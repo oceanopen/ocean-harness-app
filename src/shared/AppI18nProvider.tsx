@@ -1,7 +1,7 @@
-import type { Language, ResolvedLanguage } from './config';
+import type { Language, ResolvedLanguage } from './app_config';
 import { useEffect } from 'react';
 import { I18nextProvider } from 'react-i18next';
-import { DEFAULT_LANGUAGE, LANGUAGE_KEY } from './config';
+import { DEFAULT_LANGUAGE, LANGUAGE_KEY } from './app_config';
 import i18n from './i18n';
 import { useConfigValue } from './useConfigValue';
 import { useSystemLanguage } from './useSystemLanguage';

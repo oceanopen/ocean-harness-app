@@ -1,14 +1,14 @@
-// 本地仓库管理：持久化（复用 app.db 的 ConfigState 连接）+ git 信息解析 + CRUD 命令。
+// 本地仓库管理：持久化（复用 app.db 的 AppConfigState 连接）+ git 信息解析 + CRUD 命令。
 //
 // 设计：
-//   - 持久化复用 shared/config.rs 的 ConfigState(Mutex<Connection>)，新增 repositories 表，
-//     不另起 State / DB 文件（单连接单库，与 config 表共享）。
+//   - 持久化复用 shared/app_config.rs 的 AppConfigState(Mutex<Connection>)，新增 repositories 表，
+//     不另起 State / DB 文件（单连接单库，与 app_config 表共享）。
 //   - git 解析复刻 sessions/git.rs 的 `git -C <cwd> ...` 同步阻塞风格（项目不用 tokio），
 //     失败字段留空，前端据 card.noRemote / card.noCommit 兜底。
 //   - 命令错误统一 Result<T, String>；add 的「非 git 仓库 / 目录已存在」用稳定哨兵字符串
 //     （not-a-git-repo / dir-exists），前端字符串匹配后映射 i18n toast key（对齐 navErrToToastKey 思路）。
 //   - refresh 不持 Mutex 跑 git：先取 (id, dir) 释放锁，串行解析后再加锁写回，
-//     避免 refresh_all 长时间持锁阻塞 config 读写（单用户场景 git 串行可接受）。
+//     避免 refresh_all 长时间持锁阻塞 app_config 读写（单用户场景 git 串行可接受）。
 
 use std::process::Command;
 use std::process::Stdio;
@@ -16,7 +16,7 @@ use std::process::Stdio;
 use rusqlite::{params, Connection, OptionalExtension};
 use tauri::{Manager, State};
 
-use crate::shared::config::ConfigState;
+use crate::shared::app_config::AppConfigState;
 use crate::shared::types::{RepoSubDir, Repository};
 
 /// 解析得到的 git 信息（内部结构，不跨边界）。
@@ -27,10 +27,10 @@ struct RepoInfo {
     last_commit_message: String,
 }
 
-/// init 由 lib.rs setup 在 config::init 之后调用（此时 ConfigState 已 managed）。
-/// 复用 ConfigState 的同一 SQLite 连接建 repositories 表。
+/// init 由 lib.rs setup 在 app_config::init 之后调用（此时 AppConfigState 已 managed）。
+/// 复用 AppConfigState 的同一 SQLite 连接建 repositories 表。
 pub fn init(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let state = app.state::<ConfigState>();
+    let state = app.state::<AppConfigState>();
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS repositories (
@@ -227,7 +227,7 @@ fn open_dir(dir: &str) -> Result<(), String> {
 }
 
 // ============================================================
-// DB CRUD（操作 &Connection，与 config.rs::read_config_conn 分层一致）
+// DB CRUD（操作 &Connection，与 app_config.rs::read_app_config_conn 分层一致）
 // ============================================================
 
 fn map_repo(row: &rusqlite::Row<'_>) -> rusqlite::Result<Repository> {
@@ -329,7 +329,7 @@ fn update_info_conn(conn: &Connection, id: i32, info: &RepoInfo, now: i64) -> Re
 /// 列出全部仓库（按最近提交时间倒序）。零 git 解析，即时返回。
 #[tauri::command]
 #[specta::specta]
-pub fn list_repositories(state: State<'_, ConfigState>) -> Result<Vec<Repository>, String> {
+pub fn list_repositories(state: State<'_, AppConfigState>) -> Result<Vec<Repository>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     list_all_conn(&conn)
 }
@@ -340,7 +340,7 @@ pub fn list_repositories(state: State<'_, ConfigState>) -> Result<Vec<Repository
 #[tauri::command]
 #[specta::specta]
 pub fn add_repository(
-    state: State<'_, ConfigState>,
+    state: State<'_, AppConfigState>,
     name: String,
     dir: String,
     description: String,
@@ -384,7 +384,7 @@ pub fn add_repository(
 #[tauri::command]
 #[specta::specta]
 pub fn update_repository(
-    state: State<'_, ConfigState>,
+    state: State<'_, AppConfigState>,
     id: i32,
     name: String,
     dir: String,
@@ -436,7 +436,7 @@ pub fn update_repository(
 /// 删除仓库。
 #[tauri::command]
 #[specta::specta]
-pub fn delete_repository(state: State<'_, ConfigState>, id: i32) -> Result<(), String> {
+pub fn delete_repository(state: State<'_, AppConfigState>, id: i32) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM repositories WHERE id = ?1", params![id])
         .map_err(|e| e.to_string())?;
@@ -446,7 +446,7 @@ pub fn delete_repository(state: State<'_, ConfigState>, id: i32) -> Result<(), S
 /// 刷新单个仓库：重解析 git 信息并更新，返回新数据。
 #[tauri::command]
 #[specta::specta]
-pub fn refresh_repository(state: State<'_, ConfigState>, id: i32) -> Result<Repository, String> {
+pub fn refresh_repository(state: State<'_, AppConfigState>, id: i32) -> Result<Repository, String> {
     // 取 dir（持锁）→ 解析（释放锁跑 git）→ 写回（持锁）→ 返回（持锁）。
     let dir = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;
@@ -467,7 +467,7 @@ pub fn refresh_repository(state: State<'_, ConfigState>, id: i32) -> Result<Repo
 #[tauri::command]
 #[specta::specta]
 pub async fn refresh_all_repositories(
-    state: State<'_, ConfigState>,
+    state: State<'_, AppConfigState>,
 ) -> Result<Vec<Repository>, String> {
     let entries = {
         let conn = state.0.lock().map_err(|e| e.to_string())?;

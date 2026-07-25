@@ -1,5 +1,5 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { Iterm2SplitDirection } from '@src/shared/config';
+import type { Iterm2SplitDirection } from '@src/shared/app_config';
 import CallSplitOutlinedIcon from '@mui/icons-material/CallSplitOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import {
@@ -16,13 +16,13 @@ import {
 import {
   DEFAULT_ITERM2_SPLIT_DIRECTION,
   DEFAULT_POLL_INTERVAL_SECS,
-  getConfig,
+  getAppConfig,
   ITERM2_SPLIT_DIRECTION_KEY,
   MAX_POLL_INTERVAL_SECS,
   MIN_POLL_INTERVAL_SECS,
   POLL_INTERVAL_SECS_KEY,
-  setConfig,
-} from '@src/shared/config';
+  setAppConfig,
+} from '@src/shared/app_config';
 import { iterm2SplitDirectionOptions } from '@src/shared/settingOption';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -37,8 +37,8 @@ function MonitorConfigPage() {
 
   useEffect(() => {
     Promise.all([
-      getConfig(POLL_INTERVAL_SECS_KEY),
-      getConfig(ITERM2_SPLIT_DIRECTION_KEY),
+      getAppConfig(POLL_INTERVAL_SECS_KEY),
+      getAppConfig(ITERM2_SPLIT_DIRECTION_KEY),
     ]).then(([interval, splitDirection]) => {
       const parsed = interval != null ? Number.parseInt(interval, 10) : Number.NaN;
       if (Number.isFinite(parsed)) {
@@ -66,8 +66,8 @@ function MonitorConfigPage() {
   };
   const handleSave = async () => {
     await Promise.all([
-      setConfig(POLL_INTERVAL_SECS_KEY, String(draftInterval)),
-      setConfig(ITERM2_SPLIT_DIRECTION_KEY, draftSplitDirection),
+      setAppConfig(POLL_INTERVAL_SECS_KEY, String(draftInterval)),
+      setAppConfig(ITERM2_SPLIT_DIRECTION_KEY, draftSplitDirection),
     ]);
     setSavedInterval(draftInterval);
     setSavedSplitDirection(draftSplitDirection);

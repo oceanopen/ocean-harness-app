@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::shared::config::{read_config_raw, write_config_raw, ConfigState, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY};
+use crate::shared::app_config::{read_app_config_raw, write_app_config_raw, AppConfigState, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY};
 use crate::shared::types::YesNo;
 use crate::shared::screen::{MonitorInfo, find_monitor_for_tray};
 use crate::shared::events::EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT;
@@ -28,7 +28,7 @@ const PET_SIZE: (f64, f64) = (128.0, 128.0);
 /// 右下角内缩（逻辑像素），避开 Dock。
 const PET_MARGIN: f64 = 24.0;
 
-/// 持久化桌宠位置的 config key（逻辑坐标 JSON：`{"x":..,"y":..}`）。
+/// 持久化桌宠位置的 app_config key（逻辑坐标 JSON：`{"x":..,"y":..}`）。
 const PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY: &str = "pet_claude_sessions_summary_position";
 
 /// Moved 防抖时长：拖动期间频繁触发，停顿后落盘一次。
@@ -44,8 +44,8 @@ struct PetPositionSaved {
 /// 找不到 tray 所在屏时用 available_monitors 的第一块屏兜底；都失败返回 (100, 100)。
 fn pet_position(app: &AppHandle) -> (f64, f64) {
     // 优先用上次保存的位置；缺失或损坏时回退主屏右下角。
-    if let Some(state) = app.try_state::<ConfigState>() {
-        if let Ok(Some(raw)) = read_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY) {
+    if let Some(state) = app.try_state::<AppConfigState>() {
+        if let Ok(Some(raw)) = read_app_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY) {
             if let Ok(saved) = serde_json::from_str::<PetPositionSaved>(&raw) {
                 return (saved.x.max(0.0), saved.y.max(0.0));
             }
@@ -67,10 +67,10 @@ fn pet_position(app: &AppHandle) -> (f64, f64) {
 
 /// 读取持久化的桌宠显隐偏好。缺失或非 "N" 均视为 true（向后兼容现有用户）。
 fn pet_visible_pref(app: &AppHandle) -> bool {
-    let Some(state) = app.try_state::<ConfigState>() else {
+    let Some(state) = app.try_state::<AppConfigState>() else {
         return true;
     };
-    match read_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY) {
+    match read_app_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY) {
         Ok(Some(v)) if v == YesNo::No.as_str() => false,
         _ => true,
     }
@@ -125,8 +125,8 @@ pub fn ensure_pet_claude_sessions_summary_window(app: &AppHandle) -> tauri::Resu
                         y: logical.y,
                     })
                     .unwrap_or_default();
-                    if let Some(state) = app.try_state::<ConfigState>() {
-                        let _ = write_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY, &raw);
+                    if let Some(state) = app.try_state::<AppConfigState>() {
+                        let _ = write_app_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY, &raw);
                     }
                     // pet 停止移动后通知 pet_task 重新对齐到 pet 当前位置：拖拽中不刷新（防抖），
                     // 停下来一次性定位。前端 refit 监听 → fit → position_near_pet 按 pet 当前坐标重定位。
@@ -187,9 +187,9 @@ pub fn toggle_pet_claude_sessions_summary_window(app: AppHandle) -> Result<bool,
         let _ = pet_claude_sessions_task::hide_pet_claude_sessions_task_window(app.clone());
     }
     // 落盘显隐偏好，启动时据此恢复，避免重启后丢失用户的隐藏选择。
-    if let Some(state) = app.try_state::<ConfigState>() {
+    if let Some(state) = app.try_state::<AppConfigState>() {
         let val = if now_visible { YesNo::Yes } else { YesNo::No };
-        let _ = write_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY, val.as_str());
+        let _ = write_app_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY, val.as_str());
     }
     Ok(now_visible)
 }

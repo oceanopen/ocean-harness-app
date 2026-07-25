@@ -10,7 +10,7 @@ use tauri_specta::{collect_commands, Builder};
 // run()（注册 invoke handler）与 bin/export_bindings.rs（生成 TS 绑定）共用此函数，
 // 保证命令清单单一来源，避免两份注册表漂移。
 pub fn build_specta_builder() -> Builder<tauri::Wry> {
-    use crate::shared::types::{ConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, Repository, TerminalApp, YesNo};
+    use crate::shared::types::{AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, Repository, TerminalApp, YesNo};
     use crate::terminal::NavErr;
     Builder::<tauri::Wry>::new()
         .commands(collect_commands![
@@ -29,8 +29,8 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::pet_claude_sessions_task::hide_pet_claude_sessions_task_window,
             windows::pet_claude_sessions_task::fit_pet_claude_sessions_task,
             windows::settings::show_settings_window,
-            shared::config::get_config,
-            shared::config::set_config,
+            shared::app_config::get_app_config,
+            shared::app_config::set_app_config,
             shared::repositories::list_repositories,
             shared::repositories::add_repository,
             shared::repositories::update_repository,
@@ -43,7 +43,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。
-        .typ::<ConfigChangedPayload>()
+        .typ::<AppConfigChangedPayload>()
         .typ::<ClaudeSessionStatus>()
         .typ::<TerminalApp>()
         .typ::<YesNo>()
@@ -93,9 +93,9 @@ pub fn run() {
             };
             app.handle().plugin(log_plugin)?;
 
-            shared::config::init(app)?;
+            shared::app_config::init(app)?;
             shared::state::claude_sessions::init(app)?;
-            // 本地仓库管理表（复用 config::init 建立的同一 app.db 连接，故须在 config::init 之后）。
+            // 本地仓库管理表（复用 app_config::init 建立的同一 app.db 连接，故须在 app_config::init 之后）。
             shared::repositories::init(app)?;
             windows::tray::setup(app)?;
 
@@ -123,14 +123,14 @@ pub fn run() {
             specta_builder.mount_events(app);
 
             let handle = app.handle().clone();
-            app.listen(crate::shared::events::EVENT_CONFIG_CHANGED, move |event| {
+            app.listen(crate::shared::events::EVENT_APP_CONFIG_CHANGED, move |event| {
                 let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) else {
                     return;
                 };
                 let key = value.get("key").and_then(|v| v.as_str());
-                if key == Some(shared::config::LANGUAGE_KEY) {
+                if key == Some(shared::app_config::LANGUAGE_KEY) {
                     windows::tray::refresh_menu_texts(&handle);
-                } else if key == Some(shared::config::POLL_INTERVAL_SECS_KEY) {
+                } else if key == Some(shared::app_config::POLL_INTERVAL_SECS_KEY) {
                     if let Some(secs) = value
                         .get("value")
                         .and_then(|v| v.as_str())

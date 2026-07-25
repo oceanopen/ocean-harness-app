@@ -1,5 +1,5 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { Appearance, Language } from '@src/shared/config';
+import type { Appearance, Language } from '@src/shared/app_config';
 import LanguageIcon from '@mui/icons-material/Language';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import {
@@ -15,10 +15,10 @@ import {
   APPEARANCE_KEY,
   DEFAULT_APPEARANCE,
   DEFAULT_LANGUAGE,
-  getConfig,
+  getAppConfig,
   LANGUAGE_KEY,
-  setConfig,
-} from '@src/shared/config';
+  setAppConfig,
+} from '@src/shared/app_config';
 import {
   appearanceOptions,
   languageOptions,
@@ -36,8 +36,8 @@ function SettingsPage() {
 
   useEffect(() => {
     Promise.all([
-      getConfig(LANGUAGE_KEY),
-      getConfig(APPEARANCE_KEY),
+      getAppConfig(LANGUAGE_KEY),
+      getAppConfig(APPEARANCE_KEY),
     ]).then(([lang, appearance]) => {
       if (lang === 'system' || lang === 'zh-CN' || lang === 'en') {
         setSavedLanguage(lang);
@@ -63,8 +63,8 @@ function SettingsPage() {
   };
   const handleSave = async () => {
     await Promise.all([
-      setConfig(LANGUAGE_KEY, draftLanguage),
-      setConfig(APPEARANCE_KEY, draftAppearance),
+      setAppConfig(LANGUAGE_KEY, draftLanguage),
+      setAppConfig(APPEARANCE_KEY, draftAppearance),
     ]);
     setSavedLanguage(draftLanguage);
     setSavedAppearance(draftAppearance);

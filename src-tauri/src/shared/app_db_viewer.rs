@@ -1,11 +1,11 @@
-// 应用库（app.db）原始数据查看器：复用 ConfigState 连接，提供各表的只读浏览。
+// 应用库（app.db）原始数据查看器：复用 AppConfigState 连接，提供各表的只读浏览。
 //
-// 命名：本模块专指「应用内嵌库 app.db」（config + repositories 等表）的只读查看，
+// 命名：本模块专指「应用内嵌库 app.db」（app_config + repositories 等表）的只读查看，
 // 故模块 / 命令 / 跨边界类型一律带 app_db 前缀。未来若新增其他库（如服务端库
 // server_db / 缓存库 cache_db），各自独立命名空间，互不冲突。
 //
 // 设计：
-//   - 复用 shared/config.rs 的 ConfigState(Mutex<Connection>)，不另起连接 / 不建表 / 不写数据。
+//   - 复用 shared/app_config.rs 的 AppConfigState(Mutex<Connection>)，不另起连接 / 不建表 / 不写数据。
 //   - 只读：仅 list_app_db_tables + dump_app_db_table 两个 SELECT 命令，无任何 INSERT/UPDATE/DELETE。
 //   - 防注入：SQL 表名无法用 `?N` 占位符参数化，dump_app_db_table 必须先校验表名——
 //     白名单标识符字符（`[A-Za-z_][A-Za-z0-9_]*`）+ 须真实存在于 sqlite_master 表清单，
@@ -18,7 +18,7 @@ use rusqlite::types::Value as SqlValue;
 use rusqlite::{Connection, OptionalExtension};
 use tauri::State;
 
-use crate::shared::config::ConfigState;
+use crate::shared::app_config::AppConfigState;
 use crate::shared::types::{AppDbTableDump, AppDbTableInfo, AppDbValue};
 
 /// 合法 SQLite 标识符白名单：首字符字母/下划线，其余字母/数字/下划线。
@@ -107,7 +107,7 @@ fn dump_app_db_table_conn(conn: &Connection, table: &str) -> Result<AppDbTableDu
 /// 列出 app.db 全部用户表及其行数（只读）。前端「应用数据库」页左侧表列表数据源。
 #[tauri::command]
 #[specta::specta]
-pub fn list_app_db_tables(state: State<'_, ConfigState>) -> Result<Vec<AppDbTableInfo>, String> {
+pub fn list_app_db_tables(state: State<'_, AppConfigState>) -> Result<Vec<AppDbTableInfo>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let names = table_names_conn(&conn)?;
     let mut out = Vec::with_capacity(names.len());
@@ -133,7 +133,7 @@ pub fn list_app_db_tables(state: State<'_, ConfigState>) -> Result<Vec<AppDbTabl
 #[tauri::command]
 #[specta::specta]
 pub fn dump_app_db_table(
-    state: State<'_, ConfigState>,
+    state: State<'_, AppConfigState>,
     table: String,
 ) -> Result<AppDbTableDump, String> {
     if !is_valid_identifier(&table) {

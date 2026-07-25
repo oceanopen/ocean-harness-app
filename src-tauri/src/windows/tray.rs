@@ -5,12 +5,12 @@ use tauri::{
     AppHandle, Emitter, Manager,
 };
 
-use crate::shared::config::{
-    read_config_raw, write_config_raw, ConfigState, LANGUAGE_KEY, PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
+use crate::shared::app_config::{
+    read_app_config_raw, write_app_config_raw, AppConfigState, LANGUAGE_KEY, PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
 };
-use crate::shared::events::EVENT_CONFIG_CHANGED;
+use crate::shared::events::EVENT_APP_CONFIG_CHANGED;
 use crate::shared::i18n::{menu_text, resolve, ResolvedLanguage};
-use crate::shared::types::{ConfigChangedPayload, YesNo};
+use crate::shared::types::{AppConfigChangedPayload, YesNo};
 use crate::windows::pet_claude_sessions_summary::get_pet_claude_sessions_summary_visibility_state;
 
 /// 已构建的托盘菜单项引用，用于后续动态更新文案。
@@ -24,10 +24,10 @@ struct TrayMenuItems {
 }
 
 fn current_language(app: &AppHandle) -> ResolvedLanguage {
-    let Some(state) = app.try_state::<ConfigState>() else {
+    let Some(state) = app.try_state::<AppConfigState>() else {
         return resolve(None);
     };
-    let raw = read_config_raw(state.inner(), LANGUAGE_KEY).unwrap_or(None);
+    let raw = read_app_config_raw(state.inner(), LANGUAGE_KEY).unwrap_or(None);
     resolve(raw.as_deref())
 }
 
@@ -42,10 +42,10 @@ fn pet_claude_sessions_summary_menu_key(app: &AppHandle) -> &'static str {
 
 /// 读取持久化的桌宠拖拽开关。缺失或非 "Y" 均视为关闭（默认不可拖拽）。
 fn drag_enabled_pref(app: &AppHandle) -> bool {
-    let Some(state) = app.try_state::<ConfigState>() else {
+    let Some(state) = app.try_state::<AppConfigState>() else {
         return false;
     };
-    match read_config_raw(state.inner(), PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY) {
+    match read_app_config_raw(state.inner(), PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY) {
         Ok(Some(v)) if v == YesNo::Yes.as_str() => true,
         _ => false,
     }
@@ -222,19 +222,19 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 crate::windows::tray::refresh_menu_texts(app);
             }
             "drag" => {
-                // 翻转拖拽开关：落盘后广播 config-changed 通知前端 PetClaudeSessionsSummaryApp 实时响应，再刷新菜单文案。
+                // 翻转拖拽开关：落盘后广播 app-config-changed 通知前端 PetClaudeSessionsSummaryApp 实时响应，再刷新菜单文案。
                 // drag 的 enabled 只随桌宠显隐变化，不由此处改变。
                 let new_val = if drag_enabled_pref(app) {
                     YesNo::No
                 } else {
                     YesNo::Yes
                 };
-                if let Some(state) = app.try_state::<ConfigState>() {
-                    let _ = write_config_raw(state.inner(), PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY, new_val.as_str());
+                if let Some(state) = app.try_state::<AppConfigState>() {
+                    let _ = write_app_config_raw(state.inner(), PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY, new_val.as_str());
                 }
                 let _ = app.emit(
-                    EVENT_CONFIG_CHANGED,
-                    ConfigChangedPayload {
+                    EVENT_APP_CONFIG_CHANGED,
+                    AppConfigChangedPayload {
                         key: PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY.to_string(),
                         value: new_val.as_str().to_string(),
                     },

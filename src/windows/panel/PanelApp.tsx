@@ -22,9 +22,9 @@ import {
   isYes,
   PANEL_SIDEBAR_COLLAPSED_KEY,
   parseYesNo,
-  setConfig,
+  setAppConfig,
   toYesNo,
-} from '@src/shared/config';
+} from '@src/shared/app_config';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { listen } from '@tauri-apps/api/event';
@@ -54,10 +54,10 @@ function PanelApp() {
   const [activeMenu, setActiveMenu] = useState<MenuKey>('claudeSessions');
   const [repoRefreshTrigger, setRepoRefreshTrigger] = useState(0);
   const theme = useTheme();
-  // 侧边栏折叠状态：订阅 config（跨重启持久化、多窗口同步）。setConfig 触发 config-changed 事件，hook 自动回写，无需手动 setState。
+  // 侧边栏折叠状态：订阅 config（跨重启持久化、多窗口同步）。setAppConfig 触发 app-config-changed 事件，hook 自动回写，无需手动 setState。
   const collapsed = useConfigValue(PANEL_SIDEBAR_COLLAPSED_KEY, decodeSidebarCollapsed, false);
   const toggleCollapsed = () => {
-    void setConfig(PANEL_SIDEBAR_COLLAPSED_KEY, toYesNo(!collapsed));
+    void setAppConfig(PANEL_SIDEBAR_COLLAPSED_KEY, toYesNo(!collapsed));
   };
 
   // 监听后端 panel:navigate 事件，切换到指定页面（如 pet 点击打开控制台时自动导航到 Claude 会话监听页）。

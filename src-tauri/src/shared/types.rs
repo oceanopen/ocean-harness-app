@@ -9,15 +9,15 @@ use specta::Type;
 use specta_typescript::Number;
 
 // ============================================================
-// ConfigChangedPayload：config-changed 事件
+// AppConfigChangedPayload：app-config-changed 事件
 // ============================================================
 
-/// set_config 命令成功后通过 `config-changed` 事件广播给所有窗口的载荷。
+/// set_app_config 命令成功后通过 `app-config-changed` 事件广播给所有窗口的载荷。
 /// 订阅方（AppThemeProvider / AppI18nProvider）据此响应配置变化。
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
-pub struct ConfigChangedPayload {
-    /// 变更的配置 key（与 src/shared/config.ts 中的 *_KEY 常量对齐）。
+pub struct AppConfigChangedPayload {
+    /// 变更的配置 key（与 src/shared/app_config.ts 中的 *_KEY 常量对齐）。
     pub key: String,
     /// 新值（配置统一以字符串形式存储，订阅方按 key 自行 decode）。
     pub value: String,
@@ -68,7 +68,7 @@ pub enum YesNo {
 }
 
 impl YesNo {
-    /// 对应的存储字符串（config 层以裸字符串存储，非 JSON，故不走 serde 序列化）。
+    /// 对应的存储字符串（app_config 层以裸字符串存储，非 JSON，故不走 serde 序列化）。
     pub const fn as_str(self) -> &'static str {
         match self {
             YesNo::Yes => "Y",

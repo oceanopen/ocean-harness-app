@@ -1,4 +1,4 @@
-import type { ResolvedLanguage } from './config';
+import type { ResolvedLanguage } from './app_config';
 import { useEffect, useState } from 'react';
 
 function detectSystemLanguage(): ResolvedLanguage {

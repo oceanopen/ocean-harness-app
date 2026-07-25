@@ -1,13 +1,13 @@
 import type { ClaudeSessionInfo, ClaudeSessionStatus } from '@src/shared/bindings';
-import { commands } from '@src/shared/bindings';
-import { CLAUDE_SESSION_STATUS_PRIORITY, countAttentionClaudeSessions } from '@src/shared/claudeSessionStatus';
-import { unwrap } from '@src/shared/commands';
 import {
   DEFAULT_PET_DRAGGABLE,
   isYes,
   parseYesNo,
   PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
-} from '@src/shared/config';
+} from '@src/shared/app_config';
+import { commands } from '@src/shared/bindings';
+import { CLAUDE_SESSION_STATUS_PRIORITY, countAttentionClaudeSessions } from '@src/shared/claudeSessionStatus';
+import { unwrap } from '@src/shared/commands';
 import { EVENT_CLAUDE_SESSIONS_CHANGED } from '@src/shared/events';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { usePetHover } from '@src/shared/usePetHover';

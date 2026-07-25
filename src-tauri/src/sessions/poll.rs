@@ -2,7 +2,7 @@
 // 驱动 Dead 老化 + 兜底 fs watcher 漏报。
 //
 // 即时性由 watcher 负责，本线程只驱动老化与漏报兜底，粗粒度即可。
-// 周期经 config-changed 事件动态更新（见 set_interval）：写入原子变量后，下个循环周期生效。
+// 周期经 app-config-changed 事件动态更新（见 set_interval）：写入原子变量后，下个循环周期生效。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
-use crate::shared::config::{
-    ConfigState, DEFAULT_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS, MIN_POLL_INTERVAL_SECS,
+use crate::shared::app_config::{
+    AppConfigState, DEFAULT_POLL_INTERVAL_SECS, MAX_POLL_INTERVAL_SECS, MIN_POLL_INTERVAL_SECS,
     POLL_INTERVAL_SECS_KEY,
 };
 use crate::sessions::store;
@@ -27,8 +27,8 @@ fn clamp_interval(secs: u64) -> u64 {
 
 /// 从 SQLite 读初始周期：解析失败或越界则回退默认值。
 fn read_initial_interval(app: &AppHandle) -> u64 {
-    app.try_state::<ConfigState>()
-        .and_then(|s| crate::shared::config::read_config_raw(s.inner(), POLL_INTERVAL_SECS_KEY).ok())
+    app.try_state::<AppConfigState>()
+        .and_then(|s| crate::shared::app_config::read_app_config_raw(s.inner(), POLL_INTERVAL_SECS_KEY).ok())
         .flatten()
         .and_then(|v| v.parse::<u64>().ok())
         .map(clamp_interval)

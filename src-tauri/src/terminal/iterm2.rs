@@ -9,8 +9,8 @@ use std::process::Command;
 
 use tauri::{AppHandle, Manager};
 
-use crate::shared::config::{
-    ConfigState, DEFAULT_ITERM2_SPLIT_DIRECTION, ITERM2_SPLIT_DIRECTION_KEY,
+use crate::shared::app_config::{
+    AppConfigState, DEFAULT_ITERM2_SPLIT_DIRECTION, ITERM2_SPLIT_DIRECTION_KEY,
 };
 use crate::terminal::{NavErr, Target};
 
@@ -89,13 +89,13 @@ pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
 
     // 读取分屏方向配置，缺失或非法值回退为默认（horizontal = 上下分屏）。
     let split_direction = app
-        .state::<ConfigState>()
+        .state::<AppConfigState>()
         .0
         .lock()
         .ok()
         .and_then(|conn| {
             let mut stmt = conn
-                .prepare("SELECT value FROM config WHERE key = ?1")
+                .prepare("SELECT value FROM app_config WHERE key = ?1")
                 .ok()?;
             stmt.query_row(rusqlite::params![ITERM2_SPLIT_DIRECTION_KEY], |row| {
                 row.get::<_, String>(0)

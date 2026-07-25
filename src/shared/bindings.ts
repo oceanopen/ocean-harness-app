@@ -73,8 +73,8 @@ export const commands = {
 	 */
 	fitPetClaudeSessionsTask: (height: number | null) => typedError<null, string>(__TAURI_INVOKE("fit_pet_claude_sessions_task", { height })),
 	showSettingsWindow: () => typedError<null, string>(__TAURI_INVOKE("show_settings_window")),
-	getConfig: (key: string) => typedError<string | null, string>(__TAURI_INVOKE("get_config", { key })),
-	setConfig: (key: string, value: string) => typedError<null, string>(__TAURI_INVOKE("set_config", { key, value })),
+	getAppConfig: (key: string) => typedError<string | null, string>(__TAURI_INVOKE("get_app_config", { key })),
+	setAppConfig: (key: string, value: string) => typedError<null, string>(__TAURI_INVOKE("set_app_config", { key, value })),
 	/**  列出全部仓库（按最近提交时间倒序）。零 git 解析，即时返回。 */
 	listRepositories: () => typedError<Repository[], string>(__TAURI_INVOKE("list_repositories")),
 	/**
@@ -106,6 +106,17 @@ export const commands = {
 };
 
 /* Types */
+/**
+ *  set_app_config 命令成功后通过 `app-config-changed` 事件广播给所有窗口的载荷。
+ *  订阅方（AppThemeProvider / AppI18nProvider）据此响应配置变化。
+ */
+export type AppConfigChangedPayload = {
+	/**  变更的配置 key（与 src/shared/app_config.ts 中的 *_KEY 常量对齐）。 */
+	key: string,
+	/**  新值（配置统一以字符串形式存储，订阅方按 key 自行 decode）。 */
+	value: string,
+};
+
 /**  dump_app_db_table 返回：一张表的列名 + 全部行。每个单元格为 AppDbValue，前端按 kind 渲染。 */
 export type AppDbTableDump = {
 	/**  列名，顺序与 rows 中每行单元格一致。 */
@@ -185,17 +196,6 @@ export type ClaudeSessionStatus =
 "GitPending" | 
 /**  已失效：进程已退出，json 残留。discover 阶段会过滤掉，理论上不会出现在前端。 */
 "Dead";
-
-/**
- *  set_config 命令成功后通过 `config-changed` 事件广播给所有窗口的载荷。
- *  订阅方（AppThemeProvider / AppI18nProvider）据此响应配置变化。
- */
-export type ConfigChangedPayload = {
-	/**  变更的配置 key（与 src/shared/config.ts 中的 *_KEY 常量对齐）。 */
-	key: string,
-	/**  新值（配置统一以字符串形式存储，订阅方按 key 自行 decode）。 */
-	value: string,
-};
 
 /**  跳转失败原因。对应前端 navigation-failed toast 文案细分。 */
 export type NavErr = 

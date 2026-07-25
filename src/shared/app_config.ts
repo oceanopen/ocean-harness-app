@@ -63,11 +63,11 @@ export const PANEL_SIDEBAR_COLLAPSED_KEY = 'panel_sidebar_collapsed';
 export const DEFAULT_PANEL_SIDEBAR_COLLAPSED = YES_NO.NO;
 
 // commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，
-// 保持 getConfig/setConfig 的对外 API 不变（错误时 throw）。
-export async function getConfig(key: string): Promise<string | null> {
-  return unwrap(commands.getConfig(key));
+// 保持 getAppConfig/setAppConfig 的对外 API 不变（错误时 throw）。
+export async function getAppConfig(key: string): Promise<string | null> {
+  return unwrap(commands.getAppConfig(key));
 }
 
-export async function setConfig(key: string, value: string): Promise<void> {
-  await unwrap(commands.setConfig(key, value));
+export async function setAppConfig(key: string, value: string): Promise<void> {
+  await unwrap(commands.setAppConfig(key, value));
 }
