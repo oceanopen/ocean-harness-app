@@ -2,6 +2,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
 import {
   alpha,
@@ -25,6 +26,7 @@ import {
   setAppConfig,
   toYesNo,
 } from '@src/shared/app_config';
+import { commands } from '@src/shared/bindings';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { listen } from '@tauri-apps/api/event';
@@ -234,6 +236,23 @@ function PanelApp() {
               {activeLabel}
             </Typography>
           </Breadcrumbs>
+          <Box sx={{ flex: 1 }} />
+          <Tooltip title={t('settings:menu.settings')}>
+            <IconButton
+              size="small"
+              aria-label={t('settings:menu.settings')}
+              onClick={() => {
+                void commands.showSettingsWindow().then((res) => {
+                  if (res.status === 'error') {
+                    console.warn('[PanelApp] open settings failed:', res.error);
+                  }
+                });
+              }}
+              sx={{ color: 'text.secondary' }}
+            >
+              <SettingsOutlinedIcon />
+            </IconButton>
+          </Tooltip>
         </Box>
         {/* 页面内容区：各页面自带 header 原样保留。 */}
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
