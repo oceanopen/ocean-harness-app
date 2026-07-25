@@ -187,9 +187,10 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
             w
         }
         None => {
+            let product = app.config().product_name.as_deref().unwrap_or("We Claude Terminal");
             let win =
                 WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App("panel.html".into()))
-                    .title("控制台")
+                    .title(format!("{product} - 控制台"))
                     .inner_size(width, height)
                     .center()
                     .skip_taskbar(true)
