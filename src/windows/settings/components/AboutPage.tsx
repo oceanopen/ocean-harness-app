@@ -20,9 +20,18 @@ type CheckState
     | { kind: 'checking' }
     | { kind: 'up-to-date' }
     | { kind: 'available'; update: Update }
-    | { kind: 'downloading'; percent: number }
+    // percent === null 表示下载源未返回 Content-Length（拿不到真实百分比），回退展示已下载字节数。
+    | { kind: 'downloading'; percent: number | null; downloadedBytes: number }
     | { kind: 'downloaded' }
     | { kind: 'error'; message: string };
+
+// 把已下载字节数格式化为带单位的可读字符串：< 1MB 显示 KB，≥ 1MB 显示 MB（保留 1 位小数）。
+function formatDownloadedSize(bytes: number): string {
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 function AboutPage() {
   const { t } = useTranslation();
@@ -65,7 +74,7 @@ function AboutPage() {
   };
 
   const handleDownloadAndInstall = async (update: Update) => {
-    setState({ kind: 'downloading', percent: 0 });
+    setState({ kind: 'downloading', percent: null, downloadedBytes: 0 });
     let total = 0;
     let downloaded = 0;
     try {
@@ -77,8 +86,12 @@ function AboutPage() {
           case 'Progress':
             downloaded += event.data.chunkLength;
             if (total > 0) {
+              // 有真实 Content-Length：按百分比上报。
               const percent = Math.min(100, Math.round((downloaded / total) * 100));
-              setState({ kind: 'downloading', percent });
+              setState({ kind: 'downloading', percent, downloadedBytes: downloaded });
+            } else {
+              // 缺失 Content-Length（如 Gitee 302 重定向链路）：回退展示已下载字节数，避免卡在 0%。
+              setState({ kind: 'downloading', percent: null, downloadedBytes: downloaded });
             }
             break;
           case 'Finished':
@@ -115,7 +128,9 @@ function AboutPage() {
         };
       case 'downloading':
         return {
-          label: t('about:downloading', { percent: state.percent }),
+          label: state.percent === null
+            ? t('about:downloadingSize', { size: formatDownloadedSize(state.downloadedBytes) })
+            : t('about:downloadingPercent', { percent: state.percent }),
           icon: <CircularProgress size={16} />,
           disabled: true,
           onClick: undefined,
