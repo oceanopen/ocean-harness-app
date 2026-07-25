@@ -60,7 +60,24 @@ pub fn dispatch(host_app: TerminalApp, target: &Target<'_>) -> Result<(), NavErr
 pub fn open_directory_dispatch(app: &AppHandle, host_app: TerminalApp, dir: &str) -> Result<(), NavErr> {
     match host_app {
         TerminalApp::ITerm2 => iterm2::open_directory(app, dir),
-        TerminalApp::Terminal => terminal_app::open_directory(dir),
+        TerminalApp::Terminal => terminal_app::open_directory(app, dir),
         TerminalApp::IntelliJ | TerminalApp::Unknown => Err(NavErr::UnsupportedHostApp),
+    }
+}
+
+/// 把自定义命令转义后嵌入 AppleScript 字符串字面量内部（不加外层引号）。
+/// 只做 AppleScript 字符串转义（`\` → `\\`、`"` → `\"`），不碰空格 / `$` / `&&` 等
+/// shell 元字符——命令原样交给交互 shell 执行。与各子模块的 `escape_dir_for_applescript`
+/// 不同：dir 需要 shell-safe 的空格转义，自定义命令不需要（空格是参数分隔，有意义）。
+fn escape_command_for_applescript(cmd: &str) -> String {
+    cmd.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// 计算拼到 `cd {dir}` 之后的命令后缀：`raw_cmd` trim 后为空则返回空串（仅 cd）；
+/// 非空则返回 ` && {转义后命令}`，使最终 shell 命令等价于 `cd {dir} && {cmd}`。
+fn build_cmd_suffix(raw_cmd: &str) -> String {
+    match raw_cmd.trim() {
+        "" => String::new(),
+        c => format!(" && {}", escape_command_for_applescript(c)),
     }
 }

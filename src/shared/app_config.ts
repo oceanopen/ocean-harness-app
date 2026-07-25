@@ -57,6 +57,11 @@ export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
 export const ITERM2_SPLIT_DIRECTION_KEY = 'iterm2_split_direction';
 export const DEFAULT_ITERM2_SPLIT_DIRECTION: Iterm2SplitDirection = 'horizontal';
 
+// 打开终端 cd 后追加执行的命令（全局，iTerm2 与 Terminal.app 共用）。空串 = 仅 cd。
+// 与后端 app_config.rs 镜像，改动任一处需同步另一处。
+export const TERMINAL_POST_OPEN_COMMAND_KEY = 'terminal_post_open_command';
+export const DEFAULT_TERMINAL_POST_OPEN_COMMAND = '';
+
 // panel 窗口侧边栏折叠状态。值用 YesNo，缺失视为 NO（默认展开）。
 // 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 appearance 先例）。
 export const PANEL_SIDEBAR_COLLAPSED_KEY = 'panel_sidebar_collapsed';

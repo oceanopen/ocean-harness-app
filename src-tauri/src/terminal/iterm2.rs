@@ -10,7 +10,8 @@ use std::process::Command;
 use tauri::{AppHandle, Manager};
 
 use crate::shared::app_config::{
-    AppConfigState, DEFAULT_ITERM2_SPLIT_DIRECTION, ITERM2_SPLIT_DIRECTION_KEY,
+    AppConfigState, DEFAULT_ITERM2_SPLIT_DIRECTION, DEFAULT_TERMINAL_POST_OPEN_COMMAND,
+    ITERM2_SPLIT_DIRECTION_KEY, read_app_config_raw, TERMINAL_POST_OPEN_COMMAND_KEY,
 };
 use crate::terminal::{NavErr, Target};
 
@@ -86,23 +87,21 @@ pub fn focus_session(target: &Target<'_>) -> Result<(), NavErr> {
 ///   horizontal = 上下分屏，vertical = 左右分屏，none = 不分屏。
 pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
     let escaped_dir = escape_dir_for_applescript(dir);
+    let state = app.state::<AppConfigState>();
 
     // 读取分屏方向配置，缺失或非法值回退为默认（horizontal = 上下分屏）。
-    let split_direction = app
-        .state::<AppConfigState>()
-        .0
-        .lock()
+    let split_direction = read_app_config_raw(&state, ITERM2_SPLIT_DIRECTION_KEY)
         .ok()
-        .and_then(|conn| {
-            let mut stmt = conn
-                .prepare("SELECT value FROM app_config WHERE key = ?1")
-                .ok()?;
-            stmt.query_row(rusqlite::params![ITERM2_SPLIT_DIRECTION_KEY], |row| {
-                row.get::<_, String>(0)
-            })
-            .ok()
-        })
+        .flatten()
         .unwrap_or_else(|| DEFAULT_ITERM2_SPLIT_DIRECTION.to_string());
+
+    // 读取「cd 后追加命令」配置（全局），缺失视为空串（仅 cd）。
+    // 拼成 ` && {cmd}` 后缀，使 write text 最终发出 `cd {dir} && {cmd}`。
+    let post_open_cmd = read_app_config_raw(&state, TERMINAL_POST_OPEN_COMMAND_KEY)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| DEFAULT_TERMINAL_POST_OPEN_COMMAND.to_string());
+    let cmd_suffix = super::build_cmd_suffix(&post_open_cmd);
 
     let script = match split_direction.as_str() {
         // 不分屏：仅 cd 到目录，不执行 split
@@ -113,19 +112,20 @@ tell application "iTerm2"
     if (count of windows) is 0 then
         set newWin to (create window with default profile)
         tell current session of newWin
-            write text "cd {escaped_dir}"
+            write text "cd {escaped_dir}{cmd_suffix}"
         end tell
     else
         tell current window
             set newTab to (create tab with default profile)
             tell current session of newTab
-                write text "cd {escaped_dir}"
+                write text "cd {escaped_dir}{cmd_suffix}"
             end tell
         end tell
     end if
 end tell
 "#,
             escaped_dir = escaped_dir,
+            cmd_suffix = cmd_suffix,
         ),
         // 分屏模式：horizontal 或 vertical
         _ => {
@@ -140,20 +140,20 @@ tell application "iTerm2"
     if (count of windows) is 0 then
         set newWin to (create window with default profile)
         tell current session of newWin
-            write text "cd {escaped_dir}"
+            write text "cd {escaped_dir}{cmd_suffix}"
             set splitSess to ({split_cmd} with default profile)
             tell splitSess
-                write text "cd {escaped_dir}"
+                write text "cd {escaped_dir}{cmd_suffix}"
             end tell
         end tell
     else
         tell current window
             set newTab to (create tab with default profile)
             tell current session of newTab
-                write text "cd {escaped_dir}"
+                write text "cd {escaped_dir}{cmd_suffix}"
                 set splitSess to ({split_cmd} with default profile)
                 tell splitSess
-                    write text "cd {escaped_dir}"
+                    write text "cd {escaped_dir}{cmd_suffix}"
                 end tell
             end tell
         end tell
@@ -161,6 +161,7 @@ tell application "iTerm2"
 end tell
 "#,
                 escaped_dir = escaped_dir,
+                cmd_suffix = cmd_suffix,
                 split_cmd = split_cmd,
             )
         }

@@ -1,6 +1,7 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
 import type { Iterm2SplitDirection } from '@src/shared/app_config';
 import CallSplitOutlinedIcon from '@mui/icons-material/CallSplitOutlined';
+import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import {
   Box,
@@ -11,17 +12,20 @@ import {
   MenuItem,
   Select,
   Slider,
+  TextField,
   Typography,
 } from '@mui/material';
 import {
   DEFAULT_ITERM2_SPLIT_DIRECTION,
   DEFAULT_POLL_INTERVAL_SECS,
+  DEFAULT_TERMINAL_POST_OPEN_COMMAND,
   getAppConfig,
   ITERM2_SPLIT_DIRECTION_KEY,
   MAX_POLL_INTERVAL_SECS,
   MIN_POLL_INTERVAL_SECS,
   POLL_INTERVAL_SECS_KEY,
   setAppConfig,
+  TERMINAL_POST_OPEN_COMMAND_KEY,
 } from '@src/shared/app_config';
 import { iterm2SplitDirectionOptions } from '@src/shared/settingOption';
 import { useEffect, useState } from 'react';
@@ -34,12 +38,15 @@ function MonitorConfigPage() {
   const [draftInterval, setDraftInterval] = useState<number>(DEFAULT_POLL_INTERVAL_SECS);
   const [savedSplitDirection, setSavedSplitDirection] = useState<Iterm2SplitDirection>(DEFAULT_ITERM2_SPLIT_DIRECTION);
   const [draftSplitDirection, setDraftSplitDirection] = useState<Iterm2SplitDirection>(DEFAULT_ITERM2_SPLIT_DIRECTION);
+  const [savedTerminalPostOpenCommand, setSavedTerminalPostOpenCommand] = useState<string>(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
+  const [draftTerminalPostOpenCommand, setDraftTerminalPostOpenCommand] = useState<string>(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
 
   useEffect(() => {
     Promise.all([
       getAppConfig(POLL_INTERVAL_SECS_KEY),
       getAppConfig(ITERM2_SPLIT_DIRECTION_KEY),
-    ]).then(([interval, splitDirection]) => {
+      getAppConfig(TERMINAL_POST_OPEN_COMMAND_KEY),
+    ]).then(([interval, splitDirection, terminalPostOpenCommand]) => {
       const parsed = interval != null ? Number.parseInt(interval, 10) : Number.NaN;
       if (Number.isFinite(parsed)) {
         // DB 可能存越界或非 step 倍数（直接改 DB / 旧脏数据），clamp 到合法范围。
@@ -51,26 +58,34 @@ function MonitorConfigPage() {
         setSavedSplitDirection(splitDirection);
         setDraftSplitDirection(splitDirection);
       }
+      if (terminalPostOpenCommand != null) {
+        setSavedTerminalPostOpenCommand(terminalPostOpenCommand);
+        setDraftTerminalPostOpenCommand(terminalPostOpenCommand);
+      }
     });
   }, []);
 
-  const dirty = draftInterval !== savedInterval || draftSplitDirection !== savedSplitDirection;
+  const dirty = draftInterval !== savedInterval || draftSplitDirection !== savedSplitDirection || draftTerminalPostOpenCommand !== savedTerminalPostOpenCommand;
 
   const handleReset = () => {
     setDraftInterval(DEFAULT_POLL_INTERVAL_SECS);
     setDraftSplitDirection(DEFAULT_ITERM2_SPLIT_DIRECTION);
+    setDraftTerminalPostOpenCommand(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
   };
   const handleCancel = () => {
     setDraftInterval(savedInterval);
     setDraftSplitDirection(savedSplitDirection);
+    setDraftTerminalPostOpenCommand(savedTerminalPostOpenCommand);
   };
   const handleSave = async () => {
     await Promise.all([
       setAppConfig(POLL_INTERVAL_SECS_KEY, String(draftInterval)),
       setAppConfig(ITERM2_SPLIT_DIRECTION_KEY, draftSplitDirection),
+      setAppConfig(TERMINAL_POST_OPEN_COMMAND_KEY, draftTerminalPostOpenCommand),
     ]);
     setSavedInterval(draftInterval);
     setSavedSplitDirection(draftSplitDirection);
+    setSavedTerminalPostOpenCommand(draftTerminalPostOpenCommand);
   };
 
   const marks = [
@@ -151,6 +166,24 @@ function MonitorConfigPage() {
                 ))}
               </Select>
             </FormControl>
+          </Box>
+
+          <Divider />
+
+          <Box sx={{ px: 2, py: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <PlayArrowOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+              <Typography>{t('settings:row.terminalPostOpenCommand')}</Typography>
+            </Box>
+            <TextField
+              size="small"
+              fullWidth
+              placeholder="add_proxy"
+              value={draftTerminalPostOpenCommand}
+              onChange={e => setDraftTerminalPostOpenCommand(e.target.value)}
+              sx={{ mt: 1 }}
+            />
+            <FormHelperText>{t('settings:help.terminalPostOpenCommand')}</FormHelperText>
           </Box>
         </Box>
       </Box>

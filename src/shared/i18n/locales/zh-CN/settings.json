@@ -12,7 +12,8 @@
     "language": "语言",
     "appearance": "外观",
     "pollInterval": "兜底轮询周期",
-    "iterm2SplitDirection": "iTerm2 分屏方向"
+    "iterm2SplitDirection": "iTerm2 分屏方向",
+    "terminalPostOpenCommand": "打开终端后执行"
   },
   "option": {
     "followSystem": "跟随系统",
@@ -28,7 +29,8 @@
     "seconds": "秒"
   },
   "help": {
-    "pollInterval": "即时性由文件监听负责，此处仅驱动失效会话清理与文件监听漏报兜底。"
+    "pollInterval": "即时性由文件监听负责，此处仅驱动失效会话清理与文件监听漏报兜底。",
+    "terminalPostOpenCommand": "cd 进入仓库目录后会自动执行此命令，留空则只 cd。例如 add_proxy 或 ./bootstrap.sh；多个命令可用 && 拼接，如 add_proxy && npm run dev。"
   },
   "button": {
     "reset": "重置",

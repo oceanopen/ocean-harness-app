@@ -26,6 +26,11 @@ pub const MAX_POLL_INTERVAL_SECS: u64 = 120;
 pub const ITERM2_SPLIT_DIRECTION_KEY: &str = "iterm2_split_direction";
 pub const DEFAULT_ITERM2_SPLIT_DIRECTION: &str = "horizontal";
 
+/// 打开终端 cd 后追加执行的命令（全局，iTerm2 与 Terminal.app 共用）。
+/// 空串 = 仅 cd，不追加。默认值与前端 src/shared/app_config.ts 镜像，改动任一处需同步另一处。
+pub const TERMINAL_POST_OPEN_COMMAND_KEY: &str = "terminal_post_open_command";
+pub const DEFAULT_TERMINAL_POST_OPEN_COMMAND: &str = "";
+
 pub struct AppConfigState(pub Mutex<Connection>);
 
 pub fn init(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {

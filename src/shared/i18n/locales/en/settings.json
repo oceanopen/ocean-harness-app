@@ -12,7 +12,8 @@
     "language": "Language",
     "appearance": "Appearance",
     "pollInterval": "Fallback poll interval",
-    "iterm2SplitDirection": "iTerm2 split direction"
+    "iterm2SplitDirection": "iTerm2 split direction",
+    "terminalPostOpenCommand": "Run after opening terminal"
   },
   "option": {
     "followSystem": "Follow system",
@@ -28,7 +29,8 @@
     "seconds": "s"
   },
   "help": {
-    "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events."
+    "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events.",
+    "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev."
   },
   "button": {
     "reset": "Reset",

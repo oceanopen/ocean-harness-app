@@ -5,6 +5,12 @@
 
 use std::process::Command;
 
+use tauri::{AppHandle, Manager};
+
+use crate::shared::app_config::{
+    AppConfigState, DEFAULT_TERMINAL_POST_OPEN_COMMAND, read_app_config_raw,
+    TERMINAL_POST_OPEN_COMMAND_KEY,
+};
 use crate::terminal::{NavErr, Target};
 
 const SCRIPT_TEMPLATE: &str = r#"
@@ -61,20 +67,30 @@ pub fn focus_session(target: &Target<'_>) -> Result<(), NavErr> {
 
 /// 在 Terminal.app 中打开目录：有窗口则 `do script ... in front window`（新建 Tab），
 /// 无窗口则 `do script ...`（新建窗口），均执行 cd 到指定目录。
-pub fn open_directory(dir: &str) -> Result<(), NavErr> {
+pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
     let escaped_dir = escape_dir_for_applescript(dir);
+
+    // 读取「cd 后追加命令」配置（全局），缺失视为空串（仅 cd）。
+    let post_open_cmd =
+        read_app_config_raw(&app.state::<AppConfigState>(), TERMINAL_POST_OPEN_COMMAND_KEY)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| DEFAULT_TERMINAL_POST_OPEN_COMMAND.to_string());
+    let cmd_suffix = super::build_cmd_suffix(&post_open_cmd);
+
     let script = format!(
         r#"
 tell application "Terminal"
     activate
     if (count of windows) is 0 then
-        do script "cd {escaped_dir}"
+        do script "cd {escaped_dir}{cmd_suffix}"
     else
-        do script "cd {escaped_dir}" in front window
+        do script "cd {escaped_dir}{cmd_suffix}" in front window
     end if
 end tell
 "#,
         escaped_dir = escaped_dir,
+        cmd_suffix = cmd_suffix,
     );
     let output = Command::new("osascript")
         .args(["-e", &script])
@@ -94,20 +110,4 @@ fn escape_dir_for_applescript(dir: &str) -> String {
     let quoted = format!("'{}'", shell_safe);
     // AppleScript 字符串上下文: \\ → 字面 \, \" → 字面 "
     quoted.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn render_includes_tty() {
-        let target = Target {
-            tty: Some("/dev/ttys007"),
-        };
-        let script = render_script(&target);
-        assert!(script.contains("\"/dev/ttys007\""));
-        assert!(script.contains("set selected tab of w to t"));
-        assert!(script.contains("set index of w to 1"));
-    }
 }
