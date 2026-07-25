@@ -4,10 +4,6 @@
     "monitorConfig": "Monitor Config",
     "about": "About"
   },
-  "page": {
-    "title": "Settings",
-    "monitorConfigTitle": "Monitor Config"
-  },
   "row": {
     "language": "Language",
     "appearance": "Appearance",

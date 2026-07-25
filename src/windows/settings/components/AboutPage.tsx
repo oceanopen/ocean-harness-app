@@ -184,6 +184,7 @@ function AboutPage() {
         alignItems: 'center',
         justifyContent: 'center',
         height: '100%',
+        overflow: 'auto',
         gap: 1.5,
         px: 3,
         py: 4,

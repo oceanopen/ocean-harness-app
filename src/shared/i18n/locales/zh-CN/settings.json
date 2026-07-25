@@ -4,10 +4,6 @@
     "monitorConfig": "终端监听配置",
     "about": "关于"
   },
-  "page": {
-    "title": "系统设置",
-    "monitorConfigTitle": "终端监听配置"
-  },
   "row": {
     "language": "语言",
     "appearance": "外观",

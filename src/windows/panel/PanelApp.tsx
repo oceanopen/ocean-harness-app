@@ -237,22 +237,20 @@ function PanelApp() {
             </Typography>
           </Breadcrumbs>
           <Box sx={{ flex: 1 }} />
-          <Tooltip title={t('settings:menu.settings')}>
-            <IconButton
-              size="small"
-              aria-label={t('settings:menu.settings')}
-              onClick={() => {
-                void commands.showSettingsWindow().then((res) => {
-                  if (res.status === 'error') {
-                    console.warn('[PanelApp] open settings failed:', res.error);
-                  }
-                });
-              }}
-              sx={{ color: 'text.secondary' }}
-            >
-              <SettingsOutlinedIcon />
-            </IconButton>
-          </Tooltip>
+          <IconButton
+            size="small"
+            aria-label={t('settings:menu.settings')}
+            onClick={() => {
+              void commands.showSettingsWindow().then((res) => {
+                if (res.status === 'error') {
+                  console.warn('[PanelApp] open settings failed:', res.error);
+                }
+              });
+            }}
+            sx={{ color: 'text.secondary' }}
+          >
+            <SettingsOutlinedIcon />
+          </IconButton>
         </Box>
         {/* 页面内容区：各页面自带 header 原样保留。 */}
         <Box sx={{ flex: 1, overflow: 'hidden' }}>

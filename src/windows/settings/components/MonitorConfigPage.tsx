@@ -98,10 +98,6 @@ function MonitorConfigPage() {
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Box sx={{ p: 3, flex: 1, overflow: 'auto' }}>
-        <Typography variant="h6" sx={{ mb: 3 }}>
-          {t('settings:page.monitorConfigTitle')}
-        </Typography>
-
         <Box sx={{ borderRadius: 2, border: 1, borderColor: 'divider', overflow: 'hidden' }}>
           <Box sx={{ px: 2, py: 2 }}>
             <Box
@@ -181,7 +177,7 @@ function MonitorConfigPage() {
               placeholder="add_proxy"
               value={draftTerminalPostOpenCommand}
               onChange={e => setDraftTerminalPostOpenCommand(e.target.value)}
-              sx={{ mt: 1 }}
+              sx={{ mt: 1, mb: 1 }}
             />
             <FormHelperText>{t('settings:help.terminalPostOpenCommand')}</FormHelperText>
           </Box>
