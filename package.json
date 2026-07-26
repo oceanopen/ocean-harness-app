@@ -16,7 +16,7 @@
     "server:build": "node scripts/build-server.mjs",
     "server:fmt": "gofmt -l -w src-server",
     "gen:bindings": "cargo run --manifest-path src-tauri/Cargo.toml --features gen-bindings --bin export_bindings",
-    "genAppIcons": "tauri icon src/assets/app-icon.svg && rm -rf src-tauri/icons/android && rm -rf src-tauri/icons/ios && cp src-tauri/icons/icon.png src/assets/app-icon.png && cp src/assets/app-icon.svg public/favicon.svg",
+    "gen:app:icons": "tauri icon src/assets/app-icon.svg && rm -rf src-tauri/icons/android && rm -rf src-tauri/icons/ios && cp src-tauri/icons/icon.png src/assets/app-icon.png && cp src/assets/app-icon.svg public/favicon.svg",
     "verify:bindings": "pnpm gen:bindings && git ls-files --error-unmatch src/shared/bindings.ts && git diff --exit-code src/shared/bindings.ts",
     "release": "bumpp"
   },
