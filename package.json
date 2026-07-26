@@ -16,7 +16,7 @@
     "gen:bindings": "cargo run --manifest-path src-tauri/Cargo.toml --features gen-bindings --bin export_bindings",
     "genAppIcons": "tauri icon src/assets/app-icon.svg && rm -rf src-tauri/icons/android && rm -rf src-tauri/icons/ios && cp src-tauri/icons/icon.png src/assets/app-icon.png && cp src/assets/app-icon.svg public/favicon.svg",
     "verify:bindings": "pnpm gen:bindings && git ls-files --error-unmatch src/shared/bindings.ts && git diff --exit-code src/shared/bindings.ts",
-    "go:build": "go build -C src-go -o ../src-tauri/resources/go-server-bin ./cmd/server",
+    "go:build": "node scripts/build-go-server.mjs",
     "release": "bumpp"
   },
   "dependencies": {
