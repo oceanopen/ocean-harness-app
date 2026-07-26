@@ -3,7 +3,7 @@ mod shared;
 mod terminal;
 mod windows;
 
-use tauri::Listener;
+use tauri::{Listener, Manager};
 use tauri_specta::{collect_commands, Builder};
 
 // 集中注册所有 IPC 命令到 tauri-specta Builder。
@@ -141,8 +141,20 @@ pub fn run() {
                 }
             });
 
+            // 拉起 Go 本地 HTTP 服务（dev 用 go run，build 用随包二进制）。前端经 fetch 直连调用。
+            // 启动失败返回 Err 中断 setup——Go 服务是核心依赖，失败应暴露而非静默。
+            shared::http_server::init(app.handle())?;
+
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // 应用退出时回收 Go 服务子进程（kill + wait），避免孤儿进程。
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<shared::http_server::HttpServerState>() {
+                    shared::http_server::shutdown(state.inner());
+                }
+            }
+        });
 }

@@ -3,7 +3,8 @@
   "menu": {
     "claudeSessions": "Claude 会话监听",
     "repositories": "本地仓库管理",
-    "appDb": "应用数据库"
+    "appDb": "应用数据库",
+    "serverStatus": "服务状态"
   },
   "appDb": {
     "tables": "数据表 ({{count}})",

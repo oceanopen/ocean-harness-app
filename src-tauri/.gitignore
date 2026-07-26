@@ -2,3 +2,6 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# Go 服务编译产物（由 pnpm go:build 生成，随包分发，不入库）
+/resources/go-server-bin

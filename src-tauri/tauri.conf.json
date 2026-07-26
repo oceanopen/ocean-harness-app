@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:7102",
     "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "beforeBuildCommand": "pnpm build && pnpm go:build"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -41,6 +41,7 @@
     "category": "Utility",
     "shortDescription": "We Claude Terminal Desktop App",
     "longDescription": "We Claude Terminal Desktop App",
+    "resources": ["resources/go-server-bin*"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

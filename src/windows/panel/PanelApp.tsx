@@ -1,6 +1,7 @@
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
@@ -35,6 +36,7 @@ import { useTranslation } from 'react-i18next';
 import AppDbPage from './AppDbPage';
 import ClaudeSessionsPage from './ClaudeSessionsPage';
 import RepositoriesPage from './RepositoriesPage';
+import ServerStatusPage from './ServerStatusPage';
 
 // 侧边栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
@@ -46,7 +48,7 @@ function decodeSidebarCollapsed(raw: string | null): boolean {
 // 左侧菜单 + 右侧内容的交互复刻自 settings 窗口（SettingsApp）：
 // useState<MenuKey> 单状态 + menuItems 配置数组驱动左侧 List + 右侧条件渲染。
 // 当前菜单：Claude 会话监听、本地仓库管理；后续在此数组追加新菜单项即可扩展。
-type MenuKey = 'claudeSessions' | 'repositories' | 'appDb';
+type MenuKey = 'claudeSessions' | 'repositories' | 'appDb' | 'serverStatus';
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
@@ -89,6 +91,7 @@ function PanelApp() {
     { key: 'claudeSessions', label: t('panel:menu.claudeSessions'), icon: <SensorsOutlinedIcon /> },
     { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
     { key: 'appDb', label: t('panel:menu.appDb'), icon: <StorageOutlinedIcon /> },
+    { key: 'serverStatus', label: t('panel:menu.serverStatus'), icon: <LanOutlinedIcon /> },
   ];
   // 顶部导航栏页面标题：当前激活菜单项 label；单层面包屑，预留未来主/子菜单扩展。
   const activeLabel = menuItems.find(item => item.key === activeMenu)?.label ?? '';
@@ -257,6 +260,7 @@ function PanelApp() {
           {activeMenu === 'claudeSessions' && <ClaudeSessionsPage />}
           {activeMenu === 'repositories' && <RepositoriesPage windowShownTrigger={repoRefreshTrigger} />}
           {activeMenu === 'appDb' && <AppDbPage />}
+          {activeMenu === 'serverStatus' && <ServerStatusPage />}
         </Box>
       </Box>
     </Box>

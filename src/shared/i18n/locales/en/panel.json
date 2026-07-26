@@ -3,7 +3,8 @@
   "menu": {
     "claudeSessions": "Claude Sessions",
     "repositories": "Repository Management",
-    "appDb": "Application Database"
+    "appDb": "Application Database",
+    "serverStatus": "Service Status"
   },
   "appDb": {
     "tables": "Tables ({{count}})",
