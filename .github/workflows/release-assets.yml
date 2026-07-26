@@ -47,7 +47,7 @@ jobs:
       # runner 预装了 Go，但显式 setup-go 锁定版本（与 src-server/go.mod 的 `go 1.21` 对齐），避免 runner 镜像变动风险。
       # cache: false：src-server 零依赖、无 go.sum，无可缓存内容。
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: src-server/go.mod
           cache: false
