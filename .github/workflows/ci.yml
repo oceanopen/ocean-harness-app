@@ -1,0 +1,52 @@
+# PR / push 检查：守住 Rust→TS 类型绑定不漂移。
+#
+# 为何需要：src/shared/bindings.ts 由 gen:bindings 从 #[tauri::command] 签名 + types.rs 生成并提交进 git，
+# 构建期不再自动重新生成（见 package.json 的 web:dev/web:build）。故类型改动后必须手动 pnpm gen:bindings
+# 同步本文件，否则前后端类型会静默漂移。本 workflow 跑 verify:bindings（重新生成并断言 git diff 为空）
+# 作为兜底，把漂移拦在 PR 阶段。
+#
+# 流程须先 server:build：gen:bindings 是 host 构建（cargo run 不带 --target），tauri-build 的 build script
+# 会按 host triple 找 sidecar，缺失即硬报错。macos-latest runner 上 host==target，一份 host triple 即可。
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  verify-bindings:
+    name: Verify Rust→TS bindings in sync
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # 必须在 setup-node 之前：setup-node 的 pnpm cache 需先读到 pnpm 版本
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      # gen:bindings 走 host 构建，需要 host triple 的 sidecar；setup-go 锁定 src-server/go.mod 的 go 版本。
+      # cache: false：src-server 零依赖、无 go.sum，无可缓存内容。
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: src-server/go.mod
+          cache: false
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install app dependencies
+        run: pnpm install
+
+      - name: Build Go sidecar (host triple)
+        run: pnpm server:build
+
+      - name: Verify bindings in sync
+        run: pnpm verify:bindings

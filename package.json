@@ -5,8 +5,8 @@
   "private": false,
   "packageManager": "pnpm@10.18.3",
   "scripts": {
-    "web:dev": "pnpm gen:bindings && vite",
-    "web:build": "pnpm gen:bindings && tsc -b && vite build",
+    "web:dev": "vite",
+    "web:build": "tsc -b && vite build",
     "web:lint": "eslint .",
     "web:lint:fix": "eslint . --fix",
     "tauri": "tauri",
