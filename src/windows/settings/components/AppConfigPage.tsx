@@ -26,7 +26,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function SettingsPage() {
+function AppConfigPage() {
   const { t } = useTranslation();
 
   const [savedLanguage, setSavedLanguage] = useState<Language>(DEFAULT_LANGUAGE);
@@ -167,4 +167,4 @@ function SettingsPage() {
   );
 }
 
-export default SettingsPage;
+export default AppConfigPage;

@@ -242,7 +242,7 @@ function PanelApp() {
           <Box sx={{ flex: 1 }} />
           <IconButton
             size="small"
-            aria-label={t('settings:menu.settings')}
+            aria-label={t('settings:title')}
             onClick={() => {
               void commands.showSettingsWindow().then((res) => {
                 if (res.status === 'error') {

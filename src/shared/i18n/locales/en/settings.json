@@ -1,6 +1,7 @@
 {
+  "title": "Settings",
   "menu": {
-    "settings": "Settings",
+    "appConfig": "App Settings",
     "monitorConfig": "Monitor Config",
     "about": "About"
   },

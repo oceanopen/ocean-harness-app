@@ -16,21 +16,21 @@ import appIcon from '@src/assets/app-icon.svg';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AboutPage from './components/AboutPage';
+import AppConfigPage from './components/AppConfigPage';
 import MonitorConfigPage from './components/MonitorConfigPage';
-import SettingsPage from './components/SettingsPage';
 
-type MenuKey = 'settings' | 'monitorConfig' | 'about';
+type MenuKey = 'appConfig' | 'monitorConfig' | 'about';
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
 
 function SettingsApp() {
   const { t } = useTranslation();
-  const [activeMenu, setActiveMenu] = useState<MenuKey>('settings');
+  const [activeMenu, setActiveMenu] = useState<MenuKey>('appConfig');
   const theme = useTheme();
 
   const menuItems: { key: MenuKey; label: string; icon: React.ReactNode }[] = [
-    { key: 'settings', label: t('settings:menu.settings'), icon: <SettingsOutlinedIcon /> },
+    { key: 'appConfig', label: t('settings:menu.appConfig'), icon: <SettingsOutlinedIcon /> },
     { key: 'monitorConfig', label: t('settings:menu.monitorConfig'), icon: <SensorsOutlinedIcon /> },
     { key: 'about', label: t('settings:menu.about'), icon: <InfoOutlinedIcon /> },
   ];
@@ -54,7 +54,8 @@ function SettingsApp() {
         {/* 左上角标题栏：logo + 标题，与右侧顶部导航栏等高，底部分隔线水平对齐。
             pl:3 = List px:1(8) + ListItemButton paddingLeft(16)，logo 容器宽 36px
             复刻 ListItemIcon minWidth，使 logo / 标题与下方菜单项 icon / 文字分别垂直对齐。
-            标题复用 settings:menu.settings（与 panel 顶部「系统设置」入口文案保持一致）。 */}
+            左上角标题用 settings:title（窗口语义「系统设置」，与 OS 窗口标题栏、panel 顶部入口一致）；
+            菜单首项用 settings:menu.appConfig（页面语义「应用设置」），二者由此区分。 */}
         <Box
           sx={{
             height: TOP_BAR_HEIGHT,
@@ -76,7 +77,7 @@ function SettingsApp() {
             />
           </Box>
           <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }} color="text.secondary">
-            {t('settings:menu.settings')}
+            {t('settings:title')}
           </Typography>
         </Box>
         <List sx={{ px: 1 }}>
@@ -146,7 +147,7 @@ function SettingsApp() {
         </Box>
         {/* 页面内容区：各页面自带 header 原样保留。 */}
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
-          {activeMenu === 'settings' && <SettingsPage />}
+          {activeMenu === 'appConfig' && <AppConfigPage />}
           {activeMenu === 'monitorConfig' && <MonitorConfigPage />}
           {activeMenu === 'about' && <AboutPage />}
         </Box>

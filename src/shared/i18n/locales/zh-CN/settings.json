@@ -1,6 +1,7 @@
 {
+  "title": "系统设置",
   "menu": {
-    "settings": "系统设置",
+    "appConfig": "应用设置",
     "monitorConfig": "终端监听配置",
     "about": "关于"
   },
