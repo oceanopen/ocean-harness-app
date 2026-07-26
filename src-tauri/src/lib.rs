@@ -153,9 +153,9 @@ pub fn run() {
                 },
             );
 
-            // 拉起 Go 本地 HTTP 服务（dev 用 go run，build 用随包二进制）。前端经 fetch 直连调用。
-            // 启动失败返回 Err 中断 setup——Go 服务是核心依赖，失败应暴露而非静默。
-            shared::http_server::init(app.handle())?;
+            // 后台异步拉起 Go 本地 HTTP 服务（dev 先 go build，build 用随包二进制），前端 fetch 直连。
+            // 非核心依赖：init 在后台线程进行，失败仅 log::warn，永不阻塞 setup、永不拖垮 app。
+            shared::http_server::init(app.handle());
 
             Ok(())
         })
