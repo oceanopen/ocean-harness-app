@@ -43,13 +43,13 @@ jobs:
         with:
           node-version: 24
 
-      # 安装 Go 工具链（src-go 本地 HTTP 服务编译需要）。
-      # runner 预装了 Go，但显式 setup-go 锁定版本（与 src-go/go.mod 的 `go 1.21` 对齐），避免 runner 镜像变动风险。
-      # cache: false：src-go 零依赖、无 go.sum，无可缓存内容。
+      # 安装 Go 工具链（src-server 本地 HTTP 服务编译需要）。
+      # runner 预装了 Go，但显式 setup-go 锁定版本（与 src-server/go.mod 的 `go 1.21` 对齐），避免 runner 镜像变动风险。
+      # cache: false：src-server 零依赖、无 go.sum，无可缓存内容。
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: src-go/go.mod
+          go-version-file: src-server/go.mod
           cache: false
 
       # 安装 Rust 工具链（Tauri 后端使用 Rust 编写）
@@ -85,7 +85,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # 按矩阵目标交叉编译 Go 服务：beforeBuildCommand 的 go:build 据此产出匹配架构的二进制。
+          # 按矩阵目标交叉编译 Go 服务：beforeBuildCommand 的 server:build 据此产出匹配架构的二进制。
           # arm64 runner 构建 x86_64-apple-darwin 时，GOARCH=amd64 让 go 交叉编译出 amd64 二进制，避免 Intel Mac 运行时架构不匹配。
           # Go 服务纯 stdlib 无 CGO，可纯交叉编译；Windows 下 `go build -o go-server-bin` 自动追加 .exe，与 Rust bin_name() 对齐。
           GOOS: ${{ matrix.goos }}

@@ -4,13 +4,16 @@ mod terminal;
 mod windows;
 
 use tauri::{Listener, Manager};
-use tauri_specta::{collect_commands, Builder};
+use tauri_specta::{Builder, collect_commands};
 
 // 集中注册所有 IPC 命令到 tauri-specta Builder。
 // run()（注册 invoke handler）与 bin/export_bindings.rs（生成 TS 绑定）共用此函数，
 // 保证命令清单单一来源，避免两份注册表漂移。
 pub fn build_specta_builder() -> Builder<tauri::Wry> {
-    use crate::shared::types::{AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, Repository, TerminalApp, YesNo};
+    use crate::shared::types::{
+        AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, Repository, TerminalApp,
+        YesNo,
+    };
     use crate::terminal::NavErr;
     Builder::<tauri::Wry>::new()
         .commands(collect_commands![
@@ -77,15 +80,17 @@ pub fn run() {
                     .level(log::LevelFilter::Info)
                     .targets([
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                            file_name: None,
+                        }),
                     ])
                     .build()
             } else {
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Warn)
-                    .targets([
-                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None })
-                    ])
+                    .targets([tauri_plugin_log::Target::new(
+                        tauri_plugin_log::TargetKind::LogDir { file_name: None },
+                    )])
                     // 1 MiB/文件，保留最近 1 份（旧的重命名带日期），总量 ~5 MiB 有界
                     .max_file_size(1_048_576)
                     .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(1))
@@ -107,7 +112,10 @@ pub fn run() {
             // 预构建 pet_claude_sessions_task 窗口（隐藏）：webview 异步加载，React mount 时机虽不确定，
             // 但 store 已满，初次 IPC 必拿到非空数据；后续 claude-sessions:changed 事件持续驱动。
             if let Err(e) = windows::pet_claude_sessions_task::ensure(app.handle()) {
-                log::warn!("[pet-claude-sessions-task] startup ensure failed: {}", e);
+                log::warn!(
+                    "[pet-claude-sessions-task] startup ensure failed: {}",
+                    e
+                );
             }
 
             sessions::watch::start(app.handle().clone());
@@ -123,23 +131,27 @@ pub fn run() {
             specta_builder.mount_events(app);
 
             let handle = app.handle().clone();
-            app.listen(crate::shared::events::EVENT_APP_CONFIG_CHANGED, move |event| {
-                let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) else {
-                    return;
-                };
-                let key = value.get("key").and_then(|v| v.as_str());
-                if key == Some(shared::app_config::LANGUAGE_KEY) {
-                    windows::tray::refresh_menu_texts(&handle);
-                } else if key == Some(shared::app_config::POLL_INTERVAL_SECS_KEY) {
-                    if let Some(secs) = value
-                        .get("value")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| s.parse::<u64>().ok())
-                    {
-                        sessions::poll::set_interval(&handle, secs);
+            app.listen(
+                crate::shared::events::EVENT_APP_CONFIG_CHANGED,
+                move |event| {
+                    let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload())
+                    else {
+                        return;
+                    };
+                    let key = value.get("key").and_then(|v| v.as_str());
+                    if key == Some(shared::app_config::LANGUAGE_KEY) {
+                        windows::tray::refresh_menu_texts(&handle);
+                    } else if key == Some(shared::app_config::POLL_INTERVAL_SECS_KEY) {
+                        if let Some(secs) = value
+                            .get("value")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| s.parse::<u64>().ok())
+                        {
+                            sessions::poll::set_interval(&handle, secs);
+                        }
                     }
-                }
-            });
+                },
+            );
 
             // 拉起 Go 本地 HTTP 服务（dev 用 go run，build 用随包二进制）。前端经 fetch 直连调用。
             // 启动失败返回 Err 中断 setup——Go 服务是核心依赖，失败应暴露而非静默。

@@ -44,7 +44,8 @@ fn table_names_conn(conn: &Connection) -> Result<Vec<String>, String> {
     let rows = stmt
         .query_map([], |row| row.get::<_, String>(0))
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 /// 把一个 SQLite 动态值映射为跨边界枚举 AppDbValue（serde tag=kind，前端判别渲染）。
@@ -55,7 +56,9 @@ fn cell_to_app_db_value(v: SqlValue) -> AppDbValue {
         // f64 直接透传（含 NaN/Infinity；前端按需处理，JSON 序列化时 serde 会规整）。
         SqlValue::Real(f) => AppDbValue::Real { value: f },
         SqlValue::Text(s) => AppDbValue::Text { value: s },
-        SqlValue::Blob(b) => AppDbValue::Blob { bytes: b.len() as i32 },
+        SqlValue::Blob(b) => AppDbValue::Blob {
+            bytes: b.len() as i32,
+        },
     }
 }
 

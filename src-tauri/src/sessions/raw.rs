@@ -43,7 +43,10 @@ mod tests {
     fn parses_sample_session_file() {
         let s = parse(SAMPLE).expect("sample must parse");
         assert_eq!(s.pid, 1);
-        assert_eq!(s.session_id, "00000000-0000-0000-0000-000000000001");
+        assert_eq!(
+            s.session_id,
+            "00000000-0000-0000-0000-000000000001"
+        );
         assert_eq!(s.cwd, "/home/user/project");
         assert_eq!(s.started_at, 1700000000000);
         assert_eq!(s.status, "idle");

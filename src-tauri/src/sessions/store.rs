@@ -18,7 +18,9 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::sessions::{discover, enrich, git};
 use crate::shared::events::EVENT_CLAUDE_SESSIONS_CHANGED;
-use crate::shared::state::claude_sessions::{ClaudeSessionStore, RescanLock, write_claude_sessions};
+use crate::shared::state::claude_sessions::{
+    ClaudeSessionStore, RescanLock, write_claude_sessions,
+};
 use crate::shared::types::{ClaudeSessionInfo, ClaudeSessionStatus, TerminalApp};
 
 /// 全量重扫会话目录并刷新前端。
@@ -43,7 +45,10 @@ pub fn rescan(app: &AppHandle, force_git: bool) {
     //（临时量在语句末释放会让 guard 悬垂，E0716）。
     // state() 而非 try_state()：lib.rs setup 必先 manage RescanLock 再启动 watcher/poll。
     let rescan_lock = app.state::<RescanLock>();
-    let _guard = rescan_lock.0.lock().expect("RescanLock mutex poisoned");
+    let _guard = rescan_lock
+        .0
+        .lock()
+        .expect("RescanLock mutex poisoned");
 
     let raws = discover::list_active();
     // 过滤 Unknown 宿主：终端被关闭后孤立的 claude 进程 parent chain 爬到 launchd
@@ -83,7 +88,10 @@ pub fn rescan(app: &AppHandle, force_git: bool) {
     write_claude_sessions(&store, sessions);
 
     if let Err(e) = app.emit(EVENT_CLAUDE_SESSIONS_CHANGED, &snapshot) {
-        log::warn!("[sessions] emit claude-sessions:changed failed: {}", e);
+        log::warn!(
+            "[sessions] emit claude-sessions:changed failed: {}",
+            e
+        );
     }
 
     log::info!(
@@ -115,7 +123,10 @@ fn finalize_status(
     }
 
     // prev 曾处于 idle 基线（Idle 或 GitPending 都代表"base 是空闲"）才有缓存可复用。
-    let was_idle_base = matches!(prev.map(|p| p.status), Some(Idle) | Some(GitPending));
+    let was_idle_base = matches!(
+        prev.map(|p| p.status),
+        Some(Idle) | Some(GitPending)
+    );
 
     let need_git = force_git || prev.is_none() || !was_idle_base;
 
@@ -128,7 +139,8 @@ fn finalize_status(
     } else {
         // need_git == false ⟹ !force_git && prev.is_some() && was_idle_base，
         // 故 prev 必 Some，且其 status 为 Idle 或 GitPending。
-        prev.expect("need_git=false requires prev=Some").status
+        prev.expect("need_git=false requires prev=Some")
+            .status
     }
 }
 
@@ -198,7 +210,10 @@ mod tests {
         // prev=GitPending, force=false → 复用 GitPending（核心缓存复用场景）
         let cur = mock_info(1, Idle, FAKE_CWD);
         let prev = mock_info(1, GitPending, FAKE_CWD);
-        assert_eq!(finalize_status(&cur, Some(&prev), false), GitPending);
+        assert_eq!(
+            finalize_status(&cur, Some(&prev), false),
+            GitPending
+        );
     }
 
     #[test]

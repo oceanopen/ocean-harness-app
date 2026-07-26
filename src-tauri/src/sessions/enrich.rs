@@ -22,7 +22,9 @@ fn ps_field(pid: u32, field: &str) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let s = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .to_string();
     if s.is_empty() {
         None
     } else {
@@ -142,7 +144,10 @@ mod tests {
     #[test]
     fn status_mapping() {
         assert_eq!(map_status("busy"), ClaudeSessionStatus::Busy);
-        assert_eq!(map_status("waiting"), ClaudeSessionStatus::Waiting);
+        assert_eq!(
+            map_status("waiting"),
+            ClaudeSessionStatus::Waiting
+        );
         assert_eq!(map_status("idle"), ClaudeSessionStatus::Idle);
         assert_eq!(map_status("unknown"), ClaudeSessionStatus::Idle);
         assert_eq!(map_status(""), ClaudeSessionStatus::Idle);
@@ -150,12 +155,27 @@ mod tests {
 
     #[test]
     fn classify_known_terminals() {
-        assert_eq!(classify_terminal("iTerm2"), Some(TerminalApp::ITerm2));
-        assert_eq!(classify_terminal("iTerm"), Some(TerminalApp::ITerm2));
-        assert_eq!(classify_terminal("Terminal"), Some(TerminalApp::Terminal));
-        assert_eq!(classify_terminal("idea"), Some(TerminalApp::IntelliJ));
+        assert_eq!(
+            classify_terminal("iTerm2"),
+            Some(TerminalApp::ITerm2)
+        );
+        assert_eq!(
+            classify_terminal("iTerm"),
+            Some(TerminalApp::ITerm2)
+        );
+        assert_eq!(
+            classify_terminal("Terminal"),
+            Some(TerminalApp::Terminal)
+        );
+        assert_eq!(
+            classify_terminal("idea"),
+            Some(TerminalApp::IntelliJ)
+        );
         assert_eq!(classify_terminal("wezterm"), None);
-        assert_eq!(classify_terminal("/Applications/iTerm.app/Contents/MacOS/iTerm2"), Some(TerminalApp::ITerm2));
+        assert_eq!(
+            classify_terminal("/Applications/iTerm.app/Contents/MacOS/iTerm2"),
+            Some(TerminalApp::ITerm2)
+        );
     }
 
     #[test]
@@ -165,7 +185,10 @@ mod tests {
 
     #[test]
     fn normalize_tty_keeps_dev_prefix() {
-        assert_eq!(normalize_tty(Some("/dev/ttys002")), "/dev/ttys002");
+        assert_eq!(
+            normalize_tty(Some("/dev/ttys002")),
+            "/dev/ttys002"
+        );
     }
 
     #[test]

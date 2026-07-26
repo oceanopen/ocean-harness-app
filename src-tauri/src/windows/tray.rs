@@ -1,15 +1,16 @@
 use std::sync::Mutex;
 use tauri::{
+    AppHandle, Emitter, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager,
 };
 
 use crate::shared::app_config::{
-    read_app_config_raw, write_app_config_raw, AppConfigState, LANGUAGE_KEY, PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
+    AppConfigState, LANGUAGE_KEY, PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY, read_app_config_raw,
+    write_app_config_raw,
 };
 use crate::shared::events::EVENT_APP_CONFIG_CHANGED;
-use crate::shared::i18n::{menu_text, resolve, ResolvedLanguage};
+use crate::shared::i18n::{ResolvedLanguage, menu_text, resolve};
 use crate::shared::types::{AppConfigChangedPayload, YesNo};
 use crate::windows::pet_claude_sessions_summary::get_pet_claude_sessions_summary_visibility_state;
 
@@ -45,7 +46,10 @@ fn drag_enabled_pref(app: &AppHandle) -> bool {
     let Some(state) = app.try_state::<AppConfigState>() else {
         return false;
     };
-    match read_app_config_raw(state.inner(), PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY) {
+    match read_app_config_raw(
+        state.inner(),
+        PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
+    ) {
         Ok(Some(v)) if v == YesNo::Yes.as_str() => true,
         _ => false,
     }
@@ -111,11 +115,19 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         ))
         .as_slice()
     } else {
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/icons/32x32.png")).as_slice()
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/icons/32x32.png"
+        ))
+        .as_slice()
     };
     let icon = tauri::image::Image::from_bytes(icon_bytes).expect("failed to load tray icon");
 
-    let tooltip = app.config().product_name.as_deref().unwrap_or("We Claude Terminal");
+    let tooltip = app
+        .config()
+        .product_name
+        .as_deref()
+        .unwrap_or("We Claude Terminal");
 
     let lang = current_language(app.handle());
 
@@ -136,7 +148,10 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let pet_claude_sessions_summary_item = MenuItem::with_id(
         app,
         "pet-claude-sessions-summary",
-        menu_text(lang, pet_claude_sessions_summary_menu_key(app.handle())),
+        menu_text(
+            lang,
+            pet_claude_sessions_summary_menu_key(app.handle()),
+        ),
         true,
         None::<&str>,
     )?;
@@ -148,7 +163,13 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         false,
         None::<&str>,
     )?;
-    let quit_item = MenuItem::with_id(app, "quit", menu_text(lang, "quit"), true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(
+        app,
+        "quit",
+        menu_text(lang, "quit"),
+        true,
+        None::<&str>,
+    )?;
     let restart_item = MenuItem::with_id(
         app,
         "restart",
@@ -277,11 +298,24 @@ pub fn refresh_menu_texts(app: &AppHandle) {
     };
     let lang = current_language(app);
     let _ = items.panel.set_text(menu_text(lang, "panel"));
-    let _ = items.settings.set_text(menu_text(lang, "settings"));
-    let _ = items.pet_claude_sessions_summary.set_text(menu_text(lang, pet_claude_sessions_summary_menu_key(app)));
+    let _ = items
+        .settings
+        .set_text(menu_text(lang, "settings"));
+    let _ = items
+        .pet_claude_sessions_summary
+        .set_text(menu_text(
+            lang,
+            pet_claude_sessions_summary_menu_key(app),
+        ));
     // drag 文案随开关状态切换；enabled 随桌宠显隐（隐藏时禁用，避免无桌宠时操作）。
-    let _ = items.drag.set_text(menu_text(lang, drag_menu_key(app)));
-    let _ = items.drag.set_enabled(get_pet_claude_sessions_summary_visibility_state(app.clone()));
+    let _ = items
+        .drag
+        .set_text(menu_text(lang, drag_menu_key(app)));
+    let _ = items
+        .drag
+        .set_enabled(get_pet_claude_sessions_summary_visibility_state(
+            app.clone(),
+        ));
     let _ = items.restart.set_text(menu_text(lang, "restart"));
     let _ = items.quit.set_text(menu_text(lang, "quit"));
 }

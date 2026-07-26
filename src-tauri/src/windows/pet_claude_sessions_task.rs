@@ -11,7 +11,9 @@
 //
 // 位置每次 show 时重算，跟随 pet 当前位置；左屏边缘自动翻转到 pet 右侧，Y 夹紧 work_area。
 
-use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
+};
 
 use crate::shared::events::EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT;
 use crate::shared::screen::MonitorInfo;
@@ -72,7 +74,10 @@ fn position_near_pet(pet: &tauri::WebviewWindow, panel_h: f64) -> Option<(f64, f
 
 /// 创建任务面板窗口（不可见）。已存在则 no-op。窗口属性与 pet 同款透明悬浮。
 pub fn ensure(app: &AppHandle) -> tauri::Result<()> {
-    if app.get_webview_window(PET_CLAUDE_SESSIONS_TASK_LABEL).is_some() {
+    if app
+        .get_webview_window(PET_CLAUDE_SESSIONS_TASK_LABEL)
+        .is_some()
+    {
         return Ok(());
     }
 
@@ -82,7 +87,10 @@ pub fn ensure(app: &AppHandle) -> tauri::Result<()> {
         WebviewUrl::App("pet-claude-sessions-task.html".into()),
     )
     .title("Pet Task")
-    .inner_size(PET_CLAUDE_SESSIONS_TASK_WIDTH, PET_CLAUDE_SESSIONS_TASK_DEFAULT_HEIGHT)
+    .inner_size(
+        PET_CLAUDE_SESSIONS_TASK_WIDTH,
+        PET_CLAUDE_SESSIONS_TASK_DEFAULT_HEIGHT,
+    )
     .transparent(true)
     .decorations(false)
     .always_on_top(true)
@@ -121,9 +129,18 @@ pub fn show_pet_claude_sessions_task_window(app: AppHandle) -> Result<(), String
 
     let attention_count = match app.try_state::<ClaudeSessionStore>() {
         Some(store) => {
-            let Ok(map) = store.0.lock() else { return Ok(()); };
+            let Ok(map) = store.0.lock() else {
+                return Ok(());
+            };
             map.values()
-                .filter(|s| matches!(s.status, ClaudeSessionStatus::Busy | ClaudeSessionStatus::Waiting | ClaudeSessionStatus::GitPending))
+                .filter(|s| {
+                    matches!(
+                        s.status,
+                        ClaudeSessionStatus::Busy
+                            | ClaudeSessionStatus::Waiting
+                            | ClaudeSessionStatus::GitPending
+                    )
+                })
                 .count()
         }
         None => return Ok(()),
@@ -146,7 +163,12 @@ pub fn show_pet_claude_sessions_task_window(app: AppHandle) -> Result<(), String
         let panel_h = task_win
             .outer_size()
             .ok()
-            .and_then(|s| task_win.scale_factor().ok().map(|sf| s.height as f64 / sf))
+            .and_then(|s| {
+                task_win
+                    .scale_factor()
+                    .ok()
+                    .map(|sf| s.height as f64 / sf)
+            })
             .unwrap_or(PET_CLAUDE_SESSIONS_TASK_DEFAULT_HEIGHT);
         if let Some((x, y)) = position_near_pet(&pet, panel_h) {
             let _ = task_win.set_position(LogicalPosition::new(x, y));
@@ -154,7 +176,11 @@ pub fn show_pet_claude_sessions_task_window(app: AppHandle) -> Result<(), String
     }
     let _ = task_win.show();
     // show 后通知前端重新测量内容高度并回调 fit 刷新位置（统一可复用的重定位入口）。
-    let _ = app.emit_to(PET_CLAUDE_SESSIONS_TASK_LABEL, EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT, ());
+    let _ = app.emit_to(
+        PET_CLAUDE_SESSIONS_TASK_LABEL,
+        EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT,
+        (),
+    );
     Ok(())
 }
 
@@ -178,7 +204,10 @@ pub fn fit_pet_claude_sessions_task(app: AppHandle, height: f64) -> Result<(), S
     let Some(task_win) = app.get_webview_window(PET_CLAUDE_SESSIONS_TASK_LABEL) else {
         return Ok(());
     };
-    let _ = task_win.set_size(LogicalSize::new(PET_CLAUDE_SESSIONS_TASK_WIDTH, height));
+    let _ = task_win.set_size(LogicalSize::new(
+        PET_CLAUDE_SESSIONS_TASK_WIDTH,
+        height,
+    ));
     if let Some(pet) = app.get_webview_window("pet-claude-sessions-summary") {
         if let Some((x, y)) = position_near_pet(&pet, height) {
             let _ = task_win.set_position(LogicalPosition::new(x, y));

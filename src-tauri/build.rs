@@ -32,10 +32,10 @@
  *   这里 tauri_build 是一个外部 crate（Rust 的"包"），在 Cargo.toml 的 [build-dependencies] 中声明
  */
 fn main() {
-  /* 调用 Tauri 提供的构建函数，它会：
-   * 1. 读取 tauri.conf.json 配置
-   * 2. 生成必要的 Rust 代码（比如前端资源的嵌入代码）
-   * 3. 为当前操作系统平台准备编译环境
-   */
-  tauri_build::build()
+    /* 调用 Tauri 提供的构建函数，它会：
+     * 1. 读取 tauri.conf.json 配置
+     * 2. 生成必要的 Rust 代码（比如前端资源的嵌入代码）
+     * 3. 为当前操作系统平台准备编译环境
+     */
+    tauri_build::build()
 }

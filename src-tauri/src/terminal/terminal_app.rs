@@ -8,8 +8,8 @@ use std::process::Command;
 use tauri::{AppHandle, Manager};
 
 use crate::shared::app_config::{
-    AppConfigState, DEFAULT_TERMINAL_POST_OPEN_COMMAND, read_app_config_raw,
-    TERMINAL_POST_OPEN_COMMAND_KEY,
+    AppConfigState, DEFAULT_TERMINAL_POST_OPEN_COMMAND, TERMINAL_POST_OPEN_COMMAND_KEY,
+    read_app_config_raw,
 };
 use crate::terminal::{NavErr, Target};
 
@@ -71,11 +71,13 @@ pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
     let escaped_dir = escape_dir_for_applescript(dir);
 
     // 读取「cd 后追加命令」配置（全局），缺失视为空串（仅 cd）。
-    let post_open_cmd =
-        read_app_config_raw(&app.state::<AppConfigState>(), TERMINAL_POST_OPEN_COMMAND_KEY)
-            .ok()
-            .flatten()
-            .unwrap_or_else(|| DEFAULT_TERMINAL_POST_OPEN_COMMAND.to_string());
+    let post_open_cmd = read_app_config_raw(
+        &app.state::<AppConfigState>(),
+        TERMINAL_POST_OPEN_COMMAND_KEY,
+    )
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| DEFAULT_TERMINAL_POST_OPEN_COMMAND.to_string());
     let cmd_suffix = super::build_cmd_suffix(&post_open_cmd);
 
     let script = format!(

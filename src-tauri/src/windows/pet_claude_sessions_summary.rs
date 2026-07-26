@@ -9,17 +9,20 @@
 // 初始位置：主屏右下角内缩 24px（避免被 Dock / 任务栏遮挡）。
 // 尺寸：128x128 逻辑像素（足够展示 SVG 表情 + 状态徽章）。
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::shared::app_config::{read_app_config_raw, write_app_config_raw, AppConfigState, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY};
-use crate::shared::types::YesNo;
-use crate::shared::screen::{MonitorInfo, find_monitor_for_tray};
+use crate::shared::app_config::{
+    AppConfigState, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY, read_app_config_raw,
+    write_app_config_raw,
+};
 use crate::shared::events::EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT;
+use crate::shared::screen::{MonitorInfo, find_monitor_for_tray};
+use crate::shared::types::YesNo;
 use crate::windows::pet_claude_sessions_task;
 
 /// 桌宠窗口尺寸（逻辑像素）。
@@ -45,7 +48,9 @@ struct PetPositionSaved {
 fn pet_position(app: &AppHandle) -> (f64, f64) {
     // 优先用上次保存的位置；缺失或损坏时回退主屏右下角。
     if let Some(state) = app.try_state::<AppConfigState>() {
-        if let Ok(Some(raw)) = read_app_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY) {
+        if let Ok(Some(raw)) =
+            read_app_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY)
+        {
             if let Ok(saved) = serde_json::from_str::<PetPositionSaved>(&raw) {
                 return (saved.x.max(0.0), saved.y.max(0.0));
             }
@@ -84,21 +89,25 @@ pub fn ensure_pet_claude_sessions_summary_window(app: &AppHandle) -> tauri::Resu
     }
 
     let (x, y) = pet_position(app);
-    let win = WebviewWindowBuilder::new(app, "pet-claude-sessions-summary", WebviewUrl::App("pet-claude-sessions-summary.html".into()))
-        .title("Pet")
-        .inner_size(PET_SIZE.0, PET_SIZE.1)
-        .position(x, y)
-        // 关键透明/置顶属性
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .shadow(false)
-        .focused(false)
-        .visible(false) // 先建后显，避免首屏白闪
-        .accept_first_mouse(true) // macOS 未聚焦时首次点击即派发，配合前端 mousedown→hover
-        .build()?;
+    let win = WebviewWindowBuilder::new(
+        app,
+        "pet-claude-sessions-summary",
+        WebviewUrl::App("pet-claude-sessions-summary.html".into()),
+    )
+    .title("Pet")
+    .inner_size(PET_SIZE.0, PET_SIZE.1)
+    .position(x, y)
+    // 关键透明/置顶属性
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .shadow(false)
+    .focused(false)
+    .visible(false) // 先建后显，避免首屏白闪
+    .accept_first_mouse(true) // macOS 未聚焦时首次点击即派发，配合前端 mousedown→hover
+    .build()?;
 
     let w = win.clone();
     // Moved 防抖令牌：每次 Moved 置 true 取消上一个待保存任务；新任务 sleep 后 swap 检查。
@@ -116,7 +125,9 @@ pub fn ensure_pet_claude_sessions_summary_window(app: &AppHandle) -> tauri::Resu
                     if token.swap(false, Ordering::SeqCst) {
                         return;
                     }
-                    let Some(w) = app.get_webview_window("pet-claude-sessions-summary") else { return };
+                    let Some(w) = app.get_webview_window("pet-claude-sessions-summary") else {
+                        return;
+                    };
                     let Ok(scale) = w.scale_factor() else { return };
                     let Ok(phys) = w.outer_position() else { return };
                     let logical = phys.to_logical::<f64>(scale);
@@ -126,7 +137,11 @@ pub fn ensure_pet_claude_sessions_summary_window(app: &AppHandle) -> tauri::Resu
                     })
                     .unwrap_or_default();
                     if let Some(state) = app.try_state::<AppConfigState>() {
-                        let _ = write_app_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY, &raw);
+                        let _ = write_app_config_raw(
+                            &*state,
+                            PET_CLAUDE_SESSIONS_SUMMARY_POSITION_KEY,
+                            &raw,
+                        );
                     }
                     // pet 停止移动后通知 pet_task 重新对齐到 pet 当前位置：拖拽中不刷新（防抖），
                     // 停下来一次性定位。前端 refit 监听 → fit → position_near_pet 按 pet 当前坐标重定位。
@@ -188,8 +203,16 @@ pub fn toggle_pet_claude_sessions_summary_window(app: AppHandle) -> Result<bool,
     }
     // 落盘显隐偏好，启动时据此恢复，避免重启后丢失用户的隐藏选择。
     if let Some(state) = app.try_state::<AppConfigState>() {
-        let val = if now_visible { YesNo::Yes } else { YesNo::No };
-        let _ = write_app_config_raw(&*state, PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY, val.as_str());
+        let val = if now_visible {
+            YesNo::Yes
+        } else {
+            YesNo::No
+        };
+        let _ = write_app_config_raw(
+            &*state,
+            PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY,
+            val.as_str(),
+        );
     }
     Ok(now_visible)
 }
@@ -211,7 +234,10 @@ pub fn startup_show(app: &AppHandle) {
         return;
     }
     if let Err(e) = ensure_pet_claude_sessions_summary_window(app) {
-        log::warn!("[pet-claude-sessions-summary] startup ensure failed: {}", e);
+        log::warn!(
+            "[pet-claude-sessions-summary] startup ensure failed: {}",
+            e
+        );
     }
     // pet 显示后联动评估 pet_claude_sessions_task 显隐（show_pet_claude_sessions_task_window 内部按 count 裁决）。
     let _ = pet_claude_sessions_task::show_pet_claude_sessions_task_window(app.clone());

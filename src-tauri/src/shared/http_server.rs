@@ -9,7 +9,7 @@
 // 退出阶段（RunEvent::Exit）：unix 先 SIGTERM 让服务优雅退出，再 SIGKILL 兜底；
 // Windows 直接 terminate（无 SIGTERM 概念）。
 //
-// 服务固定监听 127.0.0.1:9000（见 src-go/cmd/server/main.go），前端直接 fetch，本模块不涉及端口解析。
+// 服务固定监听 127.0.0.1:9000（见 src-server/cmd/server/main.go），前端直接 fetch，本模块不涉及端口解析。
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -33,7 +33,12 @@ fn bin_name() -> &'static str {
 /// 直接 spawn `go` 会 ENOENT。dev 模式需 go build 编译，故注入常见安装路径到 PATH 前部。
 #[cfg(target_os = "macos")]
 fn enrich_path(cmd: &mut Command) {
-    const EXTRA: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+    const EXTRA: &[&str] = &[
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ];
     let existing = std::env::var("PATH").unwrap_or_default();
     let merged: Vec<String> = EXTRA
         .iter()
@@ -64,7 +69,7 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
         // kill 无法传递给真正的服务进程（孤儿进程）。spawn 二进制则 kill 直接有效。
         let src_go = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
-            .join("src-go");
+            .join("src-server");
         // dev 二进制输出到系统 temp 目录：写入 src-tauri/resources/ 会触发 Tauri dev 文件
         // watcher（监听 src-tauri/）"Rebuilding application" 死循环。temp 脱离项目目录，watcher
         // 不监听；每次 dev 启动覆盖同一文件。build 模式才用 src-tauri/resources/（需打包）。
@@ -84,7 +89,9 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
             .status()
             .map_err(|e| format!("failed to run go build ({mode}): {e}"))?;
         if !status.success() {
-            return Err(format!("go build failed ({mode}); see stderr output"));
+            return Err(format!(
+                "go build failed ({mode}); see stderr output"
+            ));
         }
 
         Command::new(dev_bin)
@@ -160,7 +167,10 @@ pub fn shutdown(state: &HttpServerState) {
             }
             let _ = child.kill();
             let _ = child.wait();
-            log::info!("[http-server] shutdown complete (mode={})", state.mode);
+            log::info!(
+                "[http-server] shutdown complete (mode={})",
+                state.mode
+            );
         }
     }
 }

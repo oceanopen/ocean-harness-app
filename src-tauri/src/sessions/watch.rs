@@ -42,7 +42,10 @@ pub fn start(app: AppHandle) {
                 return;
             }
         }
-        if let Err(e) = debouncer.watcher().watch(&dir, RecursiveMode::NonRecursive) {
+        if let Err(e) = debouncer
+            .watcher()
+            .watch(&dir, RecursiveMode::NonRecursive)
+        {
             log::warn!(
                 "[sessions] watcher.watch failed on {}: {}",
                 dir.display(),

@@ -4,13 +4,16 @@
 // 终端跳转逻辑全部下沉到 terminal/ 域（见 crate::terminal）。
 // 本文件仅负责：窗口创建、命令包装（get_claude_sessions / navigate_to_claude_session）。
 
-use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl,
+    WebviewWindowBuilder,
+};
 
 use crate::shared::events::EVENT_CLAUDE_SESSION_NAV_FAILED;
 use crate::shared::events::EVENT_PANEL_NAVIGATE;
 use crate::shared::events::EVENT_PANEL_SHOWN;
 use crate::shared::screen::{
-    find_monitor_for_tray, ratio_size, work_area_center, DEFAULT_SIZE, PANEL_RATIO,
+    DEFAULT_SIZE, PANEL_RATIO, find_monitor_for_tray, ratio_size, work_area_center,
 };
 use crate::shared::state::claude_sessions::ClaudeSessionStore;
 use crate::shared::types::ClaudeSessionInfo;
@@ -49,7 +52,10 @@ pub fn navigate_to_claude_session(pid: u32, app: AppHandle) -> Result<(), String
     };
 
     let Some(session) = session else {
-        let _ = app.emit(EVENT_CLAUDE_SESSION_NAV_FAILED, &NavErr::SessionNotFound);
+        let _ = app.emit(
+            EVENT_CLAUDE_SESSION_NAV_FAILED,
+            &NavErr::SessionNotFound,
+        );
         return Ok(()); // emit 后视作"已通知前端"，命令本身不算失败。
     };
 
@@ -101,7 +107,9 @@ pub fn open_in_editor(editor: String, cwd: String) -> Result<(), String> {
                 "IntelliJ IDEA Ultimate",
                 "IntelliJ IDEA EDU",
             ],
-            other => return Err(format!("unsupported editor: {other}")),
+            other => {
+                return Err(format!("unsupported editor: {other}"));
+            }
         };
         for app in apps {
             // open 启动 GUI 应用后立即返回（不阻塞等应用退出）；应用不存在则 exit code 非零。
@@ -117,7 +125,9 @@ pub fn open_in_editor(editor: String, cwd: String) -> Result<(), String> {
                 return Ok(());
             }
         }
-        Err(format!("failed to launch {editor}: no matching app found"))
+        Err(format!(
+            "failed to launch {editor}: no matching app found"
+        ))
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -125,7 +135,9 @@ pub fn open_in_editor(editor: String, cwd: String) -> Result<(), String> {
         let cmd = match editor.as_str() {
             "vscode" => "code",
             "idea" => "idea",
-            other => return Err(format!("unsupported editor: {other}")),
+            other => {
+                return Err(format!("unsupported editor: {other}"));
+            }
         };
         std::process::Command::new(cmd)
             .arg(&cwd)
@@ -161,7 +173,9 @@ pub fn open_in_terminal(app: AppHandle, terminal: String, dir: String) -> Result
         let host_app = match terminal.as_str() {
             "iterm2" => TerminalApp::ITerm2,
             "terminal" => TerminalApp::Terminal,
-            other => return Err(format!("unsupported terminal: {other}")),
+            other => {
+                return Err(format!("unsupported terminal: {other}"));
+            }
         };
         open_directory_dispatch(&app, host_app, &dir).map_err(|e| format!("{e:?}"))
     }
@@ -187,15 +201,22 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
             w
         }
         None => {
-            let product = app.config().product_name.as_deref().unwrap_or("We Claude Terminal");
-            let win =
-                WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App("panel.html".into()))
-                    .title(format!("{product} - 控制台"))
-                    .inner_size(width, height)
-                    .center()
-                    .skip_taskbar(true)
-                    .build()
-                    .map_err(|e| e.to_string())?;
+            let product = app
+                .config()
+                .product_name
+                .as_deref()
+                .unwrap_or("We Claude Terminal");
+            let win = WebviewWindowBuilder::new(
+                &app,
+                "panel",
+                WebviewUrl::App("panel.html".into()),
+            )
+            .title(format!("{product} - 控制台"))
+            .inner_size(width, height)
+            .center()
+            .skip_taskbar(true)
+            .build()
+            .map_err(|e| e.to_string())?;
 
             let w = win.clone();
             win.on_window_event(move |event| {
@@ -236,7 +257,9 @@ mod tests {
     #[test]
     fn path_basename_fallback() {
         // 验证 Path::file_name 逻辑（enrich 也用同样模式取 project_name）。
-        let name = Path::new("/Users/foo/proj").file_name().and_then(|s| s.to_str());
+        let name = Path::new("/Users/foo/proj")
+            .file_name()
+            .and_then(|s| s.to_str());
         assert_eq!(name, Some("proj"));
     }
 }

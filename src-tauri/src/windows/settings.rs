@@ -1,7 +1,7 @@
 use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::shared::screen::{
-    find_monitor_for_tray, ratio_size, work_area_center, DEFAULT_SIZE, SETTINGS_RATIO,
+    DEFAULT_SIZE, SETTINGS_RATIO, find_monitor_for_tray, ratio_size, work_area_center,
 };
 
 #[tauri::command]
@@ -21,7 +21,11 @@ pub fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
             w
         }
         None => {
-            let product = app.config().product_name.as_deref().unwrap_or("We Claude Terminal");
+            let product = app
+                .config()
+                .product_name
+                .as_deref()
+                .unwrap_or("We Claude Terminal");
             let win = WebviewWindowBuilder::new(
                 &app,
                 "settings",

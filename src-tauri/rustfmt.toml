@@ -1,0 +1,7 @@
+# rustfmt 配置：倾向「该换行就换行」的展开式风格——优先可读性、便于 diff 跟踪、降低合并冲突，
+# 不追求压缩行数。短小构造（Some/Ok/单参调用/小数组）保持单行，避免无意义展开。
+use_small_heuristics = "Default"
+chain_width = 50                    # 方法链超过 30 字符即每节独占一行
+fn_call_width = 50                  # 多参调用超过 30 字符即每参独占一行
+array_width = 50                    # 数组超过 30 字符即展开
+single_line_if_else_max_width = 0   # if/else 永远折行，绝不压成一行

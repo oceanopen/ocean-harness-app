@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -78,7 +78,10 @@ pub fn write_app_config_raw(state: &AppConfigState, key: &str, value: &str) -> R
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_app_config(state: State<'_, AppConfigState>, key: String) -> Result<Option<String>, String> {
+pub fn get_app_config(
+    state: State<'_, AppConfigState>,
+    key: String,
+) -> Result<Option<String>, String> {
     read_app_config_raw(&state, &key)
 }
 

@@ -57,7 +57,11 @@ pub fn dispatch(host_app: TerminalApp, target: &Target<'_>) -> Result<(), NavErr
 
 /// 按终端类型分发到对应 open_directory 实现。
 /// IntelliJ / Unknown 直接返回 UnsupportedHostApp。
-pub fn open_directory_dispatch(app: &AppHandle, host_app: TerminalApp, dir: &str) -> Result<(), NavErr> {
+pub fn open_directory_dispatch(
+    app: &AppHandle,
+    host_app: TerminalApp,
+    dir: &str,
+) -> Result<(), NavErr> {
     match host_app {
         TerminalApp::ITerm2 => iterm2::open_directory(app, dir),
         TerminalApp::Terminal => terminal_app::open_directory(app, dir),

@@ -13,7 +13,7 @@
 use std::process::Command;
 use std::process::Stdio;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, params};
 use tauri::{Manager, State};
 
 use crate::shared::app_config::AppConfigState;
@@ -48,8 +48,18 @@ pub fn init(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         [],
     )?;
     // 兼容老库：CREATE TABLE IF NOT EXISTS 不会给已存在的表补列，这里显式 ALTER 补 description / sub_dir_list。
-    ensure_column(&conn, "repositories", "description", "TEXT NOT NULL DEFAULT ''")?;
-    ensure_column(&conn, "repositories", "sub_dir_list", "TEXT NOT NULL DEFAULT '[]'")?;
+    ensure_column(
+        &conn,
+        "repositories",
+        "description",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &conn,
+        "repositories",
+        "sub_dir_list",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
     Ok(())
 }
 
@@ -71,7 +81,10 @@ fn ensure_column(
         names.iter().any(|n| n == column)
     };
     if !exists {
-        conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {column} {def}"), [])?;
+        conn.execute(
+            &format!("ALTER TABLE {table} ADD COLUMN {column} {def}"),
+            [],
+        )?;
     }
     Ok(())
 }
@@ -93,7 +106,11 @@ fn git_output(dir: &str, args: &[&str]) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    Some(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .trim()
+            .to_string(),
+    )
 }
 
 /// 判断 dir 是否为 git 工作区（add 严格校验用）。`--is-inside-work-tree` 成功即视为仓库。
@@ -149,7 +166,9 @@ fn parse_repo_info(dir: &str) -> RepoInfo {
 /// 归一化项目子目录：去前后空白，剥首尾路径分隔符（`/`/`\`），保证为相对路径。
 /// 剥前导分隔符至关重要——`Path::join` 遇到以 `/` 开头的绝对路径会用其整体替换 base，导致拼接出错。
 fn normalize_sub_dir(raw: &str) -> String {
-    raw.trim().trim_matches(|c| c == '/' || c == '\\').to_string()
+    raw.trim()
+        .trim_matches(|c| c == '/' || c == '\\')
+        .to_string()
 }
 
 /// 描述截断到最多 200 个字符（按 Unicode 标量值计），并去首尾空白。
@@ -233,7 +252,8 @@ fn open_dir(dir: &str) -> Result<(), String> {
 fn map_repo(row: &rusqlite::Row<'_>) -> rusqlite::Result<Repository> {
     // sub_dir_list 存为 JSON 文本列；解析失败兜底空数组，避免脏数据导致整列表加载失败。
     let sub_dir_list_json: String = row.get(4)?;
-    let sub_dir_list = serde_json::from_str::<Vec<RepoSubDir>>(&sub_dir_list_json).unwrap_or_default();
+    let sub_dir_list =
+        serde_json::from_str::<Vec<RepoSubDir>>(&sub_dir_list_json).unwrap_or_default();
     Ok(Repository {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -251,16 +271,20 @@ fn map_repo(row: &rusqlite::Row<'_>) -> rusqlite::Result<Repository> {
 // 本场景 id 极小不会触发）；last_commit_at/updated_at 为 i64 毫秒时间戳，get 同样直接读取。
 // 列顺序由 SELECT_COLS 显式指定，与表物理存储顺序无关（老库 ALTER 追加列在表尾也能正确读取）。
 
-const SELECT_COLS: &str =
-    "id, name, dir, description, sub_dir_list, remote_url, branch, last_commit_at, last_commit_message, updated_at";
+const SELECT_COLS: &str = "id, name, dir, description, sub_dir_list, remote_url, branch, last_commit_at, last_commit_message, updated_at";
 
 fn list_all_conn(conn: &Connection) -> Result<Vec<Repository>, String> {
     // 默认按最近提交时间倒序（无提交 0 沉底），次序按 id 升序稳定。
     let mut stmt = conn
-        .prepare(&format!("SELECT {SELECT_COLS} FROM repositories ORDER BY last_commit_at DESC, id ASC"))
+        .prepare(&format!(
+            "SELECT {SELECT_COLS} FROM repositories ORDER BY last_commit_at DESC, id ASC"
+        ))
         .map_err(|e| e.to_string())?;
-    let rows = stmt.query_map([], map_repo).map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    let rows = stmt
+        .query_map([], map_repo)
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 fn list_id_dir_conn(conn: &Connection) -> Result<Vec<(i32, String)>, String> {
@@ -268,9 +292,12 @@ fn list_id_dir_conn(conn: &Connection) -> Result<Vec<(i32, String)>, String> {
         .prepare("SELECT id, dir FROM repositories")
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([], |row| Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())
 }
 
 fn get_by_id_conn(conn: &Connection, id: i32) -> Result<Repository, String> {
@@ -370,13 +397,25 @@ pub fn add_repository(
 
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let dup = conn
-        .query_row("SELECT 1 FROM repositories WHERE dir = ?1", params![dir], |_| Ok(()))
+        .query_row(
+            "SELECT 1 FROM repositories WHERE dir = ?1",
+            params![dir],
+            |_| Ok(()),
+        )
         .optional()
         .map_err(|e| e.to_string())?;
     if dup.is_some() {
         return Err("dir-exists".into());
     }
-    insert_conn(&conn, name, &dir, &description, &sub_dir_list, &info, now)
+    insert_conn(
+        &conn,
+        name,
+        &dir,
+        &description,
+        &sub_dir_list,
+        &info,
+        now,
+    )
 }
 
 /// 更新仓库的名称、目录、描述与子目录列表。校验新目录须为 git 仓库且不与其他记录重复；
@@ -438,8 +477,11 @@ pub fn update_repository(
 #[specta::specta]
 pub fn delete_repository(state: State<'_, AppConfigState>, id: i32) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("DELETE FROM repositories WHERE id = ?1", params![id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "DELETE FROM repositories WHERE id = ?1",
+        params![id],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -490,7 +532,11 @@ pub async fn refresh_all_repositories(
         // 仍返回 DB 最新列表保证 UI 与 DB 一致，失败仅记日志（降级处理）。
         for (id, info) in &infos {
             if let Err(e) = update_info_conn(&conn, *id, info, now) {
-                log::warn!("[repositories] refresh_all update id={} failed: {}", id, e);
+                log::warn!(
+                    "[repositories] refresh_all update id={} failed: {}",
+                    id,
+                    e
+                );
             }
         }
     }

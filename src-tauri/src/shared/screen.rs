@@ -52,11 +52,7 @@ pub fn find_monitor_for_rect(app: &AppHandle, rect: &Rect) -> Option<MonitorInfo
     for m in app.available_monitors().ok()? {
         let mp = m.position();
         let ms = m.size();
-        if x >= mp.x
-            && x < mp.x + ms.width as i32
-            && y >= mp.y
-            && y < mp.y + ms.height as i32
-        {
+        if x >= mp.x && x < mp.x + ms.width as i32 && y >= mp.y && y < mp.y + ms.height as i32 {
             return Some(MonitorInfo::from_monitor(&m));
         }
     }

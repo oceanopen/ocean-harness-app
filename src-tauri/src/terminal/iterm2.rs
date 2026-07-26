@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::shared::app_config::{
     AppConfigState, DEFAULT_ITERM2_SPLIT_DIRECTION, DEFAULT_TERMINAL_POST_OPEN_COMMAND,
-    ITERM2_SPLIT_DIRECTION_KEY, read_app_config_raw, TERMINAL_POST_OPEN_COMMAND_KEY,
+    ITERM2_SPLIT_DIRECTION_KEY, TERMINAL_POST_OPEN_COMMAND_KEY, read_app_config_raw,
 };
 use crate::terminal::{NavErr, Target};
 
@@ -183,7 +183,9 @@ fn escape_dir_for_applescript(dir: &str) -> String {
     // Shell: 空格前加反斜杠，使 `cd my\ dir` 正确处理含空格路径
     let shell_safe = dir.replace(' ', "\\ ");
     // AppleScript 字符串上下文: \\ → 字面 \, \" → 字面 "
-    shell_safe.replace('\\', "\\\\").replace('"', "\\\"")
+    shell_safe
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
 }
 
 #[cfg(test)]
@@ -210,9 +212,7 @@ mod tests {
 
     #[test]
     fn escapes_quotes() {
-        let target = Target {
-            tty: Some("a\"b"),
-        };
+        let target = Target { tty: Some("a\"b") };
         let script = render_script(&target);
         assert!(script.contains("\"a\\\"b\""));
     }
