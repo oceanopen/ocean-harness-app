@@ -1,2 +1,0 @@
-# 占位：确保 resources/ 目录入库。
-# go-server-bin 二进制由 `pnpm go:build` 产出（见 .gitignore 忽略规则），build 模式随 Tauri 包分发。

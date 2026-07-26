@@ -87,7 +87,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           # 按矩阵目标交叉编译 Go 服务：beforeBuildCommand 的 server:build 据此产出匹配架构的二进制。
           # arm64 runner 构建 x86_64-apple-darwin 时，GOARCH=amd64 让 go 交叉编译出 amd64 二进制，避免 Intel Mac 运行时架构不匹配。
-          # Go 服务纯 stdlib 无 CGO，可纯交叉编译；Windows 下 `go build -o go-server-bin` 自动追加 .exe，与 Rust bin_name() 对齐。
+          # Go 服务纯 stdlib 无 CGO，可纯交叉编译；build-server.mjs 按 GOOS/GOARCH 产出 go-server-bin-<triple>[.exe]（Tauri sidecar 约定，tauri-build 据此拷贝/打包并签名）。
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         with:

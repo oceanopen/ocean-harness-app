@@ -3,6 +3,6 @@
 /target/
 /gen/schemas
 
-# Go 服务编译产物（由 pnpm go:build 生成，随包分发，不入库）
-# 覆盖 go-server-bin 与 windows 产出的 go-server-bin.exe，不影响 .gitkeep 与未来其他 resource
-/resources/go-server-bin*
+# Go sidecar 编译产物（pnpm server:build 按 target triple 生成，随包分发，不入库）
+# 覆盖 go-server-bin-<triple>[.exe]，不影响 .gitkeep
+/binaries/go-server-bin-*
