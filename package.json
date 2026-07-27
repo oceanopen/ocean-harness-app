@@ -1,7 +1,7 @@
 {
   "name": "we-claude-terminal",
   "type": "module",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": false,
   "packageManager": "pnpm@10.18.3",
   "scripts": {
