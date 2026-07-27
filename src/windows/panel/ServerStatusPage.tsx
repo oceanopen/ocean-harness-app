@@ -5,6 +5,7 @@ import {
   Box,
   CircularProgress,
   IconButton,
+  Snackbar,
   Stack,
   Switch,
   Table,
@@ -41,6 +42,9 @@ const MODE_LABEL: Record<string, string> = {
   test: 'test 测试',
 };
 
+// 浮层 toast 严重级别（操作失败用 error，状态提示用 warning）。
+type ToastSeverity = 'warning' | 'error';
+
 // 启用服务后 Go 绑定端口需要一点时间，重试拉 sysinfo。
 const FETCH_RETRY_TIMES = 6;
 const FETCH_RETRY_DELAY_MS = 400;
@@ -72,9 +76,16 @@ function spinSx(spinning: boolean) {
 function ServerStatusPage() {
   const [status, setStatus] = useState<HttpServerStatus | null>(null);
   const [sysInfo, setSysInfo] = useState<SysInfoResponseData | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // toast：保留最近一次内容，toastOpen 控制显隐（退出动画期间内容不闪烁）。
+  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'warning' });
+  const [toastOpen, setToastOpen] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const showToast = useCallback((text: string, severity: ToastSeverity) => {
+    setToast({ text, severity });
+    setToastOpen(true);
+  }, []);
 
   // 拉取 sysinfo（带重试：服务刚启动时端口可能尚未就绪）。成功返回 true。
   const fetchSysInfo = useCallback(async (address: string): Promise<boolean> => {
@@ -102,20 +113,19 @@ function ServerStatusPage() {
     try {
       const s = await commands.httpServerStatus();
       setStatus(s);
-      setErrorMsg(null);
       if (s.running) {
         const ok = await fetchSysInfo(s.address);
         if (!ok) {
-          setErrorMsg(`请求本地服务失败（${s.address}）`);
+          showToast(`请求本地服务失败（${s.address}）`, 'error');
         }
       } else {
         setSysInfo(null);
-        setErrorMsg(`请先开启本地服务`);
+        showToast('请先开启本地服务', 'warning');
       }
     } catch (e) {
-      setErrorMsg(`查询服务状态失败：${String(e)}`);
+      showToast(`查询服务状态失败：${String(e)}`, 'error');
     }
-  }, [fetchSysInfo]);
+  }, [fetchSysInfo, showToast]);
 
   // 初次挂载加载。
   useEffect(() => {
@@ -140,11 +150,10 @@ function ServerStatusPage() {
   const handleToggle = useCallback(
     async (checked: boolean) => {
       setToggling(true);
-      setErrorMsg(null);
       try {
         const r = await commands.setHttpServerEnabled(checked);
         if (r.status === 'error') {
-          setErrorMsg(`${checked ? '启动' : '停止'}服务失败：${r.error}`);
+          showToast(`${checked ? '启动' : '停止'}服务失败：${r.error}`, 'error');
           return;
         }
         const s = await commands.httpServerStatus();
@@ -152,7 +161,7 @@ function ServerStatusPage() {
         if (checked) {
           const ok = await fetchSysInfo(s.address);
           if (!ok) {
-            setErrorMsg(`服务已启动，但拉取信息失败（${s.address}）`);
+            showToast(`服务已启动，但拉取信息失败（${s.address}）`, 'warning');
           }
         } else {
           setSysInfo(null);
@@ -161,7 +170,7 @@ function ServerStatusPage() {
         setToggling(false);
       }
     },
-    [fetchSysInfo],
+    [fetchSysInfo, showToast],
   );
 
   const running = status?.running ?? false;
@@ -189,8 +198,6 @@ function ServerStatusPage() {
 
         {loaded && (
           <Stack spacing={2}>
-            {errorMsg && <Alert severity="warning" onClose={() => setErrorMsg(null)}>{errorMsg}</Alert>}
-
             <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
               <Table size="medium">
                 <TableBody>
@@ -250,6 +257,17 @@ function ServerStatusPage() {
           </Stack>
         )}
       </Box>
+
+      <Snackbar
+        open={toastOpen}
+        autoHideDuration={1000}
+        onClose={() => setToastOpen(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={toast.severity} variant="filled">
+          {toast.text}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

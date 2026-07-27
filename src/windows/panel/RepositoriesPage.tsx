@@ -10,6 +10,9 @@ import RepositoryCard from './components/RepositoryCard';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
+// 浮层 toast 严重级别（成功用 success，失败用 error）。
+type ToastSeverity = 'success' | 'error';
+
 // panel 窗口「本地仓库」菜单页面：三态机 + 顶栏(搜索+操作) + 响应式卡片网格 + toast。
 // 数据刷新用命令返回值直接 setState（仓库仅本页操作变更，无后台 watcher，故不引入事件）。
 // 自动刷新：页面挂载时先 load 展示缓存再 refreshAll 更新 git 信息；
@@ -19,7 +22,9 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
   const { t } = useTranslation();
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [repos, setRepos] = useState<Repository[]>([]);
-  const [toast, setToast] = useState<string | null>(null);
+  // toast：保留最近一次内容，toastOpen 控制显隐（退出动画期间内容不闪烁）。
+  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
+  const [toastOpen, setToastOpen] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
   const [searchName, setSearchName] = useState('');
@@ -31,6 +36,11 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
 
   // 防止并发刷新（自动刷新与手动刷新共享同一把锁）
   const refreshingRef = useRef(false);
+
+  const showToast = useCallback((text: string, severity: ToastSeverity) => {
+    setToast({ text, severity });
+    setToastOpen(true);
+  }, []);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -52,14 +62,14 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
     try {
       const list = await unwrap(commands.refreshAllRepositories());
       setRepos(list);
-      setToast(t('repositories:toast.refreshAllDone'));
+      showToast(t('repositories:toast.refreshAllDone'), 'success');
     } catch (e) {
-      setToast(t('repositories:toast.refreshAllFailed', { message: String(e) }));
+      showToast(t('repositories:toast.refreshAllFailed', { message: String(e) }), 'error');
     } finally {
       refreshingRef.current = false;
       setRefreshingAll(false);
     }
-  }, [t]);
+  }, [t, showToast]);
 
   // 挂载时：先 load 展示 SQLite 缓存，再 refreshAll 更新 git 信息。
   useEffect(() => {
@@ -94,39 +104,39 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
 
   const handleAdded = useCallback((repo: Repository) => {
     setRepos(prev => [...prev, repo]);
-    setToast(t('repositories:toast.added', { name: repo.name }));
-  }, [t]);
+    showToast(t('repositories:toast.added', { name: repo.name }), 'success');
+  }, [t, showToast]);
 
   const handleUpdated = useCallback((repo: Repository) => {
     setRepos(prev => prev.map(r => (r.id === repo.id ? repo : r)));
-    setToast(t('repositories:toast.updated', { name: repo.name }));
-  }, [t]);
+    showToast(t('repositories:toast.updated', { name: repo.name }), 'success');
+  }, [t, showToast]);
 
   const handleRefreshOne = useCallback(async (repo: Repository) => {
     setRefreshingId(repo.id);
     try {
       const updated = await unwrap(commands.refreshRepository(repo.id));
       setRepos(prev => prev.map(r => (r.id === updated.id ? updated : r)));
-      setToast(t('repositories:toast.refreshed', { name: repo.name }));
+      showToast(t('repositories:toast.refreshed', { name: repo.name }), 'success');
     } catch (e) {
-      setToast(t('repositories:toast.refreshFailed', { message: String(e) }));
+      showToast(t('repositories:toast.refreshFailed', { message: String(e) }), 'error');
     } finally {
       setRefreshingId(null);
     }
-  }, [t]);
+  }, [t, showToast]);
 
   // 打开回调改为按 dir 传递：卡片「仓库目录」行传仓库根目录，VSCode/iTerm2 经菜单选择后传「仓库目录 + 子目录」。
   const handleOpenFolder = useCallback((dir: string) => {
     unwrap(commands.openInFileManager(dir)).catch((e) => {
-      setToast(t('repositories:toast.openFailed', { message: String(e) }));
+      showToast(t('repositories:toast.openFailed', { message: String(e) }), 'error');
     });
-  }, [t]);
+  }, [t, showToast]);
 
   const handleOpenInTerminal = useCallback((dir: string, terminal: 'iterm2' | 'terminal') => {
     unwrap(commands.openInTerminal(terminal, dir)).catch((e) => {
-      setToast(t('repositories:toast.openTerminalFailed', { message: String(e) }));
+      showToast(t('repositories:toast.openTerminalFailed', { message: String(e) }), 'error');
     });
-  }, [t]);
+  }, [t, showToast]);
 
   const handleConfirmDelete = useCallback(async () => {
     if (!deleteTarget) {
@@ -136,14 +146,14 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
     try {
       await unwrap(commands.deleteRepository(deleteTarget.id));
       setRepos(prev => prev.filter(r => r.id !== deleteTarget.id));
-      setToast(t('repositories:toast.deleted'));
+      showToast(t('repositories:toast.deleted'), 'success');
       setDeleteTarget(null);
     } catch (e) {
-      setToast(t('repositories:toast.deleteFailed', { message: String(e) }));
+      showToast(t('repositories:toast.deleteFailed', { message: String(e) }), 'error');
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, t]);
+  }, [deleteTarget, t, showToast]);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -286,12 +296,15 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
       </Box>
 
       <Snackbar
-        open={toast !== null}
-        message={toast ?? ''}
-        onClose={() => setToast(null)}
-        autoHideDuration={4000}
+        open={toastOpen}
+        autoHideDuration={1000}
+        onClose={() => setToastOpen(false)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      />
+      >
+        <Alert severity={toast.severity} variant="filled">
+          {toast.text}
+        </Alert>
+      </Snackbar>
 
       {addDialogOpen && (
         <AddRepositoryDialog
