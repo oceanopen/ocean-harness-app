@@ -7,7 +7,7 @@
 // 故本脚本须按目标 GOOS/GOARCH 产出带 triple 后缀的文件名（Tauri 不会自动补 triple）。
 //
 // 目标平台：CI 通过 GOOS/GOARCH env 注入（按 matrix 交叉编译，见 .github/workflows/release-assets.yml）；
-// 本地未设时按宿主 platform/arch 推断（process.arch 的 x64 对应 GOARCH=amd64）。Go 服务纯 stdlib 无 CGO，可纯交叉编译。
+// 本地未设时按宿主 platform/arch 推断（process.arch 的 x64 对应 GOARCH=amd64）。Go 服务为纯 Go 实现（sqlite 用 glebarez 纯 Go 驱动，无 CGO），显式 CGO_ENABLED=0 可纯交叉编译。
 //
 // 只产目标架构一份：release 路径已不再跑 gen:bindings（host 构建），tauri-build 仅在 target 构建里找
 // go-server-bin-<target-triple>，故无需再补产 host triple。
@@ -60,5 +60,5 @@ const triple = targetTriple(targetGOOS, targetGOARCH);
 execFileSync(
   'go',
   ['build', '-C', 'src-server', '-o', `../src-tauri/binaries/go-server-bin-${triple}${exeSuffixFor(targetGOOS)}`, './cmd/server'],
-  { stdio: 'inherit', env: { ...process.env, GOOS: targetGOOS, GOARCH: targetGOARCH } },
+  { stdio: 'inherit', env: { ...process.env, GOOS: targetGOOS, GOARCH: targetGOARCH, CGO_ENABLED: '0' } },
 );

@@ -43,6 +43,8 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::repositories::open_in_file_manager,
             shared::app_db_viewer::list_app_db_tables,
             shared::app_db_viewer::dump_app_db_table,
+            shared::http_server::http_server_status,
+            shared::http_server::set_http_server_enabled,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。

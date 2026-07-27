@@ -103,6 +103,10 @@ export const commands = {
 	listAppDbTables: () => typedError<AppDbTableInfo[], string>(__TAURI_INVOKE("list_app_db_tables")),
 	/**  导出 app.db 指定表的列名 + 全部行（只读）。表名经白名单 + 存在性双重校验，防注入。 */
 	dumpAppDbTable: (table: string) => typedError<AppDbTableDump, string>(__TAURI_INVOKE("dump_app_db_table", { table })),
+	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
+	httpServerStatus: () => __TAURI_INVOKE<HttpServerStatus>("http_server_status"),
+	/**  开关 HTTP 服务（true=启动，false=停止）。前端 Switch 控件调用。 */
+	setHttpServerEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_http_server_enabled", { enabled })),
 };
 
 /* Types */
@@ -196,6 +200,22 @@ export type ClaudeSessionStatus =
 "GitPending" | 
 /**  已失效：进程已退出，json 残留。discover 阶段会过滤掉，理论上不会出现在前端。 */
 "Dead";
+
+/**
+ *  HTTP 本地服务的运行态快照（http_server_status 命令返回）。
+ *  前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch <address>/api/baseInfo/getSysInfo。
+ *  仅出参（后端→前端），故不 derive Deserialize。
+ */
+export type HttpServerStatus = {
+	/**  服务是否在运行（sidecar 子进程存活）。 */
+	running: boolean,
+	/**  服务地址（http://127.0.0.1:<port>），前端 fetch 用。端口随模式：dev=9000，build=9100。 */
+	address: string,
+	/**  监听端口（dev=9000，build=9100）。 */
+	port: number,
+	/**  运行模式（debug/release），与 Go gin mode 对齐。 */
+	mode: string,
+};
 
 /**  跳转失败原因。对应前端 navigation-failed toast 文案细分。 */
 export type NavErr = 
