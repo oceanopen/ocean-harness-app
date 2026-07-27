@@ -11,3 +11,18 @@ xattr -cr "/Applications/We Claude Terminal.app"
 ```
 
 > 若未安装到默认路径，请将路径替换为实际的 `.app` 路径。
+
+## 查看本地 SQLite 数据库
+
+可以用 [DBeaver](https://dbeaver.io/) 查看 sqlite 数据库（文件名固定为 `app.db`，位于 Tauri 的 `app_data_dir` 下）：
+
+| 平台    | 环境    | 路径                                                              |
+| ------- | ------- | ----------------------------------------------------------------- |
+| macOS   | Release | `~/Library/Application Support/com.we.claude.terminal/app.db`     |
+| macOS   | Dev     | `~/Library/Application Support/com.we.claude.terminal.dev/app.db` |
+| Windows | Release | `%APPDATA%\com.we.claude.terminal\app.db`                         |
+| Windows | Dev     | `%APPDATA%\com.we.claude.terminal.dev\app.db`                     |
+| Linux   | Release | `~/.local/share/com.we.claude.terminal/app.db`                    |
+| Linux   | Dev     | `~/.local/share/com.we.claude.terminal.dev/app.db`                |
+
+> Dev 与 Release 使用不同 identifier，数据自动隔离。`~` 为用户主目录；Windows `%APPDATA%` 对应 `C:\Users\<用户名>\AppData\Roaming`；Linux 遵循 XDG 规范，若设置了 `XDG_DATA_HOME` 则以其替代 `~/.local/share`。
