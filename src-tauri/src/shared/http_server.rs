@@ -1,10 +1,12 @@
 // HTTP 本地服务的进程生命周期管理（sidecar 模式，dev/build 统一）+ IPC 命令。
 //
-// Go 服务作为 Tauri sidecar（tauri.conf.json bundle.externalBin: "binaries/go-server-bin"）打包：
-//   - build 模式：打包器把 binaries/go-server-bin-<triple> 去后缀放进 Contents/MacOS/ 并随主 app 签名
-//     ——arm64 下 AMFI 不再拦，正是从 resources 迁到 sidecar 的关键。
-//   - dev 模式：tauri-build（cargo build）把该文件拷到 target/<profile>/go-server-bin。
-//   app.shell().sidecar("go-server-bin") 解析到 current_exe 同级路径，故 dev/build 用同一份代码。
+// Go 服务作为 Tauri sidecar 打包，baseName 复用各 conf 的 identifier，让进程名携带环境标识：
+//   - build：binaries/com.we.claude.terminal-go_server_bin-<triple>（identifier 取自 tauri.conf.json）
+//   - dev  ：binaries/com.we.claude.terminal.dev-go_server_bin-<triple>（取自 tauri.dev.conf.json）
+//   打包器把对应文件去 triple 后缀放进 Contents/MacOS/（macOS）并随主 app 签名——arm64 下 AMFI 不再拦。
+//   dev 模式下 tauri-build（cargo build）把该文件拷到 target/<profile>/<baseName>。
+//   app.shell().sidecar(format!("{}-go_server_bin", app.config().identifier)) 解析到 current_exe 同级路径，
+//   identifier 随当前生效 conf 自动切换，故 dev/build 用同一份代码。
 //
 // 配置全部走环境变量注入 Go 进程（不读配置文件）：
 //   GO_SERVER_MODE（debug/release）、GO_SERVER_PORT（dev=9000/build=9100，不支持配置化）、
@@ -127,10 +129,13 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         return Err("log_dir/sqlite_dir not resolved".into());
     }
 
+    // sidecar 名复用当前 identifier（dev/build 各自的 conf 决定），自动区分环境：
+    //   dev → com.we.claude.terminal.dev-go_server_bin / build → com.we.claude.terminal-go_server_bin
+    let sidecar_name = format!("{}-go_server_bin", app.config().identifier);
     let (mut rx, child) = app
         .shell()
-        .sidecar("go-server-bin")
-        .map_err(|e| format!("resolve go-server-bin sidecar failed: {e}"))?
+        .sidecar(&sidecar_name)
+        .map_err(|e| format!("resolve {sidecar_name} sidecar failed: {e}"))?
         .env("GO_SERVER_MODE", state.mode)
         .env("GO_SERVER_PORT", state.port.to_string())
         .env("GO_SERVER_LOG_DIR", &state.log_dir)

@@ -1,5 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "identifier": "com.we.claude.terminal.dev",
-  "productName": "We Claude Terminal [DEV]"
+  "productName": "We Claude Terminal [DEV]",
+  "bundle": {
+    "externalBin": ["binaries/com.we.claude.terminal.dev-go_server_bin"]
+  }
 }

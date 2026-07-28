@@ -2,7 +2,7 @@
 //
 // 由 Tauri 应用（Rust 侧 src-tauri/src/shared/http_server.rs）在启动时拉起：
 //   - dev 模式：先 `go build` 编译出二进制，再 spawn（持有真正的服务进程 handle）
-//   - build 模式：spawn 随包分发的二进制 go-server-bin
+//   - build 模式：spawn 随包分发的二进制 com.we.claude.terminal-go_server_bin
 //
 // dev/build 都 spawn 二进制而非 `go run`：避免孤儿进程。
 //
