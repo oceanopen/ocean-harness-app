@@ -31,3 +31,6 @@ dist-ssr
 
 .claude-tmp
 __pycache__
+
+# Go server local dev（air 构建产物 + 运行时日志/db，均在 src-server/temp 下）
+src-server/temp/

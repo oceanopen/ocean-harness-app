@@ -1,0 +1,15 @@
+# 本地调试默认配置（air 自测用，搭配 src-server/.air.toml）。
+#
+# 配置优先级：环境变量（GO_SERVER_*）> 本文件。
+#   - 生产环境：Rust spawn 时注入环境变量，覆盖本文件，不依赖本文件；
+#   - 本地 air 自测：不注入环境变量，各项取本文件值（port=9200 等）。
+#
+# 字段说明：
+#   mode       gin 运行模式（debug / release / test）
+#   port       HTTP 监听端口（本地自测用 9200，与 tauri 客户端的 9000 隔离，互不影响）
+#   logDir     日志目录（相对 src-server；运行时转绝对路径并自动创建）
+#   sqliteDir  sqlite 数据目录（相对 src-server；运行时转绝对路径并自动创建）
+mode: debug
+port: 9200
+logDir: temp/logs
+sqliteDir: temp/db

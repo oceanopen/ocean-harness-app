@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:7102",
-    "beforeDevCommand": "pnpm server:dev && pnpm web:dev",
-    "beforeBuildCommand": "pnpm server:build && pnpm web:build"
+    "beforeDevCommand": "pnpm server:test && pnpm web:dev",
+    "beforeBuildCommand": "pnpm server:release && pnpm web:build"
   },
   "app": {
     "macOSPrivateApi": true,

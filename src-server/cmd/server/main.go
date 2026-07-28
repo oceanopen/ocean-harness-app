@@ -1,14 +1,13 @@
 // Package main 是 HTTP 本地服务的入口（gin 实现）。
 //
 // 由 Tauri 应用（Rust 侧 src-tauri/src/shared/http_server.rs）在启动时拉起：
-//   - dev 模式：先 `go build` 编译出二进制，再 spawn（持有真正的服务进程 handle）
+//   - test 模式：先 `go build` 编译出二进制，再 spawn（持有真正的服务进程 handle）
 //   - build 模式：spawn 随包分发的二进制 com.we.claude.terminal-go_server_bin
+//   - dev 模式：本地 air 自测
 //
-// dev/build 都 spawn 二进制而非 `go run`：避免孤儿进程。
+// test/build 都 spawn 二进制而非 `go run`：避免孤儿进程。
 //
-// 配置全部来自环境变量（不读配置文件）：端口 / 日志目录 / sqlite 目录 / 运行模式，
-// 由 Rust spawn 时注入；运行模式 GO_SERVER_MODE 取 gin 模式值（debug/release），
-// 体现在 /api/baseInfo/getServerRunInfo 的 mode 字段。
+// 配置优先级：环境变量（GO_SERVER_*）> 配置文件（-config 指定的 yaml，可选）。
 package main
 
 import (
@@ -30,7 +29,7 @@ import (
 )
 
 func main() {
-	// 1) 加载 + 校验环境变量（任一不合规即 log.Fatalf 退出）。
+	// 1) 加载 + 校验配置（优先级：环境变量 > 配置文件；任一不合规即 log.Fatalf 退出）。
 	cfg := config.MustLoadConfig()
 	// 配置加载后立即写入全局：service 层读 global.Config.Mode 等，须在路由启动前就位。
 	global.Config = cfg

@@ -1,0 +1,24 @@
+# Air 热重载配置（本地 Go 服务自测）。
+# 启动：仓库根执行 `pnpm server:dev`（等价于 `cd src-server && air`）。
+# 前置：本机安装 air —— go install github.com/air-verse/air@latest
+
+# 工作目录（. 表示 air 启动时的 CWD，即 src-server）。
+root = "."
+# 构建产物临时目录（与 app 的 temp/logs、temp/db 同根共存，已自动从监听中排除）。
+tmp_dir = "temp"
+
+[build]
+# 构建命令：编译 main 包（入口在 ./cmd/server）输出到 temp/build/go-server。
+cmd = "go build -o temp/build/go-server ./cmd/server"
+# 构建产物：air 重建后运行的二进制。
+bin = "temp/build/go-server"
+# 运行参数：指定 dev 配置文件；不注入 GO_SERVER_* env，让配置文件值生效（port=9200）。
+args_bin = ["-config=config/settings.dev.yaml"]
+# 仅监听 .go 文件变更触发重建。
+include_ext = ["go"]
+# 排除配置文件目录（yaml 为运行时数据，其变更不触发重建；temp 为 tmp_dir 已自动排除）。
+exclude_dir = ["config"]
+# 文件变更后延迟重建的毫秒数（避免保存瞬间多次触发）。
+delay = 300
+# 构建失败时保留旧进程继续运行（而非杀掉），便于排障。
+stop_on_error = true
