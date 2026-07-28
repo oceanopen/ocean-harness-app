@@ -104,9 +104,9 @@ jobs:
           prerelease: false
 
   # ============================================================
-  # Gitee 同步：矩阵构建全部完成后执行（best-effort，绝不阻塞 GitHub 主流程）
+  # Gitee 仓库镜像：矩阵构建全部完成后执行（best-effort，绝不阻塞 GitHub 主流程）
   # 实现已抽离为可复用 workflow（.github/workflows/release-gitee-sync.yml），此处仅声明依赖与调用。
-  # github.ref_name / github.sha / 所有 secrets 通过调用上下文自动继承（secrets: inherit），
+  # 所有 secrets 通过调用上下文自动继承（secrets: inherit），
   # 故被调用 workflow 无需 inputs，何时运行由此处的 needs / if 决定。
   # ============================================================
   sync-gitee:

@@ -23,8 +23,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/oceanopen/we-claude-terminal-app/releases/latest/download/latest.json",
-        "https://gitee.com/ocean-open/we-claude-terminal-app/raw/release-manifest/latest-gitee.json"
+        "https://github.com/oceanopen/we-claude-terminal-app/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMyRDMyOUU0NzBFMzVBOUIKUldTYld1Tnc1Q25Ud2wwamFMOThFSEc5NnBDenRnd25vbk9FU1V3cDJmNlJLOUYwL3RRMjFmdHEK",
       "windows": {

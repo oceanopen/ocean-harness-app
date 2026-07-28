@@ -59,7 +59,7 @@ function AboutPage() {
     try {
       // 弱网下 plugin-updater 默认无应用层超时，会等到 OS/TCP 层才失败（最坏几分钟）。
       // 单源 5s 硬超时：plugin v2 的 timeout 是 per-endpoint（每个 endpoint 独立享有一个 reqwest
-      // ClientBuilder.timeout 窗口），endpoints 数组 [GitHub, Gitee] 串行回退，最坏合计 10s。
+      // ClientBuilder.timeout 窗口）。
       // 超时后落入下方 catch 的 error 状态，用户可点「重试」。
       const update = await check({ timeout: 5_000 });
       if (update) {
@@ -90,7 +90,7 @@ function AboutPage() {
               const percent = Math.min(100, Math.round((downloaded / total) * 100));
               setState({ kind: 'downloading', percent, downloadedBytes: downloaded });
             } else {
-              // 缺失 Content-Length（如 Gitee 302 重定向链路）：回退展示已下载字节数，避免卡在 0%。
+              // 缺失 Content-Length（如 302 重定向链路）：回退展示已下载字节数，避免卡在 0%。
               setState({ kind: 'downloading', percent: null, downloadedBytes: downloaded });
             }
             break;

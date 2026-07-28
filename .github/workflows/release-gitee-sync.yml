@@ -1,13 +1,10 @@
-# Gitee 同步（可复用 workflow）：把 GitHub Release 的产物同步到 Gitee 镜像仓库。
+# Gitee 仓库镜像（可复用 workflow）：把 GitHub 仓库的 commit + tag 镜像到 Gitee。
 # 由 .github/workflows/release-assets.yml 在 build 矩阵完成后经 needs: build + uses: 调用，
 # 因此本文件 job 不需要自己的 needs / if —— 何时运行由调用方决定。
-# github.ref_name（tag）/ github.sha（commit）/ 所有 secrets 通过调用上下文自动继承（secrets: inherit）。
+# secrets 通过调用上下文自动继承（secrets: inherit）。
 #
-# 同步内容：commit+tag 镜像、构建资产上传到 Gitee Release、Gitee 专属 latest.json
-# 复杂逻辑抽到 .github/scripts/*.py 与 *.sh，本文件只编排。
-# 失败语义（fail-fast）：secrets 缺失 / 镜像失败 / 上传失败 / 推送失败 → 步骤红，任一步失败靠默认
-# success() 级联跳过下游；仅「良性幂等条件」（null 查询/release 已存在/资产已存在）优雅处理。
-# Gitee v5 鉴权坑：access_token 一律放 body / form field，绝不放 header。
+# 仅镜像源码与 tag——不再上传安装包到 Gitee Release、不生成 Gitee 专属 manifest：
+# 安装包体积增大后 Gitee Release 上传慢且常失败；app updater 的 Gitee endpoint 已移除，仅从 GitHub 更新。
 name: Sync to Gitee
 
 on:
@@ -15,16 +12,8 @@ on:
 
 jobs:
   sync-gitee:
-    name: Sync to Gitee (mirror + release + manifest)
+    name: Mirror to Gitee
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # 推送 release-manifest orphan 分支到 GitHub 需要
-    env:
-      # 注意 owner 拼写差异：GitHub=oceanopen（无连字符），Gitee=ocean-open（有连字符）
-      GITEE_OWNER: ocean-open
-      GITEE_REPO: we-claude-terminal-app
-      GH_REPO: oceanopen/we-claude-terminal-app
-      TAG: ${{ github.ref_name }}
     steps:
       # ---------- 前置：secrets 齐全性校验（缺失则硬失败）----------
       - name: Verify Gitee secrets
@@ -34,81 +23,13 @@ jobs:
           GITEE_PRIVATE_KEY: ${{ secrets.GITEE_PRIVATE_KEY }}
         run: |
           if [ -z "$GITEE_TOKEN" ] || [ -z "$GITEE_USER" ] || [ -z "$GITEE_PRIVATE_KEY" ]; then
-            echo "::error::Gitee secrets missing (GITEE_TOKEN / GITEE_USER / GITEE_PRIVATE_KEY) — sync-gitee cannot run. Configure them in repo Settings → Secrets → Actions."
+            echo "::error::Gitee secrets missing (GITEE_TOKEN / GITEE_USER / GITEE_PRIVATE_KEY) — mirror cannot run. Configure them in repo Settings → Secrets → Actions."
             exit 1
           fi
 
-      # ---------- checkout 仓库（取 .github/scripts/* 脚本）----------
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1 # 只需脚本文件，无需完整历史
-
-      # ---------- 步骤 1：commit + tag 镜像（hub-mirror-action，force_update 强推含 tags） ----------
+      # ---------- 镜像 commit + tag 到 Gitee（force_update 强推含 tags） ----------
       - name: Mirror commits and tags to Gitee
         # 锁定 v1.5（Docker 实现，无 setup-uv）：@master 的 composite 实现会在非 Python 仓库触发 setup-uv 缓存告警。
-        uses: Yikun/hub-mirror-action@v1.5
-        with:
-          src: 'github/${{ github.repository_owner }}'
-          dst: 'gitee/${{ secrets.GITEE_USER }}'
-          dst_key: ${{ secrets.GITEE_PRIVATE_KEY }}
-          dst_token: ${{ secrets.GITEE_TOKEN }}
-          static_list: ${{ github.event.repository.name }}
-          force_update: true
-          src_account_type: org
-          dst_account_type: org
-          clone_style: ssh
-
-      # ---------- 步骤 2：下载 GitHub Release 全部资产 ----------
-      - name: Download GitHub Release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p ./assets
-          gh release download "$TAG" --repo "$GH_REPO" --dir ./assets --clobber
-          echo "Downloaded assets:"
-          ls -la ./assets
-
-      # ---------- 步骤 3：创建 / 复用 Gitee Release（脚本：gitee_create_release.py） ----------
-      - name: Create or get Gitee Release
-        id: gitee_release
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          # tag 实际指向的 commit（比硬编码 main 更严谨；Gitee Release 会指向该 commit）
-          GITHUB_SHA: ${{ github.sha }}
-        run: python3 .github/scripts/gitee_create_release.py
-
-      # ---------- 步骤 4：上传资产到 Gitee Release（脚本：gitee_upload_assets.py；幂等+重试，任一失败即红） ----------
-      - name: Upload assets to Gitee Release
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
-        run: python3 .github/scripts/gitee_upload_assets.py
-
-      # ---------- 步骤 5：查 Gitee Release 拿真实 browser_download_url（脚本：gitee_fetch_urls.py） ----------
-      - name: Fetch Gitee Release asset URLs
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          RELEASE_ID: ${{ steps.gitee_release.outputs.release_id }}
-        run: python3 .github/scripts/gitee_fetch_urls.py
-
-      # ---------- 步骤 6：改写 latest.json → latest-gitee.json（脚本：gitee_rewrite_manifest.py） ----------
-      - name: Rewrite manifest to latest-gitee.json
-        run: python3 .github/scripts/gitee_rewrite_manifest.py
-
-      # ---------- 步骤 7：推 orphan 分支 release-manifest 到 GitHub（脚本：github_publish_manifest.sh；push 失败即红） ----------
-      - name: Publish latest-gitee.json to GitHub release-manifest branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash .github/scripts/github_publish_manifest.sh
-
-      # ---------- 步骤 8：全量镜像 GitHub → Gitee（把步骤 7 刚推的 release-manifest 分支同步到 Gitee） ----------
-      # 复用步骤 1 的 hub-mirror-action + 同款 SSH 鉴权（dst_key=GITEE_PRIVATE_KEY，步骤 1 已验证可推）。
-      # 必要性：步骤 1 镜像时 release-manifest 尚未更新（步骤 7 才推新版），故这里再镜像一次把新分支带过去。
-      # ⚠️ 副作用（force_update:true + refspec --prune）：全量强推所有 refs 并删除 Gitee 独有分支/标签，
-      #    非仅同步 release-manifest；orphan 分支经普通 clone 的 remote-tracking ref（refs/remotes/origin/*）
-      #    纳入镜像，理论覆盖但需 CI 实测确认。
-      - name: Mirror release-manifest branch to Gitee
         uses: Yikun/hub-mirror-action@v1.5
         with:
           src: 'github/${{ github.repository_owner }}'
