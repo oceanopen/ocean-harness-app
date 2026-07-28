@@ -40,6 +40,9 @@ func main() {
 	// 3) 初始化 sqlite：数据目录来自环境变量。
 	initialize.MustInitSQLite(cfg)
 
+	// 3.5) 自动迁移：执行 embed 进二进制的未应用 SQL 迁移（goose），失败即 Fatal。
+	initialize.MustRunMigrations(context.Background())
+
 	// 4) gin 默认输出桥接到 zap，使 gin 日志也走文件 + 控制台。
 	initialize.InitGinLoggerWriter()
 
