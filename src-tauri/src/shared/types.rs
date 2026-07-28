@@ -210,14 +210,14 @@ pub struct AppDbTableDump {
 // ============================================================
 
 /// HTTP 本地服务的运行态快照（http_server_status 命令返回）。
-/// 前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch <address>/api/baseInfo/getSysInfo。
+/// 前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch <address>/api/baseInfo/getServerRunInfo。
 /// 仅出参（后端→前端），故不 derive Deserialize。
 #[derive(Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct HttpServerStatus {
     /// 服务是否在运行（sidecar 子进程存活）。
     pub running: bool,
-    /// 服务地址（http://127.0.0.1:<port>），前端 fetch 用。端口随模式：dev=9000，build=9100。
+    /// 服务地址（http://127.0.0.1:<port>），前端 fetch getServerRunInfo 用。端口随模式：dev=9000，build=9100。
     pub address: String,
     /// 监听端口（dev=9000，build=9100）。
     pub port: u16,

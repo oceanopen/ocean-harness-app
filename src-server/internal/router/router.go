@@ -13,7 +13,7 @@ import (
 
 // SetupRouter 构造 gin engine：注册中间件与路由。
 //
-// 当前仅暴露无需登录/鉴权的 /api/baseInfo/getSysInfo。
+// 当前仅暴露无需登录/鉴权的 /api/baseInfo/getServerRunInfo。
 // gin.SetMode 已在 config.MustLoad 中按环境变量完成。
 func SetupRouter() *gin.Engine {
 	r := gin.New()
@@ -35,7 +35,7 @@ func SetupRouter() *gin.Engine {
 	{
 		baseInfoGroup := apiGroup.Group("/baseInfo")
 		{
-			baseInfoGroup.GET("/getSysInfo", baseInfoController.GetSysInfo)
+			baseInfoGroup.GET("/getServerRunInfo", baseInfoController.GetServerRunInfo)
 		}
 	}
 

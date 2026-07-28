@@ -288,6 +288,11 @@ pub fn http_server_status(state: State<'_, HttpServerState>) -> HttpServerStatus
 #[specta::specta]
 pub fn set_http_server_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     if enabled {
+        // 开启前先停止：清理同会话残留的 sidecar 子进程（running 时强制重启），避免端口被占用
+        // 导致新进程 bind 失败。stop 幂等（child 已清则空操作），其错误不阻塞 start；
+        // stop/start 各自独立加锁释放、顺序调用，不会死锁。
+        // 注：仅清理 Rust 持有 child handle 的进程；跨会话孤立进程（app 异常退出残留）需手动清理。
+        let _ = stop_server(&app);
         start_server(&app)
     } else {
         stop_server(&app)

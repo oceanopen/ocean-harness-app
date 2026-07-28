@@ -2,6 +2,7 @@
 package service
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 
@@ -17,14 +18,22 @@ func NewBaseInfoService() *BaseInfoService {
 	return &BaseInfoService{}
 }
 
-// GetSysInfo 采集系统信息 + 当前运行模式（mode 取自全局 Config）。
-func (s *BaseInfoService) GetSysInfo(_ *types.SysInfoRequest) (*types.SysInfoResponseData, error) {
+// GetServerRunInfo 采集系统信息（SysInfo）+ 服务运行信息（ServerInfo）。
+// 服务地址、日志/数据目录一并放在 ServerInfo 返回，前端按接口展示（不依赖 Rust IPC）。
+func (s *BaseInfoService) GetServerRunInfo(_ *types.ServerRunInfoRequest) (*types.ServerRunInfo, error) {
 	hostname, _ := os.Hostname()
-	return &types.SysInfoResponseData{
-		Hostname:  hostname,
-		GoVersion: runtime.Version(),
-		OS:        runtime.GOOS,
-		Arch:      runtime.GOARCH,
-		Mode:      global.Config.Mode,
+	return &types.ServerRunInfo{
+		SysInfo: types.SysInfo{
+			Hostname:  hostname,
+			GoVersion: runtime.Version(),
+			OS:        runtime.GOOS,
+			Arch:      runtime.GOARCH,
+		},
+		ServerInfo: types.ServerInfo{
+			Mode:      global.Config.Mode,
+			Address:   fmt.Sprintf("http://127.0.0.1:%d", global.Config.Port),
+			LogDir:    global.Config.LogDir,
+			SqliteDir: global.Config.SqliteDir,
+		},
 	}, nil
 }

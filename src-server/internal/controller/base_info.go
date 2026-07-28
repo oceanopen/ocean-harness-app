@@ -21,9 +21,9 @@ func NewBaseInfoController() *BaseInfoController {
 	}
 }
 
-// GetSysInfo GET /api/baseInfo/getSysInfo：返回本地系统信息 + 运行模式。
-func (ctl *BaseInfoController) GetSysInfo(c *gin.Context) {
-	data, err := ctl.baseInfoService.GetSysInfo(&types.SysInfoRequest{})
+// GetServerRunInfo GET /api/baseInfo/getServerRunInfo：返回系统信息 + 服务运行信息。
+func (ctl *BaseInfoController) GetServerRunInfo(c *gin.Context) {
+	data, err := ctl.baseInfoService.GetServerRunInfo(&types.ServerRunInfoRequest{})
 	if err != nil {
 		response.Fail(c, err.Error())
 		return

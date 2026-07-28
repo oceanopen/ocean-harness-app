@@ -8,7 +8,7 @@
 //
 // 配置全部来自环境变量（不读配置文件）：端口 / 日志目录 / sqlite 目录 / 运行模式，
 // 由 Rust spawn 时注入；运行模式 GO_SERVER_MODE 取 gin 模式值（debug/release），
-// 体现在 /api/baseInfo/getSysInfo 的 mode 字段。
+// 体现在 /api/baseInfo/getServerRunInfo 的 mode 字段。
 package main
 
 import (
@@ -47,7 +47,7 @@ func main() {
 	// 5) 服务启动前打印完整环境变量信息（用 zap，文件 + 控制台都有）。
 	printRuntimeConfig(cfg)
 
-	// 6) 组装路由（仅 /api/baseInfo/getSysInfo，无登录/鉴权）。
+	// 6) 组装路由（仅 /api/baseInfo/getServerRunInfo，无登录/鉴权）。
 	engine := router.SetupRouter()
 
 	// 7) 优雅退出：Rust 在应用退出时发 SIGTERM，监听后关闭连接。
