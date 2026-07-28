@@ -1,8 +1,7 @@
 // HTTP 本地服务的进程生命周期管理（sidecar 模式，dev/build 统一）+ IPC 命令。
 //
-// Go 服务作为 Tauri sidecar 打包，baseName 复用各 conf 的 identifier，让进程名携带环境标识：
-//   - build：binaries/com.we.claude.terminal-go_server_bin-<triple>（identifier 取自 tauri.conf.json）
-//   - dev  ：binaries/com.we.claude.terminal.dev-go_server_bin-<triple>（取自 tauri.dev.conf.json）
+// Go 服务作为 Tauri sidecar 打包，baseName 复用各 conf 的 identifier（让进程名携带环境标识）：
+//   build 取 tauri.conf.json、dev 取 tauri.dev.conf.json，文件名 {identifier}-go_server_bin-{triple}。
 //   打包器把对应文件去 triple 后缀放进 Contents/MacOS/（macOS）并随主 app 签名——arm64 下 AMFI 不再拦。
 //   dev 模式下 tauri-build（cargo build）把该文件拷到 target/<profile>/<baseName>。
 //   app.shell().sidecar(format!("{}-go_server_bin", app.config().identifier)) 解析到 current_exe 同级路径，
@@ -106,7 +105,6 @@ pub struct HttpServerState {
 }
 
 impl HttpServerState {
-    /// 当前运行态（从 AtomicU8 还原枚举）。
     fn run_state(&self) -> HttpServerRunState {
         match self.run_state.load(Ordering::SeqCst) {
             1 => HttpServerRunState::Starting,
@@ -114,19 +112,15 @@ impl HttpServerState {
             _ => HttpServerRunState::Stopped,
         }
     }
-    /// 设置运行态（枚举转 AtomicU8）。
     fn set_run_state(&self, s: HttpServerRunState) {
         self.run_state.store(s as u8, Ordering::SeqCst);
     }
-    /// 当前端口（AtomicU16 读取）。
     fn port(&self) -> u16 {
         self.port.load(Ordering::SeqCst)
     }
-    /// 设置端口（start_server 解析配置后更新）。
     fn set_port(&self, port: u16) {
         self.port.store(port, Ordering::SeqCst);
     }
-    /// 服务地址（按当前端口现算）。
     fn address(&self) -> String {
         format!("http://127.0.0.1:{}", self.port())
     }
@@ -436,8 +430,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     let port = resolve_server_port(app);
     state.set_port(port);
 
-    // sidecar 名复用当前 identifier（dev/build 各自的 conf 决定），自动区分环境：
-    //   dev → com.we.claude.terminal.dev-go_server_bin / build → com.we.claude.terminal-go_server_bin
+    // sidecar 名复用当前 identifier（dev/build 各自的 conf 决定），自动区分环境。
     let sidecar_name = format!("{}-go_server_bin", app.config().identifier);
     let (mut rx, child) = app
         .shell()

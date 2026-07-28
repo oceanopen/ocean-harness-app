@@ -3,6 +3,6 @@
 /target/
 /gen/schemas
 
-# Go sidecar 编译产物（pnpm server:build 按 target triple 生成，随包分发，不入库）
-# 覆盖 go_server_bin-<triple>[.exe]，不影响 .gitkeep
-/binaries/*go_server_bin-*
+# Go sidecar 编译产物（由服务构建脚本按 target triple 生成，dev/release 各一份，随包分发，不入库）
+# 覆盖 <app-name>-go_server_bin-<triple>[.exe]，不影响 .gitkeep
+/binaries/*-go_server_bin-*

@@ -44,13 +44,13 @@ jobs:
           node-version: 24
 
       # 安装 Go 工具链（src-server 本地 HTTP 服务编译需要）。
-      # runner 预装了 Go，但显式 setup-go 锁定版本（与 src-server/go.mod 的 `go 1.21` 对齐），避免 runner 镜像变动风险。
-      # cache: false：src-server 零依赖、无 go.sum，无可缓存内容。
+      # runner 预装了 Go，但显式 setup-go 按 go-version-file 锁定版本（与 src-server/go.mod 对齐），避免 runner 镜像变动风险；
+      # 并按 src-server/go.sum 缓存模块（src-server 含 gin/gorm 等外部依赖，矩阵多架构共享模块缓存省去重复下载）。
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: src-server/go.mod
-          cache: false
+          cache-dependency-path: src-server/go.sum
 
       # 安装 Rust 工具链（Tauri 后端使用 Rust 编写）
       - name: Install Rust stable
@@ -66,6 +66,10 @@ jobs:
       # 安装前端及 Tauri 依赖
       - name: Install app dependencies
         run: pnpm install
+
+      # 预拉取 Go 依赖，供 beforeBuildCommand 的交叉编译复用（setup-go 缓存命中时近瞬时）。
+      - name: Download Go modules
+        run: go -C src-server mod download
 
       # tag 推送：构建 + 发布一体化。
       # tauri-action 在检测到 updater 配置后会自动：
@@ -85,9 +89,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          # 按矩阵目标交叉编译 Go 服务：beforeBuildCommand 的 server:build 据此产出匹配架构的二进制。
+          # 按矩阵目标交叉编译 Go 服务：beforeBuildCommand 调用的服务构建脚本据此产出匹配架构的二进制。
           # arm64 runner 构建 x86_64-apple-darwin 时，GOARCH=amd64 让 go 交叉编译出 amd64 二进制，避免 Intel Mac 运行时架构不匹配。
-          # Go 服务纯 stdlib 无 CGO，可纯交叉编译；build-server.mjs 按 GOOS/GOARCH 产出 go-server-bin-<triple>[.exe]（Tauri sidecar 约定，tauri-build 据此拷贝/打包并签名）。
+          # Go 服务纯 Go 实现、无 CGO，可纯交叉编译；build-server.mjs 按 GOOS/GOARCH 产出 <app-name>-go_server_bin-<triple>[.exe]（Tauri sidecar 约定，tauri-build 据此拷贝/打包并签名）。
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         with:

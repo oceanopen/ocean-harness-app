@@ -5,7 +5,7 @@
 # 同步本文件，否则前后端类型会静默漂移。本 workflow 跑 verify:bindings（重新生成并断言 git diff 为空）
 # 作为兜底，把漂移拦在 PR 阶段。
 #
-# 流程须先 server:build：gen:bindings 是 host 构建（cargo run 不带 --target），tauri-build 的 build script
+# 流程须先构建 host triple 的 Go sidecar：gen:bindings 是 host 构建（cargo run 不带 --target），tauri-build 的 build script
 # 会按 host triple 找 sidecar，缺失即硬报错。macos-latest runner 上 host==target，一份 host triple 即可。
 name: CI
 
@@ -29,13 +29,13 @@ jobs:
         with:
           node-version: 24
 
-      # gen:bindings 走 host 构建，需要 host triple 的 sidecar；setup-go 锁定 src-server/go.mod 的 go 版本。
-      # cache: false：src-server 零依赖、无 go.sum，无可缓存内容。
+      # gen:bindings 走 host 构建，需要 host triple 的 sidecar。setup-go 按 go.mod 锁定 Go 版本，
+      # 并按 src-server/go.sum 缓存模块（src-server 含 gin/gorm 等外部依赖，缓存命中省去重复下载）。
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: src-server/go.mod
-          cache: false
+          cache-dependency-path: src-server/go.sum
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@v1
@@ -45,8 +45,11 @@ jobs:
       - name: Install app dependencies
         run: pnpm install
 
+      - name: Download Go modules
+        run: go -C src-server mod download
+
       - name: Build Go sidecar (host triple)
-        run: pnpm server:build
+        run: pnpm server:release
 
       - name: Verify bindings in sync
         run: pnpm verify:bindings

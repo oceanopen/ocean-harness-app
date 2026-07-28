@@ -7,8 +7,7 @@
 // 故本脚本须按目标 GOOS/GOARCH 产出带 triple 后缀的文件名（Tauri 不会自动补 triple）。
 //
 // baseName 复用各 conf 的 identifier，让进程名携带环境标识（ps/活动监视器可区分）：
-//   - dev：com.we.claude.terminal.dev-go_server_bin（identifier 取自 tauri.dev.conf.json）
-//   - build：com.we.claude.terminal-go_server_bin（identifier 取自 tauri.conf.json）
+//   dev 取 tauri.dev.conf.json、build 取 tauri.conf.json 的 identifier（见下方 outName 拼接）。
 // 运行模式由 beforeDevCommand/beforeBuildCommand 经 cross-env 注入 TAURI_RUN_MODE=dev/build（跨平台）；Rust 侧
 // app.shell().sidecar(app.config().identifier()+"-go_server_bin") 同源取 identifier，故 dev/build 用同一份代码。
 //
@@ -66,7 +65,7 @@ const runMode = process.env.TAURI_RUN_MODE;
 if (runMode !== 'dev' && runMode !== 'build') {
   throw new Error(
     `TAURI_RUN_MODE env required (dev|build), got: ${String(runMode)}. `
-    + '通过 pnpm tauri:dev / pnpm tauri:build 触发会自动注入；手动跑请显式设置，例如 cross-env TAURI_RUN_MODE=dev pnpm server:build。',
+    + '由 beforeDevCommand/beforeBuildCommand 经 cross-env 注入；通过 pnpm tauri:dev / pnpm tauri:build 触发自动获得，直接运行本脚本时需自行设置 TAURI_RUN_MODE=dev|build。',
   );
 }
 
@@ -79,7 +78,7 @@ mkdirSync('src-tauri/binaries', { recursive: true });
 
 // 产目标 triple 一份（app 实际运行的架构）。
 // 文件名 = {identifier}-go_server_bin-{triple}{exe}：triple 是 Tauri sidecar 约定后缀，
-// 去掉后即进程名（identifier 携带 dev/build 标识，如 com.we.claude.terminal.dev-go_server_bin）。
+// 去掉后即进程名（identifier 携带 dev/build 标识）。
 const triple = targetTriple(targetGOOS, targetGOARCH);
 const outName = `${identifier}-go_server_bin-${triple}${exeSuffixFor(targetGOOS)}`;
 execFileSync(

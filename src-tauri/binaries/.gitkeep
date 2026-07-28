@@ -1,2 +1,2 @@
-# 占位：Tauri sidecar 二进制（go-server-bin-<triple>）由 pnpm server:build 生成于此，
+# 占位：Tauri sidecar 二进制（<app-name>-go_server_bin-<triple>）由服务构建脚本生成于此，
 # 不入库；tauri-build 在 cargo build 时按当前 target triple 拷贝到 target/<profile>/。
