@@ -46,7 +46,7 @@ jobs:
         run: pnpm install
 
       - name: Build Go sidecar (host triple)
-        run: cross-env TAURI_RUN_MODE=dev pnpm server:build
+        run: TAURI_RUN_MODE=dev pnpm server:build
 
       - name: Verify bindings in sync
         run: pnpm verify:bindings
