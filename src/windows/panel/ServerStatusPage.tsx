@@ -16,6 +16,8 @@ import {
   Typography,
 } from '@mui/material';
 import { commands } from '@src/shared/bindings';
+import { EVENT_HTTP_SERVER_STATE_CHANGED } from '@src/shared/events';
+import { listen } from '@tauri-apps/api/event';
 
 import { useCallback, useEffect, useState } from 'react';
 
@@ -55,20 +57,11 @@ const MODE_LABEL: Record<string, string> = {
 // 浮层 toast 严重级别（操作失败用 error，状态提示用 warning，成功用 success）。
 type ToastSeverity = 'warning' | 'error' | 'success';
 
-// 启用服务后 Go 绑定端口需要一点时间，重试拉 serverRunInfo。
-const FETCH_RETRY_TIMES = 6;
-const FETCH_RETRY_DELAY_MS = 400;
-// 轮询服务状态，保持 Switch 与后端实际运行态一致。
-const STATUS_POLL_INTERVAL_MS = 3000;
+// reload 结果：区分 running/starting/stopped/error，供调用方（handleRefresh 等）决定 toast。
+type ReloadResult = 'running' | 'starting' | 'stopped' | 'error';
 
 // 标签列统一样式（固定宽度 + 轻底色，便于扫读）。
 const labelCellSx = { fontWeight: 600, width: 140, bgcolor: 'action.hover', whiteSpace: 'nowrap' } as const;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 // 把路径转成 shell 可直接 cd 的形式：双引号包裹。
 // 双引号在 bash/zsh（macOS、Linux）与 cmd/PowerShell（Windows）下均可用，跨平台通用、无需关心空格转义差异。
@@ -104,72 +97,76 @@ function ServerStatusPage() {
     setToastOpen(true);
   }, []);
 
-  // 拉取 serverRunInfo（带重试：服务刚启动时端口可能尚未就绪）。成功返回 true。
-  const fetchRunInfo = useCallback(async (address: string): Promise<boolean> => {
-    for (let i = 0; i < FETCH_RETRY_TIMES; i += 1) {
-      try {
-        const resp = await fetch(`${address}/api/baseInfo/getServerRunInfo`);
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
-        const body: ApiResponse<ServerRunInfo> = await resp.json();
-        if (body.code !== 0) {
-          throw new Error(body.msg || `code ${body.code}`);
-        }
-        setRunInfo(body.data);
-        return true;
-      } catch {
-        await sleep(FETCH_RETRY_DELAY_MS);
-      }
-    }
-    return false;
-  }, []);
-
-  // 拉取服务状态 + （运行中时）serverRunInfo。返回是否成功拿到完整信息（running 且 fetchRunInfo 成功）。
-  const reload = useCallback(async (): Promise<boolean> => {
+  // 同步服务状态 + 按运行态拉 serverRunInfo。返回 ReloadResult 供调用方决定 toast（本函数不弹 toast，轮询可安全调用）。
+  const reload = useCallback(async (): Promise<ReloadResult> => {
+    let s: HttpServerStatus;
     try {
-      const s = await commands.httpServerStatus();
-      setStatus(s);
-      if (s.running) {
-        const ok = await fetchRunInfo(s.address);
-        if (!ok) {
-          showToast(`请求本地服务失败（${s.address}）`, 'error');
-        }
-        return ok;
-      }
-      setRunInfo(null);
-      showToast('请先开启本地服务', 'warning');
-      return false;
-    } catch (e) {
-      showToast(`查询服务状态失败：${String(e)}`, 'error');
-      return false;
+      s = await commands.httpServerStatus();
+    } catch {
+      return 'error';
     }
-  }, [fetchRunInfo, showToast]);
+    setStatus(s);
+    if (s.runState === 'starting') {
+      return 'starting';
+    }
+    if (s.runState === 'stopped') {
+      setRunInfo(null);
+      return 'stopped';
+    }
+    // running：Rust 探活保证端口已就绪，直接 fetch 一次（无重试）。
+    try {
+      const resp = await fetch(`${s.address}/api/baseInfo/getServerRunInfo`);
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      const body: ApiResponse<ServerRunInfo> = await resp.json();
+      if (body.code !== 0) {
+        throw new Error(body.msg || `code ${body.code}`);
+      }
+      setRunInfo(body.data);
+      return 'running';
+    } catch {
+      return 'error';
+    }
+  }, []);
 
   // 初次挂载加载。
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  // 轮询服务状态（仅同步 running 标志，保持 Switch 准确；轻量）。
+  // 监听后端 run_state 变化事件（替代轮询）：状态转换时 reload 同步前端，无定时器开销。
   useEffect(() => {
-    const id = window.setInterval(() => {
-      commands.httpServerStatus().then(setStatus).catch(() => {});
-    }, STATUS_POLL_INTERVAL_MS);
-    return () => window.clearInterval(id);
-  }, []);
+    const unlistenPromise = listen(EVENT_HTTP_SERVER_STATE_CHANGED, () => {
+      void reload();
+    });
+    return () => {
+      unlistenPromise.then(fn => fn()).catch(() => {});
+    };
+  }, [reload]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    const ok = await reload();
-    if (ok) {
-      showToast('刷新成功', 'success');
+    const result = await reload();
+    switch (result) {
+      case 'running':
+        showToast('刷新成功', 'success');
+        break;
+      case 'starting':
+        showToast('服务启动中，请稍后', 'warning');
+        break;
+      case 'stopped':
+        showToast('请先开启本地服务', 'warning');
+        break;
+      case 'error':
+        showToast('刷新失败', 'error');
+        break;
     }
     setRefreshing(false);
   }, [reload, showToast]);
 
   // Switch 开关：开启时先清理跨会话残留的 go-server 孤立进程（best-effort，不阻断），再调 Rust 启停服务。
-  // 成功后同步状态 + 按需拉 serverRunInfo。
+  // Rust 后台探活决定最终态（starting→running/stopped），此处调 reload 同步前端状态。
   const handleToggle = useCallback(
     async (checked: boolean) => {
       setToggling(true);
@@ -183,21 +180,12 @@ function ServerStatusPage() {
           showToast(`${checked ? '启动' : '停止'}服务失败：${r.error}`, 'error');
           return;
         }
-        const s = await commands.httpServerStatus();
-        setStatus(s);
-        if (checked) {
-          const ok = await fetchRunInfo(s.address);
-          if (!ok) {
-            showToast(`服务已启动，但拉取信息失败（${s.address}）`, 'warning');
-          }
-        } else {
-          setRunInfo(null);
-        }
+        await reload();
       } finally {
         setToggling(false);
       }
     },
-    [fetchRunInfo, showToast],
+    [reload, showToast],
   );
 
   // 复制目录路径（双引号包裹，便于在任意终端 cd 后直接粘贴）；成功/失败均 toast 反馈。
@@ -216,7 +204,9 @@ function ServerStatusPage() {
     [showToast],
   );
 
-  const running = status?.running ?? false;
+  const runState = status?.runState ?? 'stopped';
+  const running = runState === 'running';
+  const starting = runState === 'starting';
   // 运行模式取自 Go 接口（serverInfo.mode）。
   const modeLabel = runInfo ? MODE_LABEL[runInfo.serverInfo.mode] ?? runInfo.serverInfo.mode : '';
   const loaded = status !== null;
@@ -253,11 +243,11 @@ function ServerStatusPage() {
                         <Switch
                           checked={running}
                           onChange={(_, c) => void handleToggle(c)}
-                          disabled={toggling}
+                          disabled={toggling || starting}
                           size="small"
                         />
-                        <Typography variant="body2" color={running ? 'success.main' : 'text.secondary'}>
-                          {running ? '运行中' : '已停止'}
+                        <Typography variant="body2" color={running ? 'success.main' : starting ? 'warning.main' : 'text.secondary'}>
+                          {running ? '运行中' : starting ? '启动中...' : '已停止'}
                         </Typography>
                       </Stack>
                     </TableCell>
@@ -327,7 +317,7 @@ function ServerStatusPage() {
               </Table>
             </TableContainer>
 
-            {!running && (
+            {runState === 'stopped' && (
               <Alert severity="info">
                 服务未运行，系统信息暂不可用。打开上方「服务状态」开关即可启动本地服务。
               </Alert>

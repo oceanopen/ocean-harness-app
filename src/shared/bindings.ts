@@ -185,13 +185,21 @@ export type ClaudeSessionStatus =
 "Dead";
 
 /**
+ *  HTTP 本地服务的运行态：三态，反映 sidecar 生命周期。
+ *  - Stopped：未运行（从未启动 / 已停止 / 探活超时回退）
+ *  - Starting：已 spawn 子进程，TCP 探活端口就绪中
+ *  - Running：端口已就绪，HTTP 服务可 fetch
+ */
+export type HttpServerRunState = "stopped" | "starting" | "running";
+
+/**
  *  HTTP 本地服务的运行态快照（http_server_status 命令返回）。
  *  前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch <address>/api/baseInfo/getServerRunInfo。
  *  仅出参（后端→前端），故不 derive Deserialize。
  */
 export type HttpServerStatus = {
-	/**  服务是否在运行（sidecar 子进程存活）。 */
-	running: boolean,
+	/**  运行态（stopped/starting/running）。running 时端口已就绪，可直接 fetch，无需重试。 */
+	runState: HttpServerRunState,
 	/**  服务地址（http://127.0.0.1:<port>），前端 fetch getServerRunInfo 用。端口随模式：dev=9000，build=9100。 */
 	address: string,
 	/**  监听端口（dev=9000，build=9100）。 */

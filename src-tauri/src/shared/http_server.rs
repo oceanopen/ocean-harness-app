@@ -19,7 +19,8 @@
 //   - init() 永不返回 Err、永不阻塞 setup；目录解析失败仅 log::warn 并跳过自动启动。
 //   - app 退出时尽力回收子进程，并通过 aborted 标志消除"退出与注册竞态"产生的孤儿。
 //
-// 启动阶段（start_server）：仅负责停同会话 child + spawn，不夹杂端口清理逻辑（单一职责）。
+// 启动阶段（start_server）：停同会话 child + spawn，spawn 后置 Starting；后台 TCP 探活端口就绪后置 Running，
+//   超时回退 Stopped + kill。run_state 三态（Stopped/Starting/Running）供前端渲染，Running 即端口就绪可直接 fetch。
 //
 // 孤立进程清理（cleanup_orphan_http_server 命令）：app 异常退出后跨会话残留的 go-server 可能占用端口，
 //   导致新 sidecar bind 失败。前端「服务状态」页开关开启时在 start 前显式调用本命令清理——
@@ -30,31 +31,33 @@
 // Windows 直接 kill()（无 SIGTERM 概念）。
 
 use std::fs;
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
-use crate::shared::types::HttpServerStatus;
+use crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED;
+use crate::shared::types::{HttpServerRunState, HttpServerStatus};
 
 /// dev/release 模式各自的默认端口（不支持配置化，由模式决定，直接注入环境变量）。
 const PORT_DEBUG: u16 = 9000;
 const PORT_RELEASE: u16 = 9100;
 
-/// HTTP 服务运行态：持有 sidecar 子进程 handle、运行/退出标志、运行模式与注入给 Go 的目录。
+/// HTTP 服务运行态：持有 sidecar 子进程 handle、运行态、运行模式与注入给 Go 的目录。
 pub struct HttpServerState {
     /// sidecar 子进程 handle（用于停止时 kill）；None 表示未运行。
     pub child: Mutex<Option<CommandChild>>,
     /// shutdown 置位后，后台 worker 若刚 spawn 出子进程会自行 kill，避免退出竞态产生孤儿。
     pub aborted: AtomicBool,
-    /// 进程是否在运行（供 http_server_status 命令查询，与 child 是否 Some 对应）。
-    pub running: AtomicBool,
+    /// 运行态（Stopped/Starting/Running），供 http_server_status 查询与前端渲染。
+    pub run_state: AtomicU8,
     /// 运行模式（debug/release），对应 Go 的 gin mode。
     pub mode: &'static str,
     /// 监听端口（dev=9000，build=9100）。
@@ -65,6 +68,28 @@ pub struct HttpServerState {
     pub log_dir: String,
     /// sqlite 数据目录（注入 GO_SERVER_SQLITE_DIR）。
     pub sqlite_dir: String,
+}
+
+impl HttpServerState {
+    /// 当前运行态（从 AtomicU8 还原枚举）。
+    fn run_state(&self) -> HttpServerRunState {
+        match self.run_state.load(Ordering::SeqCst) {
+            1 => HttpServerRunState::Starting,
+            2 => HttpServerRunState::Running,
+            _ => HttpServerRunState::Stopped,
+        }
+    }
+    /// 设置运行态（枚举转 AtomicU8）。
+    fn set_run_state(&self, s: HttpServerRunState) {
+        self.run_state.store(s as u8, Ordering::SeqCst);
+    }
+}
+
+/// 更新 run_state 并通知前端（emit http-server:state-changed，前端 listen 后 reload 同步）。
+/// 仅状态转换点调用；init 的初始值与 shutdown（app 退出、webview 已关）不 emit。
+fn transition_state(app: &AppHandle, state: &HttpServerState, new: HttpServerRunState) {
+    state.set_run_state(new);
+    let _ = app.emit(EVENT_HTTP_SERVER_STATE_CHANGED, ());
 }
 
 /// 解析 app_data_dir 下的 go-server 数据目录并确保存在，返回 (log_dir, sqlite_dir)。
@@ -100,6 +125,22 @@ fn terminate_child(child: CommandChild) {
         thread::sleep(Duration::from_millis(200));
     }
     let _ = child.kill();
+}
+
+/// TCP 探活 127.0.0.1:port 是否已被监听（= Go gin 已 ListenAndServe、bind 端口）。
+/// 每 1s 重试一次、单次 connect 超时 200ms、总超时 5s；就绪返回 true。
+fn wait_for_port_ready(port: u16) -> bool {
+    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
+        .parse()
+        .expect("valid loopback socket addr");
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+            return true;
+        }
+        thread::sleep(Duration::from_secs(1));
+    }
+    false
 }
 
 // ============================================================
@@ -293,21 +334,22 @@ fn kill_orphan_pid(pid: u32) {
 /// 进程退出后清运行态 + child（幂等；事件线程与 stop/shutdown 都可能调到）。
 fn mark_stopped(app: &AppHandle) {
     if let Some(state) = app.try_state::<HttpServerState>() {
-        state.running.store(false, Ordering::SeqCst);
+        transition_state(app, state.inner(), HttpServerRunState::Stopped);
         if let Ok(mut guard) = state.child.lock() {
             *guard = None;
         }
     }
 }
 
-/// 启动 sidecar（仅 spawn，不含端口清理逻辑）。在调用方线程同步执行；失败返回 Err。
+/// 启动 sidecar（仅 spawn + 探活，不含端口清理逻辑）。在调用方线程同步执行；失败返回 Err。
 ///
 /// 跨会话 go-server 孤立进程的清理已迁移到独立 IPC 命令 `cleanup_orphan_http_server`，
 /// 由前端「服务状态」页开关开启时在调用本函数前显式触发（详见该命令注释）。
 ///
 /// 1) 停掉同会话 Rust 持有的 child（强制干净重启；init 时 child 为 None，空操作）。
-/// 2) 加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 置 running；
+/// 2) 加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 置 Starting；
 ///    spawn 后再复查 aborted，若期间 app 已退出则当场 kill，不留孤儿。
+/// 3) 后台 TCP 探活端口就绪后置 Running（前端可直接 fetch，无需重试）；超时回退 Stopped + kill child。
 fn start_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
 
@@ -319,7 +361,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
             .map_err(|e| format!("child mutex poisoned: {e}"))?;
         if let Some(child) = guard.take() {
             terminate_child(child);
-            state.running.store(false, Ordering::SeqCst);
+            transition_state(app, state.inner(), HttpServerRunState::Stopped);
             log::info!("[http-server] stopped existing child before (re)start");
         }
     }
@@ -330,7 +372,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         .lock()
         .map_err(|e| format!("child mutex poisoned: {e}"))?;
 
-    // 并发兜底：另一个线程可能已在此期间 spawn（本函数不再用 running 跳过，改用 child 已 Some 判定）。
+    // 并发兜底：另一个线程可能已在此期间 spawn（本函数不靠 run_state 跳过，改用 child 已 Some 判定）。
     if guard.is_some() {
         return Ok(());
     }
@@ -366,14 +408,35 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     }
 
     *guard = Some(child);
-    state.running.store(true, Ordering::SeqCst);
+    transition_state(app, state.inner(), HttpServerRunState::Starting);
     log::info!(
-        "[http-server] started (mode={}, port={}, addr={})",
+        "[http-server] spawned (mode={}, port={}, addr={}); waiting for port ready",
         state.mode,
         state.port,
         state.address
     );
-    drop(guard); // 释放锁，事件线程才能访问 child。
+    drop(guard); // 释放锁，事件线程与探活线程才能访问 child。
+
+    // 后台探活：等 Go bind 端口就绪后置 Running；超时判定启动失败，回退 Stopped + kill child。
+    let probe_handle = app.clone();
+    thread::spawn(move || {
+        let state = probe_handle.state::<HttpServerState>();
+        if wait_for_port_ready(state.port) {
+            transition_state(&probe_handle, state.inner(), HttpServerRunState::Running);
+            log::info!("[http-server] running (port {} ready)", state.port);
+        } else {
+            log::warn!(
+                "[http-server] port {} not ready within timeout; killing sidecar",
+                state.port
+            );
+            if let Ok(mut g) = state.child.lock() {
+                if let Some(child) = g.take() {
+                    terminate_child(child);
+                }
+            }
+            transition_state(&probe_handle, state.inner(), HttpServerRunState::Stopped);
+        }
+    });
 
     // 事件线程：转发 sidecar 的 stdout/stderr/终止/错误。
     // Stderr 用 warn 级：Go 的 zap 控制台日志默认写 stderr（含正常 listening 信息），release 日志级别为 Warn，
@@ -423,7 +486,7 @@ fn stop_server(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("child mutex poisoned: {e}"))?;
     if let Some(child) = guard.take() {
         terminate_child(child);
-        state.running.store(false, Ordering::SeqCst);
+        transition_state(app, state.inner(), HttpServerRunState::Stopped);
         log::info!("[http-server] stopped");
     }
     Ok(())
@@ -456,7 +519,7 @@ pub fn init(app: &AppHandle) {
     app.manage(HttpServerState {
         child: Mutex::new(None),
         aborted: AtomicBool::new(false),
-        running: AtomicBool::new(false),
+        run_state: AtomicU8::new(HttpServerRunState::Stopped as u8),
         mode,
         port,
         address: format!("http://127.0.0.1:{}", port),
@@ -482,7 +545,7 @@ pub fn shutdown(state: &HttpServerState) {
     if let Ok(mut guard) = state.child.lock() {
         if let Some(child) = guard.take() {
             terminate_child(child);
-            state.running.store(false, Ordering::SeqCst);
+            state.set_run_state(HttpServerRunState::Stopped);
             log::info!("[http-server] shutdown complete");
         }
     }
@@ -497,7 +560,7 @@ pub fn shutdown(state: &HttpServerState) {
 #[specta::specta]
 pub fn http_server_status(state: State<'_, HttpServerState>) -> HttpServerStatus {
     HttpServerStatus {
-        running: state.running.load(Ordering::SeqCst),
+        run_state: state.run_state(),
         address: state.address.clone(),
         port: state.port,
         mode: state.mode.to_string(),

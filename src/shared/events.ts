@@ -12,3 +12,5 @@ export const EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT = 'pet-claude-sessions-task:re
 export const EVENT_PANEL_NAVIGATE = 'panel:navigate';
 
 export const EVENT_PANEL_SHOWN = 'panel:shown';
+
+export const EVENT_HTTP_SERVER_STATE_CHANGED = 'http-server:state-changed';

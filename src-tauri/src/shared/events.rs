@@ -26,3 +26,7 @@ pub const EVENT_PANEL_NAVIGATE: &str = "panel:navigate";
 /// panel 窗口从隐藏恢复时广播（无 payload）。show_panel_window 在 show 后 emit_to panel 窗口，
 /// 订阅方（RepositoriesPage）据此触发数据刷新，确保用户看到的始终是最新状态。
 pub const EVENT_PANEL_SHOWN: &str = "panel:shown";
+
+/// HTTP 本地服务运行态变更时广播（无 payload）。run_state 三态转换（Stopped/Starting/Running）
+/// 时由 http_server 的 transition_state 触发；ServerStatusPage 监听后调 reload 同步前端，替代轮询。
+pub const EVENT_HTTP_SERVER_STATE_CHANGED: &str = "http-server:state-changed";
