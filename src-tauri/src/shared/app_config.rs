@@ -31,6 +31,12 @@ pub const DEFAULT_ITERM2_SPLIT_DIRECTION: &str = "horizontal";
 pub const TERMINAL_POST_OPEN_COMMAND_KEY: &str = "terminal_post_open_command";
 pub const DEFAULT_TERMINAL_POST_OPEN_COMMAND: &str = "";
 
+/// HTTP 本地服务端口（Go sidecar）。留空或越界=用模式默认（dev 9000 / release 9100，由 http_server 解析）。
+/// min/max 与前端 src/shared/app_config.ts 镜像，且对齐 Go sidecar 的端口校验区间，改动任一处需同步另一处。
+pub const HTTP_SERVER_PORT_KEY: &str = "http_server_port";
+pub const MIN_HTTP_SERVER_PORT: u16 = 3000;
+pub const MAX_HTTP_SERVER_PORT: u16 = 10000;
+
 pub struct AppConfigState(pub Mutex<Connection>);
 
 pub fn init(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {

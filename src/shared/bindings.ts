@@ -200,9 +200,9 @@ export type HttpServerRunState = "stopped" | "starting" | "running";
 export type HttpServerStatus = {
 	/**  运行态（stopped/starting/running）。running 时端口已就绪，可直接 fetch，无需重试。 */
 	runState: HttpServerRunState,
-	/**  服务地址（http://127.0.0.1:<port>），前端 fetch getServerRunInfo 用。端口随模式：dev=9000，build=9100。 */
+	/**  服务地址（http://127.0.0.1:<port>），前端 fetch getServerRunInfo 用。 */
 	address: string,
-	/**  监听端口（dev=9000，build=9100）。 */
+	/**  监听端口（默认 dev=9000/build=9100，可由「服务配置」覆盖）。 */
 	port: number,
 	/**  运行模式（debug/release），与 Go gin mode 对齐。 */
 	mode: string,

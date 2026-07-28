@@ -3,6 +3,7 @@
   "menu": {
     "appConfig": "App Settings",
     "monitorConfig": "Monitor Config",
+    "serviceConfig": "Service Config",
     "about": "About"
   },
   "row": {
@@ -10,7 +11,8 @@
     "appearance": "Appearance",
     "pollInterval": "Fallback poll interval",
     "iterm2SplitDirection": "iTerm2 split direction",
-    "terminalPostOpenCommand": "Run after opening terminal"
+    "terminalPostOpenCommand": "Run after opening terminal",
+    "httpServerPort": "HTTP server port"
   },
   "option": {
     "followSystem": "Follow system",
@@ -27,7 +29,8 @@
   },
   "help": {
     "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events.",
-    "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev."
+    "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev.",
+    "httpServerPort": "Leave empty to use the default port ({{port}}). Range 3000–10000. Manually restart the service on the status page to apply."
   },
   "button": {
     "reset": "Reset",

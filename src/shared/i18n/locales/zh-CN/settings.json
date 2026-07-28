@@ -3,6 +3,7 @@
   "menu": {
     "appConfig": "应用设置",
     "monitorConfig": "终端监听配置",
+    "serviceConfig": "服务配置",
     "about": "关于"
   },
   "row": {
@@ -10,7 +11,8 @@
     "appearance": "外观",
     "pollInterval": "兜底轮询周期",
     "iterm2SplitDirection": "iTerm2 分屏方向",
-    "terminalPostOpenCommand": "打开终端后执行"
+    "terminalPostOpenCommand": "打开终端后执行",
+    "httpServerPort": "HTTP 服务端口"
   },
   "option": {
     "followSystem": "跟随系统",
@@ -27,7 +29,8 @@
   },
   "help": {
     "pollInterval": "即时性由文件监听负责，此处仅驱动失效会话清理与文件监听漏报兜底。",
-    "terminalPostOpenCommand": "cd 进入仓库目录后会自动执行此命令，留空则只 cd。例如 add_proxy 或 ./bootstrap.sh；多个命令可用 && 拼接，如 add_proxy && npm run dev。"
+    "terminalPostOpenCommand": "cd 进入仓库目录后会自动执行此命令，留空则只 cd。例如 add_proxy 或 ./bootstrap.sh；多个命令可用 && 拼接，如 add_proxy && npm run dev。",
+    "httpServerPort": "留空使用默认端口（{{port}}），范围 3000–10000。修改后需在服务状态页手动重启服务生效。"
   },
   "button": {
     "reset": "重置",

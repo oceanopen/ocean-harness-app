@@ -62,6 +62,20 @@ export const DEFAULT_ITERM2_SPLIT_DIRECTION: Iterm2SplitDirection = 'horizontal'
 export const TERMINAL_POST_OPEN_COMMAND_KEY = 'terminal_post_open_command';
 export const DEFAULT_TERMINAL_POST_OPEN_COMMAND = '';
 
+// HTTP 本地服务端口（Go sidecar）。留空=用模式默认（由后端解析）。
+// min/max 与后端 app_config.rs 镜像，且对齐 Go sidecar 的端口校验区间，改动任一处需同步另一处。
+export const HTTP_SERVER_PORT_KEY = 'http_server_port';
+export const MIN_HTTP_SERVER_PORT = 3000;
+export const MAX_HTTP_SERVER_PORT = 10000;
+
+// 默认端口按运行模式（debug/release），与 Rust http_server.rs 的 default_port() 逻辑对应。
+// 前端用于设置页帮助文案展示当前运行时的具体默认端口（而非 dev/release 并列）。
+export const DEFAULT_HTTP_SERVER_PORT_DEBUG = 9000;
+export const DEFAULT_HTTP_SERVER_PORT_RELEASE = 9100;
+export function defaultHttpServerPort(mode: string): number {
+  return mode === 'release' ? DEFAULT_HTTP_SERVER_PORT_RELEASE : DEFAULT_HTTP_SERVER_PORT_DEBUG;
+}
+
 // panel 窗口侧边栏折叠状态。值用 YesNo，缺失视为 NO（默认展开）。
 // 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 appearance 先例）。
 export const PANEL_SIDEBAR_COLLAPSED_KEY = 'panel_sidebar_collapsed';

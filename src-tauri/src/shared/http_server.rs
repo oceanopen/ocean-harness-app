@@ -9,7 +9,7 @@
 //   identifier 随当前生效 conf 自动切换，故 dev/build 用同一份代码。
 //
 // 配置全部走环境变量注入 Go 进程（不读配置文件）：
-//   GO_SERVER_MODE（debug/release）、GO_SERVER_PORT（dev=9000/build=9100，不支持配置化）、
+//   GO_SERVER_MODE（debug/release）、GO_SERVER_PORT（默认 dev=9000/build=9100，可由系统设置「服务配置」覆盖）、
 //   GO_SERVER_LOG_DIR、GO_SERVER_SQLITE_DIR（均由 app_data_dir 派生，dev/build 自动隔离）。
 //
 // IPC：前端「服务状态」页通过 http_server_status 查询运行态与地址，通过 set_http_server_enabled
@@ -35,7 +35,7 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -43,12 +43,49 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
+use crate::shared::app_config::{
+    AppConfigState, HTTP_SERVER_PORT_KEY, MAX_HTTP_SERVER_PORT, MIN_HTTP_SERVER_PORT,
+    read_app_config_raw,
+};
 use crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED;
 use crate::shared::types::{HttpServerRunState, HttpServerStatus};
 
-/// dev/release 模式各自的默认端口（不支持配置化，由模式决定，直接注入环境变量）。
+/// dev/release 模式各自的默认端口（用户未在「服务配置」设置 http_server_port 时回退于此）。
 const PORT_DEBUG: u16 = 9000;
 const PORT_RELEASE: u16 = 9100;
+
+/// 当前编译模式的默认端口（cfg! 编译期决定）。
+fn default_port() -> u16 {
+    if cfg!(debug_assertions) {
+        PORT_DEBUG
+    } else {
+        PORT_RELEASE
+    }
+}
+
+/// 解析 HTTP 服务端口：读 app_config 的 http_server_port，合法则用，否则回退模式默认。
+/// 在 start_server 调用，保证每次（手动）重启都用最新配置（不监听配置变更）。
+fn resolve_server_port(app: &AppHandle) -> u16 {
+    let default = default_port();
+    let Some(cfg) = app.try_state::<AppConfigState>() else {
+        return default;
+    };
+    let raw = read_app_config_raw(cfg.inner(), HTTP_SERVER_PORT_KEY).unwrap_or(None);
+    let Some(raw) = raw.filter(|s| !s.trim().is_empty()) else {
+        return default;
+    };
+    match raw.trim().parse::<u16>() {
+        Ok(p) if (MIN_HTTP_SERVER_PORT..=MAX_HTTP_SERVER_PORT).contains(&p) => p,
+        _ => {
+            log::warn!(
+                "[http-server] invalid http_server_port {:?}, fallback to default {}",
+                raw,
+                default
+            );
+            default
+        }
+    }
+}
 
 /// HTTP 服务运行态：持有 sidecar 子进程 handle、运行态、运行模式与注入给 Go 的目录。
 pub struct HttpServerState {
@@ -60,10 +97,8 @@ pub struct HttpServerState {
     pub run_state: AtomicU8,
     /// 运行模式（debug/release），对应 Go 的 gin mode。
     pub mode: &'static str,
-    /// 监听端口（dev=9000，build=9100）。
-    pub port: u16,
-    /// 服务地址（http://127.0.0.1:<port>），前端 fetch 用。
-    pub address: String,
+    /// 监听端口（默认 dev=9000/build=9100；start_server 读 app_config 的 http_server_port 覆盖）。
+    pub port: AtomicU16,
     /// 日志目录（注入 GO_SERVER_LOG_DIR）。
     pub log_dir: String,
     /// sqlite 数据目录（注入 GO_SERVER_SQLITE_DIR）。
@@ -82,6 +117,18 @@ impl HttpServerState {
     /// 设置运行态（枚举转 AtomicU8）。
     fn set_run_state(&self, s: HttpServerRunState) {
         self.run_state.store(s as u8, Ordering::SeqCst);
+    }
+    /// 当前端口（AtomicU16 读取）。
+    fn port(&self) -> u16 {
+        self.port.load(Ordering::SeqCst)
+    }
+    /// 设置端口（start_server 解析配置后更新）。
+    fn set_port(&self, port: u16) {
+        self.port.store(port, Ordering::SeqCst);
+    }
+    /// 服务地址（按当前端口现算）。
+    fn address(&self) -> String {
+        format!("http://127.0.0.1:{}", self.port())
     }
 }
 
@@ -385,6 +432,10 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         return Err("log_dir/sqlite_dir not resolved".into());
     }
 
+    // 解析端口：读 app_config 的 http_server_port，缺省回退模式默认；更新 state 供 status/探活使用。
+    let port = resolve_server_port(app);
+    state.set_port(port);
+
     // sidecar 名复用当前 identifier（dev/build 各自的 conf 决定），自动区分环境：
     //   dev → com.we.claude.terminal.dev-go_server_bin / build → com.we.claude.terminal-go_server_bin
     let sidecar_name = format!("{}-go_server_bin", app.config().identifier);
@@ -393,7 +444,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         .sidecar(&sidecar_name)
         .map_err(|e| format!("resolve {sidecar_name} sidecar failed: {e}"))?
         .env("GO_SERVER_MODE", state.mode)
-        .env("GO_SERVER_PORT", state.port.to_string())
+        .env("GO_SERVER_PORT", port.to_string())
         .env("GO_SERVER_LOG_DIR", &state.log_dir)
         .env("GO_SERVER_SQLITE_DIR", &state.sqlite_dir)
         .spawn()
@@ -410,10 +461,9 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     *guard = Some(child);
     transition_state(app, state.inner(), HttpServerRunState::Starting);
     log::info!(
-        "[http-server] spawned (mode={}, port={}, addr={}); waiting for port ready",
+        "[http-server] spawned (mode={}, port={}); waiting for port ready",
         state.mode,
-        state.port,
-        state.address
+        port
     );
     drop(guard); // 释放锁，事件线程与探活线程才能访问 child。
 
@@ -421,20 +471,28 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     let probe_handle = app.clone();
     thread::spawn(move || {
         let state = probe_handle.state::<HttpServerState>();
-        if wait_for_port_ready(state.port) {
-            transition_state(&probe_handle, state.inner(), HttpServerRunState::Running);
-            log::info!("[http-server] running (port {} ready)", state.port);
+        if wait_for_port_ready(port) {
+            transition_state(
+                &probe_handle,
+                state.inner(),
+                HttpServerRunState::Running,
+            );
+            log::info!("[http-server] running (port {} ready)", port);
         } else {
             log::warn!(
                 "[http-server] port {} not ready within timeout; killing sidecar",
-                state.port
+                port
             );
             if let Ok(mut g) = state.child.lock() {
                 if let Some(child) = g.take() {
                     terminate_child(child);
                 }
             }
-            transition_state(&probe_handle, state.inner(), HttpServerRunState::Stopped);
+            transition_state(
+                &probe_handle,
+                state.inner(),
+                HttpServerRunState::Stopped,
+            );
         }
     });
 
@@ -497,10 +555,10 @@ fn stop_server(app: &AppHandle) -> Result<(), String> {
 /// 非核心依赖：**永不返回 Err、永不阻塞 setup**。先同步注册 state（含 mode/port/dirs），
 /// 确保前端 status 命令立即可用；实际 spawn 在后台线程，失败仅 log::warn。
 pub fn init(app: &AppHandle) {
-    let (mode, port) = if cfg!(debug_assertions) {
-        ("debug", PORT_DEBUG)
+    let mode = if cfg!(debug_assertions) {
+        "debug"
     } else {
-        ("release", PORT_RELEASE)
+        "release"
     };
 
     // 目录解析失败仅告警，state 仍注册（status 命令可用），但跳过自动启动。
@@ -521,8 +579,8 @@ pub fn init(app: &AppHandle) {
         aborted: AtomicBool::new(false),
         run_state: AtomicU8::new(HttpServerRunState::Stopped as u8),
         mode,
-        port,
-        address: format!("http://127.0.0.1:{}", port),
+        // 初值取模式默认；实际端口在 start_server 时按 app_config 解析覆盖。
+        port: AtomicU16::new(default_port()),
         log_dir,
         sqlite_dir,
     });
@@ -561,8 +619,8 @@ pub fn shutdown(state: &HttpServerState) {
 pub fn http_server_status(state: State<'_, HttpServerState>) -> HttpServerStatus {
     HttpServerStatus {
         run_state: state.run_state(),
-        address: state.address.clone(),
-        port: state.port,
+        address: state.address(),
+        port: state.port(),
         mode: state.mode.to_string(),
     }
 }
@@ -592,6 +650,6 @@ pub fn set_http_server_enabled(app: AppHandle, enabled: bool) -> Result<(), Stri
 #[specta::specta]
 pub fn cleanup_orphan_http_server(app: AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
-    reclaim_port_if_orphan_go_server(state.port, &app.config().identifier);
+    reclaim_port_if_orphan_go_server(state.port(), &app.config().identifier);
     Ok(())
 }

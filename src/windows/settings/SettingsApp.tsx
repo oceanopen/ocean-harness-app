@@ -1,3 +1,4 @@
+import HttpOutlinedIcon from '@mui/icons-material/HttpOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
@@ -18,8 +19,9 @@ import { useTranslation } from 'react-i18next';
 import AboutPage from './components/AboutPage';
 import AppConfigPage from './components/AppConfigPage';
 import MonitorConfigPage from './components/MonitorConfigPage';
+import ServiceConfigPage from './components/ServiceConfigPage';
 
-type MenuKey = 'appConfig' | 'monitorConfig' | 'about';
+type MenuKey = 'appConfig' | 'monitorConfig' | 'serviceConfig' | 'about';
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
@@ -32,6 +34,7 @@ function SettingsApp() {
   const menuItems: { key: MenuKey; label: string; icon: React.ReactNode }[] = [
     { key: 'appConfig', label: t('settings:menu.appConfig'), icon: <SettingsOutlinedIcon /> },
     { key: 'monitorConfig', label: t('settings:menu.monitorConfig'), icon: <SensorsOutlinedIcon /> },
+    { key: 'serviceConfig', label: t('settings:menu.serviceConfig'), icon: <HttpOutlinedIcon /> },
     { key: 'about', label: t('settings:menu.about'), icon: <InfoOutlinedIcon /> },
   ];
   // 顶部导航栏页面标题：当前激活菜单项 label；单层面包屑，预留未来主/子菜单扩展。
@@ -149,6 +152,7 @@ function SettingsApp() {
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
           {activeMenu === 'appConfig' && <AppConfigPage />}
           {activeMenu === 'monitorConfig' && <MonitorConfigPage />}
+          {activeMenu === 'serviceConfig' && <ServiceConfigPage />}
           {activeMenu === 'about' && <AboutPage />}
         </Box>
       </Box>
