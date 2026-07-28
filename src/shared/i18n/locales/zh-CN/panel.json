@@ -3,22 +3,7 @@
   "menu": {
     "claudeSessions": "Claude 会话监听",
     "repositories": "本地仓库管理",
-    "appDb": "应用数据库",
     "serverStatus": "服务状态"
-  },
-  "appDb": {
-    "tables": "数据表 ({{count}})",
-    "rowCount": "{{count}} 行",
-    "noSelection": "未选择表",
-    "noTables": "暂无数据表",
-    "emptyRows": "（空表）",
-    "retry": "重试",
-    "errorTitle": "加载失败",
-    "errorDesc": "读取表数据时出错，请重试",
-    "refreshTablesSuccess": "表列表已刷新",
-    "refreshTablesFail": "表列表刷新失败",
-    "refreshDumpSuccess": "表数据已刷新",
-    "refreshDumpFail": "表数据刷新失败"
   },
   "sidebar": {
     "collapse": "收起侧边栏",

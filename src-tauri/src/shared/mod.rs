@@ -1,5 +1,4 @@
 pub mod app_config;
-pub mod app_db_viewer;
 pub mod events;
 pub mod http_server;
 pub mod i18n;

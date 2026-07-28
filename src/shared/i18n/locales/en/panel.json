@@ -3,22 +3,7 @@
   "menu": {
     "claudeSessions": "Claude Sessions",
     "repositories": "Repository Management",
-    "appDb": "Application Database",
     "serverStatus": "Service Status"
-  },
-  "appDb": {
-    "tables": "Tables ({{count}})",
-    "rowCount": "{{count}} rows",
-    "noSelection": "No table selected",
-    "noTables": "No tables",
-    "emptyRows": "(empty table)",
-    "retry": "Retry",
-    "errorTitle": "Failed to load",
-    "errorDesc": "An error occurred while reading table data.",
-    "refreshTablesSuccess": "Tables refreshed",
-    "refreshTablesFail": "Failed to refresh tables",
-    "refreshDumpSuccess": "Table data refreshed",
-    "refreshDumpFail": "Failed to refresh table data"
   },
   "sidebar": {
     "collapse": "Collapse sidebar",

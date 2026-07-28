@@ -99,10 +99,6 @@ export const commands = {
 	refreshAllRepositories: () => typedError<Repository[], string>(__TAURI_INVOKE("refresh_all_repositories")),
 	/**  用系统文件管理器打开目录。dir 必须为存在的绝对路径。 */
 	openInFileManager: (dir: string) => typedError<null, string>(__TAURI_INVOKE("open_in_file_manager", { dir })),
-	/**  列出 app.db 全部用户表及其行数（只读）。前端「应用数据库」页左侧表列表数据源。 */
-	listAppDbTables: () => typedError<AppDbTableInfo[], string>(__TAURI_INVOKE("list_app_db_tables")),
-	/**  导出 app.db 指定表的列名 + 全部行（只读）。表名经白名单 + 存在性双重校验，防注入。 */
-	dumpAppDbTable: (table: string) => typedError<AppDbTableDump, string>(__TAURI_INVOKE("dump_app_db_table", { table })),
 	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
 	httpServerStatus: () => __TAURI_INVOKE<HttpServerStatus>("http_server_status"),
 	/**
@@ -135,34 +131,6 @@ export type AppConfigChangedPayload = {
 	/**  新值（配置统一以字符串形式存储，订阅方按 key 自行 decode）。 */
 	value: string,
 };
-
-/**  dump_app_db_table 返回：一张表的列名 + 全部行。每个单元格为 AppDbValue，前端按 kind 渲染。 */
-export type AppDbTableDump = {
-	/**  列名，顺序与 rows 中每行单元格一致。 */
-	columns: string[],
-	/**  行数据：每行为与 columns 等长、同序的单元格值数组。 */
-	rows: AppDbValue[][],
-};
-
-/**  app.db 中一张用户表的概要（list_app_db_tables 返回项）。前端「应用数据库」页左侧表列表数据源。 */
-export type AppDbTableInfo = {
-	/**  表名（来自 sqlite_master，已排除 sqlite_% 内部表）。 */
-	name: string,
-	/**
-	 *  表行数（`SELECT COUNT(*)`）。非常规表名无法安全拼接 COUNT，记 -1 供前端禁用浏览。
-	 *  i32 收窄：本地配置库行数远小于 2^31。
-	 */
-	rowCount: number,
-};
-
-/**
- *  dump_app_db_table 中一个单元格的值。SQLite 动态类型 → 跨边界枚举，前端按 kind 渲染。
- *  Integer 为 i64（时间戳等大数），specta 用 Number 映射为 TS number（值 < 2^53 精度安全）。
- *  Blob 不透传二进制（避免控制字符污染前端 JSON），仅传字节数供前端展示占位。
- */
-export type AppDbValue = { kind: "null" } | { kind: "integer"; value: number } | { kind: "real"; value: number | null } | { kind: "text"; value: string } | 
-/**  Blob 字节数（i32 收窄：单 cell blob 远小于 2^31）。 */
-{ kind: "blob"; bytes: number };
 
 /**
  *  终端会话快照。ClaudeSessionsPage 渲染 ClaudeSessionCard 列表的数据源；

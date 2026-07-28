@@ -41,8 +41,6 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::repositories::refresh_repository,
             shared::repositories::refresh_all_repositories,
             shared::repositories::open_in_file_manager,
-            shared::app_db_viewer::list_app_db_tables,
-            shared::app_db_viewer::dump_app_db_table,
             shared::http_server::http_server_status,
             shared::http_server::set_http_server_enabled,
             shared::http_server::cleanup_orphan_http_server,

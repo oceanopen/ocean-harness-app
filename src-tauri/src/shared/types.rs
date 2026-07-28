@@ -157,55 +157,6 @@ pub struct Repository {
 }
 
 // ============================================================
-// 应用数据库（app.db）原始数据查看器：panel 窗口「应用数据库」菜单
-// 命名一律带 AppDb 前缀，专指应用内嵌库；未来其他库（server_db 等）各自独立命名。
-// ============================================================
-
-/// app.db 中一张用户表的概要（list_app_db_tables 返回项）。前端「应用数据库」页左侧表列表数据源。
-#[derive(Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct AppDbTableInfo {
-    /// 表名（来自 sqlite_master，已排除 sqlite_% 内部表）。
-    pub name: String,
-    /// 表行数（`SELECT COUNT(*)`）。非常规表名无法安全拼接 COUNT，记 -1 供前端禁用浏览。
-    /// i32 收窄：本地配置库行数远小于 2^31。
-    pub row_count: i32,
-}
-
-/// dump_app_db_table 中一个单元格的值。SQLite 动态类型 → 跨边界枚举，前端按 kind 渲染。
-/// Integer 为 i64（时间戳等大数），specta 用 Number 映射为 TS number（值 < 2^53 精度安全）。
-/// Blob 不透传二进制（避免控制字符污染前端 JSON），仅传字节数供前端展示占位。
-#[derive(Clone, Serialize, Deserialize, Type)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-pub enum AppDbValue {
-    Null,
-    Integer {
-        #[specta(type = Number)]
-        value: i64,
-    },
-    Real {
-        value: f64,
-    },
-    Text {
-        value: String,
-    },
-    /// Blob 字节数（i32 收窄：单 cell blob 远小于 2^31）。
-    Blob {
-        bytes: i32,
-    },
-}
-
-/// dump_app_db_table 返回：一张表的列名 + 全部行。每个单元格为 AppDbValue，前端按 kind 渲染。
-#[derive(Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct AppDbTableDump {
-    /// 列名，顺序与 rows 中每行单元格一致。
-    pub columns: Vec<String>,
-    /// 行数据：每行为与 columns 等长、同序的单元格值数组。
-    pub rows: Vec<Vec<AppDbValue>>,
-}
-
-// ============================================================
 // HTTP 本地服务（go-server sidecar）运行态：panel 窗口「服务状态」菜单
 // ============================================================
 
