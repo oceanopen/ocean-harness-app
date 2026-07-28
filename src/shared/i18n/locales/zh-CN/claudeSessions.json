@@ -30,7 +30,9 @@
     "unsupportedHostApp": "未识别的宿主终端，请在 iTerm2 或 Terminal.app 中启动 Claude Code",
     "osaScriptFailed": "跳转终端失败：{{stderr}}",
     "sessionNotFound": "会话已失效，请刷新列表",
-    "io": "系统错误：{{message}}"
+    "io": "系统错误：{{message}}",
+    "refreshSuccess": "刷新成功",
+    "refreshFail": "刷新失败"
   },
   "time": {
     "justNow": "刚刚",

@@ -297,7 +297,7 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
 
       <Snackbar
         open={toastOpen}
-        autoHideDuration={1000}
+        autoHideDuration={2000}
         onClose={() => setToastOpen(false)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >

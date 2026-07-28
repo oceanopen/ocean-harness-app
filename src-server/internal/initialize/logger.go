@@ -52,6 +52,7 @@ func newEncoderConfig() zapcore.EncoderConfig {
 	ec.TimeKey = "time"
 	ec.EncodeLevel = zapcore.CapitalLevelEncoder
 	ec.EncodeCaller = zapcore.ShortCallerEncoder
+	ec.EncodeDuration = zapcore.StringDurationEncoder // 用 d.String() 渲染，如 1.234ms / 456µs
 	return ec
 }
 

@@ -125,8 +125,8 @@ function ServerStatusPage() {
     return false;
   }, []);
 
-  // 拉取服务状态 + （运行中时）serverRunInfo。
-  const reload = useCallback(async (): Promise<void> => {
+  // 拉取服务状态 + （运行中时）serverRunInfo。返回是否成功拿到完整信息（running 且 fetchRunInfo 成功）。
+  const reload = useCallback(async (): Promise<boolean> => {
     try {
       const s = await commands.httpServerStatus();
       setStatus(s);
@@ -135,12 +135,14 @@ function ServerStatusPage() {
         if (!ok) {
           showToast(`请求本地服务失败（${s.address}）`, 'error');
         }
-      } else {
-        setRunInfo(null);
-        showToast('请先开启本地服务', 'warning');
+        return ok;
       }
+      setRunInfo(null);
+      showToast('请先开启本地服务', 'warning');
+      return false;
     } catch (e) {
       showToast(`查询服务状态失败：${String(e)}`, 'error');
+      return false;
     }
   }, [fetchRunInfo, showToast]);
 
@@ -159,9 +161,12 @@ function ServerStatusPage() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    await reload();
+    const ok = await reload();
+    if (ok) {
+      showToast('刷新成功', 'success');
+    }
     setRefreshing(false);
-  }, [reload]);
+  }, [reload, showToast]);
 
   // Switch 开关：开启时先清理跨会话残留的 go-server 孤立进程（best-effort，不阻断），再调 Rust 启停服务。
   // 成功后同步状态 + 按需拉 serverRunInfo。
@@ -278,7 +283,7 @@ function ServerStatusPage() {
                         >
                           <CopyIcon fontSize="small" />
                         </IconButton>
-                        <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
                           {runInfo?.serverInfo.sqliteDir ?? '-'}
                         </Typography>
                       </Stack>
@@ -296,7 +301,7 @@ function ServerStatusPage() {
                         >
                           <CopyIcon fontSize="small" />
                         </IconButton>
-                        <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
                           {runInfo?.serverInfo.logDir ?? '-'}
                         </Typography>
                       </Stack>

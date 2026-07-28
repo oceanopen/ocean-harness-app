@@ -24,6 +24,9 @@ import ClaudeSessionList from './components/ClaudeSessionList';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
+// 浮层 toast 严重级别（成功用 success，错误用 error）。
+type ToastSeverity = 'success' | 'warning' | 'error';
+
 function navErrToToastKey(err: NavErr): { key: string; opts?: Record<string, unknown> } {
   switch (err.kind) {
     case 'unsupportedHostApp':
@@ -43,7 +46,7 @@ function ClaudeSessionsPage() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [sessions, setSessions] = useState<ClaudeSessionInfo[]>([]);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
@@ -68,10 +71,13 @@ function ClaudeSessionsPage() {
     setRefreshing(true);
     try {
       await unwrap(commands.refreshSessions());
+      setToast({ text: t('claudeSessions:toast.refreshSuccess'), severity: 'success' });
+    } catch {
+      setToast({ text: t('claudeSessions:toast.refreshFail'), severity: 'error' });
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -96,7 +102,7 @@ function ClaudeSessionsPage() {
   useEffect(() => {
     const unlistenPromise = listen<NavErr>(EVENT_CLAUDE_SESSION_NAV_FAILED, (e) => {
       const { key, opts } = navErrToToastKey(e.payload);
-      setToast(t(key, opts));
+      setToast({ text: t(key, opts), severity: 'error' });
     });
     return () => {
       unlistenPromise
@@ -176,11 +182,14 @@ function ClaudeSessionsPage() {
       </Box>
       <Snackbar
         open={toast !== null}
-        message={toast ?? ''}
         onClose={() => setToast(null)}
-        autoHideDuration={4000}
+        autoHideDuration={2000}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      />
+      >
+        <Alert severity={toast?.severity ?? 'info'} variant="filled">
+          {toast?.text ?? ''}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

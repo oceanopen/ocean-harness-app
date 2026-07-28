@@ -30,7 +30,9 @@
     "unsupportedHostApp": "Unrecognized host terminal. Please launch Claude Code in iTerm2 or Terminal.app",
     "osaScriptFailed": "Failed to navigate: {{stderr}}",
     "sessionNotFound": "Session expired, please refresh",
-    "io": "System error: {{message}}"
+    "io": "System error: {{message}}",
+    "refreshSuccess": "Refreshed",
+    "refreshFail": "Refresh failed"
   },
   "time": {
     "justNow": "Just now",
