@@ -356,7 +356,8 @@ fn pid_command(pid: u32) -> Option<String> {
         .lines()
         .next()?
         .trim()
-        .strip_prefix('"')?;
+        .strip_prefix('"')?
+        .to_owned();
     let end = line.find('"')?;
     Some(line[..end].to_owned())
 }
