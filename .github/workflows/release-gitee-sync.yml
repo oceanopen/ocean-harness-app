@@ -46,7 +46,8 @@ jobs:
 
       # ---------- 步骤 1：commit + tag 镜像（hub-mirror-action，force_update 强推含 tags） ----------
       - name: Mirror commits and tags to Gitee
-        uses: Yikun/hub-mirror-action@master
+        # 锁定 v1.5（Docker 实现，无 setup-uv）：@master 的 composite 实现会在非 Python 仓库触发 setup-uv 缓存告警。
+        uses: Yikun/hub-mirror-action@v1.5
         with:
           src: 'github/${{ github.repository_owner }}'
           dst: 'gitee/${{ secrets.GITEE_USER }}'
@@ -108,7 +109,7 @@ jobs:
       #    非仅同步 release-manifest；orphan 分支经普通 clone 的 remote-tracking ref（refs/remotes/origin/*）
       #    纳入镜像，理论覆盖但需 CI 实测确认。
       - name: Mirror release-manifest branch to Gitee
-        uses: Yikun/hub-mirror-action@master
+        uses: Yikun/hub-mirror-action@v1.5
         with:
           src: 'github/${{ github.repository_owner }}'
           dst: 'gitee/${{ secrets.GITEE_USER }}'
