@@ -157,11 +157,16 @@ function ServerStatusPage() {
     setRefreshing(false);
   }, [reload]);
 
-  // Switch 开关：调 Rust set_http_server_enabled，成功后同步状态 + 按需拉 serverRunInfo。
+  // Switch 开关：开启时先清理跨会话残留的 go-server 孤立进程（best-effort，不阻断），再调 Rust 启停服务。
+  // 成功后同步状态 + 按需拉 serverRunInfo。
   const handleToggle = useCallback(
     async (checked: boolean) => {
       setToggling(true);
       try {
+        if (checked) {
+          // 清理占用端口的本应用孤立 go-server，确保新 sidecar 能 bind 成功；失败不阻断启动。
+          await commands.cleanupOrphanHttpServer().catch(() => {});
+        }
         const r = await commands.setHttpServerEnabled(checked);
         if (r.status === 'error') {
           showToast(`${checked ? '启动' : '停止'}服务失败：${r.error}`, 'error');
@@ -278,7 +283,7 @@ function ServerStatusPage() {
 
       <Snackbar
         open={toastOpen}
-        autoHideDuration={1000}
+        autoHideDuration={2000}
         onClose={() => setToastOpen(false)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >

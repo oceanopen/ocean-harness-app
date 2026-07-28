@@ -19,6 +19,13 @@
 //   - init() 永不返回 Err、永不阻塞 setup；目录解析失败仅 log::warn 并跳过自动启动。
 //   - app 退出时尽力回收子进程，并通过 aborted 标志消除"退出与注册竞态"产生的孤儿。
 //
+// 启动阶段（start_server）：仅负责停同会话 child + spawn，不夹杂端口清理逻辑（单一职责）。
+//
+// 孤立进程清理（cleanup_orphan_http_server 命令）：app 异常退出后跨会话残留的 go-server 可能占用端口，
+//   导致新 sidecar bind 失败。前端「服务状态」页开关开启时在 start 前显式调用本命令清理——
+//   仅当端口占用者进程名含 tauri.conf identifier + go_server_bin（本应用 sidecar）才 kill，不误杀他应用。
+//   init 自动启动场景不清理（按需求仅在前端开关触发）。
+//
 // 退出阶段（RunEvent::Exit → shutdown）：unix 先 SIGTERM 让服务优雅退出，再 kill() 兜底；
 // Windows 直接 kill()（无 SIGTERM 概念）。
 
@@ -95,6 +102,194 @@ fn terminate_child(child: CommandChild) {
     let _ = child.kill();
 }
 
+// ============================================================
+// 端口兜底：清理跨会话残留的 go-server 孤立进程
+// ============================================================
+// 仅当端口占用者进程名同时含 tauri.conf identifier 与 go_server_bin（即本应用 sidecar）才 kill，
+// 避免误杀占用同端口的其它应用（那种情况留给 spawn 的 bind 失败自然暴露）。
+// 跨平台：unix 用 lsof/ps/kill，Windows 用 netstat/tasklist/taskkill。
+
+/// 若端口被本应用 go-server 孤立进程占用，逐个 kill（unix SIGTERM→SIGKILL；Windows taskkill /F）。
+/// identifier 取自运行态 tauri.conf（app.config().identifier），dev/build 各自匹配自己的 sidecar 名。
+fn reclaim_port_if_orphan_go_server(port: u16, identifier: &str) {
+    for pid in pids_listening_on_port(port) {
+        let cmd = match pid_command(pid) {
+            Some(c) => c,
+            None => continue,
+        };
+        if !looks_like_go_server(&cmd, identifier) {
+            log::warn!(
+                "[http-server] port {} held by non-go-server pid={} ({:?}); not killing",
+                port,
+                pid,
+                cmd
+            );
+            continue;
+        }
+        log::warn!(
+            "[http-server] killing orphan go-server pid={} on port {}",
+            pid,
+            port
+        );
+        kill_orphan_pid(pid);
+    }
+}
+
+/// 进程命令行是否像本应用 go-server：同时含 **tauri.conf 的 identifier** 与 `go_server_bin`。
+/// identifier 由调用方传入运行态 `app.config().identifier`——dev/build 各自取值（见各 conf），
+/// 故同一份匹配逻辑天然兼容 dev（...dev-go_server_bin）与 build（...go_server_bin）两种 sidecar 名。
+fn looks_like_go_server(cmd: &str, identifier: &str) -> bool {
+    cmd.contains(identifier) && cmd.contains("go_server_bin")
+}
+
+#[cfg(unix)]
+fn pids_listening_on_port(port: u16) -> Vec<u32> {
+    // -nP 不解析主机名/端口名（快且避免 DNS 失败）；-iTCP:<port> 过滤端口；
+    // -sTCP:LISTEN 仅监听套接字（bind 冲突的唯一来源）；-t 仅输出 PID。
+    let out = Command::new("lsof")
+        .args([
+            "-nP",
+            "-t",
+            &format!("-iTCP:{port}"),
+            "-sTCP:LISTEN",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output();
+    match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter_map(|l| l.trim().parse::<u32>().ok())
+            .collect(),
+        // lsof 在无匹配时退出码非 0（正常无冲突）；lsof 缺失也走这里，静默跳过。
+        _ => Vec::new(),
+    }
+}
+
+#[cfg(unix)]
+fn pid_command(pid: u32) -> Option<String> {
+    // command= 输出完整命令行（含可执行文件路径），不被 comm 的 15 字符截断影响（Linux）。
+    let out = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .to_owned();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+#[cfg(unix)]
+fn pid_alive(pid: u32) -> bool {
+    // kill -0 不发信号，仅探测进程是否存在且可信号。
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
+fn kill_orphan_pid(pid: u32) {
+    let pid_str = pid.to_string();
+    // SIGTERM 优雅退出（关闭监听套接字、释放端口），短暂等待。
+    let _ = Command::new("kill")
+        .args(["-TERM", pid_str.as_str()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    thread::sleep(Duration::from_millis(300));
+    // 仍存活则 SIGKILL 兜底。
+    if pid_alive(pid) {
+        let _ = Command::new("kill")
+            .args(["-KILL", pid_str.as_str()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+#[cfg(windows)]
+fn pids_listening_on_port(port: u16) -> Vec<u32> {
+    // netstat -ano -p TCP 行形如：
+    //   TCP    127.0.0.1:9100    0.0.0.0:0    LISTENING    1234
+    let out = match Command::new("netstat")
+        .args(["-ano", "-p", "TCP"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+    let suffix = format!(":{port}");
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            // [0]=Proto [1]=本地地址 [2]=外部地址 [3]=状态 [4]=PID
+            if f.len() < 5 || f[3] != "LISTENING" || !f[1].ends_with(&suffix) {
+                return None;
+            }
+            f[4].parse::<u32>().ok()
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn pid_command(pid: u32) -> Option<String> {
+    // tasklist CSV 行形如："image.exe","pid","session","sessnum","mem"
+    let out = Command::new("tasklist")
+        .args([
+            "/FI",
+            &format!("PID eq {pid}"),
+            "/NH",
+            "/FO",
+            "CSV",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    // /NH 无表头；PID 不存在时输出 "INFO: No tasks ..." → 不以 " 起首，返回 None。
+    let line = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()?
+        .trim()
+        .strip_prefix('"')?;
+    let end = line.find('"')?;
+    Some(line[..end].to_owned())
+}
+
+#[cfg(windows)]
+fn kill_orphan_pid(pid: u32) {
+    // /F 强制终止；/T 连带子进程（Windows 无 SIGTERM 优雅退出约定）。
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/F", "/T"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
 /// 进程退出后清运行态 + child（幂等；事件线程与 stop/shutdown 都可能调到）。
 fn mark_stopped(app: &AppHandle) {
     if let Some(state) = app.try_state::<HttpServerState>() {
@@ -105,19 +300,38 @@ fn mark_stopped(app: &AppHandle) {
     }
 }
 
-/// 启动 sidecar（已在运行则跳过，幂等）。在调用方线程同步执行；失败返回 Err。
+/// 启动 sidecar（仅 spawn，不含端口清理逻辑）。在调用方线程同步执行；失败返回 Err。
 ///
-/// 锁内复查 running 消除并发双启动竞态；spawn 后再复查 aborted，若期间 app 已退出则当场 kill。
+/// 跨会话 go-server 孤立进程的清理已迁移到独立 IPC 命令 `cleanup_orphan_http_server`，
+/// 由前端「服务状态」页开关开启时在调用本函数前显式触发（详见该命令注释）。
+///
+/// 1) 停掉同会话 Rust 持有的 child（强制干净重启；init 时 child 为 None，空操作）。
+/// 2) 加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 置 running；
+///    spawn 后再复查 aborted，若期间 app 已退出则当场 kill，不留孤儿。
 fn start_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
 
+    // 步骤 1：停同会话 child。单独锁作用域（不与后续 spawn 锁嵌套，避免 std::Mutex 重入死锁）。
+    {
+        let mut guard = state
+            .child
+            .lock()
+            .map_err(|e| format!("child mutex poisoned: {e}"))?;
+        if let Some(child) = guard.take() {
+            terminate_child(child);
+            state.running.store(false, Ordering::SeqCst);
+            log::info!("[http-server] stopped existing child before (re)start");
+        }
+    }
+
+    // 步骤 2：加锁复查 + spawn。
     let mut guard = state
         .child
         .lock()
         .map_err(|e| format!("child mutex poisoned: {e}"))?;
 
-    // 锁内复查：已运行则跳过；app 已在退出或目录未就绪则拒绝。
-    if state.running.load(Ordering::SeqCst) {
+    // 并发兜底：另一个线程可能已在此期间 spawn（本函数不再用 running 跳过，改用 child 已 Some 判定）。
+    if guard.is_some() {
         return Ok(());
     }
     if state.aborted.load(Ordering::SeqCst) {
@@ -169,13 +383,17 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         while let Some(event) = rx.blocking_recv() {
             match event {
                 CommandEvent::Stdout(line) => {
-                    let line = String::from_utf8_lossy(&line).trim_end().to_owned();
+                    let line = String::from_utf8_lossy(&line)
+                        .trim_end()
+                        .to_owned();
                     if !line.is_empty() {
                         log::info!("[http-server] {}", line);
                     }
                 }
                 CommandEvent::Stderr(line) => {
-                    let line = String::from_utf8_lossy(&line).trim_end().to_owned();
+                    let line = String::from_utf8_lossy(&line)
+                        .trim_end()
+                        .to_owned();
                     if !line.is_empty() {
                         log::warn!("[http-server] {}", line);
                     }
@@ -226,7 +444,10 @@ pub fn init(app: &AppHandle) {
     let dirs = match resolve_dirs(app) {
         Ok(d) => Some(d),
         Err(e) => {
-            log::warn!("[http-server] resolve dirs failed, auto-start skipped: {}", e);
+            log::warn!(
+                "[http-server] resolve dirs failed, auto-start skipped: {}",
+                e
+            );
             None
         }
     };
@@ -284,17 +505,30 @@ pub fn http_server_status(state: State<'_, HttpServerState>) -> HttpServerStatus
 }
 
 /// 开关 HTTP 服务（true=启动，false=停止）。前端 Switch 控件调用。
+///
+/// 开启时仅调 start_server（内部停同会话 child + spawn，不含端口清理）；
+/// 跨会话孤立进程的清理由前端在调用本命令前显式触发 `cleanup_orphan_http_server`。
 #[tauri::command]
 #[specta::specta]
 pub fn set_http_server_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     if enabled {
-        // 开启前先停止：清理同会话残留的 sidecar 子进程（running 时强制重启），避免端口被占用
-        // 导致新进程 bind 失败。stop 幂等（child 已清则空操作），其错误不阻塞 start；
-        // stop/start 各自独立加锁释放、顺序调用，不会死锁。
-        // 注：仅清理 Rust 持有 child handle 的进程；跨会话孤立进程（app 异常退出残留）需手动清理。
-        let _ = stop_server(&app);
         start_server(&app)
     } else {
         stop_server(&app)
     }
+}
+
+/// 清理跨会话残留的本应用 go-server 孤立进程（app 异常退出后残留、占用端口者）。
+///
+/// 仅当端口占用者进程名同时含 tauri.conf identifier 与 go_server_bin（即本应用 sidecar）才 kill，
+/// 不误杀占用同端口的其它应用。前端「服务状态」页开关从关闭→开启时，应在 `set_http_server_enabled(true)`
+/// 之前调用本命令，确保端口可用，避免新 sidecar bind 失败。
+///
+/// 注：init 自动启动场景不调用本命令（按需求仅在服务状态页开关触发）。
+#[tauri::command]
+#[specta::specta]
+pub fn cleanup_orphan_http_server(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<HttpServerState>();
+    reclaim_port_if_orphan_go_server(state.port, &app.config().identifier);
+    Ok(())
 }

@@ -105,8 +105,23 @@ export const commands = {
 	dumpAppDbTable: (table: string) => typedError<AppDbTableDump, string>(__TAURI_INVOKE("dump_app_db_table", { table })),
 	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
 	httpServerStatus: () => __TAURI_INVOKE<HttpServerStatus>("http_server_status"),
-	/**  开关 HTTP 服务（true=启动，false=停止）。前端 Switch 控件调用。 */
+	/**
+	 *  开关 HTTP 服务（true=启动，false=停止）。前端 Switch 控件调用。
+	 * 
+	 *  开启时仅调 start_server（内部停同会话 child + spawn，不含端口清理）；
+	 *  跨会话孤立进程的清理由前端在调用本命令前显式触发 `cleanup_orphan_http_server`。
+	 */
 	setHttpServerEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_http_server_enabled", { enabled })),
+	/**
+	 *  清理跨会话残留的本应用 go-server 孤立进程（app 异常退出后残留、占用端口者）。
+	 * 
+	 *  仅当端口占用者进程名同时含 tauri.conf identifier 与 go_server_bin（即本应用 sidecar）才 kill，
+	 *  不误杀占用同端口的其它应用。前端「服务状态」页开关从关闭→开启时，应在 `set_http_server_enabled(true)`
+	 *  之前调用本命令，确保端口可用，避免新 sidecar bind 失败。
+	 * 
+	 *  注：init 自动启动场景不调用本命令（按需求仅在服务状态页开关触发）。
+	 */
+	cleanupOrphanHttpServer: () => typedError<null, string>(__TAURI_INVOKE("cleanup_orphan_http_server")),
 };
 
 /* Types */
