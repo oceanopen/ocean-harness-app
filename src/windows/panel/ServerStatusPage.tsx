@@ -1,5 +1,5 @@
 import type { HttpServerStatus } from '@src/shared/bindings';
-import { Autorenew as AutorenewIcon } from '@mui/icons-material';
+import { Autorenew as AutorenewIcon, ContentCopy as CopyIcon } from '@mui/icons-material';
 import {
   Alert,
   Box,
@@ -52,8 +52,8 @@ const MODE_LABEL: Record<string, string> = {
   test: 'test 测试',
 };
 
-// 浮层 toast 严重级别（操作失败用 error，状态提示用 warning）。
-type ToastSeverity = 'warning' | 'error';
+// 浮层 toast 严重级别（操作失败用 error，状态提示用 warning，成功用 success）。
+type ToastSeverity = 'warning' | 'error' | 'success';
 
 // 启用服务后 Go 绑定端口需要一点时间，重试拉 serverRunInfo。
 const FETCH_RETRY_TIMES = 6;
@@ -68,6 +68,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+// 把路径转成 shell 可直接 cd 的形式：双引号包裹。
+// 双引号在 bash/zsh（macOS、Linux）与 cmd/PowerShell（Windows）下均可用，跨平台通用、无需关心空格转义差异。
+function shellQuote(p: string): string {
+  return `"${p}"`;
 }
 
 // AutorenewIcon 旋转动画：刷新中持续旋转。
@@ -189,6 +195,22 @@ function ServerStatusPage() {
     [fetchRunInfo, showToast],
   );
 
+  // 复制目录路径（双引号包裹，便于在任意终端 cd 后直接粘贴）；成功/失败均 toast 反馈。
+  const copyDir = useCallback(
+    async (path: string) => {
+      if (!path) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(shellQuote(path));
+        showToast('已复制（可直接 cd 后粘贴）', 'success');
+      } catch (e) {
+        showToast(`复制失败：${String(e)}`, 'error');
+      }
+    },
+    [showToast],
+  );
+
   const running = status?.running ?? false;
   // 运行模式取自 Go 接口（serverInfo.mode）。
   const modeLabel = runInfo ? MODE_LABEL[runInfo.serverInfo.mode] ?? runInfo.serverInfo.mode : '';
@@ -246,11 +268,39 @@ function ServerStatusPage() {
                   </TableRow>
                   <TableRow>
                     <TableCell sx={labelCellSx}>数据目录</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{runInfo?.serverInfo.sqliteDir ?? '-'}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <IconButton
+                          size="small"
+                          onClick={() => void copyDir(runInfo?.serverInfo.sqliteDir ?? '')}
+                          disabled={!runInfo?.serverInfo.sqliteDir}
+                          aria-label="复制数据目录路径"
+                        >
+                          <CopyIcon fontSize="small" />
+                        </IconButton>
+                        <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                          {runInfo?.serverInfo.sqliteDir ?? '-'}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell sx={labelCellSx}>日志目录</TableCell>
-                    <TableCell sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{runInfo?.serverInfo.logDir ?? '-'}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <IconButton
+                          size="small"
+                          onClick={() => void copyDir(runInfo?.serverInfo.logDir ?? '')}
+                          disabled={!runInfo?.serverInfo.logDir}
+                          aria-label="复制日志目录路径"
+                        >
+                          <CopyIcon fontSize="small" />
+                        </IconButton>
+                        <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                          {runInfo?.serverInfo.logDir ?? '-'}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
                   </TableRow>
                   <TableRow>
                     <TableCell sx={labelCellSx}>主机名</TableCell>
