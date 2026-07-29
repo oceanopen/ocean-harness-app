@@ -153,6 +153,7 @@ function ServerStatusPage() {
   // 监听 Rust 状态变更事件：payload 即最新 HttpServerStatus，直接 applyStatus，无需二次拉取。
   useEffect(() => {
     const unlistenPromise = listen<HttpServerStatus>(EVENT_HTTP_SERVER_STATE_CHANGED, (e) => {
+      console.log('[ServerStatusPage] http-server:state-changed, event.payload:', e.payload);
       void applyStatus(e.payload);
     });
     return () => {

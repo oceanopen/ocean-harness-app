@@ -17,9 +17,9 @@ pub const PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY: &str = "pet_claude_sessions
 /// sessions 兜底轮询周期（秒）。即时性由 fs watcher 负责，此处仅驱动 Dead 老化与漏报兜底。
 /// 默认值 / min / max 与前端 src/shared/app_config.ts 镜像，改动任一处需同步另一处。
 pub const POLL_INTERVAL_SECS_KEY: &str = "poll_interval_secs";
-pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 60;
-pub const MIN_POLL_INTERVAL_SECS: u64 = 5;
-pub const MAX_POLL_INTERVAL_SECS: u64 = 120;
+pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 120;
+pub const MIN_POLL_INTERVAL_SECS: u64 = 10;
+pub const MAX_POLL_INTERVAL_SECS: u64 = 300;
 
 /// iTerm2 分屏方向。horizontal = 上下分屏（split horizontally），vertical = 左右分屏（split vertically）。
 /// 默认值与前端 src/shared/app_config.ts 镜像，改动任一处需同步另一处。
