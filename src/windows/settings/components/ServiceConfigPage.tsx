@@ -7,7 +7,6 @@ import {
   Typography,
 } from '@mui/material';
 import {
-  DEFAULT_HTTP_SERVER_PORT_DEBUG,
   defaultHttpServerPort,
   getAppConfig,
   HTTP_SERVER_PORT_KEY,
@@ -39,7 +38,7 @@ function ServiceConfigPage() {
   const [savedPort, setSavedPort] = useState<string>('');
   const [draftPort, setDraftPort] = useState<string>('');
   // 当前运行时默认端口（帮助文案展示具体值）：读 http_server 的 mode 本地映射。
-  const [defaultPort, setDefaultPort] = useState<number>(DEFAULT_HTTP_SERVER_PORT_DEBUG);
+  const [defaultPort, setDefaultPort] = useState<number>();
 
   useEffect(() => {
     getAppConfig(HTTP_SERVER_PORT_KEY).then((raw) => {

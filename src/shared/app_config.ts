@@ -70,10 +70,10 @@ export const MAX_HTTP_SERVER_PORT = 10000;
 
 // 默认端口按运行模式（debug/release），与 Rust http_server.rs 的 default_port() 逻辑对应。
 // 前端用于设置页帮助文案展示当前运行时的具体默认端口（而非 dev/release 并列）。
-export const DEFAULT_HTTP_SERVER_PORT_DEBUG = 9000;
+export const DEFAULT_HTTP_SERVER_PORT_TEST = 9000;
 export const DEFAULT_HTTP_SERVER_PORT_RELEASE = 9100;
 export function defaultHttpServerPort(mode: string): number {
-  return mode === 'release' ? DEFAULT_HTTP_SERVER_PORT_RELEASE : DEFAULT_HTTP_SERVER_PORT_DEBUG;
+  return mode === 'release' ? DEFAULT_HTTP_SERVER_PORT_RELEASE : DEFAULT_HTTP_SERVER_PORT_TEST;
 }
 
 // panel 窗口侧边栏折叠状态。值用 YesNo，缺失视为 NO（默认展开）。

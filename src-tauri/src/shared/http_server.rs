@@ -8,7 +8,8 @@
 //   identifier 随当前生效 conf 自动切换，故 dev/build 用同一份代码。
 //
 // 配置全部走环境变量注入 Go 进程（不读配置文件）：
-//   GO_SERVER_MODE（debug/release）、GO_SERVER_PORT（默认 dev=9000/build=9100，可由系统设置「服务配置」覆盖）、
+//   GO_SERVER_MODE（dev 编译→test、build 编译→release）、
+//   GO_SERVER_PORT（默认 dev=9000/build=9100，可由系统设置「服务配置」覆盖）、
 //   GO_SERVER_LOG_DIR、GO_SERVER_SQLITE_DIR（均由 app_data_dir 派生，dev/build 自动隔离）。
 //
 // IPC：前端「服务状态」页通过 http_server_status 查询运行态与地址，通过 set_http_server_enabled
@@ -49,16 +50,16 @@ use crate::shared::app_config::{
 use crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED;
 use crate::shared::types::{HttpServerRunState, HttpServerStatus};
 
-/// dev/release 模式各自的默认端口（用户未在「服务配置」设置 http_server_port 时回退于此）。
-const PORT_DEBUG: u16 = 9000;
-const PORT_RELEASE: u16 = 9100;
+/// dev/build 编译各自的默认端口（用户未在「服务配置」设置 http_server_port 时回退于此）。
+const HTTP_SERVER_PORT_TEST: u16 = 9000;
+const HTTP_SERVER_PORT_RELEASE: u16 = 9100;
 
 /// 当前编译模式的默认端口（cfg! 编译期决定）。
 fn default_port() -> u16 {
     if cfg!(debug_assertions) {
-        PORT_DEBUG
+        HTTP_SERVER_PORT_TEST
     } else {
-        PORT_RELEASE
+        HTTP_SERVER_PORT_RELEASE
     }
 }
 
@@ -700,8 +701,9 @@ fn stop_server(app: &AppHandle) -> Result<(), String> {
 /// 非核心依赖：**永不返回 Err、永不阻塞 setup**。先同步注册 state（含 mode/port/dirs），
 /// 确保前端 status 命令立即可用；实际 spawn 在后台线程，失败仅 log::warn。
 pub fn init(app: &AppHandle) {
+    // app 启动的 go-server 只有两种模式：dev 编译（tauri:dev）→ test，build 编译（tauri:build）→ release。
     let mode = if cfg!(debug_assertions) {
-        "debug"
+        "test"
     } else {
         "release"
     };
