@@ -24,18 +24,32 @@
 
 ### 2.2 表结构（SQLite · 自增整数主键 · 软删除，MVP 6 表）
 
+> 命名约定：业务表统一 `t_` 前缀；索引唯一用 `udx_`、普通用 `idx_`（详见 2.3）。
+
 | 表 | 关键字段 | 说明 |
 |---|---|---|
-| `workspaces` | id, name, slug(唯一), description, 时间戳, deleted_at | 顶层容器 |
-| `projects` | id, workspace_id, name, identifier(同 workspace 唯一), description, emoji, default_state_id, 时间戳, deleted_at | identifier 大写短码（PLN），用于 issue key |
-| `states` | id, project_id, workspace_id, name, color, slug, state_group, sort_order, is_default, is_triage, 时间戳, deleted_at | state_group ∈ backlog/unstarted/started/completed/cancelled |
-| `issues` | id, project_id, workspace_id, name, description, state_id, priority, sequence_id, sort_order, parent_id, start_date, target_date, completed_at, is_draft, 时间戳, deleted_at | priority ∈ urgent/high/medium/low/none |
-| `labels` | id, workspace_id, project_id(可空), name, color, description, sort_order, 时间戳, deleted_at | 标签，可挂 workspace 或 project 级 |
-| `issue_labels` | id, issue_id, label_id, created_at | 多对多关联，UNIQUE(issue_id, label_id) |
+| `t_workspaces` | id, name, slug(全局唯一 udx), description, 时间戳, deleted_at | 顶层容器（顶级，表名保持） |
+| `t_workspace_projects` | id, workspace_id, name, identifier(同 workspace 全局唯一 udx), description, emoji, default_state_id, 时间戳, deleted_at | 项目，所属 workspace；identifier 大写短码（PLN），用于 issue key |
+| `t_project_states` | id, project_id, workspace_id, name, color, slug, state_group, sort_order, is_default, is_triage, 时间戳, deleted_at | 状态，所属 project；state_group ∈ backlog/unstarted/started/completed/cancelled |
+| `t_project_issues` | id, project_id, workspace_id, name, description, state_id, priority, sequence_id, sort_order, parent_id, start_date, target_date, completed_at, is_draft, 时间戳, deleted_at | issue，所属 project；priority ∈ urgent/high/medium/low/none |
+| `t_workspace_labels` | id, workspace_id, project_id(可空), name, color, description, sort_order, 时间戳, deleted_at | 标签，所属 workspace（可挂 workspace 或 project 级） |
+| `t_issue_labels` | id, issue_id, label_id, created_at, updated_at, deleted_at | 关联表，所属 issue；udx(issue_id, label_id) 全局唯一；软删除与其他表统一 |
 
 - 软删除：保留 `deleted_at`，`gencode` 配置映射 `gorm.DeletedAt`，查询自动过滤。
+- 唯一索引：**全局唯一**（不带 `WHERE deleted_at IS NULL`），即已删除记录仍占用唯一键——配合「恢复式创建」语义（见下）。
 - `sequence_id`：个人单机无并发，用 `SELECT MAX(sequence_id)+1 WHERE project_id` 即可，**不建 issue_sequences 表、不用 advisory lock**。
 - issue key = `{identifier}-{sequence_id}`（如 `PLN-1`）。
+- 关联查询：**无 DB 外键约束**，跨表关联一律走 SQL JOIN / 应用层组装；数据级联清理由 service 层手动。
+
+#### 创建逻辑（恢复式 upsert）
+
+针对带业务唯一索引的实体（**workspace by slug**、**project by (workspace_id, identifier)**），create 不直接 INSERT，而是先按唯一键查（**含已软删除记录**，即 `Unscoped` 查询）：
+
+- **存在未删除同键记录** → 返回报错「记录重复」；
+- **存在已删除同键记录** → 恢复并重置该行：`deleted_at = NULL` + `updated_at = now` + 业务字段全部用新入参覆盖，**固定列保留**（`id` + `created_at` 不变）；
+- **不存在** → 正常 INSERT。
+
+> 适用范围：workspace、project（创建语义：未删同键→报错、已删→恢复重置、无→插入），以及 `t_issue_labels`（toggle 语义：未删→软删取消、已删→恢复、无→插入）。`t_project_states / t_workspace_labels / t_project_issues` 无业务唯一索引，正常创建。
 
 ### 2.3 命名规范（全程一致）
 
@@ -43,6 +57,8 @@
 - **公共字段**：`id, name, description, createdAt, updatedAt, deletedAt`。
 - **业务字段**：`workspaceId, projectId, identifier, slug, stateId, stateGroup, priority, sequenceId, sortOrder, parentId, startDate, targetDate, completedAt, isDraft, isDefault, isTriage, emoji, color`。JSON 全 camelCase。
 - **枚举**：`priority = urgent|high|medium|low|none`；`stateGroup = backlog|unstarted|started|completed|cancelled`。
+- **表名**：业务表统一 `t_` 前缀 + 所属关系（顶级 `t_workspaces` 保持；子表以直接父单数作前缀：`t_workspace_projects` / `t_project_states` / `t_project_issues` / `t_workspace_labels` / `t_issue_labels`），与系统表（`goose_db_version` 等）区分。
+- **索引名**：唯一索引 `udx_{表名去t_}_{列名}`（如 `udx_workspaces_slug`、`udx_workspace_projects_workspace_id_identifier`），全局唯一；普通索引本期暂不建（数据量小，后续按查询热点以 `idx_{表名去t_}_{列名}` 追加）。
 - **各层后缀**（沿用 README）：`XxxRequest`/`XxxResponseData`（types）、service/controller 同名、`XxxDO`（gen 生成的数据库实体 = PO 层）。
 
 ### 2.4 gorm/gen 自动生成
@@ -78,7 +94,7 @@
 - [x] **任务 1：[后端·迁移] 建 MVP 6 张业务表**
   - 文件：`src-server/internal/migrations/migrations/20260730001_init_tracker.sql`（新增）
   - 当前：仅有 `20260728001_init.sql`（空迁移验证 goose 机制）
-  - 目标：新增 `-- +goose Up` 迁移，建 workspaces/projects/states/issues/labels/issue_labels 6 表（自增主键 + 软删除 deleted_at + 时间戳）+ 唯一索引（workspaces.slug、projects(workspace_id,identifier)、issue_labels(issue_id,label_id)，均带 `WHERE deleted_at IS NULL`）+ 外键约束；states 默认值 group='backlog'、issues 默认 priority='none'/sequence_id=1/sort_order=65535。
+  - 目标：新增 `-- +goose Up` 迁移，建带层级前缀的 6 表（t_workspaces / t_workspace_projects / t_project_states / t_project_issues / t_workspace_labels / t_issue_labels，自增主键 + 软删除 deleted_at + 时间戳）；唯一索引 `udx_` 前缀且**全局唯一**（udx_workspaces_slug、udx_workspace_projects_workspace_id_identifier、udx_issue_labels_issue_id_label_id，**不带 WHERE deleted_at IS NULL**）；普通索引本期暂不建（数据量小，按需追加）；**不建任何 DB 外键**（跨表关联走 JOIN）；t_project_states 默认 state_group='backlog'、t_project_issues 默认 priority='none'/sequence_id=1/sort_order=65535。
 
 - [ ] **任务 2：[后端·ORM] 引入 gorm/gen + 自动生成脚本 + 生成 DO**
   - 文件：`src-server/go.mod`（修改，加 `gorm.io/gen` 生成期依赖）、`src-server/cmd/gencode/main.go`（新增）、`src-server/internal/model/gen/`（新增，生成产物）、`src-server/README.md`（修改，命名表补 `DO` 后缀 + gencode 说明）
@@ -90,7 +106,7 @@
 - [ ] **任务 3：[后端·workspace] 工作空间模块**
   - 文件：`src-server/internal/types/workspace.go`、`service/workspace.go`、`controller/workspace.go`（新增）、`router/router.go`（修改）
   - 当前：无 workspace 模块
-  - 目标：实现 workspace CRUD（list/get/create/update/delete）；create/update 校验 slug 非空且未删除唯一；软删除；types 用 `WorkspaceCreateRequest`/`WorkspaceResponseData` 等后缀；service 用 `gen.Q.WorkspaceDO`；controller 用 `response.OK/Fail`；router 注册 `/api/workspace/*`。
+  - 目标：实现 workspace CRUD（list/get/create/update/delete）；create 采用**恢复式 upsert**（按 slug 含软删除记录 `Unscoped` 查询：未删除同 slug→报错「记录重复」；已删除同 slug→恢复 `deleted_at=NULL`+`updated_at=now`+业务字段覆盖、保留 `id`+`created_at`；不存在→插入）；update 校验 slug 未删除唯一；软删除；types 用 `WorkspaceCreateRequest`/`WorkspaceResponseData` 等后缀；service 用 `gen.Q.WorkspaceDO`；controller 用 `response.OK/Fail`；router 注册 `/api/workspace/*`。
 
 - [ ] **任务 4：[后端·state] 状态模块（含默认状态种子）**
   - 文件：`src-server/internal/types/state.go`、`service/state.go`、`controller/state.go`（新增）、`router/router.go`（修改）
@@ -100,12 +116,12 @@
 - [ ] **任务 5：[后端·project] 项目模块（create 种默认状态）**
   - 文件：`src-server/internal/types/project.go`、`service/project.go`、`controller/project.go`（新增）、`router/router.go`（修改）
   - 当前：无 project 模块
-  - 目标：project CRUD（按 workspaceId 查）；create 在**同一事务**内：identifier 大写化 + 同 workspace 未删除唯一校验 → 插入 project → 调 `SeedDefaultStates` 种 5 默认状态 → 回填 `default_state_id`；软删除（级联由 FK 处理）。
+  - 目标：project CRUD（按 workspaceId 查）；create 在**同一事务**内：identifier 大写化 + 按 (workspace_id, identifier) **恢复式 upsert**（含软删除记录查询：未删除同键→报错；已删除→恢复重置、保留 `id`+`created_at`；不存在→插入）→ 若为新插入或恢复后该项目下无未删除 state，则调 `SeedDefaultStates` 种 5 默认状态 → 回填 `default_state_id`；软删除（**无 DB 外键**，级联清理其下 state/issue 由 service 手动）。
 
 - [ ] **任务 6：[后端·label] 标签模块（含 issue 关联）**
   - 文件：`src-server/internal/types/label.go`、`service/label.go`、`controller/label.go`（新增）、`router/router.go`（修改）
   - 当前：无 label 模块
-  - 目标：label CRUD（按 workspaceId/projectId 查，project_id 可空表 workspace 级）；`toggleIssue` 关联/取消关联 issue_labels（幂等，已存在则删除、不存在则插入）。
+  - 目标：label CRUD（按 workspaceId/projectId 查，project_id 可空表 workspace 级）；`toggleIssue` 关联/取消关联 t_issue_labels（**恢复式 upsert**：含软删记录查询，未删→软删取消、已删→恢复、无→插入）。
 
 - [ ] **任务 7：[后端·issue] Issue 核心模块**
   - 文件：`src-server/internal/types/issue.go`、`service/issue.go`、`controller/issue.go`（新增）、`router/router.go`（修改）
