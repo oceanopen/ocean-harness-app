@@ -186,9 +186,9 @@ export type ClaudeSessionStatus =
 
 /**
  *  HTTP 本地服务的运行态：三态，反映 sidecar 生命周期。
- *  - Stopped：未运行（从未启动 / 已停止 / 探活超时回退）
- *  - Starting：已 spawn 子进程，TCP 探活端口就绪中
- *  - Running：端口已就绪，HTTP 服务可 fetch
+ *  - Stopped：未运行（从未启动 / 已停止 / 启动失败回退）
+ *  - Starting：已 spawn 子进程，等待启动成败裁定（日志静默后按 PID 身份校验）
+ *  - Running：自有进程已 bind 端口，HTTP 服务可 fetch
  */
 export type HttpServerRunState = "stopped" | "starting" | "running";
 
@@ -207,14 +207,11 @@ export type HttpServerStatus = {
 	/**  运行模式（debug/release），与 Go gin mode 对齐。 */
 	mode: string,
 	/**
-	 *  最近一次启动失败的详细原因（探活失败时填充；正常启动/停止为 None）。
+	 *  最近一次启动失败的详细原因（启动期进程退出 / 身份校验未通过 / 超时时填充；正常启动/停止为 None）。
 	 *  run_state 为 stopped 且此字段非空时，前端「服务状态」页据此 toast 失败原因。
 	 */
 	startLastError: string | null,
-	/**
-	 *  本次启动过程的全量日志（stdout+stderr，换行拼接；启动结束冻结，运行后保留快照）。
-	 *  供前端后续"查看启动日志"展示（本期前端暂不做 UI，数据先返回）。
-	 */
+	/**  本次启动过程的全量日志（stdout+stderr，换行拼接；仅 Starting 期间累积，启动结束即定格）。 */
 	startRecentLog: string | null,
 };
 
