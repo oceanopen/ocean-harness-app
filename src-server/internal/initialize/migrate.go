@@ -3,6 +3,7 @@ package initialize
 import (
 	"context"
 	"fmt"
+	"io/fs"
 
 	"github.com/pressly/goose/v3"
 	"go.uber.org/zap"
@@ -21,30 +22,45 @@ const migrationsDir = "migrations"
 //   - 迁移文件通过 go:embed 嵌入二进制（migrations.FS），sidecar 分发无需外部 SQL。
 //   - 失败即 Fatal 退出（Must 语义），杜绝 schema 不一致时服务继续启动。
 //   - 仅向前 up 迁移；迁移文件只写 -- +goose Up 段。
+//   - goose_db_version.tstamp 为 UTC 是预期行为：goose 的 sqlite3 方言用
+//     datetime('now') 作列默认值，而 SQLite 无会话时区、该函数恒返回 UTC。tstamp 是
+//     goose 内部审计字段（app 不读），UTC 无歧义故保持原样。
 func MustRunMigrations(ctx context.Context) {
 	sqlDB, err := global.SqliteDB.DB()
 	if err != nil {
 		global.Logger.Fatal("migrate get *sql.DB failed", zap.Error(err))
 	}
 
-	// 指定迁移文件来源为 embed.FS（编译期内置）；日志桥接到全局 zap。
-	goose.SetBaseFS(migrations.FS)
-	goose.SetLogger(newGooseLogger(global.Logger))
-	// 显式锁定 sqlite 方言：goose 默认全局 dialect 为 Postgres，
-	// 不调用 SetDialect 会用 Postgres 方言的版本表 SQL 在 sqlite 上报 "near BY" 语法错。
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		global.Logger.Fatal("migrate set dialect failed", zap.Error(err))
+	// embed.FS 里迁移文件在 "migrations" 子目录下；Provider 需要根在该目录的 fs.FS。
+	migrationFS, err := fs.Sub(migrations.FS, migrationsDir)
+	if err != nil {
+		global.Logger.Fatal("migrate sub fs failed", zap.Error(err))
 	}
 
-	if err := goose.UpContext(ctx, sqlDB, migrationsDir); err != nil {
+	// Provider API（goose 官方推荐）：显式配置、无包级全局态、可测试。dialect=sqlite3
+	// 既驱动迁移文件的 SQL 解析，也用于构造默认版本表 store；日志桥接到全局 zap。
+	prov, err := goose.NewProvider(
+		goose.DialectSQLite3, sqlDB, migrationFS,
+		goose.WithLogger(newGooseLogger(global.Logger)),
+	)
+	if err != nil {
+		global.Logger.Fatal("migrate new provider failed", zap.Error(err))
+	}
+
+	// 仅向前 up：执行所有未应用的迁移（失败即 Fatal，杜绝 schema 不一致时继续启动）。
+	results, err := prov.Up(ctx)
+	if err != nil {
 		global.Logger.Fatal("migrate up failed", zap.Error(err))
 	}
 
-	version, err := goose.GetDBVersion(sqlDB)
+	version, err := prov.GetDBVersion(ctx)
 	if err != nil {
 		global.Logger.Fatal("migrate get version failed", zap.Error(err))
 	}
-	global.Logger.Info("sqlite migrations done", zap.Int64("version", version))
+	global.Logger.Info("sqlite migrations done",
+		zap.Int64("version", version),
+		zap.Int("applied", len(results)),
+	)
 }
 
 // gooseLogger 实现 goose.Logger 接口，把 goose 的日志转发到全局 zap logger，
