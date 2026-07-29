@@ -282,7 +282,7 @@ function ServerStatusPage() {
                         >
                           <CopyIcon fontSize="small" />
                         </IconButton>
-                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 13 }}>
+                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 12 }}>
                           {runInfo?.serverInfo.sqliteDir ?? '-'}
                         </Typography>
                       </Stack>
