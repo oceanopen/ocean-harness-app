@@ -102,6 +102,17 @@ pub struct HttpServerState {
     pub log_dir: String,
     /// sqlite 数据目录（注入 GO_SERVER_SQLITE_DIR）。
     pub sqlite_dir: String,
+    /// 本次启动过程的全量日志（stdout+stderr，按到达顺序 append）。事件线程写入，启动结束（探活成功/失败）后冻结。
+    /// 失败时取最后一行清洗为 start_last_error；http_server_status 返回前端供后续"查看启动日志"。
+    pub start_recent_log: Mutex<Vec<String>>,
+    /// 启动日志是否已冻结（启动结束后置位）：冻结后事件线程不再 append，保证前端拿到的是纯净的"本次启动过程"日志。
+    pub start_recent_log_frozen: AtomicBool,
+    /// 最近一次启动失败的详细原因（探活失败时从 start_recent_log 最后一行清洗；正常启动/停止为 None）。
+    /// http_server_status 返回给前端，供「服务状态」页重启失败时 toast 展示。
+    pub start_last_error: Mutex<Option<String>>,
+    /// 用户主动停止标志：stop_server 置位、start_server 入口清位。探活线程超时分支据此跳过失败上报，
+    /// 避免"启动中途主动停止"被误判为启动失败而弹 toast。
+    pub user_stopped: AtomicBool,
 }
 
 impl HttpServerState {
@@ -124,13 +135,126 @@ impl HttpServerState {
     fn address(&self) -> String {
         format!("http://127.0.0.1:{}", self.port())
     }
+    /// 复位启动相关状态（start_server 入口调用）：清启动日志缓冲、start_last_error、user_stopped、解冻，
+    /// 确保本次启动过程日志与失败原因取自本次 Go 输出。
+    fn reset_start_error(&self) {
+        if let Ok(mut g) = self.start_recent_log.lock() {
+            g.clear();
+        }
+        if let Ok(mut g) = self.start_last_error.lock() {
+            *g = None;
+        }
+        self.user_stopped.store(false, Ordering::SeqCst);
+        self.start_recent_log_frozen
+            .store(false, Ordering::SeqCst);
+    }
+    /// 事件线程 append 一行 stdout/stderr 到启动日志；冻结后跳过（启动已结束）。
+    fn append_start_recent_log(&self, line: String) {
+        if !self
+            .start_recent_log_frozen
+            .load(Ordering::SeqCst)
+        {
+            if let Ok(mut g) = self.start_recent_log.lock() {
+                g.push(line);
+            }
+        }
+    }
+    /// 冻结启动日志（探活成功/失败时调用）：之后事件线程不再 append，保留"本次启动过程"快照。
+    fn freeze_start_recent_log(&self) {
+        self.start_recent_log_frozen
+            .store(true, Ordering::SeqCst);
+    }
+    /// 探活失败时调用：取启动日志最后一行非空，清洗为 start_last_error（无内容则 None）。
+    fn finalize_start_error(&self) {
+        let cleaned = self
+            .start_recent_log
+            .lock()
+            .ok()
+            .and_then(|g| {
+                g.last()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            })
+            .map(|line| clean_go_error_line(&line))
+            .filter(|s| !s.is_empty());
+        if let Ok(mut g) = self.start_last_error.lock() {
+            *g = cleaned;
+        }
+    }
+    /// 探活成功时调用：清 start_last_error 与 user_stopped（保留 start_recent_log 供前端查看）。
+    fn clear_start_last_error(&self) {
+        if let Ok(mut g) = self.start_last_error.lock() {
+            *g = None;
+        }
+        self.user_stopped.store(false, Ordering::SeqCst);
+    }
+    /// 取最近一次启动失败原因（http_server_status 返回前端用；无则 None）。
+    fn start_last_error(&self) -> Option<String> {
+        self.start_last_error
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+    }
+    /// 取启动日志拼接字符串（空则 None），http_server_status 返回前端用。
+    fn start_recent_log_joined(&self) -> Option<String> {
+        self.start_recent_log
+            .lock()
+            .ok()
+            .filter(|g| !g.is_empty())
+            .map(|g| g.join("\n"))
+    }
 }
 
-/// 更新 run_state 并通知前端（emit http-server:state-changed，前端 listen 后 reload 同步）。
+/// 清洗 Go 启动失败日志行为干净的错误详情，供前端直接展示（前端只做关键词翻译）。两种来源：
+///   - zap console：`2026-07-29 ... FATAL server/main.go:71 serve failed {"error": "..."}` → 提取 error 值
+///   - 标准库 log（config.go 的 log.Fatalf）：`2026/07/29 10:52:18 [config] ...` → 剥离前导时间戳
+fn clean_go_error_line(line: &str) -> String {
+    let line = line.trim();
+    // 优先提取 zap 的 error 字段值："error":"..."。
+    const NEEDLE: &str = "\"error\":\"";
+    if let Some(start) = line.find(NEEDLE) {
+        let rest = &line[start + NEEDLE.len()..];
+        if let Some(end) = rest.find('"') {
+            return rest[..end].trim().to_string();
+        }
+    }
+    // 否则剥离标准库 log 的前导时间戳（格式固定 "YYYY/MM/DD HH:MM:SS "，占 20 字节）。
+    let b = line.as_bytes();
+    if b.len() > 20
+        && b[4] == b'/'
+        && b[7] == b'/'
+        && b[10] == b' '
+        && b[13] == b':'
+        && b[16] == b':'
+        && b[19] == b' '
+    {
+        return line[20..].trim().to_string();
+    }
+    line.to_string()
+}
+
+/// 构造当前服务状态快照（run_state/address/port/mode/start_last_error/start_recent_log）。
+/// 既是 http_server_status 命令的返回，也作为 state-changed 事件的 payload，保证前端两路数据一致。
+fn build_status(state: &HttpServerState) -> HttpServerStatus {
+    HttpServerStatus {
+        run_state: state.run_state(),
+        address: state.address(),
+        port: state.port(),
+        mode: state.mode.to_string(),
+        start_last_error: state.start_last_error(),
+        start_recent_log: state.start_recent_log_joined(),
+    }
+}
+
+/// 更新 run_state 并把最新状态快照作为 payload emit 给前端（前端 listen 后直接同步 UI，无需二次拉取）。
 /// 仅状态转换点调用；init 的初始值与 shutdown（app 退出、webview 已关）不 emit。
 fn transition_state(app: &AppHandle, state: &HttpServerState, new: HttpServerRunState) {
     state.set_run_state(new);
-    let _ = app.emit(EVENT_HTTP_SERVER_STATE_CHANGED, ());
+    let _ = app.emit(
+        EVENT_HTTP_SERVER_STATE_CHANGED,
+        build_status(state),
+    );
 }
 
 /// 解析 app_data_dir 下的 go-server 数据目录并确保存在，返回 (log_dir, sqlite_dir)。
@@ -395,6 +519,9 @@ fn mark_stopped(app: &AppHandle) {
 fn start_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
 
+    // 复位上次的启动错误缓存：recent_stderr 重新累积本次 Go 输出，last_error 等探活结果填充。
+    state.reset_start_error();
+
     // 步骤 1：停同会话 child。单独锁作用域（不与后续 spawn 锁嵌套，避免 std::Mutex 重入死锁）。
     {
         let mut guard = state
@@ -466,6 +593,9 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     thread::spawn(move || {
         let state = probe_handle.state::<HttpServerState>();
         if wait_for_port_ready(port) {
+            // 启动成功：清 start_last_error 残留 + 冻结启动日志（保留供前端查看），再置 Running。
+            state.clear_start_last_error();
+            state.freeze_start_recent_log();
             transition_state(
                 &probe_handle,
                 state.inner(),
@@ -482,6 +612,16 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                     terminate_child(child);
                 }
             }
+            // 用户在探活期主动停止（stop_server 已 emit Stopped 且 lastError 已清）：
+            // 不再上报失败，避免误弹启动失败 toast。仅记录并返回（child 多半已被 stop take 走）。
+            if state.user_stopped.load(Ordering::SeqCst) {
+                log::info!("[http-server] probe timeout after user stop; skip failure emit");
+                return;
+            }
+            // 启动失败：把启动日志最后一行（Go Fatal 原因）清洗后固化为 start_last_error，冻结日志，
+            // 随 transition_state 的 Stopped payload emit 给前端，供其弹启动失败 toast。
+            state.finalize_start_error();
+            state.freeze_start_recent_log();
             transition_state(
                 &probe_handle,
                 state.inner(),
@@ -503,6 +643,9 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                         .to_owned();
                     if !line.is_empty() {
                         log::info!("[http-server] {}", line);
+                        if let Some(state) = app_clone.try_state::<HttpServerState>() {
+                            state.append_start_recent_log(line);
+                        }
                     }
                 }
                 CommandEvent::Stderr(line) => {
@@ -511,6 +654,10 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                         .to_owned();
                     if !line.is_empty() {
                         log::warn!("[http-server] {}", line);
+                        // append 到启动日志（zap 改走 stderr 后，启动失败的 Fatal 行也在这里）。
+                        if let Some(state) = app_clone.try_state::<HttpServerState>() {
+                            state.append_start_recent_log(line);
+                        }
                     }
                 }
                 CommandEvent::Error(err) => log::warn!("[http-server] event error: {}", err),
@@ -538,6 +685,10 @@ fn stop_server(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("child mutex poisoned: {e}"))?;
     if let Some(child) = guard.take() {
         terminate_child(child);
+        // 主动停止不是启动失败：清启动错误缓存，并置 user_stopped 标志——探活线程若仍在运行，
+        // 其超时分支读到该标志会跳过失败上报，避免误弹启动失败 toast。
+        state.reset_start_error();
+        state.user_stopped.store(true, Ordering::SeqCst);
         transition_state(app, state.inner(), HttpServerRunState::Stopped);
         log::info!("[http-server] stopped");
     }
@@ -577,6 +728,10 @@ pub fn init(app: &AppHandle) {
         port: AtomicU16::new(default_port()),
         log_dir,
         sqlite_dir,
+        start_recent_log: Mutex::new(Vec::new()),
+        start_recent_log_frozen: AtomicBool::new(false),
+        start_last_error: Mutex::new(None),
+        user_stopped: AtomicBool::new(false),
     });
 
     // 默认自动启动（后台线程，不阻塞 setup）。
@@ -611,12 +766,7 @@ pub fn shutdown(state: &HttpServerState) {
 #[tauri::command]
 #[specta::specta]
 pub fn http_server_status(state: State<'_, HttpServerState>) -> HttpServerStatus {
-    HttpServerStatus {
-        run_state: state.run_state(),
-        address: state.address(),
-        port: state.port(),
-        mode: state.mode.to_string(),
-    }
+    build_status(state.inner())
 }
 
 /// 开关 HTTP 服务（true=启动，false=停止）。前端 Switch 控件调用。

@@ -206,6 +206,16 @@ export type HttpServerStatus = {
 	port: number,
 	/**  运行模式（debug/release），与 Go gin mode 对齐。 */
 	mode: string,
+	/**
+	 *  最近一次启动失败的详细原因（探活失败时填充；正常启动/停止为 None）。
+	 *  run_state 为 stopped 且此字段非空时，前端「服务状态」页据此 toast 失败原因。
+	 */
+	startLastError: string | null,
+	/**
+	 *  本次启动过程的全量日志（stdout+stderr，换行拼接；启动结束冻结，运行后保留快照）。
+	 *  供前端后续"查看启动日志"展示（本期前端暂不做 UI，数据先返回）。
+	 */
+	startRecentLog: string | null,
 };
 
 /**  跳转失败原因。对应前端 navigation-failed toast 文案细分。 */

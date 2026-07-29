@@ -16,6 +16,7 @@ import {
   Typography,
 } from '@mui/material';
 import { commands } from '@src/shared/bindings';
+import { logOnError, unwrap } from '@src/shared/commands';
 import { EVENT_HTTP_SERVER_STATE_CHANGED } from '@src/shared/events';
 import { listen } from '@tauri-apps/api/event';
 
@@ -57,9 +58,6 @@ const MODE_LABEL: Record<string, string> = {
 // 浮层 toast 严重级别（操作失败用 error，状态提示用 warning，成功用 success）。
 type ToastSeverity = 'warning' | 'error' | 'success';
 
-// reload 结果：区分 running/starting/stopped/error，供调用方（handleRefresh 等）决定 toast。
-type ReloadResult = 'running' | 'starting' | 'stopped' | 'error';
-
 // 标签列统一样式（固定宽度 + 轻底色，便于扫读）。
 const labelCellSx = { fontWeight: 600, width: 140, bgcolor: 'action.hover', whiteSpace: 'nowrap' } as const;
 
@@ -80,6 +78,21 @@ function spinSx(spinning: boolean) {
   };
 }
 
+// 把 Rust 清洗后的启动失败详情翻译为「服务启动失败：<友好原因>（<原始错误>）」。
+// Rust 已剥离时间戳、提取 error 值（clean_go_error_line），前端只做关键词→中文翻译（文案本地化是前端职责）。
+function friendlyStartError(detail: string | null | undefined): string {
+  if (!detail) {
+    return '服务启动失败，请查看日志目录排查';
+  }
+  if (/address already in use/i.test(detail)) {
+    return `服务启动失败：端口被占用（${detail}）`;
+  }
+  if (/no such file|sqlite|database/i.test(detail)) {
+    return `服务启动失败：数据库初始化异常（${detail}）`;
+  }
+  return `服务启动失败：${detail}`;
+}
+
 // panel 窗口「服务状态」页面：以表格展示本地 HTTP 服务的运行态、地址、模式及系统信息。
 // 第一行 Switch 可开关服务（IPC 调 Rust start/stop sidecar）；其余字段取自 Go getServerRunInfo 接口。
 // fetch 用的地址取自 Rust（端口随模式 dev=9000/build=9100）。
@@ -97,95 +110,90 @@ function ServerStatusPage() {
     setToastOpen(true);
   }, []);
 
-  // 同步服务状态 + 按运行态拉 serverRunInfo。返回 ReloadResult 供调用方决定 toast（本函数不弹 toast，轮询可安全调用）。
-  const reload = useCallback(async (): Promise<ReloadResult> => {
-    let s: HttpServerStatus;
-    try {
-      s = await commands.httpServerStatus();
-    } catch {
-      return 'error';
-    }
-    setStatus(s);
-    if (s.runState === 'starting') {
-      return 'starting';
-    }
-    if (s.runState === 'stopped') {
-      setRunInfo(null);
-      return 'stopped';
-    }
-    // running：Rust 探活保证端口已就绪，直接 fetch 一次（无重试）。
-    try {
-      const resp = await fetch(`${s.address}/api/baseInfo/getServerRunInfo`);
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
+  // 单一状态同步入口：一律以 Rust 推送的 status 为准（前端不做状态判断）。
+  // running → 拉 getServerRunInfo 展示（失败提示"获取服务运行信息失败"）；
+  // stopped 且有 lastError → 启动失败，toast 友好翻译后的原因；其余（starting / 主动停止）仅清 runInfo。
+  const applyStatus = useCallback(
+    async (s: HttpServerStatus) => {
+      setStatus(s);
+      if (s.runState !== 'running') {
+        setRunInfo(null);
+        if (s.runState === 'stopped' && s.startLastError) {
+          showToast(friendlyStartError(s.startLastError), 'error');
+        }
+        return;
       }
-      const body: ApiResponse<ServerRunInfo> = await resp.json();
-      if (body.code !== 0) {
-        throw new Error(body.msg || `code ${body.code}`);
+      // running：Rust 探活保证端口已就绪，直接 fetch 一次（无重试）；失败提示获取服务运行信息失败。
+      try {
+        const resp = await fetch(`${s.address}/api/baseInfo/getServerRunInfo`);
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const body: ApiResponse<ServerRunInfo> = await resp.json();
+        if (body.code !== 0) {
+          throw new Error(body.msg || `code ${body.code}`);
+        }
+        setRunInfo(body.data);
+        showToast('启动成功，获取服务运行信息成功', 'success');
+      } catch {
+        setRunInfo(null);
+        showToast('启动成功，获取服务运行信息失败', 'error');
       }
-      setRunInfo(body.data);
-      return 'running';
-    } catch {
-      return 'error';
-    }
-  }, []);
+    },
+    [showToast],
+  );
 
-  // 初次挂载加载。
+  // 初次挂载：拉一次最新状态同步（Rust 为唯一状态源）。
   useEffect(() => {
-    void reload();
-  }, [reload]);
+    void commands.httpServerStatus().then(applyStatus).catch((err: unknown) => {
+      console.warn('[http-server] 初始状态拉取失败:', err);
+    });
+  }, [applyStatus]);
 
-  // 监听后端 run_state 变化事件（替代轮询）：状态转换时 reload 同步前端，无定时器开销。
+  // 监听 Rust 状态变更事件：payload 即最新 HttpServerStatus，直接 applyStatus，无需二次拉取。
   useEffect(() => {
-    const unlistenPromise = listen(EVENT_HTTP_SERVER_STATE_CHANGED, () => {
-      void reload();
+    const unlistenPromise = listen<HttpServerStatus>(EVENT_HTTP_SERVER_STATE_CHANGED, (e) => {
+      void applyStatus(e.payload);
     });
     return () => {
-      unlistenPromise.then(fn => fn()).catch(() => {});
+      unlistenPromise
+        .then(fn => fn())
+        .catch((err: unknown) => console.warn('[http-server:state-changed] unlisten failed:', err));
     };
-  }, [reload]);
+  }, [applyStatus]);
 
+  // 刷新：重新从 Rust 拉一次最新状态并 applyStatus（成功/失败提示由 applyStatus 内部按需弹出）。
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    const result = await reload();
-    switch (result) {
-      case 'running':
-        showToast('刷新成功', 'success');
-        break;
-      case 'starting':
-        showToast('服务启动中，请稍后', 'warning');
-        break;
-      case 'stopped':
-        showToast('请先开启本地服务', 'warning');
-        break;
-      case 'error':
-        showToast('刷新失败', 'error');
-        break;
+    try {
+      const s = await commands.httpServerStatus();
+      await applyStatus(s);
+    } catch {
+      showToast('刷新失败', 'error');
+    } finally {
+      setRefreshing(false);
     }
-    setRefreshing(false);
-  }, [reload, showToast]);
+  }, [applyStatus, showToast]);
 
-  // Switch 开关：开启时先清理跨会话残留的 go-server 孤立进程（best-effort，不阻断），再调 Rust 启停服务。
-  // Rust 后台探活决定最终态（starting→running/stopped），此处调 reload 同步前端状态。
+  // Switch 开关：开启前先清理跨会话残留的 go-server 孤儿进程（best-effort），再调 Rust 启停服务。
+  // 仅触发动作——服务最终态（starting→running/stopped）由 Rust 探活决定并经事件推送，前端不等待、不判断。
   const handleToggle = useCallback(
     async (checked: boolean) => {
       setToggling(true);
       try {
         if (checked) {
-          // 清理占用端口的本应用孤立 go-server，确保新 sidecar 能 bind 成功；失败不阻断启动。
-          await commands.cleanupOrphanHttpServer().catch(() => {});
+          // 清理占用端口的本应用孤立 go-server，确保新 sidecar 能 bind 成功；best-effort，失败仅打 warn 不阻断。
+          await logOnError(commands.cleanupOrphanHttpServer(), 'cleanup-orphan-http-server');
         }
-        const r = await commands.setHttpServerEnabled(checked);
-        if (r.status === 'error') {
-          showToast(`${checked ? '启动' : '停止'}服务失败：${r.error}`, 'error');
-          return;
-        }
-        await reload();
+        // setHttpServerEnabled 返回 Result<(), String>，按 commands.ts 约定用 unwrap：失败时 throw 错误字符串。
+        await unwrap(commands.setHttpServerEnabled(checked));
+      } catch (e) {
+        showToast(`${checked ? '启动' : '停止'}服务失败：${e}`, 'error');
       } finally {
         setToggling(false);
       }
     },
-    [reload, showToast],
+    [showToast],
   );
 
   // 复制目录路径（双引号包裹，便于在任意终端 cd 后直接粘贴）；成功/失败均 toast 反馈。

@@ -17,9 +17,9 @@ use crate::shared::screen::{
 };
 use crate::shared::state::claude_sessions::ClaudeSessionStore;
 use crate::shared::types::ClaudeSessionInfo;
-use crate::terminal::{NavErr, Target, dispatch};
 #[cfg(target_os = "macos")]
 use crate::terminal::open_directory_dispatch;
+use crate::terminal::{NavErr, Target, dispatch};
 
 #[tauri::command]
 #[specta::specta]

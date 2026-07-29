@@ -26,7 +26,11 @@ const (
 // MustInitZapLogger 初始化 zap：三路 tee（error 日志 / 全量日志 / 控制台），
 // 文件走 lumberjack 轮转。日志目录来自环境变量（cfg.LogDir）。
 func MustInitZapLogger(cfg *config.Config) {
-	consoleSyncer := zapcore.AddSync(os.Stdout)
+	// 控制台同步器走 stderr：日志属诊断信息（非程序数据输出），按 Unix 惯例应走 stderr；
+	// 更关键的是 Tauri sidecar 模式下，Rust（http_server.rs 事件线程）把子进程 stderr 归为
+	// CommandEvent::Stderr → log::warn!（release 级别留痕），而 stdout 归为 log::info!（release 被过滤）。
+	// Fatal 级别的启动失败原因（如端口占用）必须走 stderr 才能被 Rust 捕获并回传前端 toast。
+	consoleSyncer := zapcore.AddSync(os.Stderr)
 
 	jsonEncoder := zapcore.NewJSONEncoder(newEncoderConfig())
 	consoleEncoder := zapcore.NewConsoleEncoder(newEncoderConfig())
