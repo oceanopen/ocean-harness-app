@@ -19,8 +19,9 @@
 //   - init() 永不返回 Err、永不阻塞 setup；目录解析失败仅 log::warn 并跳过自动启动。
 //   - app 退出时尽力回收子进程，并通过 aborted 标志消除"退出与注册竞态"产生的孤儿。
 //
-// 启动阶段（start_server）：停同会话 child + spawn，spawn 后置 Starting；后台 TCP 探活端口就绪后置 Running，
-//   超时回退 Stopped + kill。run_state 三态（Stopped/Starting/Running）供前端渲染，Running 即端口就绪可直接 fetch。
+// 启动阶段（start_server）：停同会话 child + spawn，spawn 后置 Starting；后台 settle 线程在「最后一行日志静默 STARTUP_LOG_SILENCE」后，
+//   用「子进程 PID 是否监听端口」做身份校验——命中置 Running，未命中（端口被别家占用 / bind 失败）置 Stopped。
+//   运行中进程退出由事件线程的 Terminated 即时捕获。run_state 三态供前端渲染，Running 即自有进程已 bind 可直接 fetch。
 //
 // 孤立进程清理（cleanup_orphan_http_server 命令）：app 异常退出后跨会话残留的 go-server 可能占用端口，
 //   导致新 sidecar bind 失败。前端「服务状态」页开关开启时在 start 前显式调用本命令清理——
@@ -31,13 +32,12 @@
 // Windows 直接 kill()（无 SIGTERM 概念）。
 
 use std::fs;
-use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, AtomicU16, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::ShellExt;
@@ -53,6 +53,11 @@ use crate::shared::types::{HttpServerRunState, HttpServerStatus};
 /// dev/build 编译各自的默认端口（用户未在「服务配置」设置 http_server_port 时回退于此）。
 const HTTP_SERVER_PORT_TEST: u16 = 9000;
 const HTTP_SERVER_PORT_RELEASE: u16 = 9100;
+
+/// settle 线程：最后一行启动日志后静默多久即裁定启动成败。新日志到达会顺延，从而自适应实际启动耗时。
+const STARTUP_LOG_SILENCE: Duration = Duration::from_secs(1);
+/// settle 线程：启动裁定的硬上限，无论日志是否静默，超过即强制裁定（防异常启动永久挂起 Starting）。
+const STARTUP_VERDICT_DEADLINE: Duration = Duration::from_secs(10);
 
 /// 当前编译模式的默认端口（cfg! 编译期决定）。
 fn default_port() -> u16 {
@@ -103,17 +108,18 @@ pub struct HttpServerState {
     pub log_dir: String,
     /// sqlite 数据目录（注入 GO_SERVER_SQLITE_DIR）。
     pub sqlite_dir: String,
-    /// 本次启动过程的全量日志（stdout+stderr，按到达顺序 append）。事件线程写入，启动结束（探活成功/失败）后冻结。
+    /// 本次启动过程的全量日志（stdout+stderr，按到达顺序 append）。仅 run_state==Starting 期间累积——
+    /// 一旦进入 Running/Stopped 即停止 append，保证前端拿到的是纯净的"本次启动过程"快照，且运行期访问日志不会无限增长。
     /// 失败时取最后一行清洗为 start_last_error；http_server_status 返回前端供后续"查看启动日志"。
     pub start_recent_log: Mutex<Vec<String>>,
-    /// 启动日志是否已冻结（启动结束后置位）：冻结后事件线程不再 append，保证前端拿到的是纯净的"本次启动过程"日志。
-    pub start_recent_log_frozen: AtomicBool,
-    /// 最近一次启动失败的详细原因（探活失败时从 start_recent_log 最后一行清洗；正常启动/停止为 None）。
+    /// 最近一次启动失败的详细原因（启动期进程退出 / 身份校验未通过 / 超时时填充；正常启动 / 主动停止为 None）。
     /// http_server_status 返回给前端，供「服务状态」页重启失败时 toast 展示。
     pub start_last_error: Mutex<Option<String>>,
-    /// 用户主动停止标志：stop_server 置位、start_server 入口清位。探活线程超时分支据此跳过失败上报，
-    /// 避免"启动中途主动停止"被误判为启动失败而弹 toast。
-    pub user_stopped: AtomicBool,
+    /// 本次 sidecar 子进程 PID（spawn 时记录）：settle 线程据「该 PID 是否监听端口」判定启动成败，
+    /// 精确匹配端口监听者，区别于占用端口的别家服务或同名 / 孤儿进程。0 表示当前无活动子进程。
+    pub child_pid: AtomicU32,
+    /// 最近一行启动日志的到达时刻（spawn 时置为 spawn 时刻，每行日志刷新）。settle 线程据此判定「静默 STARTUP_LOG_SILENCE」。
+    pub last_log_at: Mutex<Option<Instant>>,
 }
 
 impl HttpServerState {
@@ -136,8 +142,8 @@ impl HttpServerState {
     fn address(&self) -> String {
         format!("http://127.0.0.1:{}", self.port())
     }
-    /// 复位启动相关状态（start_server 入口调用）：清启动日志缓冲、start_last_error、user_stopped、解冻，
-    /// 确保本次启动过程日志与失败原因取自本次 Go 输出。
+    /// 复位启动相关状态（start_server 入口调用）：清启动日志缓冲与 start_last_error，
+    /// 确保本次启动过程日志与失败原因取自本次 Go 输出。child_pid / last_log_at 在 spawn 时另行设置。
     fn reset_start_error(&self) {
         if let Ok(mut g) = self.start_recent_log.lock() {
             g.clear();
@@ -145,30 +151,36 @@ impl HttpServerState {
         if let Ok(mut g) = self.start_last_error.lock() {
             *g = None;
         }
-        self.user_stopped.store(false, Ordering::SeqCst);
-        self.start_recent_log_frozen
-            .store(false, Ordering::SeqCst);
     }
-    /// 事件线程 append 一行 stdout/stderr 到启动日志；冻结后跳过（启动已结束）。
+    /// 事件线程 append 一行 stdout/stderr 到启动日志；仅 run_state==Starting 期间累积（一旦 Running/Stopped 即停）。
     fn append_start_recent_log(&self, line: String) {
-        if !self
-            .start_recent_log_frozen
-            .load(Ordering::SeqCst)
-        {
+        if self.run_state() == HttpServerRunState::Starting {
             if let Ok(mut g) = self.start_recent_log.lock() {
                 g.push(line);
             }
         }
     }
-    /// 冻结启动日志（探活成功/失败时调用）：之后事件线程不再 append，保留"本次启动过程"快照。
-    fn freeze_start_recent_log(&self) {
-        self.start_recent_log_frozen
-            .store(true, Ordering::SeqCst);
+    /// 记录「最近一行日志到达时刻」（spawn 时与每行日志调用）；settle 线程据此判定 STARTUP_LOG_SILENCE 静默。
+    fn touch_last_log_at(&self) {
+        if let Ok(mut g) = self.last_log_at.lock() {
+            *g = Some(Instant::now());
+        }
     }
-    /// 探活失败时调用：取启动日志最后一行非空，清洗为 start_last_error（无内容则 None）。
-    fn finalize_start_error(&self) {
-        let cleaned = self
-            .start_recent_log
+    /// 取最近一行日志到达时刻；未设置（理论不会，spawn 时已置位）回退为当前时刻。
+    fn last_log_at(&self) -> Instant {
+        self.last_log_at
+            .lock()
+            .ok()
+            .and_then(|g| *g)
+            .unwrap_or_else(Instant::now)
+    }
+    /// 设置本次 sidecar 子进程 PID（spawn 时调用）。
+    fn set_child_pid(&self, pid: u32) {
+        self.child_pid.store(pid, Ordering::SeqCst);
+    }
+    /// 取启动日志最后一行非空、清洗为失败原因（供 Starting 期进程退出的 error；无内容则 None）。
+    fn extract_last_log_error(&self) -> Option<String> {
+        self.start_recent_log
             .lock()
             .ok()
             .and_then(|g| {
@@ -178,17 +190,13 @@ impl HttpServerState {
                     .map(str::to_string)
             })
             .map(|line| clean_go_error_line(&line))
-            .filter(|s| !s.is_empty());
-        if let Ok(mut g) = self.start_last_error.lock() {
-            *g = cleaned;
-        }
+            .filter(|s| !s.is_empty())
     }
-    /// 探活成功时调用：清 start_last_error 与 user_stopped（保留 start_recent_log 供前端查看）。
+    /// 清 start_last_error（启动成功 / 主动停止时调用）。
     fn clear_start_last_error(&self) {
         if let Ok(mut g) = self.start_last_error.lock() {
             *g = None;
         }
-        self.user_stopped.store(false, Ordering::SeqCst);
     }
     /// 取最近一次启动失败原因（http_server_status 返回前端用；无则 None）。
     fn start_last_error(&self) -> Option<String> {
@@ -249,9 +257,15 @@ fn build_status(state: &HttpServerState) -> HttpServerStatus {
 }
 
 /// 更新 run_state 并把最新状态快照作为 payload emit 给前端（前端 listen 后直接同步 UI，无需二次拉取）。
-/// 仅状态转换点调用；init 的初始值与 shutdown（app 退出、webview 已关）不 emit。
+/// 幂等：若新旧状态相同（如多次 Stopped）则不重复 emit——根治事件线程 Terminated+流结束、
+/// 以及 settle 线程与 Terminated 并发 finalize 时可能的双重 emit。
+/// init 的初始值与 shutdown（app 退出、webview 已关）不走此函数，本就不 emit。
 fn transition_state(app: &AppHandle, state: &HttpServerState, new: HttpServerRunState) {
+    let old = state.run_state();
     state.set_run_state(new);
+    if old == new {
+        return;
+    }
     let _ = app.emit(
         EVENT_HTTP_SERVER_STATE_CHANGED,
         build_status(state),
@@ -293,22 +307,6 @@ fn terminate_child(child: CommandChild) {
     let _ = child.kill();
 }
 
-/// TCP 探活 127.0.0.1:port 是否已被监听（= Go gin 已 ListenAndServe、bind 端口）。
-/// 每 1s 重试一次、单次 connect 超时 200ms、总超时 5s；就绪返回 true。
-fn wait_for_port_ready(port: u16) -> bool {
-    let addr: std::net::SocketAddr = format!("127.0.0.1:{port}")
-        .parse()
-        .expect("valid loopback socket addr");
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    while std::time::Instant::now() < deadline {
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
-            return true;
-        }
-        thread::sleep(Duration::from_secs(1));
-    }
-    false
-}
-
 // ============================================================
 // 端口兜底：清理跨会话残留的 go-server 孤立进程
 // ============================================================
@@ -347,6 +345,13 @@ fn reclaim_port_if_orphan_go_server(port: u16, identifier: &str) {
 /// 故同一份匹配逻辑天然兼容 dev（...dev-go_server_bin）与 build（...go_server_bin）两种 sidecar 名。
 fn looks_like_go_server(cmd: &str, identifier: &str) -> bool {
     cmd.contains(identifier) && cmd.contains("go_server_bin")
+}
+
+/// 判断本应用 sidecar 子进程是否已监听目标端口（= Go 已成功 bind）。
+/// 复用 pids_listening_on_port 取端口监听者 PID，精确匹配 child_pid——
+/// 不受同名 / 孤儿进程干扰，也绝不会把占用端口的别家服务误判为启动成功。
+fn child_owns_port(port: u16, child_pid: u32) -> bool {
+    pids_listening_on_port(port).contains(&child_pid)
 }
 
 #[cfg(unix)]
@@ -498,29 +503,41 @@ fn kill_orphan_pid(pid: u32) {
         .status();
 }
 
-/// 进程退出后清运行态 + child（幂等；事件线程与 stop/shutdown 都可能调到）。
-fn mark_stopped(app: &AppHandle) {
-    if let Some(state) = app.try_state::<HttpServerState>() {
-        transition_state(app, state.inner(), HttpServerRunState::Stopped);
-        if let Ok(mut guard) = state.child.lock() {
-            *guard = None;
-        }
+/// 集中式「置 Stopped + emit + 回收 child」：幂等——已 Stopped 则直接返回不再 emit，
+/// 根治事件线程「Terminated + 流结束」双重触发导致的 stopped 双发。
+/// error=Some 表示启动失败原因（Starting 期退出 / 身份校验未通过 / 超时），前端据此 toast；
+/// error=None 表示运行中或主动停止，不弹失败 toast。
+fn finalize_stopped(app: &AppHandle, error: Option<String>) {
+    let Some(state) = app.try_state::<HttpServerState>() else {
+        return;
+    };
+    let s = state.inner();
+    if s.run_state() == HttpServerRunState::Stopped {
+        return;
+    }
+    if let Ok(mut g) = s.start_last_error.lock() {
+        *g = error;
+    }
+    transition_state(app, s, HttpServerRunState::Stopped);
+    if let Ok(mut guard) = s.child.lock() {
+        *guard = None;
     }
 }
 
-/// 启动 sidecar（仅 spawn + 探活，不含端口清理逻辑）。在调用方线程同步执行；失败返回 Err。
+/// 启动 sidecar（仅 spawn + 启动成败判定，不含端口清理逻辑）。在调用方线程同步执行；失败返回 Err。
 ///
 /// 跨会话 go-server 孤立进程的清理已迁移到独立 IPC 命令 `cleanup_orphan_http_server`，
 /// 由前端「服务状态」页开关开启时在调用本函数前显式触发（详见该命令注释）。
 ///
 /// 1) 停掉同会话 Rust 持有的 child（强制干净重启；init 时 child 为 None，空操作）。
-/// 2) 加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 置 Starting；
+/// 2) 加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 记 child_pid → 置 Starting；
 ///    spawn 后再复查 aborted，若期间 app 已退出则当场 kill，不留孤儿。
-/// 3) 后台 TCP 探活端口就绪后置 Running（前端可直接 fetch，无需重试）；超时回退 Stopped + kill child。
+/// 3) 后台 settle 线程：等「最后一行日志静默 STARTUP_LOG_SILENCE」后用 child_owns_port（PID 精确匹配端口监听者）
+///    判定成败——命中置 Running（前端可直接 fetch），未命中置 Stopped(失败)；进程退出由事件线程 Terminated 即时捕获。
 fn start_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
 
-    // 复位上次的启动错误缓存：recent_stderr 重新累积本次 Go 输出，last_error 等探活结果填充。
+    // 复位上次的启动错误缓存：start_recent_log 重新累积本次 Go 输出，last_error 等启动裁定结果填充。
     state.reset_start_error();
 
     // 步骤 1：停同会话 child。单独锁作用域（不与后续 spawn 锁嵌套，避免 std::Mutex 重入死锁）。
@@ -555,7 +572,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         return Err("log_dir/sqlite_dir not resolved".into());
     }
 
-    // 解析端口：读 app_config 的 http_server_port，缺省回退模式默认；更新 state 供 status/探活使用。
+    // 解析端口：读 app_config 的 http_server_port，缺省回退模式默认；更新 state 供 status/settle 使用。
     let port = resolve_server_port(app);
     state.set_port(port);
 
@@ -580,53 +597,61 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
+    // 记录子进程 PID，供 settle 线程做身份校验（精确匹配端口监听者，区别于别家服务）。
+    let child_pid = child.pid();
+    state.set_child_pid(child_pid);
+    state.touch_last_log_at(); // 以 spawn 时刻为静默判定的基准，后续每行日志刷新
     *guard = Some(child);
     transition_state(app, state.inner(), HttpServerRunState::Starting);
     log::info!(
-        "[http-server] spawned (mode={}, port={}); waiting for port ready",
+        "[http-server] spawned (mode={}, port={}, pid={}); waiting for startup verdict",
         state.mode,
-        port
+        port,
+        child_pid
     );
-    drop(guard); // 释放锁，事件线程与探活线程才能访问 child。
+    drop(guard); // 释放锁，事件线程与 settle 线程才能访问 child。
 
-    // 后台探活：等 Go bind 端口就绪后置 Running；超时判定启动失败，回退 Stopped + kill child。
-    let probe_handle = app.clone();
+    // 后台 settle 线程：判定启动成败。等「最后一行日志后静默 STARTUP_LOG_SILENCE」（或 spawn+STARTUP_VERDICT_DEADLINE 硬上限），
+    // 再用 child_owns_port（该 PID 是否监听端口）做身份校验——命中置 Running，未命中置 Stopped(失败)。
+    // 任一 finalize（进程退出等）先行后，run_state≠Starting 即退让，保证「先到先得」不重复 emit。
+    let settle_handle = app.clone();
     thread::spawn(move || {
-        let state = probe_handle.state::<HttpServerState>();
-        if wait_for_port_ready(port) {
-            // 启动成功：清 start_last_error 残留 + 冻结启动日志（保留供前端查看），再置 Running。
+        let state = settle_handle.state::<HttpServerState>();
+        let cap = Instant::now() + STARTUP_VERDICT_DEADLINE;
+        loop {
+            if state.run_state() != HttpServerRunState::Starting {
+                return; // 事件线程已 finalize
+            }
+            let now = Instant::now();
+            if now >= cap {
+                break; // 硬上限：强制裁定
+            }
+            let fire_at = state.last_log_at() + STARTUP_LOG_SILENCE;
+            if now >= fire_at {
+                break; // 日志已静默 STARTUP_LOG_SILENCE：裁定
+            }
+            // 未到静默窗口：睡到 fire_at 或 cap（取早）后复查
+            let sleep_until = if fire_at < cap { fire_at } else { cap };
+            thread::sleep(sleep_until - now);
+        }
+        // 仍 Starting 才裁定（可能已被事件线程先行 finalize）
+        if state.run_state() != HttpServerRunState::Starting {
+            return;
+        }
+        if child_owns_port(port, child_pid) {
+            // 启动成功：清失败原因、置 Running（emit）。日志停止累积（run_state≠Starting）。
             state.clear_start_last_error();
-            state.freeze_start_recent_log();
-            transition_state(
-                &probe_handle,
-                state.inner(),
-                HttpServerRunState::Running,
-            );
-            log::info!("[http-server] running (port {} ready)", port);
+            transition_state(&settle_handle, state.inner(), HttpServerRunState::Running);
+            log::info!("[http-server] running (pid {} owns port {})", child_pid, port);
         } else {
             log::warn!(
-                "[http-server] port {} not ready within timeout; killing sidecar",
+                "[http-server] startup failed: pid {} not listening on port {}",
+                child_pid,
                 port
             );
-            if let Ok(mut g) = state.child.lock() {
-                if let Some(child) = g.take() {
-                    terminate_child(child);
-                }
-            }
-            // 用户在探活期主动停止（stop_server 已 emit Stopped 且 lastError 已清）：
-            // 不再上报失败，避免误弹启动失败 toast。仅记录并返回（child 多半已被 stop take 走）。
-            if state.user_stopped.load(Ordering::SeqCst) {
-                log::info!("[http-server] probe timeout after user stop; skip failure emit");
-                return;
-            }
-            // 启动失败：把启动日志最后一行（Go Fatal 原因）清洗后固化为 start_last_error，冻结日志，
-            // 随 transition_state 的 Stopped payload emit 给前端，供其弹启动失败 toast。
-            state.finalize_start_error();
-            state.freeze_start_recent_log();
-            transition_state(
-                &probe_handle,
-                state.inner(),
-                HttpServerRunState::Stopped,
+            finalize_stopped(
+                &settle_handle,
+                Some("未检测到服务监听端口，可能端口被占用".into()),
             );
         }
     });
@@ -646,6 +671,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                         log::info!("[http-server] {}", line);
                         if let Some(state) = app_clone.try_state::<HttpServerState>() {
                             state.append_start_recent_log(line);
+                            state.touch_last_log_at();
                         }
                     }
                 }
@@ -658,19 +684,25 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                         // append 到启动日志（zap 改走 stderr 后，启动失败的 Fatal 行也在这里）。
                         if let Some(state) = app_clone.try_state::<HttpServerState>() {
                             state.append_start_recent_log(line);
+                            state.touch_last_log_at();
                         }
                     }
                 }
                 CommandEvent::Error(err) => log::warn!("[http-server] event error: {}", err),
                 CommandEvent::Terminated(_) => {
                     log::info!("[http-server] process terminated");
-                    mark_stopped(&app_clone);
+                    // Starting 期退出 = 启动失败，取末行日志清洗为原因；Running 期退出 = 正常停止，无原因。
+                    let error = app_clone
+                        .try_state::<HttpServerState>()
+                        .filter(|s| s.run_state() == HttpServerRunState::Starting)
+                        .and_then(|s| s.extract_last_log_error());
+                    finalize_stopped(&app_clone, error);
                 }
                 _ => {}
             }
         }
-        // rx 关闭 = 进程已退出，确保运行态清零。
-        mark_stopped(&app_clone);
+        // rx 关闭 = 进程已退出。finalize_stopped 幂等：若 Terminated 已处理则此处 no-op，不再重复 emit。
+        finalize_stopped(&app_clone, None);
         log::info!("[http-server] event stream ended");
     });
 
@@ -680,17 +712,18 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
 /// 停止 sidecar（未运行则跳过，幂等）。unix SIGTERM 优雅退出 + kill() 兜底。
 fn stop_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
-    let mut guard = state
-        .child
-        .lock()
-        .map_err(|e| format!("child mutex poisoned: {e}"))?;
-    if let Some(child) = guard.take() {
+    let child = {
+        let mut guard = state
+            .child
+            .lock()
+            .map_err(|e| format!("child mutex poisoned: {e}"))?;
+        guard.take()
+    };
+    if let Some(child) = child {
         terminate_child(child);
-        // 主动停止不是启动失败：清启动错误缓存，并置 user_stopped 标志——探活线程若仍在运行，
-        // 其超时分支读到该标志会跳过失败上报，避免误弹启动失败 toast。
-        state.reset_start_error();
-        state.user_stopped.store(true, Ordering::SeqCst);
-        transition_state(app, state.inner(), HttpServerRunState::Stopped);
+        // 主动停止非启动失败：finalize_stopped(None) 置 Stopped 且不携带失败原因（不弹失败 toast）；
+        // 其后进程退出的 Terminated 会命中 finalize_stopped 幂等分支，不再重复 emit。
+        finalize_stopped(app, None);
         log::info!("[http-server] stopped");
     }
     Ok(())
@@ -730,10 +763,10 @@ pub fn init(app: &AppHandle) {
         port: AtomicU16::new(default_port()),
         log_dir,
         sqlite_dir,
+        child_pid: AtomicU32::new(0),
+        last_log_at: Mutex::new(None),
         start_recent_log: Mutex::new(Vec::new()),
-        start_recent_log_frozen: AtomicBool::new(false),
         start_last_error: Mutex::new(None),
-        user_stopped: AtomicBool::new(false),
     });
 
     // 默认自动启动（后台线程，不阻塞 setup）。

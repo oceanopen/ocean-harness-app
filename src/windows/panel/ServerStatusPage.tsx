@@ -282,7 +282,7 @@ function ServerStatusPage() {
                         >
                           <CopyIcon fontSize="small" />
                         </IconButton>
-                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 13 }}>
                           {runInfo?.serverInfo.sqliteDir ?? '-'}
                         </Typography>
                       </Stack>
@@ -300,7 +300,7 @@ function ServerStatusPage() {
                         >
                           <CopyIcon fontSize="small" />
                         </IconButton>
-                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 12 }}>
                           {runInfo?.serverInfo.logDir ?? '-'}
                         </Typography>
                       </Stack>
