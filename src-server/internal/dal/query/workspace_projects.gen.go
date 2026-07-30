@@ -31,7 +31,6 @@ func newWorkspaceProject(db *gorm.DB, opts ...gen.DOOption) workspaceProject {
 	_workspaceProject.ID = field.NewInt(tableName, "id")
 	_workspaceProject.WorkspaceID = field.NewInt(tableName, "workspace_id")
 	_workspaceProject.Name = field.NewString(tableName, "name")
-	_workspaceProject.Identifier = field.NewString(tableName, "identifier")
 	_workspaceProject.Description = field.NewString(tableName, "description")
 	_workspaceProject.Emoji = field.NewString(tableName, "emoji")
 	_workspaceProject.DefaultStateID = field.NewInt(tableName, "default_state_id")
@@ -67,7 +66,6 @@ type workspaceProject struct {
 	ID               field.Int
 	WorkspaceID      field.Int
 	Name             field.String
-	Identifier       field.String
 	Description      field.String
 	Emoji            field.String
 	DefaultStateID   field.Int
@@ -96,7 +94,6 @@ func (w *workspaceProject) updateTableName(table string) *workspaceProject {
 	w.ID = field.NewInt(table, "id")
 	w.WorkspaceID = field.NewInt(table, "workspace_id")
 	w.Name = field.NewString(table, "name")
-	w.Identifier = field.NewString(table, "identifier")
 	w.Description = field.NewString(table, "description")
 	w.Emoji = field.NewString(table, "emoji")
 	w.DefaultStateID = field.NewInt(table, "default_state_id")
@@ -131,11 +128,10 @@ func (w *workspaceProject) GetFieldByName(fieldName string) (field.OrderExpr, bo
 }
 
 func (w *workspaceProject) fillFieldMap() {
-	w.fieldMap = make(map[string]field.Expr, 12)
+	w.fieldMap = make(map[string]field.Expr, 11)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["workspace_id"] = w.WorkspaceID
 	w.fieldMap["name"] = w.Name
-	w.fieldMap["identifier"] = w.Identifier
 	w.fieldMap["description"] = w.Description
 	w.fieldMap["emoji"] = w.Emoji
 	w.fieldMap["default_state_id"] = w.DefaultStateID

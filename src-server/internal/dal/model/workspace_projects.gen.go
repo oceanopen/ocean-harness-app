@@ -15,9 +15,8 @@ const TableNameWorkspaceProject = "t_workspace_projects"
 // WorkspaceProject mapped from table <t_workspace_projects>
 type WorkspaceProject struct {
 	ID               int             `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
-	WorkspaceID      int             `gorm:"column:workspace_id;type:INTEGER;not null;uniqueIndex:udx_workspace_projects_workspace_id_identifier,priority:1" json:"workspaceId"`
+	WorkspaceID      int             `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
 	Name             string          `gorm:"column:name;type:TEXT;not null" json:"name"`
-	Identifier       string          `gorm:"column:identifier;type:TEXT;not null;uniqueIndex:udx_workspace_projects_workspace_id_identifier,priority:2" json:"identifier"`
 	Description      string          `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
 	Emoji            string          `gorm:"column:emoji;type:TEXT;not null;default:''" json:"emoji"`
 	DefaultStateID   int             `gorm:"column:default_state_id;type:INTEGER" json:"defaultStateId"`

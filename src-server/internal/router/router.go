@@ -58,6 +58,16 @@ func SetupRouter() *gin.Engine {
 				projectStateGroup.POST("/delete", controller.ProjectState{}.Delete)
 				projectStateGroup.POST("/reorder", controller.ProjectState{}.Reorder)
 			}
+
+			// project 模块：项目 CRUD（action 风格，POST）。
+			projectGroup := trackerGroup.Group("/project")
+			{
+				projectGroup.POST("/getList", controller.Project{}.GetList)
+				projectGroup.POST("/getInfo", controller.Project{}.GetInfo)
+				projectGroup.POST("/create", controller.Project{}.Create)
+				projectGroup.POST("/update", controller.Project{}.Update)
+				projectGroup.POST("/delete", controller.Project{}.Delete)
+			}
 		}
 	}
 

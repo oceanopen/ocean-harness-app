@@ -9,7 +9,7 @@
 ## 一、背景与目标
 
 - **个人场景**：单用户，无成员管理、无权限校验。
-- **三级模型**：workspace（顶层容器）→ project（项目，带 identifier 短码）→ issue（核心工作项）。
+- **三级模型**：workspace（顶层容器）→ project（项目）→ issue（核心工作项）。
 - **体验对齐 plane**：项目卡片网格、issue 列表分组/排序/筛选、侧滑详情编辑。MVP 先打通主链路，高级特性（看板/拖拽/富筛选/富文本/命令面板/gantt）列入后续迭代。
 - **技术栈**：后端 gin 分层 + gorm/gen（DO 自动生成）+ goose（迁移）+ sqlite；前端 React + MUI v9（专项库按需引入）+ i18next。
 
@@ -29,36 +29,36 @@
 | 表 | 关键字段 | 说明 |
 |---|---|---|
 | `t_workspaces` | id, name, slug(全局唯一 udx), description, 时间戳, deleted_at | 顶层容器（顶级，表名保持） |
-| `t_workspace_projects` | id, workspace_id, name, identifier(同 workspace 全局唯一 udx), description, emoji, default_state_id, 时间戳, deleted_at | 项目，所属 workspace；identifier 大写短码（PLN），用于 issue key |
+| `t_workspace_projects` | id, workspace_id, name, description, emoji, default_state_id, 时间戳, deleted_at | 项目，所属 workspace；允许重名（无短码、无业务唯一键），issue 用全局自增 id 标识 |
 | `t_project_states` | id, project_id, workspace_id, name, color, slug, state_group, sort_order, is_default, is_triage, 时间戳, deleted_at | 状态，所属 project；state_group ∈ backlog/unstarted/started/completed/cancelled |
-| `t_project_issues` | id, project_id, workspace_id, name, description, state_id, priority, sort_order, parent_id, start_date, target_date, completed_at, is_draft, 时间戳, deleted_at | issue，所属 project；issue key = `{identifier}-{id}`（直接用全局自增 id）；priority ∈ urgent/high/medium/low/none |
+| `t_project_issues` | id, project_id, workspace_id, name, description, state_id, priority, sort_order, parent_id, start_date, target_date, completed_at, is_draft, 时间戳, deleted_at | issue，所属 project；issue 用全局自增 `id` 标识（无 issue key、无独立 sequence_id）；priority ∈ urgent/high/medium/low/none |
 | `t_workspace_labels` | id, workspace_id, project_id(可空), name, color, description, sort_order, 时间戳, deleted_at | 标签，所属 workspace（可挂 workspace 或 project 级） |
 | `t_issue_labels` | id, issue_id, label_id, created_at, updated_at, deleted_at | 关联表，所属 issue；udx(issue_id, label_id) 全局唯一；软删除与其他表统一 |
 
 - 软删除：保留 `deleted_at`，`gencode` 配置映射 `gorm.DeletedAt`，查询自动过滤。
-- 唯一索引：**全局唯一**（不带 `WHERE deleted_at IS NULL`），即已删除记录仍占用唯一键——配合「恢复式创建」语义（见下）。
-- issue key = `{identifier}-{id}`（如 `PLN-1`）：直接用全局自增 `id` 组 key，**无独立 sequence_id**（项目间不连号可接受，省一张计数逻辑）。
+- 唯一索引：**全局唯一**（不带 `WHERE deleted_at IS NULL`），即已删除记录仍占用唯一键——配合「恢复式创建」语义（见下）；仅 `workspace(slug)` 与 `t_issue_labels(issue_id,label_id)` 两处有，**project 无业务唯一键（允许重名）**。
+- issue 标识：直接用全局自增 `id`（如 `42`），**无 issue key、无独立 sequence_id**——个人场景项目不多，省去短码/计数逻辑。
 - 枚举字段：`state_group`/`priority` 为 typed 枚举（`enums.StateGroup`/`enums.Priority`），`is_default`/`is_triage`/`is_draft` 为 `enums.YesNo`（"Y"/"N"，替代 bool）；DB 均为 TEXT、**无默认值**（`sort_order` 同样无默认），一律由代码/前端显式赋值，漏传由 `Value()` 硬错拦下（见 `internal/dal/enums/`）。
 - 关联查询：**无 DB 外键约束**，跨表关联一律走 SQL JOIN / 应用层组装；数据级联清理由 service 层手动。
 
 #### 创建逻辑（恢复式 upsert）
 
-针对带业务唯一索引的实体（**workspace by slug**、**project by (workspace_id, identifier)**），create 不直接 INSERT，而是先按唯一键查（**含已软删除记录**，即 `Unscoped` 查询）：
+针对带业务唯一索引的实体（**workspace by slug**、`t_issue_labels` toggle），create 不直接 INSERT，而是先按唯一键查（**含已软删除记录**，即 `Unscoped` 查询）：
 
 - **存在未删除同键记录** → 返回报错「记录重复」；
 - **存在已删除同键记录** → 恢复并重置该行：`deleted_at = NULL` + `updated_at = now` + 业务字段全部用新入参覆盖，**固定列保留**（`id` + `created_at` 不变）；
 - **不存在** → 正常 INSERT。
 
-> 适用范围：workspace、project（创建语义：未删同键→报错、已删→恢复重置、无→插入），以及 `t_issue_labels`（toggle 语义：未删→软删取消、已删→恢复、无→插入）。`t_project_states / t_workspace_labels / t_project_issues` 无业务唯一索引，正常创建。
+> 适用范围：workspace（slug）、`t_issue_labels`（toggle 语义：未删→软删取消、已删→恢复、无→插入）。**project / t_project_states / t_workspace_labels / t_project_issues 无业务唯一索引，正常创建（project 允许重名）。**
 
 ### 2.3 命名规范（全程一致）
 
 - **实体术语**：`workspace / project / issue / state / label` —— types/service/controller/router/前端/DB 全程同一词。
 - **公共字段**：`id, name, description, createdAt, updatedAt, deletedAt`。
-- **业务字段**：`workspaceId, projectId, identifier, slug, stateId, stateGroup, priority, sequenceId, sortOrder, parentId, startDate, targetDate, completedAt, isDraft, isDefault, isTriage, emoji, color`。JSON 全 camelCase。
+- **业务字段**：`workspaceId, projectId, slug, stateId, stateGroup, priority, sortOrder, parentId, startDate, targetDate, completedAt, isDraft, isDefault, isTriage, emoji, color`。JSON 全 camelCase。
 - **枚举**：`priority = urgent|high|medium|low|none`；`stateGroup = backlog|unstarted|started|completed|cancelled`。
 - **表名**：业务表统一 `t_` 前缀 + 所属关系（顶级 `t_workspaces` 保持；子表以直接父单数作前缀：`t_workspace_projects` / `t_project_states` / `t_project_issues` / `t_workspace_labels` / `t_issue_labels`），与系统表（`goose_db_version` 等）区分。
-- **索引名**：唯一索引 `udx_{表名去t_}_{列名}`（如 `udx_workspaces_slug`、`udx_workspace_projects_workspace_id_identifier`），全局唯一；普通索引本期暂不建（数据量小，后续按查询热点以 `idx_{表名去t_}_{列名}` 追加）。
+- **索引名**：唯一索引 `udx_{表名去t_}_{列名}`（如 `udx_workspaces_slug`、`udx_issue_labels_issue_id_label_id`），全局唯一；普通索引本期暂不建（数据量小，后续按查询热点以 `idx_{表名去t_}_{列名}` 追加）。
 - **各层后缀**（沿用 README）：`XxxRequest`/`XxxResponseData`（types）、service/controller 同名、`XxxDO`（gen 生成的数据库实体 = PO 层）。
 
 ### 2.4 gorm/gen 自动生成
@@ -72,9 +72,9 @@
 ### 2.5 接口（action 风格 `/api/<module>/<action>`，GET 查 / POST 写）
 
 - `workspace`: list / get / create / update / delete
-- `project`: list?workspaceId / get / create(**自动种 6 默认 state**) / update / delete
+- `project`: list?workspaceId / get / create(**事务内种 5 默认 state + 回填 default_state_id**) / update / delete(**级联清 state/issue**)
 - `state`: list?projectId / create / update / delete / reorder
-- `issue`: list?projectId(groupBy/orderBy/筛选) / get / create(**自动 sequenceId+sortOrder**) / update / delete
+- `issue`: list?projectId(groupBy/orderBy/筛选) / get / create(**默认 state 取 project.default_state_id、自动 sortOrder**) / update / delete
 - `label`: list / create / update / delete / toggleIssue
 
 ### 2.6 前端 tracker 窗口（新建独立窗口）
@@ -95,7 +95,7 @@
 - [x] **任务 1：[后端·迁移] 建 MVP 6 张业务表**
   - 文件：`src-server/internal/migrations/migrations/20260730001_init_tracker.sql`（新增）
   - 当前：仅有 `20260728001_init.sql`（空迁移验证 goose 机制）
-  - 目标：新增 `-- +goose Up` 迁移，建带层级前缀的 6 表（t_workspaces / t_workspace_projects / t_project_states / t_project_issues / t_workspace_labels / t_issue_labels，自增主键 + 软删除 deleted_at + 时间戳）；唯一索引 `udx_` 前缀且**全局唯一**（udx_workspaces_slug、udx_workspace_projects_workspace_id_identifier、udx_issue_labels_issue_id_label_id，**不带 WHERE deleted_at IS NULL**）；普通索引本期暂不建（数据量小，按需追加）；**不建任何 DB 外键**（跨表关联走 JOIN）；t_project_states 默认 state_group='backlog'、t_project_issues 默认 priority='none'/sequence_id=1/sort_order=65535。
+  - 目标：新增 `-- +goose Up` 迁移，建带层级前缀的 6 表（t_workspaces / t_workspace_projects / t_project_states / t_project_issues / t_workspace_labels / t_issue_labels，自增主键 + 软删除 deleted_at + 时间戳）；唯一索引 `udx_` 前缀且**全局唯一**（udx_workspaces_slug、udx_issue_labels_issue_id_label_id，**不带 WHERE deleted_at IS NULL**）；普通索引本期暂不建（数据量小，按需追加）；**不建任何 DB 外键**（跨表关联走 JOIN）；t_project_states 默认 state_group='backlog'、t_project_issues 默认 priority='none'/sort_order=65535。
 
 - [x] **任务 2：[后端·ORM] 引入 gorm/gen + 自动生成脚本 + 生成 DO**
   - 文件：`src-server/go.mod`（修改，加 `gorm.io/gen` 生成期依赖）、`src-server/cmd/gencode/main.go`（新增）、`src-server/internal/model/gen/`（新增，生成产物）、`src-server/README.md`（修改，命名表补 `DO` 后缀 + gencode 说明）
@@ -114,10 +114,11 @@
   - 当前：无 state 模块
   - 目标：state CRUD（按 projectId 查）+ reorder（批量调 sort_order）；定义 `DefaultStates` 常量（Backlog/Todo/In Progress/Done/Cancelled 五个，含 state_group + color + sort_order + is_default），供 project 创建时调用种子函数 `SeedDefaultStates(tx, projectID, workspaceID)`。
 
-- [ ] **任务 5：[后端·project] 项目模块（create 种默认状态）**
-  - 文件：`src-server/internal/types/project.go`、`service/project.go`、`controller/project.go`（新增）、`router/router.go`（修改）
+- [x] **任务 5：[后端·project] 项目模块（create 种默认状态）**
+  - 文件：`src-server/internal/dal/types/project.go`、`service/project.go`、`controller/project.go`（新增）、`router/router.go`（修改）；回改迁移 `migrations/migrations/20260730001_init_tracker.sql`（去 identifier 列与唯一索引）+ 重跑 `gorm:gen` 重生成 DO
   - 当前：无 project 模块
-  - 目标：project CRUD（按 workspaceId 查）；create 在**同一事务**内：identifier 大写化 + 按 (workspace_id, identifier) **恢复式 upsert**（含软删除记录查询：未删除同键→报错；已删除→恢复重置、保留 `id`+`created_at`；不存在→插入）→ 若为新插入或恢复后该项目下无未删除 state，则调 `SeedDefaultStates` 种 5 默认状态 → 回填 `default_state_id`；软删除（**无 DB 外键**，级联清理其下 state/issue 由 service 手动）。
+  - 目标：project CRUD（按 workspaceId 查）；**去 identifier/issue_key 简化**——project 允许重名、无业务唯一键，create 为普通插入（无 upsert），事务内：插入 project → `SeedDefaultStates` 种 5 默认状态 → 回填 `default_state_id`（取 is_default 那条）；update 仅改 name/description/emoji；软删除事务内级联清理其下 state/issue（issue_labels 留给 label/issue 模块）。
+  - 设计变更：原计划 identifier 短码 + issue key=`{identifier}-{id}`，经讨论改为去 identifier、issue 用全局自增 id 标识（个人场景简化）。
 
 - [ ] **任务 6：[后端·label] 标签模块（含 issue 关联）**
   - 文件：`src-server/internal/types/label.go`、`service/label.go`、`controller/label.go`（新增）、`router/router.go`（修改）
@@ -127,7 +128,7 @@
 - [ ] **任务 7：[后端·issue] Issue 核心模块**
   - 文件：`src-server/internal/types/issue.go`、`service/issue.go`、`controller/issue.go`（新增）、`router/router.go`（修改）
   - 当前：无 issue 模块
-  - 目标：issue CRUD；create 默认 state 取 project.default_state_id，`priority`/`is_draft` 用 typed 枚举（前端传）、`sort_order` 前端传（无则 DB 默认 0）、issue key 由 `{identifier}-{id}` 组装（id 取插入后自增主键）；update 检测 state_id 变化，新 state 的 state_group=completed 则写 completed_at、否则清空；list 支持 `groupBy`(state/priority)、`orderBy`(id/sort_order/priority/created_at)、基础筛选（stateId/priority/labelId/keyword 搜 name）；get/list 返回含 label 列表。
+  - 目标：issue CRUD；create 默认 state 取 project.default_state_id，`priority`/`is_draft` 用 typed 枚举（前端传）、`sort_order` 前端传（无则 DB 默认 0）、issue 用全局自增 id 标识（无 issue key，id 取插入后自增主键）；update 检测 state_id 变化，新 state 的 state_group=completed 则写 completed_at、否则清空；list 支持 `groupBy`(state/priority)、`orderBy`(id/sort_order/priority/created_at)、基础筛选（stateId/priority/labelId/keyword 搜 name）；get/list 返回含 label 列表。
 
 ### 阶段 C：前端窗口骨架
 
@@ -146,12 +147,12 @@
 - [ ] **任务 10：[前端] 项目列表页**
   - 文件：`src/windows/tracker/ProjectListPage.tsx` + `components/ProjectDialog.tsx`（新增）
   - 当前：无
-  - 目标：项目卡片网格（identifier 徽章 + emoji + 描述 + issue 计数）；创建对话框（name/identifier 自动大写/emoji/描述）、编辑、删除（确认）；点击进入 issue 列表。
+  - 目标：项目卡片网格（emoji + 名称 + 描述 + issue 计数）；创建对话框（name/emoji/描述）、编辑、删除（确认）；点击进入 issue 列表。
 
 - [ ] **任务 11：[前端] Issue 列表页**
   - 文件：`src/windows/tracker/IssueListPage.tsx` + `components/IssueCreateDialog.tsx`（新增）
   - 当前：无
-  - 目标：list 视图，按 state_group 或 priority 分组（MUI Collapse 可折叠）+ 排序 + 基础筛选（状态/优先级/关键字搜索）；每行显示 key（identifier-sequenceId）、状态色块、优先级图标、名称；顶部快速创建 issue；点击行打开侧滑详情。
+  - 目标：list 视图，按 state_group 或 priority 分组（MUI Collapse 可折叠）+ 排序 + 基础筛选（状态/优先级/关键字搜索）；每行显示 id、状态色块、优先级图标、名称；顶部快速创建 issue；点击行打开侧滑详情。
 
 - [ ] **任务 12：[前端] Issue 侧滑详情 + Label 管理**
   - 文件：`src/windows/tracker/IssueDetailDrawer.tsx` + `components/StateSelect.tsx`、`PrioritySelect.tsx`、`LabelSelect.tsx`、`LabelManagerDialog.tsx`（新增）

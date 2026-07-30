@@ -26,13 +26,12 @@ CREATE TABLE t_workspaces (
 );
 CREATE UNIQUE INDEX udx_workspaces_slug ON t_workspaces (slug);
 
--- t_workspace_projects：项目，所属 workspace。identifier 为项目短码（大写，如 PLN），同 workspace 内唯一，用于 issue key「PLN-1」。
+-- t_workspace_projects：项目，所属 workspace。允许重名（个人场景靠 id 区分），无短码；issue 用全局自增 id 标识。
 -- default_state_id 逻辑指向 t_project_states.id，但不建 DB 外键。
 CREATE TABLE t_workspace_projects (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id     INTEGER  NOT NULL,
     name             TEXT     NOT NULL,
-    identifier       TEXT     NOT NULL,
     description      TEXT     NOT NULL DEFAULT '',
     emoji            TEXT     NOT NULL DEFAULT '',
     default_state_id INTEGER,
@@ -40,7 +39,6 @@ CREATE TABLE t_workspace_projects (
     updated_at       DATETIME NOT NULL,
     deleted_at       DATETIME
 );
-CREATE UNIQUE INDEX udx_workspace_projects_workspace_id_identifier ON t_workspace_projects (workspace_id, identifier);
 
 -- t_project_states：issue 状态，所属 project。新建项目自动种 5 个默认状态（见 service.DefaultStates）。
 -- state_group ∈ backlog/unstarted/started/completed/cancelled（completed 组触发 issue.completed_at）。
@@ -61,7 +59,7 @@ CREATE TABLE t_project_states (
 );
 
 -- t_project_issues：核心工作项，所属 project。
--- issue key = {identifier}-{id}（直接用全局自增 id 组 key，无独立 sequence_id）；sort_order 列表排序权重；priority 五级枚举。
+-- issue 用全局自增 id 标识（无 issue key、无独立 sequence_id）；sort_order 列表排序权重；priority 五级枚举。
 -- state_id / parent_id 逻辑指向他表，但不建 DB 外键。
 CREATE TABLE t_project_issues (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
