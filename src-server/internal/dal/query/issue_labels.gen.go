@@ -17,7 +17,7 @@ import (
 
 	"gorm.io/plugin/dbresolver"
 
-	"we-claude-terminal/go-server/internal/gormgen/model"
+	"we-claude-terminal/go-server/internal/dal/model"
 )
 
 func newIssueLabel(db *gorm.DB, opts ...gen.DOOption) issueLabel {

@@ -4,9 +4,9 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
+	"we-claude-terminal/go-server/internal/dal/types"
 	"we-claude-terminal/go-server/internal/response"
 	"we-claude-terminal/go-server/internal/service"
-	"we-claude-terminal/go-server/internal/types"
 )
 
 // BaseInfoController 对应 /api/baseInfo 命名空间下的接口。

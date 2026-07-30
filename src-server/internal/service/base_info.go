@@ -6,8 +6,8 @@ import (
 	"os"
 	"runtime"
 
+	"we-claude-terminal/go-server/internal/dal/types"
 	"we-claude-terminal/go-server/internal/global"
-	"we-claude-terminal/go-server/internal/types"
 )
 
 // BaseInfoService 对应 /api/baseInfo 命名空间下的业务逻辑。

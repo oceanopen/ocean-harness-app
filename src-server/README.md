@@ -24,19 +24,21 @@ src-server/
     │   ├── sqlite.go               # MustInitSQLite：gorm + glebarez/sqlite（目录来自配置）
     │   └── gin_writer.go           # InitGinLoggerWriter：gin 日志桥接到 zap
     ├── response/response.go        # 统一响应封装 { code, data, msg }
-    ├── types/base_info.go          # /api/baseInfo 模块的请求/返回 DTO
     ├── service/base_info.go        # 业务逻辑层
     ├── controller/base_info.go     # HTTP 处理层（参数 + 响应封装）
     ├── middleware/recovery.go      # panic 恢复（zap 记录 + 统一 500）
     ├── router/router.go            # SetupRouter：gin.New + 中间件 + 路由
-    └── gormgen/                    # gorm/gen 生成产物（DO 层）：model 子包 = PO；query 层 = 类型安全 CRUD
+    └── dal/                        # 数据访问层（gorm/gen 生成 DO/DAO + 类型/DTO 定义）
+        ├── model/                  # gorm/gen 生成：各表 PO 结构体（model.Workspace）
+        ├── query/                  # gorm/gen 生成：类型安全 CRUD（query.Use(db)）
+        └── types/                  # 请求/返回 DTO（types.BaseInfoRequest）
 ```
 
-> 分层约定：`router` → `controller`（参数/响应封装）→ `service`（业务逻辑）→ `gormgen/global`（数据）。新增模块按 `<module>.go` 在 `types`/`service`/`controller` 下组织，路由按 `/api/<module>/<action>` 分组。
+> 分层约定：`router` → `controller`（参数/响应封装）→ `service`（业务逻辑）→ `dal/global`（数据）。新增模块按 `<module>.go` 在 `dal/types`、`service`、`controller` 下组织，路由按 `/api/<module>/<action>` 分组。
 
 ## 命名约定
 
-同一业务概念在不同分层有不同数据载体，按后缀区分职责（统一维护在 `types/<module>.go`）：
+同一业务概念在不同分层有不同数据载体，按后缀区分职责（统一维护在 `dal/types/<module>.go`）：
 
 | 后缀                | 全称                 | 用途                                                                                                                                                     |
 | ------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -45,7 +47,7 @@ src-server/
 | `DTO`               | Data Transfer Object | 跨层传输（service ↔ controller）                                                                                                                         |
 | `BO`                | Business Object      | service 内的业务领域对象                                                                                                                                 |
 | `PO`                | Persistent Object    | 数据库实体（gorm 表结构，建表时用）                                                                                                                      |
-| `DO`                | Data Object          | gorm/gen 生成的数据访问层（`PO` 结构体 + 类型安全 CRUD 查询），位于 `internal/gormgen`（含 `model` 子包）；下游用 `gormgen.Use(db).Xxx.WithContext(ctx)` |
+| `DO`                | Data Object          | gorm/gen 生成的数据访问层（`PO` 结构体 + 类型安全 CRUD 查询），位于 `internal/dal`（含 `model`/`query` 子包）；下游用 `query.Use(db).Xxx.WithContext(ctx)` |
 
 示例：`SysInfoRequest`（入参）↔ `SysInfoResponseData`（出参）。出参即外层 `{code,msg,data}` 中的 `data` 载荷，外层封装由 `response.Response` 统一处理。
 
@@ -143,10 +145,10 @@ pnpm tauri:dev     # Rust 拉起 sidecar 并打开客户端，端口 9000
 
 ## gorm/gen 代码生成（DO 层）
 
-业务表（workspace/project/state/issue/label 等）的 DO 层（`PO` 结构体 + 类型安全 CRUD）由 [gorm/gen](https://github.com/go-gorm/gen) 按**当前 sqlite 实际表结构**自动生成，落在 `internal/gormgen/`：
+业务表（workspace/project/state/issue/label 等）的 DO 层（`PO` 结构体 + 类型安全 CRUD）由 [gorm/gen](https://github.com/go-gorm/gen) 按**当前 sqlite 实际表结构**自动生成，落在 `internal/dal/`：
 
-- `internal/gormgen/`（package `gormgen`）：query 层 + `gen.go`（`Use(db)` / `Query` / `WithContext` / `Transaction`）。
-- `internal/gormgen/model/`（package `model`）：各表 `PO` 结构体（如 `model.Workspace`）。
+- `internal/dal/query/`（package `query`）：query 层 + `gen.go`（`Use(db)` / `Query` / `WithContext` / `Transaction`）。
+- `internal/dal/model/`（package `model`）：各表 `PO` 结构体（如 `model.Workspace`）。
 
 生成器源码在 `cmd/gormgen/`（`main.go` + `init_gen.go` + `gen_model_tracker.go`）。它复用服务 initialize 序列（config → zap → sqlite → goose 迁移），确保库与表就绪后再 introspect 生成，故**单条命令即可完成迁移 + 生成**。
 
@@ -167,11 +169,11 @@ GOPROXY=https://goproxy.cn,direct go -C src-server mod tidy
 ```go
 import (
     "we-claude-terminal/go-server/internal/global"
-    "we-claude-terminal/go-server/internal/gormgen"
-    "we-claude-terminal/go-server/internal/gormgen/model"
+    "we-claude-terminal/go-server/internal/dal/query"
+    "we-claude-terminal/go-server/internal/dal/model"
 )
 
-q := gormgen.Use(global.SqliteDB)
+q := query.Use(global.SqliteDB)
 // 建表后 id 自动回填；软删除自动过滤 deleted_at
 if err := q.Workspace.WithContext(ctx).Create(&model.Workspace{Name: "个人", Slug: "personal"}); err != nil { ... }
 ws, err := q.Workspace.WithContext(ctx).Where(q.Workspace.Slug.Eq("personal")).First()

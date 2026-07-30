@@ -18,8 +18,8 @@ import (
 //   - WithJSONTagNameStrategy：列名 snake → JSON 小驼峰（workspace_id → workspaceId）。
 func InitGen() {
 	G = gen.NewGenerator(gen.Config{
-		OutPath:           "./internal/gormgen/query",
-		ModelPkgPath:      "./internal/gormgen/model",
+		OutPath:           "./internal/dal/query",
+		ModelPkgPath:      "./internal/dal/model",
 		Mode:              gen.WithDefaultQuery | gen.WithQueryInterface, // gen.WithDefaultQuery：生成一个全局 Query 对象 Q | gen.WithQueryInterface：生成 Query 接口
 		FieldWithIndexTag: true,                                          // 从数据库生成索引标记
 		FieldWithTypeTag:  true,                                          // 从数据库生成类型标记
