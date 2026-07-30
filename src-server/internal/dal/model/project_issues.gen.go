@@ -6,6 +6,7 @@ package model
 
 import (
 	"time"
+	"we-claude-terminal/go-server/internal/dal/enums"
 
 	"gorm.io/gorm"
 )
@@ -20,14 +21,13 @@ type ProjectIssue struct {
 	Name           string         `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Description    string         `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
 	StateID        int            `gorm:"column:state_id;type:INTEGER" json:"stateId"`
-	Priority       string         `gorm:"column:priority;type:TEXT;not null;default:'none'" json:"priority"`
-	SequenceID     int            `gorm:"column:sequence_id;type:INTEGER;not null;default:1" json:"sequenceId"`
-	SortOrder      float64        `gorm:"column:sort_order;type:REAL;not null;default:65535" json:"sortOrder"`
+	Priority       enums.Priority `gorm:"column:priority;type:TEXT;not null" json:"priority"`
+	SortOrder      float64        `gorm:"column:sort_order;type:REAL;not null" json:"sortOrder"`
 	ParentID       int            `gorm:"column:parent_id;type:INTEGER" json:"parentId"`
 	StartDate      string         `gorm:"column:start_date;type:TEXT" json:"startDate"`
 	TargetDate     string         `gorm:"column:target_date;type:TEXT" json:"targetDate"`
 	CompletedAt    time.Time      `gorm:"column:completed_at;type:DATETIME" json:"completedAt"`
-	IsDraft        bool           `gorm:"column:is_draft;type:INTEGER;not null" json:"isDraft"`
+	IsDraft        enums.YesNo    `gorm:"column:is_draft;type:TEXT;not null" json:"isDraft"`
 	CreatedAt      time.Time      `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt      time.Time      `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 	DeletedAt      gorm.DeletedAt `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`

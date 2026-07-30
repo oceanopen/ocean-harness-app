@@ -35,12 +35,10 @@ func InitGen() {
 		"REAL":    func(gorm.ColumnType) (dataType string) { return "float64" },
 	})
 
-	// 字段类型覆盖（按列名全局匹配，跨表生效）。
+	// 字段类型覆盖（按列名全局匹配，跨表生效）。仅放所有表共用的列；
+	// is_default/is_triage/is_draft 仅个别表拥有，放各表 GenerateModelAs 的 per-model FieldType（见 gen_model_*.go）。
 	G.WithOpts(
 		gen.FieldType("deleted_at", "gorm.DeletedAt"),
-		gen.FieldType("is_default", "bool"),
-		gen.FieldType("is_triage", "bool"),
-		gen.FieldType("is_draft", "bool"),
 	)
 
 	// 生成文件名去 t_ 前缀，避免文件名带业务表前缀。

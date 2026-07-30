@@ -51,17 +51,17 @@ CREATE TABLE t_project_states (
     name         TEXT     NOT NULL,
     color        TEXT     NOT NULL,
     slug         TEXT     NOT NULL DEFAULT '',
-    state_group  TEXT     NOT NULL DEFAULT 'backlog',
-    sort_order   REAL     NOT NULL DEFAULT 65535,
-    is_default   INTEGER  NOT NULL DEFAULT 0,
-    is_triage    INTEGER  NOT NULL DEFAULT 0,
+    state_group  TEXT     NOT NULL,
+    sort_order   REAL     NOT NULL DEFAULT 0,
+    is_default   TEXT  NOT NULL,
+    is_triage    TEXT  NOT NULL,
     created_at   DATETIME NOT NULL,
     updated_at   DATETIME NOT NULL,
     deleted_at   DATETIME
 );
 
 -- t_project_issues：核心工作项，所属 project。
--- sequence_id 项目内自增（组成 key）；sort_order 列表排序权重；priority 五级枚举。
+-- issue key = {identifier}-{id}（直接用全局自增 id 组 key，无独立 sequence_id）；sort_order 列表排序权重；priority 五级枚举。
 -- state_id / parent_id 逻辑指向他表，但不建 DB 外键。
 CREATE TABLE t_project_issues (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,14 +70,13 @@ CREATE TABLE t_project_issues (
     name         TEXT     NOT NULL,
     description  TEXT     NOT NULL DEFAULT '',
     state_id     INTEGER,
-    priority     TEXT     NOT NULL DEFAULT 'none',
-    sequence_id  INTEGER  NOT NULL DEFAULT 1,
-    sort_order   REAL     NOT NULL DEFAULT 65535,
+    priority     TEXT     NOT NULL,
+    sort_order   REAL     NOT NULL DEFAULT 0,
     parent_id    INTEGER,
     start_date   TEXT,
     target_date  TEXT,
     completed_at DATETIME,
-    is_draft     INTEGER  NOT NULL DEFAULT 0,
+    is_draft     TEXT  NOT NULL,
     created_at   DATETIME NOT NULL,
     updated_at   DATETIME NOT NULL,
     deleted_at   DATETIME
@@ -91,7 +90,7 @@ CREATE TABLE t_workspace_labels (
     name         TEXT     NOT NULL,
     color        TEXT     NOT NULL DEFAULT '',
     description  TEXT     NOT NULL DEFAULT '',
-    sort_order   REAL     NOT NULL DEFAULT 65535,
+    sort_order   REAL     NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL,
     updated_at   DATETIME NOT NULL,
     deleted_at   DATETIME

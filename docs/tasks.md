@@ -31,14 +31,14 @@
 | `t_workspaces` | id, name, slug(全局唯一 udx), description, 时间戳, deleted_at | 顶层容器（顶级，表名保持） |
 | `t_workspace_projects` | id, workspace_id, name, identifier(同 workspace 全局唯一 udx), description, emoji, default_state_id, 时间戳, deleted_at | 项目，所属 workspace；identifier 大写短码（PLN），用于 issue key |
 | `t_project_states` | id, project_id, workspace_id, name, color, slug, state_group, sort_order, is_default, is_triage, 时间戳, deleted_at | 状态，所属 project；state_group ∈ backlog/unstarted/started/completed/cancelled |
-| `t_project_issues` | id, project_id, workspace_id, name, description, state_id, priority, sequence_id, sort_order, parent_id, start_date, target_date, completed_at, is_draft, 时间戳, deleted_at | issue，所属 project；priority ∈ urgent/high/medium/low/none |
+| `t_project_issues` | id, project_id, workspace_id, name, description, state_id, priority, sort_order, parent_id, start_date, target_date, completed_at, is_draft, 时间戳, deleted_at | issue，所属 project；issue key = `{identifier}-{id}`（直接用全局自增 id）；priority ∈ urgent/high/medium/low/none |
 | `t_workspace_labels` | id, workspace_id, project_id(可空), name, color, description, sort_order, 时间戳, deleted_at | 标签，所属 workspace（可挂 workspace 或 project 级） |
 | `t_issue_labels` | id, issue_id, label_id, created_at, updated_at, deleted_at | 关联表，所属 issue；udx(issue_id, label_id) 全局唯一；软删除与其他表统一 |
 
 - 软删除：保留 `deleted_at`，`gencode` 配置映射 `gorm.DeletedAt`，查询自动过滤。
 - 唯一索引：**全局唯一**（不带 `WHERE deleted_at IS NULL`），即已删除记录仍占用唯一键——配合「恢复式创建」语义（见下）。
-- `sequence_id`：个人单机无并发，用 `SELECT MAX(sequence_id)+1 WHERE project_id` 即可，**不建 issue_sequences 表、不用 advisory lock**。
-- issue key = `{identifier}-{sequence_id}`（如 `PLN-1`）。
+- issue key = `{identifier}-{id}`（如 `PLN-1`）：直接用全局自增 `id` 组 key，**无独立 sequence_id**（项目间不连号可接受，省一张计数逻辑）。
+- 枚举字段：`state_group`/`priority` 为 typed 枚举（`enums.StateGroup`/`enums.Priority`），`is_default`/`is_triage`/`is_draft` 为 `enums.YesNo`（"Y"/"N"，替代 bool）；DB 均为 TEXT、**无默认值**（`sort_order` 同样无默认），一律由代码/前端显式赋值，漏传由 `Value()` 硬错拦下（见 `internal/dal/enums/`）。
 - 关联查询：**无 DB 外键约束**，跨表关联一律走 SQL JOIN / 应用层组装；数据级联清理由 service 层手动。
 
 #### 创建逻辑（恢复式 upsert）
@@ -109,7 +109,7 @@
   - 当前：无 workspace 模块
   - 目标：实现 workspace CRUD（list/get/create/update/delete）；create 采用**恢复式 upsert**（按 slug 含软删除记录 `Unscoped` 查询：未删除同 slug→报错「记录重复」；已删除同 slug→恢复 `deleted_at=NULL`+`updated_at=now`+业务字段覆盖、保留 `id`+`created_at`；不存在→插入）；update 校验 slug 未删除唯一；软删除；types 用 `WorkspaceCreateRequest`/`WorkspaceResponseData` 等后缀；service 用 `gormgen.Use(global.SqliteDB).Workspace.WithContext(ctx)`；controller 用 `response.OK/Fail`；router 注册 `/api/workspace/*`。
 
-- [ ] **任务 4：[后端·state] 状态模块（含默认状态种子）**
+- [x] **任务 4：[后端·state] 状态模块（含默认状态种子）**
   - 文件：`src-server/internal/types/state.go`、`service/state.go`、`controller/state.go`（新增）、`router/router.go`（修改）
   - 当前：无 state 模块
   - 目标：state CRUD（按 projectId 查）+ reorder（批量调 sort_order）；定义 `DefaultStates` 常量（Backlog/Todo/In Progress/Done/Cancelled 五个，含 state_group + color + sort_order + is_default），供 project 创建时调用种子函数 `SeedDefaultStates(tx, projectID, workspaceID)`。
@@ -127,7 +127,7 @@
 - [ ] **任务 7：[后端·issue] Issue 核心模块**
   - 文件：`src-server/internal/types/issue.go`、`service/issue.go`、`controller/issue.go`（新增）、`router/router.go`（修改）
   - 当前：无 issue 模块
-  - 目标：issue CRUD；create 自动生成 `sequence_id`（同 project `MAX+1`）+ `sort_order`（同 state `MAX+10000`）、默认 state 取 project.default_state_id；update 检测 state_id 变化，新 state 的 state_group=completed 则写 completed_at、否则清空；list 支持 `groupBy`(state/priority)、`orderBy`(sequence_id/sort_order/priority/created_at)、基础筛选（stateId/priority/labelId/keyword 搜 name）；get/list 返回含 label 列表。
+  - 目标：issue CRUD；create 默认 state 取 project.default_state_id，`priority`/`is_draft` 用 typed 枚举（前端传）、`sort_order` 前端传（无则 DB 默认 0）、issue key 由 `{identifier}-{id}` 组装（id 取插入后自增主键）；update 检测 state_id 变化，新 state 的 state_group=completed 则写 completed_at、否则清空；list 支持 `groupBy`(state/priority)、`orderBy`(id/sort_order/priority/created_at)、基础筛选（stateId/priority/labelId/keyword 搜 name）；get/list 返回含 label 列表。
 
 ### 阶段 C：前端窗口骨架
 

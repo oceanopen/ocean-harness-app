@@ -20,7 +20,7 @@ type WorkspaceLabel struct {
 	Name        string         `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Color       string         `gorm:"column:color;type:TEXT;not null;default:''" json:"color"`
 	Description string         `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
-	SortOrder   float64        `gorm:"column:sort_order;type:REAL;not null;default:65535" json:"sortOrder"`
+	SortOrder   float64        `gorm:"column:sort_order;type:REAL;not null" json:"sortOrder"`
 	CreatedAt   time.Time      `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt   time.Time      `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 	DeletedAt   gorm.DeletedAt `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`

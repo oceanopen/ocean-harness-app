@@ -9,11 +9,18 @@ import (
 // 结构名取「单数、无 t_ 前缀」；表间无 DB 外键，此处 HasMany 为 gorm/gen 逻辑关联（仅生成结构体字段 + Preload）。
 // HasMany 在父表选项引用子表模板，故按「叶子优先」顺序创建。
 func GenModelTracker() {
-	state := G.GenerateModelAs("t_project_states", "ProjectState")
+	state := G.GenerateModelAs("t_project_states", "ProjectState",
+		// 按列名指定 typed 枚举（仅本表有的列，故 per-model 而非全局 WithOpts）。
+		gen.FieldType("state_group", "enums.StateGroup"),
+		gen.FieldType("is_default", "enums.YesNo"),
+		gen.FieldType("is_triage", "enums.YesNo"),
+	)
 	issueLabel := G.GenerateModelAs("t_issue_labels", "IssueLabel")
 	label := G.GenerateModelAs("t_workspace_labels", "WorkspaceLabel")
 
 	issue := G.GenerateModelAs("t_project_issues", "ProjectIssue",
+		gen.FieldType("priority", "enums.Priority"),
+		gen.FieldType("is_draft", "enums.YesNo"),
 		gen.FieldRelate(field.HasMany, "IssueLabelList", issueLabel, &field.RelateConfig{
 			RelateSlicePointer: true,
 			GORMTag: field.GormTag{

@@ -34,10 +34,10 @@ func newProjectState(db *gorm.DB, opts ...gen.DOOption) projectState {
 	_projectState.Name = field.NewString(tableName, "name")
 	_projectState.Color = field.NewString(tableName, "color")
 	_projectState.Slug = field.NewString(tableName, "slug")
-	_projectState.StateGroup = field.NewString(tableName, "state_group")
+	_projectState.StateGroup = field.NewField(tableName, "state_group")
 	_projectState.SortOrder = field.NewFloat64(tableName, "sort_order")
-	_projectState.IsDefault = field.NewBool(tableName, "is_default")
-	_projectState.IsTriage = field.NewBool(tableName, "is_triage")
+	_projectState.IsDefault = field.NewField(tableName, "is_default")
+	_projectState.IsTriage = field.NewField(tableName, "is_triage")
 	_projectState.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectState.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_projectState.DeletedAt = field.NewField(tableName, "deleted_at")
@@ -57,10 +57,10 @@ type projectState struct {
 	Name        field.String
 	Color       field.String
 	Slug        field.String
-	StateGroup  field.String
+	StateGroup  field.Field
 	SortOrder   field.Float64
-	IsDefault   field.Bool
-	IsTriage    field.Bool
+	IsDefault   field.Field
+	IsTriage    field.Field
 	CreatedAt   field.Time
 	UpdatedAt   field.Time
 	DeletedAt   field.Field
@@ -86,10 +86,10 @@ func (p *projectState) updateTableName(table string) *projectState {
 	p.Name = field.NewString(table, "name")
 	p.Color = field.NewString(table, "color")
 	p.Slug = field.NewString(table, "slug")
-	p.StateGroup = field.NewString(table, "state_group")
+	p.StateGroup = field.NewField(table, "state_group")
 	p.SortOrder = field.NewFloat64(table, "sort_order")
-	p.IsDefault = field.NewBool(table, "is_default")
-	p.IsTriage = field.NewBool(table, "is_triage")
+	p.IsDefault = field.NewField(table, "is_default")
+	p.IsTriage = field.NewField(table, "is_triage")
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")
 	p.DeletedAt = field.NewField(table, "deleted_at")

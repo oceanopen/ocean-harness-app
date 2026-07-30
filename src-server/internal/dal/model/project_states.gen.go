@@ -6,6 +6,7 @@ package model
 
 import (
 	"time"
+	"we-claude-terminal/go-server/internal/dal/enums"
 
 	"gorm.io/gorm"
 )
@@ -14,19 +15,19 @@ const TableNameProjectState = "t_project_states"
 
 // ProjectState mapped from table <t_project_states>
 type ProjectState struct {
-	ID          int            `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
-	ProjectID   int            `gorm:"column:project_id;type:INTEGER;not null" json:"projectId"`
-	WorkspaceID int            `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
-	Name        string         `gorm:"column:name;type:TEXT;not null" json:"name"`
-	Color       string         `gorm:"column:color;type:TEXT;not null" json:"color"`
-	Slug        string         `gorm:"column:slug;type:TEXT;not null;default:''" json:"slug"`
-	StateGroup  string         `gorm:"column:state_group;type:TEXT;not null;default:'backlog'" json:"stateGroup"`
-	SortOrder   float64        `gorm:"column:sort_order;type:REAL;not null;default:65535" json:"sortOrder"`
-	IsDefault   bool           `gorm:"column:is_default;type:INTEGER;not null" json:"isDefault"`
-	IsTriage    bool           `gorm:"column:is_triage;type:INTEGER;not null" json:"isTriage"`
-	CreatedAt   time.Time      `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	DeletedAt   gorm.DeletedAt `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
+	ID          int              `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
+	ProjectID   int              `gorm:"column:project_id;type:INTEGER;not null" json:"projectId"`
+	WorkspaceID int              `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
+	Name        string           `gorm:"column:name;type:TEXT;not null" json:"name"`
+	Color       string           `gorm:"column:color;type:TEXT;not null" json:"color"`
+	Slug        string           `gorm:"column:slug;type:TEXT;not null;default:''" json:"slug"`
+	StateGroup  enums.StateGroup `gorm:"column:state_group;type:TEXT;not null" json:"stateGroup"`
+	SortOrder   float64          `gorm:"column:sort_order;type:REAL;not null" json:"sortOrder"`
+	IsDefault   enums.YesNo      `gorm:"column:is_default;type:TEXT;not null" json:"isDefault"`
+	IsTriage    enums.YesNo      `gorm:"column:is_triage;type:TEXT;not null" json:"isTriage"`
+	CreatedAt   time.Time        `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
+	UpdatedAt   time.Time        `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	DeletedAt   gorm.DeletedAt   `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
 }
 
 // TableName ProjectState's table name
