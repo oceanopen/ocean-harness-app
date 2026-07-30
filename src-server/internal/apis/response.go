@@ -34,3 +34,14 @@ func JsonFail(ctx *gin.Context, err error) {
 func JsonFailWithCode(ctx *gin.Context, code int, msg string) {
 	ctx.JSON(http.StatusOK, Response{Code: code, Msg: msg, Data: nil})
 }
+
+// JsonPageOK 返回分页成功响应：data = {list, pageInfo}。
+//
+// service 侧典型用法（gen 的 FindByPage 返 list + count）：
+//
+//	list, count, err := q.Issue.WithContext(ctx).FindByPage(pageInfo.GetOffset(), pageInfo.GetPageSize())
+//	pageInfo.TotalCount = count
+//	return list, pageInfo, err
+func JsonPageOK(ctx *gin.Context, list interface{}, pageInfo *PageInfo) {
+	JsonOK(ctx, PageData{List: list, PageInfo: pageInfo})
+}

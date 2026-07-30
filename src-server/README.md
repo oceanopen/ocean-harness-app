@@ -95,6 +95,8 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 
 **响应**：`apis.JsonOK(ctx, data)` / `apis.JsonFail(ctx, err)` / `apis.JsonFailWithCode(ctx, code, msg)`，结构 `{code,msg,data}`（成功 0 / 失败 1，业务错误统一 HTTP 200）。
 
+**分页**：**大列表**（如 issue，可能上千条）用 `getListByPage`——请求 DTO 内嵌 `apis.PageInfo{pageSize, currentPage}`，service 用 gen `q.Xxx.WithContext(ctx).FindByPage(pageInfo.GetOffset(), pageInfo.GetPageSize())` 返 `(list, count, err)`、回填 `pageInfo.TotalCount` 后返 `(list, *apis.PageInfo, error)`，controller `api.JsonPageOK(list, pageInfo)`（data=`{list, pageInfo}`）。**小列表**（如 workspace，个位数）用 `getList` 返全量、不分页。
+
 **命名**：context 变量统一 `ctx`（不简写 `c`）；controller / service / model 同名分属不同包（`controller.Workspace` / `service.Workspace` / `model.Workspace`）。基类落 `internal/apis/`（`api.go` + `service.go`）。
 
 ## 配置：环境变量 + yaml 配置文件

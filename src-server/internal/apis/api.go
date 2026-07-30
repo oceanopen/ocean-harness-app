@@ -103,3 +103,8 @@ func (api Api) JsonOK(data interface{}) { JsonOK(api.Context, data) }
 
 // JsonFail 失败响应（err.Error() 作为 msg，code=失败）。
 func (api Api) JsonFail(err error) { JsonFail(api.Context, err) }
+
+// JsonPageOK 是 controller 侧便捷方法（用 api.Context）。
+func (api Api) JsonPageOK(list interface{}, pageInfo *PageInfo) {
+	JsonPageOK(api.Context, list, pageInfo)
+}
