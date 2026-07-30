@@ -23,7 +23,7 @@ func Recovery() gin.HandlerFunc {
 					zap.String("path", ctx.Request.URL.Path),
 				)
 				ctx.AbortWithStatusJSON(http.StatusInternalServerError, apis.Response{
-					Code: apis.CodeError,
+					Code: apis.RESPONSE_CODE_ERROR,
 					Msg:  "internal server error",
 					Data: nil,
 				})
