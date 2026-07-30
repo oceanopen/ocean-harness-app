@@ -15,6 +15,7 @@ src-server/
 ├── config/
 │   └── settings.dev.yaml           # 本地调试默认配置（环境变量缺失时回退于此）
 ├── cmd/server/main.go              # 服务入口：初始化序列 + 优雅退出
+├── cmd/gormgen/                    # gorm/gen 代码生成器（pnpm server:gorm:gen，见「gorm/gen 代码生成」）
 └── internal/
     ├── config/config.go            # MustLoadConfig()：yaml 默认 + 环境变量覆盖（env 优先）+ 校验
     ├── global/global.go            # 进程级单例：Config / Logger / SqliteDB
@@ -27,22 +28,24 @@ src-server/
     ├── service/base_info.go        # 业务逻辑层
     ├── controller/base_info.go     # HTTP 处理层（参数 + 响应封装）
     ├── middleware/recovery.go      # panic 恢复（zap 记录 + 统一 500）
-    └── router/router.go            # SetupRouter：gin.New + 中间件 + 路由
+    ├── router/router.go            # SetupRouter：gin.New + 中间件 + 路由
+    └── gormgen/                    # gorm/gen 生成产物（DO 层）：model 子包 = PO；query 层 = 类型安全 CRUD
 ```
 
-> 分层约定：`router` → `controller`（参数/响应封装）→ `service`（业务逻辑）→ `dal/global`（数据）。新增模块按 `<module>.go` 在 `types`/`service`/`controller` 下组织，路由按 `/api/<module>/<action>` 分组。
+> 分层约定：`router` → `controller`（参数/响应封装）→ `service`（业务逻辑）→ `gormgen/global`（数据）。新增模块按 `<module>.go` 在 `types`/`service`/`controller` 下组织，路由按 `/api/<module>/<action>` 分组。
 
 ## 命名约定
 
 同一业务概念在不同分层有不同数据载体，按后缀区分职责（统一维护在 `types/<module>.go`）：
 
-| 后缀                | 全称                 | 用途                                                                 |
-| ------------------- | -------------------- | -------------------------------------------------------------------- |
-| `Request` / `Query` | —                    | 接口**入参**                                                         |
-| `ResponseData`      | 响应数据             | 返回前端/展示层的**出参**（外层 `{code,msg,data}` 中的 `data` 载荷） |
-| `DTO`               | Data Transfer Object | 跨层传输（service ↔ controller）                                     |
-| `BO`                | Business Object      | service 内的业务领域对象                                             |
-| `PO`                | Persistent Object    | 数据库实体（gorm 表结构，建表时用）                                  |
+| 后缀                | 全称                 | 用途                                                                                                                                                     |
+| ------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Request` / `Query` | —                    | 接口**入参**                                                                                                                                             |
+| `ResponseData`      | 响应数据             | 返回前端/展示层的**出参**（外层 `{code,msg,data}` 中的 `data` 载荷）                                                                                     |
+| `DTO`               | Data Transfer Object | 跨层传输（service ↔ controller）                                                                                                                         |
+| `BO`                | Business Object      | service 内的业务领域对象                                                                                                                                 |
+| `PO`                | Persistent Object    | 数据库实体（gorm 表结构，建表时用）                                                                                                                      |
+| `DO`                | Data Object          | gorm/gen 生成的数据访问层（`PO` 结构体 + 类型安全 CRUD 查询），位于 `internal/gormgen`（含 `model` 子包）；下游用 `gormgen.Use(db).Xxx.WithContext(ctx)` |
 
 示例：`SysInfoRequest`（入参）↔ `SysInfoResponseData`（出参）。出参即外层 `{code,msg,data}` 中的 `data` 载荷，外层封装由 `response.Response` 统一处理。
 
@@ -137,3 +140,43 @@ pnpm tauri:dev     # Rust 拉起 sidecar 并打开客户端，端口 9000
 ```
 
 > 依赖为纯 Go（sqlite 用 `glebarez/sqlite`，无 CGO），构建脚本 `scripts/build-server.mjs` 显式 `CGO_ENABLED=0`，支持 CI 跨平台交叉编译。
+
+## gorm/gen 代码生成（DO 层）
+
+业务表（workspace/project/state/issue/label 等）的 DO 层（`PO` 结构体 + 类型安全 CRUD）由 [gorm/gen](https://github.com/go-gorm/gen) 按**当前 sqlite 实际表结构**自动生成，落在 `internal/gormgen/`：
+
+- `internal/gormgen/`（package `gormgen`）：query 层 + `gen.go`（`Use(db)` / `Query` / `WithContext` / `Transaction`）。
+- `internal/gormgen/model/`（package `model`）：各表 `PO` 结构体（如 `model.Workspace`）。
+
+生成器源码在 `cmd/gormgen/`（`main.go` + `init_gen.go` + `gen_model_tracker.go`）。它复用服务 initialize 序列（config → zap → sqlite → goose 迁移），确保库与表就绪后再 introspect 生成，故**单条命令即可完成迁移 + 生成**。
+
+**运行：**
+
+```bash
+pnpm server:gorm:gen   # 等价 cd src-server && go run ./cmd/gormgen -config config/settings.dev.yaml
+```
+
+```bash
+GOPROXY=https://goproxy.cn,direct go -C src-server mod tidy
+```
+
+**改表流程：** 改 `internal/migrations/migrations/*.sql` → 跑一次 `pnpm server:gorm:gen`（goose 自动向前迁移建表）→ 同条命令随即重新生成 DO（迁移 + 生成一气呵成）。
+
+**调用范式（service 层）：** 不生成全局 `Q`/`SetDefault`，每次调用 `Use` 取一个 query 对象（无全局态、可注入事务）：
+
+```go
+import (
+    "we-claude-terminal/go-server/internal/global"
+    "we-claude-terminal/go-server/internal/gormgen"
+    "we-claude-terminal/go-server/internal/gormgen/model"
+)
+
+q := gormgen.Use(global.SqliteDB)
+// 建表后 id 自动回填；软删除自动过滤 deleted_at
+if err := q.Workspace.WithContext(ctx).Create(&model.Workspace{Name: "个人", Slug: "personal"}); err != nil { ... }
+ws, err := q.Workspace.WithContext(ctx).Where(q.Workspace.Slug.Eq("personal")).First()
+```
+
+> nullable 列（`state_id`/`parent_id`/`completed_at`/`start_date`/`target_date` 等）未开 `FieldNullable`，按零值表「未设置」（id 自增从 1 起，0 即未设置；时间用 `IsZero()`）。清空（如 issue 流转出 completed 时 `completed_at`）由 service 层显式 `Update("completed_at", nil)` 处理。
+
+**依赖版本：** `gorm.io/gen` 生态目前锁定 `gorm v1.25.x`（不支持 gorm v1.31）。`go.mod` 固定 `gorm v1.25.12` + `gen v0.3.28` + `dbresolver v1.5.3`（v0.3.28 修复了 sqlite 下 `ScanType` 为空导致生成期 panic 的问题）。`is_*` 列映射为 `bool`、`deleted_at` 映射为 `gorm.DeletedAt`、JSON 标签为小驼峰。

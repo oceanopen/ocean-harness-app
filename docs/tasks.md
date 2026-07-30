@@ -19,7 +19,7 @@
 
 ### 2.1 数据流
 
-独立 `tracker` 窗口 → **fetch 直连 go-server**（地址从 `commands.httpServerStatus()` 取，不硬编码端口）→ gin 分层 `router → controller → service → gen.Q(DO) → sqlite`。
+独立 `tracker` 窗口 → **fetch 直连 go-server**（地址从 `commands.httpServerStatus()` 取，不硬编码端口）→ gin 分层 `router → controller → service → gormgen(DO) → sqlite`。
 迁移 goose 建表（跨机器自动），`gencode` 脚本基于当前 sqlite 生成 DO（手动触发），两层职责分离、互不冲突。
 
 ### 2.2 表结构（SQLite · 自增整数主键 · 软删除，MVP 6 表）
@@ -63,10 +63,11 @@
 
 ### 2.4 gorm/gen 自动生成
 
-- 独立程序 `src-server/cmd/gencode/main.go`：连当前 sqlite → `gen.NewGenerator` → 对 6 表 `GenerateModel` → 配置字段类型映射（`deleted_at→gorm.DeletedAt`、`is_*→bool`、JSON tag camelCase）→ 输出到 `src-server/internal/model/gen/`（DO + query.go）。
-- 运行：`GOPROXY=https://goproxy.cn,direct go run ./cmd/gencode`。
-- service 层用 `gen.Q.XxxDO.WithContext(ctx).Create/First/Find/Save/Delete` 做 CRUD。
-- 流程：改迁移 → 跑迁移建表 → 重跑 gencode 重新生成 DO。
+- 独立程序 `src-server/cmd/gormgen/`（`main.go` + `init_gen.go` + `gen_model_tracker.go`）：复用服务 initialize 序列（config → zap → sqlite → goose 迁移）确保表就绪 → `gen.NewGenerator` → 对 6 表 `GenerateModelAs`（单数无 `t_` 前缀）→ 配置字段类型映射（`deleted_at→gorm.DeletedAt`、`is_*→bool`、sqlite `INTEGER→int`/`REAL→float64`、JSON tag 小驼峰；不开 `FieldNullable` 以免 PK 被指针化）→ query 层输出到 `src-server/internal/gormgen/`（含 `gen.go` 的 `Use`/`WithContext`），PO 结构体输出到 `src-server/internal/gormgen/model/`。
+- 运行：`pnpm server:gorm:gen`（等价 `cd src-server && go run ./cmd/gormgen -config config/settings.dev.yaml`，迁移 + 生成一气呵成）；首次引入依赖需 `GOPROXY=https://goproxy.cn,direct go -C src-server mod tidy`（默认 goproxy.weoa.com 为白名单代理）。
+- service 层用 `gormgen.Use(global.SqliteDB).Xxx.WithContext(ctx).Create/First/Find/Save/Delete` 做 CRUD（不生成全局 Q/SetDefault，每次调用 `Use`）。
+- 流程：改迁移 → 跑 `pnpm server:gorm:gen`（goose 自动建表 + 重新生成 DO）。
+- 依赖锁定：`gorm v1.25.12` + `gen v0.3.28` + `dbresolver v1.5.3`（gen 生态不支持 gorm v1.31；v0.3.28 修复 sqlite 下 `ScanType` 为空导致生成期 panic）。
 
 ### 2.5 接口（action 风格 `/api/<module>/<action>`，GET 查 / POST 写）
 
@@ -96,7 +97,7 @@
   - 当前：仅有 `20260728001_init.sql`（空迁移验证 goose 机制）
   - 目标：新增 `-- +goose Up` 迁移，建带层级前缀的 6 表（t_workspaces / t_workspace_projects / t_project_states / t_project_issues / t_workspace_labels / t_issue_labels，自增主键 + 软删除 deleted_at + 时间戳）；唯一索引 `udx_` 前缀且**全局唯一**（udx_workspaces_slug、udx_workspace_projects_workspace_id_identifier、udx_issue_labels_issue_id_label_id，**不带 WHERE deleted_at IS NULL**）；普通索引本期暂不建（数据量小，按需追加）；**不建任何 DB 外键**（跨表关联走 JOIN）；t_project_states 默认 state_group='backlog'、t_project_issues 默认 priority='none'/sequence_id=1/sort_order=65535。
 
-- [ ] **任务 2：[后端·ORM] 引入 gorm/gen + 自动生成脚本 + 生成 DO**
+- [x] **任务 2：[后端·ORM] 引入 gorm/gen + 自动生成脚本 + 生成 DO**
   - 文件：`src-server/go.mod`（修改，加 `gorm.io/gen` 生成期依赖）、`src-server/cmd/gencode/main.go`（新增）、`src-server/internal/model/gen/`（新增，生成产物）、`src-server/README.md`（修改，命名表补 `DO` 后缀 + gencode 说明）
   - 当前：未引入 gorm/gen，无 model 层；go.mod 仅 gorm + glebarez/sqlite + goose
   - 目标：新增 gencode 程序，连当前 sqlite（db 路径取自 config/环境变量），用 gen 对 6 表生成 DO（配置 deleted_at→gorm.DeletedAt、is_*→bool、JSON tag camelCase、表名映射），输出到 `internal/model/gen/`；附运行说明（GOPROXY=goproxy.cn）。先跑任务1迁移建表，再跑 gencode 生成 DO。
@@ -106,7 +107,7 @@
 - [ ] **任务 3：[后端·workspace] 工作空间模块**
   - 文件：`src-server/internal/types/workspace.go`、`service/workspace.go`、`controller/workspace.go`（新增）、`router/router.go`（修改）
   - 当前：无 workspace 模块
-  - 目标：实现 workspace CRUD（list/get/create/update/delete）；create 采用**恢复式 upsert**（按 slug 含软删除记录 `Unscoped` 查询：未删除同 slug→报错「记录重复」；已删除同 slug→恢复 `deleted_at=NULL`+`updated_at=now`+业务字段覆盖、保留 `id`+`created_at`；不存在→插入）；update 校验 slug 未删除唯一；软删除；types 用 `WorkspaceCreateRequest`/`WorkspaceResponseData` 等后缀；service 用 `gen.Q.WorkspaceDO`；controller 用 `response.OK/Fail`；router 注册 `/api/workspace/*`。
+  - 目标：实现 workspace CRUD（list/get/create/update/delete）；create 采用**恢复式 upsert**（按 slug 含软删除记录 `Unscoped` 查询：未删除同 slug→报错「记录重复」；已删除同 slug→恢复 `deleted_at=NULL`+`updated_at=now`+业务字段覆盖、保留 `id`+`created_at`；不存在→插入）；update 校验 slug 未删除唯一；软删除；types 用 `WorkspaceCreateRequest`/`WorkspaceResponseData` 等后缀；service 用 `gormgen.Use(global.SqliteDB).Workspace.WithContext(ctx)`；controller 用 `response.OK/Fail`；router 注册 `/api/workspace/*`。
 
 - [ ] **任务 4：[后端·state] 状态模块（含默认状态种子）**
   - 文件：`src-server/internal/types/state.go`、`service/state.go`、`controller/state.go`（新增）、`router/router.go`（修改）

@@ -1,5 +1,4 @@
 // access_log.go 记录每个 HTTP 请求的访问日志到 zap（path / method / status / latency），按状态码分级。
-// 设计借鉴 pros-admin-server 的 request_logger：time.Since 计算耗时、按 HTTP 状态码分级输出；
 // 仅打印不落库、不记录请求/响应体（本地旁路服务、访问量低，结构化字段足够排障）。
 package middleware
 
