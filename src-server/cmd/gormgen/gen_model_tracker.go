@@ -21,6 +21,8 @@ func GenModelTracker() {
 	issue := G.GenerateModelAs("t_project_issues", "ProjectIssue",
 		gen.FieldType("priority", "enums.Priority"),
 		gen.FieldType("is_draft", "enums.YesNo"),
+		// completed_at 用 *time.Time 指针：未完成=nil（写 NULL）/ 完成=&time，便于 Save 统一处理可空语义。
+		gen.FieldType("completed_at", "*time.Time"),
 		gen.FieldRelate(field.HasMany, "IssueLabelList", issueLabel, &field.RelateConfig{
 			RelateSlicePointer: true,
 			GORMTag: field.GormTag{

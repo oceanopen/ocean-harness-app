@@ -26,7 +26,7 @@ type ProjectIssue struct {
 	ParentID       int            `gorm:"column:parent_id;type:INTEGER" json:"parentId"`
 	StartDate      string         `gorm:"column:start_date;type:TEXT" json:"startDate"`
 	TargetDate     string         `gorm:"column:target_date;type:TEXT" json:"targetDate"`
-	CompletedAt    time.Time      `gorm:"column:completed_at;type:DATETIME" json:"completedAt"`
+	CompletedAt    *time.Time     `gorm:"column:completed_at;type:DATETIME" json:"completedAt"`
 	IsDraft        enums.YesNo    `gorm:"column:is_draft;type:TEXT;not null" json:"isDraft"`
 	CreatedAt      time.Time      `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt      time.Time      `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`

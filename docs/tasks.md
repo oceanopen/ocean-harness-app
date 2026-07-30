@@ -53,7 +53,7 @@
 
 ### 2.3 命名规范（全程一致）
 
-- **实体术语**：`workspace / project / issue / state / workspaceLabel` —— types/service/controller/router/前端/DB 全程同一词。
+- **实体术语**：`workspace / project / projectIssue / state / workspaceLabel` —— types/service/controller/router/前端/DB 全程同一词。
 - **公共字段**：`id, name, description, createdAt, updatedAt, deletedAt`。
 - **业务字段**：`workspaceId, projectId, slug, stateId, stateGroup, priority, sortOrder, parentId, startDate, targetDate, completedAt, isDraft, isDefault, isTriage, emoji, color`。JSON 全 camelCase。
 - **枚举**：`priority = urgent|high|medium|low|none`；`stateGroup = backlog|unstarted|started|completed|cancelled`。
@@ -74,7 +74,7 @@
 - `workspace`: list / get / create / update / delete
 - `project`: list?workspaceId / get / create(**事务内种 5 默认 state + 回填 default_state_id**) / update / delete(**级联清 state/issue**)
 - `state`: list?projectId / create / update / delete / reorder
-- `issue`: list?projectId(groupBy/orderBy/筛选) / get / create(**默认 state 取 project.default_state_id、自动 sortOrder**) / update / delete
+- `projectIssue`: list?projectId(orderBy/筛选，扁平列表前端分组) / get / create(**默认 state 取 project.default_state_id、sort_order 自算**) / update(**stateId 变化触发 completed_at 流转**) / delete(**级联清 issue 关联**)
 - `workspaceLabel`: list?workspaceId / get / create(**sort_order 自算**) / update / delete(**级联清 issue 关联**) / toggleIssue(**恢复式 upsert，返回 issue 的 label 列表**)
 
 ### 2.6 前端 tracker 窗口（新建独立窗口）
@@ -126,10 +126,11 @@
   - 目标：workspaceLabel CRUD（按 workspaceId 查，**去 project_id、所有项目共享一套标签**）；create `sort_order` 后端自算（同 workspace MAX+10000）；delete 事务内级联软删 `t_issue_labels` 里该 label 的关联；`toggleIssue` 恢复式 upsert（未删→软删取消、已删→恢复、无→插入）→ 返回该 issue 的 label 列表。命名全程 `workspaceLabel`（对齐 DO 名 `WorkspaceLabel`/表 `t_workspace_labels`，与 projectState 模块惯例一致）。
   - 设计变更：原计划 label 两级归属（workspace 级 + project 级），经讨论改为去 project_id、label 只挂 workspace 共享一套通用标签（个人场景简化）。
 
-- [ ] **任务 7：[后端·issue] Issue 核心模块**
-  - 文件：`src-server/internal/types/issue.go`、`service/issue.go`、`controller/issue.go`（新增）、`router/router.go`（修改）
+- [x] **任务 7：[后端·projectIssue] Issue 核心模块**
+  - 文件：`src-server/internal/dal/types/project_issue.go`、`service/project_issue.go`、`controller/project_issue.go`（新增）、`router/router.go`（修改）；gencode 配 `completed_at→*time.Time`（`cmd/gormgen/gen_model_tracker.go`）+ 重跑 `gorm:gen`
   - 当前：无 issue 模块
-  - 目标：issue CRUD；create 默认 state 取 project.default_state_id，`priority`/`is_draft` 用 typed 枚举（前端传）、`sort_order` 前端传（无则 DB 默认 0）、issue 用全局自增 id 标识（无 issue key，id 取插入后自增主键）；update 检测 state_id 变化，新 state 的 state_group=completed 则写 completed_at、否则清空；list 支持 `groupBy`(state/priority)、`orderBy`(id/sort_order/priority/created_at)、基础筛选（stateId/priority/labelId/keyword 搜 name）；get/list 返回含 label 列表。
+  - 目标：projectIssue CRUD；create 默认 state 取 `project.default_state_id`、`sort_order` 后端自算（同 project MAX+10000）；`priority`/`is_draft` typed 枚举（create 空值规范为 none/N，update 空值保留原值）；update 检测 stateId 变化触发 completed_at 流转（completed 组→写 now、否则清 NULL）；list 返回扁平列表（groupBy 由前端分组）+ orderBy（默认 sort_order）+ 筛选（stateId/priority/keyword + labelId 两步查）；get/list 返回含 label 列表（应用层组装，3 次查询避 N+1）；delete 级联软删 t_issue_labels。命名全程 `projectIssue`（对齐 DO `ProjectIssue`/表 `t_project_issues`）。
+  - 设计变更：completed_at 用 `*time.Time` 指针（gencode `gen.FieldType` 配置），Save 统一处理可空语义；sort_order 改后端自算（tasks.md 原说「前端传、无则 DB 默认 0」，但 DB 无默认值且自算更一致）；list 返回扁平列表而非分组结构（groupBy 前端做）。
 
 ### 阶段 C：前端窗口骨架
 
