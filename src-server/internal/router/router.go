@@ -68,6 +68,17 @@ func SetupRouter() *gin.Engine {
 				projectGroup.POST("/update", controller.Project{}.Update)
 				projectGroup.POST("/delete", controller.Project{}.Delete)
 			}
+
+			// workspaceLabel 模块：标签 CRUD + toggleIssue（action 风格，POST）。
+			workspaceLabelGroup := trackerGroup.Group("/workspaceLabel")
+			{
+				workspaceLabelGroup.POST("/getList", controller.WorkspaceLabel{}.GetList)
+				workspaceLabelGroup.POST("/getInfo", controller.WorkspaceLabel{}.GetInfo)
+				workspaceLabelGroup.POST("/create", controller.WorkspaceLabel{}.Create)
+				workspaceLabelGroup.POST("/update", controller.WorkspaceLabel{}.Update)
+				workspaceLabelGroup.POST("/delete", controller.WorkspaceLabel{}.Delete)
+				workspaceLabelGroup.POST("/toggleIssue", controller.WorkspaceLabel{}.ToggleIssue)
+			}
 		}
 	}
 

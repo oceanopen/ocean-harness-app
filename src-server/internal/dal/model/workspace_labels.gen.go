@@ -16,7 +16,6 @@ const TableNameWorkspaceLabel = "t_workspace_labels"
 type WorkspaceLabel struct {
 	ID          int            `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
 	WorkspaceID int            `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
-	ProjectID   int            `gorm:"column:project_id;type:INTEGER" json:"projectId"`
 	Name        string         `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Color       string         `gorm:"column:color;type:TEXT;not null;default:''" json:"color"`
 	Description string         `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`

@@ -30,7 +30,6 @@ func newWorkspaceLabel(db *gorm.DB, opts ...gen.DOOption) workspaceLabel {
 	_workspaceLabel.ALL = field.NewAsterisk(tableName)
 	_workspaceLabel.ID = field.NewInt(tableName, "id")
 	_workspaceLabel.WorkspaceID = field.NewInt(tableName, "workspace_id")
-	_workspaceLabel.ProjectID = field.NewInt(tableName, "project_id")
 	_workspaceLabel.Name = field.NewString(tableName, "name")
 	_workspaceLabel.Color = field.NewString(tableName, "color")
 	_workspaceLabel.Description = field.NewString(tableName, "description")
@@ -50,7 +49,6 @@ type workspaceLabel struct {
 	ALL         field.Asterisk
 	ID          field.Int
 	WorkspaceID field.Int
-	ProjectID   field.Int
 	Name        field.String
 	Color       field.String
 	Description field.String
@@ -76,7 +74,6 @@ func (w *workspaceLabel) updateTableName(table string) *workspaceLabel {
 	w.ALL = field.NewAsterisk(table)
 	w.ID = field.NewInt(table, "id")
 	w.WorkspaceID = field.NewInt(table, "workspace_id")
-	w.ProjectID = field.NewInt(table, "project_id")
 	w.Name = field.NewString(table, "name")
 	w.Color = field.NewString(table, "color")
 	w.Description = field.NewString(table, "description")
@@ -112,10 +109,9 @@ func (w *workspaceLabel) GetFieldByName(fieldName string) (field.OrderExpr, bool
 }
 
 func (w *workspaceLabel) fillFieldMap() {
-	w.fieldMap = make(map[string]field.Expr, 10)
+	w.fieldMap = make(map[string]field.Expr, 9)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["workspace_id"] = w.WorkspaceID
-	w.fieldMap["project_id"] = w.ProjectID
 	w.fieldMap["name"] = w.Name
 	w.fieldMap["color"] = w.Color
 	w.fieldMap["description"] = w.Description

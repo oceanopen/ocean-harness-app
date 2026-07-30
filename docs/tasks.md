@@ -32,7 +32,7 @@
 | `t_workspace_projects` | id, workspace_id, name, description, emoji, default_state_id, 时间戳, deleted_at | 项目，所属 workspace；允许重名（无短码、无业务唯一键），issue 用全局自增 id 标识 |
 | `t_project_states` | id, project_id, workspace_id, name, color, slug, state_group, sort_order, is_default, is_triage, 时间戳, deleted_at | 状态，所属 project；state_group ∈ backlog/unstarted/started/completed/cancelled |
 | `t_project_issues` | id, project_id, workspace_id, name, description, state_id, priority, sort_order, parent_id, start_date, target_date, completed_at, is_draft, 时间戳, deleted_at | issue，所属 project；issue 用全局自增 `id` 标识（无 issue key、无独立 sequence_id）；priority ∈ urgent/high/medium/low/none |
-| `t_workspace_labels` | id, workspace_id, project_id(可空), name, color, description, sort_order, 时间戳, deleted_at | 标签，所属 workspace（可挂 workspace 或 project 级） |
+| `t_workspace_labels` | id, workspace_id, name, color, description, sort_order, 时间戳, deleted_at | 标签，所属 workspace；所有项目共享一套通用标签（无 project 级归属） |
 | `t_issue_labels` | id, issue_id, label_id, created_at, updated_at, deleted_at | 关联表，所属 issue；udx(issue_id, label_id) 全局唯一；软删除与其他表统一 |
 
 - 软删除：保留 `deleted_at`，`gencode` 配置映射 `gorm.DeletedAt`，查询自动过滤。
@@ -53,7 +53,7 @@
 
 ### 2.3 命名规范（全程一致）
 
-- **实体术语**：`workspace / project / issue / state / label` —— types/service/controller/router/前端/DB 全程同一词。
+- **实体术语**：`workspace / project / issue / state / workspaceLabel` —— types/service/controller/router/前端/DB 全程同一词。
 - **公共字段**：`id, name, description, createdAt, updatedAt, deletedAt`。
 - **业务字段**：`workspaceId, projectId, slug, stateId, stateGroup, priority, sortOrder, parentId, startDate, targetDate, completedAt, isDraft, isDefault, isTriage, emoji, color`。JSON 全 camelCase。
 - **枚举**：`priority = urgent|high|medium|low|none`；`stateGroup = backlog|unstarted|started|completed|cancelled`。
@@ -75,7 +75,7 @@
 - `project`: list?workspaceId / get / create(**事务内种 5 默认 state + 回填 default_state_id**) / update / delete(**级联清 state/issue**)
 - `state`: list?projectId / create / update / delete / reorder
 - `issue`: list?projectId(groupBy/orderBy/筛选) / get / create(**默认 state 取 project.default_state_id、自动 sortOrder**) / update / delete
-- `label`: list / create / update / delete / toggleIssue
+- `workspaceLabel`: list?workspaceId / get / create(**sort_order 自算**) / update / delete(**级联清 issue 关联**) / toggleIssue(**恢复式 upsert，返回 issue 的 label 列表**)
 
 ### 2.6 前端 tracker 窗口（新建独立窗口）
 
@@ -120,10 +120,11 @@
   - 目标：project CRUD（按 workspaceId 查）；**去 identifier/issue_key 简化**——project 允许重名、无业务唯一键，create 为普通插入（无 upsert），事务内：插入 project → `SeedDefaultStates` 种 5 默认状态 → 回填 `default_state_id`（取 is_default 那条）；update 仅改 name/description/emoji；软删除事务内级联清理其下 state/issue（issue_labels 留给 label/issue 模块）。
   - 设计变更：原计划 identifier 短码 + issue key=`{identifier}-{id}`，经讨论改为去 identifier、issue 用全局自增 id 标识（个人场景简化）。
 
-- [ ] **任务 6：[后端·label] 标签模块（含 issue 关联）**
-  - 文件：`src-server/internal/types/label.go`、`service/label.go`、`controller/label.go`（新增）、`router/router.go`（修改）
+- [x] **任务 6：[后端·workspaceLabel] 标签模块（含 issue 关联）**
+  - 文件：`src-server/internal/dal/types/workspace_label.go`、`service/workspace_label.go`、`controller/workspace_label.go`（新增）、`router/router.go`（修改）；回改迁移 `migrations/migrations/20260730001_init_tracker.sql`（去 `t_workspace_labels.project_id`）+ 重跑 `gorm:gen` 重生成 DO
   - 当前：无 label 模块
-  - 目标：label CRUD（按 workspaceId/projectId 查，project_id 可空表 workspace 级）；`toggleIssue` 关联/取消关联 t_issue_labels（**恢复式 upsert**：含软删记录查询，未删→软删取消、已删→恢复、无→插入）。
+  - 目标：workspaceLabel CRUD（按 workspaceId 查，**去 project_id、所有项目共享一套标签**）；create `sort_order` 后端自算（同 workspace MAX+10000）；delete 事务内级联软删 `t_issue_labels` 里该 label 的关联；`toggleIssue` 恢复式 upsert（未删→软删取消、已删→恢复、无→插入）→ 返回该 issue 的 label 列表。命名全程 `workspaceLabel`（对齐 DO 名 `WorkspaceLabel`/表 `t_workspace_labels`，与 projectState 模块惯例一致）。
+  - 设计变更：原计划 label 两级归属（workspace 级 + project 级），经讨论改为去 project_id、label 只挂 workspace 共享一套通用标签（个人场景简化）。
 
 - [ ] **任务 7：[后端·issue] Issue 核心模块**
   - 文件：`src-server/internal/types/issue.go`、`service/issue.go`、`controller/issue.go`（新增）、`router/router.go`（修改）

@@ -80,11 +80,10 @@ CREATE TABLE t_project_issues (
     deleted_at   DATETIME
 );
 
--- t_workspace_labels：标签，所属 workspace（project_id 可空表 workspace 级，非空表 project 级）。
+-- t_workspace_labels：标签，所属 workspace；所有项目共享一套通用标签（无 project 级归属）。
 CREATE TABLE t_workspace_labels (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id INTEGER  NOT NULL,
-    project_id   INTEGER,
     name         TEXT     NOT NULL,
     color        TEXT     NOT NULL DEFAULT '',
     description  TEXT     NOT NULL DEFAULT '',
