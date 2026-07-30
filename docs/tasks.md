@@ -104,7 +104,7 @@
 
 ### 阶段 B：后端业务模块
 
-- [ ] **任务 3：[后端·workspace] 工作空间模块**
+- [x] **任务 3：[后端·workspace] 工作空间模块**
   - 文件：`src-server/internal/types/workspace.go`、`service/workspace.go`、`controller/workspace.go`（新增）、`router/router.go`（修改）
   - 当前：无 workspace 模块
   - 目标：实现 workspace CRUD（list/get/create/update/delete）；create 采用**恢复式 upsert**（按 slug 含软删除记录 `Unscoped` 查询：未删除同 slug→报错「记录重复」；已删除同 slug→恢复 `deleted_at=NULL`+`updated_at=now`+业务字段覆盖、保留 `id`+`created_at`；不存在→插入）；update 校验 slug 未删除唯一；软删除；types 用 `WorkspaceCreateRequest`/`WorkspaceResponseData` 等后缀；service 用 `gormgen.Use(global.SqliteDB).Workspace.WithContext(ctx)`；controller 用 `response.OK/Fail`；router 注册 `/api/workspace/*`。

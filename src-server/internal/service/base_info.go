@@ -6,23 +6,21 @@ import (
 	"os"
 	"runtime"
 
+	"we-claude-terminal/go-server/internal/apis"
 	"we-claude-terminal/go-server/internal/dal/types"
 	"we-claude-terminal/go-server/internal/global"
 )
 
-// BaseInfoService 对应 /api/baseInfo 命名空间下的业务逻辑。
-type BaseInfoService struct{}
-
-// NewBaseInfoService 构造 BaseInfoService。
-func NewBaseInfoService() *BaseInfoService {
-	return &BaseInfoService{}
+// BaseInfo 对应 /api/baseInfo 命名空间下的业务逻辑（系统信息采集，无 DB 读写，svc.Orm 不用）。
+type BaseInfo struct {
+	apis.Service
 }
 
 // GetServerRunInfo 采集系统信息（SysInfo）+ 服务运行信息（ServerInfo）。
 // 服务地址、日志/数据目录一并放在 ServerInfo 返回，前端按接口展示（不依赖 Rust IPC）。
-func (s *BaseInfoService) GetServerRunInfo(_ *types.ServerRunInfoRequest) (*types.ServerRunInfo, error) {
+func (svc BaseInfo) GetServerRunInfo(_ *types.ServerRunInfoRequest) (*types.ServerRunInfoResponseData, error) {
 	hostname, _ := os.Hostname()
-	return &types.ServerRunInfo{
+	return &types.ServerRunInfoResponseData{
 		SysInfo: types.SysInfo{
 			Hostname:  hostname,
 			GoVersion: runtime.Version(),

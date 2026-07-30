@@ -23,7 +23,7 @@ src-server/
     │   ├── logger.go               # MustInitZapLogger：zap + lumberjack（日志目录来自配置）
     │   ├── sqlite.go               # MustInitSQLite：gorm + glebarez/sqlite（目录来自配置）
     │   └── gin_writer.go           # InitGinLoggerWriter：gin 日志桥接到 zap
-    ├── response/response.go        # 统一响应封装 { code, data, msg }
+    ├── apis/                        # API 管道：Api/Service 链式基类 + 统一响应封装（JsonOK/JsonFail/Response）
     ├── service/base_info.go        # 业务逻辑层
     ├── controller/base_info.go     # HTTP 处理层（参数 + 响应封装）
     ├── middleware/recovery.go      # panic 恢复（zap 记录 + 统一 500）
@@ -34,22 +34,68 @@ src-server/
         └── types/                  # 请求/返回 DTO（types.BaseInfoRequest）
 ```
 
-> 分层约定：`router` → `controller`（参数/响应封装）→ `service`（业务逻辑）→ `dal/global`（数据）。新增模块按 `<module>.go` 在 `dal/types`、`service`、`controller` 下组织，路由按 `/api/<module>/<action>` 分组。
+> 分层约定：`router` → `controller`（嵌 `apis.Api`，参数解析/校验/响应）→ `service`（嵌 `apis.Service`，业务逻辑）→ `dal`（query/model）。tracker 业务域接口规范见下「API 统一规范」；新增模块按 `<module>.go` 在 `dal/types`、`service`、`controller` 下组织。
 
 ## 命名约定
 
 同一业务概念在不同分层有不同数据载体，按后缀区分职责（统一维护在 `dal/types/<module>.go`）：
 
-| 后缀                | 全称                 | 用途                                                                                                                                                     |
-| ------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Request` / `Query` | —                    | 接口**入参**                                                                                                                                             |
-| `ResponseData`      | 响应数据             | 返回前端/展示层的**出参**（外层 `{code,msg,data}` 中的 `data` 载荷）                                                                                     |
-| `DTO`               | Data Transfer Object | 跨层传输（service ↔ controller）                                                                                                                         |
-| `BO`                | Business Object      | service 内的业务领域对象                                                                                                                                 |
-| `PO`                | Persistent Object    | 数据库实体（gorm 表结构，建表时用）                                                                                                                      |
+| 后缀                | 全称                 | 用途                                                                                                                                                       |
+| ------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Request` / `Query` | —                    | 接口**入参**                                                                                                                                               |
+| `ResponseData`      | 响应数据             | 返回前端/展示层的**出参**（外层 `{code,msg,data}` 中的 `data` 载荷）                                                                                       |
+| `DTO`               | Data Transfer Object | 跨层传输（service ↔ controller）                                                                                                                           |
+| `BO`                | Business Object      | service 内的业务领域对象                                                                                                                                   |
+| `PO`                | Persistent Object    | 数据库实体（gorm 表结构，建表时用）                                                                                                                        |
 | `DO`                | Data Object          | gorm/gen 生成的数据访问层（`PO` 结构体 + 类型安全 CRUD 查询），位于 `internal/dal`（含 `model`/`query` 子包）；下游用 `query.Use(db).Xxx.WithContext(ctx)` |
 
-示例：`SysInfoRequest`（入参）↔ `SysInfoResponseData`（出参）。出参即外层 `{code,msg,data}` 中的 `data` 载荷，外层封装由 `response.Response` 统一处理。
+示例：`SysInfoRequest`（入参）↔ `SysInfoResponseData`（出参）。出参即外层 `{code,msg,data}` 中的 `data` 载荷，外层封装由 `apis.Response` 统一处理。
+
+## API 统一规范（tracker 域）
+
+tracker 业务域（workspace / project / issue / state / label）的所有接口遵循统一范式，作为后续模块的基线。
+
+**数据流**：`router → controller（嵌 apis.Api）→ service（嵌 apis.Service）→ dal(query/model)`。运行期依赖（ctx / Orm / Logger）由 controller 链式灌入 service，service 方法只收 request DTO，不用全局态。
+
+**路由**：`/api/tracker/<module>/<action>`，**一律 POST**（避免同一对象 json/form 并存；getList/getInfo/create/update/delete 均走 POST，便于后续加参）。action 命名固定：`getList / getInfo / create / update / delete`。
+
+**请求类型**：每个 action 一个独立 Request（`<Module><Action>Request`，如 `WorkspaceGetInfoRequest`、`WorkspaceDeleteRequest`，不复用）。常规校验用 gin `binding` tag（`required`/`max` 等，`ShouldBindJSON` 自动触发）；跨字段/复杂场景追加 `vd` tag（go-tagexpr，`@:expr; msg:'中文'`，由 `apis.Api.Validate` 生效）。
+
+**Controller 模板**（嵌入 `apis.Api`，链式装配 + 分层错误）：
+
+```go
+type Workspace struct { apis.Api }
+
+func (api Workspace) GetInfo(ctx *gin.Context) {
+    req := &types.WorkspaceGetInfoRequest{}
+    svc := service.Workspace{}
+    if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+        api.JsonFail(err) // 绑定/校验失败
+        return
+    }
+    data, err := svc.GetInfo(req)
+    if err != nil {
+        api.JsonFail(err) // 业务错误
+        return
+    }
+    api.JsonOK(data)
+}
+```
+
+**Service 模板**（嵌入 `apis.Service`，只收 req，返原始 model——不返 ResponseData，由 controller 直 JsonOK）：
+
+```go
+type Workspace struct { apis.Service }
+
+func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspace, error) {
+    q := query.Use(svc.Orm)
+    return q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(req.ID)).First()
+}
+```
+
+**响应**：`apis.JsonOK(ctx, data)` / `apis.JsonFail(ctx, err)` / `apis.JsonFailWithCode(ctx, code, msg)`，结构 `{code,msg,data}`（成功 0 / 失败 1，业务错误统一 HTTP 200）。
+
+**命名**：context 变量统一 `ctx`（不简写 `c`）；controller / service / model 同名分属不同包（`controller.Workspace` / `service.Workspace` / `model.Workspace`）。基类落 `internal/apis/`（`api.go` + `service.go`）。
 
 ## 配置：环境变量 + yaml 配置文件
 

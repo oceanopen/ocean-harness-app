@@ -29,7 +29,7 @@ interface ApiResponse<T> {
   data: T;
 }
 
-// GET /api/baseInfo/getServerRunInfo 返回的 data 载荷（与 Go ServerRunInfo 对齐）。
+// GET /api/baseInfo/getServerRunInfo 返回的 data 载荷（与 Go ServerRunInfoResponseData 对齐）。
 // 含 SysInfo（系统信息）与 ServerInfo（服务信息）两块。
 interface SysInfo {
   hostname: string;
@@ -43,7 +43,7 @@ interface ServerInfo {
   logDir: string;
   sqliteDir: string;
 }
-interface ServerRunInfo {
+interface ServerRunInfoResponseData {
   sysInfo: SysInfo;
   serverInfo: ServerInfo;
 }
@@ -98,7 +98,7 @@ function friendlyStartError(detail: string | null | undefined): string {
 // fetch 用的地址取自 Rust（端口随模式 dev=9000/build=9100）。
 function ServerStatusPage() {
   const [status, setStatus] = useState<HttpServerStatus | null>(null);
-  const [runInfo, setRunInfo] = useState<ServerRunInfo | null>(null);
+  const [runInfo, setRunInfo] = useState<ServerRunInfoResponseData | null>(null);
   // toast：保留最近一次内容，toastOpen 控制显隐（退出动画期间内容不闪烁）。
   const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'warning' });
   const [toastOpen, setToastOpen] = useState(false);
@@ -129,7 +129,7 @@ function ServerStatusPage() {
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status}`);
         }
-        const body: ApiResponse<ServerRunInfo> = await resp.json();
+        const body: ApiResponse<ServerRunInfoResponseData> = await resp.json();
         if (body.code !== 0) {
           throw new Error(body.msg || `code ${body.code}`);
         }

@@ -4,29 +4,28 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
+	"we-claude-terminal/go-server/internal/apis"
 	"we-claude-terminal/go-server/internal/dal/types"
-	"we-claude-terminal/go-server/internal/response"
 	"we-claude-terminal/go-server/internal/service"
 )
 
-// BaseInfoController 对应 /api/baseInfo 命名空间下的接口。
-type BaseInfoController struct {
-	baseInfoService *service.BaseInfoService
-}
-
-// NewBaseInfoController 构造 BaseInfoController，注入依赖的 service。
-func NewBaseInfoController() *BaseInfoController {
-	return &BaseInfoController{
-		baseInfoService: service.NewBaseInfoService(),
-	}
+// BaseInfo 对应 /api/baseInfo 命名空间下的接口（系统信息查询，非 tracker 业务域，保留 GET）。
+type BaseInfo struct {
+	apis.Api
 }
 
 // GetServerRunInfo GET /api/baseInfo/getServerRunInfo：返回系统信息 + 服务运行信息。
-func (ctl *BaseInfoController) GetServerRunInfo(c *gin.Context) {
-	data, err := ctl.baseInfoService.GetServerRunInfo(&types.ServerRunInfoRequest{})
-	if err != nil {
-		response.Fail(c, err.Error())
+func (api BaseInfo) GetServerRunInfo(ctx *gin.Context) {
+	req := &types.ServerRunInfoRequest{}
+	svc := service.BaseInfo{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
 		return
 	}
-	response.OK(c, data)
+	data, err := svc.GetServerRunInfo(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
 }

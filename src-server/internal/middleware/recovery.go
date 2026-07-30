@@ -8,27 +8,27 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"we-claude-terminal/go-server/internal/apis"
 	"we-claude-terminal/go-server/internal/global"
-	"we-claude-terminal/go-server/internal/response"
 )
 
 // Recovery 捕获 panic，用 zap 记录堆栈，并以统一响应结构返回 500。
 func Recovery() gin.HandlerFunc {
-	return func(c *gin.Context) {
+	return func(ctx *gin.Context) {
 		defer func() {
 			if r := recover(); r != nil {
 				global.Logger.Error("panic recovered",
 					zap.Any("error", r),
 					zap.String("stack", string(debug.Stack())),
-					zap.String("path", c.Request.URL.Path),
+					zap.String("path", ctx.Request.URL.Path),
 				)
-				c.AbortWithStatusJSON(http.StatusInternalServerError, response.Response{
-					Code: response.CodeError,
+				ctx.AbortWithStatusJSON(http.StatusInternalServerError, apis.Response{
+					Code: apis.CodeError,
 					Msg:  "internal server error",
 					Data: nil,
 				})
 			}
 		}()
-		c.Next()
+		ctx.Next()
 	}
 }

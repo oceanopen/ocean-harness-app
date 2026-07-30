@@ -13,7 +13,7 @@ import (
 
 // SetupRouter 构造 gin engine：注册中间件与路由。
 //
-// 当前仅暴露无需登录/鉴权的 /api/baseInfo/getServerRunInfo。
+// 当前暴露 /api/baseInfo（系统信息）与 /api/tracker/*（tracker 业务域：workspace 等），均无需登录/鉴权。
 // gin.SetMode 已在 config.MustLoad 中按环境变量完成。
 func SetupRouter() *gin.Engine {
 	r := gin.New()
@@ -30,14 +30,24 @@ func SetupRouter() *gin.Engine {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	baseInfoController := controller.NewBaseInfoController()
-
-	// 路由按命名空间分组，便于后续扩展：/api/<module>/<action>。
+	// 路由按命名空间分组：/api/baseInfo（系统信息）；/api/tracker/<module>/<action>（工作区/项目/issue 等管理域）。
 	apiGroup := r.Group("/api")
 	{
 		baseInfoGroup := apiGroup.Group("/baseInfo")
 		{
-			baseInfoGroup.GET("/getServerRunInfo", baseInfoController.GetServerRunInfo)
+			baseInfoGroup.GET("/getServerRunInfo", controller.BaseInfo{}.GetServerRunInfo)
+		}
+		trackerGroup := apiGroup.Group("/tracker")
+		{
+			// workspace 模块：一律 POST（action 风格 getList/getInfo/create/update/delete）。
+			workspaceGroup := trackerGroup.Group("/workspace")
+			{
+				workspaceGroup.POST("/getList", controller.Workspace{}.GetList)
+				workspaceGroup.POST("/getInfo", controller.Workspace{}.GetInfo)
+				workspaceGroup.POST("/create", controller.Workspace{}.Create)
+				workspaceGroup.POST("/update", controller.Workspace{}.Update)
+				workspaceGroup.POST("/delete", controller.Workspace{}.Delete)
+			}
 		}
 	}
 
