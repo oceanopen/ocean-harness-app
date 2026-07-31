@@ -4,6 +4,7 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import SpaceDashboardOutlinedIcon from '@mui/icons-material/SpaceDashboardOutlined';
 import {
   alpha,
   Box,
@@ -237,6 +238,20 @@ function PanelApp() {
             </Typography>
           </Breadcrumbs>
           <Box sx={{ flex: 1 }} />
+          <IconButton
+            size="small"
+            aria-label={t('panel:action.openTracker')}
+            onClick={() => {
+              void commands.showTrackerWindow().then((res) => {
+                if (res.status === 'error') {
+                  console.warn('[PanelApp] open tracker failed:', res.error);
+                }
+              });
+            }}
+            sx={{ color: 'text.secondary' }}
+          >
+            <SpaceDashboardOutlinedIcon />
+          </IconButton>
           <IconButton
             size="small"
             aria-label={t('settings:title')}

@@ -25,6 +25,7 @@ export default defineConfig({
         petClaudeSessionsSummary: resolve(__dirname, 'pet-claude-sessions-summary.html'),
         petClaudeSessionsTask: resolve(__dirname, 'pet-claude-sessions-task.html'),
         settings: resolve(__dirname, 'settings.html'),
+        tracker: resolve(__dirname, 'tracker.html'),
       },
     },
   },

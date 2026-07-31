@@ -1,0 +1,18 @@
+{
+  "title": "工作台",
+  "workspace": {
+    "selectPlaceholder": "工作空间选择（即将实现）",
+    "emptyHint": "暂无工作空间"
+  },
+  "project": {
+    "comingSoon": "项目列表（即将实现）",
+    "emptyHint": "选择工作空间后查看项目"
+  },
+  "issue": {
+    "comingSoon": "Issue 列表（即将实现）",
+    "emptyHint": "选择项目后查看 Issue"
+  },
+  "toast": {
+    "loadFailed": "加载失败：{{message}}"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "title": "Tracker",
+  "workspace": {
+    "selectPlaceholder": "Workspace selector (coming soon)",
+    "emptyHint": "No workspaces"
+  },
+  "project": {
+    "comingSoon": "Project list (coming soon)",
+    "emptyHint": "Select a workspace to view projects"
+  },
+  "issue": {
+    "comingSoon": "Issue list (coming soon)",
+    "emptyHint": "Select a project to view issues"
+  },
+  "toast": {
+    "loadFailed": "Load failed: {{message}}"
+  }
+}

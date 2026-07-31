@@ -8,5 +8,8 @@
   "sidebar": {
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏"
+  },
+  "action": {
+    "openTracker": "打开工作台"
   }
 }

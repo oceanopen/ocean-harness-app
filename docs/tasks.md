@@ -82,7 +82,7 @@
 - `src/windows/tracker/`：`main.tsx` + `TrackerApp.tsx`(三级导航根) + 页面 + `components/`。
 - `src/windows/tracker/api.ts`：fetch 封装 + `ApiResponse<T>` + 地址取自 `httpServerStatus`。
 - i18n：`src/shared/i18n/locales/{zh-CN,en}/tracker.json` + 注册到 `index.ts`。
-- 窗口注册：`tracker.html` + `vite.config.ts` 多入口 + `tauri.conf.json` 窗口配置 + Rust 开窗 command + `gen:bindings` + panel 加入口按钮。
+- 窗口注册：`tracker.html` + `vite.config.ts` 多入口 + Rust 开窗 command（`showTrackerWindow`，`WebviewWindowBuilder` 动态创建，**不进 `tauri.conf.json`**，`app.windows:[]`）+ `gen:bindings` + panel 顶栏入口按钮。
 
 ---
 
@@ -134,10 +134,11 @@
 
 ### 阶段 C：前端窗口骨架
 
-- [ ] **任务 8：[前端·骨架] tracker 独立窗口 + Tauri 注册 + API 封装**
-  - 文件：`tracker.html`（新增）、`vite.config.ts`（修改，多入口）、`src/windows/tracker/main.tsx` + `TrackerApp.tsx`（新增，三级导航壳）、`src/shared/i18n/locales/{zh-CN,en}/tracker.json` + `src/shared/i18n/index.ts`（修改，注册命名空间）、`src/windows/tracker/api.ts`（新增，fetch + ApiResponse + 地址取自 httpServerStatus）、`src-tauri/tauri.conf.json` + `tauri.dev.conf.json`（修改，窗口配置）、`src-tauri/src/`（新增 `showTrackerWindow` command）、`src/windows/panel/PanelApp.tsx`（修改，加入口按钮）
+- [x] **任务 8：[前端·骨架] tracker 独立窗口 + Tauri 注册 + API 封装**
+  - 文件：`tracker.html`、`src/windows/tracker/{main.tsx,TrackerApp.tsx,index.css,api.ts}`（新增）、`src/shared/i18n/locales/{zh-CN,en}/tracker.json` + `src/shared/i18n/index.ts`（注册命名空间）、`vite.config.ts`（多入口）、`src-tauri/src/windows/tracker.rs` + `windows/mod.rs` + `lib.rs`（`showTrackerWindow` command + 注册）、`src/windows/panel/PanelApp.tsx` + `panel.json`（入口按钮 + 文案）
   - 当前：无 tracker 窗口
-  - 目标：新建 tracker 独立窗口（复用 AppThemeProvider/AppI18nProvider 暗黑亮色 + i18n），TrackerApp 三级导航壳（工作空间选择 → 项目列表 → issue 列表占位）；panel 顶栏加入口按钮拉起；前端 API 封装统一 fetch（`ApiResponse<T>`、code≠0 抛错）；`pnpm gen:bindings` 重新生成开窗 command 类型。
+  - 目标：新建 tracker 独立窗口（`AppThemeProvider`/`AppI18nProvider` 包裹 + i18n），TrackerApp **三栏布局壳**（顶 workspace 选择器位 + 左 project 列表 + 右 issue 列表，占位）；panel 顶栏加 IconButton 拉起；`api.ts` 建立项目首个 HTTP 封装（`ApiResponse<T>` + `apiGet`/`apiPost` + 地址取自 `httpServerStatus`）；`pnpm gen:bindings` 重生成 `showTrackerWindow`。
+  - 设计变更：窗口**全屏按 maximized 实现**（占满工作区、保留标题栏、`skip_taskbar(false)` 进任务栏、关闭=隐藏复用实例）；**不改 `tauri.conf.json`**（项目所有窗口由 Rust `WebviewWindowBuilder` 动态创建，`app.windows:[]`）；三级导航用**三栏布局**（顶+左+右，非层层进入）；骨架占位，业务在任务 9-12。
 
 ### 阶段 D：前端业务页面
 

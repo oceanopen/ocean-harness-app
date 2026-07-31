@@ -32,6 +32,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::pet_claude_sessions_task::hide_pet_claude_sessions_task_window,
             windows::pet_claude_sessions_task::fit_pet_claude_sessions_task,
             windows::settings::show_settings_window,
+            windows::tracker::show_tracker_window,
             shared::app_config::get_app_config,
             shared::app_config::set_app_config,
             shared::repositories::list_repositories,

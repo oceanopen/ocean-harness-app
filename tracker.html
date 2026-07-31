@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>We Claude Terminal</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+      }
+      body {
+        background: #ffffff;
+        color: rgba(0, 0, 0, 0.87);
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #121212;
+          color: rgba(255, 255, 255, 0.87);
+        }
+      }
+      .app-loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+      }
+      .app-loading__spinner {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        border: 6px solid currentColor;
+        border-top-color: transparent;
+        opacity: 0.4;
+        animation: app-loading-rotate 1s linear infinite;
+      }
+      @keyframes app-loading-rotate {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="app-loading">
+        <div class="app-loading__spinner"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/windows/tracker/main.tsx"></script>
+  </body>
+</html>

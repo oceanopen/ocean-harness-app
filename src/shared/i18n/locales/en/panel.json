@@ -8,5 +8,8 @@
   "sidebar": {
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar"
+  },
+  "action": {
+    "openTracker": "Open Tracker"
   }
 }

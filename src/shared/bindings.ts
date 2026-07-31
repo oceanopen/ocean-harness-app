@@ -73,6 +73,7 @@ export const commands = {
 	 */
 	fitPetClaudeSessionsTask: (height: number | null) => typedError<null, string>(__TAURI_INVOKE("fit_pet_claude_sessions_task", { height })),
 	showSettingsWindow: () => typedError<null, string>(__TAURI_INVOKE("show_settings_window")),
+	showTrackerWindow: () => typedError<null, string>(__TAURI_INVOKE("show_tracker_window")),
 	getAppConfig: (key: string) => typedError<string | null, string>(__TAURI_INVOKE("get_app_config", { key })),
 	setAppConfig: (key: string, value: string) => typedError<null, string>(__TAURI_INVOKE("set_app_config", { key, value })),
 	/**  列出全部仓库（按最近提交时间倒序）。零 git 解析，即时返回。 */
