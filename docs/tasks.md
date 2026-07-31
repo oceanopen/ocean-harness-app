@@ -148,10 +148,11 @@
   - 目标：工作空间卡片/列表 + 选择进入项目列表；创建/编辑/删除（slug 由 name 自动生成或手填）；三态机（loading/ready/error）+ toast（照搬 RepositoriesPage 范式）。
   - 设计变更：导航采用**全屏管理视图**——TrackerApp 持 `selectedWorkspace` 状态，为空时全屏渲染 WorkspacesPage（卡片网格 + CRUD + 客户端搜索 + id DESC 排序），选中卡片后切换到三栏工作壳（顶栏显示当前工作空间名 + 「切换工作空间」IconButton 回到网格）；Workspace 类型定义在 WorkspacesPage 并由 WorkspaceDialog `import type` 单向复用（无运行时循环）；slug 由 name 自动派生（`slugify`，手动改过或编辑模式即停止派生）；删除走标准确认文案（后端 delete 不级联，孤儿数据后续按需处理）。
 
-- [ ] **任务 10：[前端] 项目列表页**
-  - 文件：`src/windows/tracker/ProjectListPage.tsx` + `components/ProjectDialog.tsx`（新增）
+- [x] **任务 10：[前端] 项目列表页**
+  - 文件：`src/windows/panel/tracker/ProjectListPage.tsx` + `components/ProjectDialog.tsx`（新增）、`TrackerPage.tsx`（修改，左栏接入 + 右栏联动）、`src/shared/i18n/locales/{zh-CN,en}/tracker.json`（扩 `project` 子树）
   - 当前：无
-  - 目标：项目卡片网格（emoji + 名称 + 描述 + issue 计数）；创建对话框（name/emoji/描述）、编辑、删除（确认）；点击进入 issue 列表。
+  - 目标：项目列表（emoji + 名称 + 描述截断）；创建对话框（name/emoji/描述）、编辑、删除（确认）；点击行选中 → 右栏联动。
+  - 设计变更：布局改为**左栏 260px 紧凑列表行**（保留任务8 三栏壳，非卡片网格——260px 容不下卡片）；行 = emoji（空兜底 FolderOutlined）+ 名称 + 描述截断一行 + 选中高亮（左边条 primary + action.selected 底色）；选中受控上抛（`selectedId` 由 TrackerPage 持有、`onSelect` 回抛，删除当前选中项目回传 null 清空右栏，切换工作空间一并清空）；**issue 计数本期不做**（后端 `project/getList` 不返回计数，`projectIssue/getList` 强制 projectId 无法按 workspace 一次拉全），留待任务11；toast 新增 `project.toast.*` 子树（顶层 `toast.*` 硬编码"工作空间"不复用、不动 workspace 既有文案）；`Project` 类型定义在 ProjectListPage 并 export，对齐 `WorkspaceProject` JSON（去 omitempty 关联字段）。
 
 - [ ] **任务 11：[前端] Issue 列表页**
   - 文件：`src/windows/tracker/IssueListPage.tsx` + `components/IssueCreateDialog.tsx`（新增）

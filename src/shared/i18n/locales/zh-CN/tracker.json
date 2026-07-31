@@ -48,8 +48,55 @@
     }
   },
   "project": {
-    "comingSoon": "项目列表（即将实现）",
-    "emptyHint": "选择工作空间后查看项目"
+    "search": "按名称搜索",
+    "actions": {
+      "add": "新建项目"
+    },
+    "add": {
+      "title": "新建项目",
+      "name": "名称",
+      "namePlaceholder": "请输入项目名称",
+      "emoji": "图标（emoji）",
+      "emojiPlaceholder": "如 🚀（选填）",
+      "emojiHint": "粘贴一个 emoji 作为项目图标",
+      "description": "描述",
+      "descriptionPlaceholder": "请输入描述（选填）",
+      "confirm": "确定",
+      "cancel": "取消"
+    },
+    "edit": {
+      "title": "编辑项目",
+      "idLabel": "ID",
+      "confirm": "保存"
+    },
+    "card": {
+      "edit": "编辑",
+      "delete": "删除"
+    },
+    "delete": {
+      "title": "删除项目",
+      "confirmMsg": "确认删除项目「{{name}}」？其下所有状态与 Issue 将一并删除，且不可恢复。",
+      "confirm": "删除",
+      "cancel": "取消"
+    },
+    "empty": {
+      "title": "暂无项目",
+      "desc": "点击「新建项目」开始管理",
+      "noMatch": "没有匹配的项目"
+    },
+    "error": {
+      "title": "加载项目列表失败",
+      "desc": "请稍后重试",
+      "retry": "重试"
+    },
+    "toast": {
+      "created": "项目「{{name}}」创建成功",
+      "createFailed": "创建失败：{{message}}",
+      "updated": "项目「{{name}}」更新成功",
+      "updateFailed": "更新失败：{{message}}",
+      "deleted": "项目已删除",
+      "deleteFailed": "删除失败：{{message}}"
+    }
   },
   "issue": {
     "comingSoon": "Issue 列表（即将实现）",

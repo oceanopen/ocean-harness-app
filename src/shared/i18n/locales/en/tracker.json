@@ -48,8 +48,55 @@
     }
   },
   "project": {
-    "comingSoon": "Project list (coming soon)",
-    "emptyHint": "Select a workspace to view projects"
+    "search": "Search by name",
+    "actions": {
+      "add": "New project"
+    },
+    "add": {
+      "title": "New project",
+      "name": "Name",
+      "namePlaceholder": "Enter project name",
+      "emoji": "Icon (emoji)",
+      "emojiPlaceholder": "e.g. 🚀 (optional)",
+      "emojiHint": "Paste an emoji as the project icon",
+      "description": "Description",
+      "descriptionPlaceholder": "Enter description (optional)",
+      "confirm": "OK",
+      "cancel": "Cancel"
+    },
+    "edit": {
+      "title": "Edit project",
+      "idLabel": "ID",
+      "confirm": "Save"
+    },
+    "card": {
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "delete": {
+      "title": "Delete project",
+      "confirmMsg": "Delete project \"{{name}}\"? All its states and issues will be deleted, and this cannot be undone.",
+      "confirm": "Delete",
+      "cancel": "Cancel"
+    },
+    "empty": {
+      "title": "No projects",
+      "desc": "Click \"New project\" to get started",
+      "noMatch": "No matching projects"
+    },
+    "error": {
+      "title": "Failed to load projects",
+      "desc": "Please try again later",
+      "retry": "Retry"
+    },
+    "toast": {
+      "created": "Project \"{{name}}\" created",
+      "createFailed": "Create failed: {{message}}",
+      "updated": "Project \"{{name}}\" updated",
+      "updateFailed": "Update failed: {{message}}",
+      "deleted": "Project deleted",
+      "deleteFailed": "Delete failed: {{message}}"
+    }
   },
   "issue": {
     "comingSoon": "Issue list (coming soon)",
