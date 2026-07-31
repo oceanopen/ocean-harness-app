@@ -1,6 +1,7 @@
 # HTTP 本地服务
 
-we-claude-terminal 的 HTTP 本地服务（Go + gin 实现，位于 `src-server/`），提供系统信息等能力。前端 `ServerStatusPage`（`src/windows/panel/ServerStatusPage.tsx`）通过 IPC 查询运行态并 `fetch` 直连调用。Rust 侧进程管理位于 `src-tauri/src/shared/http_server.rs`。
+we-claude-terminal 的 HTTP 本地服务（Go + gin 实现，位于 `src-server/`）。
+Rust 侧进程管理位于 `src-tauri/src/shared/http_server.rs`。
 
 采用分层结构（config / initialize / router / controller / service），**配置优先级：环境变量 > yaml 配置文件**（本地调试用 `config/settings.dev.yaml`）、**数据库用 sqlite**（纯 Go 驱动，无 CGO）。
 
@@ -44,10 +45,6 @@ src-server/
 | ------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Request` / `Query` | —                    | 接口**入参**                                                                                                                                               |
 | `ResponseData`      | 响应数据             | 返回前端/展示层的**出参**（外层 `{code,msg,data}` 中的 `data` 载荷）                                                                                       |
-| `DTO`               | Data Transfer Object | 跨层传输（service ↔ controller）                                                                                                                           |
-| `BO`                | Business Object      | service 内的业务领域对象                                                                                                                                   |
-| `PO`                | Persistent Object    | 数据库实体（gorm 表结构，建表时用）                                                                                                                        |
-| `DO`                | Data Object          | gorm/gen 生成的数据访问层（`PO` 结构体 + 类型安全 CRUD 查询），位于 `internal/dal`（含 `model`/`query` 子包）；下游用 `query.Use(db).Xxx.WithContext(ctx)` |
 
 示例：`SysInfoRequest`（入参）↔ `SysInfoResponseData`（出参）。出参即外层 `{code,msg,data}` 中的 `data` 载荷，外层封装由 `apis.Response` 统一处理。
 
@@ -127,19 +124,6 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 
 - 客户端/生产场景：端口由 Rust 按模式注入环境变量（覆盖 yaml）。前端从 Rust `http_server_status` 命令获取服务地址（`http://127.0.0.1:<port>`），不硬编码端口。
 - 本地 air 自测：端口 9200 来自 `config/settings.dev.yaml`，与客户端的 9000 隔离，互不影响。
-
-## 初始化序列（main.go）
-
-```
-config.MustLoadConfig()        # 读环境变量 + 校验 + gin.SetMode（失败即退出）
-initialize.MustInitZapLogger   # zap 三路 tee：app.error.log / app.log / 控制台 + lumberjack 轮转
-initialize.MustInitSQLite      # gorm + sqlite，全局 SqliteDB，ping 验活（暂不建表）
-initialize.InitGinLoggerWriter # gin.DefaultWriter/ErrorWriter → zap（文件 + 控制台）
-printRuntimeConfig             # 启动前用 zap 打印完整环境变量信息
-router.SetupRouter             # gin.New + recovery + cors + /api/baseInfo/getSysInfo
-*http.Server + SIGTERM/SIGINT  # 优雅退出（Rust 退出时发 SIGTERM）
-zap 打印 listening 地址        # 文件 + 控制台都有
-```
 
 ## API
 
