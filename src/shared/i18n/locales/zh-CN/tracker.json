@@ -99,8 +99,53 @@
     }
   },
   "issue": {
-    "comingSoon": "Issue 列表（即将实现）",
-    "emptyHint": "选择项目后查看 Issue"
+    "emptyHint": "选择项目后查看 Issue",
+    "search": "搜索 Issue",
+    "actions": {
+      "add": "新建 Issue"
+    },
+    "add": {
+      "title": "新建 Issue",
+      "name": "名称",
+      "namePlaceholder": "请输入 Issue 名称",
+      "priority": "优先级",
+      "confirm": "确定",
+      "cancel": "取消"
+    },
+    "group": {
+      "backlog": "待办池",
+      "unstarted": "未开始",
+      "started": "进行中",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "priority": {
+      "urgent": "紧急",
+      "high": "高",
+      "medium": "中",
+      "low": "低",
+      "none": "无"
+    },
+    "filter": {
+      "all": "全部优先级",
+      "allStates": "全部状态",
+      "state": "状态",
+      "priority": "优先级"
+    },
+    "empty": {
+      "title": "暂无 Issue",
+      "desc": "点击「新建 Issue」开始管理",
+      "noMatch": "没有匹配的 Issue"
+    },
+    "error": {
+      "title": "加载 Issue 列表失败",
+      "desc": "请稍后重试",
+      "retry": "重试"
+    },
+    "toast": {
+      "created": "Issue「{{name}}」创建成功",
+      "createFailed": "创建失败：{{message}}"
+    }
   },
   "toast": {
     "loadFailed": "加载失败：{{message}}",

@@ -154,10 +154,11 @@
   - 目标：项目列表（emoji + 名称 + 描述截断）；创建对话框（name/emoji/描述）、编辑、删除（确认）；点击行选中 → 右栏联动。
   - 设计变更：布局改为**左栏 260px 紧凑列表行**（保留任务8 三栏壳，非卡片网格——260px 容不下卡片）；行 = emoji（空兜底 FolderOutlined）+ 名称 + 描述截断一行 + 选中高亮（左边条 primary + action.selected 底色）；选中受控上抛（`selectedId` 由 TrackerPage 持有、`onSelect` 回抛，删除当前选中项目回传 null 清空右栏，切换工作空间一并清空）；**issue 计数本期不做**（后端 `project/getList` 不返回计数，`projectIssue/getList` 强制 projectId 无法按 workspace 一次拉全），留待任务11；toast 新增 `project.toast.*` 子树（顶层 `toast.*` 硬编码"工作空间"不复用、不动 workspace 既有文案）；`Project` 类型定义在 ProjectListPage 并 export，对齐 `WorkspaceProject` JSON（去 omitempty 关联字段）。
 
-- [ ] **任务 11：[前端] Issue 列表页**
-  - 文件：`src/windows/tracker/IssueListPage.tsx` + `components/IssueCreateDialog.tsx`（新增）
+- [x] **任务 11：[前端] Issue 列表页**
+  - 文件：`src/windows/panel/tracker/IssueListPage.tsx` + `components/IssueCreateDialog.tsx`（新增）、`TrackerPage.tsx`（修改，右栏接入）、`src/shared/i18n/locales/{zh-CN,en}/tracker.json`（扩 `issue` 子树）
   - 当前：无
-  - 目标：list 视图，按 state_group 或 priority 分组（MUI Collapse 可折叠）+ 排序 + 基础筛选（状态/优先级/关键字搜索）；每行显示 id、状态色块、优先级图标、名称；顶部快速创建 issue；点击行打开侧滑详情。
+  - 目标：按 state_group 分组的可折叠列表（Collapse）+ 客户端筛选（关键字/优先级/状态）+ 组内 priority weight 排序；每行显示状态色块、#id、名称、优先级图标；顶部快速创建 issue。
+  - 设计变更：分组维度定为**按 state_group**（5 组固定顺序 backlog/unstarted/started/completed/cancelled），非 priority；**数据装配**——issue getList 返回扁平 issue（仅 stateId、不带 group/color），需**并行拉 projectState/getList** 构建 `stateId→state` 映射才能分组（路由 `projectIssue`/`projectState`，非 `issue`/`state`）；**筛选走客户端**（在已加载列表上过滤，与 ProjectListPage 一致、不重复请求）；**组内排序**用前端 priority weight（后端 orderBy=priority 为文本字典序不可信）+ sortOrder；**快速创建对话框极简**（name + priority，默认 none），描述/日期/标签留任务12；priority 图标用箭头系（urgent 双上红/high 上橙/medium 横杠蓝/low 下灰/none 减号浅灰）；切换项目用 `key={project.id}` 重挂载（重置筛选/折叠 + 重载）；行点击留可选 `onOpenIssue` 回调，本期 TrackerPage 不传（任务12 接侧滑详情）；`Issue`/`ProjectState`/`Priority`/`StateGroup` 类型定义在 IssueListPage 并 export；toast 新增 `issue.toast.*`，移除未用的 `issue.comingSoon`。
 
 - [ ] **任务 12：[前端] Issue 侧滑详情 + Label 管理**
   - 文件：`src/windows/tracker/IssueDetailDrawer.tsx` + `components/StateSelect.tsx`、`PrioritySelect.tsx`、`LabelSelect.tsx`、`LabelManagerDialog.tsx`（新增）

@@ -1,0 +1,459 @@
+import type { Project } from './ProjectListPage';
+import {
+  AddOutlined as AddOutlinedIcon,
+  AssignmentOutlined as AssignmentOutlinedIcon,
+  DragHandleRounded as DragHandleRoundedIcon,
+  ExpandLessOutlined as ExpandLessOutlinedIcon,
+  ExpandMoreOutlined as ExpandMoreOutlinedIcon,
+  KeyboardArrowDownRounded as KeyboardArrowDownRoundedIcon,
+  KeyboardArrowUpRounded as KeyboardArrowUpRoundedIcon,
+  KeyboardDoubleArrowUpRounded as KeyboardDoubleArrowUpRoundedIcon,
+  RemoveOutlined as RemoveOutlinedIcon,
+} from '@mui/icons-material';
+import {
+  Alert,
+  AlertTitle,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Collapse,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Snackbar,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { apiPost } from './api';
+import IssueCreateDialog from './components/IssueCreateDialog';
+
+type LoadStatus = 'loading' | 'ready' | 'error';
+
+// 浮层 toast 严重级别（成功用 success，失败用 error）。
+type ToastSeverity = 'success' | 'error';
+
+export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
+export type StateGroup = 'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled';
+
+// Issue：对齐后端 ProjectIssueResponseData（*model.ProjectIssue 字段平铺 + labels）。
+// completedAt 为 *time.Time → null/ISO 串；isDraft 为 enums.YesNo → "Y"/"N"（非 bool）。
+// 由 IssueCreateDialog 以 `import type` 复用（类型单向依赖，无运行时循环）。
+export interface Issue {
+  id: number;
+  projectId: number;
+  workspaceId: number;
+  name: string;
+  description: string;
+  stateId: number;
+  priority: Priority;
+  sortOrder: number;
+  parentId: number;
+  startDate: string;
+  targetDate: string;
+  completedAt: string | null;
+  isDraft: 'Y' | 'N';
+  createdAt: string;
+  updatedAt: string;
+  labels: { id: number; name: string; color: string }[];
+}
+
+// ProjectState：对齐后端 model.ProjectState（t_project_states），用于状态色块与 stateGroup 分组。
+export interface ProjectState {
+  id: number;
+  projectId: number;
+  workspaceId: number;
+  name: string;
+  color: string;
+  slug: string;
+  stateGroup: StateGroup;
+  sortOrder: number;
+  isDefault: 'Y' | 'N';
+  isTriage: 'Y' | 'N';
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+// 优先级业务权重（升序，urgent 在前）——后端 orderBy=priority 为文本字典序不可靠，前端按 weight 重排。
+const PRIORITY_WEIGHT: Record<Priority, number> = {
+  urgent: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  none: 4,
+};
+
+const PRIORITY_ORDER: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
+
+// 分组顺序固定（对齐 state_group 工作流语义）。
+const GROUP_ORDER: StateGroup[] = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'];
+
+const truncateSx = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+} as const;
+
+interface IssueListPageProps {
+  project: Project;
+  // 行点击回调（任务12 接侧滑详情）；不传则行不可点击。
+  onOpenIssue?: (issue: Issue) => void;
+}
+
+// Issue 列表页（嵌于 tracker 三栏壳的右栏）。
+// 并行拉 issue + state 两接口 → 构建 stateId→state 映射 → 按 stateGroup 分组（Collapse 可折叠）。
+// 筛选走客户端（与 ProjectListPage 一致，已加载列表上过滤，不重复请求）：关键字 + 优先级 + 状态。
+// 组内排序：priority weight 升序，同优先级按 sortOrder 升序。
+function IssueListPage({ project, onOpenIssue }: IssueListPageProps) {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<LoadStatus>('loading');
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [states, setStates] = useState<ProjectState[]>([]);
+  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
+  const [toastOpen, setToastOpen] = useState(false);
+  const [keyword, setKeyword] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
+  const [stateFilter, setStateFilter] = useState<number | 'all'>('all');
+  const [collapsed, setCollapsed] = useState<Set<StateGroup>>(() => new Set());
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const showToast = useCallback((text: string, severity: ToastSeverity) => {
+    setToast({ text, severity });
+    setToastOpen(true);
+  }, []);
+
+  const load = useCallback(async () => {
+    setStatus('loading');
+    try {
+      const [issueData, stateData] = await Promise.all([
+        apiPost<Issue[]>('/api/tracker/projectIssue/getList', { projectId: project.id }),
+        apiPost<ProjectState[]>('/api/tracker/projectState/getList', { projectId: project.id }),
+      ]);
+      setIssues(issueData);
+      setStates(stateData);
+      setStatus('ready');
+    } catch {
+      setStatus('error');
+    }
+  }, [project.id]);
+
+  // 挂载时加载一次（父级用 key={project.id} 保证切换项目重挂载，自然重载）。
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const stateMap = useMemo(() => {
+    const m = new Map<number, ProjectState>();
+    states.forEach(s => m.set(s.id, s));
+    return m;
+  }, [states]);
+
+  // 客户端筛选 + 按 stateGroup 分组 + 组内排序。
+  const grouped = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    const filtered = issues.filter((i) => {
+      if (q && !i.name.toLowerCase().includes(q)) {
+        return false;
+      }
+      if (priorityFilter !== 'all' && i.priority !== priorityFilter) {
+        return false;
+      }
+      if (stateFilter !== 'all' && i.stateId !== stateFilter) {
+        return false;
+      }
+      return true;
+    });
+    const buckets: Record<StateGroup, Issue[]> = {
+      backlog: [],
+      unstarted: [],
+      started: [],
+      completed: [],
+      cancelled: [],
+    };
+    filtered.forEach((i) => {
+      // stateId 未知（如状态被删）fallback 到 backlog，保证 issue 不丢。
+      const group = stateMap.get(i.stateId)?.stateGroup ?? 'backlog';
+      buckets[group].push(i);
+    });
+    Object.values(buckets).forEach(arr => arr.sort((a, b) => {
+      const dw = PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority];
+      if (dw !== 0) {
+        return dw;
+      }
+      return a.sortOrder - b.sortOrder;
+    }));
+    return buckets;
+  }, [issues, keyword, priorityFilter, stateFilter, stateMap]);
+
+  const totalCount = useMemo(
+    () => Object.values(grouped).reduce((sum, arr) => sum + arr.length, 0),
+    [grouped],
+  );
+
+  const toggleGroup = useCallback((g: StateGroup) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(g)) {
+        next.delete(g);
+      } else {
+        next.add(g);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleCreated = useCallback((issue: Issue) => {
+    setIssues(prev => [...prev, issue]);
+    showToast(t('tracker:issue.toast.created', { name: issue.name }), 'success');
+  }, [t, showToast]);
+
+  return (
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* 工具栏：搜索 + 优先级筛选 + 状态筛选 + 新建 */}
+      <Box
+        sx={{
+          p: 1.5,
+          borderBottom: 1,
+          borderColor: 'divider',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          flexWrap: 'wrap',
+        }}
+      >
+        <TextField
+          size="small"
+          placeholder={t('tracker:issue.search')}
+          value={keyword}
+          onChange={e => setKeyword(e.target.value)}
+          sx={{ flexGrow: 1, minWidth: 120 }}
+        />
+        <FormControl size="small" sx={{ minWidth: 110 }}>
+          <InputLabel>{t('tracker:issue.filter.priority')}</InputLabel>
+          <Select
+            label={t('tracker:issue.filter.priority')}
+            value={priorityFilter}
+            onChange={e => setPriorityFilter(e.target.value as Priority | 'all')}
+          >
+            <MenuItem value="all">{t('tracker:issue.filter.all')}</MenuItem>
+            {PRIORITY_ORDER.map(p => (
+              <MenuItem key={p} value={p}>{t(`tracker:issue.priority.${p}`)}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <FormControl size="small" sx={{ minWidth: 120 }}>
+          <InputLabel>{t('tracker:issue.filter.state')}</InputLabel>
+          <Select
+            label={t('tracker:issue.filter.state')}
+            value={stateFilter}
+            onChange={e => setStateFilter(e.target.value as number | 'all')}
+          >
+            <MenuItem value="all">{t('tracker:issue.filter.allStates')}</MenuItem>
+            {states.map(s => (
+              <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Button variant="contained" size="small" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)}>
+          {t('tracker:issue.actions.add')}
+        </Button>
+      </Box>
+
+      {/* 内容区 */}
+      <Box sx={{ flex: 1, overflow: 'auto' }}>
+        {status === 'loading' && (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <CircularProgress />
+          </Box>
+        )}
+        {status === 'error' && (
+          <Box sx={{ p: 2 }}>
+            <Alert
+              severity="error"
+              action={(
+                <Button color="inherit" size="small" onClick={load}>
+                  {t('tracker:issue.error.retry')}
+                </Button>
+              )}
+            >
+              <AlertTitle>{t('tracker:issue.error.title')}</AlertTitle>
+              {t('tracker:issue.error.desc')}
+            </Alert>
+          </Box>
+        )}
+        {status === 'ready' && issues.length === 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              gap: 1.5,
+              px: 3,
+              py: 4,
+            }}
+          >
+            <AssignmentOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+              {t('tracker:issue.empty.title')}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" align="center">
+              {t('tracker:issue.empty.desc')}
+            </Typography>
+            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)} sx={{ mt: 1 }}>
+              {t('tracker:issue.actions.add')}
+            </Button>
+          </Box>
+        )}
+        {status === 'ready' && issues.length > 0 && totalCount === 0 && (
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+            <Typography variant="body2" color="text.secondary">
+              {t('tracker:issue.empty.noMatch')}
+            </Typography>
+          </Box>
+        )}
+        {status === 'ready' && totalCount > 0 && (
+          <Box sx={{ p: 1 }}>
+            {GROUP_ORDER.map((g) => {
+              const arr = grouped[g];
+              if (arr.length === 0) {
+                return null;
+              }
+              const isCollapsed = collapsed.has(g);
+              return (
+                <Box key={g} sx={{ mb: 0.5 }}>
+                  <Box
+                    onClick={() => toggleGroup(g)}
+                    sx={[
+                      {
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        px: 1,
+                        py: 0.75,
+                        borderRadius: 1,
+                        cursor: 'pointer',
+                      },
+                      { '&:hover': { bgcolor: 'action.hover' } },
+                    ]}
+                  >
+                    {isCollapsed
+                      ? <ExpandMoreOutlinedIcon fontSize="small" color="action" />
+                      : <ExpandLessOutlinedIcon fontSize="small" color="action" />}
+                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                      {t(`tracker:issue.group.${g}`)}
+                    </Typography>
+                    <Chip label={arr.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+                  </Box>
+                  <Collapse in={!isCollapsed}>
+                    {arr.map(issue => (
+                      <IssueRow
+                        key={issue.id}
+                        issue={issue}
+                        stateMap={stateMap}
+                        onOpenIssue={onOpenIssue}
+                      />
+                    ))}
+                  </Collapse>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+      </Box>
+
+      <Snackbar
+        open={toastOpen}
+        autoHideDuration={2000}
+        onClose={() => setToastOpen(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={toast.severity} variant="filled">
+          {toast.text}
+        </Alert>
+      </Snackbar>
+
+      {createOpen && (
+        <IssueCreateDialog
+          projectId={project.id}
+          workspaceId={project.workspaceId}
+          onClose={() => setCreateOpen(false)}
+          onCreated={handleCreated}
+        />
+      )}
+    </Box>
+  );
+}
+
+// 优先级图标：urgent 双上箭头(红) / high 上箭头(橙) / medium 横杠(蓝) / low 下箭头(灰) / none 减号(浅灰)。
+function PriorityIcon({ priority }: { priority: Priority }) {
+  switch (priority) {
+    case 'urgent':
+      return <KeyboardDoubleArrowUpRoundedIcon sx={{ fontSize: '1rem', color: 'error.main' }} />;
+    case 'high':
+      return <KeyboardArrowUpRoundedIcon sx={{ fontSize: '1rem', color: 'warning.main' }} />;
+    case 'medium':
+      return <DragHandleRoundedIcon sx={{ fontSize: '1rem', color: 'info.main' }} />;
+    case 'low':
+      return <KeyboardArrowDownRoundedIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />;
+    default:
+      return <RemoveOutlinedIcon sx={{ fontSize: '1rem', color: 'text.disabled' }} />;
+  }
+}
+
+// 单行：状态色块（取 state.color，未知用 text.disabled）+ #id + 名称 + 优先级图标。
+// onOpenIssue 传入时整行可点击（cursor pointer），否则仅展示。
+interface IssueRowProps {
+  issue: Issue;
+  stateMap: Map<number, ProjectState>;
+  onOpenIssue?: (issue: Issue) => void;
+}
+
+function IssueRow({ issue, stateMap, onOpenIssue }: IssueRowProps) {
+  const state = stateMap.get(issue.stateId);
+  const clickable = !!onOpenIssue;
+
+  return (
+    <Box
+      onClick={clickable ? () => onOpenIssue?.(issue) : undefined}
+      sx={[
+        {
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          mx: 0.5,
+          px: 1,
+          py: 0.75,
+          borderRadius: 1,
+        },
+        { '&:hover': { bgcolor: 'action.hover' } },
+        clickable ? { cursor: 'pointer' } : null,
+      ]}
+    >
+      <Tooltip title={state?.name ?? ''}>
+        <Box
+          sx={{
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            bgcolor: state?.color || 'text.disabled',
+            flexShrink: 0,
+          }}
+        />
+      </Tooltip>
+      <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>#{issue.id}</Typography>
+      <Typography variant="body2" sx={{ flex: 1, minWidth: 0, ...truncateSx }} title={issue.name}>
+        {issue.name}
+      </Typography>
+      <PriorityIcon priority={issue.priority} />
+    </Box>
+  );
+}
+
+export default IssueListPage;

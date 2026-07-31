@@ -4,6 +4,7 @@ import { AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import IssueListPage from './IssueListPage';
 import ProjectListPage from './ProjectListPage';
 import WorkspacesPage from './WorkspacesPage';
 
@@ -77,19 +78,19 @@ export default function TrackerPage() {
           />
         </Box>
 
-        {/* 右栏：issue 列表（任务11 实现；本期据是否选中项目显示占位文案） */}
-        <Box
-          sx={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            p: 2,
-          }}
-        >
-          <Typography variant="body2" color="text.secondary">
-            {selectedProject ? t('tracker:issue.comingSoon') : t('tracker:issue.emptyHint')}
-          </Typography>
+        {/* 右栏：issue 列表（选中项目后渲染；key 随项目切换重挂载，重置筛选/折叠并重新加载） */}
+        <Box sx={{ flex: 1, overflow: 'hidden' }}>
+          {selectedProject
+            ? (
+                <IssueListPage key={selectedProject.id} project={selectedProject} />
+              )
+            : (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    {t('tracker:issue.emptyHint')}
+                  </Typography>
+                </Box>
+              )}
         </Box>
       </Box>
     </Box>

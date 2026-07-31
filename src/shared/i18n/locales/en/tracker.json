@@ -99,8 +99,53 @@
     }
   },
   "issue": {
-    "comingSoon": "Issue list (coming soon)",
-    "emptyHint": "Select a project to view issues"
+    "emptyHint": "Select a project to view issues",
+    "search": "Search issues",
+    "actions": {
+      "add": "New issue"
+    },
+    "add": {
+      "title": "New issue",
+      "name": "Name",
+      "namePlaceholder": "Enter issue name",
+      "priority": "Priority",
+      "confirm": "OK",
+      "cancel": "Cancel"
+    },
+    "group": {
+      "backlog": "Backlog",
+      "unstarted": "Unstarted",
+      "started": "Started",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "priority": {
+      "urgent": "Urgent",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "none": "None"
+    },
+    "filter": {
+      "all": "All priorities",
+      "allStates": "All states",
+      "state": "State",
+      "priority": "Priority"
+    },
+    "empty": {
+      "title": "No issues",
+      "desc": "Click \"New issue\" to get started",
+      "noMatch": "No matching issues"
+    },
+    "error": {
+      "title": "Failed to load issues",
+      "desc": "Please try again later",
+      "retry": "Retry"
+    },
+    "toast": {
+      "created": "Issue \"{{name}}\" created",
+      "createFailed": "Create failed: {{message}}"
+    }
   },
   "toast": {
     "loadFailed": "Load failed: {{message}}",
