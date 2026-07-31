@@ -132,6 +132,10 @@
       "state": "State",
       "priority": "Priority"
     },
+    "view": {
+      "list": "List",
+      "board": "Board"
+    },
     "empty": {
       "title": "No issues",
       "desc": "Click \"New issue\" to get started",
@@ -152,7 +156,8 @@
       "labelCreated": "Label \"{{name}}\" created",
       "labelUpdated": "Label updated",
       "labelDeleted": "Label deleted",
-      "labelOpFailed": "Label operation failed: {{message}}"
+      "labelOpFailed": "Label operation failed: {{message}}",
+      "moveFailed": "Move failed: {{message}}"
     },
     "detail": {
       "close": "Close",

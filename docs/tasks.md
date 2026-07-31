@@ -2,8 +2,6 @@
 
 ## 后续迭代
 
-- 看板视图 + 拖拽排序（引入 `@hello-pangea/dnd`）
-- 富筛选表达式（property-operator-value 构建器，保存为视图）
 - 富文本描述编辑器（TipTap）
 - 命令面板（`cmdk`）
 - calendar / gantt 视图

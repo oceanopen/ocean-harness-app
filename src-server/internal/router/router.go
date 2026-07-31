@@ -80,7 +80,7 @@ func SetupRouter() *gin.Engine {
 				workspaceLabelGroup.POST("/toggleIssue", controller.WorkspaceLabel{}.ToggleIssue)
 			}
 
-			// projectIssue 模块：issue CRUD（action 风格，POST）。
+			// projectIssue 模块：issue CRUD + move（看板拖拽，action 风格，POST）。
 			projectIssueGroup := trackerGroup.Group("/projectIssue")
 			{
 				projectIssueGroup.POST("/getList", controller.ProjectIssue{}.GetList)
@@ -88,6 +88,7 @@ func SetupRouter() *gin.Engine {
 				projectIssueGroup.POST("/create", controller.ProjectIssue{}.Create)
 				projectIssueGroup.POST("/update", controller.ProjectIssue{}.Update)
 				projectIssueGroup.POST("/delete", controller.ProjectIssue{}.Delete)
+				projectIssueGroup.POST("/move", controller.ProjectIssue{}.Move)
 			}
 		}
 	}

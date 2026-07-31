@@ -78,6 +78,22 @@ func (api ProjectIssue) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
+// Move POST /api/tracker/projectIssue/move：看板拖拽单卡移动（写 sortOrder + stateId 流转 completed_at）。
+func (api ProjectIssue) Move(ctx *gin.Context) {
+	req := &types.ProjectIssueMoveRequest{}
+	svc := service.ProjectIssue{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.Move(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}
+
 // Delete POST /api/tracker/projectIssue/delete：软删除 issue（级联清其 label 关联）。
 func (api ProjectIssue) Delete(ctx *gin.Context) {
 	req := &types.ProjectIssueDeleteRequest{}

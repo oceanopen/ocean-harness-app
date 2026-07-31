@@ -132,6 +132,10 @@
       "state": "状态",
       "priority": "优先级"
     },
+    "view": {
+      "list": "列表",
+      "board": "看板"
+    },
     "empty": {
       "title": "暂无 Issue",
       "desc": "点击「新建 Issue」开始管理",
@@ -152,7 +156,8 @@
       "labelCreated": "标签「{{name}}」已创建",
       "labelUpdated": "标签已更新",
       "labelDeleted": "标签已删除",
-      "labelOpFailed": "标签操作失败：{{message}}"
+      "labelOpFailed": "标签操作失败：{{message}}",
+      "moveFailed": "移动失败：{{message}}"
     },
     "detail": {
       "close": "关闭",

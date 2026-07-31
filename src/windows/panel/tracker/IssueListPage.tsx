@@ -9,6 +9,8 @@ import {
   KeyboardArrowUpRounded as KeyboardArrowUpRoundedIcon,
   KeyboardDoubleArrowUpRounded as KeyboardDoubleArrowUpRoundedIcon,
   RemoveOutlined as RemoveOutlinedIcon,
+  ViewKanbanOutlined as ViewKanbanOutlinedIcon,
+  ViewListOutlined as ViewListOutlinedIcon,
 } from '@mui/icons-material';
 import {
   Alert,
@@ -24,6 +26,8 @@ import {
   Select,
   Snackbar,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -32,8 +36,12 @@ import { useTranslation } from 'react-i18next';
 import { apiPost } from './api';
 import IssueCreateDialog from './components/IssueCreateDialog';
 import IssueDetailDrawer from './IssueDetailDrawer';
+import KanbanView from './kanban/KanbanView';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
+
+// Issue 视图模式：列表（按状态组纵向分组）/ 看板（按具体状态横向分列 + 拖拽）。
+type IssueViewMode = 'list' | 'kanban';
 
 // 浮层 toast 严重级别（成功用 success，失败用 error）。
 type ToastSeverity = 'success' | 'error';
@@ -135,6 +143,15 @@ function IssueListPage({ project }: IssueListPageProps) {
   const [collapsed, setCollapsed] = useState<Set<StateGroup>>(() => new Set());
   const [createOpen, setCreateOpen] = useState(false);
   const [detailIssue, setDetailIssue] = useState<Issue | null>(null);
+  // 视图模式按项目持久化（localStorage），默认列表。
+  const [viewMode, setViewMode] = useState<IssueViewMode>(
+    () => (localStorage.getItem(`tracker.viewMode.${project.id}`) === 'kanban' ? 'kanban' : 'list'),
+  );
+
+  const handleViewModeChange = useCallback((mode: IssueViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem(`tracker.viewMode.${project.id}`, mode);
+  }, [project.id]);
 
   const showToast = useCallback((text: string, severity: ToastSeverity) => {
     setToast({ text, severity });
@@ -293,6 +310,23 @@ function IssueListPage({ project }: IssueListPageProps) {
             ))}
           </Select>
         </FormControl>
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={viewMode}
+          onChange={(_, v) => {
+            if (v) {
+              handleViewModeChange(v);
+            }
+          }}
+        >
+          <ToggleButton value="list" aria-label={t('tracker:issue.view.list')}>
+            <ViewListOutlinedIcon />
+          </ToggleButton>
+          <ToggleButton value="kanban" aria-label={t('tracker:issue.view.board')}>
+            <ViewKanbanOutlinedIcon />
+          </ToggleButton>
+        </ToggleButtonGroup>
         <Button variant="contained" size="small" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)}>
           {t('tracker:issue.actions.add')}
         </Button>
@@ -345,14 +379,24 @@ function IssueListPage({ project }: IssueListPageProps) {
             </Button>
           </Box>
         )}
-        {status === 'ready' && issues.length > 0 && totalCount === 0 && (
+        {status === 'ready' && issues.length > 0 && viewMode === 'kanban' && (
+          <KanbanView
+            issues={issues}
+            states={states}
+            stateMap={stateMap}
+            setIssues={setIssues}
+            onOpen={setDetailIssue}
+            showToast={showToast}
+          />
+        )}
+        {status === 'ready' && issues.length > 0 && viewMode === 'list' && totalCount === 0 && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Typography variant="body2" color="text.secondary">
               {t('tracker:issue.empty.noMatch')}
             </Typography>
           </Box>
         )}
-        {status === 'ready' && totalCount > 0 && (
+        {status === 'ready' && viewMode === 'list' && totalCount > 0 && (
           <Box sx={{ p: 1 }}>
             {GROUP_ORDER.map((g) => {
               const arr = grouped[g];
@@ -438,7 +482,7 @@ function IssueListPage({ project }: IssueListPageProps) {
 }
 
 // 优先级图标：urgent 双上箭头(红) / high 上箭头(橙) / medium 横杠(蓝) / low 下箭头(灰) / none 减号(浅灰)。
-function PriorityIcon({ priority }: { priority: Priority }) {
+export function PriorityIcon({ priority }: { priority: Priority }) {
   switch (priority) {
     case 'urgent':
       return <KeyboardDoubleArrowUpRoundedIcon sx={{ fontSize: '1rem', color: 'error.main' }} />;

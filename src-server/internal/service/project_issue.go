@@ -162,21 +162,61 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 	issue.TargetDate = req.TargetDate
 
 	// stateId 变化 → completed_at 流转。
-	if req.StateID > 0 && req.StateID != issue.StateID {
-		st, e := q.ProjectState.WithContext(svc.Context).Where(q.ProjectState.ID.Eq(req.StateID)).First()
-		if e != nil {
-			if errors.Is(e, gorm.ErrRecordNotFound) {
-				return nil, errors.New("状态不存在")
-			}
-			return nil, e
+	if e := svc.applyStateTransition(issue, req.StateID); e != nil {
+		return nil, e
+	}
+
+	if e := iq.Save(issue); e != nil {
+		return nil, e
+	}
+	list, err := svc.assembleWithLabels([]*model.ProjectIssue{issue})
+	if err != nil {
+		return nil, err
+	}
+	return list[0], nil
+}
+
+// applyStateTransition 处理 stateId 变化时的 completed_at 流转：新 state 的 state_group=completed→写 now，否则清 nil。
+// newStateID<=0 或等于当前值为 no-op；state 不存在返回错误。供 update/move 复用，避免流转逻辑重复。
+func (svc ProjectIssue) applyStateTransition(issue *model.ProjectIssue, newStateID int) error {
+	if newStateID <= 0 || newStateID == issue.StateID {
+		return nil
+	}
+	q := query.Use(svc.Orm)
+	st, e := q.ProjectState.WithContext(svc.Context).Where(q.ProjectState.ID.Eq(newStateID)).First()
+	if e != nil {
+		if errors.Is(e, gorm.ErrRecordNotFound) {
+			return errors.New("状态不存在")
 		}
-		issue.StateID = req.StateID
-		if st.StateGroup == enums.STATE_GROUP_COMPLETED {
-			now := time.Now()
-			issue.CompletedAt = &now
-		} else {
-			issue.CompletedAt = nil // 清空（*time.Time 指针 nil → Save 写 NULL）
+		return e
+	}
+	issue.StateID = newStateID
+	if st.StateGroup == enums.STATE_GROUP_COMPLETED {
+		now := time.Now()
+		issue.CompletedAt = &now
+	} else {
+		issue.CompletedAt = nil // 清空（*time.Time 指针 nil → Save 写 NULL）
+	}
+	return nil
+}
+
+// Move 看板拖拽单卡移动：写 sortOrder（前端按分数插值算好）+ stateId 变化触发 completed_at 流转。
+// 不碰其他业务字段（name/description/priority 等由 update 维护）。
+func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.ProjectIssueResponseData, error) {
+	q := query.Use(svc.Orm)
+	iq := q.ProjectIssue.WithContext(svc.Context)
+
+	issue, err := iq.Where(q.ProjectIssue.ID.Eq(req.ID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("issue 不存在")
 		}
+		return nil, err
+	}
+
+	issue.SortOrder = req.SortOrder
+	if e := svc.applyStateTransition(issue, req.StateID); e != nil {
+		return nil, e
 	}
 
 	if e := iq.Save(issue); e != nil {

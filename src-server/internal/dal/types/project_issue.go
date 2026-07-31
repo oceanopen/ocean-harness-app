@@ -52,6 +52,15 @@ type ProjectIssueUpdateRequest struct {
 	TargetDate  string         `json:"targetDate" binding:"omitempty"`
 }
 
+// ProjectIssueMoveRequest 是 POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）。
+// 前端按分数插值算好 sortOrder 传上来后端写库；stateId 变化触发 completed_at 流转。
+// 不碰 name/description/priority 等业务字段（由 update 维护）。
+type ProjectIssueMoveRequest struct {
+	ID        int     `json:"id" binding:"required"`
+	StateID   int     `json:"stateId" binding:"required"`
+	SortOrder float64 `json:"sortOrder"`
+}
+
 // ProjectIssueDeleteRequest 是 POST /api/tracker/projectIssue/delete 的入参。
 type ProjectIssueDeleteRequest struct {
 	ID int `json:"id" binding:"required"`
