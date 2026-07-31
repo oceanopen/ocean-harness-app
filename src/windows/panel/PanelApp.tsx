@@ -57,6 +57,9 @@ function PanelApp() {
   const { t } = useTranslation();
   const [activeMenu, setActiveMenu] = useState<MenuKey>('claudeSessions');
   const [repoRefreshTrigger, setRepoRefreshTrigger] = useState(0);
+  // tracker 保活：首次切到工作台时置 true（仅升不降），配合下方 display:none 隐藏而非卸载，
+  // 保留选中工作空间/项目与已加载列表等全部 state（仅会话内，重启重新初始化）。
+  const [trackerMounted, setTrackerMounted] = useState(false);
   const theme = useTheme();
   // 侧边栏折叠状态：订阅 config（跨重启持久化、多窗口同步）。setAppConfig 触发 app-config-changed 事件，hook 自动回写，无需手动 setState。
   const collapsed = useConfigValue(PANEL_SIDEBAR_COLLAPSED_KEY, decodeSidebarCollapsed, false);
@@ -68,6 +71,10 @@ function PanelApp() {
   useEffect(() => {
     const unlisten = listen<MenuKey>(EVENT_PANEL_NAVIGATE, (e) => {
       setActiveMenu(e.payload);
+      // 首次切到工作台时挂载 tracker（保活），在事件源头标记，避免 effect 里 setState。
+      if (e.payload === 'tracker') {
+        setTrackerMounted(true);
+      }
     });
     return () => {
       unlisten.then(fn => fn()).catch(err => console.warn('[PanelApp] unlisten panel:navigate failed:', err));
@@ -149,7 +156,12 @@ function PanelApp() {
             <ListItemButton
               key={item.key}
               selected={activeMenu === item.key}
-              onClick={() => setActiveMenu(item.key)}
+              onClick={() => {
+                setActiveMenu(item.key);
+                if (item.key === 'tracker') {
+                  setTrackerMounted(true);
+                }
+              }}
               {...(collapsed ? { 'aria-label': item.label } : {})}
               sx={{
                 'borderRadius': 2,
@@ -260,7 +272,12 @@ function PanelApp() {
           {activeMenu === 'claudeSessions' && <ClaudeSessionsPage />}
           {activeMenu === 'repositories' && <RepositoriesPage windowShownTrigger={repoRefreshTrigger} />}
           {activeMenu === 'serverStatus' && <ServerStatusPage />}
-          {activeMenu === 'tracker' && <TrackerPage />}
+          {/* tracker 保活：首次访问才挂载，之后常驻；切走用 display:none 隐藏，保留全部 state。 */}
+          {trackerMounted && (
+            <Box sx={{ height: '100%', display: activeMenu === 'tracker' ? 'block' : 'none' }}>
+              <TrackerPage />
+            </Box>
+          )}
         </Box>
       </Box>
     </Box>
