@@ -34,8 +34,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiPost } from './api';
-import IssueCreateDialog from './components/IssueCreateDialog';
-import IssueDetailDrawer from './IssueDetailDrawer';
+import IssueDrawer from './IssueDrawer';
 import KanbanView from './kanban/KanbanView';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -51,7 +50,7 @@ export type StateGroup = 'backlog' | 'unstarted' | 'started' | 'completed' | 'ca
 
 // Issue：对齐后端 ProjectIssueResponseData（*model.ProjectIssue 字段平铺 + labels）。
 // completedAt 为 *time.Time → null/ISO 串；isDraft 为 enums.YesNo → "Y"/"N"（非 bool）。
-// 由 IssueCreateDialog 以 `import type` 复用（类型单向依赖，无运行时循环）。
+// 由 IssueDrawer 以 `import type` 复用（类型单向依赖，无运行时循环）。
 export interface Issue {
   id: number;
   projectId: number;
@@ -89,7 +88,7 @@ export interface ProjectState {
 }
 
 // WorkspaceLabel：对齐后端 model.WorkspaceLabel（t_workspace_labels，workspace 级共享标签）。
-// issue.labels 元素即此类型；由 LabelSelect / LabelManagerDialog / IssueDetailDrawer 复用。
+// issue.labels 元素即此类型；由 LabelSelect / LabelManagerDialog / IssueDrawer 复用。
 export interface WorkspaceLabel {
   id: number;
   workspaceId: number;
@@ -243,18 +242,12 @@ function IssueListPage({ project }: IssueListPageProps) {
     showToast(t('tracker:issue.toast.created', { name: issue.name }), 'success');
   }, [t, showToast]);
 
-  // 详情编辑保存：就地替换 issue + 同步 detailIssue（消除 drawer dirty）+ toast。
+  // 编辑保存：就地替换 issue + 关闭抽屉（统一模型：保存即关闭刷新）+ toast。
   const handleUpdated = useCallback((updated: Issue) => {
     setIssues(prev => prev.map(i => (i.id === updated.id ? updated : i)));
-    setDetailIssue(prev => (prev?.id === updated.id ? updated : prev));
+    setDetailIssue(null);
     showToast(t('tracker:issue.toast.updated'), 'success');
   }, [showToast]);
-
-  // 标签即时 toggle：静默同步列表与 detailIssue 的 labels（不弹 toast，避免刷屏）。
-  const handleLabelsChanged = useCallback((issueId: number, labels: WorkspaceLabel[]) => {
-    setIssues(prev => prev.map(i => (i.id === issueId ? { ...i, labels } : i)));
-    setDetailIssue(prev => (prev?.id === issueId ? { ...prev, labels } : prev));
-  }, []);
 
   // 删除 issue：从列表剔除 + 关闭 drawer + toast。
   const handleDeleted = useCallback((issueId: number) => {
@@ -458,23 +451,24 @@ function IssueListPage({ project }: IssueListPageProps) {
       </Snackbar>
 
       {createOpen && (
-        <IssueCreateDialog
-          projectId={project.id}
-          workspaceId={project.workspaceId}
+        <IssueDrawer
+          mode="create"
+          project={project}
+          states={states}
           onClose={() => setCreateOpen(false)}
           onCreated={handleCreated}
         />
       )}
 
       {detailIssue && (
-        <IssueDetailDrawer
+        <IssueDrawer
+          mode="edit"
           issue={detailIssue}
           project={project}
           states={states}
           onClose={() => setDetailIssue(null)}
           onUpdated={handleUpdated}
           onDeleted={handleDeleted}
-          onLabelsChanged={handleLabelsChanged}
         />
       )}
     </Box>

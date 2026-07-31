@@ -36,10 +36,13 @@ type ProjectIssueCreateRequest struct {
 	IsDraft     enums.YesNo    `json:"isDraft"`
 	StartDate   string         `json:"startDate" binding:"omitempty"`
 	TargetDate  string         `json:"targetDate" binding:"omitempty"`
+	StateID     int            `json:"stateId"`  // 0 → 取 project.default_state_id
+	LabelIDs    []int          `json:"labelIds"` // 全量覆盖该 issue 的 label 关联
 }
 
 // ProjectIssueUpdateRequest 是 POST /api/tracker/projectIssue/update 的入参。
 // stateId 变化触发 completed_at 流转：新 state 的 state_group=completed→写 now，否则清 NULL。
+// labelIds 全量覆盖该 issue 的 label 关联（事务内 diff：恢复已删/软删多余/插入新增）。
 // 不变更 projectId/workspaceId/sortOrder（sortOrder 后续拖拽迭代维护）。
 type ProjectIssueUpdateRequest struct {
 	ID          int            `json:"id" binding:"required"`
@@ -50,6 +53,7 @@ type ProjectIssueUpdateRequest struct {
 	IsDraft     enums.YesNo    `json:"isDraft"`
 	StartDate   string         `json:"startDate" binding:"omitempty"`
 	TargetDate  string         `json:"targetDate" binding:"omitempty"`
+	LabelIDs    []int          `json:"labelIds"` // 全量覆盖该 issue 的 label 关联
 }
 
 // ProjectIssueMoveRequest 是 POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）。

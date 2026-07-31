@@ -85,104 +85,130 @@ func (svc ProjectIssue) GetInfo(req *types.ProjectIssueGetInfoRequest) (*types.P
 	return list[0], nil
 }
 
-// Create 新建 issue。state_id 取 project.default_state_id；sort_order 自算（同 project MAX+10000，首个 10000）；
-// priority/is_draft 空值规范为 none/N。completed_at 默认 nil（未完成）。
+// Create 新建 issue。stateId 优先用入参（0 或缺省 → project.default_state_id）；sort_order 自算（同 project MAX+10000，首个 10000）；
+// priority/is_draft 空值规范为 none/N。事务内创建 issue + 全量同步 label 关联，completed_at 默认 nil（未完成）。
 func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.ProjectIssueResponseData, error) {
-	q := query.Use(svc.Orm)
+	var created *model.ProjectIssue
+	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
+		q := query.Use(tx)
 
-	proj, err := q.WorkspaceProject.WithContext(svc.Context).Where(q.WorkspaceProject.ID.Eq(req.ProjectID)).First()
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("项目不存在")
+		proj, e := q.WorkspaceProject.WithContext(svc.Context).Where(q.WorkspaceProject.ID.Eq(req.ProjectID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return errors.New("项目不存在")
+			}
+			return e
 		}
+
+		// sort_order 自算：同 project MAX(sort_order)+10000，首个 10000。
+		sortOrder := float64(10000)
+		if last, le := q.ProjectIssue.WithContext(svc.Context).
+			Where(q.ProjectIssue.ProjectID.Eq(req.ProjectID)).
+			Order(q.ProjectIssue.SortOrder.Desc()).First(); le == nil {
+			sortOrder = last.SortOrder + 10000
+		} else if !errors.Is(le, gorm.ErrRecordNotFound) {
+			return le
+		}
+
+		priority := req.Priority
+		if priority == "" {
+			priority = enums.PRIORITY_NONE
+		}
+		isDraft := req.IsDraft
+		if isDraft == "" {
+			isDraft = enums.YES_NO_N
+		}
+
+		// stateId 优先用入参，否则取 project.default_state_id。
+		stateID := proj.DefaultStateID
+		if req.StateID > 0 {
+			stateID = req.StateID
+		}
+
+		created = &model.ProjectIssue{
+			ProjectID:   req.ProjectID,
+			WorkspaceID: req.WorkspaceID,
+			Name:        req.Name,
+			Description: req.Description,
+			StateID:     stateID,
+			Priority:    priority,
+			SortOrder:   sortOrder,
+			IsDraft:     isDraft,
+			StartDate:   req.StartDate,
+			TargetDate:  req.TargetDate,
+		}
+		if ce := q.ProjectIssue.WithContext(svc.Context).Create(created); ce != nil {
+			return ce
+		}
+		return svc.syncIssueLabels(tx, created.ID, req.LabelIDs)
+	})
+	if err != nil {
 		return nil, err
 	}
-
-	// sort_order 自算：同 project MAX(sort_order)+10000，首个 10000。
-	sortOrder := float64(10000)
-	if last, e := q.ProjectIssue.WithContext(svc.Context).
-		Where(q.ProjectIssue.ProjectID.Eq(req.ProjectID)).
-		Order(q.ProjectIssue.SortOrder.Desc()).First(); e == nil {
-		sortOrder = last.SortOrder + 10000
-	} else if !errors.Is(e, gorm.ErrRecordNotFound) {
+	list, e := svc.assembleWithLabels([]*model.ProjectIssue{created})
+	if e != nil {
 		return nil, e
 	}
-
-	priority := req.Priority
-	if priority == "" {
-		priority = enums.PRIORITY_NONE
-	}
-	isDraft := req.IsDraft
-	if isDraft == "" {
-		isDraft = enums.YES_NO_N
-	}
-
-	created := &model.ProjectIssue{
-		ProjectID:   req.ProjectID,
-		WorkspaceID: req.WorkspaceID,
-		Name:        req.Name,
-		Description: req.Description,
-		StateID:     proj.DefaultStateID,
-		Priority:    priority,
-		SortOrder:   sortOrder,
-		IsDraft:     isDraft,
-		StartDate:   req.StartDate,
-		TargetDate:  req.TargetDate,
-	}
-	if e := q.ProjectIssue.WithContext(svc.Context).Create(created); e != nil {
-		return nil, e
-	}
-	return &types.ProjectIssueResponseData{ProjectIssue: created, Labels: []*model.WorkspaceLabel{}}, nil
+	return list[0], nil
 }
 
 // Update 更新 issue 业务字段；检测 stateId 变化触发 completed_at 流转：
 // 新 state 的 state_group=completed→写 now，否则清 nil（*time.Time 指针，Save 写 NULL）。
+// 事务内 Save + 全量同步 label 关联（labelIds）。
 func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.ProjectIssueResponseData, error) {
-	q := query.Use(svc.Orm)
-	iq := q.ProjectIssue.WithContext(svc.Context)
+	var issue *model.ProjectIssue
+	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
+		q := query.Use(tx)
+		iq := q.ProjectIssue.WithContext(svc.Context)
 
-	issue, err := iq.Where(q.ProjectIssue.ID.Eq(req.ID)).First()
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("issue 不存在")
+		found, e := iq.Where(q.ProjectIssue.ID.Eq(req.ID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return errors.New("issue 不存在")
+			}
+			return e
 		}
-		return nil, err
-	}
+		issue = found
 
-	issue.Name = req.Name
-	issue.Description = req.Description
-	// priority/isDraft 为 typed 枚举：空值保留原值（前端不传即不改，避免 Value() 校验空串报错）。
-	if req.Priority != "" {
-		issue.Priority = req.Priority
-	}
-	if req.IsDraft != "" {
-		issue.IsDraft = req.IsDraft
-	}
-	issue.StartDate = req.StartDate
-	issue.TargetDate = req.TargetDate
+		issue.Name = req.Name
+		issue.Description = req.Description
+		// priority/isDraft 为 typed 枚举：空值保留原值（前端不传即不改，避免 Value() 校验空串报错）。
+		if req.Priority != "" {
+			issue.Priority = req.Priority
+		}
+		if req.IsDraft != "" {
+			issue.IsDraft = req.IsDraft
+		}
+		issue.StartDate = req.StartDate
+		issue.TargetDate = req.TargetDate
 
-	// stateId 变化 → completed_at 流转。
-	if e := svc.applyStateTransition(issue, req.StateID); e != nil {
-		return nil, e
-	}
+		// stateId 变化 → completed_at 流转。
+		if e := svc.applyStateTransition(tx, issue, req.StateID); e != nil {
+			return e
+		}
 
-	if e := iq.Save(issue); e != nil {
-		return nil, e
-	}
-	list, err := svc.assembleWithLabels([]*model.ProjectIssue{issue})
+		if e := iq.Save(issue); e != nil {
+			return e
+		}
+		return svc.syncIssueLabels(tx, issue.ID, req.LabelIDs)
+	})
 	if err != nil {
 		return nil, err
+	}
+	list, e := svc.assembleWithLabels([]*model.ProjectIssue{issue})
+	if e != nil {
+		return nil, e
 	}
 	return list[0], nil
 }
 
 // applyStateTransition 处理 stateId 变化时的 completed_at 流转：新 state 的 state_group=completed→写 now，否则清 nil。
-// newStateID<=0 或等于当前值为 no-op；state 不存在返回错误。供 update/move 复用，避免流转逻辑重复。
-func (svc ProjectIssue) applyStateTransition(issue *model.ProjectIssue, newStateID int) error {
+// newStateID<=0 或等于当前值为 no-op；state 不存在返回错误。orm 参数支持事务内复用（传 tx）或独立调用（传 svc.Orm）。
+func (svc ProjectIssue) applyStateTransition(orm *gorm.DB, issue *model.ProjectIssue, newStateID int) error {
 	if newStateID <= 0 || newStateID == issue.StateID {
 		return nil
 	}
-	q := query.Use(svc.Orm)
+	q := query.Use(orm)
 	st, e := q.ProjectState.WithContext(svc.Context).Where(q.ProjectState.ID.Eq(newStateID)).First()
 	if e != nil {
 		if errors.Is(e, gorm.ErrRecordNotFound) {
@@ -196,6 +222,53 @@ func (svc ProjectIssue) applyStateTransition(issue *model.ProjectIssue, newState
 		issue.CompletedAt = &now
 	} else {
 		issue.CompletedAt = nil // 清空（*time.Time 指针 nil → Save 写 NULL）
+	}
+	return nil
+}
+
+// syncIssueLabels 全量同步某 issue 的 label 关联为 labelIDs（事务内调用，orm 传 tx）。
+// diff 策略（保留软删记录，与原 toggleIssue 恢复式语义一致）：
+//   - 现有(含软删)且在目标中 + 已软删 → 恢复（清 deleted_at）；
+//   - 现有(未删)且不在目标中 → 软删；
+//   - 目标中且无任何现有记录 → 插入。
+//
+// labelIDs 在内部去重。
+func (svc ProjectIssue) syncIssueLabels(orm *gorm.DB, issueID int, labelIDs []int) error {
+	q := query.Use(orm)
+	ilq := q.IssueLabel.WithContext(svc.Context)
+
+	target := make(map[int]struct{}, len(labelIDs))
+	for _, id := range labelIDs {
+		target[id] = struct{}{}
+	}
+
+	existings, err := ilq.Unscoped().Where(q.IssueLabel.IssueID.Eq(issueID)).Find()
+	if err != nil {
+		return err
+	}
+	existingSet := make(map[int]struct{}, len(existings))
+	for _, il := range existings {
+		existingSet[il.LabelID] = struct{}{}
+		_, want := target[il.LabelID]
+		switch {
+		case want && il.DeletedAt.Valid:
+			il.DeletedAt = gorm.DeletedAt{} // 恢复
+			if e := ilq.Unscoped().Save(il); e != nil {
+				return e
+			}
+		case !want && !il.DeletedAt.Valid:
+			if _, e := ilq.Where(q.IssueLabel.ID.Eq(il.ID)).Delete(); e != nil { // 软删
+				return e
+			}
+		}
+	}
+
+	for lid := range target {
+		if _, ok := existingSet[lid]; !ok {
+			if e := ilq.Create(&model.IssueLabel{IssueID: issueID, LabelID: lid}); e != nil {
+				return e
+			}
+		}
 	}
 	return nil
 }
@@ -215,7 +288,7 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 	}
 
 	issue.SortOrder = req.SortOrder
-	if e := svc.applyStateTransition(issue, req.StateID); e != nil {
+	if e := svc.applyStateTransition(svc.Orm, issue, req.StateID); e != nil {
 		return nil, e
 	}
 

@@ -104,12 +104,9 @@
     "actions": {
       "add": "新建 Issue"
     },
-    "add": {
+    "create": {
       "title": "新建 Issue",
-      "name": "名称",
-      "namePlaceholder": "请输入 Issue 名称",
-      "priority": "优先级",
-      "confirm": "确定",
+      "confirm": "创建",
       "cancel": "取消"
     },
     "group": {
@@ -163,7 +160,6 @@
       "close": "关闭",
       "name": "名称",
       "description": "描述",
-      "descriptionPlaceholder": "使用 markdown 编写（选填）",
       "state": "状态",
       "priority": "优先级",
       "startDate": "开始日期",
@@ -176,6 +172,29 @@
       "delete": "删除",
       "deleteTitle": "删除 Issue",
       "deleteConfirmMsg": "确认删除 Issue「{{name}}」？此操作不可恢复。"
+    },
+    "rte": {
+      "placeholder": "支持富文本：粗体、标题、列表、代码、链接等（选填）",
+      "bold": "粗体",
+      "italic": "斜体",
+      "strike": "删除线",
+      "code": "行内代码",
+      "h1": "标题 1",
+      "h2": "标题 2",
+      "h3": "标题 3",
+      "bulletList": "无序列表",
+      "orderedList": "有序列表",
+      "taskList": "待办列表",
+      "quote": "引用",
+      "codeBlock": "代码块",
+      "divider": "分割线",
+      "link": "链接",
+      "linkTitle": "插入链接",
+      "linkUrl": "链接地址",
+      "linkInvalid": "链接地址无效",
+      "removeLink": "移除链接",
+      "undo": "撤销",
+      "redo": "重做"
     },
     "label": {
       "title": "管理标签",

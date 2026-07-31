@@ -104,12 +104,9 @@
     "actions": {
       "add": "New issue"
     },
-    "add": {
+    "create": {
       "title": "New issue",
-      "name": "Name",
-      "namePlaceholder": "Enter issue name",
-      "priority": "Priority",
-      "confirm": "OK",
+      "confirm": "Create",
       "cancel": "Cancel"
     },
     "group": {
@@ -163,7 +160,6 @@
       "close": "Close",
       "name": "Name",
       "description": "Description",
-      "descriptionPlaceholder": "Write in markdown (optional)",
       "state": "State",
       "priority": "Priority",
       "startDate": "Start date",
@@ -176,6 +172,29 @@
       "delete": "Delete",
       "deleteTitle": "Delete issue",
       "deleteConfirmMsg": "Delete issue \"{{name}}\"? This cannot be undone."
+    },
+    "rte": {
+      "placeholder": "Rich text: bold, headings, lists, code, links (optional)",
+      "bold": "Bold",
+      "italic": "Italic",
+      "strike": "Strikethrough",
+      "code": "Inline code",
+      "h1": "Heading 1",
+      "h2": "Heading 2",
+      "h3": "Heading 3",
+      "bulletList": "Bullet list",
+      "orderedList": "Numbered list",
+      "taskList": "Task list",
+      "quote": "Quote",
+      "codeBlock": "Code block",
+      "divider": "Divider",
+      "link": "Link",
+      "linkTitle": "Insert link",
+      "linkUrl": "URL",
+      "linkInvalid": "Invalid URL",
+      "removeLink": "Remove link",
+      "undo": "Undo",
+      "redo": "Redo"
     },
     "label": {
       "title": "Manage labels",

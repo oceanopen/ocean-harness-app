@@ -35,9 +35,3 @@ type WorkspaceLabelUpdateRequest struct {
 type WorkspaceLabelDeleteRequest struct {
 	ID int `json:"id" binding:"required"`
 }
-
-// WorkspaceLabelToggleIssueRequest 是 POST /api/tracker/workspaceLabel/toggleIssue 的入参（给 issue 贴/撕 label）。
-type WorkspaceLabelToggleIssueRequest struct {
-	IssueID int `json:"issueId" binding:"required"`
-	LabelID int `json:"labelId" binding:"required"`
-}

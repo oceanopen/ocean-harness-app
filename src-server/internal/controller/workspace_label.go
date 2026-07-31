@@ -92,19 +92,3 @@ func (api WorkspaceLabel) Delete(ctx *gin.Context) {
 	}
 	api.JsonOK(nil)
 }
-
-// ToggleIssue POST /api/tracker/workspaceLabel/toggleIssue：给 issue 贴/撕 label，返回 issue 当前 label 列表。
-func (api WorkspaceLabel) ToggleIssue(ctx *gin.Context) {
-	req := &types.WorkspaceLabelToggleIssueRequest{}
-	svc := service.WorkspaceLabel{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
-		return
-	}
-	data, err := svc.ToggleIssue(req)
-	if err != nil {
-		api.JsonFail(err)
-		return
-	}
-	api.JsonOK(data)
-}

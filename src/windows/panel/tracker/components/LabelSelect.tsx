@@ -3,7 +3,7 @@ import { CheckOutlined as CheckOutlinedIcon, SettingsOutlined as SettingsOutline
 import { Autocomplete, Box, Button, Chip, TextField, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-// issue 标签多选：Autocomplete multiple，勾选/取消即触发 onToggle（父级走 toggleIssue 即时生效）。
+// issue 标签多选：Autocomplete multiple，勾选/取消即触发 onToggle（父级本地切换 labels，统一随保存提交）。
 // 底部「管理标签」按钮打开 LabelManagerDialog。受控（value=issueLabels）。
 interface LabelSelectProps {
   issueLabels: WorkspaceLabel[];
@@ -28,7 +28,7 @@ function LabelSelect({ issueLabels, options, onToggle, onOpenManager, disabled }
         disableCloseOnSelect
         limitTags={3}
         onChange={(_e, newValue) => {
-          // diff：对增删的 label 各触发一次 onToggle（toggleIssue 幂等、返回 issue 全部 label 由父级覆盖）。
+          // diff：对增删的 label 各触发一次 onToggle（父级本地切换 labels，统一随保存提交）。
           const prevIds = new Set(issueLabels.map(l => l.id));
           const newIds = new Set(newValue.map(l => l.id));
           newValue.forEach((l) => {
