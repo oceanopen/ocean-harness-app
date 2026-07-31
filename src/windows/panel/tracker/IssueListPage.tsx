@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiPost } from './api';
 import IssueCreateDialog from './components/IssueCreateDialog';
+import IssueDetailDrawer from './IssueDetailDrawer';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
@@ -59,7 +60,7 @@ export interface Issue {
   isDraft: 'Y' | 'N';
   createdAt: string;
   updatedAt: string;
-  labels: { id: number; name: string; color: string }[];
+  labels: WorkspaceLabel[];
 }
 
 // ProjectState：对齐后端 model.ProjectState（t_project_states），用于状态色块与 stateGroup 分组。
@@ -74,6 +75,20 @@ export interface ProjectState {
   sortOrder: number;
   isDefault: 'Y' | 'N';
   isTriage: 'Y' | 'N';
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+// WorkspaceLabel：对齐后端 model.WorkspaceLabel（t_workspace_labels，workspace 级共享标签）。
+// issue.labels 元素即此类型；由 LabelSelect / LabelManagerDialog / IssueDetailDrawer 复用。
+export interface WorkspaceLabel {
+  id: number;
+  workspaceId: number;
+  name: string;
+  color: string;
+  description: string;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -101,15 +116,13 @@ const truncateSx = {
 
 interface IssueListPageProps {
   project: Project;
-  // 行点击回调（任务12 接侧滑详情）；不传则行不可点击。
-  onOpenIssue?: (issue: Issue) => void;
 }
 
 // Issue 列表页（嵌于 tracker 三栏壳的右栏）。
 // 并行拉 issue + state 两接口 → 构建 stateId→state 映射 → 按 stateGroup 分组（Collapse 可折叠）。
 // 筛选走客户端（与 ProjectListPage 一致，已加载列表上过滤，不重复请求）：关键字 + 优先级 + 状态。
 // 组内排序：priority weight 升序，同优先级按 sortOrder 升序。
-function IssueListPage({ project, onOpenIssue }: IssueListPageProps) {
+function IssueListPage({ project }: IssueListPageProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<LoadStatus>('loading');
   const [issues, setIssues] = useState<Issue[]>([]);
@@ -121,6 +134,7 @@ function IssueListPage({ project, onOpenIssue }: IssueListPageProps) {
   const [stateFilter, setStateFilter] = useState<number | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<StateGroup>>(() => new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  const [detailIssue, setDetailIssue] = useState<Issue | null>(null);
 
   const showToast = useCallback((text: string, severity: ToastSeverity) => {
     setToast({ text, severity });
@@ -211,6 +225,26 @@ function IssueListPage({ project, onOpenIssue }: IssueListPageProps) {
     setIssues(prev => [...prev, issue]);
     showToast(t('tracker:issue.toast.created', { name: issue.name }), 'success');
   }, [t, showToast]);
+
+  // 详情编辑保存：就地替换 issue + 同步 detailIssue（消除 drawer dirty）+ toast。
+  const handleUpdated = useCallback((updated: Issue) => {
+    setIssues(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+    setDetailIssue(prev => (prev?.id === updated.id ? updated : prev));
+    showToast(t('tracker:issue.toast.updated'), 'success');
+  }, [showToast]);
+
+  // 标签即时 toggle：静默同步列表与 detailIssue 的 labels（不弹 toast，避免刷屏）。
+  const handleLabelsChanged = useCallback((issueId: number, labels: WorkspaceLabel[]) => {
+    setIssues(prev => prev.map(i => (i.id === issueId ? { ...i, labels } : i)));
+    setDetailIssue(prev => (prev?.id === issueId ? { ...prev, labels } : prev));
+  }, []);
+
+  // 删除 issue：从列表剔除 + 关闭 drawer + toast。
+  const handleDeleted = useCallback((issueId: number) => {
+    setIssues(prev => prev.filter(i => i.id !== issueId));
+    setDetailIssue(prev => (prev?.id === issueId ? null : prev));
+    showToast(t('tracker:issue.toast.deleted'), 'success');
+  }, [showToast]);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -357,7 +391,7 @@ function IssueListPage({ project, onOpenIssue }: IssueListPageProps) {
                         key={issue.id}
                         issue={issue}
                         stateMap={stateMap}
-                        onOpenIssue={onOpenIssue}
+                        onOpen={setDetailIssue}
                       />
                     ))}
                   </Collapse>
@@ -387,6 +421,18 @@ function IssueListPage({ project, onOpenIssue }: IssueListPageProps) {
           onCreated={handleCreated}
         />
       )}
+
+      {detailIssue && (
+        <IssueDetailDrawer
+          issue={detailIssue}
+          project={project}
+          states={states}
+          onClose={() => setDetailIssue(null)}
+          onUpdated={handleUpdated}
+          onDeleted={handleDeleted}
+          onLabelsChanged={handleLabelsChanged}
+        />
+      )}
     </Box>
   );
 }
@@ -408,20 +454,19 @@ function PriorityIcon({ priority }: { priority: Priority }) {
 }
 
 // 单行：状态色块（取 state.color，未知用 text.disabled）+ #id + 名称 + 优先级图标。
-// onOpenIssue 传入时整行可点击（cursor pointer），否则仅展示。
+// 整行可点击打开侧滑详情（onOpen）。
 interface IssueRowProps {
   issue: Issue;
   stateMap: Map<number, ProjectState>;
-  onOpenIssue?: (issue: Issue) => void;
+  onOpen: (issue: Issue) => void;
 }
 
-function IssueRow({ issue, stateMap, onOpenIssue }: IssueRowProps) {
+function IssueRow({ issue, stateMap, onOpen }: IssueRowProps) {
   const state = stateMap.get(issue.stateId);
-  const clickable = !!onOpenIssue;
 
   return (
     <Box
-      onClick={clickable ? () => onOpenIssue?.(issue) : undefined}
+      onClick={() => onOpen(issue)}
       sx={[
         {
           display: 'flex',
@@ -431,9 +476,9 @@ function IssueRow({ issue, stateMap, onOpenIssue }: IssueRowProps) {
           px: 1,
           py: 0.75,
           borderRadius: 1,
+          cursor: 'pointer',
         },
         { '&:hover': { bgcolor: 'action.hover' } },
-        clickable ? { cursor: 'pointer' } : null,
       ]}
     >
       <Tooltip title={state?.name ?? ''}>

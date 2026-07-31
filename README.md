@@ -26,3 +26,8 @@ xattr -cr "/Applications/We Claude Terminal.app"
 | Linux   | Dev     | `~/.local/share/com.we.claude.terminal.dev/app.db`                |
 
 > Dev 与 Release 使用不同 identifier，数据自动隔离。`~` 为用户主目录；Windows `%APPDATA%` 对应 `C:\Users\<用户名>\AppData\Roaming`；Linux 遵循 XDG 规范，若设置了 `XDG_DATA_HOME` 则以其替代 `~/.local/share`。
+
+## 设计
+
+- https://mui.com/material-ui/getting-started/
+- https://mui.com/x/introduction/

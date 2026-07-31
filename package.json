@@ -31,6 +31,7 @@
     "@icons-pack/react-simple-icons": "^13.13.0",
     "@mui/icons-material": "^9.1.0",
     "@mui/material": "^9.1.0",
+    "@mui/x-date-pickers": "^9.10.1",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-dialog": "^2.2.0",
     "@tauri-apps/plugin-process": "^2.3.1",

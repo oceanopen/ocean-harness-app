@@ -144,7 +144,49 @@
     },
     "toast": {
       "created": "Issue「{{name}}」创建成功",
-      "createFailed": "创建失败：{{message}}"
+      "createFailed": "创建失败：{{message}}",
+      "updated": "Issue 已更新",
+      "updateFailed": "更新失败：{{message}}",
+      "deleted": "Issue 已删除",
+      "deleteFailed": "删除失败：{{message}}",
+      "labelCreated": "标签「{{name}}」已创建",
+      "labelUpdated": "标签已更新",
+      "labelDeleted": "标签已删除",
+      "labelOpFailed": "标签操作失败：{{message}}"
+    },
+    "detail": {
+      "close": "关闭",
+      "name": "名称",
+      "description": "描述",
+      "descriptionPlaceholder": "使用 markdown 编写（选填）",
+      "state": "状态",
+      "priority": "优先级",
+      "startDate": "开始日期",
+      "targetDate": "目标日期",
+      "labels": "标签",
+      "createdAt": "创建于",
+      "completedAt": "完成于",
+      "save": "保存",
+      "cancel": "取消",
+      "delete": "删除",
+      "deleteTitle": "删除 Issue",
+      "deleteConfirmMsg": "确认删除 Issue「{{name}}」？此操作不可恢复。"
+    },
+    "label": {
+      "title": "管理标签",
+      "name": "名称",
+      "namePlaceholder": "输入标签名称或搜索",
+      "color": "颜色",
+      "description": "描述",
+      "descriptionPlaceholder": "选填",
+      "create": "新建标签",
+      "save": "保存修改",
+      "cancel": "取消",
+      "close": "关闭",
+      "edit": "编辑",
+      "delete": "删除",
+      "deleteConfirmMsg": "确认删除标签「{{name}}」？将自动从所有 Issue 上移除。",
+      "empty": "暂无标签"
     }
   },
   "toast": {

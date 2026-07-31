@@ -160,10 +160,11 @@
   - 目标：按 state_group 分组的可折叠列表（Collapse）+ 客户端筛选（关键字/优先级/状态）+ 组内 priority weight 排序；每行显示状态色块、#id、名称、优先级图标；顶部快速创建 issue。
   - 设计变更：分组维度定为**按 state_group**（5 组固定顺序 backlog/unstarted/started/completed/cancelled），非 priority；**数据装配**——issue getList 返回扁平 issue（仅 stateId、不带 group/color），需**并行拉 projectState/getList** 构建 `stateId→state` 映射才能分组（路由 `projectIssue`/`projectState`，非 `issue`/`state`）；**筛选走客户端**（在已加载列表上过滤，与 ProjectListPage 一致、不重复请求）；**组内排序**用前端 priority weight（后端 orderBy=priority 为文本字典序不可信）+ sortOrder；**快速创建对话框极简**（name + priority，默认 none），描述/日期/标签留任务12；priority 图标用箭头系（urgent 双上红/high 上橙/medium 横杠蓝/low 下灰/none 减号浅灰）；切换项目用 `key={project.id}` 重挂载（重置筛选/折叠 + 重载）；行点击留可选 `onOpenIssue` 回调，本期 TrackerPage 不传（任务12 接侧滑详情）；`Issue`/`ProjectState`/`Priority`/`StateGroup` 类型定义在 IssueListPage 并 export；toast 新增 `issue.toast.*`，移除未用的 `issue.comingSoon`。
 
-- [ ] **任务 12：[前端] Issue 侧滑详情 + Label 管理**
-  - 文件：`src/windows/tracker/IssueDetailDrawer.tsx` + `components/StateSelect.tsx`、`PrioritySelect.tsx`、`LabelSelect.tsx`、`LabelManagerDialog.tsx`（新增）
+- [x] **任务 12：[前端] Issue 侧滑详情 + Label 管理**
+  - 文件：`src/windows/panel/tracker/IssueDetailDrawer.tsx` + `components/StateSelect.tsx`、`PrioritySelect.tsx`、`LabelSelect.tsx`、`LabelManagerDialog.tsx`（新增）、`IssueListPage.tsx`（修改，接入 Drawer + 标签同步）、`src/shared/i18n/locales/{zh-CN,en}/tracker.json`（扩 `issue.detail`/`issue.label`/`issue.toast`）
   - 当前：无
-  - 目标：MUI Drawer 侧滑详情，编辑标题/描述(markdown Textarea)/状态/优先级/标签/起止日期（属性变更即时保存）；状态切换由后端维护 completed_at；LabelSelect 多选 + LabelManagerDialog 管理 label 增删改；删除 issue（确认）。
+  - 目标：MUI Drawer 侧滑详情，编辑标题/描述/状态/优先级/标签/起止日期 + 删除；LabelSelect 多选 + LabelManagerDialog 标签增删改。
+  - 设计变更：**Drawer 归属 IssueListPage 内部**（detailIssue state，编辑/删除就地刷新；切项目 key 重挂载自动清空；TrackerPage 不动），非上抛 TrackerPage；**保存策略改为统一保存按钮**（属性字段 name/description/stateId/priority/startDate/targetDate 一次 `projectIssue/update` 发全，不发 isDraft）；**标签走 toggleIssue 即时 toggle**（API 模型决定无法批量，与属性保存按钮分离）；状态切换随 stateId 提交、后端按目标 state group 自动维护 completedAt（前端不感知）；描述用纯 textarea（不预览，TipTap 列后续）、日期用原生 `input type=date`（避免引 `@mui/x-date-pickers` 触发 goproxy 白名单风险）；标签颜色用预设 9 色板 + hex 输入（无新依赖）；`WorkspaceLabel` 类型定义在 IssueListPage 并 export（与 Issue/ProjectState 同源避免类型循环，`Issue.labels` 升级为 `WorkspaceLabel[]`）；MUI v9 Autocomplete 用 `renderValue`（v9 已将 `renderTags` 重命名为 `renderValue`，签名 `(value, getItemProps, ownerState)`）；`onLabelsChanged` 静默同步父级 labels（标签即时生效不弹 toast）；LabelManager 删标签后重拉 wsLabels + 本地剔除已删标签；移除任务11 预留的 `onOpenIssue` 回调（改 IssueListPage 内部 detailIssue）。
 
 ### 收尾
 

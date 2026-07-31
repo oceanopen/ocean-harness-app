@@ -144,7 +144,49 @@
     },
     "toast": {
       "created": "Issue \"{{name}}\" created",
-      "createFailed": "Create failed: {{message}}"
+      "createFailed": "Create failed: {{message}}",
+      "updated": "Issue updated",
+      "updateFailed": "Update failed: {{message}}",
+      "deleted": "Issue deleted",
+      "deleteFailed": "Delete failed: {{message}}",
+      "labelCreated": "Label \"{{name}}\" created",
+      "labelUpdated": "Label updated",
+      "labelDeleted": "Label deleted",
+      "labelOpFailed": "Label operation failed: {{message}}"
+    },
+    "detail": {
+      "close": "Close",
+      "name": "Name",
+      "description": "Description",
+      "descriptionPlaceholder": "Write in markdown (optional)",
+      "state": "State",
+      "priority": "Priority",
+      "startDate": "Start date",
+      "targetDate": "Target date",
+      "labels": "Labels",
+      "createdAt": "Created",
+      "completedAt": "Completed",
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "deleteTitle": "Delete issue",
+      "deleteConfirmMsg": "Delete issue \"{{name}}\"? This cannot be undone."
+    },
+    "label": {
+      "title": "Manage labels",
+      "name": "Name",
+      "namePlaceholder": "Enter or search label name",
+      "color": "Color",
+      "description": "Description",
+      "descriptionPlaceholder": "Optional",
+      "create": "New label",
+      "save": "Save changes",
+      "cancel": "Cancel",
+      "close": "Close",
+      "edit": "Edit",
+      "delete": "Delete",
+      "deleteConfirmMsg": "Delete label \"{{name}}\"? It will be removed from all issues.",
+      "empty": "No labels"
     }
   },
   "toast": {
