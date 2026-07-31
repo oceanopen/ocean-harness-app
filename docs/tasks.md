@@ -142,10 +142,11 @@
 
 ### 阶段 D：前端业务页面
 
-- [ ] **任务 9：[前端] 工作空间页**
-  - 文件：`src/windows/tracker/WorkspacesPage.tsx` + `components/WorkspaceDialog.tsx`（新增）
+- [x] **任务 9：[前端] 工作空间页**
+  - 文件：`src/windows/tracker/WorkspacesPage.tsx` + `components/WorkspaceDialog.tsx`（新增）、`src/windows/tracker/TrackerApp.tsx`（修改，接入 selectedWorkspace 状态 + 视图切换）、`src/shared/i18n/locales/{zh-CN,en}/tracker.json`（补 workspace/toast/time 文案）
   - 当前：无
   - 目标：工作空间卡片/列表 + 选择进入项目列表；创建/编辑/删除（slug 由 name 自动生成或手填）；三态机（loading/ready/error）+ toast（照搬 RepositoriesPage 范式）。
+  - 设计变更：导航采用**全屏管理视图**——TrackerApp 持 `selectedWorkspace` 状态，为空时全屏渲染 WorkspacesPage（卡片网格 + CRUD + 客户端搜索 + id DESC 排序），选中卡片后切换到三栏工作壳（顶栏显示当前工作空间名 + 「切换工作空间」IconButton 回到网格）；Workspace 类型定义在 WorkspacesPage 并由 WorkspaceDialog `import type` 单向复用（无运行时循环）；slug 由 name 自动派生（`slugify`，手动改过或编辑模式即停止派生）；删除走标准确认文案（后端 delete 不级联，孤儿数据后续按需处理）。
 
 - [ ] **任务 10：[前端] 项目列表页**
   - 文件：`src/windows/tracker/ProjectListPage.tsx` + `components/ProjectDialog.tsx`（新增）

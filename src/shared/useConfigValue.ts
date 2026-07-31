@@ -36,6 +36,10 @@ export function useConfigValue<T>(
         apply(e.payload.value);
       }
     });
+    // listen 被 ACL 拒绝时（窗口未在 capabilities 授权）默认静默；显式 warn 以便尽早发现漏配窗口。
+    unlisten.catch((err: unknown) => {
+      console.warn(`[useConfigValue:${key}] listen denied (check capability for this window)`, err);
+    });
     return () => {
       unlisten
         .then(fn => fn())

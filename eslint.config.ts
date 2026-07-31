@@ -6,6 +6,7 @@ export default await antfu(
       '**/*.yaml',
       '**/**.yml',
       'src-tauri',
+      'src-server',
       'dist',
       'node_modules',
       'src/shared/bindings.ts',

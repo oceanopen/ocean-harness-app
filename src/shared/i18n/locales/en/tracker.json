@@ -1,8 +1,52 @@
 {
   "title": "Tracker",
   "workspace": {
-    "selectPlaceholder": "Workspace selector (coming soon)",
-    "emptyHint": "No workspaces"
+    "summary": "{{total}} workspaces",
+    "search": "Search by name",
+    "actions": {
+      "add": "New workspace",
+      "switch": "Switch workspace"
+    },
+    "add": {
+      "title": "New workspace",
+      "name": "Name",
+      "namePlaceholder": "Enter workspace name",
+      "slug": "Slug",
+      "slugPlaceholder": "lowercase letters, digits, hyphens",
+      "slugHint": "Auto-derived from name, editable",
+      "description": "Description",
+      "descriptionPlaceholder": "Enter description (optional)",
+      "confirm": "OK",
+      "cancel": "Cancel"
+    },
+    "edit": {
+      "title": "Edit workspace",
+      "idLabel": "ID",
+      "confirm": "Save"
+    },
+    "card": {
+      "slugLabel": "Slug",
+      "noDescription": "No description",
+      "updatedAtLabel": "Updated",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "delete": {
+      "title": "Delete workspace",
+      "confirmMsg": "Delete workspace \"{{name}}\"? This cannot be undone.",
+      "confirm": "Delete",
+      "cancel": "Cancel"
+    },
+    "empty": {
+      "title": "No workspaces",
+      "desc": "Click \"New workspace\" to get started",
+      "noMatch": "No matching workspaces"
+    },
+    "error": {
+      "title": "Failed to load workspaces",
+      "desc": "Please try again later",
+      "retry": "Retry"
+    }
   },
   "project": {
     "comingSoon": "Project list (coming soon)",
@@ -13,6 +57,21 @@
     "emptyHint": "Select a project to view issues"
   },
   "toast": {
-    "loadFailed": "Load failed: {{message}}"
+    "loadFailed": "Load failed: {{message}}",
+    "created": "Workspace \"{{name}}\" created",
+    "createFailed": "Create failed: {{message}}",
+    "updated": "Workspace \"{{name}}\" updated",
+    "updateFailed": "Update failed: {{message}}",
+    "deleted": "Workspace deleted",
+    "deleteFailed": "Delete failed: {{message}}"
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo": "{{count}} minutes ago",
+    "hoursAgo": "{{count}} hours ago",
+    "daysAgo": "{{count}} days ago",
+    "weeksAgo": "{{count}} weeks ago",
+    "monthsAgo": "{{count}} months ago",
+    "yearsAgo": "{{count}} years ago"
   }
 }
