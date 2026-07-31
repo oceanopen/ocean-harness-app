@@ -3,13 +3,11 @@
   "menu": {
     "claudeSessions": "Claude Sessions",
     "repositories": "Repository Management",
-    "serverStatus": "Service Status"
+    "serverStatus": "Service Status",
+    "tracker": "Tracker"
   },
   "sidebar": {
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar"
-  },
-  "action": {
-    "openTracker": "Open Tracker"
   }
 }

@@ -6,8 +6,7 @@
     "panel",
     "pet-claude-sessions-summary",
     "pet-claude-sessions-task",
-    "settings",
-    "tracker"
+    "settings"
   ],
   "permissions": [
     "core:default",

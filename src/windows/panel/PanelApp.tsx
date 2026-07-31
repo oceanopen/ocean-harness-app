@@ -36,6 +36,7 @@ import { useTranslation } from 'react-i18next';
 import ClaudeSessionsPage from './ClaudeSessionsPage';
 import RepositoriesPage from './RepositoriesPage';
 import ServerStatusPage from './ServerStatusPage';
+import TrackerPage from './tracker/TrackerPage';
 
 // 侧边栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
@@ -47,7 +48,7 @@ function decodeSidebarCollapsed(raw: string | null): boolean {
 // 左侧菜单 + 右侧内容的交互复刻自 settings 窗口（SettingsApp）：
 // useState<MenuKey> 单状态 + menuItems 配置数组驱动左侧 List + 右侧条件渲染。
 // 当前菜单：Claude 会话监听、本地仓库管理；后续在此数组追加新菜单项即可扩展。
-type MenuKey = 'claudeSessions' | 'repositories' | 'serverStatus';
+type MenuKey = 'claudeSessions' | 'repositories' | 'serverStatus' | 'tracker';
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
@@ -87,6 +88,7 @@ function PanelApp() {
   }, [activeMenu]);
 
   const menuItems: { key: MenuKey; label: string; icon: React.ReactNode }[] = [
+    { key: 'tracker', label: t('panel:menu.tracker'), icon: <SpaceDashboardOutlinedIcon /> },
     { key: 'claudeSessions', label: t('panel:menu.claudeSessions'), icon: <SensorsOutlinedIcon /> },
     { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
     { key: 'serverStatus', label: t('panel:menu.serverStatus'), icon: <LanOutlinedIcon /> },
@@ -240,20 +242,6 @@ function PanelApp() {
           <Box sx={{ flex: 1 }} />
           <IconButton
             size="small"
-            aria-label={t('panel:action.openTracker')}
-            onClick={() => {
-              void commands.showTrackerWindow().then((res) => {
-                if (res.status === 'error') {
-                  console.warn('[PanelApp] open tracker failed:', res.error);
-                }
-              });
-            }}
-            sx={{ color: 'text.secondary' }}
-          >
-            <SpaceDashboardOutlinedIcon />
-          </IconButton>
-          <IconButton
-            size="small"
             aria-label={t('settings:title')}
             onClick={() => {
               void commands.showSettingsWindow().then((res) => {
@@ -272,6 +260,7 @@ function PanelApp() {
           {activeMenu === 'claudeSessions' && <ClaudeSessionsPage />}
           {activeMenu === 'repositories' && <RepositoriesPage windowShownTrigger={repoRefreshTrigger} />}
           {activeMenu === 'serverStatus' && <ServerStatusPage />}
+          {activeMenu === 'tracker' && <TrackerPage />}
         </Box>
       </Box>
     </Box>
