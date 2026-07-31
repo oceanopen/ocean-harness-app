@@ -4,10 +4,10 @@ use tauri::{AppHandle, Monitor, Position, Rect};
 pub const DEFAULT_SIZE: (f64, f64) = (800.0, 600.0);
 
 /// panel 窗口（控制台）占目标屏的比例。
-pub const PANEL_RATIO: f64 = 0.8;
+pub const PANEL_RATIO: f64 = 0.85;
 
 /// settings 窗口占目标屏的比例。
-pub const SETTINGS_RATIO: f64 = 0.6;
+pub const SETTINGS_RATIO: f64 = 0.7;
 
 /// 显示器逻辑化几何：把 Tauri 物理像素几何 + work_area 除以 scale_factor 转成逻辑像素，
 /// 供窗口定位算法统一消费，避免各调用方重复 `/ sf`。
