@@ -20,7 +20,7 @@ import {
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import ClaudeSessionList from './components/ClaudeSessionList';
+import ClaudeSessionList from './components/ClaudeSessionList/ClaudeSessionList';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 

@@ -3,13 +3,8 @@ import type { Dispatch, SetStateAction } from 'react';
 import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
-  DragHandleRounded as DragHandleRoundedIcon,
   ExpandLessOutlined as ExpandLessOutlinedIcon,
   ExpandMoreOutlined as ExpandMoreOutlinedIcon,
-  KeyboardArrowDownRounded as KeyboardArrowDownRoundedIcon,
-  KeyboardArrowUpRounded as KeyboardArrowUpRoundedIcon,
-  KeyboardDoubleArrowUpRounded as KeyboardDoubleArrowUpRoundedIcon,
-  RemoveOutlined as RemoveOutlinedIcon,
   ViewKanbanOutlined as ViewKanbanOutlinedIcon,
   ViewListOutlined as ViewListOutlinedIcon,
 } from '@mui/icons-material';
@@ -33,11 +28,12 @@ import {
 } from '@mui/material';
 import { useToast } from '@src/shared/useToast';
 import { trackerKeys, useProjectIssues, useProjectStates } from '@src/state/tracker';
+import { PriorityIcon } from '@src/windows/panel/TrackerPage/components/PriorityIcon';
+import ProjectIssueDrawer from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectIssueDrawer';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import KanbanView from './kanban/KanbanView';
-import ProjectIssueDrawer from './ProjectIssueDrawer';
+import KanbanView from './KanbanView/KanbanView';
 
 // Issue 视图模式：列表（按状态组纵向分组）/ 看板（按具体状态横向分列 + 拖拽）。
 type IssueViewMode = 'list' | 'kanban';
@@ -394,22 +390,6 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
       )}
     </Box>
   );
-}
-
-// 优先级图标：urgent 双上箭头(红) / high 上箭头(橙) / medium 横杠(蓝) / low 下箭头(灰) / none 减号(浅灰)。
-export function PriorityIcon({ priority }: { priority: Priority }) {
-  switch (priority) {
-    case 'urgent':
-      return <KeyboardDoubleArrowUpRoundedIcon sx={{ fontSize: '1rem', color: 'error.main' }} />;
-    case 'high':
-      return <KeyboardArrowUpRoundedIcon sx={{ fontSize: '1rem', color: 'warning.main' }} />;
-    case 'medium':
-      return <DragHandleRoundedIcon sx={{ fontSize: '1rem', color: 'info.main' }} />;
-    case 'low':
-      return <KeyboardArrowDownRoundedIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />;
-    default:
-      return <RemoveOutlinedIcon sx={{ fontSize: '1rem', color: 'text.disabled' }} />;
-  }
 }
 
 // 单行：状态色块（取 state.color，未知用 text.disabled）+ #id + 名称 + 优先级图标。

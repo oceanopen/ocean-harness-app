@@ -24,7 +24,7 @@ import { useToast } from '@src/shared/useToast';
 import { useDeleteWorkspaceProject, useTrackerStore, useWorkspaceProjects } from '@src/state/tracker';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import WorkspaceProjectDialog from './components/WorkspaceProjectDialog';
+import WorkspaceProjectDialog from './WorkspaceProjectDialog';
 
 const truncateSx = {
   overflow: 'hidden',

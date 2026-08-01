@@ -21,11 +21,11 @@ import { useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } f
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import PrioritySelect from './components/PrioritySelect';
-import ProjectStateSelect from './components/ProjectStateSelect';
-import RichTextEditor from './components/RichTextEditor';
-import WorkspaceLabelManagerDialog from './components/WorkspaceLabelManagerDialog';
-import WorkspaceLabelSelect from './components/WorkspaceLabelSelect';
+import PrioritySelect from './PrioritySelect';
+import ProjectStateSelect from './ProjectStateSelect';
+import RichTextEditor from './RichTextEditor/RichTextEditor';
+import WorkspaceLabelManagerDialog from './WorkspaceLabelManagerDialog';
+import WorkspaceLabelSelect from './WorkspaceLabelSelect';
 import 'dayjs/locale/zh-cn';
 
 interface ProjectIssueDrawerProps {

@@ -3,7 +3,7 @@ import { Draggable } from '@hello-pangea/dnd';
 import { CalendarMonthOutlined as CalendarMonthOutlinedIcon } from '@mui/icons-material';
 import { Box, Paper, Tooltip, Typography } from '@mui/material';
 import { formatDate } from '@src/shared/time';
-import { PriorityIcon } from '../ProjectIssueListPage';
+import { PriorityIcon } from '@src/windows/panel/TrackerPage/components/PriorityIcon';
 import { truncateSx } from './shared';
 
 interface KanbanCardProps {

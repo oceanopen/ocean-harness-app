@@ -16,10 +16,10 @@ import {
 import appIcon from '@src/assets/app-icon.svg';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import AboutPage from './components/AboutPage';
-import AppConfigPage from './components/AppConfigPage';
-import MonitorConfigPage from './components/MonitorConfigPage';
-import ServiceConfigPage from './components/ServiceConfigPage';
+import AboutPage from './AboutPage';
+import AppConfigPage from './AppConfigPage';
+import MonitorConfigPage from './MonitorConfigPage';
+import ServiceConfigPage from './ServiceConfigPage';
 
 type MenuKey = 'appConfig' | 'monitorConfig' | 'serviceConfig' | 'about';
 

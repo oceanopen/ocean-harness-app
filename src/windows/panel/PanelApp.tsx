@@ -36,12 +36,12 @@ import { useTrackerStore } from '@src/state/tracker';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import ClaudeSessionsPage from './ClaudeSessionsPage';
+import ClaudeSessionsPage from './ClaudeSessionsPage/ClaudeSessionsPage';
 import CommandPaletteProvider from './command-palette/CommandPaletteProvider';
 import CommandPaletteTrigger from './command-palette/CommandPaletteTrigger';
-import RepositoriesPage from './RepositoriesPage';
+import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
 import ServerStatusPage from './ServerStatusPage';
-import TrackerPage from './tracker/TrackerPage';
+import TrackerPage from './TrackerPage/TrackerPage';
 
 // 侧边栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。

@@ -2,9 +2,9 @@ import { AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
 import { useTrackerStore } from '@src/state/tracker';
 import { useTranslation } from 'react-i18next';
-import ProjectIssueListPage from './ProjectIssueListPage';
-import WorkspaceProjectListPage from './WorkspaceProjectListPage';
-import WorkspacesPage from './WorkspacesPage';
+import ProjectIssueListPage from './components/ProjectIssueListPage/ProjectIssueListPage';
+import WorkspaceProjectListPage from './components/WorkspaceProjectListPage/WorkspaceProjectListPage';
+import WorkspacesPage from './components/WorkspacesPage/WorkspacesPage';
 
 // TrackerPage：控制台「工作台」页面内容组件（工作空间 → 项目 → Issue 三级管理）。
 // 三级选择态读写 tracker store（与命令面板共享同一份），故本组件无 props。
