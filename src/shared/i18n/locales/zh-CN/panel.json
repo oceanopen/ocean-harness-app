@@ -13,6 +13,7 @@
   "commandPalette": {
     "placeholder": "输入命令或搜索…",
     "placeholderSubPage": "输入名称以筛选…",
+    "searchPlaceholder": "搜索…",
     "empty": "无匹配结果",
     "footer": {
       "close": "关闭",

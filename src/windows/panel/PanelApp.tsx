@@ -38,6 +38,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ClaudeSessionsPage from './ClaudeSessionsPage';
 import CommandPaletteProvider from './command-palette/CommandPaletteProvider';
+import CommandPaletteTrigger from './command-palette/CommandPaletteTrigger';
 import RepositoriesPage from './RepositoriesPage';
 import ServerStatusPage from './ServerStatusPage';
 import TrackerPage from './tracker/TrackerPage';
@@ -284,6 +285,7 @@ function PanelApp() {
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
+              gap: 1,
               px: 2,
               borderBottom: 1,
               borderColor: 'divider',
@@ -296,6 +298,7 @@ function PanelApp() {
               </Typography>
             </Breadcrumbs>
             <Box sx={{ flex: 1 }} />
+            <CommandPaletteTrigger />
             <IconButton
               size="small"
               aria-label={t('settings:title')}

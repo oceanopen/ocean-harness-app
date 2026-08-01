@@ -13,6 +13,7 @@
   "commandPalette": {
     "placeholder": "Type a command or search…",
     "placeholderSubPage": "Filter by name…",
+    "searchPlaceholder": "Search…",
     "empty": "No results found",
     "footer": {
       "close": "Close",
