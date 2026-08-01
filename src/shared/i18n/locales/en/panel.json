@@ -9,5 +9,33 @@
   "sidebar": {
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar"
+  },
+  "commandPalette": {
+    "placeholder": "Type a command or search…",
+    "placeholderSubPage": "Filter by name…",
+    "empty": "No results found",
+    "footer": {
+      "close": "Close",
+      "back": "Back"
+    },
+    "group": {
+      "navigation": "Navigation",
+      "action": "Actions",
+      "jump": "Jump to"
+    },
+    "nav": {
+      "claudeSessions": "Go to Claude Sessions",
+      "repositories": "Go to Repository Management",
+      "serverStatus": "Go to Service Status",
+      "tracker": "Go to Tracker"
+    },
+    "action": {
+      "settings": "Open Settings",
+      "toggleSidebar": "Toggle Sidebar"
+    },
+    "jump": {
+      "workspace": "Jump to Workspace",
+      "project": "Jump to Project"
+    }
   }
 }

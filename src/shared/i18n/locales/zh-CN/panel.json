@@ -9,5 +9,33 @@
   "sidebar": {
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏"
+  },
+  "commandPalette": {
+    "placeholder": "输入命令或搜索…",
+    "placeholderSubPage": "输入名称以筛选…",
+    "empty": "无匹配结果",
+    "footer": {
+      "close": "关闭",
+      "back": "返回"
+    },
+    "group": {
+      "navigation": "导航",
+      "action": "动作",
+      "jump": "跳转"
+    },
+    "nav": {
+      "claudeSessions": "前往 Claude 会话监听",
+      "repositories": "前往本地仓库管理",
+      "serverStatus": "前往服务状态",
+      "tracker": "前往工作台"
+    },
+    "action": {
+      "settings": "打开设置",
+      "toggleSidebar": "折叠 / 展开侧边栏"
+    },
+    "jump": {
+      "workspace": "跳到工作空间",
+      "project": "跳到项目"
+    }
   }
 }
