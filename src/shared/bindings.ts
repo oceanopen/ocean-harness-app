@@ -126,7 +126,7 @@ export const commands = {
  *  订阅方（AppThemeProvider / AppI18nProvider）据此响应配置变化。
  */
 export type AppConfigChangedPayload = {
-	/**  变更的配置 key（与 src/shared/app_config.ts 中的 *_KEY 常量对齐）。 */
+	/**  变更的配置 key（与 src/shared/appConfig.ts 中的 *_KEY 常量对齐）。 */
 	key: string,
 	/**  新值（配置统一以字符串形式存储，订阅方按 key 自行 decode）。 */
 	value: string,

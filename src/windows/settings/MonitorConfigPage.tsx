@@ -1,5 +1,5 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { Iterm2SplitDirection } from '@src/shared/app_config';
+import type { Iterm2SplitDirection } from '@src/shared/appConfig';
 import CallSplitOutlinedIcon from '@mui/icons-material/CallSplitOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
@@ -26,7 +26,7 @@ import {
   POLL_INTERVAL_SECS_KEY,
   setAppConfig,
   TERMINAL_POST_OPEN_COMMAND_KEY,
-} from '@src/shared/app_config';
+} from '@src/shared/appConfig';
 import { iterm2SplitDirectionOptions } from '@src/shared/settingOption';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';

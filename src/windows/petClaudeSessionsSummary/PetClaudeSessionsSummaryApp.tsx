@@ -4,7 +4,7 @@ import {
   isYes,
   parseYesNo,
   PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
-} from '@src/shared/app_config';
+} from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { CLAUDE_SESSION_STATUS_PRIORITY, countAttentionClaudeSessions } from '@src/shared/claudeSessionStatus';
 import { unwrap } from '@src/shared/commands';

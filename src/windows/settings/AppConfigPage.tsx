@@ -1,5 +1,5 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { Appearance, Language } from '@src/shared/app_config';
+import type { Appearance, Language } from '@src/shared/appConfig';
 import LanguageIcon from '@mui/icons-material/Language';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import {
@@ -18,7 +18,7 @@ import {
   getAppConfig,
   LANGUAGE_KEY,
   setAppConfig,
-} from '@src/shared/app_config';
+} from '@src/shared/appConfig';
 import {
   appearanceOptions,
   languageOptions,

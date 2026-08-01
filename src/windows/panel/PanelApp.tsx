@@ -1,5 +1,5 @@
 import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
-import type { MenuKey } from './command-palette/types';
+import type { MenuKey } from './commandPalette/types';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
@@ -28,7 +28,7 @@ import {
   parseYesNo,
   setAppConfig,
   toYesNo,
-} from '@src/shared/app_config';
+} from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
 import { useConfigValue } from '@src/shared/useConfigValue';
@@ -37,8 +37,8 @@ import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ClaudeSessionsPage from './ClaudeSessionsPage/ClaudeSessionsPage';
-import CommandPaletteProvider from './command-palette/CommandPaletteProvider';
-import CommandPaletteTrigger from './command-palette/CommandPaletteTrigger';
+import CommandPaletteProvider from './commandPalette/CommandPaletteProvider';
+import CommandPaletteTrigger from './commandPalette/CommandPaletteTrigger';
 import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
 import ServerStatusPage from './ServerStatusPage';
 import TrackerPage from './TrackerPage/TrackerPage';
@@ -53,7 +53,7 @@ function decodeSidebarCollapsed(raw: string | null): boolean {
 // 左侧菜单 + 右侧内容的交互复刻自 settings 窗口（SettingsApp）：
 // useState<MenuKey> 单状态 + menuItems 配置数组驱动左侧 List + 右侧条件渲染。
 // 当前菜单：Claude 会话监听、本地仓库管理；后续在此数组追加新菜单项即可扩展。
-// MenuKey 见 ./command-palette/types（顶级菜单标识与命令面板共用，避免 union 字面量双份维护）。
+// MenuKey 见 ./commandPalette/types（顶级菜单标识与命令面板共用，避免 union 字面量双份维护）。
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;

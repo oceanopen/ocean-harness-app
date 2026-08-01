@@ -1,4 +1,4 @@
-import type { Appearance, Iterm2SplitDirection, Language } from './app_config';
+import type { Appearance, Iterm2SplitDirection, Language } from './appConfig';
 
 export interface LanguageOption {
   value: Language;

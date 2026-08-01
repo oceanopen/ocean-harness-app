@@ -1,7 +1,7 @@
-import type { Appearance } from './app_config';
+import type { Appearance } from './appConfig';
 import { createTheme, CssBaseline, ThemeProvider } from '@mui/material';
 import { useMemo } from 'react';
-import { APPEARANCE_KEY, DEFAULT_APPEARANCE } from './app_config';
+import { APPEARANCE_KEY, DEFAULT_APPEARANCE } from './appConfig';
 import { useConfigValue } from './useConfigValue';
 import { useSystemThemeMode } from './useSystemTheme';
 

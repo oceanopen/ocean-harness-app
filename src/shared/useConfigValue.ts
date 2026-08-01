@@ -1,7 +1,7 @@
 import type { AppConfigChangedPayload } from './bindings';
 import { listen } from '@tauri-apps/api/event';
 import { useEffect, useState } from 'react';
-import { getAppConfig } from './app_config';
+import { getAppConfig } from './appConfig';
 import { EVENT_APP_CONFIG_CHANGED } from './events';
 
 /**

@@ -13,7 +13,7 @@ import {
   MAX_HTTP_SERVER_PORT,
   MIN_HTTP_SERVER_PORT,
   setAppConfig,
-} from '@src/shared/app_config';
+} from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
