@@ -1,9 +1,9 @@
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { CommandConfig, CommandGroup } from './types';
 import { SearchOutlined as SearchOutlinedIcon } from '@mui/icons-material';
 import { Box, CircularProgress, Dialog, Typography } from '@mui/material';
-import { WorkspaceProjectService, WorkspaceService } from '@src/service';
+import { WorkspaceProjectService, WorkspaceService } from '@src/services';
 import { Command } from 'cmdk';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';

@@ -1,4 +1,4 @@
-import type { WorkspaceModel } from '@src/service';
+import type { WorkspaceModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
@@ -26,7 +26,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { WorkspaceService } from '@src/service';
+import { WorkspaceService } from '@src/services';
 import { formatDate, formatRelativeTime } from '@src/shared/time';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -43,7 +43,7 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
-// WorkspaceModel 类型与请求封装已迁移至 @src/service（WorkspaceService）。
+// WorkspaceModel 类型与请求封装已迁移至 @src/services（WorkspaceService）。
 
 interface WorkspacesPageProps {
   onSelect: (ws: WorkspaceModel) => void;

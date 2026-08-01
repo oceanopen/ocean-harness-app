@@ -1,4 +1,4 @@
-import type { Priority, ProjectIssueResponseData, ProjectStateModel, StateGroup, WorkspaceProjectModel } from '@src/service';
+import type { Priority, ProjectIssueResponseData, ProjectStateModel, StateGroup, WorkspaceProjectModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
@@ -31,7 +31,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { ProjectIssueService, ProjectStateService } from '@src/service';
+import { ProjectIssueService, ProjectStateService } from '@src/services';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import IssueDrawer from './IssueDrawer';
@@ -46,7 +46,7 @@ type IssueViewMode = 'list' | 'kanban';
 type ToastSeverity = 'success' | 'error';
 
 // Priority / StateGroup / ProjectIssueResponseData / ProjectStateModel / WorkspaceLabelModel 类型
-// 已迁移至 @src/service（ProjectIssueService / ProjectStateService 等）。
+// 已迁移至 @src/services（ProjectIssueService / ProjectStateService 等）。
 
 // 优先级业务权重（升序，urgent 在前）——后端 orderBy=priority 为文本字典序不可靠，前端按 weight 重排。
 const PRIORITY_WEIGHT: Record<Priority, number> = {

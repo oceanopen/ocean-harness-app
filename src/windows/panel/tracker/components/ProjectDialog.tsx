@@ -1,4 +1,4 @@
-import type { WorkspaceProjectModel } from '@src/service';
+import type { WorkspaceProjectModel } from '@src/services';
 import {
   Alert,
   Box,
@@ -9,7 +9,7 @@ import {
   DialogTitle,
   TextField,
 } from '@mui/material';
-import { WorkspaceProjectService } from '@src/service';
+import { WorkspaceProjectService } from '@src/services';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 

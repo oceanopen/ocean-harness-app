@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
 
 // panel 顶级页面标识（与 PanelApp 的 MenuKey 同源；此处为 SSOT，PanelApp 反向 import 复用，
 // 避免 union 字面量双份维护导致不一致）。后端 EVENT_PANEL_NAVIGATE payload 亦为同集合字符串。

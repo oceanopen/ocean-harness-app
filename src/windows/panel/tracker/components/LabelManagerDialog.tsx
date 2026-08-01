@@ -1,4 +1,4 @@
-import { WorkspaceLabelService, type WorkspaceLabelModel } from '@src/service';
+import { WorkspaceLabelService, type WorkspaceLabelModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,

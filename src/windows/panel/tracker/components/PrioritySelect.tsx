@@ -1,4 +1,4 @@
-import type { Priority } from '@src/service';
+import type { Priority } from '@src/services';
 import { Box, MenuItem, Select, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 

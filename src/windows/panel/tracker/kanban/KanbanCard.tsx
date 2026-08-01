@@ -1,4 +1,4 @@
-import type { ProjectIssueResponseData } from '@src/service';
+import type { ProjectIssueResponseData } from '@src/services';
 import { Draggable } from '@hello-pangea/dnd';
 import { CalendarMonthOutlined as CalendarMonthOutlinedIcon } from '@mui/icons-material';
 import { Box, Paper, Tooltip, Typography } from '@mui/material';

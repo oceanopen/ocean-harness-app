@@ -1,4 +1,4 @@
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
@@ -21,7 +21,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { WorkspaceProjectService } from '@src/service';
+import { WorkspaceProjectService } from '@src/services';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ProjectDialog from './components/ProjectDialog';
@@ -37,7 +37,7 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
-// WorkspaceProjectModel 类型与请求封装已迁移至 @src/service（WorkspaceProjectService）。
+// WorkspaceProjectModel 类型与请求封装已迁移至 @src/services（WorkspaceProjectService）。
 
 interface ProjectListPageProps {
   workspace: WorkspaceModel;

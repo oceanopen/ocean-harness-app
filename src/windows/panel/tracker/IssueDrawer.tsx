@@ -1,4 +1,4 @@
-import type { Priority, ProjectIssueResponseData, ProjectStateModel, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/service';
+import type { Priority, ProjectIssueResponseData, ProjectStateModel, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
 import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon } from '@mui/icons-material';
 import {
   Alert,
@@ -16,7 +16,7 @@ import {
 } from '@mui/material';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { ProjectIssueService, WorkspaceLabelService } from '@src/service';
+import { ProjectIssueService, WorkspaceLabelService } from '@src/services';
 import { formatDate } from '@src/shared/time';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';

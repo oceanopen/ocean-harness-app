@@ -1,4 +1,4 @@
-import type { ProjectIssueResponseData, ProjectStateModel } from '@src/service';
+import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
 import { Droppable } from '@hello-pangea/dnd';
 import { Box, Chip, Paper, Typography } from '@mui/material';
 import KanbanCard from './KanbanCard';

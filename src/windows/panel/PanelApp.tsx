@@ -1,4 +1,4 @@
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
 import type { MenuKey } from './command-palette/types';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';

@@ -19,11 +19,11 @@ import { commands } from '@src/shared/bindings';
 import { logOnError, unwrap } from '@src/shared/commands';
 import { EVENT_HTTP_SERVER_STATE_CHANGED } from '@src/shared/events';
 import { listen } from '@tauri-apps/api/event';
-import { BaseInfoService, type ServerRunInfoResponseData } from '@src/service';
+import { BaseInfoService, type ServerRunInfoResponseData } from '@src/services';
 
 import { useCallback, useEffect, useState } from 'react';
 
-// ServerRunInfoResponseData / SysInfo / ServerInfo 类型与请求封装已迁移至 @src/service（BaseInfoService）。
+// ServerRunInfoResponseData / SysInfo / ServerInfo 类型与请求封装已迁移至 @src/services（BaseInfoService）。
 
 // 运行模式徽章文案（mode 取自 Go 接口 serverInfo.mode，值为 debug/release/test）。
 const MODE_LABEL: Record<string, string> = {

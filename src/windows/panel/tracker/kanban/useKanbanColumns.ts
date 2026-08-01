@@ -1,4 +1,4 @@
-import type { ProjectIssueResponseData, ProjectStateModel } from '@src/service';
+import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
 import { useMemo } from 'react';
 
 export interface KanbanColumns {

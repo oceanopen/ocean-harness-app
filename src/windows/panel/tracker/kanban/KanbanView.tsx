@@ -1,4 +1,4 @@
-import type { ProjectIssueResponseData, ProjectStateModel } from '@src/service';
+import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
 import type { Dispatch, SetStateAction } from 'react';
 import { DragDropContext } from '@hello-pangea/dnd';
 import { Box, CircularProgress } from '@mui/material';

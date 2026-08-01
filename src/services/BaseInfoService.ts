@@ -1,6 +1,3 @@
-// BaseInfoService：/api/baseInfo 命名空间下的接口封装（本地服务系统信息）。
-// 类型对齐 src-server/internal/dal/types/base_info.go。
-
 import { request } from './http';
 
 // 系统信息（对齐 Go SysInfo：主机名 / Go 运行时 / OS / 架构）。

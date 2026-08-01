@@ -1,4 +1,4 @@
-import type { ProjectStateModel } from '@src/service';
+import type { ProjectStateModel } from '@src/services';
 import { Box, MenuItem, Select, Typography } from '@mui/material';
 
 // 受控状态下拉：options 为项目状态列表，每项「色点 + 名称」。

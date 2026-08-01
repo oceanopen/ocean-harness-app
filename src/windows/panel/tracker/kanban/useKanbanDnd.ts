@@ -1,7 +1,7 @@
 import type { DropResult } from '@hello-pangea/dnd';
-import type { ProjectIssueResponseData, ProjectStateModel } from '@src/service';
+import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
 import type { Dispatch, SetStateAction } from 'react';
-import { ProjectIssueService } from '@src/service';
+import { ProjectIssueService } from '@src/services';
 import { useCallback, useRef } from 'react';
 
 type ToastSeverity = 'success' | 'error';

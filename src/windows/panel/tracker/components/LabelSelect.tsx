@@ -1,4 +1,4 @@
-import type { WorkspaceLabelModel } from '@src/service';
+import type { WorkspaceLabelModel } from '@src/services';
 import { CheckOutlined as CheckOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Autocomplete, Box, Button, Chip, TextField, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';

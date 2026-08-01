@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
 import type { CommandPaletteContextValue, CommandSubPage, MenuKey } from './types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommandPaletteContext } from './CommandPaletteContext';

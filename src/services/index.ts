@@ -1,12 +1,3 @@
-// src/service 统一导出入口。
-//
-// 页面与组件统一从此处导入 service 与类型，例如：
-//   import { WorkspaceService, type WorkspaceModel } from '@src/service';
-//
-// 底层 request 仅 service 内部使用，不从此处导出——页面不直接发请求，
-// 一切请求经 XxxService 收敛，便于后续接入 cache 与跨页面复用。
-
-// ===== Service（含静态方法）=====
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 
