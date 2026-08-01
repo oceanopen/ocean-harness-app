@@ -1,13 +1,13 @@
-import type { Issue, ProjectState } from '../IssueListPage';
+import type { ProjectIssueResponseData, ProjectStateModel } from '@src/service';
 import { Droppable } from '@hello-pangea/dnd';
 import { Box, Chip, Paper, Typography } from '@mui/material';
 import KanbanCard from './KanbanCard';
 import { truncateSx } from './shared';
 
 interface KanbanColumnProps {
-  state: ProjectState;
-  issues: Issue[];
-  onOpen: (issue: Issue) => void;
+  state: ProjectStateModel;
+  issues: ProjectIssueResponseData[];
+  onOpen: (issue: ProjectIssueResponseData) => void;
 }
 
 // 看板列（Droppable）：状态色点 + 名称 + 计数；卡片列表纵向可滚；拖入时背景高亮。

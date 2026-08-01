@@ -1,5 +1,4 @@
-import type { Issue, Priority, ProjectState, WorkspaceLabel } from './IssueListPage';
-import type { Project } from './ProjectListPage';
+import type { Priority, ProjectIssueResponseData, ProjectStateModel, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/service';
 import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon } from '@mui/icons-material';
 import {
   Alert,
@@ -17,11 +16,11 @@ import {
 } from '@mui/material';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { ProjectIssueService, WorkspaceLabelService } from '@src/service';
 import { formatDate } from '@src/shared/time';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiPost } from './api';
 import LabelManagerDialog from './components/LabelManagerDialog';
 import LabelSelect from './components/LabelSelect';
 import PrioritySelect from './components/PrioritySelect';
@@ -33,12 +32,12 @@ type ToastSeverity = 'success' | 'error';
 
 interface IssueDrawerProps {
   mode: 'create' | 'edit';
-  project: Project;
-  states: ProjectState[];
-  issue?: Issue; // edit 模式必传
+  project: WorkspaceProjectModel;
+  states: ProjectStateModel[];
+  issue?: ProjectIssueResponseData; // edit 模式必传
   onClose: () => void;
-  onCreated?: (issue: Issue) => void;
-  onUpdated?: (issue: Issue) => void;
+  onCreated?: (issue: ProjectIssueResponseData) => void;
+  onUpdated?: (issue: ProjectIssueResponseData) => void;
   onDeleted?: (issueId: number) => void;
 }
 
@@ -56,8 +55,8 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
   const [priority, setPriority] = useState<Priority>(issue?.priority ?? 'none');
   const [startDate, setStartDate] = useState(issue?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(issue?.targetDate ?? '');
-  const [labels, setLabels] = useState<WorkspaceLabel[]>(issue?.labels ?? []);
-  const [wsLabels, setWsLabels] = useState<WorkspaceLabel[]>([]);
+  const [labels, setLabels] = useState<WorkspaceLabelModel[]>(issue?.labels ?? []);
+  const [wsLabels, setWsLabels] = useState<WorkspaceLabelModel[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -72,7 +71,7 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
 
   const loadWsLabels = useCallback(async () => {
     try {
-      const data = await apiPost<WorkspaceLabel[]>('/api/tracker/workspaceLabel/getList', { workspaceId: project.workspaceId });
+      const data = await WorkspaceLabelService.getList({ workspaceId: project.workspaceId });
       setWsLabels(data);
       // 标签管理里若有删除，剔除本地已选 labels 中已不存在的。
       setLabels(prev => prev.filter(l => data.some(w => w.id === l.id)));
@@ -127,7 +126,7 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
     setSubmitting(true);
     try {
       if (mode === 'create') {
-        const created = await apiPost<Issue>('/api/tracker/projectIssue/create', {
+        const created = await ProjectIssueService.create({
           projectId: project.id,
           workspaceId: project.workspaceId,
           name: name.trim(),
@@ -141,7 +140,7 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
         onCreated?.(created);
         onClose();
       } else {
-        const updated = await apiPost<Issue>('/api/tracker/projectIssue/update', {
+        const updated = await ProjectIssueService.update({
           id: issue!.id,
           name: name.trim(),
           description,
@@ -173,7 +172,7 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
     }
     setDeleting(true);
     try {
-      await apiPost('/api/tracker/projectIssue/delete', { id: issue.id });
+      await ProjectIssueService.delete({ id: issue.id });
       onDeleted?.(issue.id);
       onClose();
     } catch (e) {

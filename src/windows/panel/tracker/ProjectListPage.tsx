@@ -1,4 +1,4 @@
-import type { Workspace } from './WorkspacesPage';
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
 import {
   AddOutlined as AddOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
@@ -21,9 +21,9 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { WorkspaceProjectService } from '@src/service';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiPost } from './api';
 import ProjectDialog from './components/ProjectDialog';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -37,27 +37,14 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
-// Project：对齐后端 model.WorkspaceProject 的 JSON 形态（t_workspace_projects）。
-// getList 不预载 state/issue 关联，故仅声明顶层字段；关联字段后续按需扩展。
-// 由 ProjectDialog / TrackerPage 以 `import type` 复用（类型单向依赖，无运行时循环）。
-export interface Project {
-  id: number;
-  workspaceId: number;
-  name: string;
-  description: string;
-  emoji: string;
-  defaultStateId: number;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-}
+// WorkspaceProjectModel 类型与请求封装已迁移至 @src/service（WorkspaceProjectService）。
 
 interface ProjectListPageProps {
-  workspace: Workspace;
+  workspace: WorkspaceModel;
   // 当前选中项目 id（受控，由 TrackerPage 持有），用于行高亮。
   selectedId: number | null;
   // 行点击选中上抛；删除当前选中项目时回传 null 通知父级清空。
-  onSelect: (p: Project | null) => void;
+  onSelect: (p: WorkspaceProjectModel | null) => void;
 }
 
 // 项目列表页（嵌于 tracker 三栏壳的左栏，宽 260）。
@@ -68,14 +55,14 @@ interface ProjectListPageProps {
 function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPageProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<LoadStatus>('loading');
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<WorkspaceProjectModel[]>([]);
   // toast：保留最近一次内容，toastOpen 控制显隐（退出动画期间内容不闪烁）。
   const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
   const [toastOpen, setToastOpen] = useState(false);
   const [searchName, setSearchName] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<Project | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [editTarget, setEditTarget] = useState<WorkspaceProjectModel | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceProjectModel | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const showToast = useCallback((text: string, severity: ToastSeverity) => {
@@ -86,7 +73,7 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
   const load = useCallback(async () => {
     setStatus('loading');
     try {
-      const data = await apiPost<Project[]>('/api/tracker/project/getList', { workspaceId: workspace.id });
+      const data = await WorkspaceProjectService.getList({ workspaceId: workspace.id });
       setProjects(data);
       setStatus('ready');
     } catch {
@@ -106,12 +93,12 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
     return [...filtered].sort((a, b) => b.id - a.id);
   }, [projects, searchName]);
 
-  const handleCreated = useCallback((p: Project) => {
+  const handleCreated = useCallback((p: WorkspaceProjectModel) => {
     setProjects(prev => [...prev, p]);
     showToast(t('tracker:project.toast.created', { name: p.name }), 'success');
   }, [t, showToast]);
 
-  const handleUpdated = useCallback((p: Project) => {
+  const handleUpdated = useCallback((p: WorkspaceProjectModel) => {
     setProjects(prev => prev.map(x => (x.id === p.id ? p : x)));
     showToast(t('tracker:project.toast.updated', { name: p.name }), 'success');
   }, [t, showToast]);
@@ -122,7 +109,7 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
     }
     setDeleting(true);
     try {
-      await apiPost('/api/tracker/project/delete', { id: deleteTarget.id });
+      await WorkspaceProjectService.delete({ id: deleteTarget.id });
       setProjects(prev => prev.filter(x => x.id !== deleteTarget.id));
       // 删除的正是当前选中项目：通知父级清空选中，避免右栏指向已删项目。
       if (deleteTarget.id === selectedId) {
@@ -296,11 +283,11 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
 // 单行：整行可点击选中（onSelect）；左侧 emoji（空则兜底图标）+ 名称/描述；右侧编辑/删除图标
 // （stopPropagation 避免触发选中）。选中行用左侧主色边条 + action.selected 底色标识。
 interface ProjectRowProps {
-  project: Project;
+  project: WorkspaceProjectModel;
   selected: boolean;
-  onSelect: (p: Project) => void;
-  onEdit: (p: Project) => void;
-  onDelete: (p: Project) => void;
+  onSelect: (p: WorkspaceProjectModel) => void;
+  onEdit: (p: WorkspaceProjectModel) => void;
+  onDelete: (p: WorkspaceProjectModel) => void;
 }
 
 function ProjectRow({ project, selected, onSelect, onEdit, onDelete }: ProjectRowProps) {

@@ -1,4 +1,4 @@
-import type { Workspace } from '../WorkspacesPage';
+import type { WorkspaceModel } from '@src/service';
 import {
   Alert,
   Box,
@@ -9,9 +9,9 @@ import {
   DialogTitle,
   TextField,
 } from '@mui/material';
+import { WorkspaceService } from '@src/service';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiPost } from '../api';
 
 // 新建/编辑工作空间弹窗。
 // 传入 workspace 时为编辑模式：标题改为"编辑工作空间"、ID 只读展示、字段反显、提交调用 update；
@@ -24,9 +24,9 @@ import { apiPost } from '../api';
 // 用户手动编辑 slug 后置 slugTouched=true，停止派生；编辑模式初始即视为 touched（尊重既有 slug）。
 interface WorkspaceDialogProps {
   onClose: () => void;
-  onCreated: (ws: Workspace) => void;
-  onUpdated?: (ws: Workspace) => void;
-  workspace?: Workspace;
+  onCreated: (ws: WorkspaceModel) => void;
+  onUpdated?: (ws: WorkspaceModel) => void;
+  workspace?: WorkspaceModel;
 }
 
 // 描述最大字数（与后端 binding max=500 对齐）。
@@ -79,13 +79,13 @@ function WorkspaceDialog({ onClose, onCreated, onUpdated, workspace }: Workspace
         description: description.trim(),
       };
       if (isEdit && workspace) {
-        const updated = await apiPost<Workspace>('/api/tracker/workspace/update', {
+        const updated = await WorkspaceService.update({
           id: workspace.id,
           ...payload,
         });
         onUpdated?.(updated);
       } else {
-        const created = await apiPost<Workspace>('/api/tracker/workspace/create', payload);
+        const created = await WorkspaceService.create(payload);
         onCreated(created);
       }
       onClose();

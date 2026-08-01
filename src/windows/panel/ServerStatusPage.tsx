@@ -19,34 +19,11 @@ import { commands } from '@src/shared/bindings';
 import { logOnError, unwrap } from '@src/shared/commands';
 import { EVENT_HTTP_SERVER_STATE_CHANGED } from '@src/shared/events';
 import { listen } from '@tauri-apps/api/event';
+import { BaseInfoService, type ServerRunInfoResponseData } from '@src/service';
 
 import { useCallback, useEffect, useState } from 'react';
 
-// Go 服务统一响应封装（见 src-server/internal/response/response.go）。
-interface ApiResponse<T> {
-  code: number;
-  msg: string;
-  data: T;
-}
-
-// GET /api/baseInfo/getServerRunInfo 返回的 data 载荷（与 Go ServerRunInfoResponseData 对齐）。
-// 含 SysInfo（系统信息）与 ServerInfo（服务信息）两块。
-interface SysInfo {
-  hostname: string;
-  goVersion: string;
-  os: string;
-  arch: string;
-}
-interface ServerInfo {
-  mode: string;
-  address: string;
-  logDir: string;
-  sqliteDir: string;
-}
-interface ServerRunInfoResponseData {
-  sysInfo: SysInfo;
-  serverInfo: ServerInfo;
-}
+// ServerRunInfoResponseData / SysInfo / ServerInfo 类型与请求封装已迁移至 @src/service（BaseInfoService）。
 
 // 运行模式徽章文案（mode 取自 Go 接口 serverInfo.mode，值为 debug/release/test）。
 const MODE_LABEL: Record<string, string> = {
@@ -125,15 +102,7 @@ function ServerStatusPage() {
       }
       // running：Rust 探活保证端口已就绪，直接 fetch 一次（无重试）；失败提示获取服务运行信息失败。
       try {
-        const resp = await fetch(`${s.address}/api/baseInfo/getServerRunInfo`);
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
-        const body: ApiResponse<ServerRunInfoResponseData> = await resp.json();
-        if (body.code !== 0) {
-          throw new Error(body.msg || `code ${body.code}`);
-        }
-        setRunInfo(body.data);
+        setRunInfo(await BaseInfoService.getServerRunInfo());
         showToast('启动成功，获取服务运行信息成功', 'success');
       } catch {
         setRunInfo(null);

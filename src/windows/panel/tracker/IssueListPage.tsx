@@ -1,4 +1,4 @@
-import type { Project } from './ProjectListPage';
+import type { Priority, ProjectIssueResponseData, ProjectStateModel, StateGroup, WorkspaceProjectModel } from '@src/service';
 import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
@@ -31,9 +31,9 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { ProjectIssueService, ProjectStateService } from '@src/service';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiPost } from './api';
 import IssueDrawer from './IssueDrawer';
 import KanbanView from './kanban/KanbanView';
 
@@ -45,61 +45,8 @@ type IssueViewMode = 'list' | 'kanban';
 // 浮层 toast 严重级别（成功用 success，失败用 error）。
 type ToastSeverity = 'success' | 'error';
 
-export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
-export type StateGroup = 'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled';
-
-// Issue：对齐后端 ProjectIssueResponseData（*model.ProjectIssue 字段平铺 + labels）。
-// completedAt 为 *time.Time → null/ISO 串；isDraft 为 enums.YesNo → "Y"/"N"（非 bool）。
-// 由 IssueDrawer 以 `import type` 复用（类型单向依赖，无运行时循环）。
-export interface Issue {
-  id: number;
-  projectId: number;
-  workspaceId: number;
-  name: string;
-  description: string;
-  stateId: number;
-  priority: Priority;
-  sortOrder: number;
-  parentId: number;
-  startDate: string;
-  targetDate: string;
-  completedAt: string | null;
-  isDraft: 'Y' | 'N';
-  createdAt: string;
-  updatedAt: string;
-  labels: WorkspaceLabel[];
-}
-
-// ProjectState：对齐后端 model.ProjectState（t_project_states），用于状态色块与 stateGroup 分组。
-export interface ProjectState {
-  id: number;
-  projectId: number;
-  workspaceId: number;
-  name: string;
-  color: string;
-  slug: string;
-  stateGroup: StateGroup;
-  sortOrder: number;
-  isDefault: 'Y' | 'N';
-  isTriage: 'Y' | 'N';
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-}
-
-// WorkspaceLabel：对齐后端 model.WorkspaceLabel（t_workspace_labels，workspace 级共享标签）。
-// issue.labels 元素即此类型；由 LabelSelect / LabelManagerDialog / IssueDrawer 复用。
-export interface WorkspaceLabel {
-  id: number;
-  workspaceId: number;
-  name: string;
-  color: string;
-  description: string;
-  sortOrder: number;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-}
+// Priority / StateGroup / ProjectIssueResponseData / ProjectStateModel / WorkspaceLabelModel 类型
+// 已迁移至 @src/service（ProjectIssueService / ProjectStateService 等）。
 
 // 优先级业务权重（升序，urgent 在前）——后端 orderBy=priority 为文本字典序不可靠，前端按 weight 重排。
 const PRIORITY_WEIGHT: Record<Priority, number> = {
@@ -122,7 +69,7 @@ const truncateSx = {
 } as const;
 
 interface IssueListPageProps {
-  project: Project;
+  project: WorkspaceProjectModel;
 }
 
 // Issue 列表页（嵌于 tracker 三栏壳的右栏）。
@@ -132,8 +79,8 @@ interface IssueListPageProps {
 function IssueListPage({ project }: IssueListPageProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<LoadStatus>('loading');
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [states, setStates] = useState<ProjectState[]>([]);
+  const [issues, setIssues] = useState<ProjectIssueResponseData[]>([]);
+  const [states, setStates] = useState<ProjectStateModel[]>([]);
   const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
   const [toastOpen, setToastOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
@@ -141,7 +88,7 @@ function IssueListPage({ project }: IssueListPageProps) {
   const [stateFilter, setStateFilter] = useState<number | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<StateGroup>>(() => new Set());
   const [createOpen, setCreateOpen] = useState(false);
-  const [detailIssue, setDetailIssue] = useState<Issue | null>(null);
+  const [detailIssue, setDetailIssue] = useState<ProjectIssueResponseData | null>(null);
   // 视图模式按项目持久化（localStorage），默认列表。
   const [viewMode, setViewMode] = useState<IssueViewMode>(
     () => (localStorage.getItem(`tracker.viewMode.${project.id}`) === 'kanban' ? 'kanban' : 'list'),
@@ -161,8 +108,8 @@ function IssueListPage({ project }: IssueListPageProps) {
     setStatus('loading');
     try {
       const [issueData, stateData] = await Promise.all([
-        apiPost<Issue[]>('/api/tracker/projectIssue/getList', { projectId: project.id }),
-        apiPost<ProjectState[]>('/api/tracker/projectState/getList', { projectId: project.id }),
+        ProjectIssueService.getList({ projectId: project.id }),
+        ProjectStateService.getList({ projectId: project.id }),
       ]);
       setIssues(issueData);
       setStates(stateData);
@@ -178,7 +125,7 @@ function IssueListPage({ project }: IssueListPageProps) {
   }, [load]);
 
   const stateMap = useMemo(() => {
-    const m = new Map<number, ProjectState>();
+    const m = new Map<number, ProjectStateModel>();
     states.forEach(s => m.set(s.id, s));
     return m;
   }, [states]);
@@ -198,7 +145,7 @@ function IssueListPage({ project }: IssueListPageProps) {
       }
       return true;
     });
-    const buckets: Record<StateGroup, Issue[]> = {
+    const buckets: Record<StateGroup, ProjectIssueResponseData[]> = {
       backlog: [],
       unstarted: [],
       started: [],
@@ -237,13 +184,13 @@ function IssueListPage({ project }: IssueListPageProps) {
     });
   }, []);
 
-  const handleCreated = useCallback((issue: Issue) => {
+  const handleCreated = useCallback((issue: ProjectIssueResponseData) => {
     setIssues(prev => [...prev, issue]);
     showToast(t('tracker:issue.toast.created', { name: issue.name }), 'success');
   }, [t, showToast]);
 
   // 编辑保存：就地替换 issue + 关闭抽屉（统一模型：保存即关闭刷新）+ toast。
-  const handleUpdated = useCallback((updated: Issue) => {
+  const handleUpdated = useCallback((updated: ProjectIssueResponseData) => {
     setIssues(prev => prev.map(i => (i.id === updated.id ? updated : i)));
     setDetailIssue(null);
     showToast(t('tracker:issue.toast.updated'), 'success');
@@ -494,9 +441,9 @@ export function PriorityIcon({ priority }: { priority: Priority }) {
 // 单行：状态色块（取 state.color，未知用 text.disabled）+ #id + 名称 + 优先级图标。
 // 整行可点击打开侧滑详情（onOpen）。
 interface IssueRowProps {
-  issue: Issue;
-  stateMap: Map<number, ProjectState>;
-  onOpen: (issue: Issue) => void;
+  issue: ProjectIssueResponseData;
+  stateMap: Map<number, ProjectStateModel>;
+  onOpen: (issue: ProjectIssueResponseData) => void;
 }
 
 function IssueRow({ issue, stateMap, onOpen }: IssueRowProps) {

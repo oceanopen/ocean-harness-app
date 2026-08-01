@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Project } from '../tracker/ProjectListPage';
-import type { Workspace } from '../tracker/WorkspacesPage';
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
 import type { CommandPaletteContextValue, CommandSubPage, MenuKey } from './types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommandPaletteContext } from './CommandPaletteContext';
@@ -14,8 +13,8 @@ interface CommandPaletteProviderProps {
   openSettings: () => void;
   toggleSidebar: () => void;
   currentWorkspaceId: number | null;
-  selectWorkspace: (ws: Workspace) => void;
-  selectProject: (project: Project) => void;
+  selectWorkspace: (ws: WorkspaceModel) => void;
+  selectProject: (project: WorkspaceProjectModel) => void;
   children: ReactNode;
 }
 

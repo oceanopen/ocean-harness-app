@@ -1,6 +1,5 @@
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
 import type { MenuKey } from './command-palette/types';
-import type { Project } from './tracker/ProjectListPage';
-import type { Workspace } from './tracker/WorkspacesPage';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
@@ -67,8 +66,8 @@ function PanelApp() {
   const [trackerMounted, setTrackerMounted] = useState(false);
   // tracker 三级选择状态上提到此：命令面板「跳到工作空间/项目」需回写同一份状态，
   // TrackerPage 改为受控消费（selected/selectedProject 经 props 传入）。
-  const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceModel | null>(null);
+  const [selectedProject, setSelectedProject] = useState<WorkspaceProjectModel | null>(null);
   const theme = useTheme();
   // 侧边栏折叠状态：订阅 config（跨重启持久化、多窗口同步）。setAppConfig 触发 app-config-changed 事件，hook 自动回写，无需手动 setState。
   const collapsed = useConfigValue(PANEL_SIDEBAR_COLLAPSED_KEY, decodeSidebarCollapsed, false);
@@ -90,14 +89,14 @@ function PanelApp() {
     });
   }, []);
   // 跳到工作空间：回写选中（清空项目避免跨空间残留）并切到工作台。
-  const selectWorkspace = useCallback((ws: Workspace) => {
+  const selectWorkspace = useCallback((ws: WorkspaceModel) => {
     setSelectedWorkspace(ws);
     setSelectedProject(null);
     setActiveMenu('tracker');
     setTrackerMounted(true);
   }, []);
   // 跳到项目：回写选中项目并切到工作台（项目仅在某工作空间已选中时可达，故 selectedWorkspace 必已存在）。
-  const selectProject = useCallback((project: Project) => {
+  const selectProject = useCallback((project: WorkspaceProjectModel) => {
     setSelectedProject(project);
     setActiveMenu('tracker');
     setTrackerMounted(true);

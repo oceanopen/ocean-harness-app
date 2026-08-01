@@ -1,4 +1,4 @@
-import type { Issue } from '../IssueListPage';
+import type { ProjectIssueResponseData } from '@src/service';
 import { Draggable } from '@hello-pangea/dnd';
 import { CalendarMonthOutlined as CalendarMonthOutlinedIcon } from '@mui/icons-material';
 import { Box, Paper, Tooltip, Typography } from '@mui/material';
@@ -7,9 +7,9 @@ import { PriorityIcon } from '../IssueListPage';
 import { truncateSx } from './shared';
 
 interface KanbanCardProps {
-  issue: Issue;
+  issue: ProjectIssueResponseData;
   index: number;
-  onOpen: (issue: Issue) => void;
+  onOpen: (issue: ProjectIssueResponseData) => void;
 }
 
 // 看板卡片：优先级图标 + #id + 标题（截断）+ 标签色块 + 目标日期。

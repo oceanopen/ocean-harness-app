@@ -1,3 +1,4 @@
+import type { WorkspaceModel } from '@src/service';
 import {
   AddOutlined as AddOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
@@ -25,10 +26,10 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { WorkspaceService } from '@src/service';
 import { formatDate, formatRelativeTime } from '@src/shared/time';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiPost } from './api';
 import WorkspaceDialog from './components/WorkspaceDialog';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -42,21 +43,10 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
-// Workspace：对齐后端 model.Workspace 的 JSON 形态（t_workspaces）。
-// getList 不预载 project/label 关联，故仅声明顶层字段；关联字段后续按需扩展。
-// 由 WorkspaceDialog 以 `import type` 复用（类型单向依赖，无运行时循环）。
-export interface Workspace {
-  id: number;
-  name: string;
-  slug: string;
-  description: string;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-}
+// WorkspaceModel 类型与请求封装已迁移至 @src/service（WorkspaceService）。
 
 interface WorkspacesPageProps {
-  onSelect: (ws: Workspace) => void;
+  onSelect: (ws: WorkspaceModel) => void;
 }
 
 // 工作空间管理页（tracker 窗口未选中工作空间时的全屏视图）。
@@ -66,14 +56,14 @@ interface WorkspacesPageProps {
 function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<LoadStatus>('loading');
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceModel[]>([]);
   // toast：保留最近一次内容，toastOpen 控制显隐（退出动画期间内容不闪烁）。
   const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
   const [toastOpen, setToastOpen] = useState(false);
   const [searchName, setSearchName] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<Workspace | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Workspace | null>(null);
+  const [editTarget, setEditTarget] = useState<WorkspaceModel | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceModel | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const showToast = useCallback((text: string, severity: ToastSeverity) => {
@@ -84,7 +74,7 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
   const load = useCallback(async () => {
     setStatus('loading');
     try {
-      const data = await apiPost<Workspace[]>('/api/tracker/workspace/getList');
+      const data = await WorkspaceService.getList();
       setWorkspaces(data);
       setStatus('ready');
     } catch {
@@ -104,12 +94,12 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
     return [...filtered].sort((a, b) => b.id - a.id);
   }, [workspaces, searchName]);
 
-  const handleCreated = useCallback((ws: Workspace) => {
+  const handleCreated = useCallback((ws: WorkspaceModel) => {
     setWorkspaces(prev => [...prev, ws]);
     showToast(t('tracker:toast.created', { name: ws.name }), 'success');
   }, [t, showToast]);
 
-  const handleUpdated = useCallback((ws: Workspace) => {
+  const handleUpdated = useCallback((ws: WorkspaceModel) => {
     setWorkspaces(prev => prev.map(w => (w.id === ws.id ? ws : w)));
     showToast(t('tracker:toast.updated', { name: ws.name }), 'success');
   }, [t, showToast]);
@@ -120,7 +110,7 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
     }
     setDeleting(true);
     try {
-      await apiPost('/api/tracker/workspace/delete', { id: deleteTarget.id });
+      await WorkspaceService.delete({ id: deleteTarget.id });
       setWorkspaces(prev => prev.filter(w => w.id !== deleteTarget.id));
       showToast(t('tracker:toast.deleted'), 'success');
       setDeleteTarget(null);
@@ -295,10 +285,10 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
 // 单卡片：整卡可点击进入（onSelect）；Header 放编辑/删除图标（stopPropagation 避免触发进入）；
 // Content 放 slug/描述/更新时间。height:100% + flex column 保证网格内同行卡片等高。
 interface WorkspaceCardProps {
-  ws: Workspace;
-  onSelect: (ws: Workspace) => void;
-  onEdit: (ws: Workspace) => void;
-  onDelete: (ws: Workspace) => void;
+  ws: WorkspaceModel;
+  onSelect: (ws: WorkspaceModel) => void;
+  onEdit: (ws: WorkspaceModel) => void;
+  onDelete: (ws: WorkspaceModel) => void;
 }
 
 function WorkspaceCard({ ws, onSelect, onEdit, onDelete }: WorkspaceCardProps) {

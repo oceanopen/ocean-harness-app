@@ -1,13 +1,12 @@
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
 import type { KeyboardEvent, ReactNode } from 'react';
-import type { Project } from '../tracker/ProjectListPage';
-import type { Workspace } from '../tracker/WorkspacesPage';
 import type { CommandConfig, CommandGroup } from './types';
 import { SearchOutlined as SearchOutlinedIcon } from '@mui/icons-material';
 import { Box, CircularProgress, Dialog, Typography } from '@mui/material';
+import { WorkspaceProjectService, WorkspaceService } from '@src/service';
 import { Command } from 'cmdk';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiPost } from '../tracker/api';
 import { useCommandPalette } from './CommandPaletteContext';
 import { getCommandsByGroup } from './registry';
 
@@ -96,8 +95,8 @@ function CommandPaletteDialog() {
   // 受控搜索词：Backspace 返回逻辑依赖判空，故不交给 cmdk 内部状态。
   const [search, setSearch] = useState('');
   // 二级页实体列表 + 加载态（避免 load 期间误显"无结果"）。
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [workspaces, setWorkspaces] = useState<WorkspaceModel[]>([]);
+  const [projects, setProjects] = useState<WorkspaceProjectModel[]>([]);
   const [loading, setLoading] = useState(false);
 
   // 打开/切页时重置搜索词：渲染期据 (isOpen, subPage) 变化调整（React 推荐），避免 effect 内同步 setState。
@@ -127,13 +126,13 @@ function CommandPaletteDialog() {
     setLoading(true);
     try {
       if (ctx.subPage === 'workspace') {
-        setWorkspaces(await apiPost<Workspace[]>('/api/tracker/workspace/getList'));
+        setWorkspaces(await WorkspaceService.getList());
       } else if (ctx.subPage === 'project') {
         if (ctx.currentWorkspaceId == null) {
           setProjects([]);
           return;
         }
-        setProjects(await apiPost<Project[]>('/api/tracker/project/getList', { workspaceId: ctx.currentWorkspaceId }));
+        setProjects(await WorkspaceProjectService.getList({ workspaceId: ctx.currentWorkspaceId }));
       }
     } catch (e) {
       console.warn(`[command-palette] load ${ctx.subPage} failed:`, e);
@@ -160,11 +159,11 @@ function CommandPaletteDialog() {
   };
 
   // 二级页：选中实体 → 宿主回写 → 关闭。
-  const pickWorkspace = (ws: Workspace) => {
+  const pickWorkspace = (ws: WorkspaceModel) => {
     ctx.selectWorkspace(ws);
     ctx.close();
   };
-  const pickProject = (project: Project) => {
+  const pickProject = (project: WorkspaceProjectModel) => {
     ctx.selectProject(project);
     ctx.close();
   };
@@ -301,10 +300,10 @@ function CommandPaletteDialog() {
 // 二级页实体列表：loading 显进度环，否则渲染 cmdk Item（实体名既作展示又作过滤 value）。
 interface SubPageListProps {
   loading: boolean;
-  workspaces: Workspace[];
-  projects: Project[];
-  onPickWorkspace: (ws: Workspace) => void;
-  onPickProject: (project: Project) => void;
+  workspaces: WorkspaceModel[];
+  projects: WorkspaceProjectModel[];
+  onPickWorkspace: (ws: WorkspaceModel) => void;
+  onPickProject: (project: WorkspaceProjectModel) => void;
 }
 
 function SubPageList({ loading, workspaces, projects, onPickWorkspace, onPickProject }: SubPageListProps) {

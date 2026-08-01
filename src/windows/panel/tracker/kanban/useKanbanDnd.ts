@@ -1,8 +1,8 @@
 import type { DropResult } from '@hello-pangea/dnd';
+import type { ProjectIssueResponseData, ProjectStateModel } from '@src/service';
 import type { Dispatch, SetStateAction } from 'react';
-import type { Issue, ProjectState } from '../IssueListPage';
+import { ProjectIssueService } from '@src/service';
 import { useCallback, useRef } from 'react';
-import { apiPost } from '../api';
 
 type ToastSeverity = 'success' | 'error';
 
@@ -10,9 +10,9 @@ const STEP = 10000;
 const EPSILON = 1e-6;
 
 export interface UseKanbanDndOptions {
-  columnsByState: Map<number, Issue[]>;
-  stateMap: Map<number, ProjectState>;
-  setIssues: Dispatch<SetStateAction<Issue[]>>;
+  columnsByState: Map<number, ProjectIssueResponseData[]>;
+  stateMap: Map<number, ProjectStateModel>;
+  setIssues: Dispatch<SetStateAction<ProjectIssueResponseData[]>>;
   showToast: (text: string, severity: ToastSeverity) => void;
   moveFailedText: (message: string) => string;
 }
@@ -20,7 +20,7 @@ export interface UseKanbanDndOptions {
 // computeSortOrder 按分数插值算落点 sortOrder：列空/列首/列尾/列中四情形；
 // 邻值差 < EPSILON 时降级为整数步进，避免反复对半后浮点精度塌缩。
 // 入参 col 应已剔除被拖卡片自身（同列下拖时避免把自己算进邻居导致 index 偏移）。
-export function computeSortOrder(col: Issue[], index: number): number {
+export function computeSortOrder(col: ProjectIssueResponseData[], index: number): number {
   if (col.length === 0) {
     return STEP;
   }
@@ -44,7 +44,7 @@ export function computeSortOrder(col: Issue[], index: number): number {
 export function useKanbanDnd(opts: UseKanbanDndOptions) {
   const { columnsByState, stateMap, setIssues, showToast, moveFailedText } = opts;
   // 回滚快照：在 setIssues 的 updater 内捕获更新前的最新 state，失败时整表恢复。
-  const snapshotRef = useRef<Issue[] | null>(null);
+  const snapshotRef = useRef<ProjectIssueResponseData[] | null>(null);
   // 同卡飞行中串行化：避免快速连拖同一张卡导致 fetch 响应乱序覆盖乐观状态。
   const inFlightRef = useRef<Set<number>>(new Set());
 
@@ -78,7 +78,7 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
       if (!issue) {
         return prev;
       }
-      const moved: Issue = {
+      const moved: ProjectIssueResponseData = {
         ...issue,
         stateId: destStateId,
         sortOrder: newSortOrder,
@@ -88,7 +88,7 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
     });
 
     inFlightRef.current.add(issueId);
-    apiPost<Issue>('/api/tracker/projectIssue/move', {
+    ProjectIssueService.move({
       id: issueId,
       stateId: destStateId,
       sortOrder: newSortOrder,

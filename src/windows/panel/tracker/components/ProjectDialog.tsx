@@ -1,4 +1,4 @@
-import type { Project } from '../ProjectListPage';
+import type { WorkspaceProjectModel } from '@src/service';
 import {
   Alert,
   Box,
@@ -9,9 +9,9 @@ import {
   DialogTitle,
   TextField,
 } from '@mui/material';
+import { WorkspaceProjectService } from '@src/service';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiPost } from '../api';
 
 // 新建/编辑项目弹窗。
 // 传入 project 时为编辑模式：标题改为"编辑项目"、ID 只读展示、字段反显、提交调用 update；
@@ -25,9 +25,9 @@ import { apiPost } from '../api';
 interface ProjectDialogProps {
   workspaceId: number;
   onClose: () => void;
-  onCreated: (p: Project) => void;
-  onUpdated?: (p: Project) => void;
-  project?: Project;
+  onCreated: (p: WorkspaceProjectModel) => void;
+  onUpdated?: (p: WorkspaceProjectModel) => void;
+  project?: WorkspaceProjectModel;
 }
 
 // 描述/emoji 最大字数（与后端 binding max=500 / max=20 对齐）。
@@ -55,13 +55,13 @@ function ProjectDialog({ workspaceId, onClose, onCreated, onUpdated, project }: 
         description: description.trim(),
       };
       if (isEdit && project) {
-        const updated = await apiPost<Project>('/api/tracker/project/update', {
+        const updated = await WorkspaceProjectService.update({
           id: project.id,
           ...payload,
         });
         onUpdated?.(updated);
       } else {
-        const created = await apiPost<Project>('/api/tracker/project/create', {
+        const created = await WorkspaceProjectService.create({
           workspaceId,
           ...payload,
         });

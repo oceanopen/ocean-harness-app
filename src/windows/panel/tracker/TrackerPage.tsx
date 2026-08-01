@@ -1,5 +1,4 @@
-import type { Project } from './ProjectListPage';
-import type { Workspace } from './WorkspacesPage';
+import type { WorkspaceModel, WorkspaceProjectModel } from '@src/service';
 import { AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -10,10 +9,10 @@ import WorkspacesPage from './WorkspacesPage';
 // tracker 三级选择状态由父级 PanelApp 持有：命令面板「跳到工作空间/项目」需回写同一份状态，
 // 故 TrackerPage 改为受控——selected/selectedProject 经 props 传入，变更经回调上抛。
 interface TrackerPageProps {
-  selected: Workspace | null;
-  selectedProject: Project | null;
-  onSelectWorkspace: (ws: Workspace | null) => void;
-  onSelectProject: (project: Project | null) => void;
+  selected: WorkspaceModel | null;
+  selectedProject: WorkspaceProjectModel | null;
+  onSelectWorkspace: (ws: WorkspaceModel | null) => void;
+  onSelectProject: (project: WorkspaceProjectModel | null) => void;
 }
 
 // TrackerPage：控制台「工作台」页面内容组件（工作空间 → 项目 → Issue 三级管理）。

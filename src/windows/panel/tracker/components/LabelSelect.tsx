@@ -1,4 +1,4 @@
-import type { WorkspaceLabel } from '../IssueListPage';
+import type { WorkspaceLabelModel } from '@src/service';
 import { CheckOutlined as CheckOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Autocomplete, Box, Button, Chip, TextField, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -6,8 +6,8 @@ import { useTranslation } from 'react-i18next';
 // issue 标签多选：Autocomplete multiple，勾选/取消即触发 onToggle（父级本地切换 labels，统一随保存提交）。
 // 底部「管理标签」按钮打开 LabelManagerDialog。受控（value=issueLabels）。
 interface LabelSelectProps {
-  issueLabels: WorkspaceLabel[];
-  options: WorkspaceLabel[];
+  issueLabels: WorkspaceLabelModel[];
+  options: WorkspaceLabelModel[];
   onToggle: (labelId: number) => void;
   onOpenManager: () => void;
   disabled?: boolean;

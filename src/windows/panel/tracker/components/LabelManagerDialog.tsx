@@ -1,4 +1,4 @@
-import type { WorkspaceLabel } from '../IssueListPage';
+import { WorkspaceLabelService, type WorkspaceLabelModel } from '@src/service';
 import {
   AddOutlined as AddOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
@@ -21,7 +21,6 @@ import {
 } from '@mui/material';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { apiPost } from '../api';
 
 // 预设色板（与 plane 默认状态色系接近），勾选 + 可手填 hex。
 const COLOR_PRESETS = [
@@ -43,7 +42,7 @@ type ToastSeverity = 'success' | 'error';
 // delete 级联清 issue 关联。每次变更调 onChanged 让父级重拉。
 interface LabelManagerDialogProps {
   workspaceId: number;
-  labels: WorkspaceLabel[];
+  labels: WorkspaceLabelModel[];
   onClose: () => void;
   onChanged: () => void;
 }
@@ -56,7 +55,7 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<WorkspaceLabel | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceLabelModel | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
   const [toastOpen, setToastOpen] = useState(false);
@@ -77,7 +76,7 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
     setError(null);
   };
 
-  const startEdit = (l: WorkspaceLabel) => {
+  const startEdit = (l: WorkspaceLabelModel) => {
     setEditId(l.id);
     setName(l.name);
     setColor(l.color || COLOR_PRESETS[0]);
@@ -91,10 +90,10 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
     try {
       const payload = { name: name.trim(), color: color.trim(), description: description.trim() };
       if (isEdit && editId !== null) {
-        await apiPost('/api/tracker/workspaceLabel/update', { id: editId, ...payload });
+        await WorkspaceLabelService.update({ id: editId, ...payload });
         showToast(t('tracker:issue.toast.labelUpdated'), 'success');
       } else {
-        await apiPost('/api/tracker/workspaceLabel/create', { workspaceId, ...payload });
+        await WorkspaceLabelService.create({ workspaceId, ...payload });
         showToast(t('tracker:issue.toast.labelCreated', { name: payload.name }), 'success');
       }
       onChanged();
@@ -113,7 +112,7 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
     }
     setDeleting(true);
     try {
-      await apiPost('/api/tracker/workspaceLabel/delete', { id: deleteTarget.id });
+      await WorkspaceLabelService.delete({ id: deleteTarget.id });
       showToast(t('tracker:issue.toast.labelDeleted'), 'success');
       if (editId === deleteTarget.id) {
         resetForm();

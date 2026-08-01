@@ -1,5 +1,5 @@
+import type { ProjectIssueResponseData, ProjectStateModel } from '@src/service';
 import type { Dispatch, SetStateAction } from 'react';
-import type { Issue, ProjectState } from '../IssueListPage';
 import { DragDropContext } from '@hello-pangea/dnd';
 import { Box, CircularProgress } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -8,11 +8,11 @@ import { useKanbanColumns } from './useKanbanColumns';
 import { useKanbanDnd } from './useKanbanDnd';
 
 interface KanbanViewProps {
-  issues: Issue[];
-  states: ProjectState[];
-  stateMap: Map<number, ProjectState>;
-  setIssues: Dispatch<SetStateAction<Issue[]>>;
-  onOpen: (issue: Issue) => void;
+  issues: ProjectIssueResponseData[];
+  states: ProjectStateModel[];
+  stateMap: Map<number, ProjectStateModel>;
+  setIssues: Dispatch<SetStateAction<ProjectIssueResponseData[]>>;
+  onOpen: (issue: ProjectIssueResponseData) => void;
   showToast: (text: string, severity: 'success' | 'error') => void;
 }
 
