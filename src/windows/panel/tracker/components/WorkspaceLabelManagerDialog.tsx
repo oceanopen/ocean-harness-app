@@ -1,4 +1,4 @@
-import { WorkspaceLabelService, type WorkspaceLabelModel } from '@src/services';
+import type { WorkspaceLabelModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
@@ -19,6 +19,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import { WorkspaceLabelService } from '@src/services';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -39,7 +40,7 @@ type ToastSeverity = 'success' | 'error';
 
 // workspace 标签管理弹窗（CRUD）：顶部新建/编辑表单（name + 色板/hex + description）+ 已有标签列表。
 // 由父组件按需挂载。create 不传 sortOrder（后端 MAX+10000）；update 直接覆盖 color/description；
-// delete 级联清 issue 关联。每次变更调 onChanged 让父级重拉。
+// delete 级联清 projectIssue 关联。每次变更调 onChanged 让父级重拉。
 interface LabelManagerDialogProps {
   workspaceId: number;
   labels: WorkspaceLabelModel[];
@@ -47,7 +48,7 @@ interface LabelManagerDialogProps {
   onChanged: () => void;
 }
 
-function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelManagerDialogProps) {
+function WorkspaceLabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelManagerDialogProps) {
   const { t } = useTranslation();
   const [editId, setEditId] = useState<number | null>(null);
   const [name, setName] = useState('');
@@ -91,16 +92,16 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
       const payload = { name: name.trim(), color: color.trim(), description: description.trim() };
       if (isEdit && editId !== null) {
         await WorkspaceLabelService.update({ id: editId, ...payload });
-        showToast(t('tracker:issue.toast.labelUpdated'), 'success');
+        showToast(t('tracker:projectIssue.toast.labelUpdated'), 'success');
       } else {
         await WorkspaceLabelService.create({ workspaceId, ...payload });
-        showToast(t('tracker:issue.toast.labelCreated', { name: payload.name }), 'success');
+        showToast(t('tracker:projectIssue.toast.labelCreated', { name: payload.name }), 'success');
       }
       onChanged();
       resetForm();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(t('tracker:issue.toast.labelOpFailed', { message: msg }));
+      setError(t('tracker:projectIssue.toast.labelOpFailed', { message: msg }));
     } finally {
       setSubmitting(false);
     }
@@ -113,7 +114,7 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
     setDeleting(true);
     try {
       await WorkspaceLabelService.delete({ id: deleteTarget.id });
-      showToast(t('tracker:issue.toast.labelDeleted'), 'success');
+      showToast(t('tracker:projectIssue.toast.labelDeleted'), 'success');
       if (editId === deleteTarget.id) {
         resetForm();
       }
@@ -121,7 +122,7 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
       onChanged();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast(t('tracker:issue.toast.labelOpFailed', { message: msg }), 'error');
+      showToast(t('tracker:projectIssue.toast.labelOpFailed', { message: msg }), 'error');
     } finally {
       setDeleting(false);
     }
@@ -129,13 +130,13 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
 
   return (
     <Dialog open onClose={submitting || deleting ? undefined : onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{t('tracker:issue.label.title')}</DialogTitle>
+      <DialogTitle>{t('tracker:workspaceLabel.title')}</DialogTitle>
       <DialogContent>
         <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {/* 新建/编辑表单 */}
           <TextField
-            label={t('tracker:issue.label.name')}
-            placeholder={t('tracker:issue.label.namePlaceholder')}
+            label={t('tracker:workspaceLabel.name')}
+            placeholder={t('tracker:workspaceLabel.namePlaceholder')}
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -147,7 +148,7 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
             disabled={submitting}
           />
           <Box>
-            <Typography variant="caption" color="text.secondary">{t('tracker:issue.label.color')}</Typography>
+            <Typography variant="caption" color="text.secondary">{t('tracker:workspaceLabel.color')}</Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.5, alignItems: 'center' }}>
               {COLOR_PRESETS.map(c => (
                 <Box
@@ -179,8 +180,8 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
             </Box>
           </Box>
           <TextField
-            label={t('tracker:issue.label.description')}
-            placeholder={t('tracker:issue.label.descriptionPlaceholder')}
+            label={t('tracker:workspaceLabel.description')}
+            placeholder={t('tracker:workspaceLabel.descriptionPlaceholder')}
             value={description}
             onChange={(e) => {
               setDescription(e.target.value);
@@ -203,11 +204,11 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
               onClick={handleCreateOrUpdate}
               disabled={!canSubmit}
             >
-              {isEdit ? t('tracker:issue.label.save') : t('tracker:issue.label.create')}
+              {isEdit ? t('tracker:workspaceLabel.save') : t('tracker:workspaceLabel.create')}
             </Button>
             {isEdit && (
               <Button color="inherit" size="small" onClick={resetForm} disabled={submitting}>
-                {t('tracker:issue.label.cancel')}
+                {t('tracker:workspaceLabel.cancel')}
               </Button>
             )}
           </Box>
@@ -220,39 +221,39 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
               <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: l.color || 'text.disabled', flexShrink: 0 }} />
               <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{l.name}</Typography>
               {l.description && <Chip label={l.description} size="small" variant="outlined" sx={{ maxWidth: 160 }} />}
-              <IconButton size="small" onClick={() => startEdit(l)} aria-label={t('tracker:issue.label.edit')}>
+              <IconButton size="small" onClick={() => startEdit(l)} aria-label={t('tracker:workspaceLabel.edit')}>
                 <EditOutlinedIcon />
               </IconButton>
-              <IconButton size="small" onClick={() => setDeleteTarget(l)} aria-label={t('tracker:issue.label.delete')}>
+              <IconButton size="small" onClick={() => setDeleteTarget(l)} aria-label={t('tracker:workspaceLabel.delete')}>
                 <DeleteOutlinedIcon />
               </IconButton>
             </Box>
           ))}
           {labels.length === 0 && (
             <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 1 }}>
-              {t('tracker:issue.label.empty')}
+              {t('tracker:workspaceLabel.empty')}
             </Typography>
           )}
         </Box>
       </DialogContent>
       <DialogActions>
         <Button color="inherit" onClick={onClose} disabled={submitting || deleting}>
-          {t('tracker:issue.label.close')}
+          {t('tracker:workspaceLabel.close')}
         </Button>
       </DialogActions>
 
       {/* 删除确认 */}
       <Dialog open={deleteTarget !== null} onClose={deleting ? undefined : () => setDeleteTarget(null)}>
-        <DialogTitle>{t('tracker:issue.label.delete')}</DialogTitle>
+        <DialogTitle>{t('tracker:workspaceLabel.delete')}</DialogTitle>
         <DialogContent>
-          <Typography>{t('tracker:issue.label.deleteConfirmMsg', { name: deleteTarget?.name ?? '' })}</Typography>
+          <Typography>{t('tracker:workspaceLabel.deleteConfirmMsg', { name: deleteTarget?.name ?? '' })}</Typography>
         </DialogContent>
         <DialogActions>
           <Button color="inherit" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-            {t('tracker:issue.label.cancel')}
+            {t('tracker:workspaceLabel.cancel')}
           </Button>
           <Button color="error" variant="contained" onClick={handleDelete} disabled={deleting}>
-            {t('tracker:issue.label.delete')}
+            {t('tracker:workspaceLabel.delete')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -269,4 +270,4 @@ function LabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelMa
   );
 }
 
-export default LabelManagerDialog;
+export default WorkspaceLabelManagerDialog;

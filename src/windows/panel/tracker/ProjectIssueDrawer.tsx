@@ -1,7 +1,6 @@
 import type { Priority, ProjectIssueResponseData, ProjectStateModel, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
 import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon } from '@mui/icons-material';
 import {
-  Alert,
   Box,
   Button,
   Dialog,
@@ -10,75 +9,71 @@ import {
   DialogTitle,
   Drawer,
   IconButton,
-  Snackbar,
   TextField,
   Typography,
 } from '@mui/material';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { ProjectIssueService, WorkspaceLabelService } from '@src/services';
+import { WorkspaceLabelService } from '@src/services';
 import { formatDate } from '@src/shared/time';
+import { useToast } from '@src/shared/useToast';
+import { useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } from '@src/state/tracker';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import LabelManagerDialog from './components/LabelManagerDialog';
-import LabelSelect from './components/LabelSelect';
 import PrioritySelect from './components/PrioritySelect';
+import ProjectStateSelect from './components/ProjectStateSelect';
 import RichTextEditor from './components/RichTextEditor';
-import StateSelect from './components/StateSelect';
+import WorkspaceLabelManagerDialog from './components/WorkspaceLabelManagerDialog';
+import WorkspaceLabelSelect from './components/WorkspaceLabelSelect';
 import 'dayjs/locale/zh-cn';
 
-type ToastSeverity = 'success' | 'error';
-
-interface IssueDrawerProps {
+interface ProjectIssueDrawerProps {
   mode: 'create' | 'edit';
-  project: WorkspaceProjectModel;
-  states: ProjectStateModel[];
-  issue?: ProjectIssueResponseData; // edit 模式必传
+  workspaceProject: WorkspaceProjectModel;
+  projectStates: ProjectStateModel[];
+  projectIssue?: ProjectIssueResponseData; // edit 模式必传
   onClose: () => void;
-  onCreated?: (issue: ProjectIssueResponseData) => void;
-  onUpdated?: (issue: ProjectIssueResponseData) => void;
+  onCreated?: (projectIssue: ProjectIssueResponseData) => void;
+  onUpdated?: (projectIssue: ProjectIssueResponseData) => void;
   onDeleted?: (issueId: number) => void;
 }
 
 // Issue 抽屉（create/edit 共用）。所有字段（含 labels）本地态，点保存/创建一次性提交，
 // 成功后关闭抽屉 + 父级刷新列表；失败 drawer 内弹 error toast（成功 toast 由父级统一弹）。
 // mode 仅决定初值来源、提交 API、头部标题/元信息/删除按钮显隐。
-function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdated, onDeleted }: IssueDrawerProps) {
+function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssue, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
   const { t, i18n } = useTranslation();
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
-  // 属性字段本地态（挂载即按 mode/issue 初始化，每次打开新挂载，无需 reset effect）。
-  const defaultStateId = states.find(s => s.isDefault === 'Y')?.id ?? states[0]?.id ?? 0;
-  const [name, setName] = useState(issue?.name ?? '');
-  const [description, setDescription] = useState(issue?.description ?? '');
-  const [stateId, setStateId] = useState(issue?.stateId ?? defaultStateId);
-  const [priority, setPriority] = useState<Priority>(issue?.priority ?? 'none');
-  const [startDate, setStartDate] = useState(issue?.startDate ?? '');
-  const [targetDate, setTargetDate] = useState(issue?.targetDate ?? '');
-  const [labels, setLabels] = useState<WorkspaceLabelModel[]>(issue?.labels ?? []);
+  const createProjectIssue = useCreateProjectIssue(workspaceProject.id);
+  const updateProjectIssue = useUpdateProjectIssue(workspaceProject.id);
+  const deleteProjectIssue = useDeleteProjectIssue(workspaceProject.id);
+  // 属性字段本地态（挂载即按 mode/projectIssue 初始化，每次打开新挂载，无需 reset effect）。
+  const defaultStateId = projectStates.find(s => s.isDefault === 'Y')?.id ?? projectStates[0]?.id ?? 0;
+  const [name, setName] = useState(projectIssue?.name ?? '');
+  const [description, setDescription] = useState(projectIssue?.description ?? '');
+  const [stateId, setStateId] = useState(projectIssue?.stateId ?? defaultStateId);
+  const [priority, setPriority] = useState<Priority>(projectIssue?.priority ?? 'none');
+  const [startDate, setStartDate] = useState(projectIssue?.startDate ?? '');
+  const [targetDate, setTargetDate] = useState(projectIssue?.targetDate ?? '');
+  const [labels, setLabels] = useState<WorkspaceLabelModel[]>(projectIssue?.labels ?? []);
   const [wsLabels, setWsLabels] = useState<WorkspaceLabelModel[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
-  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
-  const [toastOpen, setToastOpen] = useState(false);
-
-  const showToast = useCallback((text: string, severity: ToastSeverity) => {
-    setToast({ text, severity });
-    setToastOpen(true);
-  }, []);
+  const { show: showToast, snack } = useToast();
 
   const loadWsLabels = useCallback(async () => {
     try {
-      const data = await WorkspaceLabelService.getList({ workspaceId: project.workspaceId });
+      const data = await WorkspaceLabelService.getList({ workspaceId: workspaceProject.workspaceId });
       setWsLabels(data);
       // 标签管理里若有删除，剔除本地已选 labels 中已不存在的。
       setLabels(prev => prev.filter(l => data.some(w => w.id === l.id)));
     } catch {
       // 标签选项加载失败不阻塞编辑。
     }
-  }, [project.workspaceId]);
+  }, [workspaceProject.workspaceId]);
 
   useEffect(() => {
     void loadWsLabels();
@@ -87,7 +82,7 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
   // labels 是否相对原值变化（id 集合比较，覆盖增/删/替换）。
   const labelsDirty = (() => {
     const cur = new Set(labels.map(l => l.id));
-    const orig = new Set((issue?.labels ?? []).map(l => l.id));
+    const orig = new Set((projectIssue?.labels ?? []).map(l => l.id));
     if (cur.size !== orig.size) {
       return true;
     }
@@ -99,13 +94,13 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
     return false;
   })();
 
-  const dirty = mode === 'edit' && !!issue && (
-    name !== issue.name
-    || description !== issue.description
-    || stateId !== issue.stateId
-    || priority !== issue.priority
-    || startDate !== issue.startDate
-    || targetDate !== issue.targetDate
+  const dirty = mode === 'edit' && !!projectIssue && (
+    name !== projectIssue.name
+    || description !== projectIssue.description
+    || stateId !== projectIssue.stateId
+    || priority !== projectIssue.priority
+    || startDate !== projectIssue.startDate
+    || targetDate !== projectIssue.targetDate
     || labelsDirty
   );
 
@@ -126,9 +121,9 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
     setSubmitting(true);
     try {
       if (mode === 'create') {
-        const created = await ProjectIssueService.create({
-          projectId: project.id,
-          workspaceId: project.workspaceId,
+        const created = await createProjectIssue.mutateAsync({
+          projectId: workspaceProject.id,
+          workspaceId: workspaceProject.workspaceId,
           name: name.trim(),
           description,
           priority,
@@ -140,8 +135,8 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
         onCreated?.(created);
         onClose();
       } else {
-        const updated = await ProjectIssueService.update({
-          id: issue!.id,
+        const updated = await updateProjectIssue.mutateAsync({
+          id: projectIssue!.id,
           name: name.trim(),
           description,
           stateId,
@@ -157,8 +152,8 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
       const msg = e instanceof Error ? e.message : String(e);
       showToast(
         mode === 'create'
-          ? t('tracker:issue.toast.createFailed', { message: msg })
-          : t('tracker:issue.toast.updateFailed', { message: msg }),
+          ? t('tracker:projectIssue.toast.createFailed', { message: msg })
+          : t('tracker:projectIssue.toast.updateFailed', { message: msg }),
         'error',
       );
     } finally {
@@ -167,17 +162,17 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
   };
 
   const handleDelete = async () => {
-    if (!issue) {
+    if (!projectIssue) {
       return;
     }
     setDeleting(true);
     try {
-      await ProjectIssueService.delete({ id: issue.id });
-      onDeleted?.(issue.id);
+      await deleteProjectIssue.mutateAsync(projectIssue.id);
+      onDeleted?.(projectIssue.id);
       onClose();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast(t('tracker:issue.toast.deleteFailed', { message: msg }), 'error');
+      showToast(t('tracker:projectIssue.toast.deleteFailed', { message: msg }), 'error');
     } finally {
       setDeleting(false);
       setDeleteOpen(false);
@@ -190,9 +185,9 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
         {/* 头部 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
-            {mode === 'edit' && issue ? `#${issue.id} ${issue.name}` : t('tracker:issue.create.title')}
+            {mode === 'edit' && projectIssue ? `#${projectIssue.id} ${projectIssue.name}` : t('tracker:projectIssue.create.title')}
           </Typography>
-          <IconButton size="small" onClick={onClose} aria-label={t('tracker:issue.detail.close')}>
+          <IconButton size="small" onClick={onClose} aria-label={t('tracker:projectIssue.detail.close')}>
             <CloseOutlinedIcon fontSize="small" />
           </IconButton>
         </Box>
@@ -200,7 +195,7 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
         {/* 内容 */}
         <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
           <TextField
-            label={t('tracker:issue.detail.name')}
+            label={t('tracker:projectIssue.detail.name')}
             value={name}
             onChange={e => setName(e.target.value)}
             fullWidth
@@ -210,22 +205,22 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
           />
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-              {t('tracker:issue.detail.description')}
+              {t('tracker:projectIssue.detail.description')}
             </Typography>
             <RichTextEditor
               value={description}
               onChange={setDescription}
-              placeholder={t('tracker:issue.rte.placeholder')}
+              placeholder={t('tracker:projectIssue.rte.placeholder')}
               disabled={submitting || deleting}
             />
           </Box>
           <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale={isZh ? 'zh-cn' : 'en'}>
             <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 1.5, alignItems: 'center' }}>
-              <Typography variant="body2" color="text.secondary">{t('tracker:issue.detail.state')}</Typography>
-              <StateSelect value={stateId} states={states} onChange={setStateId} disabled={submitting || deleting} />
-              <Typography variant="body2" color="text.secondary">{t('tracker:issue.detail.priority')}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.state')}</Typography>
+              <ProjectStateSelect value={stateId} projectStates={projectStates} onChange={setStateId} disabled={submitting || deleting} />
+              <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.priority')}</Typography>
               <PrioritySelect value={priority} onChange={setPriority} disabled={submitting || deleting} />
-              <Typography variant="body2" color="text.secondary">{t('tracker:issue.detail.startDate')}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.startDate')}</Typography>
               <DatePicker
                 format="YYYY-MM-DD"
                 value={startDate ? dayjs(startDate) : null}
@@ -233,7 +228,7 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
                 disabled={submitting || deleting}
                 slotProps={{ textField: { size: 'small', fullWidth: true } }}
               />
-              <Typography variant="body2" color="text.secondary">{t('tracker:issue.detail.targetDate')}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.targetDate')}</Typography>
               <DatePicker
                 format="YYYY-MM-DD"
                 value={targetDate ? dayjs(targetDate) : null}
@@ -243,7 +238,7 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
               />
             </Box>
           </LocalizationProvider>
-          <LabelSelect
+          <WorkspaceLabelSelect
             issueLabels={labels}
             options={wsLabels}
             onToggle={handleToggleLabel}
@@ -251,14 +246,14 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
             disabled={submitting || deleting}
           />
           {/* 元信息（仅 edit） */}
-          {mode === 'edit' && issue && (
+          {mode === 'edit' && projectIssue && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 1 }}>
               <Typography variant="caption" color="text.disabled">
-                {t('tracker:issue.detail.createdAt')} {formatDate(issue.createdAt, 'YYYY-MM-DD HH:mm')}
+                {t('tracker:projectIssue.detail.createdAt')} {formatDate(projectIssue.createdAt, 'YYYY-MM-DD HH:mm')}
               </Typography>
-              {issue.completedAt && (
+              {projectIssue.completedAt && (
                 <Typography variant="caption" color="text.disabled">
-                  {t('tracker:issue.detail.completedAt')} {formatDate(issue.completedAt, 'YYYY-MM-DD HH:mm')}
+                  {t('tracker:projectIssue.detail.completedAt')} {formatDate(projectIssue.completedAt, 'YYYY-MM-DD HH:mm')}
                 </Typography>
               )}
             </Box>
@@ -275,22 +270,22 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
               onClick={() => setDeleteOpen(true)}
               disabled={submitting || deleting}
             >
-              {t('tracker:issue.detail.delete')}
+              {t('tracker:projectIssue.detail.delete')}
             </Button>
           )}
           <Box sx={{ flex: 1 }} />
           <Button color="inherit" onClick={onClose} disabled={submitting || deleting}>
-            {t('tracker:issue.create.cancel')}
+            {t('tracker:projectIssue.create.cancel')}
           </Button>
           <Button variant="contained" onClick={handleSave} disabled={!canSubmit || submitting}>
-            {mode === 'create' ? t('tracker:issue.create.confirm') : t('tracker:issue.detail.save')}
+            {mode === 'create' ? t('tracker:projectIssue.create.confirm') : t('tracker:projectIssue.detail.save')}
           </Button>
         </Box>
       </Box>
 
       {managerOpen && (
-        <LabelManagerDialog
-          workspaceId={project.workspaceId}
+        <WorkspaceLabelManagerDialog
+          workspaceId={workspaceProject.workspaceId}
           labels={wsLabels}
           onClose={() => setManagerOpen(false)}
           onChanged={loadWsLabels}
@@ -299,31 +294,24 @@ function IssueDrawer({ mode, project, states, issue, onClose, onCreated, onUpdat
 
       {mode === 'edit' && (
         <Dialog open={deleteOpen} onClose={deleting ? undefined : () => setDeleteOpen(false)}>
-          <DialogTitle>{t('tracker:issue.detail.deleteTitle')}</DialogTitle>
+          <DialogTitle>{t('tracker:projectIssue.detail.deleteTitle')}</DialogTitle>
           <DialogContent>
-            <Typography>{t('tracker:issue.detail.deleteConfirmMsg', { name: issue?.name ?? '' })}</Typography>
+            <Typography>{t('tracker:projectIssue.detail.deleteConfirmMsg', { name: projectIssue?.name ?? '' })}</Typography>
           </DialogContent>
           <DialogActions>
             <Button color="inherit" onClick={() => setDeleteOpen(false)} disabled={deleting}>
-              {t('tracker:issue.detail.cancel')}
+              {t('tracker:projectIssue.detail.cancel')}
             </Button>
             <Button color="error" variant="contained" onClick={handleDelete} disabled={deleting}>
-              {t('tracker:issue.detail.delete')}
+              {t('tracker:projectIssue.detail.delete')}
             </Button>
           </DialogActions>
         </Dialog>
       )}
 
-      <Snackbar
-        open={toastOpen}
-        autoHideDuration={2000}
-        onClose={() => setToastOpen(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity={toast.severity} variant="filled">{toast.text}</Alert>
-      </Snackbar>
+      {snack}
     </Drawer>
   );
 }
 
-export default IssueDrawer;
+export default ProjectIssueDrawer;

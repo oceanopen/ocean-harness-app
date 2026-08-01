@@ -22,20 +22,15 @@ import {
   DialogTitle,
   Divider,
   IconButton,
-  Snackbar,
   TextField,
   Typography,
 } from '@mui/material';
-import { WorkspaceService } from '@src/services';
 import { formatDate, formatRelativeTime } from '@src/shared/time';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useToast } from '@src/shared/useToast';
+import { useDeleteWorkspace, useWorkspaces } from '@src/state/tracker';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import WorkspaceDialog from './components/WorkspaceDialog';
-
-type LoadStatus = 'loading' | 'ready' | 'error';
-
-// 浮层 toast 严重级别（成功用 success，失败用 error）。
-type ToastSeverity = 'success' | 'error';
 
 const truncateSx = {
   overflow: 'hidden',
@@ -43,65 +38,38 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
-// WorkspaceModel 类型与请求封装已迁移至 @src/services（WorkspaceService）。
-
 interface WorkspacesPageProps {
   onSelect: (ws: WorkspaceModel) => void;
 }
 
 // 工作空间管理页（tracker 窗口未选中工作空间时的全屏视图）。
-// 三态机 + 顶栏(搜索+新建) + 响应式卡片网格 + toast，照搬 RepositoriesPage 范式。
-// 数据刷新用接口返回值直接 setState（仅本页操作变更，无后台 watcher，故不引入事件）。
-// 选中某卡片经 onSelect 回调上抛，由 TrackerApp 切换到三栏工作视图。
+// 列表数据走 useWorkspaces()（与命令面板二级页共享缓存）；增删改走 mutation，内部自动 invalidate，
+// 故本地不再持有列表 state、不再手写三态机/load/useEffect/patch。
 function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<LoadStatus>('loading');
-  const [workspaces, setWorkspaces] = useState<WorkspaceModel[]>([]);
-  // toast：保留最近一次内容，toastOpen 控制显隐（退出动画期间内容不闪烁）。
-  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
-  const [toastOpen, setToastOpen] = useState(false);
+  const { data: workspaces = [], isLoading, isError, refetch } = useWorkspaces();
+  const deleteWs = useDeleteWorkspace();
+  const { show: showToast, snack } = useToast();
   const [searchName, setSearchName] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<WorkspaceModel | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceModel | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const showToast = useCallback((text: string, severity: ToastSeverity) => {
-    setToast({ text, severity });
-    setToastOpen(true);
-  }, []);
-
-  const load = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const data = await WorkspaceService.getList();
-      setWorkspaces(data);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, []);
-
-  // 挂载时加载一次。
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // 客户端模糊过滤 + 兜底排序（id DESC，新建在前），保证增删改后无需重新拉取即有序。
+  // 客户端模糊过滤 + 兜底排序（id DESC，新建在前）。
   const displayed = useMemo(() => {
     const q = searchName.trim().toLowerCase();
     const filtered = workspaces.filter(w => !q || w.name.toLowerCase().includes(q));
     return [...filtered].sort((a, b) => b.id - a.id);
   }, [workspaces, searchName]);
 
+  // 创建/更新成功：mutation 内部已 invalidate（列表自动刷新），回调仅弹 toast。
   const handleCreated = useCallback((ws: WorkspaceModel) => {
-    setWorkspaces(prev => [...prev, ws]);
-    showToast(t('tracker:toast.created', { name: ws.name }), 'success');
+    showToast(t('tracker:workspace.toast.created', { name: ws.name }), 'success');
   }, [t, showToast]);
 
   const handleUpdated = useCallback((ws: WorkspaceModel) => {
-    setWorkspaces(prev => prev.map(w => (w.id === ws.id ? ws : w)));
-    showToast(t('tracker:toast.updated', { name: ws.name }), 'success');
+    showToast(t('tracker:workspace.toast.updated', { name: ws.name }), 'success');
   }, [t, showToast]);
 
   const handleConfirmDelete = useCallback(async () => {
@@ -110,17 +78,18 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
     }
     setDeleting(true);
     try {
-      await WorkspaceService.delete({ id: deleteTarget.id });
-      setWorkspaces(prev => prev.filter(w => w.id !== deleteTarget.id));
-      showToast(t('tracker:toast.deleted'), 'success');
+      await deleteWs.mutateAsync(deleteTarget.id);
+      showToast(t('tracker:workspace.toast.deleted'), 'success');
       setDeleteTarget(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast(t('tracker:toast.deleteFailed', { message: msg }), 'error');
+      showToast(t('tracker:workspace.toast.deleteFailed', { message: msg }), 'error');
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, t, showToast]);
+  }, [deleteTarget, deleteWs, t, showToast]);
+
+  const ready = !isLoading && !isError;
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -158,17 +127,17 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
 
       {/* 内容区 */}
       <Box sx={{ flex: 1, overflow: 'auto' }}>
-        {status === 'loading' && (
+        {isLoading && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <CircularProgress />
           </Box>
         )}
-        {status === 'error' && (
+        {isError && (
           <Box sx={{ p: 2 }}>
             <Alert
               severity="error"
               action={(
-                <Button color="inherit" size="small" onClick={load}>
+                <Button color="inherit" size="small" onClick={() => refetch()}>
                   {t('tracker:workspace.error.retry')}
                 </Button>
               )}
@@ -178,7 +147,7 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
             </Alert>
           </Box>
         )}
-        {status === 'ready' && workspaces.length === 0 && (
+        {ready && workspaces.length === 0 && (
           <Box
             sx={{
               display: 'flex',
@@ -203,14 +172,14 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
             </Button>
           </Box>
         )}
-        {status === 'ready' && workspaces.length > 0 && displayed.length === 0 && (
+        {ready && workspaces.length > 0 && displayed.length === 0 && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Typography variant="body2" color="text.secondary">
               {t('tracker:workspace.empty.noMatch')}
             </Typography>
           </Box>
         )}
-        {status === 'ready' && displayed.length > 0 && (
+        {ready && displayed.length > 0 && (
           <Box
             sx={{
               p: 2,
@@ -237,16 +206,7 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
         )}
       </Box>
 
-      <Snackbar
-        open={toastOpen}
-        autoHideDuration={2000}
-        onClose={() => setToastOpen(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity={toast.severity} variant="filled">
-          {toast.text}
-        </Alert>
-      </Snackbar>
+      {snack}
 
       {addDialogOpen && (
         <WorkspaceDialog

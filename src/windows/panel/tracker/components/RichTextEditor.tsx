@@ -112,7 +112,7 @@ function RichTextEditor({ value, onChange, placeholder, editable = true, disable
           <Fragment key={group.id}>
             {gi > 0 && <Divider orientation="vertical" flexItem sx={{ mx: 0.25, my: 0.5 }} />}
             {group.items.map(item => (
-              <Tooltip key={item.value} title={t(`tracker:issue.rte.${item.i18nKey}`)} arrow>
+              <Tooltip key={item.value} title={t(`tracker:projectIssue.rte.${item.i18nKey}`)} arrow>
                 <ToggleButton
                   size="small"
                   value={item.value}
@@ -129,7 +129,7 @@ function RichTextEditor({ value, onChange, placeholder, editable = true, disable
         ))}
         {/* 链接按钮（单独，带弹窗编辑 URL） */}
         <Divider orientation="vertical" flexItem sx={{ mx: 0.25, my: 0.5 }} />
-        <Tooltip title={t('tracker:issue.rte.link')} arrow>
+        <Tooltip title={t('tracker:projectIssue.rte.link')} arrow>
           <ToggleButton
             size="small"
             value="link"
@@ -150,13 +150,13 @@ function RichTextEditor({ value, onChange, placeholder, editable = true, disable
 
       {/* 链接编辑弹窗 */}
       <Dialog open={linkOpen} onClose={() => setLinkOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle>{t('tracker:issue.rte.linkTitle')}</DialogTitle>
+        <DialogTitle>{t('tracker:projectIssue.rte.linkTitle')}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
             fullWidth
             size="small"
-            label={t('tracker:issue.rte.linkUrl')}
+            label={t('tracker:projectIssue.rte.linkUrl')}
             value={linkUrl}
             onChange={e => setLinkUrl(e.target.value)}
             placeholder="https://"
@@ -171,12 +171,12 @@ function RichTextEditor({ value, onChange, placeholder, editable = true, disable
                 setLinkOpen(false);
               }}
             >
-              {t('tracker:issue.rte.removeLink')}
+              {t('tracker:projectIssue.rte.removeLink')}
             </Button>
           )}
           <Box sx={{ flex: 1 }} />
-          <Button color="inherit" onClick={() => setLinkOpen(false)}>{t('tracker:issue.create.cancel')}</Button>
-          <Button variant="contained" onClick={applyLink}>{t('tracker:issue.rte.linkTitle')}</Button>
+          <Button color="inherit" onClick={() => setLinkOpen(false)}>{t('tracker:projectIssue.create.cancel')}</Button>
+          <Button variant="contained" onClick={applyLink}>{t('tracker:projectIssue.rte.linkTitle')}</Button>
         </DialogActions>
       </Dialog>
     </Box>

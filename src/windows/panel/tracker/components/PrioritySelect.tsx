@@ -24,7 +24,7 @@ function PrioritySelect({ value, onChange, disabled }: PrioritySelectProps) {
   const renderPriority = (p: Priority) => (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
       <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: PRIORITY_COLOR[p], flexShrink: 0 }} />
-      <Typography variant="body2" noWrap>{t(`tracker:issue.priority.${p}`)}</Typography>
+      <Typography variant="body2" noWrap>{t(`tracker:projectIssue.priority.${p}`)}</Typography>
     </Box>
   );
 

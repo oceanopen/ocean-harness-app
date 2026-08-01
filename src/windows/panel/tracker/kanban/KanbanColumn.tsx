@@ -6,12 +6,12 @@ import { truncateSx } from './shared';
 
 interface KanbanColumnProps {
   state: ProjectStateModel;
-  issues: ProjectIssueResponseData[];
-  onOpen: (issue: ProjectIssueResponseData) => void;
+  projectIssues: ProjectIssueResponseData[];
+  onOpen: (projectIssue: ProjectIssueResponseData) => void;
 }
 
 // 看板列（Droppable）：状态色点 + 名称 + 计数；卡片列表纵向可滚；拖入时背景高亮。
-function KanbanColumn({ state, issues, onOpen }: KanbanColumnProps) {
+function KanbanColumn({ state, projectIssues, onOpen }: KanbanColumnProps) {
   return (
     <Droppable droppableId={String(state.id)}>
       {(provided, snapshot) => (
@@ -31,11 +31,11 @@ function KanbanColumn({ state, issues, onOpen }: KanbanColumnProps) {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 1 }}>
             <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: state.color, flexShrink: 0 }} />
             <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 600, ...truncateSx }}>{state.name}</Typography>
-            <Chip label={issues.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+            <Chip label={projectIssues.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
           </Box>
           <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
-            {issues.map((issue, index) => (
-              <KanbanCard key={issue.id} issue={issue} index={index} onOpen={onOpen} />
+            {projectIssues.map((projectIssue, index) => (
+              <KanbanCard key={projectIssue.id} projectIssue={projectIssue} index={index} onOpen={onOpen} />
             ))}
             {provided.placeholder}
           </Box>

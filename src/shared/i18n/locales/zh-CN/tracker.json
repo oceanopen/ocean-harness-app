@@ -47,7 +47,7 @@
       "retry": "重试"
     }
   },
-  "project": {
+  "workspaceProject": {
     "search": "按名称搜索",
     "actions": {
       "add": "新建项目"
@@ -98,7 +98,7 @@
       "deleteFailed": "删除失败：{{message}}"
     }
   },
-  "issue": {
+  "projectIssue": {
     "emptyHint": "选择项目后查看 Issue",
     "search": "搜索 Issue",
     "actions": {
@@ -195,23 +195,23 @@
       "removeLink": "移除链接",
       "undo": "撤销",
       "redo": "重做"
-    },
-    "label": {
-      "title": "管理标签",
-      "name": "名称",
-      "namePlaceholder": "输入标签名称或搜索",
-      "color": "颜色",
-      "description": "描述",
-      "descriptionPlaceholder": "选填",
-      "create": "新建标签",
-      "save": "保存修改",
-      "cancel": "取消",
-      "close": "关闭",
-      "edit": "编辑",
-      "delete": "删除",
-      "deleteConfirmMsg": "确认删除标签「{{name}}」？将自动从所有 Issue 上移除。",
-      "empty": "暂无标签"
     }
+  },
+  "workspaceLabel": {
+    "title": "管理标签",
+    "name": "名称",
+    "namePlaceholder": "输入标签名称或搜索",
+    "color": "颜色",
+    "description": "描述",
+    "descriptionPlaceholder": "选填",
+    "create": "新建标签",
+    "save": "保存修改",
+    "cancel": "取消",
+    "close": "关闭",
+    "edit": "编辑",
+    "delete": "删除",
+    "deleteConfirmMsg": "确认删除标签「{{name}}」？将自动从所有 Issue 上移除。",
+    "empty": "暂无标签"
   },
   "toast": {
     "loadFailed": "加载失败：{{message}}",

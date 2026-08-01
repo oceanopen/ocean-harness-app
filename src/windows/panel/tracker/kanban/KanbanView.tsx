@@ -8,29 +8,29 @@ import { useKanbanColumns } from './useKanbanColumns';
 import { useKanbanDnd } from './useKanbanDnd';
 
 interface KanbanViewProps {
-  issues: ProjectIssueResponseData[];
-  states: ProjectStateModel[];
+  projectIssues: ProjectIssueResponseData[];
+  projectStates: ProjectStateModel[];
   stateMap: Map<number, ProjectStateModel>;
   setIssues: Dispatch<SetStateAction<ProjectIssueResponseData[]>>;
-  onOpen: (issue: ProjectIssueResponseData) => void;
+  onOpen: (projectIssue: ProjectIssueResponseData) => void;
   showToast: (text: string, severity: 'success' | 'error') => void;
 }
 
 // 看板视图：DragDropContext 容器 + 横向铺列（固定列宽 + 横向滚动）。
 // 分列用 useKanbanColumns（按 stateId），拖拽逻辑用 useKanbanDnd（与渲染解耦）。
-// 注：看板展示全量 issues（不应用列表的筛选，避免破坏列结构与拖拽排序基准）。
-function KanbanView({ issues, states, stateMap, setIssues, onOpen, showToast }: KanbanViewProps) {
+// 注：看板展示全量 projectIssues（不应用列表的筛选，避免破坏列结构与拖拽排序基准）。
+function KanbanView({ projectIssues, projectStates, stateMap, setIssues, onOpen, showToast }: KanbanViewProps) {
   const { t } = useTranslation();
-  const { columnsByState, orderedStates } = useKanbanColumns(issues, states);
+  const { columnsByState, orderedStates } = useKanbanColumns(projectIssues, projectStates);
   const onDragEnd = useKanbanDnd({
     columnsByState,
     stateMap,
     setIssues,
     showToast,
-    moveFailedText: message => t('tracker:issue.toast.moveFailed', { message }),
+    moveFailedText: message => t('tracker:projectIssue.toast.moveFailed', { message }),
   });
 
-  if (states.length === 0) {
+  if (projectStates.length === 0) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
         <CircularProgress />
@@ -45,7 +45,7 @@ function KanbanView({ issues, states, stateMap, setIssues, onOpen, showToast }: 
           <KanbanColumn
             key={state.id}
             state={state}
-            issues={columnsByState.get(state.id) ?? []}
+            projectIssues={columnsByState.get(state.id) ?? []}
             onOpen={onOpen}
           />
         ))}

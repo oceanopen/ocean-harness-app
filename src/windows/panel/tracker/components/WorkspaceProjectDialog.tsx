@@ -9,37 +9,39 @@ import {
   DialogTitle,
   TextField,
 } from '@mui/material';
-import { WorkspaceProjectService } from '@src/services';
+import { useCreateWorkspaceProject, useUpdateWorkspaceProject } from '@src/state/tracker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // 新建/编辑项目弹窗。
-// 传入 project 时为编辑模式：标题改为"编辑项目"、ID 只读展示、字段反显、提交调用 update；
+// 传入 workspaceProject 时为编辑模式：标题改为"编辑项目"、ID 只读展示、字段反显、提交调用 update；
 // 不传则为新建模式，行为不变。
 //
-// 由父组件按需挂载（{open && <ProjectDialog/>}）：每次打开都是全新 useState 初值，
+// 由父组件按需挂载（{open && <WorkspaceProjectDialog/>}）：每次打开都是全新 useState 初值，
 // 无需重置 effect；关闭即卸载。
 //
 // 与 WorkspaceDialog 的差异：项目无 slug（去 slugify/slugTouched 整套逻辑），改为 emoji 字段；
 // create 带 workspaceId、update 不带（对齐后端 ProjectCreate/UpdateRequest）。
-interface ProjectDialogProps {
+interface WorkspaceProjectDialogProps {
   workspaceId: number;
   onClose: () => void;
   onCreated: (p: WorkspaceProjectModel) => void;
   onUpdated?: (p: WorkspaceProjectModel) => void;
-  project?: WorkspaceProjectModel;
+  workspaceProject?: WorkspaceProjectModel;
 }
 
 // 描述/emoji 最大字数（与后端 binding max=500 / max=20 对齐）。
 const DESCRIPTION_MAX = 500;
 const EMOJI_MAX = 20;
 
-function ProjectDialog({ workspaceId, onClose, onCreated, onUpdated, project }: ProjectDialogProps) {
+function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, workspaceProject }: WorkspaceProjectDialogProps) {
   const { t } = useTranslation();
-  const isEdit = !!project;
-  const [name, setName] = useState(project?.name ?? '');
-  const [emoji, setEmoji] = useState(project?.emoji ?? '');
-  const [description, setDescription] = useState(project?.description ?? '');
+  const isEdit = !!workspaceProject;
+  const createWorkspaceProject = useCreateWorkspaceProject(workspaceId);
+  const updateWorkspaceProject = useUpdateWorkspaceProject(workspaceId);
+  const [name, setName] = useState(workspaceProject?.name ?? '');
+  const [emoji, setEmoji] = useState(workspaceProject?.emoji ?? '');
+  const [description, setDescription] = useState(workspaceProject?.description ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,23 +56,17 @@ function ProjectDialog({ workspaceId, onClose, onCreated, onUpdated, project }: 
         emoji: emoji.trim(),
         description: description.trim(),
       };
-      if (isEdit && project) {
-        const updated = await WorkspaceProjectService.update({
-          id: project.id,
-          ...payload,
-        });
+      if (isEdit && workspaceProject) {
+        const updated = await updateWorkspaceProject.mutateAsync({ id: workspaceProject.id, ...payload });
         onUpdated?.(updated);
       } else {
-        const created = await WorkspaceProjectService.create({
-          workspaceId,
-          ...payload,
-        });
+        const created = await createWorkspaceProject.mutateAsync({ workspaceId, ...payload });
         onCreated(created);
       }
       onClose();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(isEdit ? t('tracker:project.toast.updateFailed', { message: msg }) : t('tracker:project.toast.createFailed', { message: msg }));
+      setError(isEdit ? t('tracker:workspaceProject.toast.updateFailed', { message: msg }) : t('tracker:workspaceProject.toast.createFailed', { message: msg }));
     } finally {
       setSubmitting(false);
     }
@@ -84,21 +80,21 @@ function ProjectDialog({ workspaceId, onClose, onCreated, onUpdated, project }: 
       fullWidth
       maxWidth="sm"
     >
-      <DialogTitle>{isEdit ? t('tracker:project.edit.title') : t('tracker:project.add.title')}</DialogTitle>
+      <DialogTitle>{isEdit ? t('tracker:workspaceProject.edit.title') : t('tracker:workspaceProject.add.title')}</DialogTitle>
       <DialogContent>
         <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {isEdit && (
             <TextField
-              label={t('tracker:project.edit.idLabel')}
-              value={project!.id}
+              label={t('tracker:workspaceProject.edit.idLabel')}
+              value={workspaceProject!.id}
               fullWidth
               slotProps={{ input: { readOnly: true } }}
               variant="filled"
             />
           )}
           <TextField
-            label={t('tracker:project.add.name')}
-            placeholder={t('tracker:project.add.namePlaceholder')}
+            label={t('tracker:workspaceProject.add.name')}
+            placeholder={t('tracker:workspaceProject.add.namePlaceholder')}
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -109,8 +105,8 @@ function ProjectDialog({ workspaceId, onClose, onCreated, onUpdated, project }: 
             disabled={submitting}
           />
           <TextField
-            label={t('tracker:project.add.emoji')}
-            placeholder={t('tracker:project.add.emojiPlaceholder')}
+            label={t('tracker:workspaceProject.add.emoji')}
+            placeholder={t('tracker:workspaceProject.add.emojiPlaceholder')}
             value={emoji}
             onChange={(e) => {
               setEmoji(e.target.value);
@@ -118,12 +114,12 @@ function ProjectDialog({ workspaceId, onClose, onCreated, onUpdated, project }: 
             }}
             fullWidth
             disabled={submitting}
-            helperText={t('tracker:project.add.emojiHint')}
+            helperText={t('tracker:workspaceProject.add.emojiHint')}
             slotProps={{ htmlInput: { maxLength: EMOJI_MAX } }}
           />
           <TextField
-            label={t('tracker:project.add.description')}
-            placeholder={t('tracker:project.add.descriptionPlaceholder')}
+            label={t('tracker:workspaceProject.add.description')}
+            placeholder={t('tracker:workspaceProject.add.descriptionPlaceholder')}
             value={description}
             onChange={(e) => {
               setDescription(e.target.value);
@@ -142,14 +138,14 @@ function ProjectDialog({ workspaceId, onClose, onCreated, onUpdated, project }: 
       </DialogContent>
       <DialogActions>
         <Button color="inherit" onClick={onClose} disabled={submitting}>
-          {t('tracker:project.add.cancel')}
+          {t('tracker:workspaceProject.add.cancel')}
         </Button>
         <Button variant="contained" onClick={handleConfirm} disabled={!canSubmit}>
-          {isEdit ? t('tracker:project.edit.confirm') : t('tracker:project.add.confirm')}
+          {isEdit ? t('tracker:workspaceProject.edit.confirm') : t('tracker:workspaceProject.add.confirm')}
         </Button>
       </DialogActions>
     </Dialog>
   );
 }
 
-export default ProjectDialog;
+export default WorkspaceProjectDialog;

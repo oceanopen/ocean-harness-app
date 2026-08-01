@@ -1,4 +1,5 @@
 import type { Priority, ProjectIssueResponseData, ProjectStateModel, StateGroup, WorkspaceProjectModel } from '@src/services';
+import type { Dispatch, SetStateAction } from 'react';
 import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
@@ -24,29 +25,22 @@ import {
   InputLabel,
   MenuItem,
   Select,
-  Snackbar,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { ProjectIssueService, ProjectStateService } from '@src/services';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useToast } from '@src/shared/useToast';
+import { trackerKeys, useProjectIssues, useProjectStates } from '@src/state/tracker';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import IssueDrawer from './IssueDrawer';
 import KanbanView from './kanban/KanbanView';
-
-type LoadStatus = 'loading' | 'ready' | 'error';
+import ProjectIssueDrawer from './ProjectIssueDrawer';
 
 // Issue 视图模式：列表（按状态组纵向分组）/ 看板（按具体状态横向分列 + 拖拽）。
 type IssueViewMode = 'list' | 'kanban';
-
-// 浮层 toast 严重级别（成功用 success，失败用 error）。
-type ToastSeverity = 'success' | 'error';
-
-// Priority / StateGroup / ProjectIssueResponseData / ProjectStateModel / WorkspaceLabelModel 类型
-// 已迁移至 @src/services（ProjectIssueService / ProjectStateService 等）。
 
 // 优先级业务权重（升序，urgent 在前）——后端 orderBy=priority 为文本字典序不可靠，前端按 weight 重排。
 const PRIORITY_WEIGHT: Record<Priority, number> = {
@@ -69,71 +63,53 @@ const truncateSx = {
 } as const;
 
 interface IssueListPageProps {
-  project: WorkspaceProjectModel;
+  workspaceProject: WorkspaceProjectModel;
 }
 
 // Issue 列表页（嵌于 tracker 三栏壳的右栏）。
-// 并行拉 issue + state 两接口 → 构建 stateId→state 映射 → 按 stateGroup 分组（Collapse 可折叠）。
-// 筛选走客户端（与 ProjectListPage 一致，已加载列表上过滤，不重复请求）：关键字 + 优先级 + 状态。
-// 组内排序：priority weight 升序，同优先级按 sortOrder 升序。
-function IssueListPage({ project }: IssueListPageProps) {
+// projectIssue/state 列表走 useProjectIssues/useProjectStates（与详情抽屉/看板共享缓存）；增删改走 mutation（在抽屉内），
+// 本页回调仅弹 toast（mutation 内部 invalidate）。看板拖拽乐观更新经 updateProjectIssues 适配器写回 Query 缓存。
+function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<LoadStatus>('loading');
-  const [issues, setIssues] = useState<ProjectIssueResponseData[]>([]);
-  const [states, setStates] = useState<ProjectStateModel[]>([]);
-  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
-  const [toastOpen, setToastOpen] = useState(false);
+  const qc = useQueryClient();
+  const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError } = useProjectIssues(workspaceProject.id);
+  const { data: projectStates = [], isLoading: statesLoading, isError: statesError } = useProjectStates(workspaceProject.id);
+  const { show: showToast, snack } = useToast();
   const [keyword, setKeyword] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
   const [stateFilter, setStateFilter] = useState<number | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<StateGroup>>(() => new Set());
   const [createOpen, setCreateOpen] = useState(false);
-  const [detailIssue, setDetailIssue] = useState<ProjectIssueResponseData | null>(null);
+  const [detailProjectIssue, setDetailProjectIssue] = useState<ProjectIssueResponseData | null>(null);
   // 视图模式按项目持久化（localStorage），默认列表。
   const [viewMode, setViewMode] = useState<IssueViewMode>(
-    () => (localStorage.getItem(`tracker.viewMode.${project.id}`) === 'kanban' ? 'kanban' : 'list'),
+    () => (localStorage.getItem(`tracker.viewMode.${workspaceProject.id}`) === 'kanban' ? 'kanban' : 'list'),
   );
 
   const handleViewModeChange = useCallback((mode: IssueViewMode) => {
     setViewMode(mode);
-    localStorage.setItem(`tracker.viewMode.${project.id}`, mode);
-  }, [project.id]);
+    localStorage.setItem(`tracker.viewMode.${workspaceProject.id}`, mode);
+  }, [workspaceProject.id]);
 
-  const showToast = useCallback((text: string, severity: ToastSeverity) => {
-    setToast({ text, severity });
-    setToastOpen(true);
-  }, []);
-
-  const load = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const [issueData, stateData] = await Promise.all([
-        ProjectIssueService.getList({ projectId: project.id }),
-        ProjectStateService.getList({ projectId: project.id }),
-      ]);
-      setIssues(issueData);
-      setStates(stateData);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [project.id]);
-
-  // 挂载时加载一次（父级用 key={project.id} 保证切换项目重挂载，自然重载）。
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // 看板拖拽乐观更新适配器：把 useKanbanDnd 的 Dispatch<SetStateAction> 调用转写回 Query 缓存。
+  // useKanbanDnd 的乐观更新/回滚/二次校正逻辑完全不变，仅底层从本地 state 切到 Query 缓存。
+  const updateProjectIssues = useCallback<Dispatch<SetStateAction<ProjectIssueResponseData[]>>>((action) => {
+    qc.setQueryData<ProjectIssueResponseData[]>(trackerKeys.projectIssues(workspaceProject.id), (prev) => {
+      const base = prev ?? []; // prev 理论必为数组（useProjectIssues 默认 []），兜底仅为类型安全
+      return typeof action === 'function' ? action(base) : action;
+    });
+  }, [qc, workspaceProject.id]);
 
   const stateMap = useMemo(() => {
     const m = new Map<number, ProjectStateModel>();
-    states.forEach(s => m.set(s.id, s));
+    projectStates.forEach(s => m.set(s.id, s));
     return m;
-  }, [states]);
+  }, [projectStates]);
 
   // 客户端筛选 + 按 stateGroup 分组 + 组内排序。
   const grouped = useMemo(() => {
     const q = keyword.trim().toLowerCase();
-    const filtered = issues.filter((i) => {
+    const filtered = projectIssues.filter((i) => {
       if (q && !i.name.toLowerCase().includes(q)) {
         return false;
       }
@@ -153,7 +129,7 @@ function IssueListPage({ project }: IssueListPageProps) {
       cancelled: [],
     };
     filtered.forEach((i) => {
-      // stateId 未知（如状态被删）fallback 到 backlog，保证 issue 不丢。
+      // stateId 未知（如状态被删）fallback 到 backlog，保证 projectIssue 不丢。
       const group = stateMap.get(i.stateId)?.stateGroup ?? 'backlog';
       buckets[group].push(i);
     });
@@ -165,7 +141,7 @@ function IssueListPage({ project }: IssueListPageProps) {
       return a.sortOrder - b.sortOrder;
     }));
     return buckets;
-  }, [issues, keyword, priorityFilter, stateFilter, stateMap]);
+  }, [projectIssues, keyword, priorityFilter, stateFilter, stateMap]);
 
   const totalCount = useMemo(
     () => Object.values(grouped).reduce((sum, arr) => sum + arr.length, 0),
@@ -184,24 +160,24 @@ function IssueListPage({ project }: IssueListPageProps) {
     });
   }, []);
 
-  const handleCreated = useCallback((issue: ProjectIssueResponseData) => {
-    setIssues(prev => [...prev, issue]);
-    showToast(t('tracker:issue.toast.created', { name: issue.name }), 'success');
+  // 创建/更新/删除成功：mutation 内部已 invalidate，回调仅弹 toast + 关闭抽屉。
+  const handleCreated = useCallback((projectIssue: ProjectIssueResponseData) => {
+    showToast(t('tracker:projectIssue.toast.created', { name: projectIssue.name }), 'success');
   }, [t, showToast]);
 
-  // 编辑保存：就地替换 issue + 关闭抽屉（统一模型：保存即关闭刷新）+ toast。
-  const handleUpdated = useCallback((updated: ProjectIssueResponseData) => {
-    setIssues(prev => prev.map(i => (i.id === updated.id ? updated : i)));
-    setDetailIssue(null);
-    showToast(t('tracker:issue.toast.updated'), 'success');
+  const handleUpdated = useCallback(() => {
+    setDetailProjectIssue(null);
+    showToast(t('tracker:projectIssue.toast.updated'), 'success');
+  }, [showToast, t]);
+
+  const handleDeleted = useCallback((issueId: number) => {
+    setDetailProjectIssue(prev => (prev?.id === issueId ? null : prev));
+    showToast(t('tracker:projectIssue.toast.deleted'), 'success');
   }, [showToast]);
 
-  // 删除 issue：从列表剔除 + 关闭 drawer + toast。
-  const handleDeleted = useCallback((issueId: number) => {
-    setIssues(prev => prev.filter(i => i.id !== issueId));
-    setDetailIssue(prev => (prev?.id === issueId ? null : prev));
-    showToast(t('tracker:issue.toast.deleted'), 'success');
-  }, [showToast]);
+  const isLoading = issuesLoading || statesLoading;
+  const isError = issuesError || statesError;
+  const ready = !isLoading && !isError;
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -219,33 +195,33 @@ function IssueListPage({ project }: IssueListPageProps) {
       >
         <TextField
           size="small"
-          placeholder={t('tracker:issue.search')}
+          placeholder={t('tracker:projectIssue.search')}
           value={keyword}
           onChange={e => setKeyword(e.target.value)}
           sx={{ flexGrow: 1, minWidth: 120 }}
         />
         <FormControl size="small" sx={{ minWidth: 110 }}>
-          <InputLabel>{t('tracker:issue.filter.priority')}</InputLabel>
+          <InputLabel>{t('tracker:projectIssue.filter.priority')}</InputLabel>
           <Select
-            label={t('tracker:issue.filter.priority')}
+            label={t('tracker:projectIssue.filter.priority')}
             value={priorityFilter}
             onChange={e => setPriorityFilter(e.target.value as Priority | 'all')}
           >
-            <MenuItem value="all">{t('tracker:issue.filter.all')}</MenuItem>
+            <MenuItem value="all">{t('tracker:projectIssue.filter.all')}</MenuItem>
             {PRIORITY_ORDER.map(p => (
-              <MenuItem key={p} value={p}>{t(`tracker:issue.priority.${p}`)}</MenuItem>
+              <MenuItem key={p} value={p}>{t(`tracker:projectIssue.priority.${p}`)}</MenuItem>
             ))}
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 120 }}>
-          <InputLabel>{t('tracker:issue.filter.state')}</InputLabel>
+          <InputLabel>{t('tracker:projectIssue.filter.state')}</InputLabel>
           <Select
-            label={t('tracker:issue.filter.state')}
+            label={t('tracker:projectIssue.filter.state')}
             value={stateFilter}
             onChange={e => setStateFilter(e.target.value as number | 'all')}
           >
-            <MenuItem value="all">{t('tracker:issue.filter.allStates')}</MenuItem>
-            {states.map(s => (
+            <MenuItem value="all">{t('tracker:projectIssue.filter.allStates')}</MenuItem>
+            {projectStates.map(s => (
               <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
             ))}
           </Select>
@@ -260,41 +236,48 @@ function IssueListPage({ project }: IssueListPageProps) {
             }
           }}
         >
-          <ToggleButton value="list" aria-label={t('tracker:issue.view.list')}>
+          <ToggleButton value="list" aria-label={t('tracker:projectIssue.view.list')}>
             <ViewListOutlinedIcon />
           </ToggleButton>
-          <ToggleButton value="kanban" aria-label={t('tracker:issue.view.board')}>
+          <ToggleButton value="kanban" aria-label={t('tracker:projectIssue.view.board')}>
             <ViewKanbanOutlinedIcon />
           </ToggleButton>
         </ToggleButtonGroup>
         <Button variant="contained" size="small" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)}>
-          {t('tracker:issue.actions.add')}
+          {t('tracker:projectIssue.actions.add')}
         </Button>
       </Box>
 
       {/* 内容区 */}
       <Box sx={{ flex: 1, overflow: 'auto' }}>
-        {status === 'loading' && (
+        {isLoading && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <CircularProgress />
           </Box>
         )}
-        {status === 'error' && (
+        {isError && (
           <Box sx={{ p: 2 }}>
             <Alert
               severity="error"
               action={(
-                <Button color="inherit" size="small" onClick={load}>
-                  {t('tracker:issue.error.retry')}
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => {
+                    void qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(workspaceProject.id) });
+                    void qc.invalidateQueries({ queryKey: trackerKeys.projectStates(workspaceProject.id) });
+                  }}
+                >
+                  {t('tracker:projectIssue.error.retry')}
                 </Button>
               )}
             >
-              <AlertTitle>{t('tracker:issue.error.title')}</AlertTitle>
-              {t('tracker:issue.error.desc')}
+              <AlertTitle>{t('tracker:projectIssue.error.title')}</AlertTitle>
+              {t('tracker:projectIssue.error.desc')}
             </Alert>
           </Box>
         )}
-        {status === 'ready' && issues.length === 0 && (
+        {ready && projectIssues.length === 0 && (
           <Box
             sx={{
               display: 'flex',
@@ -309,34 +292,34 @@ function IssueListPage({ project }: IssueListPageProps) {
           >
             <AssignmentOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-              {t('tracker:issue.empty.title')}
+              {t('tracker:projectIssue.empty.title')}
             </Typography>
             <Typography variant="body2" color="text.secondary" align="center">
-              {t('tracker:issue.empty.desc')}
+              {t('tracker:projectIssue.empty.desc')}
             </Typography>
             <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)} sx={{ mt: 1 }}>
-              {t('tracker:issue.actions.add')}
+              {t('tracker:projectIssue.actions.add')}
             </Button>
           </Box>
         )}
-        {status === 'ready' && issues.length > 0 && viewMode === 'kanban' && (
+        {ready && projectIssues.length > 0 && viewMode === 'kanban' && (
           <KanbanView
-            issues={issues}
-            states={states}
+            projectIssues={projectIssues}
+            projectStates={projectStates}
             stateMap={stateMap}
-            setIssues={setIssues}
-            onOpen={setDetailIssue}
+            setIssues={updateProjectIssues}
+            onOpen={setDetailProjectIssue}
             showToast={showToast}
           />
         )}
-        {status === 'ready' && issues.length > 0 && viewMode === 'list' && totalCount === 0 && (
+        {ready && projectIssues.length > 0 && viewMode === 'list' && totalCount === 0 && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Typography variant="body2" color="text.secondary">
-              {t('tracker:issue.empty.noMatch')}
+              {t('tracker:projectIssue.empty.noMatch')}
             </Typography>
           </Box>
         )}
-        {status === 'ready' && viewMode === 'list' && totalCount > 0 && (
+        {ready && viewMode === 'list' && totalCount > 0 && (
           <Box sx={{ p: 1 }}>
             {GROUP_ORDER.map((g) => {
               const arr = grouped[g];
@@ -365,17 +348,17 @@ function IssueListPage({ project }: IssueListPageProps) {
                       ? <ExpandMoreOutlinedIcon fontSize="small" color="action" />
                       : <ExpandLessOutlinedIcon fontSize="small" color="action" />}
                     <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                      {t(`tracker:issue.group.${g}`)}
+                      {t(`tracker:projectIssue.group.${g}`)}
                     </Typography>
                     <Chip label={arr.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
                   </Box>
                   <Collapse in={!isCollapsed}>
-                    {arr.map(issue => (
-                      <IssueRow
-                        key={issue.id}
-                        issue={issue}
+                    {arr.map(projectIssue => (
+                      <ProjectIssueRow
+                        key={projectIssue.id}
+                        projectIssue={projectIssue}
                         stateMap={stateMap}
-                        onOpen={setDetailIssue}
+                        onOpen={setDetailProjectIssue}
                       />
                     ))}
                   </Collapse>
@@ -386,34 +369,25 @@ function IssueListPage({ project }: IssueListPageProps) {
         )}
       </Box>
 
-      <Snackbar
-        open={toastOpen}
-        autoHideDuration={2000}
-        onClose={() => setToastOpen(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity={toast.severity} variant="filled">
-          {toast.text}
-        </Alert>
-      </Snackbar>
+      {snack}
 
       {createOpen && (
-        <IssueDrawer
+        <ProjectIssueDrawer
           mode="create"
-          project={project}
-          states={states}
+          workspaceProject={workspaceProject}
+          projectStates={projectStates}
           onClose={() => setCreateOpen(false)}
           onCreated={handleCreated}
         />
       )}
 
-      {detailIssue && (
-        <IssueDrawer
+      {detailProjectIssue && (
+        <ProjectIssueDrawer
           mode="edit"
-          issue={detailIssue}
-          project={project}
-          states={states}
-          onClose={() => setDetailIssue(null)}
+          projectIssue={detailProjectIssue}
+          workspaceProject={workspaceProject}
+          projectStates={projectStates}
+          onClose={() => setDetailProjectIssue(null)}
           onUpdated={handleUpdated}
           onDeleted={handleDeleted}
         />
@@ -441,17 +415,17 @@ export function PriorityIcon({ priority }: { priority: Priority }) {
 // 单行：状态色块（取 state.color，未知用 text.disabled）+ #id + 名称 + 优先级图标。
 // 整行可点击打开侧滑详情（onOpen）。
 interface IssueRowProps {
-  issue: ProjectIssueResponseData;
+  projectIssue: ProjectIssueResponseData;
   stateMap: Map<number, ProjectStateModel>;
-  onOpen: (issue: ProjectIssueResponseData) => void;
+  onOpen: (projectIssue: ProjectIssueResponseData) => void;
 }
 
-function IssueRow({ issue, stateMap, onOpen }: IssueRowProps) {
-  const state = stateMap.get(issue.stateId);
+function ProjectIssueRow({ projectIssue, stateMap, onOpen }: IssueRowProps) {
+  const state = stateMap.get(projectIssue.stateId);
 
   return (
     <Box
-      onClick={() => onOpen(issue)}
+      onClick={() => onOpen(projectIssue)}
       sx={[
         {
           display: 'flex',
@@ -477,13 +451,13 @@ function IssueRow({ issue, stateMap, onOpen }: IssueRowProps) {
           }}
         />
       </Tooltip>
-      <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>#{issue.id}</Typography>
-      <Typography variant="body2" sx={{ flex: 1, minWidth: 0, ...truncateSx }} title={issue.name}>
-        {issue.name}
+      <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>#{projectIssue.id}</Typography>
+      <Typography variant="body2" sx={{ flex: 1, minWidth: 0, ...truncateSx }} title={projectIssue.name}>
+        {projectIssue.name}
       </Typography>
-      <PriorityIcon priority={issue.priority} />
+      <PriorityIcon priority={projectIssue.priority} />
     </Box>
   );
 }
 
-export default IssueListPage;
+export default ProjectIssueListPage;

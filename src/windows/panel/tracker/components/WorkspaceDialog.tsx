@@ -9,7 +9,7 @@ import {
   DialogTitle,
   TextField,
 } from '@mui/material';
-import { WorkspaceService } from '@src/services';
+import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -45,6 +45,8 @@ function slugify(input: string): string {
 function WorkspaceDialog({ onClose, onCreated, onUpdated, workspace }: WorkspaceDialogProps) {
   const { t } = useTranslation();
   const isEdit = !!workspace;
+  const createWs = useCreateWorkspace();
+  const updateWs = useUpdateWorkspace();
   const [name, setName] = useState(workspace?.name ?? '');
   const [slug, setSlug] = useState(workspace?.slug ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
@@ -79,13 +81,10 @@ function WorkspaceDialog({ onClose, onCreated, onUpdated, workspace }: Workspace
         description: description.trim(),
       };
       if (isEdit && workspace) {
-        const updated = await WorkspaceService.update({
-          id: workspace.id,
-          ...payload,
-        });
+        const updated = await updateWs.mutateAsync({ id: workspace.id, ...payload });
         onUpdated?.(updated);
       } else {
-        const created = await WorkspaceService.create(payload);
+        const created = await createWs.mutateAsync(payload);
         onCreated(created);
       }
       onClose();

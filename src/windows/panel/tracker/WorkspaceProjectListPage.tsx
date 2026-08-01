@@ -16,20 +16,15 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
-  Snackbar,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { WorkspaceProjectService } from '@src/services';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useToast } from '@src/shared/useToast';
+import { useDeleteWorkspaceProject, useTrackerStore, useWorkspaceProjects } from '@src/state/tracker';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import ProjectDialog from './components/ProjectDialog';
-
-type LoadStatus = 'loading' | 'ready' | 'error';
-
-// 浮层 toast 严重级别（成功用 success，失败用 error）。
-type ToastSeverity = 'success' | 'error';
+import WorkspaceProjectDialog from './components/WorkspaceProjectDialog';
 
 const truncateSx = {
   overflow: 'hidden',
@@ -37,70 +32,40 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
-// WorkspaceProjectModel 类型与请求封装已迁移至 @src/services（WorkspaceProjectService）。
-
 interface ProjectListPageProps {
   workspace: WorkspaceModel;
-  // 当前选中项目 id（受控，由 TrackerPage 持有），用于行高亮。
-  selectedId: number | null;
-  // 行点击选中上抛；删除当前选中项目时回传 null 通知父级清空。
-  onSelect: (p: WorkspaceProjectModel | null) => void;
 }
 
 // 项目列表页（嵌于 tracker 三栏壳的左栏，宽 260）。
-// 三态机 + 紧凑工具栏(搜索+新建) + 可滚动列表行 + toast，照搬 WorkspacesPage 范式，
-// 仅把"卡片网格"适配为侧栏紧凑列表行（emoji + 名称 + 描述截断一行 + 选中高亮）。
-// 数据刷新用接口返回值直接 setState（仅本页操作变更，无后台 watcher，故不引入事件）。
-// 选中态受控上抛：行点击 → onSelect(project)；由 TrackerPage 决定右栏渲染哪个项目的 issue。
-function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPageProps) {
+// 列表走 useWorkspaceProjects(workspaceId)；选中态读写 tracker store（与命令面板/右栏共享）；
+// 删除走 mutation（删当前选中项目时清空 store 已在 mutation 内处理）。本地不再持有列表/选中 state。
+function WorkspaceProjectListPage({ workspace }: ProjectListPageProps) {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<LoadStatus>('loading');
-  const [projects, setProjects] = useState<WorkspaceProjectModel[]>([]);
-  // toast：保留最近一次内容，toastOpen 控制显隐（退出动画期间内容不闪烁）。
-  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
-  const [toastOpen, setToastOpen] = useState(false);
+  const { data: workspaceProjects = [], isLoading, isError, refetch } = useWorkspaceProjects(workspace.id);
+  const deleteWorkspaceProject = useDeleteWorkspaceProject(workspace.id);
+  const selectedProjectId = useTrackerStore(s => s.selectedWorkspaceProject?.id ?? null);
+  const selectWorkspaceProject = useTrackerStore(s => s.selectWorkspaceProject);
+  const { show: showToast, snack } = useToast();
   const [searchName, setSearchName] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<WorkspaceProjectModel | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceProjectModel | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const showToast = useCallback((text: string, severity: ToastSeverity) => {
-    setToast({ text, severity });
-    setToastOpen(true);
-  }, []);
-
-  const load = useCallback(async () => {
-    setStatus('loading');
-    try {
-      const data = await WorkspaceProjectService.getList({ workspaceId: workspace.id });
-      setProjects(data);
-      setStatus('ready');
-    } catch {
-      setStatus('error');
-    }
-  }, [workspace.id]);
-
-  // 挂载时加载一次（workspace 切换时本组件随父级重挂载，自然重新加载）。
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // 客户端模糊过滤 + 兜底排序（id DESC，新建在前），保证增删改后无需重新拉取即有序。
+  // 客户端模糊过滤 + 兜底排序（id DESC，新建在前）。
   const displayed = useMemo(() => {
     const q = searchName.trim().toLowerCase();
-    const filtered = projects.filter(p => !q || p.name.toLowerCase().includes(q));
+    const filtered = workspaceProjects.filter(p => !q || p.name.toLowerCase().includes(q));
     return [...filtered].sort((a, b) => b.id - a.id);
-  }, [projects, searchName]);
+  }, [workspaceProjects, searchName]);
 
+  // 创建/更新成功：mutation 内部已 invalidate（列表自动刷新），回调仅弹 toast。
   const handleCreated = useCallback((p: WorkspaceProjectModel) => {
-    setProjects(prev => [...prev, p]);
-    showToast(t('tracker:project.toast.created', { name: p.name }), 'success');
+    showToast(t('tracker:workspaceProject.toast.created', { name: p.name }), 'success');
   }, [t, showToast]);
 
   const handleUpdated = useCallback((p: WorkspaceProjectModel) => {
-    setProjects(prev => prev.map(x => (x.id === p.id ? p : x)));
-    showToast(t('tracker:project.toast.updated', { name: p.name }), 'success');
+    showToast(t('tracker:workspaceProject.toast.updated', { name: p.name }), 'success');
   }, [t, showToast]);
 
   const handleConfirmDelete = useCallback(async () => {
@@ -109,21 +74,19 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
     }
     setDeleting(true);
     try {
-      await WorkspaceProjectService.delete({ id: deleteTarget.id });
-      setProjects(prev => prev.filter(x => x.id !== deleteTarget.id));
-      // 删除的正是当前选中项目：通知父级清空选中，避免右栏指向已删项目。
-      if (deleteTarget.id === selectedId) {
-        onSelect(null);
-      }
-      showToast(t('tracker:project.toast.deleted'), 'success');
+      await deleteWorkspaceProject.mutateAsync(deleteTarget.id);
+      // 删除的正是当前选中项目：清空 store 选中已在 useDeleteWorkspaceProject 的 onSuccess 内处理。
+      showToast(t('tracker:workspaceProject.toast.deleted'), 'success');
       setDeleteTarget(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast(t('tracker:project.toast.deleteFailed', { message: msg }), 'error');
+      showToast(t('tracker:workspaceProject.toast.deleteFailed', { message: msg }), 'error');
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, selectedId, onSelect, t, showToast]);
+  }, [deleteTarget, deleteWorkspaceProject, t, showToast]);
+
+  const ready = !isLoading && !isError;
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -140,17 +103,17 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
       >
         <TextField
           size="small"
-          placeholder={t('tracker:project.search')}
+          placeholder={t('tracker:workspaceProject.search')}
           value={searchName}
           onChange={e => setSearchName(e.target.value)}
           sx={{ flexGrow: 1, minWidth: 60 }}
         />
-        <Tooltip title={t('tracker:project.actions.add')}>
+        <Tooltip title={t('tracker:workspaceProject.actions.add')}>
           <IconButton
             size="small"
             color="primary"
             onClick={() => setAddDialogOpen(true)}
-            aria-label={t('tracker:project.actions.add')}
+            aria-label={t('tracker:workspaceProject.actions.add')}
           >
             <AddOutlinedIcon />
           </IconButton>
@@ -159,27 +122,27 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
 
       {/* 内容区 */}
       <Box sx={{ flex: 1, overflow: 'auto' }}>
-        {status === 'loading' && (
+        {isLoading && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <CircularProgress />
           </Box>
         )}
-        {status === 'error' && (
+        {isError && (
           <Box sx={{ p: 1.5 }}>
             <Alert
               severity="error"
               action={(
-                <Button color="inherit" size="small" onClick={load}>
-                  {t('tracker:project.error.retry')}
+                <Button color="inherit" size="small" onClick={() => refetch()}>
+                  {t('tracker:workspaceProject.error.retry')}
                 </Button>
               )}
             >
-              <AlertTitle>{t('tracker:project.error.title')}</AlertTitle>
-              {t('tracker:project.error.desc')}
+              <AlertTitle>{t('tracker:workspaceProject.error.title')}</AlertTitle>
+              {t('tracker:workspaceProject.error.desc')}
             </Alert>
           </Box>
         )}
-        {status === 'ready' && projects.length === 0 && (
+        {ready && workspaceProjects.length === 0 && (
           <Box
             sx={{
               display: 'flex',
@@ -194,10 +157,10 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
           >
             <FolderOutlinedIcon sx={{ fontSize: 36, color: 'text.secondary' }} />
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {t('tracker:project.empty.title')}
+              {t('tracker:workspaceProject.empty.title')}
             </Typography>
             <Typography variant="caption" color="text.secondary" align="center">
-              {t('tracker:project.empty.desc')}
+              {t('tracker:workspaceProject.empty.desc')}
             </Typography>
             <Button
               variant="contained"
@@ -206,25 +169,25 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
               onClick={() => setAddDialogOpen(true)}
               sx={{ mt: 0.5 }}
             >
-              {t('tracker:project.actions.add')}
+              {t('tracker:workspaceProject.actions.add')}
             </Button>
           </Box>
         )}
-        {status === 'ready' && projects.length > 0 && displayed.length === 0 && (
+        {ready && workspaceProjects.length > 0 && displayed.length === 0 && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
             <Typography variant="body2" color="text.secondary">
-              {t('tracker:project.empty.noMatch')}
+              {t('tracker:workspaceProject.empty.noMatch')}
             </Typography>
           </Box>
         )}
-        {status === 'ready' && displayed.length > 0 && (
+        {ready && displayed.length > 0 && (
           <Box sx={{ py: 0.5 }}>
             {displayed.map(p => (
-              <ProjectRow
+              <WorkspaceProjectRow
                 key={p.id}
-                project={p}
-                selected={p.id === selectedId}
-                onSelect={onSelect}
+                workspaceProject={p}
+                selected={p.id === selectedProjectId}
+                onSelect={selectWorkspaceProject}
                 onEdit={setEditTarget}
                 onDelete={setDeleteTarget}
               />
@@ -233,19 +196,10 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
         )}
       </Box>
 
-      <Snackbar
-        open={toastOpen}
-        autoHideDuration={2000}
-        onClose={() => setToastOpen(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity={toast.severity} variant="filled">
-          {toast.text}
-        </Alert>
-      </Snackbar>
+      {snack}
 
       {addDialogOpen && (
-        <ProjectDialog
+        <WorkspaceProjectDialog
           workspaceId={workspace.id}
           onClose={() => setAddDialogOpen(false)}
           onCreated={handleCreated}
@@ -253,9 +207,9 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
       )}
 
       {editTarget && (
-        <ProjectDialog
+        <WorkspaceProjectDialog
           workspaceId={workspace.id}
-          project={editTarget}
+          workspaceProject={editTarget}
           onClose={() => setEditTarget(null)}
           onCreated={handleCreated}
           onUpdated={handleUpdated}
@@ -263,16 +217,16 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
       )}
 
       <Dialog open={deleteTarget !== null} onClose={deleting ? undefined : () => setDeleteTarget(null)}>
-        <DialogTitle>{t('tracker:project.delete.title')}</DialogTitle>
+        <DialogTitle>{t('tracker:workspaceProject.delete.title')}</DialogTitle>
         <DialogContent>
-          <Typography>{t('tracker:project.delete.confirmMsg', { name: deleteTarget?.name ?? '' })}</Typography>
+          <Typography>{t('tracker:workspaceProject.delete.confirmMsg', { name: deleteTarget?.name ?? '' })}</Typography>
         </DialogContent>
         <DialogActions>
           <Button color="inherit" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-            {t('tracker:project.delete.cancel')}
+            {t('tracker:workspaceProject.delete.cancel')}
           </Button>
           <Button color="error" variant="contained" onClick={handleConfirmDelete} disabled={deleting}>
-            {t('tracker:project.delete.confirm')}
+            {t('tracker:workspaceProject.delete.confirm')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -283,21 +237,21 @@ function ProjectListPage({ workspace, selectedId, onSelect }: ProjectListPagePro
 // 单行：整行可点击选中（onSelect）；左侧 emoji（空则兜底图标）+ 名称/描述；右侧编辑/删除图标
 // （stopPropagation 避免触发选中）。选中行用左侧主色边条 + action.selected 底色标识。
 interface ProjectRowProps {
-  project: WorkspaceProjectModel;
+  workspaceProject: WorkspaceProjectModel;
   selected: boolean;
   onSelect: (p: WorkspaceProjectModel) => void;
   onEdit: (p: WorkspaceProjectModel) => void;
   onDelete: (p: WorkspaceProjectModel) => void;
 }
 
-function ProjectRow({ project, selected, onSelect, onEdit, onDelete }: ProjectRowProps) {
+function WorkspaceProjectRow({ workspaceProject, selected, onSelect, onEdit, onDelete }: ProjectRowProps) {
   const { t } = useTranslation();
-  const hasDescription = project.description.trim().length > 0;
-  const emoji = project.emoji.trim();
+  const hasDescription = workspaceProject.description.trim().length > 0;
+  const emoji = workspaceProject.emoji.trim();
 
   return (
     <Box
-      onClick={() => onSelect(project)}
+      onClick={() => onSelect(workspaceProject)}
       sx={[
         {
           display: 'flex',
@@ -329,12 +283,12 @@ function ProjectRow({ project, selected, onSelect, onEdit, onDelete }: ProjectRo
             )}
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="body2" sx={{ fontWeight: 600, ...truncateSx }} title={project.name}>
-          {project.name}
+        <Typography variant="body2" sx={{ fontWeight: 600, ...truncateSx }} title={workspaceProject.name}>
+          {workspaceProject.name}
         </Typography>
         {hasDescription && (
-          <Typography variant="caption" component="div" color="text.secondary" sx={truncateSx} title={project.description}>
-            {project.description}
+          <Typography variant="caption" component="div" color="text.secondary" sx={truncateSx} title={workspaceProject.description}>
+            {workspaceProject.description}
           </Typography>
         )}
       </Box>
@@ -343,9 +297,9 @@ function ProjectRow({ project, selected, onSelect, onEdit, onDelete }: ProjectRo
           size="small"
           onClick={(e) => {
             e.stopPropagation();
-            onEdit(project);
+            onEdit(workspaceProject);
           }}
-          aria-label={t('tracker:project.card.edit')}
+          aria-label={t('tracker:workspaceProject.card.edit')}
         >
           <EditOutlinedIcon />
         </IconButton>
@@ -353,9 +307,9 @@ function ProjectRow({ project, selected, onSelect, onEdit, onDelete }: ProjectRo
           size="small"
           onClick={(e) => {
             e.stopPropagation();
-            onDelete(project);
+            onDelete(workspaceProject);
           }}
-          aria-label={t('tracker:project.card.delete')}
+          aria-label={t('tracker:workspaceProject.card.delete')}
         >
           <DeleteOutlinedIcon />
         </IconButton>
@@ -364,4 +318,4 @@ function ProjectRow({ project, selected, onSelect, onEdit, onDelete }: ProjectRo
   );
 }
 
-export default ProjectListPage;
+export default WorkspaceProjectListPage;

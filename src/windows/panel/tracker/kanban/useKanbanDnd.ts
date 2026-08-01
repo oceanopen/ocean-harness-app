@@ -74,12 +74,12 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
 
     setIssues((prev) => {
       snapshotRef.current = prev;
-      const issue = prev.find(i => i.id === issueId);
-      if (!issue) {
+      const projectIssue = prev.find(i => i.id === issueId);
+      if (!projectIssue) {
         return prev;
       }
       const moved: ProjectIssueResponseData = {
-        ...issue,
+        ...projectIssue,
         stateId: destStateId,
         sortOrder: newSortOrder,
         completedAt: destGroup === 'completed' ? new Date().toISOString() : null,

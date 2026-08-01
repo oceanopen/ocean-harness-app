@@ -3,8 +3,8 @@ import { CheckOutlined as CheckOutlinedIcon, SettingsOutlined as SettingsOutline
 import { Autocomplete, Box, Button, Chip, TextField, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-// issue 标签多选：Autocomplete multiple，勾选/取消即触发 onToggle（父级本地切换 labels，统一随保存提交）。
-// 底部「管理标签」按钮打开 LabelManagerDialog。受控（value=issueLabels）。
+// projectIssue 标签多选：Autocomplete multiple，勾选/取消即触发 onToggle（父级本地切换 labels，统一随保存提交）。
+// 底部「管理标签」按钮打开 WorkspaceLabelManagerDialog。受控（value=issueLabels）。
 interface LabelSelectProps {
   issueLabels: WorkspaceLabelModel[];
   options: WorkspaceLabelModel[];
@@ -13,7 +13,7 @@ interface LabelSelectProps {
   disabled?: boolean;
 }
 
-function LabelSelect({ issueLabels, options, onToggle, onOpenManager, disabled }: LabelSelectProps) {
+function WorkspaceLabelSelect({ issueLabels, options, onToggle, onOpenManager, disabled }: LabelSelectProps) {
   const { t } = useTranslation();
 
   return (
@@ -68,11 +68,11 @@ function LabelSelect({ issueLabels, options, onToggle, onOpenManager, disabled }
         renderInput={params => (
           <TextField
             {...params}
-            label={t('tracker:issue.detail.labels')}
-            placeholder={t('tracker:issue.label.namePlaceholder')}
+            label={t('tracker:projectIssue.detail.labels')}
+            placeholder={t('tracker:workspaceLabel.namePlaceholder')}
           />
         )}
-        noOptionsText={t('tracker:issue.label.empty')}
+        noOptionsText={t('tracker:workspaceLabel.empty')}
       />
       <Button
         startIcon={<SettingsOutlinedIcon />}
@@ -80,10 +80,10 @@ function LabelSelect({ issueLabels, options, onToggle, onOpenManager, disabled }
         disabled={disabled}
         sx={{ mt: 0.5, textTransform: 'none' }}
       >
-        {t('tracker:issue.label.title')}
+        {t('tracker:workspaceLabel.title')}
       </Button>
     </Box>
   );
 }
 
-export default LabelSelect;
+export default WorkspaceLabelSelect;

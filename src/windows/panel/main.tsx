@@ -1,5 +1,7 @@
 import AppI18nProvider from '@src/shared/AppI18nProvider';
 import AppThemeProvider from '@src/shared/AppThemeProvider';
+import { queryClient } from '@src/state/client';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import PanelApp from './PanelApp';
@@ -9,7 +11,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AppThemeProvider>
       <AppI18nProvider>
-        <PanelApp />
+        <QueryClientProvider client={queryClient}>
+          <PanelApp />
+        </QueryClientProvider>
       </AppI18nProvider>
     </AppThemeProvider>
   </StrictMode>,

@@ -32,6 +32,7 @@ import {
 import { commands } from '@src/shared/bindings';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
 import { useConfigValue } from '@src/shared/useConfigValue';
+import { useTrackerStore } from '@src/state/tracker';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -64,10 +65,8 @@ function PanelApp() {
   // tracker 保活：首次切到工作台时置 true（仅升不降），配合下方 display:none 隐藏而非卸载，
   // 保留选中工作空间/项目与已加载列表等全部 state（仅会话内，重启重新初始化）。
   const [trackerMounted, setTrackerMounted] = useState(false);
-  // tracker 三级选择状态上提到此：命令面板「跳到工作空间/项目」需回写同一份状态，
-  // TrackerPage 改为受控消费（selected/selectedProject 经 props 传入）。
-  const [selectedWorkspace, setSelectedWorkspace] = useState<WorkspaceModel | null>(null);
-  const [selectedProject, setSelectedProject] = useState<WorkspaceProjectModel | null>(null);
+  // tracker 三级选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
+  const currentWorkspaceId = useTrackerStore(s => s.selectedWorkspace?.id ?? null);
   const theme = useTheme();
   // 侧边栏折叠状态：订阅 config（跨重启持久化、多窗口同步）。setAppConfig 触发 app-config-changed 事件，hook 自动回写，无需手动 setState。
   const collapsed = useConfigValue(PANEL_SIDEBAR_COLLAPSED_KEY, decodeSidebarCollapsed, false);
@@ -90,14 +89,13 @@ function PanelApp() {
   }, []);
   // 跳到工作空间：回写选中（清空项目避免跨空间残留）并切到工作台。
   const selectWorkspace = useCallback((ws: WorkspaceModel) => {
-    setSelectedWorkspace(ws);
-    setSelectedProject(null);
+    useTrackerStore.getState().selectWorkspace(ws); // 联动清空 workspaceProject 在 store 内
     setActiveMenu('tracker');
     setTrackerMounted(true);
   }, []);
   // 跳到项目：回写选中项目并切到工作台（项目仅在某工作空间已选中时可达，故 selectedWorkspace 必已存在）。
-  const selectProject = useCallback((project: WorkspaceProjectModel) => {
-    setSelectedProject(project);
+  const selectWorkspaceProject = useCallback((workspaceProject: WorkspaceProjectModel) => {
+    useTrackerStore.getState().selectWorkspaceProject(workspaceProject);
     setActiveMenu('tracker');
     setTrackerMounted(true);
   }, []);
@@ -144,9 +142,9 @@ function PanelApp() {
       navigate={navigate}
       openSettings={openSettings}
       toggleSidebar={toggleCollapsed}
-      currentWorkspaceId={selectedWorkspace?.id ?? null}
+      currentWorkspaceId={currentWorkspaceId}
       selectWorkspace={selectWorkspace}
-      selectProject={selectProject}
+      selectWorkspaceProject={selectWorkspaceProject}
     >
       <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
         <Box
@@ -315,12 +313,7 @@ function PanelApp() {
             {/* tracker 保活：首次访问才挂载，之后常驻；切走用 display:none 隐藏，保留全部 state。 */}
             {trackerMounted && (
               <Box sx={{ height: '100%', display: activeMenu === 'tracker' ? 'block' : 'none' }}>
-                <TrackerPage
-                  selected={selectedWorkspace}
-                  selectedProject={selectedProject}
-                  onSelectWorkspace={setSelectedWorkspace}
-                  onSelectProject={setSelectedProject}
-                />
+                <TrackerPage />
               </Box>
             )}
           </Box>

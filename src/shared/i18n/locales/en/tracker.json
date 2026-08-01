@@ -47,7 +47,7 @@
       "retry": "Retry"
     }
   },
-  "project": {
+  "workspaceProject": {
     "search": "Search by name",
     "actions": {
       "add": "New project"
@@ -98,7 +98,7 @@
       "deleteFailed": "Delete failed: {{message}}"
     }
   },
-  "issue": {
+  "projectIssue": {
     "emptyHint": "Select a project to view issues",
     "search": "Search issues",
     "actions": {
@@ -195,23 +195,23 @@
       "removeLink": "Remove link",
       "undo": "Undo",
       "redo": "Redo"
-    },
-    "label": {
-      "title": "Manage labels",
-      "name": "Name",
-      "namePlaceholder": "Enter or search label name",
-      "color": "Color",
-      "description": "Description",
-      "descriptionPlaceholder": "Optional",
-      "create": "New label",
-      "save": "Save changes",
-      "cancel": "Cancel",
-      "close": "Close",
-      "edit": "Edit",
-      "delete": "Delete",
-      "deleteConfirmMsg": "Delete label \"{{name}}\"? It will be removed from all issues.",
-      "empty": "No labels"
     }
+  },
+  "workspaceLabel": {
+    "title": "Manage labels",
+    "name": "Name",
+    "namePlaceholder": "Enter or search label name",
+    "color": "Color",
+    "description": "Description",
+    "descriptionPlaceholder": "Optional",
+    "create": "New label",
+    "save": "Save changes",
+    "cancel": "Cancel",
+    "close": "Close",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteConfirmMsg": "Delete label \"{{name}}\"? It will be removed from all issues.",
+    "empty": "No labels"
   },
   "toast": {
     "loadFailed": "Load failed: {{message}}",

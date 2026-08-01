@@ -3,9 +3,9 @@ import type { KeyboardEvent, ReactNode } from 'react';
 import type { CommandConfig, CommandGroup } from './types';
 import { SearchOutlined as SearchOutlinedIcon } from '@mui/icons-material';
 import { Box, CircularProgress, Dialog, Typography } from '@mui/material';
-import { WorkspaceProjectService, WorkspaceService } from '@src/services';
+import { useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
 import { Command } from 'cmdk';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCommandPalette } from './CommandPaletteContext';
 import { getCommandsByGroup } from './registry';
@@ -94,10 +94,10 @@ function CommandPaletteDialog() {
 
   // 受控搜索词：Backspace 返回逻辑依赖判空，故不交给 cmdk 内部状态。
   const [search, setSearch] = useState('');
-  // 二级页实体列表 + 加载态（避免 load 期间误显"无结果"）。
-  const [workspaces, setWorkspaces] = useState<WorkspaceModel[]>([]);
-  const [projects, setProjects] = useState<WorkspaceProjectModel[]>([]);
-  const [loading, setLoading] = useState(false);
+  // 二级页实体列表走 tracker query（与主页面共享缓存，命中缓存即零请求）。
+  const { data: workspaces = [], isFetching: workspacesFetching } = useWorkspaces();
+  const workspaceProjectsQuery = useWorkspaceProjects(ctx.currentWorkspaceId);
+  const workspaceProjects = workspaceProjectsQuery.data ?? [];
 
   // 打开/切页时重置搜索词：渲染期据 (isOpen, subPage) 变化调整（React 推荐），避免 effect 内同步 setState。
   const resetKey = `${ctx.isOpen}:${ctx.subPage}`;
@@ -116,39 +116,8 @@ function CommandPaletteDialog() {
     return () => window.clearTimeout(timer);
   }, [ctx.isOpen]);
 
-  // 二级页拉取对应实体列表（复用 tracker getList，无需新增 server 端点）。
-  // 抽成 useCallback（同 tracker 各页 load 范式），effect 仅调用——setState 不在 effect 体内同步执行，
-  // 规避 react/set-state-in-effect。loading 显隐与 try/catch/finally 三段式对齐 WorkspacesPage。
-  const loadSubPage = useCallback(async () => {
-    if (!ctx.isOpen || ctx.subPage == null) {
-      return;
-    }
-    setLoading(true);
-    try {
-      if (ctx.subPage === 'workspace') {
-        setWorkspaces(await WorkspaceService.getList());
-      } else if (ctx.subPage === 'project') {
-        if (ctx.currentWorkspaceId == null) {
-          setProjects([]);
-          return;
-        }
-        setProjects(await WorkspaceProjectService.getList({ workspaceId: ctx.currentWorkspaceId }));
-      }
-    } catch (e) {
-      console.warn(`[command-palette] load ${ctx.subPage} failed:`, e);
-      if (ctx.subPage === 'workspace') {
-        setWorkspaces([]);
-      } else {
-        setProjects([]);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [ctx.isOpen, ctx.subPage, ctx.currentWorkspaceId]);
-
-  useEffect(() => {
-    void loadSubPage();
-  }, [loadSubPage]);
+  // 二级页加载态：仅当前页对应的查询在拉取时显示进度环（缓存命中时为 false，零请求）。
+  const loading = ctx.subPage === 'workspace' ? workspacesFetching : workspaceProjectsQuery.isFetching;
 
   // 选中命令：执行 action，按 closeOnSelect 决定是否关闭。
   const runCommand = (cmd: CommandConfig) => {
@@ -163,8 +132,8 @@ function CommandPaletteDialog() {
     ctx.selectWorkspace(ws);
     ctx.close();
   };
-  const pickProject = (project: WorkspaceProjectModel) => {
-    ctx.selectProject(project);
+  const pickWorkspaceProject = (workspaceProject: WorkspaceProjectModel) => {
+    ctx.selectWorkspaceProject(workspaceProject);
     ctx.close();
   };
 
@@ -258,9 +227,9 @@ function CommandPaletteDialog() {
                   <SubPageList
                     loading={loading}
                     workspaces={ctx.subPage === 'workspace' ? workspaces : []}
-                    projects={ctx.subPage === 'project' ? projects : []}
+                    workspaceProjects={ctx.subPage === 'project' ? workspaceProjects : []}
                     onPickWorkspace={pickWorkspace}
-                    onPickProject={pickProject}
+                    onPickWorkspaceProject={pickWorkspaceProject}
                   />
                 )}
             {!loading && <Command.Empty>{t('panel:commandPalette.empty')}</Command.Empty>}
@@ -301,12 +270,12 @@ function CommandPaletteDialog() {
 interface SubPageListProps {
   loading: boolean;
   workspaces: WorkspaceModel[];
-  projects: WorkspaceProjectModel[];
+  workspaceProjects: WorkspaceProjectModel[];
   onPickWorkspace: (ws: WorkspaceModel) => void;
-  onPickProject: (project: WorkspaceProjectModel) => void;
+  onPickWorkspaceProject: (workspaceProject: WorkspaceProjectModel) => void;
 }
 
-function SubPageList({ loading, workspaces, projects, onPickWorkspace, onPickProject }: SubPageListProps) {
+function SubPageList({ loading, workspaces, workspaceProjects, onPickWorkspace, onPickWorkspaceProject }: SubPageListProps) {
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
@@ -321,8 +290,8 @@ function SubPageList({ loading, workspaces, projects, onPickWorkspace, onPickPro
           <Typography variant="body2">{ws.name}</Typography>
         </Command.Item>
       ))}
-      {projects.map(p => (
-        <Command.Item key={p.id} value={p.name} onSelect={() => onPickProject(p)}>
+      {workspaceProjects.map(p => (
+        <Command.Item key={p.id} value={p.name} onSelect={() => onPickWorkspaceProject(p)}>
           <Typography variant="body2">{p.name}</Typography>
         </Command.Item>
       ))}

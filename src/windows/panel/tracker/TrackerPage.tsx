@@ -1,32 +1,26 @@
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
 import { AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
+import { useTrackerStore } from '@src/state/tracker';
 import { useTranslation } from 'react-i18next';
-import IssueListPage from './IssueListPage';
-import ProjectListPage from './ProjectListPage';
+import ProjectIssueListPage from './ProjectIssueListPage';
+import WorkspaceProjectListPage from './WorkspaceProjectListPage';
 import WorkspacesPage from './WorkspacesPage';
 
-// tracker 三级选择状态由父级 PanelApp 持有：命令面板「跳到工作空间/项目」需回写同一份状态，
-// 故 TrackerPage 改为受控——selected/selectedProject 经 props 传入，变更经回调上抛。
-interface TrackerPageProps {
-  selected: WorkspaceModel | null;
-  selectedProject: WorkspaceProjectModel | null;
-  onSelectWorkspace: (ws: WorkspaceModel | null) => void;
-  onSelectProject: (project: WorkspaceProjectModel | null) => void;
-}
-
 // TrackerPage：控制台「工作台」页面内容组件（工作空间 → 项目 → Issue 三级管理）。
+// 三级选择态读写 tracker store（与命令面板共享同一份），故本组件无 props。
 // 嵌在 PanelApp 内容区内（panel 顶栏已显示「工作台」页面名），故自身不再重复标题。
 // 两态机：未选中工作空间 → 全屏 WorkspacesPage（卡片网格 + CRUD）；
-// 选中某工作空间 → 顶部「工作空间切换栏」（名称 + 切换按钮）+ 左项目列表 / 右 issue 三栏。
-// 左栏 ProjectListPage 受控选中：行点击上抛 selectedProject，由右栏决定渲染哪个项目的 issue。
-// 切换工作空间时一并清空选中项目。
-export default function TrackerPage({ selected, selectedProject, onSelectWorkspace, onSelectProject }: TrackerPageProps) {
+// 选中某工作空间 → 顶部「工作空间切换栏」（名称 + 切换按钮）+ 左项目列表 / 右 projectIssue 三栏。
+export default function TrackerPage() {
   const { t } = useTranslation();
+  const selected = useTrackerStore(s => s.selectedWorkspace);
+  const selectedWorkspaceProject = useTrackerStore(s => s.selectedWorkspaceProject);
+  const selectWorkspace = useTrackerStore(s => s.selectWorkspace);
+  const selectWorkspaceProject = useTrackerStore(s => s.selectWorkspaceProject);
 
   // 未选中工作空间：全屏管理工作空间。
   if (!selected) {
-    return <WorkspacesPage onSelect={onSelectWorkspace} />;
+    return <WorkspacesPage onSelect={selectWorkspace} />;
   }
 
   // 已选中工作空间：工作空间切换栏 + 三栏工作壳。
@@ -53,8 +47,8 @@ export default function TrackerPage({ selected, selectedProject, onSelectWorkspa
           <IconButton
             size="small"
             onClick={() => {
-              onSelectProject(null);
-              onSelectWorkspace(null);
+              selectWorkspaceProject(null);
+              selectWorkspace(null);
             }}
             sx={{ ml: 'auto' }}
             aria-label={t('tracker:workspace.actions.switch')}
@@ -64,9 +58,9 @@ export default function TrackerPage({ selected, selectedProject, onSelectWorkspa
         </Tooltip>
       </Box>
 
-      {/* 主体：左 project 列表 + 右 issue 列表 */}
+      {/* 主体：左 workspaceProject 列表 + 右 projectIssue 列表 */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        {/* 左栏：project 列表（宽 260，选中受控上抛） */}
+        {/* 左栏：workspaceProject 列表（宽 260，选中态读写 store） */}
         <Box
           sx={{
             width: 260,
@@ -76,23 +70,19 @@ export default function TrackerPage({ selected, selectedProject, onSelectWorkspa
             overflow: 'hidden',
           }}
         >
-          <ProjectListPage
-            workspace={selected}
-            selectedId={selectedProject?.id ?? null}
-            onSelect={onSelectProject}
-          />
+          <WorkspaceProjectListPage workspace={selected} />
         </Box>
 
-        {/* 右栏：issue 列表（选中项目后渲染；key 随项目切换重挂载，重置筛选/折叠并重新加载） */}
+        {/* 右栏：projectIssue 列表（选中项目后渲染；key 随项目切换重挂载，重置筛选/折叠并重新加载） */}
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
-          {selectedProject
+          {selectedWorkspaceProject
             ? (
-                <IssueListPage key={selectedProject.id} project={selectedProject} />
+                <ProjectIssueListPage key={selectedWorkspaceProject.id} workspaceProject={selectedWorkspaceProject} />
               )
             : (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
                   <Typography variant="body2" color="text.secondary">
-                    {t('tracker:issue.emptyHint')}
+                    {t('tracker:projectIssue.emptyHint')}
                   </Typography>
                 </Box>
               )}

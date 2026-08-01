@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
 import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
+import type { ReactNode } from 'react';
 import type { CommandPaletteContextValue, CommandSubPage, MenuKey } from './types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommandPaletteContext } from './CommandPaletteContext';
@@ -14,7 +14,7 @@ interface CommandPaletteProviderProps {
   toggleSidebar: () => void;
   currentWorkspaceId: number | null;
   selectWorkspace: (ws: WorkspaceModel) => void;
-  selectProject: (project: WorkspaceProjectModel) => void;
+  selectWorkspaceProject: (workspaceProject: WorkspaceProjectModel) => void;
   children: ReactNode;
 }
 
@@ -64,7 +64,7 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
     toggleSidebar: props.toggleSidebar,
     currentWorkspaceId: props.currentWorkspaceId,
     selectWorkspace: props.selectWorkspace,
-    selectProject: props.selectProject,
+    selectWorkspaceProject: props.selectWorkspaceProject,
   }), [
     isOpen,
     open,
@@ -78,7 +78,7 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
     props.toggleSidebar,
     props.currentWorkspaceId,
     props.selectWorkspace,
-    props.selectProject,
+    props.selectWorkspaceProject,
   ]);
 
   return (

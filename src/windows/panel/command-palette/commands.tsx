@@ -48,7 +48,7 @@ export const commands: CommandConfig[] = [
     group: 'navigation',
     titleI18nKey: 'panel:commandPalette.nav.tracker',
     icon: <SpaceDashboardOutlinedIcon />,
-    keywords: ['tracker', 'workspace', 'issue', 'kanban', '工作台', '看板'],
+    keywords: ['tracker', 'workspace', 'projectIssue', 'kanban', '工作台', '看板'],
     action: ctx => ctx.navigate('tracker'),
     closeOnSelect: true,
   },
