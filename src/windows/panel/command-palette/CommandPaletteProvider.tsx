@@ -46,12 +46,11 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // 兜底：面板关闭时确保二级页复位（与 close 内联逻辑双保险，应对外部 setIsOpen 场景）。
-  useEffect(() => {
-    if (!isOpen) {
-      setSubPage(null);
-    }
-  }, [isOpen]);
+  // 兜底：面板关闭时复位二级页。用渲染期「据 isOpen 调整 state」模式（React 推荐）替代 effect 内
+  // 同步 setState——覆盖 close() 之外的关闭路径（⌘K toggle），与 close() 内联复位双保险。
+  if (!isOpen && subPage !== null) {
+    setSubPage(null);
+  }
 
   const value = useMemo<CommandPaletteContextValue>(() => ({
     isOpen,
@@ -84,10 +83,10 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
   ]);
 
   return (
-    <CommandPaletteContext.Provider value={value}>
+    <CommandPaletteContext value={value}>
       {props.children}
       <CommandPaletteDialog />
-    </CommandPaletteContext.Provider>
+    </CommandPaletteContext>
   );
 }
 

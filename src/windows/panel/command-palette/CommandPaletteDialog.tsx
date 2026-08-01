@@ -5,7 +5,7 @@ import type { CommandConfig, CommandGroup } from './types';
 import { SearchOutlined as SearchOutlinedIcon } from '@mui/icons-material';
 import { Box, CircularProgress, Dialog, Typography } from '@mui/material';
 import { Command } from 'cmdk';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiPost } from '../tracker/api';
 import { useCommandPalette } from './CommandPaletteContext';
@@ -90,6 +90,8 @@ function CommandPaletteDialog() {
   const ctx = useCommandPalette();
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
+  // 渲染期复位搜索词的 prev 追踪（替代 effect 内同步 setSearch）。
+  const prevResetKeyRef = useRef<string | null>(null);
 
   // 受控搜索词：Backspace 返回逻辑依赖判空，故不交给 cmdk 内部状态。
   const [search, setSearch] = useState('');
@@ -98,46 +100,56 @@ function CommandPaletteDialog() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // 打开/切页时重置搜索，聚焦输入框（MUI Dialog 挂载后 command 输入抢焦）。
-  useEffect(() => {
+  // 打开/切页时重置搜索词：渲染期据 (isOpen, subPage) 变化调整（React 推荐），避免 effect 内同步 setState。
+  const resetKey = `${ctx.isOpen}:${ctx.subPage}`;
+  if (prevResetKeyRef.current !== resetKey) {
+    prevResetKeyRef.current = resetKey;
     setSearch('');
-    if (ctx.isOpen) {
-      // 微延后至 Dialog 过渡挂载完成，确保 input 可聚焦。
-      const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
-      return () => window.clearTimeout(timer);
+  }
+
+  // 打开时聚焦输入框（MUI Dialog 挂载后 command 输入抢焦）。
+  useEffect(() => {
+    if (!ctx.isOpen) {
+      return;
     }
-  }, [ctx.isOpen, ctx.subPage]);
+    // 微延后至 Dialog 过渡挂载完成，确保 input 可聚焦。
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [ctx.isOpen]);
 
   // 二级页拉取对应实体列表（复用 tracker getList，无需新增 server 端点）。
-  useEffect(() => {
+  // 抽成 useCallback（同 tracker 各页 load 范式），effect 仅调用——setState 不在 effect 体内同步执行，
+  // 规避 react/set-state-in-effect。loading 显隐与 try/catch/finally 三段式对齐 WorkspacesPage。
+  const loadSubPage = useCallback(async () => {
     if (!ctx.isOpen || ctx.subPage == null) {
       return;
     }
     setLoading(true);
-    const page = ctx.subPage;
-    if (page === 'workspace') {
-      apiPost<Workspace[]>('/api/tracker/workspace/getList')
-        .then(setWorkspaces)
-        .catch((e) => {
-          console.warn('[command-palette] load workspaces failed:', e);
-          setWorkspaces([]);
-        })
-        .finally(() => setLoading(false));
-    } else if (page === 'project') {
-      if (ctx.currentWorkspaceId == null) {
-        setProjects([]);
-        setLoading(false);
-        return;
-      }
-      apiPost<Project[]>('/api/tracker/project/getList', { workspaceId: ctx.currentWorkspaceId })
-        .then(setProjects)
-        .catch((e) => {
-          console.warn('[command-palette] load projects failed:', e);
+    try {
+      if (ctx.subPage === 'workspace') {
+        setWorkspaces(await apiPost<Workspace[]>('/api/tracker/workspace/getList'));
+      } else if (ctx.subPage === 'project') {
+        if (ctx.currentWorkspaceId == null) {
           setProjects([]);
-        })
-        .finally(() => setLoading(false));
+          return;
+        }
+        setProjects(await apiPost<Project[]>('/api/tracker/project/getList', { workspaceId: ctx.currentWorkspaceId }));
+      }
+    } catch (e) {
+      console.warn(`[command-palette] load ${ctx.subPage} failed:`, e);
+      if (ctx.subPage === 'workspace') {
+        setWorkspaces([]);
+      } else {
+        setProjects([]);
+      }
+    } finally {
+      setLoading(false);
     }
   }, [ctx.isOpen, ctx.subPage, ctx.currentWorkspaceId]);
+
+  useEffect(() => {
+    void loadSubPage();
+  }, [loadSubPage]);
 
   // 选中命令：执行 action，按 closeOnSelect 决定是否关闭。
   const runCommand = (cmd: CommandConfig) => {

@@ -35,7 +35,7 @@ function CommandPaletteTrigger() {
       }}
     >
       <SearchOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />
-      <Typography variant="body2" sx={{ flex: 1, color: 'text.disabled', textAlign: 'left' }} noWrap>
+      <Typography variant="body2" sx={{ fontSize: 12, flex: 1, color: 'text.disabled', textAlign: 'left' }} noWrap>
         {t('panel:commandPalette.searchPlaceholder')}
       </Typography>
       {/* 键帽徽标：与 Dialog 底部 Kbd 同风格（monospace + 描边 + action.hover 底）。 */}
