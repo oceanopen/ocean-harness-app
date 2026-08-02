@@ -15,6 +15,9 @@
     "placeholderSubPage": "输入名称以筛选…",
     "searchPlaceholder": "搜索…",
     "empty": "无匹配结果",
+    "annotation": "（{{text}}）",
+    "noWorkspace": "暂无工作空间",
+    "noProject": "暂无项目",
     "footer": {
       "close": "关闭",
       "back": "返回"
@@ -36,7 +39,8 @@
     },
     "jump": {
       "workspace": "跳到工作空间",
-      "project": "跳到项目"
+      "project": "跳到项目",
+      "projectDisabledHint": "需先选择工作空间"
     }
   }
 }

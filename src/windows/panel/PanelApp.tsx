@@ -49,12 +49,6 @@ function decodeSidebarCollapsed(raw: string | null): boolean {
   return isYes(parseYesNo(raw, DEFAULT_PANEL_SIDEBAR_COLLAPSED));
 }
 
-// panel 窗口（控制台）是各种场景管理页面的通用容器。
-// 左侧菜单 + 右侧内容的交互复刻自 settings 窗口（SettingsApp）：
-// useState<MenuKey> 单状态 + menuItems 配置数组驱动左侧 List + 右侧条件渲染。
-// 当前菜单：Claude 会话监听、本地仓库管理；后续在此数组追加新菜单项即可扩展。
-// MenuKey 见 ./commandPalette/types（顶级菜单标识与命令面板共用，避免 union 字面量双份维护）。
-
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
 
@@ -67,6 +61,9 @@ function PanelApp() {
   const [trackerMounted, setTrackerMounted] = useState(false);
   // tracker 三级选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
   const currentWorkspaceId = useTrackerStore(s => s.selectedWorkspace?.id ?? null);
+  // 选中实体名供命令面板 jump 命令声明式渲染名称注释（id 用于逻辑判断，name 用于展示）。
+  const currentWorkspaceName = useTrackerStore(s => s.selectedWorkspace?.name ?? null);
+  const currentWorkspaceProjectName = useTrackerStore(s => s.selectedWorkspaceProject?.name ?? null);
   const theme = useTheme();
   // 侧边栏折叠状态：订阅 config（跨重启持久化、多窗口同步）。setAppConfig 触发 app-config-changed 事件，hook 自动回写，无需手动 setState。
   const collapsed = useConfigValue(PANEL_SIDEBAR_COLLAPSED_KEY, decodeSidebarCollapsed, false);
@@ -143,6 +140,8 @@ function PanelApp() {
       openSettings={openSettings}
       toggleSidebar={toggleCollapsed}
       currentWorkspaceId={currentWorkspaceId}
+      currentWorkspaceName={currentWorkspaceName}
+      currentWorkspaceProjectName={currentWorkspaceProjectName}
       selectWorkspace={selectWorkspace}
       selectWorkspaceProject={selectWorkspaceProject}
     >

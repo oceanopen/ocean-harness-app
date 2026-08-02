@@ -80,6 +80,8 @@ export const commands: CommandConfig[] = [
     titleI18nKey: 'panel:commandPalette.jump.workspace',
     icon: <WorkspacesOutlinedIcon />,
     keywords: ['workspace', 'switch', '工作空间', '切换'],
+    // 注释当前选中工作空间名（无则不显示），让用户在面板内即可看到当前上下文。
+    getSubtitle: ctx => ctx.currentWorkspaceName,
     // 切二级页面而非直接关闭：选中后保留面板展示工作空间列表供二次过滤。
     action: ctx => ctx.setSubPage('workspace'),
     closeOnSelect: false,
@@ -90,8 +92,11 @@ export const commands: CommandConfig[] = [
     titleI18nKey: 'panel:commandPalette.jump.project',
     icon: <DashboardOutlinedIcon />,
     keywords: ['project', 'switch', '项目', '切换'],
-    // 仅在某工作空间已选中时可见：项目列表依赖 workspaceId，避免无上下文的二级空页。
-    isVisible: ctx => ctx.currentWorkspaceId != null,
+    // 未选工作空间时软禁用（置灰 + 提示 + 回车无效），而非隐藏：项目列表依赖 workspaceId，
+    // 但恒定渲染让命令列表长度稳定（避免 cmdk 选中态失序），并引导用户"先选工作空间"。
+    isEnabled: ctx => ctx.currentWorkspaceId != null,
+    disabledHintI18nKey: 'panel:commandPalette.jump.projectDisabledHint',
+    getSubtitle: ctx => ctx.currentWorkspaceProjectName,
     action: ctx => ctx.setSubPage('project'),
     closeOnSelect: false,
   },

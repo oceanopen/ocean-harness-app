@@ -15,6 +15,9 @@
     "placeholderSubPage": "Filter by name…",
     "searchPlaceholder": "Search…",
     "empty": "No results found",
+    "annotation": "({{text}})",
+    "noWorkspace": "No workspaces",
+    "noProject": "No projects",
     "footer": {
       "close": "Close",
       "back": "Back"
@@ -36,7 +39,8 @@
     },
     "jump": {
       "workspace": "Jump to Workspace",
-      "project": "Jump to Project"
+      "project": "Jump to Project",
+      "projectDisabledHint": "Select a workspace first"
     }
   }
 }

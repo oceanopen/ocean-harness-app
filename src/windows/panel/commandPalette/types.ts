@@ -13,8 +13,6 @@ export type CommandGroup = 'navigation' | 'action' | 'jump';
 export type CommandSubPage = 'workspace' | 'project';
 
 // 命令运行期上下文：同时承载"面板自身状态"与"宿主导航/动作能力"。
-// 命令的 isVisible / action 接收本类型，因此命令即数据、与 UI 解耦（借鉴 plane TPowerKContext 思路，
-// 合并为单 context，避免 plane 那套 MobX store + 多 context 的复杂度）。
 export interface CommandPaletteContextValue {
   // 面板自身状态
   isOpen: boolean;
@@ -32,13 +30,18 @@ export interface CommandPaletteContextValue {
 
   // 宿主：tracker 跳转（二级页面选中实体后回写）
   currentWorkspaceId: number | null;
+  // 当前选中工作空间 / 项目的名称（派生自 tracker store），供 jump 命令声明式渲染名称注释。
+  currentWorkspaceName: string | null;
+  currentWorkspaceProjectName: string | null;
   selectWorkspace: (ws: WorkspaceModel) => void;
   selectWorkspaceProject: (workspaceProject: WorkspaceProjectModel) => void;
 }
 
 // CommandConfig：一条命令的声明式描述。借鉴 plane TPowerKCommandConfig，
-// 裁剪掉 v1 不需要的 keySequence / modifierShortcut / isEnabled / 动态 contextType，
-// 保留"命令即数据 + 动态可见 + 关键词搜索"三要素。action 经 ctx 调用宿主能力，命令本身不持有 UI。
+// 裁剪掉 v1 不需要的 keySequence / modifierShortcut / 动态 contextType，
+// 保留"命令即数据 + 关键词搜索"核心要素。isVisible（v1 仅 jump.project 用于动态可见）已移除——
+// 改为恒定渲染 + isEnabled 软禁用：避免命令列表长度随上下文变化导致 cmdk 选中态失序（down 键跳回 bug），
+// 同时让置灰项仍可达、回车无效，契合"先选工作空间再选项目"的引导式交互。
 export interface CommandConfig {
   id: string;
   group: CommandGroup;
@@ -49,8 +52,13 @@ export interface CommandConfig {
   keywords?: string[];
   // 展示用快捷键提示（v1 仅展示，不实现按键分发）。
   shortcut?: string;
-  // 运行期动态可见（如"跳到项目"仅在某工作空间已选中时出现）。
-  isVisible?: (ctx: CommandPaletteContextValue) => boolean;
+  // 运行期软禁用谓词（缺省视为启用）。为 false 时项恒渲染但置灰：仍可键盘/鼠标聚焦，回车与点击无效。
+  // 注意：不用 cmdk 原生 disabled（会被踢出键盘导航，反令工作空间变末项、失序 bug 复发）。
+  isEnabled?: (ctx: CommandPaletteContextValue) => boolean;
+  // 软禁用时展示的提示文案 i18n key（如"需先选择工作空间"），渲染时自动括注。
+  disabledHintI18nKey?: string;
+  // 动态名称注释（如当前选中工作空间/项目名），返回名称字符串；渲染时自动括注为"（名称）"。
+  getSubtitle?: (ctx: CommandPaletteContextValue) => string | null;
   // 选中后执行；经 ctx 调用宿主导航/动作或切换二级页面。
   action: (ctx: CommandPaletteContextValue) => void;
   // 选中后是否关闭面板（导航/动作关闭；跳转切二级页面不关闭）。

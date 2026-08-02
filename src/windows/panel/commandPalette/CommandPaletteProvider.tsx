@@ -13,6 +13,8 @@ interface CommandPaletteProviderProps {
   openSettings: () => void;
   toggleSidebar: () => void;
   currentWorkspaceId: number | null;
+  currentWorkspaceName: string | null;
+  currentWorkspaceProjectName: string | null;
   selectWorkspace: (ws: WorkspaceModel) => void;
   selectWorkspaceProject: (workspaceProject: WorkspaceProjectModel) => void;
   children: ReactNode;
@@ -63,6 +65,8 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
     openSettings: props.openSettings,
     toggleSidebar: props.toggleSidebar,
     currentWorkspaceId: props.currentWorkspaceId,
+    currentWorkspaceName: props.currentWorkspaceName,
+    currentWorkspaceProjectName: props.currentWorkspaceProjectName,
     selectWorkspace: props.selectWorkspace,
     selectWorkspaceProject: props.selectWorkspaceProject,
   }), [
@@ -77,6 +81,8 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
     props.openSettings,
     props.toggleSidebar,
     props.currentWorkspaceId,
+    props.currentWorkspaceName,
+    props.currentWorkspaceProjectName,
     props.selectWorkspace,
     props.selectWorkspaceProject,
   ]);

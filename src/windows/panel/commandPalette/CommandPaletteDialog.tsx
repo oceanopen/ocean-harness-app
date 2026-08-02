@@ -59,13 +59,24 @@ const commandSx = {
     'borderRadius': 1,
     'cursor': 'pointer',
     'color': 'text.primary',
-    'fontSize': '0.9rem',
+    'fontSize': '0.8rem',
+    // 命令项图标等比缩小（MUI SvgIcon 默认 24px），与 0.8rem 文字视觉平衡。
+    '& [data-cmdk-icon] svg': { width: 18, height: 18 },
     // cmdk 在激活项上置 data-selected="true"；用 action.selected 标识，避免自调 alpha。
     '&[data-selected="true"]': {
       bgcolor: 'action.selected',
     },
     '&[data-selected="true"] [data-cmdk-icon]': {
       color: 'primary.main',
+    },
+    // 软禁用项（如未选工作空间时的"跳到项目"）：置灰但仍可聚焦，回车/点击由 onSelect 守卫无效。
+    // 不用 cmdk 原生 disabled——它会把项踢出键盘导航，反令工作空间变末项、down 键失序 bug 复发。
+    '&[data-soft-disabled="true"]': {
+      'color': 'text.disabled',
+      'cursor': 'not-allowed',
+      '& [data-cmdk-icon]': { color: 'text.disabled' },
+      // 选中态也保持置灰：多一个属性选择器，特异性高于上方 [data-selected] 染 primary 规则。
+      '&[data-selected="true"] [data-cmdk-icon]': { color: 'text.disabled' },
     },
   },
   '& [cmdk-empty]': {
@@ -118,6 +129,15 @@ function CommandPaletteDialog() {
 
   // 二级页加载态：仅当前页对应的查询在拉取时显示进度环（缓存命中时为 false，零请求）。
   const loading = ctx.subPage === 'workspace' ? workspacesFetching : workspaceProjectsQuery.isFetching;
+  // 二级页"列表本身为空"（区别于"搜索无匹配"）：前者给"暂无X"明确文案，后者保留"无匹配结果"。
+  // 主页面恒有命令，此标志恒 false（其空态只可能是搜索无匹配）。
+  const subPageEmpty = ctx.subPage != null
+    && (ctx.subPage === 'workspace' ? workspaces.length === 0 : workspaceProjects.length === 0);
+  // 空态文案 key：二级页列表为空给"暂无X"，否则（含主页面搜索无匹配）给"无匹配结果"。
+  const emptyStateKey
+    = subPageEmpty
+      ? (ctx.subPage === 'workspace' ? 'panel:commandPalette.noWorkspace' : 'panel:commandPalette.noProject')
+      : 'panel:commandPalette.empty';
 
   // 选中命令：执行 action，按 closeOnSelect 决定是否关闭。
   const runCommand = (cmd: CommandConfig) => {
@@ -195,30 +215,54 @@ function CommandPaletteDialog() {
             {ctx.subPage == null
               ? (
                   GROUPS.map(({ group, headingKey }) => {
-                    const items = getCommandsByGroup(group, ctx);
+                    const items = getCommandsByGroup(group);
                     if (items.length === 0) {
                       return null;
                     }
                     return (
                       <Command.Group key={group} heading={t(headingKey)}>
-                        {items.map(cmd => (
-                          <Command.Item
-                            key={cmd.id}
-                            value={t(cmd.titleI18nKey)}
-                            keywords={cmd.keywords}
-                            onSelect={() => runCommand(cmd)}
-                          >
-                            <Box component="span" data-cmdk-icon sx={{ display: 'flex', color: 'text.secondary' }}>
-                              {cmd.icon}
-                            </Box>
-                            <Box component="span" sx={{ flex: 1 }}>
-                              {t(cmd.titleI18nKey)}
-                            </Box>
-                            {cmd.shortcut && (
-                              <Typography variant="caption" color="text.disabled">{cmd.shortcut}</Typography>
-                            )}
-                          </Command.Item>
-                        ))}
+                        {items.map((cmd) => {
+                          // 软禁用：仍渲染并可达（键盘/鼠标可聚焦），回车/点击由 onSelect 守卫无效。
+                          const enabled = cmd.isEnabled?.(ctx) ?? true;
+                          const subtitleName = cmd.getSubtitle?.(ctx) ?? null;
+                          // 软禁用时优先展示提示文案；否则展示名称注释；皆无则不显示括注。
+                          // 括号走语言感知 i18n 模板（zh 全角／en 半角），避免硬编码标点泄露到英文环境。
+                          const captionText = !enabled && cmd.disabledHintI18nKey
+                            ? t(cmd.disabledHintI18nKey)
+                            : subtitleName;
+                          const caption = captionText
+                            ? t('panel:commandPalette.annotation', { text: captionText })
+                            : null;
+                          return (
+                            <Command.Item
+                              key={cmd.id}
+                              value={t(cmd.titleI18nKey)}
+                              keywords={cmd.keywords}
+                              data-soft-disabled={enabled ? undefined : true}
+                              onSelect={() => {
+                                if (!enabled) {
+                                  return;
+                                }
+                                runCommand(cmd);
+                              }}
+                            >
+                              <Box component="span" data-cmdk-icon sx={{ display: 'flex', color: 'text.secondary' }}>
+                                {cmd.icon}
+                              </Box>
+                              <Box component="span" sx={{ flex: 1, minWidth: 0 }}>
+                                {t(cmd.titleI18nKey)}
+                                {caption && (
+                                  <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 0.5 }}>
+                                    {caption}
+                                  </Typography>
+                                )}
+                              </Box>
+                              {cmd.shortcut && (
+                                <Typography variant="caption" color="text.disabled">{cmd.shortcut}</Typography>
+                              )}
+                            </Command.Item>
+                          );
+                        })}
                       </Command.Group>
                     );
                   })
@@ -232,7 +276,7 @@ function CommandPaletteDialog() {
                     onPickWorkspaceProject={pickWorkspaceProject}
                   />
                 )}
-            {!loading && <Command.Empty>{t('panel:commandPalette.empty')}</Command.Empty>}
+            {!loading && <Command.Empty>{t(emptyStateKey)}</Command.Empty>}
           </Command.List>
 
           {/* 底部提示：Esc 关闭 / 二级页时 ⌫ 返回。 */}
@@ -287,12 +331,12 @@ function SubPageList({ loading, workspaces, workspaceProjects, onPickWorkspace, 
     <>
       {workspaces.map(ws => (
         <Command.Item key={ws.id} value={ws.name} onSelect={() => onPickWorkspace(ws)}>
-          <Typography variant="body2">{ws.name}</Typography>
+          <Typography sx={{ fontSize: '0.8rem' }}>{ws.name}</Typography>
         </Command.Item>
       ))}
       {workspaceProjects.map(p => (
         <Command.Item key={p.id} value={p.name} onSelect={() => onPickWorkspaceProject(p)}>
-          <Typography variant="body2">{p.name}</Typography>
+          <Typography sx={{ fontSize: '0.8rem' }}>{p.name}</Typography>
         </Command.Item>
       ))}
     </>
