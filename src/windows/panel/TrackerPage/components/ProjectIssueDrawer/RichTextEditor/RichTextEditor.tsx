@@ -60,6 +60,11 @@ function RichTextEditor({ value, onChange, placeholder, editable = true, disable
     editorProps: {
       attributes: {
         class: 'rte-content ProseMirror',
+        // 关闭 webview（macOS WKWebView）对 contenteditable 的自动大写/自动纠正/拼写检查，
+        // 避免输入英文时弹出"首字母大写"等输入建议浮层。
+        spellcheck: 'false',
+        autocorrect: 'off',
+        autocapitalize: 'off',
       },
     },
   });
