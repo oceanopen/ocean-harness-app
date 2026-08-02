@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next';
 import PrioritySelect from './PrioritySelect';
 import ProjectStateSelect from './ProjectStateSelect';
 import RichTextEditor from './RichTextEditor/RichTextEditor';
+import SubTaskSection from './SubTaskSection';
 import WorkspaceLabelManagerDialog from './WorkspaceLabelManagerDialog';
 import WorkspaceLabelSelect from './WorkspaceLabelSelect';
 import 'dayjs/locale/zh-cn';
@@ -63,6 +64,8 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
+  // 嵌套抽屉：点击子任务标题打开其详情（子任务 parentId!==0 → 不渲染子任务 section，强制一层）。
+  const [subDetailIssue, setSubDetailIssue] = useState<ProjectIssueResponseData | null>(null);
   const { show: showToast, snack } = useToast();
 
   const loadWsLabels = useCallback(async () => {
@@ -246,6 +249,15 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
             onOpenManager={() => setManagerOpen(true)}
             disabled={submitting || deleting}
           />
+          {/* 子任务（仅顶级 issue：子任务本身 parentId!==0 不渲染此 section，UI 强制一层） */}
+          {mode === 'edit' && projectIssue && projectIssue.parentId === 0 && (
+            <SubTaskSection
+              parentIssue={projectIssue}
+              workspaceProject={workspaceProject}
+              projectStates={projectStates}
+              onOpenChild={setSubDetailIssue}
+            />
+          )}
           {/* 元信息（仅 edit） */}
           {mode === 'edit' && projectIssue && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 1 }}>
@@ -308,6 +320,19 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
             </Button>
           </DialogActions>
         </Dialog>
+      )}
+
+      {/* 嵌套抽屉：点击子任务标题打开其详情（子任务 parentId!==0 → 不渲染子任务 section，强制一层） */}
+      {subDetailIssue && (
+        <ProjectIssueDrawer
+          mode="edit"
+          projectIssue={subDetailIssue}
+          workspaceProject={workspaceProject}
+          projectStates={projectStates}
+          onClose={() => setSubDetailIssue(null)}
+          onUpdated={() => setSubDetailIssue(null)}
+          onDeleted={() => setSubDetailIssue(null)}
+        />
       )}
 
       {snack}

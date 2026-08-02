@@ -28,6 +28,8 @@ export default function AppThemeProvider({ children }: Props) {
     () =>
       createTheme({
         palette: { mode: resolvedMode },
+        // 全局默认字号 12（MUI 默认 14 偏大）：表单提示文案/输入值随之缩小。
+        typography: { fontSize: 12 },
         components: {
           // MuiButton 默认 text-transform: uppercase 会把 "iTerm2" 渲染成 "ITEM2"，
           // 全局关掉，让按钮文案保持原样大小写。

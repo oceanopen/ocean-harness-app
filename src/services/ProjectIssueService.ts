@@ -43,6 +43,7 @@ export interface ProjectIssueCreateRequest {
   startDate?: string;
   targetDate?: string;
   stateId?: number; // 0 → 取 project.default_state_id
+  parentId?: number; // 0=顶级，>0=子任务（须与父同 project，仅一层）
   labelIds?: number[];
 }
 

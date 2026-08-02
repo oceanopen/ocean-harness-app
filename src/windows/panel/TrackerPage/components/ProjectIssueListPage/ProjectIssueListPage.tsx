@@ -17,11 +17,7 @@ import {
   Chip,
   CircularProgress,
   Collapse,
-  FormControl,
   IconButton,
-  InputLabel,
-  MenuItem,
-  Select,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -33,7 +29,9 @@ import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
 import { trackerKeys, useProjectIssues, useProjectStates } from '@src/state/tracker';
 import { PriorityIcon } from '@src/windows/panel/TrackerPage/components/PriorityIcon';
+import PrioritySelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/PrioritySelect';
 import ProjectIssueDrawer from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectIssueDrawer';
+import ProjectStateSelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectStateSelect';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -50,8 +48,6 @@ const PRIORITY_WEIGHT: Record<Priority, number> = {
   low: 3,
   none: 4,
 };
-
-const PRIORITY_ORDER: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
 
 // 分组顺序固定（对齐 state_group 工作流语义）。
 const GROUP_ORDER: StateGroup[] = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'];
@@ -112,6 +108,23 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
     return m;
   }, [projectStates]);
 
+  // 各父 issue 的子任务统计（done/total），用于列表行/看板卡的进度小标（从全量扁平 issue 派生）。
+  const subtaskStats = useMemo(() => {
+    const m = new Map<number, { done: number; total: number }>();
+    for (const i of projectIssues) {
+      if (i.parentId <= 0) {
+        continue;
+      }
+      const s = m.get(i.parentId) ?? { done: 0, total: 0 };
+      s.total += 1;
+      if (i.completedAt) {
+        s.done += 1;
+      }
+      m.set(i.parentId, s);
+    }
+    return m;
+  }, [projectIssues]);
+
   // 各状态组的首个状态 id（sortOrder 升序），供分组头"+"快捷新建预选该组状态。
   const firstStateIdByGroup = useMemo(() => {
     const m: Partial<Record<StateGroup, number>> = {};
@@ -131,6 +144,9 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const grouped = useMemo(() => {
     const q = keyword.trim().toLowerCase();
     const filtered = projectIssues.filter((i) => {
+      if (i.parentId !== 0) {
+        return false; // 子任务不进主列表（仅在父抽屉管理）
+      }
       if (q && !i.name.toLowerCase().includes(q)) {
         return false;
       }
@@ -225,39 +241,6 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
           flexWrap: 'wrap',
         }}
       >
-        <TextField
-          size="small"
-          placeholder={t('tracker:projectIssue.search')}
-          value={keyword}
-          onChange={e => setKeyword(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: 120 }}
-        />
-        <FormControl size="small" sx={{ minWidth: 110 }}>
-          <InputLabel>{t('tracker:projectIssue.filter.priority')}</InputLabel>
-          <Select
-            label={t('tracker:projectIssue.filter.priority')}
-            value={priorityFilter}
-            onChange={e => setPriorityFilter(e.target.value as Priority | 'all')}
-          >
-            <MenuItem value="all">{t('tracker:projectIssue.filter.all')}</MenuItem>
-            {PRIORITY_ORDER.map(p => (
-              <MenuItem key={p} value={p}>{t(`tracker:projectIssue.priority.${p}`)}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <FormControl size="small" sx={{ minWidth: 120 }}>
-          <InputLabel>{t('tracker:projectIssue.filter.state')}</InputLabel>
-          <Select
-            label={t('tracker:projectIssue.filter.state')}
-            value={stateFilter}
-            onChange={e => setStateFilter(e.target.value as number | 'all')}
-          >
-            <MenuItem value="all">{t('tracker:projectIssue.filter.allStates')}</MenuItem>
-            {projectStates.map(s => (
-              <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
         <ToggleButtonGroup
           size="small"
           exclusive
@@ -275,6 +258,35 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
             <ViewKanbanOutlinedIcon />
           </ToggleButton>
         </ToggleButtonGroup>
+        {/* 查询表单项：仅列表视图展示（看板按状态分列展示全量，筛选无意义，隐藏避免歧义） */}
+        {viewMode === 'list' && (
+          <>
+            <TextField
+              size="small"
+              placeholder={t('tracker:projectIssue.search')}
+              value={keyword}
+              onChange={e => setKeyword(e.target.value)}
+              sx={{ flexGrow: 1, minWidth: 120 }}
+            />
+            <PrioritySelect
+              value={priorityFilter}
+              onChange={setPriorityFilter}
+              label={t('tracker:projectIssue.filter.priority')}
+              allOption={t('tracker:projectIssue.filter.all')}
+              sx={{ minWidth: 110 }}
+            />
+            <ProjectStateSelect
+              value={stateFilter}
+              onChange={setStateFilter}
+              projectStates={projectStates}
+              label={t('tracker:projectIssue.filter.state')}
+              allOption={t('tracker:projectIssue.filter.allStates')}
+              sx={{ minWidth: 120 }}
+            />
+          </>
+        )}
+        {/* 看板模式下用弹性间隔把"新建"推到右侧（列表模式搜索框 flexGrow 已撑开） */}
+        {viewMode === 'kanban' && <Box sx={{ flex: 1 }} />}
         <Button variant="contained" size="small" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()}>
           {t('tracker:projectIssue.actions.add')}
         </Button>
@@ -339,6 +351,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
             projectIssues={projectIssues}
             projectStates={projectStates}
             stateMap={stateMap}
+            subtaskStats={subtaskStats}
             setIssues={updateProjectIssues}
             onOpen={setDetailProjectIssue}
             showToast={showToast}
@@ -406,6 +419,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
                         key={projectIssue.id}
                         projectIssue={projectIssue}
                         stateMap={stateMap}
+                        subtaskStats={subtaskStats}
                         onOpen={setDetailProjectIssue}
                       />
                     ))}
@@ -450,11 +464,14 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
 interface IssueRowProps {
   projectIssue: ProjectIssueResponseData;
   stateMap: Map<number, ProjectStateModel>;
+  subtaskStats: Map<number, { done: number; total: number }>;
   onOpen: (projectIssue: ProjectIssueResponseData) => void;
 }
 
-function ProjectIssueRow({ projectIssue, stateMap, onOpen }: IssueRowProps) {
+function ProjectIssueRow({ projectIssue, stateMap, subtaskStats, onOpen }: IssueRowProps) {
+  const { t } = useTranslation();
   const state = stateMap.get(projectIssue.stateId);
+  const subtaskStat = subtaskStats.get(projectIssue.id);
   // 当前列表打开时刻冻结的"现在"，用于逾期判断（不在 render 中调 new Date() 以保纯；解析字符串的 new Date(str) 是纯函数）。
   const [now] = useState(() => Date.now());
   const overdue = !!projectIssue.targetDate
@@ -530,6 +547,14 @@ function ProjectIssueRow({ projectIssue, stateMap, onOpen }: IssueRowProps) {
           <CalendarMonthOutlinedIcon sx={{ fontSize: '0.9rem' }} />
           <Typography variant="caption" color="inherit">{formatDate(projectIssue.targetDate, 'YYYY-MM-DD')}</Typography>
         </Box>
+      )}
+      {subtaskStat && subtaskStat.total > 0 && (
+        <Tooltip title={t('tracker:projectIssue.detail.subtasks.title')}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0, color: 'text.disabled' }}>
+            <AssignmentOutlinedIcon sx={{ fontSize: '0.9rem' }} />
+            <Typography variant="caption" color="inherit">{subtaskStat.done}/{subtaskStat.total}</Typography>
+          </Box>
+        </Tooltip>
       )}
       <PriorityIcon priority={projectIssue.priority} />
     </Box>

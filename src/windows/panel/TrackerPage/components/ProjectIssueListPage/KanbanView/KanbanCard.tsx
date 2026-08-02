@@ -1,20 +1,25 @@
 import type { ProjectIssueResponseData } from '@src/services';
+import type { SubtaskStats } from './shared';
 import { Draggable } from '@hello-pangea/dnd';
-import { CalendarMonthOutlined as CalendarMonthOutlinedIcon } from '@mui/icons-material';
+import { AssignmentOutlined as AssignmentOutlinedIcon, CalendarMonthOutlined as CalendarMonthOutlinedIcon } from '@mui/icons-material';
 import { Box, Paper, Tooltip, Typography } from '@mui/material';
 import { formatDate } from '@src/shared/time';
 import { PriorityIcon } from '@src/windows/panel/TrackerPage/components/PriorityIcon';
+import { useTranslation } from 'react-i18next';
 import { truncateSx } from './shared';
 
 interface KanbanCardProps {
   projectIssue: ProjectIssueResponseData;
   index: number;
+  subtaskStats: SubtaskStats;
   onOpen: (projectIssue: ProjectIssueResponseData) => void;
 }
 
 // 看板卡片：优先级图标 + #id + 标题（截断）+ 标签色块 + 目标日期。
 // 整卡作为拖拽手柄（dragHandleProps 绑整卡）；纯点击（无拖动）打开详情。
-function KanbanCard({ projectIssue, index, onOpen }: KanbanCardProps) {
+function KanbanCard({ projectIssue, index, subtaskStats, onOpen }: KanbanCardProps) {
+  const { t } = useTranslation();
+  const subtaskStat = subtaskStats.get(projectIssue.id);
   return (
     <Draggable draggableId={String(projectIssue.id)} index={index}>
       {(provided, snapshot) => (
@@ -34,6 +39,14 @@ function KanbanCard({ projectIssue, index, onOpen }: KanbanCardProps) {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.25 }}>
             <PriorityIcon priority={projectIssue.priority} />
             <Typography variant="caption" color="text.disabled">#{projectIssue.id}</Typography>
+            {subtaskStat && subtaskStat.total > 0 && (
+              <Tooltip title={t('tracker:projectIssue.detail.subtasks.title')}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, ml: 'auto', color: 'text.disabled' }}>
+                  <AssignmentOutlinedIcon sx={{ fontSize: '0.9rem' }} />
+                  <Typography variant="caption" color="inherit">{subtaskStat.done}/{subtaskStat.total}</Typography>
+                </Box>
+              </Tooltip>
+            )}
           </Box>
           <Typography variant="body2" sx={truncateSx} title={projectIssue.name}>
             {projectIssue.name}

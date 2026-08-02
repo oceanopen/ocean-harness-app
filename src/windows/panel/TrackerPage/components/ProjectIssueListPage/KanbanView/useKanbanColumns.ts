@@ -20,6 +20,9 @@ export function useKanbanColumns(projectIssues: ProjectIssueResponseData[], proj
       columnsByState.set(s.id, []);
     });
     projectIssues.forEach((i) => {
+      if (i.parentId !== 0) {
+        return; // 子任务不进看板列（仅在父抽屉管理）
+      }
       const arr = columnsByState.get(i.stateId);
       if (arr) {
         arr.push(i);

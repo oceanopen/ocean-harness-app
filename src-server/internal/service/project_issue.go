@@ -100,6 +100,24 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			return e
 		}
 
+		// parent_id：>0 时为子任务，校验父存在 + 同 project + 仅一层（父自身不能是子任务）。
+		parentID := req.ParentID
+		if parentID > 0 {
+			parent, pe := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(parentID)).First()
+			if errors.Is(pe, gorm.ErrRecordNotFound) {
+				return errors.New("父任务不存在")
+			}
+			if pe != nil {
+				return pe
+			}
+			if parent.ProjectID != req.ProjectID {
+				return errors.New("子任务须与父任务同项目")
+			}
+			if parent.ParentID != 0 {
+				return errors.New("仅支持一层子任务")
+			}
+		}
+
 		// sort_order 自算：同 project MAX(sort_order)+10000，首个 10000。
 		sortOrder := float64(10000)
 		if last, le := q.ProjectIssue.WithContext(svc.Context).
@@ -124,6 +142,19 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 		if req.StateID > 0 {
 			stateID = req.StateID
 		}
+		// 同步 completed_at：初始状态若属 completed 组则记录完成时间（与 applyStateTransition 口径一致，
+		// 否则留下 state=completed 但 completed_at=nil 的记录，会阻断父任务自动完成）。
+		var completedAt *time.Time
+		if stateID > 0 {
+			st, se := q.ProjectState.WithContext(svc.Context).Where(q.ProjectState.ID.Eq(stateID)).First()
+			if se != nil && !errors.Is(se, gorm.ErrRecordNotFound) {
+				return se
+			}
+			if se == nil && st.StateGroup == enums.STATE_GROUP_COMPLETED {
+				now := time.Now()
+				completedAt = &now
+			}
+		}
 
 		created = &model.ProjectIssue{
 			ProjectID:   req.ProjectID,
@@ -133,9 +164,11 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			StateID:     stateID,
 			Priority:    priority,
 			SortOrder:   sortOrder,
+			ParentID:    parentID,
 			IsDraft:     isDraft,
 			StartDate:   req.StartDate,
 			TargetDate:  req.TargetDate,
+			CompletedAt: completedAt,
 		}
 		if ce := q.ProjectIssue.WithContext(svc.Context).Create(created); ce != nil {
 			return ce
@@ -183,12 +216,18 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 		issue.TargetDate = req.TargetDate
 
 		// stateId 变化 → completed_at 流转。
+		wasCompleted := issue.CompletedAt != nil
 		if e := svc.applyStateTransition(tx, issue, req.StateID); e != nil {
 			return e
 		}
-
 		if e := iq.Save(issue); e != nil {
 			return e
+		}
+		// 仅当本任务本次"变为完成"时触发父联动（须在自身完成态落库后，否则兄弟查询读到旧值导致永不联动）。
+		if !wasCompleted && issue.CompletedAt != nil {
+			if e := svc.maybeAutoCompleteParent(tx, issue); e != nil {
+				return e
+			}
 		}
 		return svc.syncIssueLabels(tx, issue.ID, req.LabelIDs)
 	})
@@ -224,6 +263,49 @@ func (svc ProjectIssue) applyStateTransition(orm *gorm.DB, issue *model.ProjectI
 		issue.CompletedAt = nil // 清空（*time.Time 指针 nil → Save 写 NULL）
 	}
 	return nil
+}
+
+// maybeAutoCompleteParent 状态联动：若 issue 是子任务（ParentID>0）且其全部兄弟均已完成，
+// 则把父任务流转到其项目首个 completed 组状态。仅做"全完成→完成父"单方向；
+// 父已完成/不存在、或项目无 completed 组状态时静默跳过（不阻断主流程）。orm 传 tx 以复用事务。
+func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.ProjectIssue) error {
+	if issue.ParentID <= 0 {
+		return nil
+	}
+	q := query.Use(orm)
+	// 兄弟（含自身）：同 parent_id、未软删；任一未完成则不联动。
+	siblings, e := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ParentID.Eq(issue.ParentID)).Find()
+	if e != nil {
+		return e
+	}
+	for _, s := range siblings {
+		if s.CompletedAt == nil {
+			return nil
+		}
+	}
+	// 父任务。
+	parent, pe := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(issue.ParentID)).First()
+	if pe != nil {
+		if errors.Is(pe, gorm.ErrRecordNotFound) {
+			return nil // 父已删，忽略
+		}
+		return pe
+	}
+	if parent.CompletedAt != nil {
+		return nil // 父已完成
+	}
+	// 项目首个 completed 组状态（无则跳过，不阻断）。
+	st, se := q.ProjectState.WithContext(svc.Context).
+		Where(q.ProjectState.ProjectID.Eq(parent.ProjectID)).
+		Where(q.ProjectState.StateGroup.Eq(enums.STATE_GROUP_COMPLETED)).
+		First()
+	if se != nil {
+		return nil
+	}
+	if e := svc.applyStateTransition(orm, parent, st.ID); e != nil {
+		return e
+	}
+	return q.ProjectIssue.WithContext(svc.Context).Save(parent)
 }
 
 // syncIssueLabels 全量同步某 issue 的 label 关联为 labelIDs（事务内调用，orm 传 tx）。
@@ -274,26 +356,40 @@ func (svc ProjectIssue) syncIssueLabels(orm *gorm.DB, issueID int, labelIDs []in
 }
 
 // Move 看板拖拽单卡移动：写 sortOrder（前端按分数插值算好）+ stateId 变化触发 completed_at 流转。
-// 不碰其他业务字段（name/description/priority 等由 update 维护）。
+// 子任务全完成时联动完成父（事务内：自身完成态先落库再查兄弟，避免部分失败不一致）。不碰其他业务字段。
 func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.ProjectIssueResponseData, error) {
-	q := query.Use(svc.Orm)
-	iq := q.ProjectIssue.WithContext(svc.Context)
+	var issue *model.ProjectIssue
+	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
+		q := query.Use(tx)
+		iq := q.ProjectIssue.WithContext(svc.Context)
 
-	issue, err := iq.Where(q.ProjectIssue.ID.Eq(req.ID)).First()
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("issue 不存在")
+		found, e := iq.Where(q.ProjectIssue.ID.Eq(req.ID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return errors.New("issue 不存在")
+			}
+			return e
 		}
+		issue = found
+
+		issue.SortOrder = req.SortOrder
+		wasCompleted := issue.CompletedAt != nil
+		if e := svc.applyStateTransition(tx, issue, req.StateID); e != nil {
+			return e
+		}
+		if e := iq.Save(issue); e != nil {
+			return e
+		}
+		// 看板拖入 completed 列：子任务全完成 → 父自动完成（须在自身完成态落库后）。
+		if !wasCompleted && issue.CompletedAt != nil {
+			if e := svc.maybeAutoCompleteParent(tx, issue); e != nil {
+				return e
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
-	}
-
-	issue.SortOrder = req.SortOrder
-	if e := svc.applyStateTransition(svc.Orm, issue, req.StateID); e != nil {
-		return nil, e
-	}
-
-	if e := iq.Save(issue); e != nil {
-		return nil, e
 	}
 	list, err := svc.assembleWithLabels([]*model.ProjectIssue{issue})
 	if err != nil {
@@ -302,7 +398,7 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 	return list[0], nil
 }
 
-// Delete 软删除 issue（无 DB 外键），事务内级联软删其 t_issue_labels 关联，避免悬挂。
+// Delete 软删除 issue（无 DB 外键），事务内级联软删其 t_issue_labels 关联与子任务（+ 子任务 label 关联），避免悬挂。
 func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
@@ -317,6 +413,23 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 		}
 		if _, e := q.IssueLabel.WithContext(svc.Context).Where(q.IssueLabel.IssueID.Eq(req.ID)).Delete(); e != nil {
 			return e
+		}
+		// 级联软删子任务（parent_id 指向本 issue）+ 子任务的 label 关联。
+		children, ce := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ParentID.Eq(req.ID)).Find()
+		if ce != nil {
+			return ce
+		}
+		if len(children) > 0 {
+			childIDs := make([]int, 0, len(children))
+			for _, c := range children {
+				childIDs = append(childIDs, c.ID)
+			}
+			if _, e := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.In(childIDs...)).Delete(); e != nil {
+				return e
+			}
+			if _, e := q.IssueLabel.WithContext(svc.Context).Where(q.IssueLabel.IssueID.In(childIDs...)).Delete(); e != nil {
+				return e
+			}
 		}
 		return nil
 	})

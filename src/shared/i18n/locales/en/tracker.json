@@ -171,7 +171,12 @@
       "cancel": "Cancel",
       "delete": "Delete",
       "deleteTitle": "Delete issue",
-      "deleteConfirmMsg": "Delete issue \"{{name}}\"? This cannot be undone."
+      "deleteConfirmMsg": "Delete issue \"{{name}}\"? This cannot be undone.",
+      "subtasks": {
+        "title": "Sub-tasks",
+        "addPlaceholder": "Add a sub-task, press Enter…",
+        "empty": "No sub-tasks"
+      }
     },
     "rte": {
       "placeholder": "Rich text: bold, headings, lists, code, links (optional)",

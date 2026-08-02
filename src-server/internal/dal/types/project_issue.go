@@ -27,6 +27,7 @@ type ProjectIssueGetInfoRequest struct {
 
 // ProjectIssueCreateRequest 是 POST /api/tracker/projectIssue/create 的入参。
 // stateId 不传（后端取 project.default_state_id）；sortOrder 不传（后端自算同 project MAX+10000）。
+// parentId>0 时创建为子任务（后端校验父存在 + 同 project + 仅一层）。
 type ProjectIssueCreateRequest struct {
 	ProjectID   int            `json:"projectId" binding:"required"`
 	WorkspaceID int            `json:"workspaceId" binding:"required"`
@@ -37,6 +38,7 @@ type ProjectIssueCreateRequest struct {
 	StartDate   string         `json:"startDate" binding:"omitempty"`
 	TargetDate  string         `json:"targetDate" binding:"omitempty"`
 	StateID     int            `json:"stateId"`  // 0 → 取 project.default_state_id
+	ParentID    int            `json:"parentId"` // 0=顶级，>0=子任务（须与父同 project，仅一层）
 	LabelIDs    []int          `json:"labelIds"` // 全量覆盖该 issue 的 label 关联
 }
 
