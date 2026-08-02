@@ -33,6 +33,7 @@ interface ProjectIssueDrawerProps {
   workspaceProject: WorkspaceProjectModel;
   projectStates: ProjectStateModel[];
   projectIssue?: ProjectIssueResponseData; // edit 模式必传
+  initialStateId?: number; // create 模式预选状态（如分组头"+"快捷新建时传入该组首个状态）
   onClose: () => void;
   onCreated?: (projectIssue: ProjectIssueResponseData) => void;
   onUpdated?: (projectIssue: ProjectIssueResponseData) => void;
@@ -42,7 +43,7 @@ interface ProjectIssueDrawerProps {
 // Issue 抽屉（create/edit 共用）。所有字段（含 labels）本地态，点保存/创建一次性提交，
 // 成功后关闭抽屉 + 父级刷新列表；失败 drawer 内弹 error toast（成功 toast 由父级统一弹）。
 // mode 仅决定初值来源、提交 API、头部标题/元信息/删除按钮显隐。
-function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssue, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
+function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssue, initialStateId, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
   const { t, i18n } = useTranslation();
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
   const createProjectIssue = useCreateProjectIssue(workspaceProject.id);
@@ -52,7 +53,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
   const defaultStateId = projectStates.find(s => s.isDefault === 'Y')?.id ?? projectStates[0]?.id ?? 0;
   const [name, setName] = useState(projectIssue?.name ?? '');
   const [description, setDescription] = useState(projectIssue?.description ?? '');
-  const [stateId, setStateId] = useState(projectIssue?.stateId ?? defaultStateId);
+  const [stateId, setStateId] = useState(projectIssue?.stateId ?? initialStateId ?? defaultStateId);
   const [priority, setPriority] = useState<Priority>(projectIssue?.priority ?? 'none');
   const [startDate, setStartDate] = useState(projectIssue?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(projectIssue?.targetDate ?? '');
@@ -180,7 +181,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
   };
 
   return (
-    <Drawer anchor="right" open onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: 480 } } }}>
+    <Drawer anchor="right" open onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '60%' } } }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>

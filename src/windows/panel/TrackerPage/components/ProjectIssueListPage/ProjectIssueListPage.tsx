@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
+  CalendarMonthOutlined as CalendarMonthOutlinedIcon,
   ExpandLessOutlined as ExpandLessOutlinedIcon,
   ExpandMoreOutlined as ExpandMoreOutlinedIcon,
   ViewKanbanOutlined as ViewKanbanOutlinedIcon,
@@ -17,6 +18,7 @@ import {
   CircularProgress,
   Collapse,
   FormControl,
+  IconButton,
   InputLabel,
   MenuItem,
   Select,
@@ -25,7 +27,9 @@ import {
   ToggleButtonGroup,
   Tooltip,
   Typography,
+  useTheme,
 } from '@mui/material';
+import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
 import { trackerKeys, useProjectIssues, useProjectStates } from '@src/state/tracker';
 import { PriorityIcon } from '@src/windows/panel/TrackerPage/components/PriorityIcon';
@@ -58,6 +62,9 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
+// 列表行内最多展示的标签数，超出显示 +N（对齐 plane list 的标签胶囊上限）。
+const MAX_ROW_LABELS = 3;
+
 interface IssueListPageProps {
   workspaceProject: WorkspaceProjectModel;
 }
@@ -67,6 +74,7 @@ interface IssueListPageProps {
 // 本页回调仅弹 toast（mutation 内部 invalidate）。看板拖拽乐观更新经 updateProjectIssues 适配器写回 Query 缓存。
 function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const { t } = useTranslation();
+  const theme = useTheme();
   const qc = useQueryClient();
   const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError } = useProjectIssues(workspaceProject.id);
   const { data: projectStates = [], isLoading: statesLoading, isError: statesError } = useProjectStates(workspaceProject.id);
@@ -76,6 +84,8 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const [stateFilter, setStateFilter] = useState<number | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<StateGroup>>(() => new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  // 创建抽屉预选状态：分组头"+"快捷新建时传入该组首个状态，工具栏/空态新建为 undefined。
+  const [createInitialStateId, setCreateInitialStateId] = useState<number | undefined>(undefined);
   const [detailProjectIssue, setDetailProjectIssue] = useState<ProjectIssueResponseData | null>(null);
   // 视图模式按项目持久化（localStorage），默认列表。
   const [viewMode, setViewMode] = useState<IssueViewMode>(
@@ -99,6 +109,21 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const stateMap = useMemo(() => {
     const m = new Map<number, ProjectStateModel>();
     projectStates.forEach(s => m.set(s.id, s));
+    return m;
+  }, [projectStates]);
+
+  // 各状态组的首个状态 id（sortOrder 升序），供分组头"+"快捷新建预选该组状态。
+  const firstStateIdByGroup = useMemo(() => {
+    const m: Partial<Record<StateGroup, number>> = {};
+    for (const sg of GROUP_ORDER) {
+      const sorted = projectStates
+        .filter(s => s.stateGroup === sg)
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+      const first = sorted[0];
+      if (first) {
+        m[sg] = first.id;
+      }
+    }
     return m;
   }, [projectStates]);
 
@@ -171,6 +196,16 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
     showToast(t('tracker:projectIssue.toast.deleted'), 'success');
   }, [showToast]);
 
+  // 打开/关闭创建抽屉：openCreate 可预选状态（分组头"+"传该组首个状态；其余入口不预选）。
+  const openCreate = useCallback((stateId?: number) => {
+    setCreateInitialStateId(stateId);
+    setCreateOpen(true);
+  }, []);
+  const closeCreate = useCallback(() => {
+    setCreateOpen(false);
+    setCreateInitialStateId(undefined);
+  }, []);
+
   const isLoading = issuesLoading || statesLoading;
   const isError = issuesError || statesError;
   const ready = !isLoading && !isError;
@@ -183,6 +218,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
           p: 1.5,
           borderBottom: 1,
           borderColor: 'divider',
+          bgcolor: 'action.hover',
           display: 'flex',
           alignItems: 'center',
           gap: 1,
@@ -239,7 +275,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
             <ViewKanbanOutlinedIcon />
           </ToggleButton>
         </ToggleButtonGroup>
-        <Button variant="contained" size="small" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)}>
+        <Button variant="contained" size="small" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()}>
           {t('tracker:projectIssue.actions.add')}
         </Button>
       </Box>
@@ -293,7 +329,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
             <Typography variant="body2" color="text.secondary" align="center">
               {t('tracker:projectIssue.empty.desc')}
             </Typography>
-            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setCreateOpen(true)} sx={{ mt: 1 }}>
+            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()} sx={{ mt: 1 }}>
               {t('tracker:projectIssue.actions.add')}
             </Button>
           </Box>
@@ -316,7 +352,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
           </Box>
         )}
         {ready && viewMode === 'list' && totalCount > 0 && (
-          <Box sx={{ p: 1 }}>
+          <Box sx={{ pb: 1 }}>
             {GROUP_ORDER.map((g) => {
               const arr = grouped[g];
               if (arr.length === 0) {
@@ -324,29 +360,45 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
               }
               const isCollapsed = collapsed.has(g);
               return (
-                <Box key={g} sx={{ mb: 0.5 }}>
+                <Box key={g} sx={{ mb: 1 }}>
                   <Box
                     onClick={() => toggleGroup(g)}
-                    sx={[
-                      {
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                        px: 1,
-                        py: 0.75,
-                        borderRadius: 1,
-                        cursor: 'pointer',
-                      },
-                      { '&:hover': { bgcolor: 'action.hover' } },
-                    ]}
+                    sx={{
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      px: 1.5,
+                      py: 0.75,
+                      borderBottom: 1,
+                      borderColor: 'divider',
+                      // 不透明灰带：sticky 吸顶需遮住下方滚动行，故用 grey token（action.hover 为半透明会透底）。
+                      bgcolor: theme.palette.mode === 'light' ? 'grey.100' : 'grey.900',
+                      cursor: 'pointer',
+                    }}
                   >
                     {isCollapsed
                       ? <ExpandMoreOutlinedIcon fontSize="small" color="action" />
                       : <ExpandLessOutlinedIcon fontSize="small" color="action" />}
-                    <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
                       {t(`tracker:projectIssue.group.${g}`)}
                     </Typography>
                     <Chip label={arr.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+                    <Box sx={{ flex: 1 }} />
+                    <Tooltip title={t('tracker:projectIssue.actions.add')}>
+                      <IconButton
+                        size="small"
+                        aria-label={t('tracker:projectIssue.actions.add')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openCreate(firstStateIdByGroup[g]);
+                        }}
+                      >
+                        <AddOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </Box>
                   <Collapse in={!isCollapsed}>
                     {arr.map(projectIssue => (
@@ -372,7 +424,8 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
           mode="create"
           workspaceProject={workspaceProject}
           projectStates={projectStates}
-          onClose={() => setCreateOpen(false)}
+          initialStateId={createInitialStateId}
+          onClose={closeCreate}
           onCreated={handleCreated}
         />
       )}
@@ -402,6 +455,13 @@ interface IssueRowProps {
 
 function ProjectIssueRow({ projectIssue, stateMap, onOpen }: IssueRowProps) {
   const state = stateMap.get(projectIssue.stateId);
+  // 当前列表打开时刻冻结的"现在"，用于逾期判断（不在 render 中调 new Date() 以保纯；解析字符串的 new Date(str) 是纯函数）。
+  const [now] = useState(() => Date.now());
+  const overdue = !!projectIssue.targetDate
+    && new Date(projectIssue.targetDate).getTime() < now
+    && state?.stateGroup !== 'completed'
+    && state?.stateGroup !== 'cancelled';
+  const labels = projectIssue.labels;
 
   return (
     <Box
@@ -411,13 +471,16 @@ function ProjectIssueRow({ projectIssue, stateMap, onOpen }: IssueRowProps) {
           display: 'flex',
           alignItems: 'center',
           gap: 1,
-          mx: 0.5,
-          px: 1,
-          py: 0.75,
-          borderRadius: 1,
+          px: 1.5,
+          py: 1,
+          minHeight: 40,
+          borderBottom: 1,
+          borderColor: 'divider',
           cursor: 'pointer',
         },
         { '&:hover': { bgcolor: 'action.hover' } },
+        // 组内最后一行去底线，避免与下一分组头/容器底形成双线。
+        { '&:last-child': { borderBottomColor: 'transparent' } },
       ]}
     >
       <Tooltip title={state?.name ?? ''}>
@@ -435,6 +498,39 @@ function ProjectIssueRow({ projectIssue, stateMap, onOpen }: IssueRowProps) {
       <Typography variant="body2" sx={{ flex: 1, minWidth: 0, ...truncateSx }} title={projectIssue.name}>
         {projectIssue.name}
       </Typography>
+      {labels.length > 0 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+          {labels.slice(0, MAX_ROW_LABELS).map(l => (
+            <Tooltip key={l.id} title={l.name}>
+              <Box
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  maxWidth: 120,
+                  px: 0.75,
+                  py: 0.25,
+                  borderRadius: 0.5,
+                  border: 1,
+                  borderColor: l.color || 'divider',
+                }}
+              >
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: l.color, flexShrink: 0 }} />
+                <Typography variant="caption" sx={{ ...truncateSx }}>{l.name}</Typography>
+              </Box>
+            </Tooltip>
+          ))}
+          {labels.length > MAX_ROW_LABELS && (
+            <Typography variant="caption" color="text.disabled">+{labels.length - MAX_ROW_LABELS}</Typography>
+          )}
+        </Box>
+      )}
+      {projectIssue.targetDate && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, color: overdue ? 'error.main' : 'text.disabled' }}>
+          <CalendarMonthOutlinedIcon sx={{ fontSize: '0.9rem' }} />
+          <Typography variant="caption" color="inherit">{formatDate(projectIssue.targetDate, 'YYYY-MM-DD')}</Typography>
+        </Box>
+      )}
       <PriorityIcon priority={projectIssue.priority} />
     </Box>
   );
