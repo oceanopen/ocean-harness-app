@@ -36,6 +36,15 @@ export default function AppThemeProvider({ children }: Props) {
           MuiButton: {
             styleOverrides: { root: { textTransform: 'none' } },
           },
+          // 全局关闭 webview（macOS WKWebView）对输入框的自动大写/自动纠正/拼写检查，
+          // 避免输入英文时首字母被自动大写。作用于所有 InputBase 派生组件（TextField/Select 输入框等）。
+          MuiInputBase: {
+            defaultProps: {
+              slotProps: {
+                input: { spellCheck: false, autoCapitalize: 'off', autoCorrect: 'off' },
+              },
+            },
+          },
         },
       }),
     [resolvedMode],
