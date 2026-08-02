@@ -1,4 +1,5 @@
 import type { WorkspaceProjectModel } from '@src/services';
+import { EmojiEmotionsOutlined as EmojiEmotionsOutlinedIcon } from '@mui/icons-material';
 import {
   Alert,
   Box,
@@ -7,10 +8,14 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
+  InputAdornment,
+  Popover,
   TextField,
+  Tooltip,
 } from '@mui/material';
 import { useCreateWorkspaceProject, useUpdateWorkspaceProject } from '@src/state/tracker';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // 新建/编辑项目弹窗。
@@ -34,6 +39,42 @@ interface WorkspaceProjectDialogProps {
 const DESCRIPTION_MAX = 500;
 const EMOJI_MAX = 20;
 
+// 项目图标常用 emoji 预设（点选填入，仍可在上方文本框自定义粘贴/清空）。
+const EMOJI_PRESETS = [
+  '🚀',
+  '🎯',
+  '📦',
+  '💡',
+  '🔥',
+  '⚡',
+  '🛠️',
+  '📊',
+  '🎨',
+  '🧩',
+  '🔒',
+  '🔑',
+  '🌐',
+  '📱',
+  '💻',
+  '🐛',
+  '✨',
+  '🌱',
+  '📈',
+  '🏗️',
+  '🧪',
+  '📚',
+  '🎮',
+  '🎵',
+  '🗂️',
+  '💼',
+  '🏠',
+  '⭐',
+  '🔔',
+  '✅',
+  '🏆',
+  '💎',
+];
+
 function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, workspaceProject }: WorkspaceProjectDialogProps) {
   const { t } = useTranslation();
   const isEdit = !!workspaceProject;
@@ -44,6 +85,10 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
   const [description, setDescription] = useState(workspaceProject?.description ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // emoji 选择浮层锚点（null=关闭；点按钮设为输入框根节点，点表情/外部关闭清空）。
+  const [emojiPickerAnchor, setEmojiPickerAnchor] = useState<HTMLElement | null>(null);
+  // emoji 输入框根节点 ref：作为选择浮层锚点，使浮层在输入框下方展开（而非按钮下方）。
+  const textFieldRef = useRef<HTMLDivElement | null>(null);
 
   const canSubmit = name.trim().length > 0 && !submitting;
 
@@ -105,6 +150,7 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
             disabled={submitting}
           />
           <TextField
+            ref={textFieldRef}
             label={t('tracker:workspaceProject.add.emoji')}
             placeholder={t('tracker:workspaceProject.add.emojiPlaceholder')}
             value={emoji}
@@ -114,9 +160,65 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
             }}
             fullWidth
             disabled={submitting}
-            helperText={t('tracker:workspaceProject.add.emojiHint')}
-            slotProps={{ htmlInput: { maxLength: EMOJI_MAX } }}
+            slotProps={{
+              htmlInput: { maxLength: EMOJI_MAX },
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Tooltip title={t('tracker:workspaceProject.add.emojiPicker')}>
+                      <IconButton
+                        size="small"
+                        edge="end"
+                        onClick={() => setEmojiPickerAnchor(textFieldRef.current)}
+                        disabled={submitting}
+                        aria-label={t('tracker:workspaceProject.add.emojiPicker')}
+                      >
+                        <EmojiEmotionsOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
+          {/* emoji 选择浮层：锚点为输入框本身，在输入框下方展开（非按钮下方）；点选填入并关闭 */}
+          <Popover
+            open={Boolean(emojiPickerAnchor)}
+            anchorEl={emojiPickerAnchor}
+            onClose={() => setEmojiPickerAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          >
+            <Box sx={{ p: 1.5, maxWidth: 320, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+              {EMOJI_PRESETS.map((e) => {
+                const selected = emoji === e;
+                return (
+                  <IconButton
+                    key={e}
+                    size="small"
+                    onClick={() => {
+                      setEmoji(e);
+                      setError(null);
+                      setEmojiPickerAnchor(null);
+                    }}
+                    disabled={submitting}
+                    sx={{
+                      'width': 32,
+                      'height': 32,
+                      'p': 0,
+                      'fontSize': '1.1rem',
+                      'lineHeight': 1,
+                      'border': 2,
+                      'borderColor': selected ? 'primary.main' : 'transparent',
+                      'bgcolor': selected ? 'action.selected' : 'transparent',
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
+                    {e}
+                  </IconButton>
+                );
+              })}
+            </Box>
+          </Popover>
           <TextField
             label={t('tracker:workspaceProject.add.description')}
             placeholder={t('tracker:workspaceProject.add.descriptionPlaceholder')}
