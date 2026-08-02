@@ -16,17 +16,13 @@ import { formatDate } from '@src/shared/time';
 import { PRIORITY_COLOR } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { truncateSx } from './shared';
+import { GUTTER_WIDTH, truncateSx } from './shared';
 
-// 展开图标列宽（无子 issue 时留白占位，保证顶级卡片左侧对齐）。
-const GUTTER_WIDTH = 28;
-// 行内最多展示的标签数，超出显示 +N（列表胶囊用）。
-const MAX_LABELS = 3;
 // 子卡片容器缩进：gutter(28) + 首行 gap(8) - 子卡 px(8) = 28，使子卡内容起点恰为 gutter+gap，
-// 从而子 issue 优先级色点落在父 issue 优先级色点正下方（list/kanban 通用，gutter+gap 为常量）。
+// 从而子 issue 优先级色点落在父 issue 优先级色点正下方。
 const CHILD_INDENT_PL = 3.5;
 
-// 看板拖拽透传（仅 variant=kanban 且 depth=0 的顶级卡片由外层 Draggable 注入）。
+// 看板拖拽透传（仅看板顶级卡片由外层 Draggable 注入；列表不传）。
 export interface IssueCardDnd {
   provided?: DraggableProvided;
   snapshot?: DraggableStateSnapshot;
@@ -34,7 +30,6 @@ export interface IssueCardDnd {
 
 export interface IssueCardProps {
   issue: ProjectIssueResponseData;
-  variant: 'list' | 'kanban';
   depth?: number; // 0=顶级（可展开/可新增子），1=子任务（叶节点）
   stateMap: Map<number, ProjectStateModel>;
   subtaskStats: SubtaskStats;
@@ -47,17 +42,14 @@ export interface IssueCardProps {
   dnd?: IssueCardDnd;
 }
 
-// 统一 Issue 卡片：列表项与看板卡共用同一组件与交互逻辑，行布局按 variant 区分：
-// - list 两行：首行 [展开/占位][优先级色点+描述] #id 名称 … [进度][新增][编辑]；
-//              次行 [占位] 标签胶囊 … 结束日期。
-// - kanban 三行：首行 [展开/占位][优先级色点+描述] #id … [进度][新增][编辑]（无标题）；
-//              第二行 [占位] 标题；第三行 [占位] 标签颜色横杠 … 结束日期。
+// 统一 Issue 卡片：列表与看板共用同一组件、同一外观（看板式三行 Paper 卡片）。
+// 列表/看板唯一差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
+// 三行布局：首行 [展开/占位][优先级色点+描述] #id … [进度][新增][编辑]（无标题）；
+// 第二行 [占位] 标题；第三行 [占位] 标签颜色横杠 … 结束日期。
 // 点击卡片主体：有子级（父级）→ 切换展开；无子级 → 打开编辑抽屉（onEdit）。
-// 编辑/新增 icon 各自触发回调并 stopPropagation（避免冒泡到父卡片）。
 // 所有 icon/button 不挂 Tooltip（避免遮挡鼠标），改用 aria-label。
 function IssueCard({
   issue,
-  variant,
   depth = 0,
   stateMap,
   subtaskStats,
@@ -83,32 +75,27 @@ function IssueCard({
     && state?.stateGroup !== 'completed'
     && state?.stateGroup !== 'cancelled';
 
-  // 子卡片（depth=1）统一用轻量缩进行样式（看板内嵌也不套 Paper，避免纸叠纸）；顶级按 variant 区分。
+  // depth=1 子卡片用轻量缩进行（与父卡片视觉区分）；depth=0 用 Paper 卡片（列表/看板一致）。
   const rootSx: SxProps<Theme> = depth === 1
     ? [
         { display: 'flex', flexDirection: 'column', px: 1, py: 0.5, my: 0.25, borderRadius: 0.75, bgcolor: 'action.hover', cursor: 'pointer' },
         { '&:hover': { bgcolor: 'action.selected' } },
       ]
-    : variant === 'kanban'
-      ? {
-          display: 'flex',
-          flexDirection: 'column',
-          p: 1,
-          mb: 0.75,
-          borderRadius: 1,
-          bgcolor: 'background.paper',
-          border: 1,
-          borderColor: 'divider',
-          boxShadow: isDragging ? 3 : 0,
-          opacity: isDragging ? 0.95 : 1,
-          cursor: 'pointer',
-        }
-      : [
-          { display: 'flex', flexDirection: 'column', px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider', cursor: 'pointer' },
-          { '&:hover': { bgcolor: 'action.hover' } },
-        ];
+    : {
+        display: 'flex',
+        flexDirection: 'column',
+        p: 1,
+        mb: 0.75,
+        borderRadius: 1,
+        bgcolor: 'background.paper',
+        border: 1,
+        borderColor: 'divider',
+        boxShadow: isDragging ? 3 : 0,
+        opacity: isDragging ? 0.95 : 1,
+        cursor: 'pointer',
+      };
 
-  // —— 共享原子（两种行布局复用，避免重复） ——
+  // —— 共享原子 ——
   // 展开图标列（depth=0 才有；无子 issue 时空占位保持左侧对齐）。
   const gutter = depth === 0 && (
     <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -129,7 +116,7 @@ function IssueCard({
       )}
     </Box>
   );
-  // 行内占位（让次行/第三行内容与首行优先级色点左对齐）。
+  // 行内占位（让第二、三行内容与首行优先级色点左对齐）。
   const gutterPlaceholder = depth === 0 && <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0 }} />;
 
   const priorityBadge = (
@@ -189,34 +176,7 @@ function IssueCard({
       <Typography variant="caption" color="inherit">{formatDate(issue.targetDate, 'YYYY-MM-DD')}</Typography>
     </Box>
   );
-  // 列表样式：彩色边框胶囊（dot + 文字），最多 MAX_LABELS 个 + N。
-  const labelPills = (
-    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-      {issue.labels.slice(0, MAX_LABELS).map(l => (
-        <Box
-          key={l.id}
-          sx={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 0.25,
-            maxWidth: 120,
-            px: 0.5,
-            py: 0.125,
-            borderRadius: 0.5,
-            border: 1,
-            borderColor: l.color || 'divider',
-          }}
-        >
-          <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: l.color, flexShrink: 0 }} />
-          <Typography variant="caption" sx={{ ...truncateSx, fontSize: '0.7rem', lineHeight: 1 }}>{l.name}</Typography>
-        </Box>
-      ))}
-      {issue.labels.length > MAX_LABELS && (
-        <Typography variant="caption" color="text.disabled">+{issue.labels.length - MAX_LABELS}</Typography>
-      )}
-    </Box>
-  );
-  // 看板样式：纯颜色横杠（恢复改造前交互），全部展示可换行。
+  // 标签颜色横杠（列表/看板一致），全部展示可换行。
   const labelBars = issue.labels.length > 0 && (
     <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.25, flexWrap: 'wrap' }}>
       {issue.labels.map(l => (
@@ -241,50 +201,27 @@ function IssueCard({
       sx={rootSx}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-        {variant === 'list'
-          ? (
-              <>
-                {/* 首行：展开/占位 优先级 #id 名称 … 进度 新增 编辑 */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {gutter}
-                  {priorityBadge}
-                  {idText}
-                  {nameEl}
-                  {rightCluster}
-                </Box>
-                {/* 次行：占位 标签胶囊 … 结束日期 */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {gutterPlaceholder}
-                  {labelPills}
-                  {dateEl}
-                </Box>
-              </>
-            )
-          : (
-              <>
-                {/* 首行：展开/占位 优先级 #id …（无标题） 进度 新增 编辑 */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {gutter}
-                  {priorityBadge}
-                  {idText}
-                  <Box sx={{ flex: 1 }} />
-                  {rightCluster}
-                </Box>
-                {/* 第二行：占位 标题 */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {gutterPlaceholder}
-                  {nameEl}
-                </Box>
-                {/* 第三行：占位 标签颜色横杠 … 结束日期（无标签/日期时不渲染空行） */}
-                {(issue.labels.length > 0 || issue.targetDate) && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {gutterPlaceholder}
-                    {labelBars ?? <Box sx={{ flex: 1 }} />}
-                    {dateEl}
-                  </Box>
-                )}
-              </>
-            )}
+        {/* 首行：展开/占位 优先级 #id …（无标题） 进度 新增 编辑 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {gutter}
+          {priorityBadge}
+          {idText}
+          <Box sx={{ flex: 1 }} />
+          {rightCluster}
+        </Box>
+        {/* 第二行：占位 标题 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {gutterPlaceholder}
+          {nameEl}
+        </Box>
+        {/* 第三行：占位 标签颜色横杠 … 结束日期（无标签/日期时不渲染空行） */}
+        {(issue.labels.length > 0 || issue.targetDate) && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {gutterPlaceholder}
+            {labelBars ?? <Box sx={{ flex: 1 }} />}
+            {dateEl}
+          </Box>
+        )}
       </Box>
 
       {/* 内联子卡片（仅顶级 + 展开 + 有子 issue）；缩进使子卡优先级色点对齐父级 */}
@@ -294,7 +231,6 @@ function IssueCard({
             <IssueCard
               key={child.id}
               issue={child}
-              variant={variant}
               depth={1}
               stateMap={stateMap}
               subtaskStats={subtaskStats}

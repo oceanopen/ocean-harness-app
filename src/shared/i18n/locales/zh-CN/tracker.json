@@ -122,7 +122,9 @@
       "unstarted": "未开始",
       "started": "进行中",
       "completed": "已完成",
-      "cancelled": "已取消"
+      "cancelled": "已取消",
+      "expand": "展开",
+      "collapse": "折叠"
     },
     "priority": {
       "urgent": "紧急",

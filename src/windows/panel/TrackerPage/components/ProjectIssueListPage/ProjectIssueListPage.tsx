@@ -13,15 +13,13 @@ import {
   AlertTitle,
   Box,
   Button,
-  Chip,
   CircularProgress,
   Collapse,
-  IconButton,
+  Paper,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
-  useTheme,
 } from '@mui/material';
 import { useToast } from '@src/shared/useToast';
 import { trackerKeys, useProjectIssues, useProjectStates } from '@src/state/tracker';
@@ -34,6 +32,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import IssueCard from './IssueCard';
 import KanbanView from './KanbanView/KanbanView';
+import StateGroupCard from './StateGroupCard';
 
 // Issue 视图模式：列表（按状态组纵向分组）/ 看板（按具体状态横向分列 + 拖拽）。
 type IssueViewMode = 'list' | 'kanban';
@@ -50,7 +49,6 @@ interface IssueListPageProps {
 // 本页回调仅弹 toast（mutation 内部 invalidate）。看板拖拽乐观更新经 updateProjectIssues 适配器写回 Query 缓存。
 function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const { t } = useTranslation();
-  const theme = useTheme();
   const qc = useQueryClient();
   const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError } = useProjectIssues(workspaceProject.id);
   const { data: projectStates = [], isLoading: statesLoading, isError: statesError } = useProjectStates(workspaceProject.id);
@@ -385,6 +383,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
             childrenByParent={childrenByParent}
             expandedParents={expandedParents}
             setIssues={updateProjectIssues}
+            onAddIssue={openCreate}
             onEdit={setEditIssue}
             onAddChild={openCreateChild}
             onToggleExpand={toggleExpand}
@@ -399,7 +398,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
           </Box>
         )}
         {ready && viewMode === 'list' && totalCount > 0 && (
-          <Box sx={{ pb: 1 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 1.5 }}>
             {GROUP_ORDER.map((g) => {
               const arr = grouped[g];
               if (arr.length === 0) {
@@ -407,61 +406,40 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
               }
               const isCollapsed = collapsed.has(g);
               return (
-                <Box key={g} sx={{ mb: 1 }}>
-                  <Box
-                    onClick={() => toggleGroup(g)}
-                    sx={{
-                      position: 'sticky',
-                      top: 0,
-                      zIndex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.5,
-                      px: 1.5,
-                      py: 0.75,
-                      borderBottom: 1,
-                      borderColor: 'divider',
-                      // 不透明灰带：sticky 吸顶需遮住下方滚动行，故用 grey token（action.hover 为半透明会透底）。
-                      bgcolor: theme.palette.mode === 'light' ? 'grey.100' : 'grey.900',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {isCollapsed
-                      ? <ExpandMoreOutlinedIcon fontSize="small" color="action" />
-                      : <ExpandLessOutlinedIcon fontSize="small" color="action" />}
-                    <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                      {t(`tracker:projectIssue.group.${g}`)}
-                    </Typography>
-                    <Chip label={arr.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
-                    <Box sx={{ flex: 1 }} />
-                    <IconButton
-                      size="small"
-                      aria-label={t('tracker:projectIssue.actions.add')}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openCreate(firstStateIdByGroup[g]);
-                      }}
-                    >
-                      <AddOutlinedIcon fontSize="small" />
-                    </IconButton>
+                <Paper
+                  key={g}
+                  variant="outlined"
+                  sx={{ display: 'flex', flexDirection: 'column', borderRadius: 1, bgcolor: 'background.default' }}
+                >
+                  <Box sx={{ px: 2, py: 1, cursor: 'pointer' }} onClick={() => toggleGroup(g)}>
+                    <StateGroupCard
+                      leading={isCollapsed
+                        ? <ExpandMoreOutlinedIcon fontSize="small" color="action" />
+                        : <ExpandLessOutlinedIcon fontSize="small" color="action" />}
+                      color={stateMap.get(firstStateIdByGroup[g] ?? -1)?.color}
+                      name={t(`tracker:projectIssue.group.${g}`)}
+                      count={arr.length}
+                      onAdd={() => openCreate(firstStateIdByGroup[g])}
+                    />
                   </Box>
                   <Collapse in={!isCollapsed}>
-                    {arr.map(projectIssue => (
-                      <IssueCard
-                        key={projectIssue.id}
-                        issue={projectIssue}
-                        variant="list"
-                        stateMap={stateMap}
-                        subtaskStats={subtaskStats}
-                        childIssues={childrenByParent.get(projectIssue.id) ?? []}
-                        expanded={expandedParents.has(projectIssue.id)}
-                        onToggleExpand={toggleExpand}
-                        onEdit={setEditIssue}
-                        onAddChild={openCreateChild}
-                      />
-                    ))}
+                    <Box sx={{ p: 1, pt: 0 }}>
+                      {arr.map(projectIssue => (
+                        <IssueCard
+                          key={projectIssue.id}
+                          issue={projectIssue}
+                          stateMap={stateMap}
+                          subtaskStats={subtaskStats}
+                          childIssues={childrenByParent.get(projectIssue.id) ?? []}
+                          expanded={expandedParents.has(projectIssue.id)}
+                          onToggleExpand={toggleExpand}
+                          onEdit={setEditIssue}
+                          onAddChild={openCreateChild}
+                        />
+                      ))}
+                    </Box>
                   </Collapse>
-                </Box>
+                </Paper>
               );
             })}
           </Box>

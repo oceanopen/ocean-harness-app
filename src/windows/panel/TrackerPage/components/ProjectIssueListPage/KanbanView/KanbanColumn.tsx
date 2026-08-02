@@ -1,10 +1,10 @@
 import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
 import type { SubtaskStats } from '../shared';
 import { Draggable, Droppable } from '@hello-pangea/dnd';
-import { Box, Chip, Paper, Typography } from '@mui/material';
+import { Box, Paper } from '@mui/material';
 import { stateDisplayName } from '@src/windows/panel/TrackerPage/components/stateDisplayName';
 import IssueCard from '../IssueCard';
-import { truncateSx } from '../shared';
+import StateGroupCard from '../StateGroupCard';
 
 interface KanbanColumnProps {
   state: ProjectStateModel;
@@ -13,14 +13,15 @@ interface KanbanColumnProps {
   subtaskStats: SubtaskStats;
   childrenByParent: Map<number, ProjectIssueResponseData[]>;
   expandedParents: Set<number>;
+  onAddIssue: (stateId: number) => void;
   onEdit: (projectIssue: ProjectIssueResponseData) => void;
   onAddChild: (parent: ProjectIssueResponseData) => void;
   onToggleExpand: (id: number) => void;
 }
 
-// 看板列（Droppable）：状态色点 + 名称 + 计数；卡片列表纵向可滚；拖入时背景高亮。
+// 看板列（Droppable）：列头复用 StateGroupCard（色点+名称+计数+新增icon）；卡片列表纵向可滚；拖入时背景高亮。
 // 列内卡片复用统一 IssueCard（variant=kanban），由 Draggable 注入 dnd 透传。
-function KanbanColumn({ state, projectIssues, stateMap, subtaskStats, childrenByParent, expandedParents, onEdit, onAddChild, onToggleExpand }: KanbanColumnProps) {
+function KanbanColumn({ state, projectIssues, stateMap, subtaskStats, childrenByParent, expandedParents, onAddIssue, onEdit, onAddChild, onToggleExpand }: KanbanColumnProps) {
   return (
     <Droppable droppableId={String(state.id)}>
       {(provided, snapshot) => (
@@ -37,10 +38,13 @@ function KanbanColumn({ state, projectIssues, stateMap, subtaskStats, childrenBy
             bgcolor: snapshot.isDraggingOver ? 'action.hover' : 'background.default',
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 1 }}>
-            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: state.color, flexShrink: 0 }} />
-            <Typography variant="subtitle2" sx={{ flex: 1, fontWeight: 600, ...truncateSx }}>{stateDisplayName(state.name)}</Typography>
-            <Chip label={projectIssues.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+          <Box sx={{ px: 1.5, py: 1 }}>
+            <StateGroupCard
+              color={state.color}
+              name={stateDisplayName(state.name)}
+              count={projectIssues.length}
+              onAdd={() => onAddIssue(state.id)}
+            />
           </Box>
           <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
             {projectIssues.map((projectIssue, index) => (
@@ -48,7 +52,6 @@ function KanbanColumn({ state, projectIssues, stateMap, subtaskStats, childrenBy
                 {(dragProvided, dragSnapshot) => (
                   <IssueCard
                     issue={projectIssue}
-                    variant="kanban"
                     stateMap={stateMap}
                     subtaskStats={subtaskStats}
                     childIssues={childrenByParent.get(projectIssue.id) ?? []}
