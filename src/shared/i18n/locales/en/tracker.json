@@ -107,8 +107,15 @@
     },
     "create": {
       "title": "New issue",
+      "subTitle": "New sub-issue",
       "confirm": "Create",
       "cancel": "Cancel"
+    },
+    "card": {
+      "edit": "Edit",
+      "addSub": "Add sub-issue",
+      "expand": "Expand sub-issues",
+      "collapse": "Collapse sub-issues"
     },
     "group": {
       "backlog": "Backlog",
@@ -159,6 +166,7 @@
     },
     "detail": {
       "close": "Close",
+      "parentIssue": "Parent issue",
       "name": "Name",
       "description": "Description",
       "state": "State",

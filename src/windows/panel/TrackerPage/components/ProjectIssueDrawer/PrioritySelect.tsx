@@ -1,21 +1,12 @@
 import type { SxProps } from '@mui/material';
 import type { Priority } from '@src/services';
 import { Box, FormControl, InputLabel, MenuItem, Select, Typography } from '@mui/material';
+import { PRIORITY_COLOR, PRIORITY_ORDER } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // 受控优先级下拉：5 档（色点 + 本地化文案）。仅改本地值，不发请求。
 // label 提供时包 FormControl+InputLabel（查询表单复用）；allOption 提供时渲染"全部"项（value='all'）。
-const PRIORITY_OPTIONS: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];
-
-const PRIORITY_COLOR: Record<Priority, string> = {
-  urgent: 'error.main',
-  high: 'warning.main',
-  medium: 'info.main',
-  low: 'text.secondary',
-  none: 'text.disabled',
-};
-
 interface PrioritySelectProps<V extends Priority | 'all' = Priority> {
   value: V;
   onChange: (p: V) => void;
@@ -58,7 +49,7 @@ function PrioritySelect<V extends Priority | 'all' = Priority>({
       )}
     >
       {allOption !== undefined && <MenuItem value="all">{allOption}</MenuItem>}
-      {PRIORITY_OPTIONS.map(p => (
+      {PRIORITY_ORDER.map(p => (
         <MenuItem key={p} value={p}>{renderPriority(p)}</MenuItem>
       ))}
     </Select>

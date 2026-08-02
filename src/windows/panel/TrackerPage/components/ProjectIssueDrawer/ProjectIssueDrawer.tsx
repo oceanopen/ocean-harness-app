@@ -24,7 +24,6 @@ import { useTranslation } from 'react-i18next';
 import PrioritySelect from './PrioritySelect';
 import ProjectStateSelect from './ProjectStateSelect';
 import RichTextEditor from './RichTextEditor/RichTextEditor';
-import SubTaskSection from './SubTaskSection';
 import WorkspaceLabelManagerDialog from './WorkspaceLabelManagerDialog';
 import WorkspaceLabelSelect from './WorkspaceLabelSelect';
 import 'dayjs/locale/zh-cn';
@@ -34,7 +33,10 @@ interface ProjectIssueDrawerProps {
   workspaceProject: WorkspaceProjectModel;
   projectStates: ProjectStateModel[];
   projectIssue?: ProjectIssueResponseData; // edit 模式必传
-  initialStateId?: number; // create 模式预选状态（如分组头"+"快捷新建时传入该组首个状态）
+  // create 模式预选状态（如分组头"+"快捷新建时传入该组首个状态）。
+  initialStateId?: number;
+  // create 模式新建子 issue 时传入父 issue：顶部展示只读父信息条，提交时带 parentId，并预填父状态。
+  parentIssue?: ProjectIssueResponseData;
   onClose: () => void;
   onCreated?: (projectIssue: ProjectIssueResponseData) => void;
   onUpdated?: (projectIssue: ProjectIssueResponseData) => void;
@@ -43,10 +45,12 @@ interface ProjectIssueDrawerProps {
 
 // Issue 抽屉（create/edit 共用）。所有字段（含 labels）本地态，点保存/创建一次性提交，
 // 成功后关闭抽屉 + 父级刷新列表；失败 drawer 内弹 error toast（成功 toast 由父级统一弹）。
-// mode 仅决定初值来源、提交 API、头部标题/元信息/删除按钮显隐。
-function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssue, initialStateId, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
+// mode 决定：初值来源、提交 API、头部标题/元信息/删除按钮显隐。
+// create + parentIssue：新建子 issue（顶部只读父信息条 + parentId）。
+function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssue, initialStateId, parentIssue, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
   const { t, i18n } = useTranslation();
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
+  const isCreateSub = mode === 'create' && !!parentIssue;
   const createProjectIssue = useCreateProjectIssue(workspaceProject.id);
   const updateProjectIssue = useUpdateProjectIssue(workspaceProject.id);
   const deleteProjectIssue = useDeleteProjectIssue(workspaceProject.id);
@@ -54,7 +58,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
   const defaultStateId = projectStates.find(s => s.isDefault === 'Y')?.id ?? projectStates[0]?.id ?? 0;
   const [name, setName] = useState(projectIssue?.name ?? '');
   const [description, setDescription] = useState(projectIssue?.description ?? '');
-  const [stateId, setStateId] = useState(projectIssue?.stateId ?? initialStateId ?? defaultStateId);
+  const [stateId, setStateId] = useState(projectIssue?.stateId ?? initialStateId ?? parentIssue?.stateId ?? defaultStateId);
   const [priority, setPriority] = useState<Priority>(projectIssue?.priority ?? 'none');
   const [startDate, setStartDate] = useState(projectIssue?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(projectIssue?.targetDate ?? '');
@@ -64,8 +68,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
-  // 嵌套抽屉：点击子任务标题打开其详情（子任务 parentId!==0 → 不渲染子任务 section，强制一层）。
-  const [subDetailIssue, setSubDetailIssue] = useState<ProjectIssueResponseData | null>(null);
   const { show: showToast, snack } = useToast();
 
   const loadWsLabels = useCallback(async () => {
@@ -135,10 +137,12 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
           targetDate,
           stateId,
           labelIds: labels.map(l => l.id),
+          // 新建子 issue 带父 id（顶级创建不传，走后端默认 0）。
+          ...(parentIssue ? { parentId: parentIssue.id } : {}),
         });
         onCreated?.(created);
         onClose();
-      } else {
+      } else if (mode === 'edit') {
         const updated = await updateProjectIssue.mutateAsync({
           id: projectIssue!.id,
           name: name.trim(),
@@ -183,13 +187,20 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
     }
   };
 
+  // 头部标题：edit 显示 #id 名称；create-sub 显示"新建子 Issue"；其余 create 显示"新建 Issue"。
+  const title = mode === 'edit'
+    ? `#${projectIssue?.id} ${projectIssue?.name ?? ''}`
+    : isCreateSub
+      ? t('tracker:projectIssue.create.subTitle')
+      : t('tracker:projectIssue.create.title');
+
   return (
     <Drawer anchor="right" open onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '60%' } } }}>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
-            {mode === 'edit' && projectIssue ? `#${projectIssue.id} ${projectIssue.name}` : t('tracker:projectIssue.create.title')}
+            {title}
           </Typography>
           <IconButton size="small" onClick={onClose} aria-label={t('tracker:projectIssue.detail.close')}>
             <CloseOutlinedIcon fontSize="small" />
@@ -198,6 +209,16 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
 
         {/* 内容 */}
         <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* 新建子 issue：顶部只读父信息条（不可修改） */}
+          {isCreateSub && parentIssue && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 1, borderRadius: 1, bgcolor: 'action.hover' }}>
+              <Typography variant="caption" color="text.secondary">{t('tracker:projectIssue.detail.parentIssue')}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>#{parentIssue.id}</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ ...({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const) }}>
+                {parentIssue.name}
+              </Typography>
+            </Box>
+          )}
           <TextField
             label={t('tracker:projectIssue.detail.name')}
             value={name}
@@ -249,15 +270,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
             onOpenManager={() => setManagerOpen(true)}
             disabled={submitting || deleting}
           />
-          {/* 子任务（仅顶级 issue：子任务本身 parentId!==0 不渲染此 section，UI 强制一层） */}
-          {mode === 'edit' && projectIssue && projectIssue.parentId === 0 && (
-            <SubTaskSection
-              parentIssue={projectIssue}
-              workspaceProject={workspaceProject}
-              projectStates={projectStates}
-              onOpenChild={setSubDetailIssue}
-            />
-          )}
           {/* 元信息（仅 edit） */}
           {mode === 'edit' && projectIssue && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 1 }}>
@@ -273,7 +285,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
           )}
         </Box>
 
-        {/* 底部操作栏 */}
+        {/* 底部操作栏：edit 删除+取消+保存；create 取消+创建 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
           {mode === 'edit' && (
             <Button
@@ -320,19 +332,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
             </Button>
           </DialogActions>
         </Dialog>
-      )}
-
-      {/* 嵌套抽屉：点击子任务标题打开其详情（子任务 parentId!==0 → 不渲染子任务 section，强制一层） */}
-      {subDetailIssue && (
-        <ProjectIssueDrawer
-          mode="edit"
-          projectIssue={subDetailIssue}
-          workspaceProject={workspaceProject}
-          projectStates={projectStates}
-          onClose={() => setSubDetailIssue(null)}
-          onUpdated={() => setSubDetailIssue(null)}
-          onDeleted={() => setSubDetailIssue(null)}
-        />
       )}
 
       {snack}

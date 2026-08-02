@@ -107,8 +107,15 @@
     },
     "create": {
       "title": "新建 Issue",
+      "subTitle": "新建子 Issue",
       "confirm": "创建",
       "cancel": "取消"
+    },
+    "card": {
+      "edit": "编辑",
+      "addSub": "新增子 Issue",
+      "expand": "展开子 Issue",
+      "collapse": "折叠子 Issue"
     },
     "group": {
       "backlog": "待办池",
@@ -159,6 +166,7 @@
     },
     "detail": {
       "close": "关闭",
+      "parentIssue": "父级 Issue",
       "name": "名称",
       "description": "描述",
       "state": "状态",

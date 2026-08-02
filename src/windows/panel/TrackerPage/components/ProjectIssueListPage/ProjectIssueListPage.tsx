@@ -3,7 +3,6 @@ import type { Dispatch, SetStateAction } from 'react';
 import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
-  CalendarMonthOutlined as CalendarMonthOutlinedIcon,
   ExpandLessOutlined as ExpandLessOutlinedIcon,
   ExpandMoreOutlined as ExpandMoreOutlinedIcon,
   ViewKanbanOutlined as ViewKanbanOutlinedIcon,
@@ -21,52 +20,33 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
-  Tooltip,
   Typography,
   useTheme,
 } from '@mui/material';
-import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
 import { trackerKeys, useProjectIssues, useProjectStates } from '@src/state/tracker';
-import { PriorityIcon } from '@src/windows/panel/TrackerPage/components/PriorityIcon';
+import { PRIORITY_WEIGHT } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import PrioritySelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/PrioritySelect';
 import ProjectIssueDrawer from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectIssueDrawer';
 import ProjectStateSelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectStateSelect';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import IssueCard from './IssueCard';
 import KanbanView from './KanbanView/KanbanView';
 
 // Issue 视图模式：列表（按状态组纵向分组）/ 看板（按具体状态横向分列 + 拖拽）。
 type IssueViewMode = 'list' | 'kanban';
 
-// 优先级业务权重（升序，urgent 在前）——后端 orderBy=priority 为文本字典序不可靠，前端按 weight 重排。
-const PRIORITY_WEIGHT: Record<Priority, number> = {
-  urgent: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-  none: 4,
-};
-
 // 分组顺序固定（对齐 state_group 工作流语义）。
 const GROUP_ORDER: StateGroup[] = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'];
-
-const truncateSx = {
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-} as const;
-
-// 列表行内最多展示的标签数，超出显示 +N（对齐 plane list 的标签胶囊上限）。
-const MAX_ROW_LABELS = 3;
 
 interface IssueListPageProps {
   workspaceProject: WorkspaceProjectModel;
 }
 
 // Issue 列表页（嵌于 tracker 三栏壳的右栏）。
-// projectIssue/state 列表走 useProjectIssues/useProjectStates（与详情抽屉/看板共享缓存）；增删改走 mutation（在抽屉内），
+// projectIssue/state 列表走 useProjectIssues/useProjectStates（与抽屉/看板/卡片共享缓存）；增删改走 mutation（在抽屉内），
 // 本页回调仅弹 toast（mutation 内部 invalidate）。看板拖拽乐观更新经 updateProjectIssues 适配器写回 Query 缓存。
 function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const { t } = useTranslation();
@@ -82,7 +62,12 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const [createOpen, setCreateOpen] = useState(false);
   // 创建抽屉预选状态：分组头"+"快捷新建时传入该组首个状态，工具栏/空态新建为 undefined。
   const [createInitialStateId, setCreateInitialStateId] = useState<number | undefined>(undefined);
-  const [detailProjectIssue, setDetailProjectIssue] = useState<ProjectIssueResponseData | null>(null);
+  // 新建子 issue 的父 issue（非空即打开"新建子 issue"抽屉）。
+  const [createChildParent, setCreateChildParent] = useState<ProjectIssueResponseData | null>(null);
+  // 编辑抽屉：无子级卡片点击或编辑 icon 进入。
+  const [editIssue, setEditIssue] = useState<ProjectIssueResponseData | null>(null);
+  // 展开的父 issue 集合（列表/看板共享，内联展开子 issue 卡片）。
+  const [expandedParents, setExpandedParents] = useState<Set<number>>(() => new Set());
   // 视图模式按项目持久化（localStorage），默认列表。
   const [viewMode, setViewMode] = useState<IssueViewMode>(
     () => (localStorage.getItem(`tracker.viewMode.${workspaceProject.id}`) === 'kanban' ? 'kanban' : 'list'),
@@ -108,7 +93,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
     return m;
   }, [projectStates]);
 
-  // 各父 issue 的子任务统计（done/total），用于列表行/看板卡的进度小标（从全量扁平 issue 派生）。
+  // 各父 issue 的子任务统计（done/total），用于卡片进度小标（从全量扁平 issue 派生）。
   const subtaskStats = useMemo(() => {
     const m = new Map<number, { done: number; total: number }>();
     for (const i of projectIssues) {
@@ -122,6 +107,24 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
       }
       m.set(i.parentId, s);
     }
+    return m;
+  }, [projectIssues]);
+
+  // 各父 issue 的子 issue 列表（按 sortOrder 升序），用于卡片内联展开渲染。
+  const childrenByParent = useMemo(() => {
+    const m = new Map<number, ProjectIssueResponseData[]>();
+    for (const i of projectIssues) {
+      if (i.parentId <= 0) {
+        continue;
+      }
+      const arr = m.get(i.parentId);
+      if (arr) {
+        arr.push(i);
+      } else {
+        m.set(i.parentId, [i]);
+      }
+    }
+    m.forEach(arr => arr.sort((a, b) => a.sortOrder - b.sortOrder));
     return m;
   }, [projectIssues]);
 
@@ -145,7 +148,7 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
     const q = keyword.trim().toLowerCase();
     const filtered = projectIssues.filter((i) => {
       if (i.parentId !== 0) {
-        return false; // 子任务不进主列表（仅在父抽屉管理）
+        return false; // 子任务不进主列表（随父卡片内联展开）
       }
       if (q && !i.name.toLowerCase().includes(q)) {
         return false;
@@ -197,18 +200,41 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
     });
   }, []);
 
+  const toggleExpand = useCallback((id: number) => {
+    setExpandedParents((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
   // 创建/更新/删除成功：mutation 内部已 invalidate，回调仅弹 toast + 关闭抽屉。
   const handleCreated = useCallback((projectIssue: ProjectIssueResponseData) => {
     showToast(t('tracker:projectIssue.toast.created', { name: projectIssue.name }), 'success');
   }, [t, showToast]);
 
+  // 新建子 issue 成功：弹 toast + 自动展开父级，便于看到新建的子卡片。
+  const handleChildCreated = useCallback((projectIssue: ProjectIssueResponseData) => {
+    showToast(t('tracker:projectIssue.toast.created', { name: projectIssue.name }), 'success');
+    setExpandedParents((prev) => {
+      if (!createChildParent || prev.has(createChildParent.id)) {
+        return prev;
+      }
+      return new Set(prev).add(createChildParent.id);
+    });
+  }, [t, showToast, createChildParent]);
+
   const handleUpdated = useCallback(() => {
-    setDetailProjectIssue(null);
+    setEditIssue(null);
     showToast(t('tracker:projectIssue.toast.updated'), 'success');
   }, [showToast, t]);
 
   const handleDeleted = useCallback((issueId: number) => {
-    setDetailProjectIssue(prev => (prev?.id === issueId ? null : prev));
+    setEditIssue(prev => (prev?.id === issueId ? null : prev));
     showToast(t('tracker:projectIssue.toast.deleted'), 'success');
   }, [showToast]);
 
@@ -220,6 +246,10 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const closeCreate = useCallback(() => {
     setCreateOpen(false);
     setCreateInitialStateId(undefined);
+  }, []);
+
+  const openCreateChild = useCallback((parent: ProjectIssueResponseData) => {
+    setCreateChildParent(parent);
   }, []);
 
   const isLoading = issuesLoading || statesLoading;
@@ -352,8 +382,12 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
             projectStates={projectStates}
             stateMap={stateMap}
             subtaskStats={subtaskStats}
+            childrenByParent={childrenByParent}
+            expandedParents={expandedParents}
             setIssues={updateProjectIssues}
-            onOpen={setDetailProjectIssue}
+            onEdit={setEditIssue}
+            onAddChild={openCreateChild}
+            onToggleExpand={toggleExpand}
             showToast={showToast}
           />
         )}
@@ -400,27 +434,30 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
                     </Typography>
                     <Chip label={arr.length} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
                     <Box sx={{ flex: 1 }} />
-                    <Tooltip title={t('tracker:projectIssue.actions.add')}>
-                      <IconButton
-                        size="small"
-                        aria-label={t('tracker:projectIssue.actions.add')}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openCreate(firstStateIdByGroup[g]);
-                        }}
-                      >
-                        <AddOutlinedIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    <IconButton
+                      size="small"
+                      aria-label={t('tracker:projectIssue.actions.add')}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCreate(firstStateIdByGroup[g]);
+                      }}
+                    >
+                      <AddOutlinedIcon fontSize="small" />
+                    </IconButton>
                   </Box>
                   <Collapse in={!isCollapsed}>
                     {arr.map(projectIssue => (
-                      <ProjectIssueRow
+                      <IssueCard
                         key={projectIssue.id}
-                        projectIssue={projectIssue}
+                        issue={projectIssue}
+                        variant="list"
                         stateMap={stateMap}
                         subtaskStats={subtaskStats}
-                        onOpen={setDetailProjectIssue}
+                        childIssues={childrenByParent.get(projectIssue.id) ?? []}
+                        expanded={expandedParents.has(projectIssue.id)}
+                        onToggleExpand={toggleExpand}
+                        onEdit={setEditIssue}
+                        onAddChild={openCreateChild}
                       />
                     ))}
                   </Collapse>
@@ -444,119 +481,28 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
         />
       )}
 
-      {detailProjectIssue && (
+      {createChildParent && (
         <ProjectIssueDrawer
-          mode="edit"
-          projectIssue={detailProjectIssue}
+          mode="create"
           workspaceProject={workspaceProject}
           projectStates={projectStates}
-          onClose={() => setDetailProjectIssue(null)}
+          parentIssue={createChildParent}
+          onClose={() => setCreateChildParent(null)}
+          onCreated={handleChildCreated}
+        />
+      )}
+
+      {editIssue && (
+        <ProjectIssueDrawer
+          mode="edit"
+          projectIssue={editIssue}
+          workspaceProject={workspaceProject}
+          projectStates={projectStates}
+          onClose={() => setEditIssue(null)}
           onUpdated={handleUpdated}
           onDeleted={handleDeleted}
         />
       )}
-    </Box>
-  );
-}
-
-// 单行：状态色块（取 state.color，未知用 text.disabled）+ #id + 名称 + 优先级图标。
-// 整行可点击打开侧滑详情（onOpen）。
-interface IssueRowProps {
-  projectIssue: ProjectIssueResponseData;
-  stateMap: Map<number, ProjectStateModel>;
-  subtaskStats: Map<number, { done: number; total: number }>;
-  onOpen: (projectIssue: ProjectIssueResponseData) => void;
-}
-
-function ProjectIssueRow({ projectIssue, stateMap, subtaskStats, onOpen }: IssueRowProps) {
-  const { t } = useTranslation();
-  const state = stateMap.get(projectIssue.stateId);
-  const subtaskStat = subtaskStats.get(projectIssue.id);
-  // 当前列表打开时刻冻结的"现在"，用于逾期判断（不在 render 中调 new Date() 以保纯；解析字符串的 new Date(str) 是纯函数）。
-  const [now] = useState(() => Date.now());
-  const overdue = !!projectIssue.targetDate
-    && new Date(projectIssue.targetDate).getTime() < now
-    && state?.stateGroup !== 'completed'
-    && state?.stateGroup !== 'cancelled';
-  const labels = projectIssue.labels;
-
-  return (
-    <Box
-      onClick={() => onOpen(projectIssue)}
-      sx={[
-        {
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1.5,
-          py: 1,
-          minHeight: 40,
-          borderBottom: 1,
-          borderColor: 'divider',
-          cursor: 'pointer',
-        },
-        { '&:hover': { bgcolor: 'action.hover' } },
-        // 组内最后一行去底线，避免与下一分组头/容器底形成双线。
-        { '&:last-child': { borderBottomColor: 'transparent' } },
-      ]}
-    >
-      <Tooltip title={state?.name ?? ''}>
-        <Box
-          sx={{
-            width: 10,
-            height: 10,
-            borderRadius: '50%',
-            bgcolor: state?.color || 'text.disabled',
-            flexShrink: 0,
-          }}
-        />
-      </Tooltip>
-      <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>#{projectIssue.id}</Typography>
-      <Typography variant="body2" sx={{ flex: 1, minWidth: 0, ...truncateSx }} title={projectIssue.name}>
-        {projectIssue.name}
-      </Typography>
-      {labels.length > 0 && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-          {labels.slice(0, MAX_ROW_LABELS).map(l => (
-            <Tooltip key={l.id} title={l.name}>
-              <Box
-                sx={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 0.5,
-                  maxWidth: 120,
-                  px: 0.75,
-                  py: 0.25,
-                  borderRadius: 0.5,
-                  border: 1,
-                  borderColor: l.color || 'divider',
-                }}
-              >
-                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: l.color, flexShrink: 0 }} />
-                <Typography variant="caption" sx={{ ...truncateSx }}>{l.name}</Typography>
-              </Box>
-            </Tooltip>
-          ))}
-          {labels.length > MAX_ROW_LABELS && (
-            <Typography variant="caption" color="text.disabled">+{labels.length - MAX_ROW_LABELS}</Typography>
-          )}
-        </Box>
-      )}
-      {projectIssue.targetDate && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, color: overdue ? 'error.main' : 'text.disabled' }}>
-          <CalendarMonthOutlinedIcon sx={{ fontSize: '0.9rem' }} />
-          <Typography variant="caption" color="inherit">{formatDate(projectIssue.targetDate, 'YYYY-MM-DD')}</Typography>
-        </Box>
-      )}
-      {subtaskStat && subtaskStat.total > 0 && (
-        <Tooltip title={t('tracker:projectIssue.detail.subtasks.title')}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0, color: 'text.disabled' }}>
-            <AssignmentOutlinedIcon sx={{ fontSize: '0.9rem' }} />
-            <Typography variant="caption" color="inherit">{subtaskStat.done}/{subtaskStat.total}</Typography>
-          </Box>
-        </Tooltip>
-      )}
-      <PriorityIcon priority={projectIssue.priority} />
     </Box>
   );
 }
