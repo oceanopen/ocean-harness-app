@@ -15,24 +15,24 @@ pub const PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY: &str = "pet_claude_sessions_s
 pub const PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY: &str = "pet_claude_sessions_summary_draggable";
 
 /// sessions 兜底轮询周期（秒）。即时性由 fs watcher 负责，此处仅驱动 Dead 老化与漏报兜底。
-/// 默认值 / min / max 与前端 src/shared/app_config.ts 镜像，改动任一处需同步另一处。
+/// 默认值 / min / max 与前端 src/shared/appConfig.ts 镜像，改动任一处需同步另一处。
 pub const POLL_INTERVAL_SECS_KEY: &str = "poll_interval_secs";
 pub const DEFAULT_POLL_INTERVAL_SECS: u64 = 120;
 pub const MIN_POLL_INTERVAL_SECS: u64 = 10;
 pub const MAX_POLL_INTERVAL_SECS: u64 = 300;
 
 /// iTerm2 分屏方向。horizontal = 上下分屏（split horizontally），vertical = 左右分屏（split vertically）。
-/// 默认值与前端 src/shared/app_config.ts 镜像，改动任一处需同步另一处。
+/// 默认值与前端 src/shared/appConfig.ts 镜像，改动任一处需同步另一处。
 pub const ITERM2_SPLIT_DIRECTION_KEY: &str = "iterm2_split_direction";
 pub const DEFAULT_ITERM2_SPLIT_DIRECTION: &str = "horizontal";
 
 /// 打开终端 cd 后追加执行的命令（全局，iTerm2 与 Terminal.app 共用）。
-/// 空串 = 仅 cd，不追加。默认值与前端 src/shared/app_config.ts 镜像，改动任一处需同步另一处。
+/// 空串 = 仅 cd，不追加。默认值与前端 src/shared/appConfig.ts 镜像，改动任一处需同步另一处。
 pub const TERMINAL_POST_OPEN_COMMAND_KEY: &str = "terminal_post_open_command";
 pub const DEFAULT_TERMINAL_POST_OPEN_COMMAND: &str = "";
 
 /// HTTP 本地服务端口（Go sidecar）。留空或越界=用模式默认（dev 9000 / release 9100，由 http_server 解析）。
-/// min/max 与前端 src/shared/app_config.ts 镜像，且对齐 Go sidecar 的端口校验区间，改动任一处需同步另一处。
+/// min/max 与前端 src/shared/appConfig.ts 镜像，且对齐 Go sidecar 的端口校验区间，改动任一处需同步另一处。
 pub const HTTP_SERVER_PORT_KEY: &str = "http_server_port";
 pub const MIN_HTTP_SERVER_PORT: u16 = 3000;
 pub const MAX_HTTP_SERVER_PORT: u16 = 10000;

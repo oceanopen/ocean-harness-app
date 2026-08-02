@@ -17,7 +17,7 @@ use specta_typescript::Number;
 #[derive(Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfigChangedPayload {
-    /// 变更的配置 key（与 src/shared/app_config.ts 中的 *_KEY 常量对齐）。
+    /// 变更的配置 key（与 src/shared/appConfig.ts 中的 *_KEY 常量对齐）。
     pub key: String,
     /// 新值（配置统一以字符串形式存储，订阅方按 key 自行 decode）。
     pub value: String,
