@@ -21,9 +21,9 @@ import { useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } f
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import MarkdownEditor from './MarkdownEditor/MarkdownEditor';
 import PrioritySelect from './PrioritySelect';
 import ProjectStateSelect from './ProjectStateSelect';
-import RichTextEditor from './RichTextEditor/RichTextEditor';
 import WorkspaceLabelManagerDialog from './WorkspaceLabelManagerDialog';
 import WorkspaceLabelSelect from './WorkspaceLabelSelect';
 import 'dayjs/locale/zh-cn';
@@ -232,10 +232,10 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
               {t('tracker:projectIssue.detail.description')}
             </Typography>
-            <RichTextEditor
+            <MarkdownEditor
               value={description}
               onChange={setDescription}
-              placeholder={t('tracker:projectIssue.rte.placeholder')}
+              placeholder={t('tracker:projectIssue.markdownEditor.placeholder')}
               disabled={submitting || deleting}
             />
           </Box>

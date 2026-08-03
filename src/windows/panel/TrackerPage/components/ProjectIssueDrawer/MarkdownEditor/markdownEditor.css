@@ -1,0 +1,11 @@
+/* @uiw/react-md-editor 容器微调：
+   工具栏/分屏/暗色均由 @uiw 自带（markdown-editor.css + data-color-mode），
+   此文件仅做抽屉内编辑区/预览区的字体与字号微调。 */
+
+.w-md-editor-text-pre,
+.w-md-editor-text-input,
+.wmde-markdown {
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}

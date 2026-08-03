@@ -8,7 +8,7 @@ export interface ProjectIssueResponseData {
   projectId: number;
   workspaceId: number;
   name: string;
-  description: string;
+  description: string; // issue 描述：markdown 源文本（前端 Milkdown 编辑器产出，非 HTML）
   stateId: number;
   priority: Priority;
   sortOrder: number;
