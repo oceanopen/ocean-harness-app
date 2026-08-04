@@ -6,9 +6,9 @@ import ProjectIssueListPage from './components/ProjectIssueListPage/ProjectIssue
 import WorkspaceProjectListPage from './components/WorkspaceProjectListPage/WorkspaceProjectListPage';
 import WorkspacesPage from './components/WorkspacesPage/WorkspacesPage';
 
-// TrackerPage：控制台「工作台」页面内容组件（工作空间 → 项目 → Issue 三级管理）。
+// TrackerPage：控制台「项目事项管理」页面内容组件（工作空间 → 项目 → Issue 三级管理）。
 // 三级选择态读写 tracker store（与命令面板共享同一份），故本组件无 props。
-// 嵌在 PanelApp 内容区内（panel 顶栏已显示「工作台」页面名），故自身不再重复标题。
+// 嵌在 PanelApp 内容区内（panel 顶栏已显示「项目事项管理」页面名），故自身不再重复标题。
 // 两态机：未选中工作空间 → 全屏 WorkspacesPage（卡片网格 + CRUD）；
 // 选中某工作空间 → 顶部「工作空间切换栏」（名称 + 切换按钮）+ 左项目列表 / 右 projectIssue 三栏。
 export default function TrackerPage() {

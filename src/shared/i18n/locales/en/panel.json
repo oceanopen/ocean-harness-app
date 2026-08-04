@@ -4,7 +4,7 @@
     "claudeSessions": "Claude Sessions",
     "repositories": "Repository Management",
     "serverStatus": "Service Status",
-    "tracker": "Tracker"
+    "tracker": "Project & Issue Management"
   },
   "sidebar": {
     "collapse": "Collapse sidebar",
@@ -31,7 +31,7 @@
       "claudeSessions": "Go to Claude Sessions",
       "repositories": "Go to Repository Management",
       "serverStatus": "Go to Service Status",
-      "tracker": "Go to Tracker"
+      "tracker": "Go to Project & Issue Management"
     },
     "action": {
       "settings": "Open Settings",

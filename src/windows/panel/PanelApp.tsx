@@ -56,7 +56,7 @@ function PanelApp() {
   const { t } = useTranslation();
   const [activeMenu, setActiveMenu] = useState<MenuKey>('claudeSessions');
   const [repoRefreshTrigger, setRepoRefreshTrigger] = useState(0);
-  // tracker 保活：首次切到工作台时置 true（仅升不降），配合下方 display:none 隐藏而非卸载，
+  // tracker 保活：首次切到项目事项管理时置 true（仅升不降），配合下方 display:none 隐藏而非卸载，
   // 保留选中工作空间/项目与已加载列表等全部 state（仅会话内，重启重新初始化）。
   const [trackerMounted, setTrackerMounted] = useState(false);
   // tracker 三级选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
@@ -84,13 +84,13 @@ function PanelApp() {
       }
     });
   }, []);
-  // 跳到工作空间：回写选中（清空项目避免跨空间残留）并切到工作台。
+  // 跳到工作空间：回写选中（清空项目避免跨空间残留）并切到项目事项管理。
   const selectWorkspace = useCallback((ws: WorkspaceModel) => {
     useTrackerStore.getState().selectWorkspace(ws); // 联动清空 workspaceProject 在 store 内
     setActiveMenu('tracker');
     setTrackerMounted(true);
   }, []);
-  // 跳到项目：回写选中项目并切到工作台（项目仅在某工作空间已选中时可达，故 selectedWorkspace 必已存在）。
+  // 跳到项目：回写选中项目并切到项目事项管理（项目仅在某工作空间已选中时可达，故 selectedWorkspace 必已存在）。
   const selectWorkspaceProject = useCallback((workspaceProject: WorkspaceProjectModel) => {
     useTrackerStore.getState().selectWorkspaceProject(workspaceProject);
     setActiveMenu('tracker');
@@ -101,7 +101,7 @@ function PanelApp() {
   useEffect(() => {
     const unlisten = listen<MenuKey>(EVENT_PANEL_NAVIGATE, (e) => {
       setActiveMenu(e.payload);
-      // 首次切到工作台时挂载 tracker（保活），在事件源头标记，避免 effect 里 setState。
+      // 首次切到项目事项管理时挂载 tracker（保活），在事件源头标记，避免 effect 里 setState。
       if (e.payload === 'tracker') {
         setTrackerMounted(true);
       }
