@@ -1,6 +1,6 @@
 import { AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
-import { useTrackerStore } from '@src/state/tracker';
+import { useTrackerStore, useWorkspaceProjects } from '@src/state/tracker';
 import { useTranslation } from 'react-i18next';
 import ProjectIssueListPage from './components/ProjectIssueListPage/ProjectIssueListPage';
 import WorkspaceProjectListPage from './components/WorkspaceProjectListPage/WorkspaceProjectListPage';
@@ -14,14 +14,23 @@ import WorkspacesPage from './components/WorkspacesPage/WorkspacesPage';
 export default function TrackerPage() {
   const { t } = useTranslation();
   const selected = useTrackerStore(s => s.selectedWorkspace);
-  const selectedWorkspaceProject = useTrackerStore(s => s.selectedWorkspaceProject);
+  // 仅记选中项目 id（快照）；项目数据（含关联仓库 localRepositoryIds）从下方 query 实时派生，
+  // 避免读 store 快照导致 issue 弹窗仓库列表在项目更新关联仓库后陈旧。
+  const selectedProjectId = useTrackerStore(s => s.selectedWorkspaceProject?.id ?? null);
   const selectWorkspace = useTrackerStore(s => s.selectWorkspace);
   const selectWorkspaceProject = useTrackerStore(s => s.selectWorkspaceProject);
+  // 项目列表 query：与左栏 WorkspaceProjectListPage 共享同一缓存（同 key），命中即零请求。
+  const { data: workspaceProjects = [] } = useWorkspaceProjects(selected?.id ?? null);
 
   // 未选中工作空间：全屏管理工作空间。
   if (!selected) {
     return <WorkspacesPage onSelect={selectWorkspace} />;
   }
+
+  // 按 id 从最新 query 数据派生选中项目：关联仓库等随项目刷新自动更新（修复 issue 弹窗仓库列表陈旧）。
+  const selectedWorkspaceProject = selectedProjectId != null
+    ? workspaceProjects.find(p => p.id === selectedProjectId) ?? null
+    : null;
 
   // 已选中工作空间：工作空间切换栏 + 三栏工作壳。
   return (
