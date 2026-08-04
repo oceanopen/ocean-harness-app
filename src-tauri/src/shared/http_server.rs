@@ -19,8 +19,8 @@
 //   - init() 永不返回 Err、永不阻塞 setup；目录解析失败仅 log::warn 并跳过自动启动。
 //   - app 退出时尽力回收子进程，并通过 aborted 标志消除"退出与注册竞态"产生的孤儿。
 //
-// 启动阶段（start_server）：停同会话 child + spawn，spawn 后置 Starting；后台 settle 线程在「最后一行日志静默 STARTUP_LOG_SILENCE」后，
-//   用「子进程 PID 是否监听端口」做身份校验——命中置 Running，未命中（端口被别家占用 / bind 失败）置 Stopped。
+// 启动阶段（start_server）：停同会话 child + spawn，spawn 后置 Starting；后台 settle 线程在 STARTUP_VERDICT_DEADLINE 窗口内按
+//   STARTUP_POLL_INTERVAL 轮询「子进程 PID 是否监听端口」做身份校验——命中即置 Running，窗口结束未命中则 kill 子进程后置 Stopped。
 //   运行中进程退出由事件线程的 Terminated 即时捕获。run_state 三态供前端渲染，Running 即自有进程已 bind 可直接 fetch。
 //
 // 孤立进程清理（cleanup_orphan_http_server 命令）：app 异常退出后跨会话残留的 go-server 可能占用端口，
@@ -54,10 +54,11 @@ use crate::shared::types::{HttpServerRunState, HttpServerStatus};
 const HTTP_SERVER_PORT_TEST: u16 = 9000;
 const HTTP_SERVER_PORT_RELEASE: u16 = 9100;
 
-/// settle 线程：最后一行启动日志后静默多久即裁定启动成败。新日志到达会顺延，从而自适应实际启动耗时。
-const STARTUP_LOG_SILENCE: Duration = Duration::from_secs(1);
-/// settle 线程：启动裁定的硬上限，无论日志是否静默，超过即强制裁定（防异常启动永久挂起 Starting）。
+/// settle 线程：启动裁定的硬上限，超过仍未监听端口即判定失败（防异常启动永久挂起 Starting）。
 const STARTUP_VERDICT_DEADLINE: Duration = Duration::from_secs(10);
+/// settle 线程：轮询「子进程是否已监听端口」的间隔。直接探活端口就绪，不依赖日志输出节奏——
+/// Go 启动期 SQLite 迁移可能数秒无控制台输出，「日志静默」式触发会误杀正常启动，故改轮询。
+const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// 当前编译模式的默认端口（cfg! 编译期决定）。
 fn default_port() -> u16 {
@@ -118,8 +119,6 @@ pub struct HttpServerState {
     /// 本次 sidecar 子进程 PID（spawn 时记录）：settle 线程据「该 PID 是否监听端口」判定启动成败，
     /// 精确匹配端口监听者，区别于占用端口的别家服务或同名 / 孤儿进程。0 表示当前无活动子进程。
     pub child_pid: AtomicU32,
-    /// 最近一行启动日志的到达时刻（spawn 时置为 spawn 时刻，每行日志刷新）。settle 线程据此判定「静默 STARTUP_LOG_SILENCE」。
-    pub last_log_at: Mutex<Option<Instant>>,
 }
 
 impl HttpServerState {
@@ -143,7 +142,7 @@ impl HttpServerState {
         format!("http://127.0.0.1:{}", self.port())
     }
     /// 复位启动相关状态（start_server 入口调用）：清启动日志缓冲与 start_last_error，
-    /// 确保本次启动过程日志与失败原因取自本次 Go 输出。child_pid / last_log_at 在 spawn 时另行设置。
+    /// 确保本次启动过程日志与失败原因取自本次 Go 输出。child_pid 在 spawn 时另行设置。
     fn reset_start_error(&self) {
         if let Ok(mut g) = self.start_recent_log.lock() {
             g.clear();
@@ -159,20 +158,6 @@ impl HttpServerState {
                 g.push(line);
             }
         }
-    }
-    /// 记录「最近一行日志到达时刻」（spawn 时与每行日志调用）；settle 线程据此判定 STARTUP_LOG_SILENCE 静默。
-    fn touch_last_log_at(&self) {
-        if let Ok(mut g) = self.last_log_at.lock() {
-            *g = Some(Instant::now());
-        }
-    }
-    /// 取最近一行日志到达时刻；未设置（理论不会，spawn 时已置位）回退为当前时刻。
-    fn last_log_at(&self) -> Instant {
-        self.last_log_at
-            .lock()
-            .ok()
-            .and_then(|g| *g)
-            .unwrap_or_else(Instant::now)
     }
     /// 设置本次 sidecar 子进程 PID（spawn 时调用）。
     fn set_child_pid(&self, pid: u32) {
@@ -532,8 +517,8 @@ fn finalize_stopped(app: &AppHandle, error: Option<String>) {
 /// 1) 停掉同会话 Rust 持有的 child（强制干净重启；init 时 child 为 None，空操作）。
 /// 2) 加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 记 child_pid → 置 Starting；
 ///    spawn 后再复查 aborted，若期间 app 已退出则当场 kill，不留孤儿。
-/// 3) 后台 settle 线程：等「最后一行日志静默 STARTUP_LOG_SILENCE」后用 child_owns_port（PID 精确匹配端口监听者）
-///    判定成败——命中置 Running（前端可直接 fetch），未命中置 Stopped(失败)；进程退出由事件线程 Terminated 即时捕获。
+/// 3) 后台 settle 线程：在 STARTUP_VERDICT_DEADLINE 窗口内按 STARTUP_POLL_INTERVAL 轮询 child_owns_port（PID 精确匹配端口监听者）
+///    判定成败——命中即置 Running（前端可直接 fetch），窗口结束未命中则 kill 子进程后置 Stopped(失败)；进程退出由事件线程 Terminated 即时捕获。
 fn start_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
 
@@ -600,7 +585,6 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     // 记录子进程 PID，供 settle 线程做身份校验（精确匹配端口监听者，区别于别家服务）。
     let child_pid = child.pid();
     state.set_child_pid(child_pid);
-    state.touch_last_log_at(); // 以 spawn 时刻为静默判定的基准，后续每行日志刷新
     *guard = Some(child);
     transition_state(app, state.inner(), HttpServerRunState::Starting);
     log::info!(
@@ -611,47 +595,60 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     );
     drop(guard); // 释放锁，事件线程与 settle 线程才能访问 child。
 
-    // 后台 settle 线程：判定启动成败。等「最后一行日志后静默 STARTUP_LOG_SILENCE」（或 spawn+STARTUP_VERDICT_DEADLINE 硬上限），
-    // 再用 child_owns_port（该 PID 是否监听端口）做身份校验——命中置 Running，未命中置 Stopped(失败)。
+    // 后台 settle 线程：判定启动成败。在 STARTUP_VERDICT_DEADLINE 窗口内按 STARTUP_POLL_INTERVAL 轮询 child_owns_port
+    // （该 PID 是否监听端口）做身份校验——端口就绪即置 Running；窗口结束仍未就绪则 kill 子进程后置 Stopped(失败)。
+    // 轮询而非「日志静默触发」：Go 启动期 SQLite 迁移可能数秒无控制台输出，日志静默会误杀正常启动；
+    // 失败即 kill 杜绝「进程在跑但状态 Stopped」的孤儿（settle 一次性判定、运行期无探活，不 kill 则状态永久偏离）。
     // 任一 finalize（进程退出等）先行后，run_state≠Starting 即退让，保证「先到先得」不重复 emit。
     let settle_handle = app.clone();
     thread::spawn(move || {
         let state = settle_handle.state::<HttpServerState>();
         let cap = Instant::now() + STARTUP_VERDICT_DEADLINE;
-        loop {
+        let mut ready = false;
+        while Instant::now() < cap {
+            // 事件线程已 finalize（如启动期进程退出）→ 退让，不重复裁定。
             if state.run_state() != HttpServerRunState::Starting {
-                return; // 事件线程已 finalize
+                return;
             }
-            let now = Instant::now();
-            if now >= cap {
-                break; // 硬上限：强制裁定
+            if child_owns_port(port, child_pid) {
+                ready = true;
+                break;
             }
-            let fire_at = state.last_log_at() + STARTUP_LOG_SILENCE;
-            if now >= fire_at {
-                break; // 日志已静默 STARTUP_LOG_SILENCE：裁定
-            }
-            // 未到静默窗口：睡到 fire_at 或 cap（取早）后复查
-            let sleep_until = if fire_at < cap { fire_at } else { cap };
-            thread::sleep(sleep_until - now);
+            thread::sleep(STARTUP_POLL_INTERVAL);
         }
-        // 仍 Starting 才裁定（可能已被事件线程先行 finalize）
+        // 仍 Starting 才裁定（可能已被事件线程先行 finalize）。
         if state.run_state() != HttpServerRunState::Starting {
             return;
         }
-        if child_owns_port(port, child_pid) {
+        if ready {
             // 启动成功：清失败原因、置 Running（emit）。日志停止累积（run_state≠Starting）。
             state.clear_start_last_error();
-            transition_state(&settle_handle, state.inner(), HttpServerRunState::Running);
-            log::info!("[http-server] running (pid {} owns port {})", child_pid, port);
-        } else {
-            log::warn!(
-                "[http-server] startup failed: pid {} not listening on port {}",
+            transition_state(
+                &settle_handle,
+                state.inner(),
+                HttpServerRunState::Running,
+            );
+            log::info!(
+                "[http-server] running (pid {} owns port {})",
                 child_pid,
                 port
             );
+        } else {
+            log::warn!(
+                "[http-server] startup failed: pid {} not listening on port {} within deadline",
+                child_pid,
+                port
+            );
+            // 失败即杀：take 出 child 并 terminate，避免「进程实际在跑却置 Stopped」的孤儿。
+            // finalize_stopped 不会再 kill（child 已 take 为 None），仅置状态 + 记录失败原因。
+            if let Ok(mut guard) = state.child.lock() {
+                if let Some(child) = guard.take() {
+                    terminate_child(child);
+                }
+            }
             finalize_stopped(
                 &settle_handle,
-                Some("未检测到服务监听端口，可能端口被占用".into()),
+                Some("未检测到服务监听端口，可能端口被占用或启动超时".into()),
             );
         }
     });
@@ -671,7 +668,6 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                         log::info!("[http-server] {}", line);
                         if let Some(state) = app_clone.try_state::<HttpServerState>() {
                             state.append_start_recent_log(line);
-                            state.touch_last_log_at();
                         }
                     }
                 }
@@ -684,7 +680,6 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                         // append 到启动日志（zap 改走 stderr 后，启动失败的 Fatal 行也在这里）。
                         if let Some(state) = app_clone.try_state::<HttpServerState>() {
                             state.append_start_recent_log(line);
-                            state.touch_last_log_at();
                         }
                     }
                 }
@@ -764,7 +759,6 @@ pub fn init(app: &AppHandle) {
         log_dir,
         sqlite_dir,
         child_pid: AtomicU32::new(0),
-        last_log_at: Mutex::new(None),
         start_recent_log: Mutex::new(Vec::new()),
         start_last_error: Mutex::new(None),
     });

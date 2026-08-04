@@ -126,8 +126,8 @@ function PanelApp() {
 
   const menuItems: { key: MenuKey; label: string; icon: React.ReactNode }[] = [
     { key: 'claudeSessions', label: t('panel:menu.claudeSessions'), icon: <SensorsOutlinedIcon /> },
-    { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
     { key: 'serverStatus', label: t('panel:menu.serverStatus'), icon: <LanOutlinedIcon /> },
+    { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
     { key: 'tracker', label: t('panel:menu.tracker'), icon: <SpaceDashboardOutlinedIcon /> },
   ];
   // 顶部导航栏页面标题：当前激活菜单项 label；单层面包屑，预留未来主/子菜单扩展。

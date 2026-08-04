@@ -1,3 +1,4 @@
+import type { ServerRunInfoResponseData } from '@src/services';
 import type { HttpServerStatus } from '@src/shared/bindings';
 import { Autorenew as AutorenewIcon, ContentCopy as CopyIcon } from '@mui/icons-material';
 import {
@@ -15,11 +16,11 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import { BaseInfoService } from '@src/services';
 import { commands } from '@src/shared/bindings';
 import { logOnError, unwrap } from '@src/shared/commands';
 import { EVENT_HTTP_SERVER_STATE_CHANGED } from '@src/shared/events';
 import { listen } from '@tauri-apps/api/event';
-import { BaseInfoService, type ServerRunInfoResponseData } from '@src/services';
 
 import { useCallback, useEffect, useState } from 'react';
 
@@ -294,6 +295,31 @@ function ServerStatusPage() {
                 </TableBody>
               </Table>
             </TableContainer>
+
+            {/* 启动日志：渲染 Rust 累积的本次启动 stdout/stderr 快照（status.startRecentLog）。
+                启动成功/失败均有内容；仅 state-changed 事件到达时刷新（Starting 期间不逐行推送，非实时）。 */}
+            {status?.startRecentLog && (
+              <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
+                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                  启动日志
+                </Typography>
+                <Box
+                  component="pre"
+                  sx={{
+                    m: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    lineHeight: 1.4,
+                    maxHeight: 280,
+                    overflow: 'auto',
+                  }}
+                >
+                  {status.startRecentLog}
+                </Box>
+              </Box>
+            )}
 
             {runState === 'stopped' && (
               <Alert severity="info">
