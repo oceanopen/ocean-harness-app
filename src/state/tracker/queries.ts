@@ -52,6 +52,15 @@ export function useProjectStates(projectId: number) {
   });
 }
 
+/** 指定项目已关联的本地仓库（多对多）。projectId<=0 时不查询（如项目尚未创建）。 */
+export function useProjectRepositories(projectId: number) {
+  return useQuery({
+    queryKey: trackerKeys.projectRepositories(projectId),
+    queryFn: () => WorkspaceProjectService.listRepositories({ projectId }),
+    enabled: projectId > 0,
+  });
+}
+
 // ─── 写操作（mutation）───
 // 每个 mutation 内部 invalidate 对应 key；消费方只调 mutateAsync/mutate，不关心失效。
 // workspaceId/projectId 入参仅用于失效对应列表缓存。

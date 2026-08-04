@@ -20,6 +20,8 @@ export interface ProjectIssueResponseData {
   createdAt: string;
   updatedAt: string;
   labels: WorkspaceLabelModel[];
+  localRepositoryId: number; // 关联的本地仓库 id（0=未关联）
+  repositoryBranch: string; // 关联分支名（空串=未关联）
 }
 
 // POST /api/tracker/projectIssue/getList 的入参。
@@ -45,6 +47,8 @@ export interface ProjectIssueCreateRequest {
   stateId?: number; // 0 → 取 project.default_state_id
   parentId?: number; // 0=顶级，>0=子任务（须与父同 project，仅一层）
   labelIds?: number[];
+  localRepositoryId?: number; // 0=未关联；>0 须属于当前项目关联仓库
+  repositoryBranch?: string; // 分支名；localRepositoryId=0 时后端强制清空
 }
 
 // POST /api/tracker/projectIssue/update 的入参。
@@ -58,6 +62,8 @@ export interface ProjectIssueUpdateRequest {
   startDate?: string;
   targetDate?: string;
   labelIds?: number[];
+  localRepositoryId?: number; // 0=清除关联；>0 须属于当前项目关联仓库
+  repositoryBranch?: string; // 分支名；localRepositoryId=0 时后端强制清空
 }
 
 // POST /api/tracker/projectIssue/delete 的入参。

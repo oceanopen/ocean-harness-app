@@ -21,6 +21,7 @@ import { useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } f
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import IssueBranchField from './IssueBranchField';
 import MarkdownEditor from './MarkdownEditor/MarkdownEditor';
 import PrioritySelect from './PrioritySelect';
 import ProjectStateSelect from './ProjectStateSelect';
@@ -63,6 +64,9 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
   const [startDate, setStartDate] = useState(projectIssue?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(projectIssue?.targetDate ?? '');
   const [labels, setLabels] = useState<WorkspaceLabelModel[]>(projectIssue?.labels ?? []);
+  // 关联分支：localRepositoryId 逻辑指向项目关联仓库，repositoryBranch 为分支名（freeSolo 可手输）。
+  const [localRepositoryId, setLocalRepositoryId] = useState(projectIssue?.localRepositoryId ?? 0);
+  const [repositoryBranch, setRepositoryBranch] = useState(projectIssue?.repositoryBranch ?? '');
   const [wsLabels, setWsLabels] = useState<WorkspaceLabelModel[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -107,6 +111,8 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
     || priority !== projectIssue.priority
     || startDate !== projectIssue.startDate
     || targetDate !== projectIssue.targetDate
+    || localRepositoryId !== (projectIssue.localRepositoryId ?? 0)
+    || repositoryBranch !== (projectIssue.repositoryBranch ?? '')
     || labelsDirty
   );
 
@@ -123,6 +129,12 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
     });
   }, [wsLabels]);
 
+  // IssueBranchField 受控回调：仓库或分支任一变化都同步本地态（提交统一在 handleSave）。
+  const handleBranchChange = useCallback((repoId: number, branch: string) => {
+    setLocalRepositoryId(repoId);
+    setRepositoryBranch(branch);
+  }, []);
+
   const handleSave = async () => {
     setSubmitting(true);
     try {
@@ -137,6 +149,8 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
           targetDate,
           stateId,
           labelIds: labels.map(l => l.id),
+          localRepositoryId,
+          repositoryBranch,
           // 新建子 issue 带父 id（顶级创建不传，走后端默认 0）。
           ...(parentIssue ? { parentId: parentIssue.id } : {}),
         });
@@ -152,6 +166,8 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
           startDate,
           targetDate,
           labelIds: labels.map(l => l.id),
+          localRepositoryId,
+          repositoryBranch,
         });
         onUpdated?.(updated);
         onClose();
@@ -268,6 +284,13 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
             options={wsLabels}
             onToggle={handleToggleLabel}
             onOpenManager={() => setManagerOpen(true)}
+            disabled={submitting || deleting}
+          />
+          <IssueBranchField
+            projectId={workspaceProject.id}
+            localRepositoryId={localRepositoryId}
+            repositoryBranch={repositoryBranch}
+            onChange={handleBranchChange}
             disabled={submitting || deleting}
           />
           {/* 元信息（仅 edit） */}

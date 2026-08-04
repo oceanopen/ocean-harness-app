@@ -6,6 +6,7 @@ export type {
   LocalRepositoryCreateRequest,
   LocalRepositoryDeleteRequest,
   LocalRepositoryGetListRequest,
+  LocalRepositoryGetLocalBranchesRequest,
   LocalRepositoryModel,
   LocalRepositoryRefreshRequest,
   LocalRepositoryUpdateRequest,
@@ -40,6 +41,7 @@ export type {
   WorkspaceProjectCreateRequest,
   WorkspaceProjectDeleteRequest,
   WorkspaceProjectGetListRequest,
+  WorkspaceProjectListRepositoriesRequest,
   WorkspaceProjectModel,
   WorkspaceProjectUpdateRequest,
 } from './WorkspaceProjectService';

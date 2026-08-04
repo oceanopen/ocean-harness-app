@@ -41,7 +41,7 @@ func (svc Project) GetInfo(req *types.ProjectGetInfoRequest) (*model.WorkspacePr
 }
 
 // Create 新建 project（允许重名、无业务唯一键，普通插入）。
-// 同一事务内：插入 project → 种 5 个默认状态（SeedDefaultStates）→ 回填 default_state_id（取 is_default 那条）。
+// 同一事务内：插入 project → 种 5 个默认状态（SeedDefaultStates）→ 回填 default_state_id → 全量写入关联仓库。
 func (svc Project) Create(req *types.ProjectCreateRequest) (*model.WorkspaceProject, error) {
 	created := &model.WorkspaceProject{}
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -75,9 +75,13 @@ func (svc Project) Create(req *types.ProjectCreateRequest) (*model.WorkspaceProj
 				break
 			}
 		}
-		_, e = pq.Where(q.WorkspaceProject.ID.Eq(created.ID)).
-			UpdateColumn(q.WorkspaceProject.DefaultStateID, created.DefaultStateID)
-		return e
+		if _, e = pq.Where(q.WorkspaceProject.ID.Eq(created.ID)).
+			UpdateColumn(q.WorkspaceProject.DefaultStateID, created.DefaultStateID); e != nil {
+			return e
+		}
+
+		// 4) 全量写入关联仓库（随项目信息一起保存）。
+		return svc.replaceAssociatedRepositories(tx, created.ID, req.LocalRepositoryIDs)
 	})
 	if err != nil {
 		return nil, err
@@ -85,23 +89,33 @@ func (svc Project) Create(req *types.ProjectCreateRequest) (*model.WorkspaceProj
 	return created, nil
 }
 
-// Update 更新 project 的 name/description/emoji（不动 workspaceId/defaultStateId；无业务唯一键，无需唯一性校验）。
+// Update 更新 project 的 name/description/emoji（不动 workspaceId/defaultStateId）+ 全量覆盖关联仓库。
+// 关联采用「先全量删后全量插」策略：不做 diff，前端只传最终列表（含 create 同款语义）。
 func (svc Project) Update(req *types.ProjectUpdateRequest) (*model.WorkspaceProject, error) {
-	q := query.Use(svc.Orm)
-	pq := q.WorkspaceProject.WithContext(svc.Context)
+	var p *model.WorkspaceProject
+	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
+		q := query.Use(tx)
+		pq := q.WorkspaceProject.WithContext(svc.Context)
 
-	p, err := pq.Where(q.WorkspaceProject.ID.Eq(req.ID)).First()
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("项目不存在")
+		found, e := pq.Where(q.WorkspaceProject.ID.Eq(req.ID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return errors.New("项目不存在")
+			}
+			return e
 		}
+		p = found
+		p.Name = req.Name
+		p.Description = req.Description
+		p.Emoji = req.Emoji
+		if e := pq.Save(p); e != nil {
+			return e
+		}
+		// 全量覆盖关联仓库（无 diff）。
+		return svc.replaceAssociatedRepositories(tx, req.ID, req.LocalRepositoryIDs)
+	})
+	if err != nil {
 		return nil, err
-	}
-	p.Name = req.Name
-	p.Description = req.Description
-	p.Emoji = req.Emoji
-	if e := pq.Save(p); e != nil {
-		return nil, e
 	}
 	return p, nil
 }
@@ -134,6 +148,71 @@ func (svc Project) Delete(req *types.ProjectDeleteRequest) error {
 			Where(q.ProjectIssue.ProjectID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
+		// 5) 硬删项目↔仓库中间表记录（中间表无 deleted_at）。
+		if _, e := q.ProjectLocalRepository.WithContext(svc.Context).
+			Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(req.ID)).Delete(); e != nil {
+			return e
+		}
 		return nil
 	})
+}
+
+// replaceAssociatedRepositories 全量替换项目的关联仓库：先删该项目全部中间表记录，再插入 repoIDs。
+// 约定"无 diff、全量覆盖"——create/update 随项目信息一起保存关联，前端只传最终列表。orm 传 tx 复用事务。
+// repoIDs 内部去重 + 过滤 <=0（防唯一索引冲突）；空切片=清空全部关联。
+func (svc Project) replaceAssociatedRepositories(orm *gorm.DB, projectID int, repoIDs []int) error {
+	q := query.Use(orm)
+	jq := q.ProjectLocalRepository.WithContext(svc.Context)
+	// 1) 先全量删除该项目现有关联。
+	if _, e := jq.Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(projectID)).Delete(); e != nil {
+		return e
+	}
+	// 2) 去重后全量插入。
+	seen := make(map[int]struct{}, len(repoIDs))
+	links := make([]*model.ProjectLocalRepository, 0, len(repoIDs))
+	for _, rid := range repoIDs {
+		if rid <= 0 {
+			continue
+		}
+		if _, ok := seen[rid]; ok {
+			continue
+		}
+		seen[rid] = struct{}{}
+		links = append(links, &model.ProjectLocalRepository{WorkspaceProjectID: projectID, LocalRepositoryID: rid})
+	}
+	if len(links) == 0 {
+		return nil
+	}
+	return jq.Create(links...)
+}
+
+// ListRepositories 返回项目已关联的本地仓库（按 last_commit_at 倒序、id 升序，与 localRepository 列表口径一致）。
+// 读接口：供项目编辑弹窗回显 + issue 分支选择器的仓库下拉。
+func (svc Project) ListRepositories(req *types.ProjectListRepositoriesRequest) ([]types.LocalRepositoryResponseData, error) {
+	q := query.Use(svc.Orm)
+	links, e := q.ProjectLocalRepository.WithContext(svc.Context).
+		Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(req.ProjectID)).Find()
+	if e != nil {
+		return nil, e
+	}
+	if len(links) == 0 {
+		return []types.LocalRepositoryResponseData{}, nil
+	}
+	repoIDs := make([]int, 0, len(links))
+	for _, l := range links {
+		repoIDs = append(repoIDs, l.LocalRepositoryID)
+	}
+	repos, e := q.LocalRepository.WithContext(svc.Context).
+		Where(q.LocalRepository.ID.In(repoIDs...)).
+		Order(q.LocalRepository.LastCommitAt.Desc()).
+		Order(q.LocalRepository.ID.Asc()).
+		Find()
+	if e != nil {
+		return nil, e
+	}
+	out := make([]types.LocalRepositoryResponseData, 0, len(repos))
+	for _, r := range repos {
+		out = append(out, types.LocalRepositoryResponseData{}.FromModel(r))
+	}
+	return out, nil
 }

@@ -49,6 +49,7 @@ func SetupRouter() *gin.Engine {
 			localRepositoryGroup.POST("/delete", controller.LocalRepository{}.Delete)
 			localRepositoryGroup.POST("/refresh", controller.LocalRepository{}.Refresh)
 			localRepositoryGroup.POST("/refreshAll", controller.LocalRepository{}.RefreshAll)
+			localRepositoryGroup.POST("/getLocalBranches", controller.LocalRepository{}.GetLocalBranches)
 		}
 		trackerGroup := apiGroup.Group("/tracker")
 		{
@@ -80,6 +81,8 @@ func SetupRouter() *gin.Engine {
 				projectGroup.POST("/create", controller.Project{}.Create)
 				projectGroup.POST("/update", controller.Project{}.Update)
 				projectGroup.POST("/delete", controller.Project{}.Delete)
+				// 项目 ↔ 本地仓库 关联随 create/update 全量保存；listRepositories 为读接口（编辑回显 + issue 仓库下拉）。
+				projectGroup.POST("/listRepositories", controller.Project{}.ListRepositories)
 			}
 
 			// workspaceLabel 模块：标签 CRUD（action 风格，POST）。

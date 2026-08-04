@@ -5,4 +5,6 @@ export const localRepositoryKeys = {
   root: ['localRepositories'] as const,
   list: () => [...localRepositoryKeys.root, 'list'] as const,
   detail: (id: number) => [...localRepositoryKeys.root, 'detail', { id }] as const,
+  // 仓库的本地分支列表（git branch 默认仅本地分支）；远程分支后续按需扩展（remoteBranches）。
+  localBranches: (id: number) => [...localRepositoryKeys.root, 'localBranches', { id }] as const,
 } as const;

@@ -52,6 +52,12 @@ type LocalRepositoryRefreshRequest struct {
 	ID int `json:"id" binding:"required"`
 }
 
+// LocalRepositoryGetLocalBranchesRequest 是 POST /api/localRepository/getLocalBranches 的入参（列仓库本地分支）。
+// 仅本地分支（git branch）；远程分支能力后续按需扩展（getRemoteBranches）。
+type LocalRepositoryGetLocalBranchesRequest struct {
+	ID int `json:"id" binding:"required"`
+}
+
 // LocalRepositoryResponseData 是仓库响应：DO 字段平铺 + subDirList 由 JSON 文本反序列化为数组。
 // 不嵌入 *model.LocalRepository（其 SubDirList 为 string），改为扁平结构由 FromModel 装配，
 // 与 issue 响应「service 层组装呈现形态」的思路一致。

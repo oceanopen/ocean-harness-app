@@ -141,12 +141,34 @@ func (svc LocalRepository) Update(req *types.LocalRepositoryUpdateRequest) (type
 }
 
 // Delete 物理删除仓库（无 deleted_at，释放 localDir 供重新添加）。
+// 事务内级联清理（避免悬挂引用）：硬删中间表 t_project_local_repositories 关联记录 +
+// 清空指向该仓库的 issue 分支引用（local_repository_id 与 repository_branch）。
 func (svc LocalRepository) Delete(req *types.LocalRepositoryDeleteRequest) error {
-	q := query.Use(svc.Orm)
-	if _, err := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(req.ID)).Delete(); err != nil {
-		return err
-	}
-	return nil
+	return svc.Orm.Transaction(func(tx *gorm.DB) error {
+		q := query.Use(tx)
+		// 1) 物理删除仓库。
+		if _, e := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(req.ID)).Delete(); e != nil {
+			return e
+		}
+		// 2) 硬删中间表关联记录（项目↔仓库）。
+		if _, e := q.ProjectLocalRepository.WithContext(svc.Context).
+			Where(q.ProjectLocalRepository.LocalRepositoryID.Eq(req.ID)).Delete(); e != nil {
+			return e
+		}
+		// 3) 清空指向该仓库的 issue 分支引用。顺序敏感：先 repository_branch（此时 local_repository_id 仍 = req.ID，
+		//    WHERE 命中），再 local_repository_id（否则第二次 WHERE 已被第一次清零而不命中）。
+		if _, e := q.ProjectIssue.WithContext(svc.Context).
+			Where(q.ProjectIssue.LocalRepositoryID.Eq(req.ID)).
+			UpdateColumn(q.ProjectIssue.RepositoryBranch, ""); e != nil {
+			return e
+		}
+		if _, e := q.ProjectIssue.WithContext(svc.Context).
+			Where(q.ProjectIssue.LocalRepositoryID.Eq(req.ID)).
+			UpdateColumn(q.ProjectIssue.LocalRepositoryID, 0); e != nil {
+			return e
+		}
+		return nil
+	})
 }
 
 // Refresh 重解析单个仓库的 git 信息并更新，返回新数据。
@@ -185,6 +207,20 @@ func (svc LocalRepository) RefreshAll() ([]types.LocalRepositoryResponseData, er
 	}
 	// 重新查询保证返回与 DB 一致（避免内存态与落库态偏差）。
 	return svc.findAll()
+}
+
+// GetLocalBranches 列出仓库的本地分支名（git branch 默认仅本地分支）。
+// 仓库不存在返回错误；非 git 目录 / 无分支返回空切片（gitutil 留空，不阻塞前端选择器）。
+func (svc LocalRepository) GetLocalBranches(req *types.LocalRepositoryGetLocalBranchesRequest) ([]string, error) {
+	q := query.Use(svc.Orm)
+	r, err := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(req.ID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("仓库不存在")
+		}
+		return nil, err
+	}
+	return gitutil.LocalBranches(r.LocalDir), nil
 }
 
 // findAll 查询全部仓库并装配响应（GetList/RefreshAll 共用）。

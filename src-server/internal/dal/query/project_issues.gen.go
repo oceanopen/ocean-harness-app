@@ -44,6 +44,8 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectIssue.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_projectIssue.DeletedAt = field.NewField(tableName, "deleted_at")
+	_projectIssue.LocalRepositoryID = field.NewInt(tableName, "local_repository_id")
+	_projectIssue.RepositoryBranch = field.NewString(tableName, "repository_branch")
 	_projectIssue.IssueLabelList = projectIssueHasManyIssueLabelList{
 		db: db.Session(&gorm.Session{}),
 
@@ -58,24 +60,26 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 type projectIssue struct {
 	projectIssueDo projectIssueDo
 
-	ALL            field.Asterisk
-	ID             field.Int
-	ProjectID      field.Int
-	WorkspaceID    field.Int
-	Name           field.String
-	Description    field.String
-	StateID        field.Int
-	Priority       field.Field
-	SortOrder      field.Float64
-	ParentID       field.Int
-	StartDate      field.String
-	TargetDate     field.String
-	CompletedAt    field.Time
-	IsDraft        field.Field
-	CreatedAt      field.Time
-	UpdatedAt      field.Time
-	DeletedAt      field.Field
-	IssueLabelList projectIssueHasManyIssueLabelList
+	ALL               field.Asterisk
+	ID                field.Int
+	ProjectID         field.Int
+	WorkspaceID       field.Int
+	Name              field.String
+	Description       field.String
+	StateID           field.Int
+	Priority          field.Field
+	SortOrder         field.Float64
+	ParentID          field.Int
+	StartDate         field.String
+	TargetDate        field.String
+	CompletedAt       field.Time
+	IsDraft           field.Field
+	CreatedAt         field.Time
+	UpdatedAt         field.Time
+	DeletedAt         field.Field
+	LocalRepositoryID field.Int
+	RepositoryBranch  field.String
+	IssueLabelList    projectIssueHasManyIssueLabelList
 
 	fieldMap map[string]field.Expr
 }
@@ -108,6 +112,8 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")
 	p.DeletedAt = field.NewField(table, "deleted_at")
+	p.LocalRepositoryID = field.NewInt(table, "local_repository_id")
+	p.RepositoryBranch = field.NewString(table, "repository_branch")
 
 	p.fillFieldMap()
 
@@ -136,7 +142,7 @@ func (p *projectIssue) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (p *projectIssue) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 17)
+	p.fieldMap = make(map[string]field.Expr, 19)
 	p.fieldMap["id"] = p.ID
 	p.fieldMap["project_id"] = p.ProjectID
 	p.fieldMap["workspace_id"] = p.WorkspaceID
@@ -153,6 +159,8 @@ func (p *projectIssue) fillFieldMap() {
 	p.fieldMap["created_at"] = p.CreatedAt
 	p.fieldMap["updated_at"] = p.UpdatedAt
 	p.fieldMap["deleted_at"] = p.DeletedAt
+	p.fieldMap["local_repository_id"] = p.LocalRepositoryID
+	p.fieldMap["repository_branch"] = p.RepositoryBranch
 
 }
 

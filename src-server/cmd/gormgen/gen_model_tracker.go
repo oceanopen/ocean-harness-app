@@ -17,6 +17,8 @@ func GenModelTracker() {
 	)
 	issueLabel := G.GenerateModelAs("t_issue_labels", "IssueLabel")
 	label := G.GenerateModelAs("t_workspace_labels", "WorkspaceLabel")
+	// 项目 ↔ 本地仓库 多对多中间表：无关联关系，service 层手动 JOIN 查询（与表间无 DB 外键约定一致）。
+	projectLocalRepository := G.GenerateModelAs("t_project_local_repositories", "ProjectLocalRepository")
 
 	issue := G.GenerateModelAs("t_project_issues", "ProjectIssue",
 		gen.FieldType("priority", "enums.Priority"),
@@ -71,5 +73,5 @@ func GenModelTracker() {
 		}),
 	)
 
-	G.ApplyBasic(workspace, project, state, issue, label, issueLabel)
+	G.ApplyBasic(workspace, project, state, issue, label, issueLabel, projectLocalRepository)
 }

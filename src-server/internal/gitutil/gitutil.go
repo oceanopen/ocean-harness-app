@@ -66,3 +66,15 @@ func ParseInfo(dir string) Info {
 		LastCommitMessage: lastCommitMsg,
 	}
 }
+
+// LocalBranches 列出 dir 的本地分支名（`git branch` 默认仅本地分支），按 git 输出顺序返回。
+// --format=%(refname:short) 同时抑制当前分支的 `*` 标记，每行一个干净分支名。
+// 后续若需远程分支列表，另写 RemoteBranches（git branch -r），不复用本函数以免语义混淆。
+// 失败 / 非 git 目录 / 无分支返回 nil。
+func LocalBranches(dir string) []string {
+	out := gitOutput(dir, "branch", "--format=%(refname:short)")
+	if out == "" {
+		return nil
+	}
+	return strings.Split(out, "\n")
+}

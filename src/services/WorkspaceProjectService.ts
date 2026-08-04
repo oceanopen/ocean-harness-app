@@ -1,3 +1,4 @@
+import type { LocalRepositoryModel } from './LocalRepositoryService';
 import { request } from './http';
 
 // WorkspaceProjectModel：对齐后端 model.WorkspaceProject 的 JSON 形态（t_workspace_projects）。
@@ -19,24 +20,36 @@ export interface WorkspaceProjectGetListRequest {
 }
 
 // POST /api/tracker/project/create 的入参。
+// localRepositoryIds 为关联仓库最终列表（全量，随项目一起保存，后端事务内全量写入）。
 export interface WorkspaceProjectCreateRequest {
   workspaceId: number;
   name: string;
   description?: string;
   emoji?: string;
+  localRepositoryIds?: number[];
 }
 
 // POST /api/tracker/project/update 的入参。
+// localRepositoryIds 为关联仓库最终列表（全量覆盖：后端先删后插，无 diff）。
 export interface WorkspaceProjectUpdateRequest {
   id: number;
   name: string;
   description?: string;
   emoji?: string;
+  localRepositoryIds?: number[];
 }
 
 // POST /api/tracker/project/delete 的入参。
 export interface WorkspaceProjectDeleteRequest {
   id: number;
+}
+
+// 项目 ↔ 本地仓库 多对多关联：随 create/update 全量保存，无独立增删接口。
+// listRepositories 为读接口（编辑回显 + issue 仓库下拉）。
+
+// POST /api/tracker/project/listRepositories 的入参（列项目已关联的仓库）。
+export interface WorkspaceProjectListRepositoriesRequest {
+  projectId: number;
 }
 
 export class WorkspaceProjectService {
@@ -58,5 +71,10 @@ export class WorkspaceProjectService {
   // delete：删除项目。
   static delete(req: WorkspaceProjectDeleteRequest): Promise<void> {
     return request<void>('POST', '/api/tracker/project/delete', req);
+  }
+
+  // listRepositories：返回项目已关联的本地仓库（按 lastCommitAt 倒序、id 升序）。
+  static listRepositories(req: WorkspaceProjectListRepositoriesRequest): Promise<LocalRepositoryModel[]> {
+    return request<LocalRepositoryModel[]>('POST', '/api/tracker/project/listRepositories', req);
   }
 }

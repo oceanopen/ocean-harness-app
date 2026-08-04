@@ -14,23 +14,35 @@ type ProjectGetInfoRequest struct {
 }
 
 // ProjectCreateRequest 是 POST /api/tracker/project/create 的入参。
+// LocalRepositoryIDs 为关联仓库最终列表（全量，随项目一起保存，事务内全量写入）。
 type ProjectCreateRequest struct {
-	WorkspaceID int    `json:"workspaceId" binding:"required"`
-	Name        string `json:"name" binding:"required,max=100"`
-	Description string `json:"description" binding:"omitempty,max=500"`
-	Emoji       string `json:"emoji" binding:"omitempty,max=20"`
+	WorkspaceID        int    `json:"workspaceId" binding:"required"`
+	Name               string `json:"name" binding:"required,max=100"`
+	Description        string `json:"description" binding:"omitempty,max=500"`
+	Emoji              string `json:"emoji" binding:"omitempty,max=20"`
+	LocalRepositoryIDs []int  `json:"localRepositoryIds"`
 }
 
 // ProjectUpdateRequest 是 POST /api/tracker/project/update 的入参。
 // 不变更 workspaceId / defaultStateId（defaultStateId 由 state 模块维护）。
+// LocalRepositoryIDs 为关联仓库最终列表（全量覆盖：先删后插，无 diff）。
 type ProjectUpdateRequest struct {
-	ID          int    `json:"id" binding:"required"`
-	Name        string `json:"name" binding:"required,max=100"`
-	Description string `json:"description" binding:"omitempty,max=500"`
-	Emoji       string `json:"emoji" binding:"omitempty,max=20"`
+	ID                 int    `json:"id" binding:"required"`
+	Name               string `json:"name" binding:"required,max=100"`
+	Description        string `json:"description" binding:"omitempty,max=500"`
+	Emoji              string `json:"emoji" binding:"omitempty,max=20"`
+	LocalRepositoryIDs []int  `json:"localRepositoryIds"`
 }
 
 // ProjectDeleteRequest 是 POST /api/tracker/project/delete 的入参。
 type ProjectDeleteRequest struct {
 	ID int `json:"id" binding:"required"`
+}
+
+// 项目 ↔ 本地仓库 多对多关联：随 create/update 全量保存，无独立增删接口。
+// listRepositories 为读接口（编辑回显 + issue 仓库下拉）。
+
+// ProjectListRepositoriesRequest 是 POST /api/tracker/project/listRepositories 的入参（列项目已关联的仓库）。
+type ProjectListRepositoriesRequest struct {
+	ProjectID int `json:"projectId" binding:"required"`
 }

@@ -50,6 +50,12 @@ export interface LocalRepositoryRefreshRequest {
   id: number;
 }
 
+// POST /api/localRepository/getLocalBranches 的入参（列仓库本地分支）。
+// 仅本地分支（git branch）；远程分支能力后续按需扩展（getRemoteBranches）。
+export interface LocalRepositoryGetLocalBranchesRequest {
+  id: number;
+}
+
 export class LocalRepositoryService {
   // getList：返回全部本地仓库（按 lastCommitAt 倒序、id 升序）。
   static getList(): Promise<LocalRepositoryModel[]> {
@@ -79,5 +85,10 @@ export class LocalRepositoryService {
   // refreshAll：重解析全部仓库的 git 信息，返回最新列表。
   static refreshAll(): Promise<LocalRepositoryModel[]> {
     return request<LocalRepositoryModel[]>('POST', '/api/localRepository/refreshAll', {});
+  }
+
+  // getLocalBranches：列出仓库的本地分支名（供 issue 分支选择器）。
+  static getLocalBranches(req: LocalRepositoryGetLocalBranchesRequest): Promise<string[]> {
+    return request<string[]>('POST', '/api/localRepository/getLocalBranches', req);
   }
 }

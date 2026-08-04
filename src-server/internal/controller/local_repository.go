@@ -124,3 +124,19 @@ func (api LocalRepository) RefreshAll(ctx *gin.Context) {
 	}
 	api.JsonOK(data)
 }
+
+// GetLocalBranches POST /api/localRepository/getLocalBranches：列出仓库的本地分支名（供 issue 分支选择器）。
+func (api LocalRepository) GetLocalBranches(ctx *gin.Context) {
+	req := &types.LocalRepositoryGetLocalBranchesRequest{}
+	svc := service.LocalRepository{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.GetLocalBranches(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}

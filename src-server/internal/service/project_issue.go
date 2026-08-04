@@ -156,19 +156,27 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			}
 		}
 
+		// local_repository_id > 0 须属于当前项目关联仓库；=0 时连 branch 一并清空（无仓库则分支无意义）。
+		repoID, repoBranch, ve := svc.validateIssueRepo(tx, req.ProjectID, req.LocalRepositoryID, req.RepositoryBranch)
+		if ve != nil {
+			return ve
+		}
+
 		created = &model.ProjectIssue{
-			ProjectID:   req.ProjectID,
-			WorkspaceID: req.WorkspaceID,
-			Name:        req.Name,
-			Description: req.Description,
-			StateID:     stateID,
-			Priority:    priority,
-			SortOrder:   sortOrder,
-			ParentID:    parentID,
-			IsDraft:     isDraft,
-			StartDate:   req.StartDate,
-			TargetDate:  req.TargetDate,
-			CompletedAt: completedAt,
+			ProjectID:         req.ProjectID,
+			WorkspaceID:       req.WorkspaceID,
+			Name:              req.Name,
+			Description:       req.Description,
+			StateID:           stateID,
+			Priority:          priority,
+			SortOrder:         sortOrder,
+			ParentID:          parentID,
+			IsDraft:           isDraft,
+			StartDate:         req.StartDate,
+			TargetDate:        req.TargetDate,
+			CompletedAt:       completedAt,
+			LocalRepositoryID: repoID,
+			RepositoryBranch:  repoBranch,
 		}
 		if ce := q.ProjectIssue.WithContext(svc.Context).Create(created); ce != nil {
 			return ce
@@ -214,6 +222,14 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 		}
 		issue.StartDate = req.StartDate
 		issue.TargetDate = req.TargetDate
+
+		// local_repository_id > 0 须属于 issue 所属项目关联仓库；=0 清除关联（连 branch 一并清空）。
+		repoID, repoBranch, ve := svc.validateIssueRepo(tx, issue.ProjectID, req.LocalRepositoryID, req.RepositoryBranch)
+		if ve != nil {
+			return ve
+		}
+		issue.LocalRepositoryID = repoID
+		issue.RepositoryBranch = repoBranch
 
 		// stateId 变化 → completed_at 流转。
 		wasCompleted := issue.CompletedAt != nil
@@ -485,4 +501,24 @@ func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*typ
 		result = append(result, &types.ProjectIssueResponseData{ProjectIssue: i, Labels: labels})
 	}
 	return result, nil
+}
+
+// validateIssueRepo 校验 issue 关联的本地仓库（localRepositoryId > 0 时）属于 projectID 的关联仓库集合。
+// 返回规范后的 (localRepositoryID, repositoryBranch)：repoID<=0 时强制返回 (0,"")（无仓库则分支无意义）。
+// orm 传 tx 以复用调用方事务。
+func (svc ProjectIssue) validateIssueRepo(orm *gorm.DB, projectID, repoID int, branch string) (int, string, error) {
+	if repoID <= 0 {
+		return 0, "", nil
+	}
+	q := query.Use(orm)
+	count, e := q.ProjectLocalRepository.WithContext(svc.Context).
+		Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(projectID)).
+		Where(q.ProjectLocalRepository.LocalRepositoryID.Eq(repoID)).Count()
+	if e != nil {
+		return 0, "", e
+	}
+	if count == 0 {
+		return 0, "", errors.New("该仓库未关联到当前项目")
+	}
+	return repoID, branch, nil
 }

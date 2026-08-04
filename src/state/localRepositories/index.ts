@@ -3,6 +3,7 @@ export { localRepositoryKeys } from './keys';
 export {
   useCreateLocalRepository,
   useDeleteLocalRepository,
+  useLocalBranches,
   useLocalRepositories,
   useRefreshAllLocalRepositories,
   useRefreshLocalRepository,

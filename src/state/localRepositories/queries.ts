@@ -4,6 +4,7 @@ import type {
   LocalRepositoryUpdateRequest,
 } from '@src/services';
 import { LocalRepositoryService } from '@src/services';
+import { trackerKeys } from '@src/state/tracker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { localRepositoryKeys } from './keys';
 
@@ -14,6 +15,15 @@ export function useLocalRepositories() {
   return useQuery({
     queryKey: localRepositoryKeys.list(),
     queryFn: () => LocalRepositoryService.getList(),
+  });
+}
+
+/** 指定仓库的本地分支列表（git branch 默认仅本地分支），供 issue 分支选择器。localRepositoryId<=0 时不查询。 */
+export function useLocalBranches(localRepositoryId: number) {
+  return useQuery({
+    queryKey: localRepositoryKeys.localBranches(localRepositoryId),
+    queryFn: () => LocalRepositoryService.getLocalBranches({ id: localRepositoryId }),
+    enabled: localRepositoryId > 0,
   });
 }
 
@@ -39,12 +49,19 @@ export function useUpdateLocalRepository() {
   });
 }
 
-/** 物理删除本地仓库。入参为 id（与 tracker 域 useDelete* 签名一致）。 */
+/**
+ * 物理删除本地仓库。入参为 id（与 tracker 域 useDelete* 签名一致）。
+ * 后端删仓库会事务级联：硬删项目↔仓库中间表记录 + 清空指向该仓库的 issue.localRepositoryId/repositoryBranch，
+ * 故除本地仓库列表外还需失效 tracker 整域（projectRepositories/projectIssues），否则 UI 残留悬挂引用。
+ */
 export function useDeleteLocalRepository() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => LocalRepositoryService.delete({ id }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: localRepositoryKeys.list() }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: localRepositoryKeys.list() });
+      qc.invalidateQueries({ queryKey: trackerKeys.root });
+    },
   });
 }
 

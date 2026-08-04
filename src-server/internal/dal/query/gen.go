@@ -16,14 +16,15 @@ import (
 )
 
 var (
-	Q                = new(Query)
-	IssueLabel       *issueLabel
-	LocalRepository  *localRepository
-	ProjectIssue     *projectIssue
-	ProjectState     *projectState
-	Workspace        *workspace
-	WorkspaceLabel   *workspaceLabel
-	WorkspaceProject *workspaceProject
+	Q                      = new(Query)
+	IssueLabel             *issueLabel
+	LocalRepository        *localRepository
+	ProjectIssue           *projectIssue
+	ProjectLocalRepository *projectLocalRepository
+	ProjectState           *projectState
+	Workspace              *workspace
+	WorkspaceLabel         *workspaceLabel
+	WorkspaceProject       *workspaceProject
 )
 
 func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
@@ -31,6 +32,7 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	IssueLabel = &Q.IssueLabel
 	LocalRepository = &Q.LocalRepository
 	ProjectIssue = &Q.ProjectIssue
+	ProjectLocalRepository = &Q.ProjectLocalRepository
 	ProjectState = &Q.ProjectState
 	Workspace = &Q.Workspace
 	WorkspaceLabel = &Q.WorkspaceLabel
@@ -39,27 +41,29 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 
 func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 	return &Query{
-		db:               db,
-		IssueLabel:       newIssueLabel(db, opts...),
-		LocalRepository:  newLocalRepository(db, opts...),
-		ProjectIssue:     newProjectIssue(db, opts...),
-		ProjectState:     newProjectState(db, opts...),
-		Workspace:        newWorkspace(db, opts...),
-		WorkspaceLabel:   newWorkspaceLabel(db, opts...),
-		WorkspaceProject: newWorkspaceProject(db, opts...),
+		db:                     db,
+		IssueLabel:             newIssueLabel(db, opts...),
+		LocalRepository:        newLocalRepository(db, opts...),
+		ProjectIssue:           newProjectIssue(db, opts...),
+		ProjectLocalRepository: newProjectLocalRepository(db, opts...),
+		ProjectState:           newProjectState(db, opts...),
+		Workspace:              newWorkspace(db, opts...),
+		WorkspaceLabel:         newWorkspaceLabel(db, opts...),
+		WorkspaceProject:       newWorkspaceProject(db, opts...),
 	}
 }
 
 type Query struct {
 	db *gorm.DB
 
-	IssueLabel       issueLabel
-	LocalRepository  localRepository
-	ProjectIssue     projectIssue
-	ProjectState     projectState
-	Workspace        workspace
-	WorkspaceLabel   workspaceLabel
-	WorkspaceProject workspaceProject
+	IssueLabel             issueLabel
+	LocalRepository        localRepository
+	ProjectIssue           projectIssue
+	ProjectLocalRepository projectLocalRepository
+	ProjectState           projectState
+	Workspace              workspace
+	WorkspaceLabel         workspaceLabel
+	WorkspaceProject       workspaceProject
 }
 
 func (q *Query) Available() bool { return q.db != nil }
@@ -68,14 +72,15 @@ func (q *Query) UnderlyingDB() *gorm.DB { return q.db }
 
 func (q *Query) clone(db *gorm.DB) *Query {
 	return &Query{
-		db:               db,
-		IssueLabel:       q.IssueLabel.clone(db),
-		LocalRepository:  q.LocalRepository.clone(db),
-		ProjectIssue:     q.ProjectIssue.clone(db),
-		ProjectState:     q.ProjectState.clone(db),
-		Workspace:        q.Workspace.clone(db),
-		WorkspaceLabel:   q.WorkspaceLabel.clone(db),
-		WorkspaceProject: q.WorkspaceProject.clone(db),
+		db:                     db,
+		IssueLabel:             q.IssueLabel.clone(db),
+		LocalRepository:        q.LocalRepository.clone(db),
+		ProjectIssue:           q.ProjectIssue.clone(db),
+		ProjectLocalRepository: q.ProjectLocalRepository.clone(db),
+		ProjectState:           q.ProjectState.clone(db),
+		Workspace:              q.Workspace.clone(db),
+		WorkspaceLabel:         q.WorkspaceLabel.clone(db),
+		WorkspaceProject:       q.WorkspaceProject.clone(db),
 	}
 }
 
@@ -89,36 +94,39 @@ func (q *Query) WriteDB() *Query {
 
 func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 	return &Query{
-		db:               db,
-		IssueLabel:       q.IssueLabel.replaceDB(db),
-		LocalRepository:  q.LocalRepository.replaceDB(db),
-		ProjectIssue:     q.ProjectIssue.replaceDB(db),
-		ProjectState:     q.ProjectState.replaceDB(db),
-		Workspace:        q.Workspace.replaceDB(db),
-		WorkspaceLabel:   q.WorkspaceLabel.replaceDB(db),
-		WorkspaceProject: q.WorkspaceProject.replaceDB(db),
+		db:                     db,
+		IssueLabel:             q.IssueLabel.replaceDB(db),
+		LocalRepository:        q.LocalRepository.replaceDB(db),
+		ProjectIssue:           q.ProjectIssue.replaceDB(db),
+		ProjectLocalRepository: q.ProjectLocalRepository.replaceDB(db),
+		ProjectState:           q.ProjectState.replaceDB(db),
+		Workspace:              q.Workspace.replaceDB(db),
+		WorkspaceLabel:         q.WorkspaceLabel.replaceDB(db),
+		WorkspaceProject:       q.WorkspaceProject.replaceDB(db),
 	}
 }
 
 type queryCtx struct {
-	IssueLabel       IIssueLabelDo
-	LocalRepository  ILocalRepositoryDo
-	ProjectIssue     IProjectIssueDo
-	ProjectState     IProjectStateDo
-	Workspace        IWorkspaceDo
-	WorkspaceLabel   IWorkspaceLabelDo
-	WorkspaceProject IWorkspaceProjectDo
+	IssueLabel             IIssueLabelDo
+	LocalRepository        ILocalRepositoryDo
+	ProjectIssue           IProjectIssueDo
+	ProjectLocalRepository IProjectLocalRepositoryDo
+	ProjectState           IProjectStateDo
+	Workspace              IWorkspaceDo
+	WorkspaceLabel         IWorkspaceLabelDo
+	WorkspaceProject       IWorkspaceProjectDo
 }
 
 func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
-		IssueLabel:       q.IssueLabel.WithContext(ctx),
-		LocalRepository:  q.LocalRepository.WithContext(ctx),
-		ProjectIssue:     q.ProjectIssue.WithContext(ctx),
-		ProjectState:     q.ProjectState.WithContext(ctx),
-		Workspace:        q.Workspace.WithContext(ctx),
-		WorkspaceLabel:   q.WorkspaceLabel.WithContext(ctx),
-		WorkspaceProject: q.WorkspaceProject.WithContext(ctx),
+		IssueLabel:             q.IssueLabel.WithContext(ctx),
+		LocalRepository:        q.LocalRepository.WithContext(ctx),
+		ProjectIssue:           q.ProjectIssue.WithContext(ctx),
+		ProjectLocalRepository: q.ProjectLocalRepository.WithContext(ctx),
+		ProjectState:           q.ProjectState.WithContext(ctx),
+		Workspace:              q.Workspace.WithContext(ctx),
+		WorkspaceLabel:         q.WorkspaceLabel.WithContext(ctx),
+		WorkspaceProject:       q.WorkspaceProject.WithContext(ctx),
 	}
 }
 

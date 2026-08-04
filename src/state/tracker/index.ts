@@ -9,6 +9,7 @@ export {
   useDeleteWorkspace,
   useDeleteWorkspaceProject,
   useProjectIssues,
+  useProjectRepositories,
   useProjectStates,
   useUpdateProjectIssue,
   useUpdateWorkspace,
