@@ -52,6 +52,14 @@ func GenModelTracker() {
 			},
 			JSONTag: "projectIssueList,omitempty",
 		}),
+		gen.FieldRelate(field.HasMany, "ProjectLocalRepositoryList", projectLocalRepository, &field.RelateConfig{
+			RelateSlicePointer: true,
+			GORMTag: field.GormTag{
+				"foreignKey": []string{"WorkspaceProjectID"}, // 子表 t_project_local_repositories.workspace_project_id
+				"references": []string{"ID"},                 // 父表 t_workspace_projects.id
+			},
+			JSONTag: "projectLocalRepositoryList,omitempty",
+		}),
 	)
 
 	workspace := G.GenerateModelAs("t_workspaces", "Workspace",

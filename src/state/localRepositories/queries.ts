@@ -52,7 +52,7 @@ export function useUpdateLocalRepository() {
 /**
  * 物理删除本地仓库。入参为 id（与 tracker 域 useDelete* 签名一致）。
  * 后端删仓库会事务级联：硬删项目↔仓库中间表记录 + 清空指向该仓库的 issue.localRepositoryId/repositoryBranch，
- * 故除本地仓库列表外还需失效 tracker 整域（projectRepositories/projectIssues），否则 UI 残留悬挂引用。
+ * 故除本地仓库列表外还需失效 tracker 整域（projectIssues，以及携带 localRepositoryIds 的 workspaceProjects），否则 UI 残留悬挂引用。
  */
 export function useDeleteLocalRepository() {
   const qc = useQueryClient();

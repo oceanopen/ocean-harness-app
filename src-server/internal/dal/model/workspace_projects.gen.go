@@ -14,17 +14,18 @@ const TableNameWorkspaceProject = "t_workspace_projects"
 
 // WorkspaceProject mapped from table <t_workspace_projects>
 type WorkspaceProject struct {
-	ID               int             `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
-	WorkspaceID      int             `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
-	Name             string          `gorm:"column:name;type:TEXT;not null" json:"name"`
-	Description      string          `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
-	Emoji            string          `gorm:"column:emoji;type:TEXT;not null;default:''" json:"emoji"`
-	DefaultStateID   int             `gorm:"column:default_state_id;type:INTEGER" json:"defaultStateId"`
-	CreatedAt        time.Time       `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
-	UpdatedAt        time.Time       `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	DeletedAt        gorm.DeletedAt  `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
-	ProjectStateList []*ProjectState `gorm:"foreignKey:ProjectID;references:ID" json:"projectStateList,omitempty"`
-	ProjectIssueList []*ProjectIssue `gorm:"foreignKey:ProjectID;references:ID" json:"projectIssueList,omitempty"`
+	ID                         int                       `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
+	WorkspaceID                int                       `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
+	Name                       string                    `gorm:"column:name;type:TEXT;not null" json:"name"`
+	Description                string                    `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
+	Emoji                      string                    `gorm:"column:emoji;type:TEXT;not null;default:''" json:"emoji"`
+	DefaultStateID             int                       `gorm:"column:default_state_id;type:INTEGER" json:"defaultStateId"`
+	CreatedAt                  time.Time                 `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
+	UpdatedAt                  time.Time                 `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	DeletedAt                  gorm.DeletedAt            `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
+	ProjectStateList           []*ProjectState           `gorm:"foreignKey:ProjectID;references:ID" json:"projectStateList,omitempty"`
+	ProjectIssueList           []*ProjectIssue           `gorm:"foreignKey:ProjectID;references:ID" json:"projectIssueList,omitempty"`
+	ProjectLocalRepositoryList []*ProjectLocalRepository `gorm:"foreignKey:WorkspaceProjectID;references:ID" json:"projectLocalRepositoryList,omitempty"`
 }
 
 // TableName WorkspaceProject's table name

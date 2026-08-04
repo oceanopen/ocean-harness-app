@@ -41,7 +41,6 @@ export type {
   WorkspaceProjectCreateRequest,
   WorkspaceProjectDeleteRequest,
   WorkspaceProjectGetListRequest,
-  WorkspaceProjectListRepositoriesRequest,
   WorkspaceProjectModel,
   WorkspaceProjectUpdateRequest,
 } from './WorkspaceProjectService';

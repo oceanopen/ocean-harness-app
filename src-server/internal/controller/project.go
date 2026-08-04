@@ -92,19 +92,3 @@ func (api Project) Delete(ctx *gin.Context) {
 	}
 	api.JsonOK(nil)
 }
-
-// ListRepositories POST /api/tracker/project/listRepositories：列项目已关联的本地仓库。
-func (api Project) ListRepositories(ctx *gin.Context) {
-	req := &types.ProjectListRepositoriesRequest{}
-	svc := service.Project{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
-		return
-	}
-	data, err := svc.ListRepositories(req)
-	if err != nil {
-		api.JsonFail(err)
-		return
-	}
-	api.JsonOK(data)
-}

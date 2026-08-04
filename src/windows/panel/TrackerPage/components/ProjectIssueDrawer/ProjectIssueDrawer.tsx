@@ -287,7 +287,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
             disabled={submitting || deleting}
           />
           <IssueBranchField
-            projectId={workspaceProject.id}
+            localRepositoryIds={workspaceProject.localRepositoryIds ?? []}
             localRepositoryId={localRepositoryId}
             repositoryBranch={repositoryBranch}
             onChange={handleBranchChange}

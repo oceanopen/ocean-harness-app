@@ -1,15 +1,16 @@
 import type { SxProps } from '@mui/material';
 import { Autocomplete, Box, FormControl, MenuItem, Select, TextField, Typography } from '@mui/material';
-import { useLocalBranches } from '@src/state/localRepositories';
-import { useProjectRepositories } from '@src/state/tracker';
+import { useLocalBranches, useLocalRepositories } from '@src/state/localRepositories';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// Issue 关联分支字段：仓库下拉（选项 = 项目已关联仓库）+ 分支 Combobox（freeSolo，选项 = 该仓库本地分支）。
+// Issue 关联分支字段：仓库下拉（选项 = 项目已关联仓库，从项目 prop 的 localRepositoryIds 过滤全局仓库列表）
+// + 分支 Combobox（freeSolo，选项 = 该仓库本地分支）。
 // 受控：仅改本地值（父级统一提交），不发请求。仓库变更时清空分支（分支按仓库不同）。
 // 项目无关联仓库时整体禁用并提示；未选仓库时分支框禁用。
 interface IssueBranchFieldProps {
-  projectId: number;
+  // 当前项目已关联的仓库 id 列表（来自项目响应 WorkspaceProjectModel.localRepositoryIds，作仓库下拉选项源）。
+  localRepositoryIds: number[];
   localRepositoryId: number;
   repositoryBranch: string;
   onChange: (localRepositoryId: number, repositoryBranch: string) => void;
@@ -18,7 +19,7 @@ interface IssueBranchFieldProps {
 }
 
 function IssueBranchField({
-  projectId,
+  localRepositoryIds,
   localRepositoryId,
   repositoryBranch,
   onChange,
@@ -26,9 +27,10 @@ function IssueBranchField({
   sx,
 }: IssueBranchFieldProps) {
   const { t } = useTranslation();
-  const reposQuery = useProjectRepositories(projectId);
-  const repos = reposQuery.data ?? [];
-  const noRepos = repos.length === 0;
+  // 仓库下拉选项 = 全局仓库列表按项目关联 id 过滤（useLocalRepositories 全局缓存，无需按项目单独取数）。
+  const allReposQuery = useLocalRepositories();
+  const repos = (allReposQuery.data ?? []).filter(r => localRepositoryIds.includes(r.id));
+  const noRepos = localRepositoryIds.length === 0;
   const branchesQuery = useLocalBranches(localRepositoryId);
   const branches = branchesQuery.data ?? [];
   const repoLabelId = useId();

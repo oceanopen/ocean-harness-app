@@ -81,8 +81,7 @@ func SetupRouter() *gin.Engine {
 				projectGroup.POST("/create", controller.Project{}.Create)
 				projectGroup.POST("/update", controller.Project{}.Update)
 				projectGroup.POST("/delete", controller.Project{}.Delete)
-				// 项目 ↔ 本地仓库 关联随 create/update 全量保存；listRepositories 为读接口（编辑回显 + issue 仓库下拉）。
-				projectGroup.POST("/listRepositories", controller.Project{}.ListRepositories)
+				// 项目 ↔ 本地仓库 关联随 create/update 全量保存，ids 随项目响应返回（无独立读接口）。
 			}
 
 			// workspaceLabel 模块：标签 CRUD（action 风格，POST）。

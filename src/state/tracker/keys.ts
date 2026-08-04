@@ -7,6 +7,4 @@ export const trackerKeys = {
   workspaceProjects: (workspaceId: number) => [...trackerKeys.root, 'workspaceProjects', { workspaceId }] as const,
   projectIssues: (projectId: number) => [...trackerKeys.root, 'projectIssues', { projectId }] as const,
   projectStates: (projectId: number) => [...trackerKeys.root, 'projectStates', { projectId }] as const,
-  // 项目已关联的本地仓库（多对多）
-  projectRepositories: (projectId: number) => [...trackerKeys.root, 'projectRepositories', { projectId }] as const,
 } as const;

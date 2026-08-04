@@ -1,5 +1,9 @@
 package types
 
+import (
+	"we-claude-terminal/go-server/internal/dal/model"
+)
+
 // 每 action 一个独立 Request 类型（不复用，便于各自演进与校验）。常规字段用 gin binding tag 校验。
 // 项目无短码（identifier）、允许重名（无业务唯一键），issue 用全局自增 id 标识；workspaceId 由前端导航上下文提供（无 FK 设计）。
 
@@ -39,10 +43,12 @@ type ProjectDeleteRequest struct {
 	ID int `json:"id" binding:"required"`
 }
 
-// 项目 ↔ 本地仓库 多对多关联：随 create/update 全量保存，无独立增删接口。
-// listRepositories 为读接口（编辑回显 + issue 仓库下拉）。
+// 项目 ↔ 本地仓库 多对多关联：随 create/update 全量保存（无独立增删接口）；
+// 关联仓库 ids 随项目响应返回（ProjectResponseData.LocalRepositoryIDs），无需独立读接口。
 
-// ProjectListRepositoriesRequest 是 POST /api/tracker/project/listRepositories 的入参（列项目已关联的仓库）。
-type ProjectListRepositoriesRequest struct {
-	ProjectID int `json:"projectId" binding:"required"`
+// ProjectResponseData 是项目响应：嵌入 DO（JSON 平铺项目字段）+ 应用层装配的关联仓库 id 列表。
+// LocalRepositoryIDs 由 getList/getInfo Preload(ProjectLocalRepositoryList) 后提取，转换后清空原列表去冗余。
+type ProjectResponseData struct {
+	*model.WorkspaceProject
+	LocalRepositoryIDs []int `json:"localRepositoryIds"`
 }

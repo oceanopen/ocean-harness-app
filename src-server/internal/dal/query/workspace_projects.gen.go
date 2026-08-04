@@ -54,6 +54,12 @@ func newWorkspaceProject(db *gorm.DB, opts ...gen.DOOption) workspaceProject {
 		},
 	}
 
+	_workspaceProject.ProjectLocalRepositoryList = workspaceProjectHasManyProjectLocalRepositoryList{
+		db: db.Session(&gorm.Session{}),
+
+		RelationField: field.NewRelation("ProjectLocalRepositoryList", "model.ProjectLocalRepository"),
+	}
+
 	_workspaceProject.fillFieldMap()
 
 	return _workspaceProject
@@ -75,6 +81,8 @@ type workspaceProject struct {
 	ProjectStateList workspaceProjectHasManyProjectStateList
 
 	ProjectIssueList workspaceProjectHasManyProjectIssueList
+
+	ProjectLocalRepositoryList workspaceProjectHasManyProjectLocalRepositoryList
 
 	fieldMap map[string]field.Expr
 }
@@ -128,7 +136,7 @@ func (w *workspaceProject) GetFieldByName(fieldName string) (field.OrderExpr, bo
 }
 
 func (w *workspaceProject) fillFieldMap() {
-	w.fieldMap = make(map[string]field.Expr, 11)
+	w.fieldMap = make(map[string]field.Expr, 12)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["workspace_id"] = w.WorkspaceID
 	w.fieldMap["name"] = w.Name
@@ -147,6 +155,8 @@ func (w workspaceProject) clone(db *gorm.DB) workspaceProject {
 	w.ProjectStateList.db.Statement.ConnPool = db.Statement.ConnPool
 	w.ProjectIssueList.db = db.Session(&gorm.Session{Initialized: true})
 	w.ProjectIssueList.db.Statement.ConnPool = db.Statement.ConnPool
+	w.ProjectLocalRepositoryList.db = db.Session(&gorm.Session{Initialized: true})
+	w.ProjectLocalRepositoryList.db.Statement.ConnPool = db.Statement.ConnPool
 	return w
 }
 
@@ -154,6 +164,7 @@ func (w workspaceProject) replaceDB(db *gorm.DB) workspaceProject {
 	w.workspaceProjectDo.ReplaceDB(db)
 	w.ProjectStateList.db = db.Session(&gorm.Session{})
 	w.ProjectIssueList.db = db.Session(&gorm.Session{})
+	w.ProjectLocalRepositoryList.db = db.Session(&gorm.Session{})
 	return w
 }
 
@@ -319,6 +330,87 @@ func (a workspaceProjectHasManyProjectIssueListTx) Count() int64 {
 }
 
 func (a workspaceProjectHasManyProjectIssueListTx) Unscoped() *workspaceProjectHasManyProjectIssueListTx {
+	a.tx = a.tx.Unscoped()
+	return &a
+}
+
+type workspaceProjectHasManyProjectLocalRepositoryList struct {
+	db *gorm.DB
+
+	field.RelationField
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryList) Where(conds ...field.Expr) *workspaceProjectHasManyProjectLocalRepositoryList {
+	if len(conds) == 0 {
+		return &a
+	}
+
+	exprs := make([]clause.Expression, 0, len(conds))
+	for _, cond := range conds {
+		exprs = append(exprs, cond.BeCond().(clause.Expression))
+	}
+	a.db = a.db.Clauses(clause.Where{Exprs: exprs})
+	return &a
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryList) WithContext(ctx context.Context) *workspaceProjectHasManyProjectLocalRepositoryList {
+	a.db = a.db.WithContext(ctx)
+	return &a
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryList) Session(session *gorm.Session) *workspaceProjectHasManyProjectLocalRepositoryList {
+	a.db = a.db.Session(session)
+	return &a
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryList) Model(m *model.WorkspaceProject) *workspaceProjectHasManyProjectLocalRepositoryListTx {
+	return &workspaceProjectHasManyProjectLocalRepositoryListTx{a.db.Model(m).Association(a.Name())}
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryList) Unscoped() *workspaceProjectHasManyProjectLocalRepositoryList {
+	a.db = a.db.Unscoped()
+	return &a
+}
+
+type workspaceProjectHasManyProjectLocalRepositoryListTx struct{ tx *gorm.Association }
+
+func (a workspaceProjectHasManyProjectLocalRepositoryListTx) Find() (result []*model.ProjectLocalRepository, err error) {
+	return result, a.tx.Find(&result)
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryListTx) Append(values ...*model.ProjectLocalRepository) (err error) {
+	targetValues := make([]interface{}, len(values))
+	for i, v := range values {
+		targetValues[i] = v
+	}
+	return a.tx.Append(targetValues...)
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryListTx) Replace(values ...*model.ProjectLocalRepository) (err error) {
+	targetValues := make([]interface{}, len(values))
+	for i, v := range values {
+		targetValues[i] = v
+	}
+	return a.tx.Replace(targetValues...)
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryListTx) Delete(values ...*model.ProjectLocalRepository) (err error) {
+	targetValues := make([]interface{}, len(values))
+	for i, v := range values {
+		targetValues[i] = v
+	}
+	return a.tx.Delete(targetValues...)
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryListTx) Clear() error {
+	return a.tx.Clear()
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryListTx) Count() int64 {
+	return a.tx.Count()
+}
+
+func (a workspaceProjectHasManyProjectLocalRepositoryListTx) Unscoped() *workspaceProjectHasManyProjectLocalRepositoryListTx {
 	a.tx = a.tx.Unscoped()
 	return &a
 }

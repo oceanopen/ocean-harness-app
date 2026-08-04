@@ -57,6 +57,11 @@ func newWorkspace(db *gorm.DB, opts ...gen.DOOption) workspace {
 				RelationField: field.NewRelation("WorkspaceProjectList.ProjectIssueList.IssueLabelList", "model.IssueLabel"),
 			},
 		},
+		ProjectLocalRepositoryList: struct {
+			field.RelationField
+		}{
+			RelationField: field.NewRelation("WorkspaceProjectList.ProjectLocalRepositoryList", "model.ProjectLocalRepository"),
+		},
 	}
 
 	_workspace.WorkspaceLabelList = workspaceHasManyWorkspaceLabelList{
@@ -173,6 +178,9 @@ type workspaceHasManyWorkspaceProjectList struct {
 		IssueLabelList struct {
 			field.RelationField
 		}
+	}
+	ProjectLocalRepositoryList struct {
+		field.RelationField
 	}
 }
 

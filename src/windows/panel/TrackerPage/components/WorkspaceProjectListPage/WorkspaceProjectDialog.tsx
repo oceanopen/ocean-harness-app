@@ -17,13 +17,7 @@ import {
   Tooltip,
 } from '@mui/material';
 import { useLocalRepositories } from '@src/state/localRepositories';
-import {
-  trackerKeys,
-  useCreateWorkspaceProject,
-  useProjectRepositories,
-  useUpdateWorkspaceProject,
-} from '@src/state/tracker';
-import { useQueryClient } from '@tanstack/react-query';
+import { useCreateWorkspaceProject, useUpdateWorkspaceProject } from '@src/state/tracker';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -89,27 +83,16 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
   const isEdit = !!workspaceProject;
   const createWorkspaceProject = useCreateWorkspaceProject(workspaceId);
   const updateWorkspaceProject = useUpdateWorkspaceProject(workspaceId);
-  // 关联仓库：全量仓库（选项）+ 项目已关联仓库（编辑模式回显，随 create/update 全量保存）。
-  const qc = useQueryClient();
+  // 关联仓库：全量仓库（选项）；编辑模式选中态直接从项目 prop 回显（项目响应自带 localRepositoryIds）。
   const allReposQuery = useLocalRepositories();
   const allRepos: LocalRepositoryModel[] = allReposQuery.data ?? [];
-  const projectReposQuery = useProjectRepositories(isEdit ? workspaceProject!.id : 0);
   const [name, setName] = useState(workspaceProject?.name ?? '');
   const [emoji, setEmoji] = useState(workspaceProject?.emoji ?? '');
   const [description, setDescription] = useState(workspaceProject?.description ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 选中的关联仓库 id 列表。编辑模式：项目已关联仓库就绪后用 render-time 调整种子化。
-  // 用「id 集合的值比较」而非引用比较：TanStack 缓存命中且未失效时 data 引用稳定，
-  // 引用比较会导致 mount 时 guard 恒 false、selectedRepoIds 不种子化（回显空）；
-  // 改为 join 串比较后 mount 必种子化，且仅当 id 集合真正变化才重种子化（保留用户本地增删）。
-  const [selectedRepoIds, setSelectedRepoIds] = useState<number[]>([]);
-  const repoSeedKey = projectReposQuery.data?.map(r => r.id).join(',') ?? '';
-  const [lastRepoSeedKey, setLastRepoSeedKey] = useState('');
-  if (repoSeedKey !== lastRepoSeedKey) {
-    setLastRepoSeedKey(repoSeedKey);
-    setSelectedRepoIds(projectReposQuery.data ? projectReposQuery.data.map(r => r.id) : []);
-  }
+  // 选中的关联仓库 id 列表：直接从项目 prop 初始化（无需独立取数/种子化，无回显 bug）。
+  const [selectedRepoIds, setSelectedRepoIds] = useState<number[]>(workspaceProject?.localRepositoryIds ?? []);
   // emoji 选择浮层锚点（null=关闭；点按钮设为输入框根节点，点表情/外部关闭清空）。
   const [emojiPickerAnchor, setEmojiPickerAnchor] = useState<HTMLElement | null>(null);
   // emoji 输入框根节点 ref：作为选择浮层锚点，使浮层在输入框下方展开（而非按钮下方）。
@@ -122,24 +105,20 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
     setError(null);
     try {
       // 关联仓库随项目信息一起保存（后端 create/update 全量写入，无独立增删接口）。
+      // create/update mutation 的 onSuccess 已失效 workspaceProjects（携带最新 localRepositoryIds）。
       const payload = {
         name: name.trim(),
         emoji: emoji.trim(),
         description: description.trim(),
         localRepositoryIds: selectedRepoIds,
       };
-      let projectId: number;
       if (isEdit && workspaceProject) {
         const updated = await updateWorkspaceProject.mutateAsync({ id: workspaceProject.id, ...payload });
-        projectId = workspaceProject.id;
         onUpdated?.(updated);
       } else {
         const created = await createWorkspaceProject.mutateAsync({ workspaceId, ...payload });
-        projectId = created.id;
         onCreated(created);
       }
-      // 失效该项目关联仓库缓存，下次打开编辑/issue 仓库下拉取最新。
-      qc.invalidateQueries({ queryKey: trackerKeys.projectRepositories(projectId) });
       onClose();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
