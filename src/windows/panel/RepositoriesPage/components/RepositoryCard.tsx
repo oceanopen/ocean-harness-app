@@ -1,4 +1,4 @@
-import type { Repository } from '@src/shared/bindings';
+import type { LocalRepositoryModel } from '@src/services';
 import type { MouseEvent, ReactNode } from 'react';
 import { SiIntellijidea, SiIterm2 } from '@icons-pack/react-simple-icons';
 import {
@@ -54,15 +54,16 @@ function VsCodeIcon() {
 // Actions 左下 VSCode/IDEA、右下 iTerm2——点击弹出 Menu 选择目标子目录（无子目录则直接打开仓库根目录）。
 // 卡片 height:100% + flex column，保证网格内同行卡片高度对齐、操作栏贴底。
 //
-// 打开目标统一按 dir: string 传递：仓库目录行传仓库根目录，VSCode/IDEA/iTerm2 按菜单所选子目录拼接（无子目录时传根目录）。
+// 数据来自 Go 服务 LocalRepositoryModel（localDir/currentBranch）。OS 原生动作（打开 IDE/终端/Finder、
+// Java 判断）仍走 Rust commands，传入 repo.localDir 作为目标目录。
 interface RepositoryCardProps {
-  repo: Repository;
+  repo: LocalRepositoryModel;
   refreshing: boolean;
   onOpenFolder: (dir: string) => void;
   onOpenInTerminal: (dir: string, terminal: 'iterm2' | 'terminal') => void;
-  onRefresh: (repo: Repository) => void;
-  onEdit: (repo: Repository) => void;
-  onDelete: (repo: Repository) => void;
+  onRefresh: (repo: LocalRepositoryModel) => void;
+  onEdit: (repo: LocalRepositoryModel) => void;
+  onDelete: (repo: LocalRepositoryModel) => void;
 }
 
 type OpenAction = 'vscode' | 'idea' | 'iterm2';
@@ -95,7 +96,7 @@ function InfoRow({ icon, label, children }: { icon: ReactNode; label?: string; c
 function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRefresh, onEdit, onDelete }: RepositoryCardProps) {
   const { t } = useTranslation();
   const hasRemote = repo.remoteUrl.length > 0;
-  const hasBranch = repo.branch.length > 0;
+  const hasBranch = repo.currentBranch.length > 0;
   const hasCommit = repo.lastCommitAt > 0;
   const hasSubDirs = repo.subDirList.length > 0;
 
@@ -108,10 +109,10 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
   // 命令返回裸 Promise<boolean>（非 typedError），错误时 fallback false（按非 Java 处理）。
   const [isJava, setIsJava] = useState(false);
   useEffect(() => {
-    commands.isJavaProject(repo.dir)
+    commands.isJavaProject(repo.localDir)
       .then(setIsJava)
       .catch(() => setIsJava(false));
-  }, [repo.dir]);
+  }, [repo.localDir]);
 
   // 执行打开：vscode/idea 走 openInEditor（失败静默 warn，编辑器未装的常见场景；同 ClaudeSessionCard）；
   // iterm2 走 onOpenInTerminal（失败 toast）。
@@ -128,7 +129,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
   // 操作按钮点击：无子目录直接打开仓库根目录；有子目录弹 Menu 选择。
   const handleActionClick = (action: OpenAction, event: MouseEvent<HTMLElement>) => {
     if (!hasSubDirs) {
-      openTarget(action, repo.dir);
+      openTarget(action, repo.localDir);
       return;
     }
     setMenuAction(action);
@@ -142,7 +143,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
 
   // 菜单选中某子目录：拼接仓库目录 + 子目录后打开。
   const handleMenuItemClick = (subDir: string) => {
-    const target = joinRepoDir(repo.dir, subDir);
+    const target = joinRepoDir(repo.localDir, subDir);
     const action = menuAction;
     handleMenuClose();
     if (action) {
@@ -189,8 +190,8 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
           <Link
             component="button"
             type="button"
-            onClick={() => onOpenFolder(repo.dir)}
-            title={repo.dir}
+            onClick={() => onOpenFolder(repo.localDir)}
+            title={repo.localDir}
             underline="hover"
             sx={{
               fontFamily: 'monospace',
@@ -202,7 +203,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
               ...truncateSx,
             }}
           >
-            {repo.dir}
+            {repo.localDir}
           </Link>
         </InfoRow>
 
@@ -215,7 +216,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
         <InfoRow icon={<AccountTreeIcon sx={{ fontSize: '0.95rem' }} />} label={t('repositories:card.branchLabel')}>
           {hasBranch
             ? (
-                <Chip size="small" variant="outlined" label={repo.branch} />
+                <Chip size="small" variant="outlined" label={repo.currentBranch} />
               )
             : (
                 <Typography variant="caption" sx={{ color: 'text.disabled' }}>

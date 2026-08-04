@@ -1,6 +1,17 @@
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 
+export { LocalRepositoryService } from './LocalRepositoryService';
+export type {
+  LocalRepositoryCreateRequest,
+  LocalRepositoryDeleteRequest,
+  LocalRepositoryGetListRequest,
+  LocalRepositoryModel,
+  LocalRepositoryRefreshRequest,
+  LocalRepositoryUpdateRequest,
+  RepoSubDir,
+} from './LocalRepositoryService';
+
 export { ProjectIssueService } from './ProjectIssueService';
 export type {
   Priority,

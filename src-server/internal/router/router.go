@@ -37,6 +37,19 @@ func SetupRouter() *gin.Engine {
 		{
 			baseInfoGroup.GET("/getServerRunInfo", controller.BaseInfo{}.GetServerRunInfo)
 		}
+
+		// localRepository 模块：本地仓库 CRUD + git 刷新（action 风格，POST）。
+		// 本地仓库为顶层资源（无 workspace 归属），独立分组，不挂 tracker 下。
+		localRepositoryGroup := apiGroup.Group("/localRepository")
+		{
+			localRepositoryGroup.POST("/getList", controller.LocalRepository{}.GetList)
+			localRepositoryGroup.POST("/getInfo", controller.LocalRepository{}.GetInfo)
+			localRepositoryGroup.POST("/create", controller.LocalRepository{}.Create)
+			localRepositoryGroup.POST("/update", controller.LocalRepository{}.Update)
+			localRepositoryGroup.POST("/delete", controller.LocalRepository{}.Delete)
+			localRepositoryGroup.POST("/refresh", controller.LocalRepository{}.Refresh)
+			localRepositoryGroup.POST("/refreshAll", controller.LocalRepository{}.RefreshAll)
+		}
 		trackerGroup := apiGroup.Group("/tracker")
 		{
 			// workspace 模块：一律 POST（action 风格 getList/getInfo/create/update/delete）。

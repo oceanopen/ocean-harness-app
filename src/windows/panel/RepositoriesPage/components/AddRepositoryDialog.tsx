@@ -1,4 +1,4 @@
-import type { Repository, RepoSubDir } from '@src/shared/bindings';
+import type { LocalRepositoryModel, RepoSubDir } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
   FolderOpen as FolderOpenIcon,
@@ -18,41 +18,39 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { commands } from '@src/shared/bindings';
-import { unwrap } from '@src/shared/commands';
 import { basename, relativeSubDir } from '@src/shared/repoPath';
+import { useCreateLocalRepository, useUpdateLocalRepository } from '@src/state/localRepositories';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // 添加/编辑本地仓库弹窗。
-// 传入 repo 时为编辑模式：标题改为"编辑仓库"、ID 只读展示、name/dir/description/subDirList 默认反显、
-// 提交调用 updateRepository；不传则为添加模式，行为不变。
-//
-// 由父组件按需挂载（{open && <AddRepositoryDialog/>}）：每次打开都是全新 useState 初值，
-// 无需重置 effect；关闭即卸载。
-//
-// 名称派生（仅新增模式）：选择/变更仓库目录 → name = basename(dir)。项目子目录不影响仓库名称
-// （一个仓库可对应多个子目录，子目录不应改写仓库整体名称）。
 interface AddRepositoryDialogProps {
   onClose: () => void;
-  onAdded: (repo: Repository) => void;
-  onUpdated?: (repo: Repository) => void;
-  repo?: Repository;
+  repo?: LocalRepositoryModel;
 }
 
-// 描述最大字数（仓库描述与子目录描述共用，与后端 cap_description 对齐）。
+// 描述最大字数（仓库描述与子目录描述共用，与后端 capDescription 对齐）。
 const DESCRIPTION_MAX = 200;
 
 // 表单内子目录行：在持久化的 RepoSubDir 基础上追加客户端唯一 _key，用作 React list key（避免 index key 警告）。
 // _key 不入库，提交前剥离。
 type SubDirRow = RepoSubDir & { _key: string };
 
-function AddRepositoryDialog({ onClose, onAdded, onUpdated, repo }: AddRepositoryDialogProps) {
+// 从未知错误对象提取 message（Go 经 http.ts 抛 new Error(msg)，Rust IPC 抛裸字符串，两者兼容）。
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+function AddRepositoryDialog({ onClose, repo }: AddRepositoryDialogProps) {
   const { t } = useTranslation();
   const isEdit = !!repo;
+  const createMu = useCreateLocalRepository();
+  const updateMu = useUpdateLocalRepository();
+  const submitting = isEdit ? updateMu.isPending : createMu.isPending;
+
   const [name, setName] = useState(repo?.name ?? '');
-  const [dir, setDir] = useState(repo?.dir ?? '');
+  const [localDir, setLocalDir] = useState(repo?.localDir ?? '');
   const [description, setDescription] = useState(repo?.description ?? '');
   // 行 key 顺序生成器（同一时刻仅一个弹窗实例，顺序 id 即可保证唯一）。
   const keySeqRef = useRef(0);
@@ -60,7 +58,6 @@ function AddRepositoryDialog({ onClose, onAdded, onUpdated, repo }: AddRepositor
   const [subDirs, setSubDirs] = useState<SubDirRow[]>(() =>
     (repo?.subDirList ?? []).map(s => ({ ...s, _key: nextKey() })),
   );
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 新增模式下据仓库目录派生仓库名称；编辑模式不动（保留用户自定义名称）。
@@ -75,7 +72,7 @@ function AddRepositoryDialog({ onClose, onAdded, onUpdated, repo }: AddRepositor
     // directory: true 多选关闭，返回 string | null。
     const selected = await openDialog({ directory: true, multiple: false });
     if (typeof selected === 'string') {
-      setDir(selected);
+      setLocalDir(selected);
       setError(null);
       deriveName(selected);
     }
@@ -83,7 +80,7 @@ function AddRepositoryDialog({ onClose, onAdded, onUpdated, repo }: AddRepositor
 
   // 某一行项目子目录的文件夹选择：剥离仓库目录前缀得相对路径；不在仓库目录下则报错。
   const handleBrowseSubDir = async (idx: number) => {
-    const root = dir.trim();
+    const root = localDir.trim();
     if (!root) {
       setError(t('repositories:toast.invalidSubDir'));
       return;
@@ -113,44 +110,30 @@ function AddRepositoryDialog({ onClose, onAdded, onUpdated, repo }: AddRepositor
     setError(null);
   };
 
-  const canSubmit = name.trim().length > 0 && dir.trim().length > 0 && !submitting;
+  const canSubmit = name.trim().length > 0 && localDir.trim().length > 0 && !submitting;
 
   const handleConfirm = async () => {
-    setSubmitting(true);
     setError(null);
     try {
       // 过滤 subDir 为空的行（未填写路径的行无意义，不入库；后端也会再过滤一次），并剥离客户端 _key。
       const cleanedSubDirs = subDirs
         .filter(s => s.subDir.trim().length > 0)
         .map(({ _key: _omit, ...rest }) => rest);
+      const payload = {
+        name: name.trim(),
+        localDir: localDir.trim(),
+        description: description.trim(),
+        subDirList: cleanedSubDirs,
+      };
       if (isEdit && repo) {
-        const updated = await unwrap(
-          commands.updateRepository(repo.id, name.trim(), dir.trim(), description.trim(), cleanedSubDirs),
-        );
-        onUpdated?.(updated);
+        await updateMu.mutateAsync({ id: repo.id, ...payload });
       } else {
-        const added = await unwrap(
-          commands.addRepository(name.trim(), dir.trim(), description.trim(), cleanedSubDirs),
-        );
-        onAdded(added);
+        await createMu.mutateAsync(payload);
       }
       onClose();
     } catch (e) {
-      // 后端哨兵字符串 → i18n 文案；未知错误带原始信息。
-      const err = String(e);
-      if (err === 'not-a-git-repo') {
-        setError(t('repositories:toast.notGitRepo'));
-      } else if (err === 'dir-exists') {
-        setError(t('repositories:toast.dirExists'));
-      } else if (err === 'invalid-sub-dir') {
-        setError(t('repositories:toast.invalidSubDir'));
-      } else if (isEdit) {
-        setError(t('repositories:toast.updateFailed', { message: err }));
-      } else {
-        setError(t('repositories:toast.addFailed', { message: err }));
-      }
-    } finally {
-      setSubmitting(false);
+      // 统一展示后台返回的错误信息（后端返回可读中文），不做细分映射。
+      setError(errMsg(e));
     }
   };
 
@@ -189,9 +172,9 @@ function AddRepositoryDialog({ onClose, onAdded, onUpdated, repo }: AddRepositor
           <TextField
             label={t('repositories:add.dir')}
             placeholder={t('repositories:add.dirPlaceholder')}
-            value={dir}
+            value={localDir}
             onChange={(e) => {
-              setDir(e.target.value);
+              setLocalDir(e.target.value);
               setError(null);
             }}
             fullWidth

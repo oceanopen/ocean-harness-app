@@ -11,7 +11,7 @@ use tauri_specta::{Builder, collect_commands};
 // 保证命令清单单一来源，避免两份注册表漂移。
 pub fn build_specta_builder() -> Builder<tauri::Wry> {
     use crate::shared::types::{
-        AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, Repository, TerminalApp,
+        AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, TerminalApp,
         YesNo,
     };
     use crate::terminal::NavErr;
@@ -24,6 +24,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::panel::open_in_editor,
             windows::panel::is_java_project,
             windows::panel::open_in_terminal,
+            windows::panel::open_in_file_manager,
             windows::pet_claude_sessions_summary::show_pet_claude_sessions_summary_window,
             windows::pet_claude_sessions_summary::hide_pet_claude_sessions_summary_window,
             windows::pet_claude_sessions_summary::toggle_pet_claude_sessions_summary_window,
@@ -34,13 +35,6 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::settings::show_settings_window,
             shared::app_config::get_app_config,
             shared::app_config::set_app_config,
-            shared::repositories::list_repositories,
-            shared::repositories::add_repository,
-            shared::repositories::update_repository,
-            shared::repositories::delete_repository,
-            shared::repositories::refresh_repository,
-            shared::repositories::refresh_all_repositories,
-            shared::repositories::open_in_file_manager,
             shared::http_server::http_server_status,
             shared::http_server::set_http_server_enabled,
             shared::http_server::cleanup_orphan_http_server,
@@ -53,7 +47,6 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         .typ::<YesNo>()
         .typ::<ClaudeSessionInfo>()
         .typ::<NavErr>()
-        .typ::<Repository>()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -101,8 +94,6 @@ pub fn run() {
 
             shared::app_config::init(app)?;
             shared::state::claude_sessions::init(app)?;
-            // 本地仓库管理表（复用 app_config::init 建立的同一 app.db 连接，故须在 app_config::init 之后）。
-            shared::repositories::init(app)?;
             windows::tray::setup(app)?;
 
             // 先 rescan 填充 ClaudeSessionStore 并广播首批快照，保证后续 pet_claude_sessions_task / pet

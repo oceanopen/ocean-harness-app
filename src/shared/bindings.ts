@@ -47,6 +47,8 @@ export const commands = {
 	 *  iTerm2 模式下根据 `iterm2_split_direction` 配置决定分屏方向（默认上下分屏）。
 	 */
 	openInTerminal: (terminal: string, dir: string) => typedError<null, string>(__TAURI_INVOKE("open_in_terminal", { terminal, dir })),
+	/**  用系统文件管理器打开目录。dir 必须为存在的绝对路径。 */
+	openInFileManager: (dir: string) => typedError<null, string>(__TAURI_INVOKE("open_in_file_manager", { dir })),
 	showPetClaudeSessionsSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("show_pet_claude_sessions_summary_window")),
 	hidePetClaudeSessionsSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("hide_pet_claude_sessions_summary_window")),
 	togglePetClaudeSessionsSummaryWindow: () => typedError<boolean, string>(__TAURI_INVOKE("toggle_pet_claude_sessions_summary_window")),
@@ -75,30 +77,6 @@ export const commands = {
 	showSettingsWindow: () => typedError<null, string>(__TAURI_INVOKE("show_settings_window")),
 	getAppConfig: (key: string) => typedError<string | null, string>(__TAURI_INVOKE("get_app_config", { key })),
 	setAppConfig: (key: string, value: string) => typedError<null, string>(__TAURI_INVOKE("set_app_config", { key, value })),
-	/**  列出全部仓库（按最近提交时间倒序）。零 git 解析，即时返回。 */
-	listRepositories: () => typedError<Repository[], string>(__TAURI_INVOKE("list_repositories")),
-	/**
-	 *  添加仓库。**严格校验**：名称/目录非空、目录为存在的绝对路径、且为 git 仓库；
-	 *  dir 唯一（重复返回哨兵 "dir-exists"）；sub_dir_list 每项拼接目录须存在（否则 "invalid-sub-dir"）。
-	 *  校验通过后解析 git 信息并入库，返回新仓库。
-	 */
-	addRepository: (name: string, dir: string, description: string, subDirList: RepoSubDir[]) => typedError<Repository, string>(__TAURI_INVOKE("add_repository", { name, dir, description, subDirList })),
-	/**
-	 *  更新仓库的名称、目录、描述与子目录列表。校验新目录须为 git 仓库且不与其他记录重复；
-	 *  sub_dir_list 每项拼接目录须存在。校验通过后重新解析 git 信息并更新，返回更新后的仓库。
-	 */
-	updateRepository: (id: number, name: string, dir: string, description: string, subDirList: RepoSubDir[]) => typedError<Repository, string>(__TAURI_INVOKE("update_repository", { id, name, dir, description, subDirList })),
-	/**  删除仓库。 */
-	deleteRepository: (id: number) => typedError<null, string>(__TAURI_INVOKE("delete_repository", { id })),
-	/**  刷新单个仓库：重解析 git 信息并更新，返回新数据。 */
-	refreshRepository: (id: number) => typedError<Repository, string>(__TAURI_INVOKE("refresh_repository", { id })),
-	/**
-	 *  全量刷新：遍历重解析全部仓库并更新，返回新列表。
-	 *  async + spawn_blocking：git 子进程操作让出 async 线程，不阻塞其他 IPC 调用。
-	 */
-	refreshAllRepositories: () => typedError<Repository[], string>(__TAURI_INVOKE("refresh_all_repositories")),
-	/**  用系统文件管理器打开目录。dir 必须为存在的绝对路径。 */
-	openInFileManager: (dir: string) => typedError<null, string>(__TAURI_INVOKE("open_in_file_manager", { dir })),
 	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
 	httpServerStatus: () => __TAURI_INVOKE<HttpServerStatus>("http_server_status"),
 	/**
@@ -225,51 +203,6 @@ export type NavErr =
 { kind: "sessionNotFound" } | 
 /**  其他 IO 错误。 */
 { kind: "io"; message: string };
-
-/**
- *  仓库下的一个项目子目录项。一个仓库可对应多个项目子目录（monorepo 多 package）。
- *  `sub_dir_list` 在 SQLite 中以 JSON 字符串存储，跨边界时 serde 在 `Vec<RepoSubDir>` ↔ 文本间转换。
- */
-export type RepoSubDir = {
-	/**  项目子目录相对仓库目录的路径（如 `packages/web`）。后端校验拼接目录须存在。 */
-	subDir: string,
-	/**  该子目录的描述（用户填写，可空，最多 200 字）。 */
-	subDirDescription: string,
-};
-
-/**
- *  本地仓库记录。持久化在 SQLite `repositories` 表（见 shared/repositories.rs）。
- *  RepositoriesPage 渲染 RepositoryCard 列表的数据源。
- * 
- *  `name` / `dir` / `description` / `sub_dir_list` 由用户在添加表单填写；`remote_url` / `branch` / `last_commit_*`
- *  由 `parse_repo_info` 跑 git CLI 解析，add/refresh 时写入；`updated_at` 为最近一次刷新时间。
- *  解析失败的字段留空字符串 / 0 时间戳，前端据 `card.noRemote` / `card.noCommit` 兜底文案。
- */
-export type Repository = {
-	/**
-	 *  自增主键（SQLite INTEGER PRIMARY KEY）。用 i32 而非 i64：本地仓库列表规模远小于 2^31，
-	 *  且 specta 禁止裸 i64 跨边界导出（BigInt 精度），i32 映射 TS number 无需 Number 注解。
-	 */
-	id: number,
-	/**  用户填写的仓库名称（展示用，可重复）。新增模式下由仓库目录 basename 自动派生，项目子目录不影响。 */
-	name: string,
-	/**  仓库目录绝对路径（UNIQUE，严格校验须存在且为 git 仓库）。 */
-	dir: string,
-	/**  仓库级描述（用户填写，可空，最多 200 字）。卡片在「当前分支」下方单行展示，悬浮显示完整内容。 */
-	description: string,
-	/**  项目子目录列表（可空数组）。VSCode/IDEA/iTerm2 通过菜单选择其中一项，以「仓库目录 + 子目录」打开。 */
-	subDirList: RepoSubDir[],
-	/**  `git remote get-url origin` 结果，无 origin 时为空字符串。 */
-	remoteUrl: string,
-	/**  `git rev-parse --abbrev-ref HEAD` 结果，detached HEAD / 无提交时为空字符串。 */
-	branch: string,
-	/**  最近一次提交时间（毫秒时间戳，`git log -1 --format=%ct` ×1000）。无提交时为 0。 */
-	lastCommitAt: number,
-	/**  最近一次提交的标题（`git log -1 --format=%s`）。无提交时为空字符串。 */
-	lastCommitMessage: string,
-	/**  本记录最近一次刷新时间（毫秒时间戳），add/refresh 时写入。 */
-	updatedAt: number,
-};
 
 /**
  *  宿主终端应用。通过 `ps -p <ppid>` 链式反查 Claude 进程的祖先进程名得出。

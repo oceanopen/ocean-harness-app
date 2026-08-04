@@ -18,6 +18,7 @@ import (
 var (
 	Q                = new(Query)
 	IssueLabel       *issueLabel
+	LocalRepository  *localRepository
 	ProjectIssue     *projectIssue
 	ProjectState     *projectState
 	Workspace        *workspace
@@ -28,6 +29,7 @@ var (
 func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	*Q = *Use(db, opts...)
 	IssueLabel = &Q.IssueLabel
+	LocalRepository = &Q.LocalRepository
 	ProjectIssue = &Q.ProjectIssue
 	ProjectState = &Q.ProjectState
 	Workspace = &Q.Workspace
@@ -39,6 +41,7 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 	return &Query{
 		db:               db,
 		IssueLabel:       newIssueLabel(db, opts...),
+		LocalRepository:  newLocalRepository(db, opts...),
 		ProjectIssue:     newProjectIssue(db, opts...),
 		ProjectState:     newProjectState(db, opts...),
 		Workspace:        newWorkspace(db, opts...),
@@ -51,6 +54,7 @@ type Query struct {
 	db *gorm.DB
 
 	IssueLabel       issueLabel
+	LocalRepository  localRepository
 	ProjectIssue     projectIssue
 	ProjectState     projectState
 	Workspace        workspace
@@ -66,6 +70,7 @@ func (q *Query) clone(db *gorm.DB) *Query {
 	return &Query{
 		db:               db,
 		IssueLabel:       q.IssueLabel.clone(db),
+		LocalRepository:  q.LocalRepository.clone(db),
 		ProjectIssue:     q.ProjectIssue.clone(db),
 		ProjectState:     q.ProjectState.clone(db),
 		Workspace:        q.Workspace.clone(db),
@@ -86,6 +91,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 	return &Query{
 		db:               db,
 		IssueLabel:       q.IssueLabel.replaceDB(db),
+		LocalRepository:  q.LocalRepository.replaceDB(db),
 		ProjectIssue:     q.ProjectIssue.replaceDB(db),
 		ProjectState:     q.ProjectState.replaceDB(db),
 		Workspace:        q.Workspace.replaceDB(db),
@@ -96,6 +102,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 
 type queryCtx struct {
 	IssueLabel       IIssueLabelDo
+	LocalRepository  ILocalRepositoryDo
 	ProjectIssue     IProjectIssueDo
 	ProjectState     IProjectStateDo
 	Workspace        IWorkspaceDo
@@ -106,6 +113,7 @@ type queryCtx struct {
 func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
 		IssueLabel:       q.IssueLabel.WithContext(ctx),
+		LocalRepository:  q.LocalRepository.WithContext(ctx),
 		ProjectIssue:     q.ProjectIssue.WithContext(ctx),
 		ProjectState:     q.ProjectState.WithContext(ctx),
 		Workspace:        q.Workspace.WithContext(ctx),

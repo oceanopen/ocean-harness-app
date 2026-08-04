@@ -188,6 +188,54 @@ pub fn open_in_terminal(app: AppHandle, terminal: String, dir: String) -> Result
     }
 }
 
+/// 用系统默认文件管理器打开目录：macOS Finder(open) / Windows Explorer(explorer) / Linux(xdg-open)。
+/// 跨平台 cfg 与 stdio null 写法复刻 open_in_editor。explorer 退出码不可靠，用 spawn 不检查 status。
+/// 从 shared/repositories.rs 迁移而来（仓库注册表已迁至 Go 服务，本命令作为通用 OS 动作保留）。
+fn open_dir(dir: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("failed to open directory: {e}"))?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|e| format!("failed to open directory: {e}"))?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map_err(|e| format!("failed to open directory: {e}"))?;
+    }
+    Ok(())
+}
+
+/// 用系统文件管理器打开目录。dir 必须为存在的绝对路径。
+#[tauri::command]
+#[specta::specta]
+pub fn open_in_file_manager(dir: String) -> Result<(), String> {
+    let path = std::path::Path::new(&dir);
+    if dir.is_empty() || !path.is_absolute() {
+        return Err("invalid directory".into());
+    }
+    open_dir(&dir)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> Result<(), String> {
