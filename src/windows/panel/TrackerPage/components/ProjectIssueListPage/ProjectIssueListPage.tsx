@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
+  Autorenew as AutorenewIcon,
   ExpandLessOutlined as ExpandLessOutlinedIcon,
   ExpandMoreOutlined as ExpandMoreOutlinedIcon,
   ViewKanbanOutlined as ViewKanbanOutlinedIcon,
@@ -15,6 +16,7 @@ import {
   Button,
   CircularProgress,
   Collapse,
+  IconButton,
   Paper,
   TextField,
   ToggleButton,
@@ -50,8 +52,8 @@ interface IssueListPageProps {
 function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError } = useProjectIssues(workspaceProject.id);
-  const { data: projectStates = [], isLoading: statesLoading, isError: statesError } = useProjectStates(workspaceProject.id);
+  const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError, isFetching: issuesFetching } = useProjectIssues(workspaceProject.id);
+  const { data: projectStates = [], isLoading: statesLoading, isError: statesError, isFetching: statesFetching } = useProjectStates(workspaceProject.id);
   const { show: showToast, snack } = useToast();
   const [keyword, setKeyword] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
@@ -252,6 +254,8 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
 
   const isLoading = issuesLoading || statesLoading;
   const isError = issuesError || statesError;
+  // 后台刷新中（驱动刷新按钮的禁用与旋转）：两个 query 任一在拉取即为刷新中。
+  const refreshing = issuesFetching || statesFetching;
   const ready = !isLoading && !isError;
 
   return (
@@ -315,9 +319,27 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
         )}
         {/* 看板模式下用弹性间隔把"新建"推到右侧（列表模式搜索框 flexGrow 已撑开） */}
         {viewMode === 'kanban' && <Box sx={{ flex: 1 }} />}
-        <Button variant="contained" size="small" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()}>
+        <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()}>
           {t('tracker:projectIssue.actions.add')}
         </Button>
+        <IconButton
+          size="small"
+          onClick={() => {
+            void qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(workspaceProject.id) });
+          }}
+          disabled={refreshing}
+          aria-label={t('tracker:projectIssue.actions.refresh')}
+        >
+          <AutorenewIcon
+            sx={{
+              'animation': refreshing ? 'spin 0.8s linear infinite' : undefined,
+              '@keyframes spin': {
+                from: { transform: 'rotate(0deg)' },
+                to: { transform: 'rotate(360deg)' },
+              },
+            }}
+          />
+        </IconButton>
       </Box>
 
       {/* 内容区 */}

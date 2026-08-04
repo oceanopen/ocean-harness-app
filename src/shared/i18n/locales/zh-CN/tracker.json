@@ -5,7 +5,8 @@
     "search": "按名称搜索",
     "actions": {
       "add": "新建工作空间",
-      "switch": "切换工作空间"
+      "switch": "切换工作空间",
+      "refresh": "刷新"
     },
     "add": {
       "title": "新建工作空间",
@@ -28,6 +29,7 @@
       "slugLabel": "标识",
       "noDescription": "暂无描述",
       "updatedAtLabel": "更新于",
+      "current": "当前工作空间",
       "edit": "编辑",
       "delete": "删除"
     },
@@ -51,7 +53,8 @@
   "workspaceProject": {
     "search": "按项目名称搜索",
     "actions": {
-      "add": "新建项目"
+      "add": "新建项目",
+      "refresh": "刷新"
     },
     "add": {
       "title": "新建项目",
@@ -107,7 +110,8 @@
     "emptyHint": "选择项目后查看 Issue",
     "search": "搜索 Issue",
     "actions": {
-      "add": "新建 Issue"
+      "add": "新建 Issue",
+      "refresh": "刷新"
     },
     "create": {
       "title": "新建 Issue",

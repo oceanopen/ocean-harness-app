@@ -5,7 +5,8 @@
     "search": "Search by name",
     "actions": {
       "add": "New workspace",
-      "switch": "Switch workspace"
+      "switch": "Switch workspace",
+      "refresh": "Refresh"
     },
     "add": {
       "title": "New workspace",
@@ -28,6 +29,7 @@
       "slugLabel": "Slug",
       "noDescription": "No description",
       "updatedAtLabel": "Updated",
+      "current": "Current workspace",
       "edit": "Edit",
       "delete": "Delete"
     },
@@ -51,7 +53,8 @@
   "workspaceProject": {
     "search": "Search by project name",
     "actions": {
-      "add": "New project"
+      "add": "New project",
+      "refresh": "Refresh"
     },
     "add": {
       "title": "New project",
@@ -107,7 +110,8 @@
     "emptyHint": "Select a project to view issues",
     "search": "Search issues",
     "actions": {
-      "add": "New issue"
+      "add": "New issue",
+      "refresh": "Refresh"
     },
     "create": {
       "title": "New issue",

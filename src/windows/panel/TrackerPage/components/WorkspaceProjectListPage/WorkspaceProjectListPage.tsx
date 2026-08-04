@@ -1,6 +1,7 @@
 import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
+  Autorenew as AutorenewIcon,
   DeleteOutlined as DeleteOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
   FolderOutlined as FolderOutlinedIcon,
@@ -41,7 +42,7 @@ interface ProjectListPageProps {
 // 删除走 mutation（删当前选中项目时清空 store 已在 mutation 内处理）。本地不再持有列表/选中 state。
 function WorkspaceProjectListPage({ workspace }: ProjectListPageProps) {
   const { t } = useTranslation();
-  const { data: workspaceProjects = [], isLoading, isError, refetch } = useWorkspaceProjects(workspace.id);
+  const { data: workspaceProjects = [], isLoading, isError, isFetching, refetch } = useWorkspaceProjects(workspace.id);
   const deleteWorkspaceProject = useDeleteWorkspaceProject(workspace.id);
   const selectedProjectId = useTrackerStore(s => s.selectedWorkspaceProject?.id ?? null);
   const selectWorkspaceProject = useTrackerStore(s => s.selectWorkspaceProject);
@@ -118,6 +119,22 @@ function WorkspaceProjectListPage({ workspace }: ProjectListPageProps) {
             <AddOutlinedIcon />
           </IconButton>
         </Tooltip>
+        <IconButton
+          size="small"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+          aria-label={t('tracker:workspaceProject.actions.refresh')}
+        >
+          <AutorenewIcon
+            sx={{
+              'animation': isFetching ? 'spin 0.8s linear infinite' : undefined,
+              '@keyframes spin': {
+                from: { transform: 'rotate(0deg)' },
+                to: { transform: 'rotate(360deg)' },
+              },
+            }}
+          />
+        </IconButton>
       </Box>
 
       {/* 内容区 */}

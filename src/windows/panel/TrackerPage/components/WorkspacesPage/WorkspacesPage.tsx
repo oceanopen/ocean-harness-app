@@ -1,6 +1,8 @@
 import type { WorkspaceModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
+  Autorenew as AutorenewIcon,
+  CheckOutlined as CheckOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
   TagOutlined as TagOutlinedIcon,
@@ -27,7 +29,7 @@ import {
 } from '@mui/material';
 import { formatDate, formatRelativeTime } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
-import { useDeleteWorkspace, useWorkspaces } from '@src/state/tracker';
+import { useDeleteWorkspace, useTrackerStore, useWorkspaces } from '@src/state/tracker';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import WorkspaceDialog from './WorkspaceDialog';
@@ -47,7 +49,9 @@ interface WorkspacesPageProps {
 // 故本地不再持有列表 state、不再手写三态机/load/useEffect/patch。
 function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
   const { t } = useTranslation();
-  const { data: workspaces = [], isLoading, isError, refetch } = useWorkspaces();
+  const { data: workspaces = [], isLoading, isError, isFetching, refetch } = useWorkspaces();
+  // 粘性「当前工作空间 id」：本页在未选中态渲染，靠它才知道上个工作空间以标记对勾。
+  const activeWorkspaceId = useTrackerStore(s => s.activeWorkspaceId);
   const deleteWs = useDeleteWorkspace();
   const { show: showToast, snack } = useToast();
   const [searchName, setSearchName] = useState('');
@@ -115,14 +119,31 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
           onChange={e => setSearchName(e.target.value)}
           sx={{ flexGrow: 1, minWidth: 120 }}
         />
-        <Button
-          variant="contained"
-          size="small"
-          startIcon={<AddOutlinedIcon />}
-          onClick={() => setAddDialogOpen(true)}
-        >
-          {t('tracker:workspace.actions.add')}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+          <Button
+            variant="contained"
+            startIcon={<AddOutlinedIcon />}
+            onClick={() => setAddDialogOpen(true)}
+          >
+            {t('tracker:workspace.actions.add')}
+          </Button>
+          <IconButton
+            size="small"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+            aria-label={t('tracker:workspace.actions.refresh')}
+          >
+            <AutorenewIcon
+              sx={{
+                'animation': isFetching ? 'spin 0.8s linear infinite' : undefined,
+                '@keyframes spin': {
+                  from: { transform: 'rotate(0deg)' },
+                  to: { transform: 'rotate(360deg)' },
+                },
+              }}
+            />
+          </IconButton>
+        </Box>
       </Box>
 
       {/* 内容区 */}
@@ -197,6 +218,7 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
               <WorkspaceCard
                 key={ws.id}
                 ws={ws}
+                isActive={ws.id === activeWorkspaceId}
                 onSelect={onSelect}
                 onEdit={setEditTarget}
                 onDelete={setDeleteTarget}
@@ -246,12 +268,13 @@ function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
 // Content 放 slug/描述/更新时间。height:100% + flex column 保证网格内同行卡片等高。
 interface WorkspaceCardProps {
   ws: WorkspaceModel;
+  isActive: boolean;
   onSelect: (ws: WorkspaceModel) => void;
   onEdit: (ws: WorkspaceModel) => void;
   onDelete: (ws: WorkspaceModel) => void;
 }
 
-function WorkspaceCard({ ws, onSelect, onEdit, onDelete }: WorkspaceCardProps) {
+function WorkspaceCard({ ws, isActive, onSelect, onEdit, onDelete }: WorkspaceCardProps) {
   const { t } = useTranslation();
   const hasDescription = ws.description.trim().length > 0;
 
@@ -262,7 +285,18 @@ function WorkspaceCard({ ws, onSelect, onEdit, onDelete }: WorkspaceCardProps) {
       sx={{ height: '100%', display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
     >
       <CardHeader
-        title={ws.name}
+        title={(
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+            {ws.name}
+            {isActive && (
+              <CheckOutlinedIcon
+                color="primary"
+                sx={{ fontSize: '1.1rem' }}
+                aria-label={t('tracker:workspace.card.current')}
+              />
+            )}
+          </Box>
+        )}
         slotProps={{ title: { fontWeight: 600, noWrap: true } }}
         action={(
           <Box sx={{ display: 'flex', gap: 0.5 }}>
