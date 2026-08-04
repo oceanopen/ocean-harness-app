@@ -1,6 +1,7 @@
 {
   "workspace": {
     "summary": "共 {{total}} 个工作空间",
+    "current": "当前工作空间：",
     "search": "按名称搜索",
     "actions": {
       "add": "新建工作空间",
@@ -48,7 +49,7 @@
     }
   },
   "workspaceProject": {
-    "search": "按名称搜索",
+    "search": "按项目名称搜索",
     "actions": {
       "add": "新建项目"
     },

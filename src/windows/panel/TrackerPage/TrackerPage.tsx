@@ -41,6 +41,10 @@ export default function TrackerPage() {
         }}
       >
         <Typography variant="subtitle1" sx={{ fontWeight: 600 }} noWrap>
+          {/* 前缀「当前工作空间：」用次级色 + 细字重，与名称做区分 */}
+          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>
+            {t('tracker:workspace.current')}
+          </Box>
           {selected.name}
         </Typography>
         <Tooltip title={t('tracker:workspace.actions.switch')}>
