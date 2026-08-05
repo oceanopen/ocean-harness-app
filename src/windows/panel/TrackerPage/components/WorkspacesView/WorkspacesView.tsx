@@ -40,14 +40,14 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
-interface WorkspacesPageProps {
+interface WorkspacesViewProps {
   onSelect: (ws: WorkspaceModel) => void;
 }
 
-// 工作空间管理页（tracker 窗口未选中工作空间时的全屏视图）。
+// 工作空间管理视图（tracker 窗口未选中工作空间时的全屏视图）。
 // 列表数据走 useWorkspaces()（与命令面板二级页共享缓存）；增删改走 mutation，内部自动 invalidate，
 // 故本地不再持有列表 state、不再手写三态机/load/useEffect/patch。
-function WorkspacesPage({ onSelect }: WorkspacesPageProps) {
+function WorkspacesView({ onSelect }: WorkspacesViewProps) {
   const { t } = useTranslation();
   const { data: workspaces = [], isLoading, isError, isFetching, refetch } = useWorkspaces();
   // 粘性「当前工作空间 id」：本页在未选中态渲染，靠它才知道上个工作空间以标记对勾。
@@ -346,4 +346,4 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onDelete }: WorkspaceCa
   );
 }
 
-export default WorkspacesPage;
+export default WorkspacesView;

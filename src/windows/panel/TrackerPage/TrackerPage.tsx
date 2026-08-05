@@ -2,14 +2,14 @@ import { AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
 import { Box, IconButton, Tooltip, Typography } from '@mui/material';
 import { useTrackerStore, useWorkspaceProjects } from '@src/state/tracker';
 import { useTranslation } from 'react-i18next';
-import ProjectIssueListPage from './components/ProjectIssueListPage/ProjectIssueListPage';
-import WorkspaceProjectListPage from './components/WorkspaceProjectListPage/WorkspaceProjectListPage';
-import WorkspacesPage from './components/WorkspacesPage/WorkspacesPage';
+import ProjectIssueList from './components/ProjectIssueList/ProjectIssueList';
+import WorkspaceProjectList from './components/WorkspaceProjectList/WorkspaceProjectList';
+import WorkspacesView from './components/WorkspacesView/WorkspacesView';
 
 // TrackerPage：控制台「项目事项管理」页面内容组件（工作空间 → 项目 → Issue 三级管理）。
 // 三级选择态读写 tracker store（与命令面板共享同一份），故本组件无 props。
 // 嵌在 PanelApp 内容区内（panel 顶栏已显示「项目事项管理」页面名），故自身不再重复标题。
-// 两态机：未选中工作空间 → 全屏 WorkspacesPage（卡片网格 + CRUD）；
+// 两态机：未选中工作空间 → 全屏 WorkspacesView（卡片网格 + CRUD）；
 // 选中某工作空间 → 顶部「工作空间切换栏」（名称 + 切换按钮）+ 左项目列表 / 右 projectIssue 三栏。
 export default function TrackerPage() {
   const { t } = useTranslation();
@@ -19,12 +19,12 @@ export default function TrackerPage() {
   const selectedProjectId = useTrackerStore(s => s.selectedWorkspaceProject?.id ?? null);
   const selectWorkspace = useTrackerStore(s => s.selectWorkspace);
   const selectWorkspaceProject = useTrackerStore(s => s.selectWorkspaceProject);
-  // 项目列表 query：与左栏 WorkspaceProjectListPage 共享同一缓存（同 key），命中即零请求。
+  // 项目列表 query：与左栏 WorkspaceProjectList 共享同一缓存（同 key），命中即零请求。
   const { data: workspaceProjects = [] } = useWorkspaceProjects(selected?.id ?? null);
 
   // 未选中工作空间：全屏管理工作空间。
   if (!selected) {
-    return <WorkspacesPage onSelect={selectWorkspace} />;
+    return <WorkspacesView onSelect={selectWorkspace} />;
   }
 
   // 按 id 从最新 query 数据派生选中项目：关联仓库等随项目刷新自动更新（修复 issue 弹窗仓库列表陈旧）。
@@ -83,14 +83,14 @@ export default function TrackerPage() {
             overflow: 'hidden',
           }}
         >
-          <WorkspaceProjectListPage workspace={selected} />
+          <WorkspaceProjectList workspace={selected} />
         </Box>
 
         {/* 右栏：projectIssue 列表（选中项目后渲染；key 随项目切换重挂载，重置筛选/折叠并重新加载） */}
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
           {selectedWorkspaceProject
             ? (
-                <ProjectIssueListPage key={selectedWorkspaceProject.id} workspaceProject={selectedWorkspaceProject} />
+                <ProjectIssueList key={selectedWorkspaceProject.id} workspaceProject={selectedWorkspaceProject} />
               )
             : (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>

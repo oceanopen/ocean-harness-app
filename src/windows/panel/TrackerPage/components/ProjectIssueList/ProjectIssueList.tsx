@@ -42,14 +42,14 @@ type IssueViewMode = 'list' | 'kanban';
 // 分组顺序固定（对齐 state_group 工作流语义）。
 const GROUP_ORDER: StateGroup[] = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'];
 
-interface IssueListPageProps {
+interface IssueListProps {
   workspaceProject: WorkspaceProjectModel;
 }
 
-// Issue 列表页（嵌于 tracker 三栏壳的右栏）。
+// Issue 列表（嵌于 tracker 三栏壳的右栏）。
 // projectIssue/state 列表走 useProjectIssues/useProjectStates（与抽屉/看板/卡片共享缓存）；增删改走 mutation（在抽屉内），
 // 本页回调仅弹 toast（mutation 内部 invalidate）。看板拖拽乐观更新经 updateProjectIssues 适配器写回 Query 缓存。
-function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
+function ProjectIssueList({ workspaceProject }: IssueListProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError, isFetching: issuesFetching } = useProjectIssues(workspaceProject.id);
@@ -507,4 +507,4 @@ function ProjectIssueListPage({ workspaceProject }: IssueListPageProps) {
   );
 }
 
-export default ProjectIssueListPage;
+export default ProjectIssueList;

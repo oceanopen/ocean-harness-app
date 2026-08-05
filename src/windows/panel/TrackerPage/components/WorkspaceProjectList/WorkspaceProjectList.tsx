@@ -33,14 +33,14 @@ const truncateSx = {
   whiteSpace: 'nowrap',
 } as const;
 
-interface ProjectListPageProps {
+interface ProjectListProps {
   workspace: WorkspaceModel;
 }
 
-// 项目列表页（嵌于 tracker 三栏壳的左栏，宽 260）。
+// 项目列表（嵌于 tracker 三栏壳的左栏，宽 260）。
 // 列表走 useWorkspaceProjects(workspaceId)；选中态读写 tracker store（与命令面板/右栏共享）；
 // 删除走 mutation（删当前选中项目时清空 store 已在 mutation 内处理）。本地不再持有列表/选中 state。
-function WorkspaceProjectListPage({ workspace }: ProjectListPageProps) {
+function WorkspaceProjectList({ workspace }: ProjectListProps) {
   const { t } = useTranslation();
   const { data: workspaceProjects = [], isLoading, isError, isFetching, refetch } = useWorkspaceProjects(workspace.id);
   const deleteWorkspaceProject = useDeleteWorkspaceProject(workspace.id);
@@ -335,4 +335,4 @@ function WorkspaceProjectRow({ workspaceProject, selected, onSelect, onEdit, onD
   );
 }
 
-export default WorkspaceProjectListPage;
+export default WorkspaceProjectList;

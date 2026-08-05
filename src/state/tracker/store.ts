@@ -9,7 +9,7 @@ interface TrackerSelectionState {
   selectedWorkspace: WorkspaceModel | null;
   selectedWorkspaceProject: WorkspaceProjectModel | null;
   // 当前活动工作空间 id（粘性）：selectWorkspace(ws) 时记录 ws.id，selectWorkspace(null)（点切换回到网格页）时保留，
-  // 供 WorkspacesPage 在卡片上标记「当前工作空间」对勾（该页仅在未选中态渲染，需靠此粘性 id 才知道上个工作空间）。
+  // 供 WorkspacesView 在卡片上标记「当前工作空间」对勾（该页仅在未选中态渲染，需靠此粘性 id 才知道上个工作空间）。
   activeWorkspaceId: number | null;
   selectWorkspace: (ws: WorkspaceModel | null) => void;
   selectWorkspaceProject: (workspaceProject: WorkspaceProjectModel | null) => void;

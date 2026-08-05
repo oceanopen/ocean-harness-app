@@ -101,7 +101,7 @@ export function useUpdateWorkspaceProject(workspaceId: number) {
   });
 }
 
-/** 删除项目；若删的正是当前选中项目，联动清空 store 选中态（替代原 WorkspaceProjectListPage onSelect(null) 副作用）。 */
+/** 删除项目；若删的正是当前选中项目，联动清空 store 选中态（替代原 WorkspaceProjectList onSelect(null) 副作用）。 */
 export function useDeleteWorkspaceProject(workspaceId: number) {
   const qc = useQueryClient();
   return useMutation({
@@ -118,7 +118,7 @@ export function useDeleteWorkspaceProject(workspaceId: number) {
 
 // ─── Issue 写操作（mutation）───
 // 每个 mutation 内部 invalidate 对应 key；消费方只调 mutateAsync/mutate，不关心失效。
-// 注：看板拖拽的乐观更新另走 ProjectIssueListPage.updateProjectIssues（setQueryData），不经过这些 mutation。
+// 注：看板拖拽的乐观更新另走 ProjectIssueList.updateProjectIssues（setQueryData），不经过这些 mutation。
 
 /** 创建 projectIssue。 */
 export function useCreateProjectIssue(projectId: number) {
