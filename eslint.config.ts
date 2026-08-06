@@ -10,7 +10,7 @@ export default await antfu(
       'dist',
       'node_modules',
       'src/shared/bindings.ts',
-      'docs/tasks.md',
+      'docs',
     ],
     stylistic: {
       indent: 2,
