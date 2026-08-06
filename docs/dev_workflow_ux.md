@@ -4,7 +4,7 @@
 > - [`docs/issue.md`](issue.md) — 状态体系三层模型(本方案的数据基础)
 > - [`docs/worktree_term.md`](worktree_term.md) — worktree + 嵌入式终端后端技术方案
 >
-> 本文档定义「开发工作台」的**交互方案**。开发流程的状态基础见 `issue.md`(devPhase 已并入 `started` 组子 state)。
+> 本文档定义「开发工作台」的**交互方案**。开发流程的状态基础见 `issue.md`(开发步骤已并入 `started` 组子 state,无独立 devPhase 字段)。
 > 终端能力本期**占位**(写提示 + 复用现有「外部终端/编辑器打开」),真终端实现见 `worktree_term.md`。
 
 ---
@@ -21,10 +21,10 @@
 
 | 视图 | 角色 | 入口 | 改动量 |
 |---|---|---|---|
-| 项目事项管理(现有) | 规划面:issue CRUD / 看板 / 分诊 | 侧栏 `tracker` | **小**:处理中 issue 加 devPhase 子状态徽章 + 「开始开发」入口 |
+| 项目事项管理(现有) | 规划面:issue CRUD / 看板 / 分诊 | 侧栏 `tracker` | **小**:处理中 issue 加开发步骤子状态徽章 + 「开始开发」入口 |
 | 开发工作台(新增) | 执行面:worktree 初始化 / 开发 / PR / 清理 | 侧栏 `devWorkbench`(`MenuKey` 新增) | **全新**:左任务树 + 右步骤条 |
 
-**状态统一**:两个视图共用 issue 的 `stateId`。开发工作台的步骤条 = 项目 `started` 组里勾选的 devPhase 子 state(见 `issue.md` §2.2);issue 的开发位置就是它的 `stateId`,不存在第二套 devPhase 字段。
+**状态统一**:两个视图共用 issue 的 `stateId`。开发工作台的步骤条 = 项目 `started` 组里勾选的子 state、排除「进行中」(见 `issue.md` §2.2);issue 的开发位置就是它的 `stateId`,不存在第二套开发阶段字段。
 
 ---
 
@@ -50,7 +50,7 @@
 ```
 
 - **顶栏**:工作空间切换条(同 tracker 48px bar)+ 右侧「清理中心」批量入口。
-- **左任务树**:workspace → project → **处于开发流程的 issue**(其 `stateId` 落在 `started` 组的 devPhase 子 state)。默认只显示这些;可切换显示已归档(completed/cancelled)。
+- **左任务树**:workspace → project → **处于开发流程的 issue**(其 `stateId` 落在 `started` 组「进行中」之外的子 state)。默认只显示这些;可切换显示已归档(completed/cancelled)。
 - **右侧**:issue 头部(meta + 回链)→ 步骤条 → 当前步骤内容区 → 取消动作。
 
 ---
@@ -74,19 +74,19 @@
 
 ## 5. 步骤条(由项目配置驱动,非固定向导)
 
-**步骤条 = 当前项目 `started` 组里、带 `devPhase` 的子 state**,按 `sort_order` 排序。
-- 项目没勾 devPhase 项 → 没有步骤条(纯状态管理,该 issue 不进开发工作台);
+**步骤条 = 当前项目 `started` 组里、「进行中」之外的子 state**,按 `sort_order` 排序。
+- 项目没勾「进行中」之外的项 → 没有步骤条(纯状态管理,该 issue 不进开发工作台);
 - 不同项目勾不同项 → 不同步骤序列;**跳过** = 配置里不勾某项;
 - 步骤状态:`✓已完成`(stateId 已越过) / `●进行中`(= 当前 stateId) / `○待办`;
 - 点某步骤可回看(已完成步骤只读展示当时信息,进行中步骤可操作)。
 
-步骤项的 `devPhase` 决定右侧渲染哪种内容。
+步骤项的 `state_code` 决定右侧渲染哪种内容。
 
 ---
 
-## 6. 各步骤内容(按 devPhase)
+## 6. 各步骤内容(按 state_code)
 
-### Step · worktree 初始化(`devPhase=init`)
+### Step · worktree 初始化(`state_code=wt_init`)
 - **未初始化**(无 worktree 记录)→ 表单卡(复用 `IssueBranchField` 的仓库+分支逻辑):
   - 仓库(默认取 `issue.localRepositoryId`,可改选项目关联仓库)
   - 基准分支 baseRef(默认仓库默认分支)
@@ -97,20 +97,20 @@
 - **已初始化** → 同表单进入"已就绪"只读态,回填当前 worktree 信息,带 `[调整/重新初始化]` 次按钮。
 - **推进**:创建成功 → 自动把 issue `stateId` 后移到下一个 started 子 state(通常是「开发中」)。
 
-### Step · 开发中(`devPhase=developing`,终端本期占位)
+### Step · 开发中(`state_code=developing`,终端本期占位)
 - 终端区(xterm 占位):带边框空终端框 + 提示条:
   > 📌 嵌入式终端即将支持。当前可点「在外部终端打开」用原生终端开发;开发完成后点下方「开发完成」进入下一步。
 - 快捷操作行(**复用** `bindings.ts` 现有 `openInEditor/openInTerminal/openInFileManager`,范式照搬 `RepositoryCard.tsx:117-127`):`VSCode 打开 / iTerm2 打开 / 访达打开`;
 - `[开发完成]` 主按钮 → `stateId` 推进到下一个 started 子 state(待合并PR);
 - 顶部常显 worktree 路径 + 分支 chip。
 
-### Step · 生成 PR(`devPhase=pr`)
+### Step · 生成 PR(`state_code=pr_open`)
 - PR 配置卡:源分支(`devBranch`,只读)、目标分支(`baseBranch`,可改)、PR 标题(默认 issue 名)、描述(默认 issue.description);
 - `[生成 PR / 打开创建页]` → 构造 compare URL `https://<host>/compare/<base>...<head>` 并打开,记录 `prUrl`;
   > 后端 PR 创建在 `worktree_term.md` 明确是本期非目标。这步先用"引导式 compare URL 生成"顶住,后续加 token 可无缝升级为应用内建 PR,UX 不变。
 - `prUrl` 已存在 → 显示 PR 链接 + `[打开 PR]` + `[合并完成]` → `stateId` 推进到「待清理」。
 
-### Step · 待清理(`devPhase=cleanup`)
+### Step · 待清理(`state_code=cleanup`)
 - 清理确认卡:列出将删除项(worktree 路径、分支);若 `git status` 有未提交改动则警告;
 - `[清理并完成]` → 按 `worktree_term.md` §9.3 两阶段编排(先 `pty_stop_for_worktree` 停 PTY,再 `removeWorktree`)→ `stateId` 移到 **completed 组**(自动归档);
 - `[仅停止开发,保留 worktree]` 次按钮 → 取消流程但留工作区(`stateId` → cancelled 组)。
@@ -139,8 +139,8 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ## 8. 与「项目事项管理」的桥接(改动极小)
 
-1. **`ProjectIssueDrawer` 加「开始开发」按钮**(footer 区,或 `IssueBranchField` 附近):issue 处于 backlog/unstarted/started 且 `localRepositoryId≠0`、且项目 started 组勾了 devPhase 项时显示。点击 → 切到「开发工作台」并定位该 issue(或就地创建 worktree、把 `stateId` 推到首个 devPhase 子 state 再跳转)。
-2. **`IssueCard` 显示 devPhase 子状态徽章**:started 组的 issue 按当前 state 显目录里的 name+color。点徽章 → 跳开发工作台该 issue。
+1. **`ProjectIssueDrawer` 加「开始开发」按钮**(footer 区,或 `IssueBranchField` 附近):issue 处于 backlog/unstarted/started 且 `localRepositoryId≠0`、且项目 started 组勾了「进行中」之外的项时显示。点击 → 切到「开发工作台」并定位该 issue(或就地创建 worktree、把 `stateId` 推到首个开发步骤子 state 再跳转)。
+2. **`IssueCard` 显示开发步骤子状态徽章**:started 组的 issue 按当前 state 显目录里的 name+color。点徽章 → 跳开发工作台该 issue。
 
 ---
 

@@ -5,7 +5,7 @@
 > **范围**：issue → 创建 worktree → 打开本地终端 → 开发 → 清理。仅本地终端，远程终端（SSH relay）预留接口、不在本期实现。
 >
 > 配套文档：
-> - [`docs/issue.md`](issue.md) — issue 状态体系三层模型。**开发流程的阶段(init/dev/pr/cleanup)不存本表**，而是 issue 的 `stateId` 在 `started` 组的 devPhase 子 state 上推进（completed/cancelled 组即归档）。
+> - [`docs/issue.md`](issue.md) — issue 状态体系三层模型。**开发流程的阶段(init/dev/pr/cleanup)不存本表**，而是 issue 的 `stateId` 在 `started` 组的开发步骤子 state（「进行中」之外）上推进（completed/cancelled 组即归档）。
 > - [`docs/_dev_workflow_ux.md`](_dev_workflow_ux.md) — 「开发工作台」交互方案。本文档负责 worktree + 嵌入式终端的后端 plumbing，UX 层（步骤条、各步骤内容、左任务树）见该文。
 
 ---
@@ -151,7 +151,7 @@ CREATE INDEX idx_issue_worktrees_repo  ON t_issue_worktrees(local_repository_id)
 ```
 > 与 issue 既有 `repository_branch` 的关系：`repository_branch` 表示「issue 关心的分支」（既有语义不变）；`t_issue_worktrees` 表示「为开发而创建的隔离工作区」。一个 issue 可有 0..N 个 worktree（本期 UI 侧重 1:1，模型支持 1:N）。
 >
-> **开发流程阶段不在本表**：worktree 初始化/开发中/待合并PR/待清理 这些"阶段"是 issue 的 `stateId` 在 `started` 组 devPhase 子 state 上的位置（见 [`issue.md`](issue.md) §2.2）。本表的 `status`(active/stale/removed) 只描述 **worktree 自身的物理生命周期**，与开发阶段正交。前端编排时：阶段推进 = 改 issue.stateId；worktree 物理增删 = 改本表 + 调 `git worktree`。
+> **开发流程阶段不在本表**：worktree 初始化/开发中/待合并PR/待清理 这些"阶段"是 issue 的 `stateId` 在 `started` 组开发步骤子 state（「进行中」之外）上的位置（见 [`issue.md`](issue.md) §2.2）。本表的 `status`(active/stale/removed) 只描述 **worktree 自身的物理生命周期**，与开发阶段正交。前端编排时：阶段推进 = 改 issue.stateId；worktree 物理增删 = 改本表 + 调 `git worktree`。
 
 ### 5.2 gormgen / DO
 按项目 `tracker 枚举范式`（见记忆）：
