@@ -25,7 +25,15 @@ export type {
 } from './ProjectIssueService';
 
 export { ProjectStateService } from './ProjectStateService';
-export type { ProjectStateGetListRequest, ProjectStateModel, StateGroup } from './ProjectStateService';
+export type {
+  CatalogResponse,
+  ProjectStateGetListRequest,
+  ProjectStateItem,
+  ProjectStateModel,
+  StateGroup,
+  StateGroupMeta,
+  StateMeta,
+} from './ProjectStateService';
 
 export { WorkspaceLabelService } from './WorkspaceLabelService';
 export type {

@@ -1,4 +1,4 @@
-import type { Priority, ProjectIssueResponseData, ProjectStateModel, StateGroup, WorkspaceProjectModel } from '@src/services';
+import type { Priority, ProjectIssueResponseData, StateGroup, StateGroupMeta, WorkspaceProjectModel } from '@src/services';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   AddOutlined as AddOutlinedIcon,
@@ -24,7 +24,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useToast } from '@src/shared/useToast';
-import { trackerKeys, useProjectIssues, useProjectStates } from '@src/state/tracker';
+import { trackerKeys, useProjectIssues, useProjectStateViews } from '@src/state/tracker';
 import { PRIORITY_WEIGHT } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import PrioritySelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/PrioritySelect';
 import ProjectIssueDrawer from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectIssueDrawer';
@@ -53,7 +53,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError, isFetching: issuesFetching } = useProjectIssues(workspaceProject.id);
-  const { data: projectStates = [], isLoading: statesLoading, isError: statesError, isFetching: statesFetching } = useProjectStates(workspaceProject.id);
+  const { views: projectStates, viewMap: stateMap, groups: stateGroups, isLoading: statesLoading, isError: statesError, isFetching: statesFetching } = useProjectStateViews(workspaceProject.id);
   const { show: showToast, snack } = useToast();
   const [keyword, setKeyword] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
@@ -87,11 +87,12 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     });
   }, [qc, workspaceProject.id]);
 
-  const stateMap = useMemo(() => {
-    const m = new Map<number, ProjectStateModel>();
-    projectStates.forEach(s => m.set(s.id, s));
+  // 分组元数据目录（列表分组头取中文名/色，非 i18n；对齐 docs/issue.md §6）。
+  const groupMetaMap = useMemo(() => {
+    const m = new Map<StateGroup, StateGroupMeta>();
+    stateGroups.forEach(g => m.set(g.code, g));
     return m;
-  }, [projectStates]);
+  }, [stateGroups]);
 
   // 各父 issue 的子任务统计（done/total），用于卡片进度小标（从全量扁平 issue 派生）。
   const subtaskStats = useMemo(() => {
@@ -133,7 +134,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     const m: Partial<Record<StateGroup, number>> = {};
     for (const sg of GROUP_ORDER) {
       const sorted = projectStates
-        .filter(s => s.stateGroup === sg)
+        .filter(s => s.stateGroupCode === sg)
         .sort((a, b) => a.sortOrder - b.sortOrder);
       const first = sorted[0];
       if (first) {
@@ -170,7 +171,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     };
     filtered.forEach((i) => {
       // stateId 未知（如状态被删）fallback 到 backlog，保证 projectIssue 不丢。
-      const group = stateMap.get(i.stateId)?.stateGroup ?? 'backlog';
+      const group = stateMap.get(i.stateId)?.stateGroupCode ?? 'backlog';
       buckets[group].push(i);
     });
     Object.values(buckets).forEach(arr => arr.sort((a, b) => {
@@ -438,8 +439,8 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
                       leading={isCollapsed
                         ? <ExpandMoreOutlinedIcon fontSize="small" color="action" />
                         : <ExpandLessOutlinedIcon fontSize="small" color="action" />}
-                      color={stateMap.get(firstStateIdByGroup[g] ?? -1)?.color}
-                      name={t(`tracker:projectIssue.group.${g}`)}
+                      color={groupMetaMap.get(g)?.color}
+                      name={groupMetaMap.get(g)?.name ?? g}
                       count={arr.length}
                       onAdd={() => openCreate(firstStateIdByGroup[g])}
                     />

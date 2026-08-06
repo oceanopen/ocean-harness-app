@@ -1,3 +1,4 @@
+import type { ProjectStateItem } from './ProjectStateService';
 import { request } from './http';
 
 // WorkspaceProjectModel：对齐后端 types.ProjectResponseData 的 JSON 形态（嵌入 DO 平铺 + localRepositoryIds 装配）。
@@ -21,22 +22,26 @@ export interface WorkspaceProjectGetListRequest {
 
 // POST /api/tracker/project/create 的入参。
 // localRepositoryIds 为关联仓库最终列表（全量，随项目一起保存，后端事务内全量写入）。
+// states 为项目初始状态全量列表（引用目录，事务内全量写入 + 回填 default_state_id）。
 export interface WorkspaceProjectCreateRequest {
   workspaceId: number;
   name: string;
   description?: string;
   emoji?: string;
   localRepositoryIds?: number[];
+  states?: ProjectStateItem[];
 }
 
 // POST /api/tracker/project/update 的入参。
 // localRepositoryIds 为关联仓库最终列表（全量覆盖：后端先删后插，无 diff）。
+// states 非 undefined 时全量替换项目状态并重算 default_state_id；省略则跳过（不动状态）。
 export interface WorkspaceProjectUpdateRequest {
   id: number;
   name: string;
   description?: string;
   emoji?: string;
   localRepositoryIds?: number[];
+  states?: ProjectStateItem[];
 }
 
 // POST /api/tracker/project/delete 的入参。

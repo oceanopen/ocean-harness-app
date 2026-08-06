@@ -1,4 +1,5 @@
-import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
+import type { ProjectIssueResponseData } from '@src/services';
+import type { ProjectStateView } from '@src/state/tracker';
 import type { Dispatch, SetStateAction } from 'react';
 import type { SubtaskStats } from '../shared';
 import { DragDropContext } from '@hello-pangea/dnd';
@@ -10,8 +11,8 @@ import { useKanbanDnd } from './useKanbanDnd';
 
 interface KanbanViewProps {
   projectIssues: ProjectIssueResponseData[];
-  projectStates: ProjectStateModel[];
-  stateMap: Map<number, ProjectStateModel>;
+  projectStates: ProjectStateView[];
+  stateMap: Map<number, ProjectStateView>;
   subtaskStats: SubtaskStats;
   childrenByParent: Map<number, ProjectIssueResponseData[]>;
   expandedParents: Set<number>;

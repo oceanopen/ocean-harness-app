@@ -1,5 +1,6 @@
 import type { DropResult } from '@hello-pangea/dnd';
-import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
+import type { ProjectIssueResponseData } from '@src/services';
+import type { ProjectStateView } from '@src/state/tracker';
 import type { Dispatch, SetStateAction } from 'react';
 import { ProjectIssueService } from '@src/services';
 import { useCallback, useRef } from 'react';
@@ -11,7 +12,7 @@ const EPSILON = 1e-6;
 
 export interface UseKanbanDndOptions {
   columnsByState: Map<number, ProjectIssueResponseData[]>;
-  stateMap: Map<number, ProjectStateModel>;
+  stateMap: Map<number, ProjectStateView>;
   setIssues: Dispatch<SetStateAction<ProjectIssueResponseData[]>>;
   showToast: (text: string, severity: ToastSeverity) => void;
   moveFailedText: (message: string) => string;
@@ -70,7 +71,7 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
     const newSortOrder = computeSortOrder(destCol, destination.index);
 
     // 按目标 stateGroup 预估 completedAt（与后端 applyStateTransition 规则字面对齐；后端二次校正）。
-    const destGroup = stateMap.get(destStateId)?.stateGroup;
+    const destGroup = stateMap.get(destStateId)?.stateGroupCode;
 
     setIssues((prev) => {
       snapshotRef.current = prev;

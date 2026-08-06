@@ -1,15 +1,15 @@
-import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
+import type { ProjectIssueResponseData } from '@src/services';
+import type { ProjectStateView } from '@src/state/tracker';
 import type { SubtaskStats } from '../shared';
 import { Draggable, Droppable } from '@hello-pangea/dnd';
 import { Box, Paper } from '@mui/material';
-import { stateDisplayName } from '@src/windows/panel/TrackerPage/components/stateDisplayName';
 import IssueCard from '../IssueCard';
 import StateGroupCard from '../StateGroupCard';
 
 interface KanbanColumnProps {
-  state: ProjectStateModel;
+  state: ProjectStateView;
   projectIssues: ProjectIssueResponseData[];
-  stateMap: Map<number, ProjectStateModel>;
+  stateMap: Map<number, ProjectStateView>;
   subtaskStats: SubtaskStats;
   childrenByParent: Map<number, ProjectIssueResponseData[]>;
   expandedParents: Set<number>;
@@ -41,7 +41,7 @@ function KanbanColumn({ state, projectIssues, stateMap, subtaskStats, childrenBy
           <Box sx={{ px: 1.5, py: 1 }}>
             <StateGroupCard
               color={state.color}
-              name={stateDisplayName(state.name)}
+              name={state.name}
               count={projectIssues.length}
               onAdd={() => onAddIssue(state.id)}
             />

@@ -1,4 +1,5 @@
-import type { Priority, ProjectIssueResponseData, ProjectStateModel, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
+import type { Priority, ProjectIssueResponseData, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
+import type { ProjectStateView } from '@src/state/tracker';
 import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon } from '@mui/icons-material';
 import {
   Box,
@@ -32,7 +33,7 @@ import 'dayjs/locale/zh-cn';
 interface ProjectIssueDrawerProps {
   mode: 'create' | 'edit';
   workspaceProject: WorkspaceProjectModel;
-  projectStates: ProjectStateModel[];
+  projectStates: ProjectStateView[];
   projectIssue?: ProjectIssueResponseData; // edit 模式必传
   // create 模式预选状态（如分组头"+"快捷新建时传入该组首个状态）。
   initialStateId?: number;

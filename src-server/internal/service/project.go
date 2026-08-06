@@ -50,7 +50,7 @@ func (svc Project) GetInfo(req *types.ProjectGetInfoRequest) (*types.ProjectResp
 }
 
 // Create 新建 project（允许重名、无业务唯一键，普通插入）。
-// 同一事务内：插入 project → 种 5 个默认状态（SeedDefaultStates）→ 回填 default_state_id → 全量写入关联仓库。
+// 同一事务内：插入 project → ApplyStates 全量写入状态（校验目录/默认项 + 回填 default_state_id）→ 全量写入关联仓库。
 // 返回响应含本批写入的 localRepositoryIds。
 func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectResponseData, error) {
 	created := &model.WorkspaceProject{}

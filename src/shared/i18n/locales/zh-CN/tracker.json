@@ -77,6 +77,10 @@
       "idLabel": "ID",
       "confirm": "保存"
     },
+    "stateManage": {
+      "title": "状态管理（勾选启用，每组至少保留 1 项；进行中外的开发步骤可拖序）",
+      "stepOrder": "开发步骤顺序（拖动调整）"
+    },
     "card": {
       "edit": "编辑",
       "delete": "删除"
@@ -126,11 +130,6 @@
       "collapse": "折叠子 Issue"
     },
     "group": {
-      "backlog": "待办池",
-      "unstarted": "未开始",
-      "started": "进行中",
-      "completed": "已完成",
-      "cancelled": "已取消",
       "expand": "展开",
       "collapse": "折叠"
     },

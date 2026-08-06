@@ -1,6 +1,7 @@
 import type { DraggableProvided, DraggableStateSnapshot } from '@hello-pangea/dnd';
 import type { SxProps, Theme } from '@mui/material';
-import type { ProjectIssueResponseData, ProjectStateModel } from '@src/services';
+import type { ProjectIssueResponseData } from '@src/services';
+import type { ProjectStateView } from '@src/state/tracker';
 import type { MouseEvent } from 'react';
 import type { SubtaskStats } from './shared';
 import {
@@ -31,7 +32,7 @@ export interface IssueCardDnd {
 export interface IssueCardProps {
   issue: ProjectIssueResponseData;
   depth?: number; // 0=顶级（可展开/可新增子），1=子任务（叶节点）
-  stateMap: Map<number, ProjectStateModel>;
+  stateMap: Map<number, ProjectStateView>;
   subtaskStats: SubtaskStats;
   // 子 issue（已按 sortOrder 排序）；展开时内联渲染。子卡片不传（叶节点）。
   childIssues?: ProjectIssueResponseData[];
@@ -72,8 +73,8 @@ function IssueCard({
   const state = stateMap.get(issue.stateId);
   const overdue = !!issue.targetDate
     && new Date(issue.targetDate).getTime() < now
-    && state?.stateGroup !== 'completed'
-    && state?.stateGroup !== 'cancelled';
+    && state?.stateGroupCode !== 'completed'
+    && state?.stateGroupCode !== 'cancelled';
 
   // depth=1 子卡片用轻量缩进行（与父卡片视觉区分）；depth=0 用 Paper 卡片（列表/看板一致）。
   const rootSx: SxProps<Theme> = depth === 1

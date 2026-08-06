@@ -77,6 +77,10 @@
       "idLabel": "ID",
       "confirm": "Save"
     },
+    "stateManage": {
+      "title": "State management (check to enable, keep at least 1 per group; dev steps except In progress are draggable)",
+      "stepOrder": "Dev step order (drag to reorder)"
+    },
     "card": {
       "edit": "Edit",
       "delete": "Delete"
@@ -126,11 +130,6 @@
       "collapse": "Collapse sub-issues"
     },
     "group": {
-      "backlog": "Backlog",
-      "unstarted": "Unstarted",
-      "started": "Started",
-      "completed": "Completed",
-      "cancelled": "Cancelled",
       "expand": "Expand",
       "collapse": "Collapse"
     },

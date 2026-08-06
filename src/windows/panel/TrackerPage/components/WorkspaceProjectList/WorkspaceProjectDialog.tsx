@@ -1,4 +1,4 @@
-import type { LocalRepositoryModel, WorkspaceProjectModel } from '@src/services';
+import type { LocalRepositoryModel, ProjectStateItem, WorkspaceProjectModel } from '@src/services';
 import { EmojiEmotionsOutlined as EmojiEmotionsOutlinedIcon } from '@mui/icons-material';
 import {
   Alert,
@@ -17,9 +17,11 @@ import {
   Tooltip,
 } from '@mui/material';
 import { useLocalRepositories } from '@src/state/localRepositories';
-import { useCreateWorkspaceProject, useUpdateWorkspaceProject } from '@src/state/tracker';
-import { useRef, useState } from 'react';
+import { trackerKeys, useCreateWorkspaceProject, useProjectStates, useUpdateWorkspaceProject } from '@src/state/tracker';
+import { useQueryClient } from '@tanstack/react-query';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import ProjectStateManage from '../ProjectStateManage';
 
 // 新建/编辑项目弹窗。
 // 传入 workspaceProject 时为编辑模式：标题改为"编辑项目"、ID 只读展示、字段反显、提交调用 update；
@@ -78,6 +80,20 @@ const EMOJI_PRESETS = [
   '💎',
 ];
 
+// 新建项目默认状态全量列表（决策#4：开箱自带完整开发步骤条）。
+// 引用后端固定目录 StateCatalog（9 项），backlog 项为默认状态；sortOrder 仅占位（保存时按目录重排）。
+const DEFAULT_STATES: ProjectStateItem[] = [
+  { stateGroupCode: 'backlog', stateCode: 'backlog', sortOrder: 1000, isDefault: 'Y' },
+  { stateGroupCode: 'unstarted', stateCode: 'todo', sortOrder: 2000, isDefault: 'N' },
+  { stateGroupCode: 'started', stateCode: 'in_progress', sortOrder: 3000, isDefault: 'N' },
+  { stateGroupCode: 'started', stateCode: 'wt_init', sortOrder: 4000, isDefault: 'N' },
+  { stateGroupCode: 'started', stateCode: 'developing', sortOrder: 5000, isDefault: 'N' },
+  { stateGroupCode: 'started', stateCode: 'pr_open', sortOrder: 6000, isDefault: 'N' },
+  { stateGroupCode: 'started', stateCode: 'cleanup', sortOrder: 7000, isDefault: 'N' },
+  { stateGroupCode: 'completed', stateCode: 'done', sortOrder: 8000, isDefault: 'N' },
+  { stateGroupCode: 'cancelled', stateCode: 'cancelled', sortOrder: 9000, isDefault: 'N' },
+];
+
 function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, workspaceProject }: WorkspaceProjectDialogProps) {
   const { t } = useTranslation();
   const isEdit = !!workspaceProject;
@@ -93,6 +109,24 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
   const [error, setError] = useState<string | null>(null);
   // 选中的关联仓库 id 列表：直接从项目 prop 初始化（无需独立取数/种子化，无回显 bug）。
   const [selectedRepoIds, setSelectedRepoIds] = useState<number[]>(workspaceProject?.localRepositoryIds ?? []);
+  // 项目状态全量列表（引用目录）。新建=默认全勾（DEFAULT_STATES）；编辑=回显该项目现有状态。
+  // override 派生模式：未改时随 existingStates 自动派生（避免 effect 同步 set），用户改动后用 override 覆写。
+  const qc = useQueryClient();
+  const projectId = workspaceProject?.id ?? 0;
+  const { data: existingStates = [] } = useProjectStates(projectId);
+  const baseStates = useMemo<ProjectStateItem[]>(
+    () => (isEdit
+      ? existingStates.map(s => ({
+          stateGroupCode: s.stateGroupCode,
+          stateCode: s.stateCode,
+          sortOrder: s.sortOrder,
+          isDefault: s.isDefault,
+        }))
+      : DEFAULT_STATES),
+    [isEdit, existingStates],
+  );
+  const [statesOverride, setStatesOverride] = useState<ProjectStateItem[] | null>(null);
+  const states = statesOverride ?? baseStates;
   // emoji 选择浮层锚点（null=关闭；点按钮设为输入框根节点，点表情/外部关闭清空）。
   const [emojiPickerAnchor, setEmojiPickerAnchor] = useState<HTMLElement | null>(null);
   // emoji 输入框根节点 ref：作为选择浮层锚点，使浮层在输入框下方展开（而非按钮下方）。
@@ -104,16 +138,18 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
     setSubmitting(true);
     setError(null);
     try {
-      // 关联仓库随项目信息一起保存（后端 create/update 全量写入，无独立增删接口）。
-      // create/update mutation 的 onSuccess 已失效 workspaceProjects（携带最新 localRepositoryIds）。
+      // 关联仓库 + 状态全量列表随项目信息一起保存（后端 create/update 事务内全量写入，无独立增删接口）。
+      // create/update mutation 的 onSuccess 已失效 workspaceProjects；状态变更额外失效 projectStates。
       const payload = {
         name: name.trim(),
         emoji: emoji.trim(),
         description: description.trim(),
         localRepositoryIds: selectedRepoIds,
+        states,
       };
       if (isEdit && workspaceProject) {
         const updated = await updateWorkspaceProject.mutateAsync({ id: workspaceProject.id, ...payload });
+        qc.invalidateQueries({ queryKey: trackerKeys.projectStates(workspaceProject.id) });
         onUpdated?.(updated);
       } else {
         const created = await createWorkspaceProject.mutateAsync({ workspaceId, ...payload });
@@ -273,6 +309,7 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
               />
             )}
           />
+          <ProjectStateManage states={states} onChange={setStatesOverride} disabled={submitting} />
           {error && <Alert severity="error">{error}</Alert>}
         </Box>
       </DialogContent>
