@@ -41,11 +41,11 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.TargetDate = field.NewString(tableName, "target_date")
 	_projectIssue.CompletedAt = field.NewTime(tableName, "completed_at")
 	_projectIssue.IsDraft = field.NewField(tableName, "is_draft")
+	_projectIssue.LocalRepositoryID = field.NewInt(tableName, "local_repository_id")
+	_projectIssue.RepositoryBranch = field.NewString(tableName, "repository_branch")
 	_projectIssue.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectIssue.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_projectIssue.DeletedAt = field.NewField(tableName, "deleted_at")
-	_projectIssue.LocalRepositoryID = field.NewInt(tableName, "local_repository_id")
-	_projectIssue.RepositoryBranch = field.NewString(tableName, "repository_branch")
 	_projectIssue.IssueLabelList = projectIssueHasManyIssueLabelList{
 		db: db.Session(&gorm.Session{}),
 
@@ -74,11 +74,11 @@ type projectIssue struct {
 	TargetDate        field.String
 	CompletedAt       field.Time
 	IsDraft           field.Field
+	LocalRepositoryID field.Int
+	RepositoryBranch  field.String
 	CreatedAt         field.Time
 	UpdatedAt         field.Time
 	DeletedAt         field.Field
-	LocalRepositoryID field.Int
-	RepositoryBranch  field.String
 	IssueLabelList    projectIssueHasManyIssueLabelList
 
 	fieldMap map[string]field.Expr
@@ -109,11 +109,11 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.TargetDate = field.NewString(table, "target_date")
 	p.CompletedAt = field.NewTime(table, "completed_at")
 	p.IsDraft = field.NewField(table, "is_draft")
+	p.LocalRepositoryID = field.NewInt(table, "local_repository_id")
+	p.RepositoryBranch = field.NewString(table, "repository_branch")
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")
 	p.DeletedAt = field.NewField(table, "deleted_at")
-	p.LocalRepositoryID = field.NewInt(table, "local_repository_id")
-	p.RepositoryBranch = field.NewString(table, "repository_branch")
 
 	p.fillFieldMap()
 
@@ -156,11 +156,11 @@ func (p *projectIssue) fillFieldMap() {
 	p.fieldMap["target_date"] = p.TargetDate
 	p.fieldMap["completed_at"] = p.CompletedAt
 	p.fieldMap["is_draft"] = p.IsDraft
+	p.fieldMap["local_repository_id"] = p.LocalRepositoryID
+	p.fieldMap["repository_branch"] = p.RepositoryBranch
 	p.fieldMap["created_at"] = p.CreatedAt
 	p.fieldMap["updated_at"] = p.UpdatedAt
 	p.fieldMap["deleted_at"] = p.DeletedAt
-	p.fieldMap["local_repository_id"] = p.LocalRepositoryID
-	p.fieldMap["repository_branch"] = p.RepositoryBranch
 
 }
 

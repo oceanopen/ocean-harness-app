@@ -10,6 +10,9 @@ import (
 
 // ProjectState 对应 /api/tracker/projectState 命名空间下的接口。
 // 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+//
+// 状态管理无独立 CRUD/reorder 接口：状态随项目 create/update 全量提交。
+// 本命名空间只保留 getList（项目状态数据）与 catalog（固定状态目录）。
 type ProjectState struct {
 	apis.Api
 }
@@ -30,64 +33,18 @@ func (api ProjectState) GetList(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Create POST /api/tracker/projectState/create：新建状态（sort_order 自算 + is_default 互斥）。
-func (api ProjectState) Create(ctx *gin.Context) {
-	req := &types.ProjectStateCreateRequest{}
+// Catalog GET /api/tracker/projectState/catalog：返回固定状态目录（分组 + 子状态）。
+// 全局常量、无入参，故省略 Bind/Validate。
+func (api ProjectState) Catalog(ctx *gin.Context) {
 	svc := service.ProjectState{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+	if err := api.MakeContext(ctx).MakeService(&svc.Service).Errors; err != nil {
 		api.JsonFail(err)
 		return
 	}
-	data, err := svc.Create(req)
+	data, err := svc.GetCatalog()
 	if err != nil {
 		api.JsonFail(err)
 		return
 	}
 	api.JsonOK(data)
-}
-
-// Update POST /api/tracker/projectState/update：更新状态（is_default 互斥）。
-func (api ProjectState) Update(ctx *gin.Context) {
-	req := &types.ProjectStateUpdateRequest{}
-	svc := service.ProjectState{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
-		return
-	}
-	data, err := svc.Update(req)
-	if err != nil {
-		api.JsonFail(err)
-		return
-	}
-	api.JsonOK(data)
-}
-
-// Delete POST /api/tracker/projectState/delete：软删除状态（默认状态受保护）。
-func (api ProjectState) Delete(ctx *gin.Context) {
-	req := &types.ProjectStateDeleteRequest{}
-	svc := service.ProjectState{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
-		return
-	}
-	if err := svc.Delete(req); err != nil {
-		api.JsonFail(err)
-		return
-	}
-	api.JsonOK(nil)
-}
-
-// Reorder POST /api/tracker/projectState/reorder：批量重置 sort_order。
-func (api ProjectState) Reorder(ctx *gin.Context) {
-	req := &types.ProjectStateReorderRequest{}
-	svc := service.ProjectState{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
-		return
-	}
-	if err := svc.Reorder(req); err != nil {
-		api.JsonFail(err)
-		return
-	}
-	api.JsonOK(nil)
 }

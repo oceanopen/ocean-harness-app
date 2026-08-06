@@ -28,11 +28,11 @@ type ProjectIssue struct {
 	TargetDate        string         `gorm:"column:target_date;type:TEXT" json:"targetDate"`
 	CompletedAt       *time.Time     `gorm:"column:completed_at;type:DATETIME" json:"completedAt"`
 	IsDraft           enums.YesNo    `gorm:"column:is_draft;type:TEXT;not null" json:"isDraft"`
+	LocalRepositoryID int            `gorm:"column:local_repository_id;type:INTEGER" json:"localRepositoryId"`
+	RepositoryBranch  string         `gorm:"column:repository_branch;type:TEXT;not null;default:''" json:"repositoryBranch"`
 	CreatedAt         time.Time      `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt         time.Time      `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 	DeletedAt         gorm.DeletedAt `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
-	LocalRepositoryID int            `gorm:"column:local_repository_id;type:INTEGER" json:"localRepositoryId"`
-	RepositoryBranch  string         `gorm:"column:repository_branch;type:TEXT;not null;default:''" json:"repositoryBranch"`
 	IssueLabelList    []*IssueLabel  `gorm:"foreignKey:IssueID;references:ID" json:"issueLabelList,omitempty"`
 }
 

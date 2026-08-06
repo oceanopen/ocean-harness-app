@@ -6,7 +6,6 @@ import (
 	"gorm.io/gorm"
 
 	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/dal/enums"
 	"we-claude-terminal/go-server/internal/dal/model"
 	"we-claude-terminal/go-server/internal/dal/query"
 	"we-claude-terminal/go-server/internal/dal/types"
@@ -71,22 +70,17 @@ func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectRespon
 			return e
 		}
 
-		// 2) 种 5 个默认状态：把 tx 透传给 ProjectState service，纳入同一事务。
+		// 2) 全量写入项目状态（随项目一起保存）：把 tx 透传给 ProjectState service，纳入同一事务。
 		stateSvc := ProjectState{}
 		svc.MakeService(&stateSvc.Service)
 		stateSvc.Orm = tx
-		states, e := stateSvc.SeedDefaultStates(created.ID, req.WorkspaceID)
+		defaultStateID, e := stateSvc.ApplyStates(created.ID, req.WorkspaceID, req.States)
 		if e != nil {
 			return e
 		}
 
-		// 3) 回填 default_state_id（取 is_default=YES_NO_Y 那条，即 Backlog）。
-		for _, s := range states {
-			if s.IsDefault == enums.YES_NO_Y {
-				created.DefaultStateID = s.ID
-				break
-			}
-		}
+		// 3) 回填 default_state_id（ApplyStates 返回 is_default 那条的 id）。
+		created.DefaultStateID = defaultStateID
 		if _, e = pq.Where(q.WorkspaceProject.ID.Eq(created.ID)).
 			UpdateColumn(q.WorkspaceProject.DefaultStateID, created.DefaultStateID); e != nil {
 			return e
@@ -102,8 +96,8 @@ func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectRespon
 	return &types.ProjectResponseData{WorkspaceProject: created, LocalRepositoryIDs: repoIDs}, nil
 }
 
-// Update 更新 project 的 name/description/emoji（不动 workspaceId/defaultStateId）+ 全量覆盖关联仓库。
-// 关联采用「先全量删后全量插」策略：不做 diff，前端只传最终列表（含 create 同款语义）。返回响应含新 localRepositoryIds。
+// Update 更新 project 的 name/description/emoji（不动 workspaceId）+ 全量覆盖关联仓库 +（States 非 nil 时）全量替换状态。
+// 关联/状态均采用「先全量删后全量插」策略：不做 diff，前端只传最终列表。状态替换时重算 default_state_id。
 func (svc Project) Update(req *types.ProjectUpdateRequest) (*types.ProjectResponseData, error) {
 	var p *model.WorkspaceProject
 	var repoIDs []int
@@ -127,7 +121,25 @@ func (svc Project) Update(req *types.ProjectUpdateRequest) (*types.ProjectRespon
 		}
 		// 全量覆盖关联仓库（无 diff）。
 		repoIDs, e = svc.replaceAssociatedRepositories(tx, req.ID, req.LocalRepositoryIDs)
-		return e
+		if e != nil {
+			return e
+		}
+		// 全量替换项目状态（States 非 nil 时）：硬删全插 + 重算 default_state_id。
+		if req.States != nil {
+			stateSvc := ProjectState{}
+			svc.MakeService(&stateSvc.Service)
+			stateSvc.Orm = tx
+			defaultStateID, se := stateSvc.ApplyStates(req.ID, p.WorkspaceID, req.States)
+			if se != nil {
+				return se
+			}
+			if _, e = pq.Where(q.WorkspaceProject.ID.Eq(req.ID)).
+				UpdateColumn(q.WorkspaceProject.DefaultStateID, defaultStateID); e != nil {
+				return e
+			}
+			p.DefaultStateID = defaultStateID
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err

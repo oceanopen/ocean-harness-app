@@ -19,23 +19,27 @@ type ProjectGetInfoRequest struct {
 
 // ProjectCreateRequest 是 POST /api/tracker/project/create 的入参。
 // LocalRepositoryIDs 为关联仓库最终列表（全量，随项目一起保存，事务内全量写入）。
+// States 为项目初始状态全量列表（引用目录，事务内全量写入 + 回填 default_state_id）。
 type ProjectCreateRequest struct {
-	WorkspaceID        int    `json:"workspaceId" binding:"required"`
-	Name               string `json:"name" binding:"required,max=100"`
-	Description        string `json:"description" binding:"omitempty,max=500"`
-	Emoji              string `json:"emoji" binding:"omitempty,max=20"`
-	LocalRepositoryIDs []int  `json:"localRepositoryIds"`
+	WorkspaceID        int                  `json:"workspaceId" binding:"required"`
+	Name               string               `json:"name" binding:"required,max=100"`
+	Description        string               `json:"description" binding:"omitempty,max=500"`
+	Emoji              string               `json:"emoji" binding:"omitempty,max=20"`
+	LocalRepositoryIDs []int                `json:"localRepositoryIds"`
+	States             []ProjectStateItem   `json:"states"`
 }
 
 // ProjectUpdateRequest 是 POST /api/tracker/project/update 的入参。
-// 不变更 workspaceId / defaultStateId（defaultStateId 由 state 模块维护）。
+// 不变更 workspaceId（defaultStateId 由 States 全量替换时重算）。
 // LocalRepositoryIDs 为关联仓库最终列表（全量覆盖：先删后插，无 diff）。
+// States 非 nil 时全量替换项目状态并重算 default_state_id；为 nil 则跳过（不动状态）。
 type ProjectUpdateRequest struct {
-	ID                 int    `json:"id" binding:"required"`
-	Name               string `json:"name" binding:"required,max=100"`
-	Description        string `json:"description" binding:"omitempty,max=500"`
-	Emoji              string `json:"emoji" binding:"omitempty,max=20"`
-	LocalRepositoryIDs []int  `json:"localRepositoryIds"`
+	ID                 int                `json:"id" binding:"required"`
+	Name               string             `json:"name" binding:"required,max=100"`
+	Description        string             `json:"description" binding:"omitempty,max=500"`
+	Emoji              string             `json:"emoji" binding:"omitempty,max=20"`
+	LocalRepositoryIDs []int              `json:"localRepositoryIds"`
+	States             []ProjectStateItem `json:"states"`
 }
 
 // ProjectDeleteRequest 是 POST /api/tracker/project/delete 的入参。

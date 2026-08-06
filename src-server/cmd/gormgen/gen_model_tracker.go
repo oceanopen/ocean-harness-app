@@ -11,9 +11,9 @@ import (
 func GenModelTracker() {
 	state := G.GenerateModelAs("t_project_states", "ProjectState",
 		// 按列名指定 typed 枚举（仅本表有的列，故 per-model 而非全局 WithOpts）。
-		gen.FieldType("state_group", "enums.StateGroup"),
+		// state_code 存普通 TEXT、不做 typed enum（同一 code 可跨 group，合法性由 service 查 StateCatalog 校验）。
+		gen.FieldType("state_group_code", "enums.StateGroup"),
 		gen.FieldType("is_default", "enums.YesNo"),
-		gen.FieldType("is_triage", "enums.YesNo"),
 	)
 	issueLabel := G.GenerateModelAs("t_issue_labels", "IssueLabel")
 	label := G.GenerateModelAs("t_workspace_labels", "WorkspaceLabel")

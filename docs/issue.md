@@ -38,7 +38,7 @@ issue 的状态 = `issue.stateId` → `ProjectState` → `stateGroup`(5 值枚�
 ### 1.3 已锁定的决策
 1. `projectState` 用**引用模型**:存 `state_code`,name/color/icon 由目录解析;
 2. **保留** `is_default`(每项目一个,新建 issue 的初始状态);
-3. 项目 create 随请求带 `initialStates`,**后端无 seed 逻辑**;保存走**全量替换**(全删全插,不比对 diff);
+3. 项目 create/update 随请求带 `states[]`(全量状态列表,引用目录),**后端无 seed 逻辑**;保存走**全量替换**(硬删全插,不比对 diff),同事务回填/重算 `default_state_id`;
 4. `started` 组的开发步骤项(除「进行中」外)**默认勾选** —— 新项目开箱自带完整开发步骤条,与「进行中」并存;不需要开发流程的项目在配置里手动取消勾选。
 
 ---
@@ -47,15 +47,15 @@ issue 的状态 = `issue.stateId` → `ProjectState` → `stateGroup`(5 值枚�
 
 | 层 | 内容 | 性质 | 位置 |
 |---|---|---|---|
-| 第 1 层 | **stateGroup 常量 + 分组目录 `StateGroupCatalog`** | 固定 5 值 + 展示元数据 | Go `internal/dal/enums/state_group.go` |
+| 第 1 层 | **stateGroup 常量 + 分组目录 `StateGroupCatalog`** | 固定 5 值 + 展示元数据 | Go `internal/dal/enums/state_catalog.go` |
 | 第 2 层 | **状态目录 `StateCatalog`**(每 group 一组固定可选项,扁平数组) | 常量 | Go `internal/dal/enums/state_catalog.go` |
 | 第 3 层 | **projectState** | 数据(每项目一份,引用目录) | SQLite `t_project_states` |
 
 前端通过接口获取第 1、2 层(常量映射)+ 第 3 层(项目数据),自身不维护任何状态常量。
 
 ### 2.1 第 1 层:分组目录 `StateGroupCatalog`(Go 直出中文)
-`enums/state_group.go` 的 5 个枚举值不动(`backlog/unstarted/started/completed/cancelled`,`completed` 组触发 `issue.completed_at`)。
-分组的展示元数据(展示名/色/sortOrder)以**独立 Go 注册表**落地(`enums/state_group.go`):
+`enums/state_catalog.go` 的 5 个枚举值不动(`backlog/unstarted/started/completed/cancelled`,`completed` 组触发 `issue.completed_at`)。
+分组的展示元数据(展示名/色/sortOrder)与 StateGroup 枚举同处 `enums/state_catalog.go`,以独立注册表落地:
 
 ```go
 type StateGroupMeta struct {
@@ -95,7 +95,7 @@ cancelled:  [ 已取消 ]
 
 Go 注册(示意,`internal/dal/enums/state_catalog.go`):
 ```go
-type StateDef struct {
+type StateMeta struct {
     GroupCode string  // 归属 state_group_code（对应 StateGroupCatalog 的 Code）
     Code      string  // state_code（开发工作台按此 switch 渲染步骤内容）
     Name      string  // 中文，Go 直出，不走 i18n
@@ -104,7 +104,7 @@ type StateDef struct {
     SortOrder float64
 }
 
-var StateCatalog = []StateDef{
+var StateCatalog = []StateMeta{
     {GroupCode: "backlog",   Code: "backlog",     Name: "待办池",         Color: "#94a3b8", SortOrder: 10000},
     {GroupCode: "unstarted", Code: "todo",        Name: "未开始",         Color: "#475569", SortOrder: 20000},
     {GroupCode: "started",   Code: "in_progress", Name: "进行中",         Color: "#f59e0b", SortOrder: 30000},
@@ -120,8 +120,8 @@ var StateCatalog = []StateDef{
 ### 2.3 第 3 层:projectState(数据,引用模型)
 `t_project_states` 只存"项目选了哪些目录项",name/color/icon 一律从目录(第 2 层)实时解析,不在数据行里冗余。
 - **引用目录**:行里的 `(state_group_code, state_code)` 对应 `StateCatalog` 中某项(按 `GroupCode`+`Code` 双键定位);
-- **无 seed**:后端不再 `SeedDefaultStates`;前端在项目 create 时按"默认勾选"算出 `initialStates` 随请求传入;
-- **全量替换保存**:`replaceAll` 事务内硬删该 project 全部行 → 批量插入请求数据,不比对 diff;
+- **无 seed**:后端不再 `SeedDefaultStates`;前端在项目 create/update 时按"默认勾选"算出 `states[]` 随请求传入;
+- **全量替换保存**:状态全量列表随项目 create/update 提交,service 层 `ApplyStates` 事务内硬删该 project 全部行 → 批量插入,不比对 diff;
 - **`is_default` 保留**:每项目仅一个 `Y`,= 新建 issue 的初始状态(默认指向 backlog 组那项)。
 
 ---
@@ -209,7 +209,7 @@ CREATE UNIQUE INDEX udx_project_states_proj_group_state
 ├ 已取消 (cancelled) ──────────────────────┤
 │  ☑ 已取消                                │
 └──────────────────────────────────────────┘
-   [保存] → replaceAll（事务内全删全插）
+   [保存] → 随项目 create/update 提交 states[]（事务内硬删全插 + 回填 default_state_id）
 ```
 
 - 每 group 从目录勾选,**至少 1**(删到最后一个时禁用减号);
@@ -223,13 +223,14 @@ CREATE UNIQUE INDEX udx_project_states_proj_group_state
 
 | 接口 | 说明 |
 |---|---|
-| `GET /api/tracker/projectState/catalog` | **新增**。返回第 1+2 层常量:`groups[]`(由 `StateGroupCatalog`,group/name/color/sortOrder)+ 每 group 的 `states[]`(由 `StateCatalog` group-by,code/name/color/icon/sortOrder)。前端用它渲染配置模块、状态徽章、步骤条、看板列头 |
+| `GET /api/tracker/projectState/catalog` | **新增**。返回第 1+2 层常量:`groups[]`(由 `StateGroupCatalog`,code/name/color/sortOrder)+ `states[]` 扁平(由 `StateCatalog`,groupCode/code/name/color/icon/sortOrder,前端按 groupCode 自行分组)。前端用它渲染配置模块、状态徽章、步骤条、看板列头 |
 | `POST /api/tracker/projectState/getList` | 不变。返回某项目的 projectState(行含 `state_code`,不再有 name/color) |
-| `POST /api/tracker/projectState/replaceAll` | **新增,取代 create/update/delete/reorder**。入参 `{projectId, states:[{stateGroupCode, stateCode, sortOrder, isDefault}]}`。事务内:`Unscoped().Where(project_id).Delete`(硬删,避免软删行占用全局唯一键)→ 批量 `Insert`。校验:每行 `(stateGroupCode, stateCode)` 须在目录内;每 group ≥1 项;`is_default=Y` 恰好一个 |
-| 项目 `create` | 入参新增 `initialStates`。建 project 后循环插入(不再调 `SeedDefaultStates`);`default_state_id` = `is_default=Y` 那条的 id |
-| 项目 `update` | 不变(状态管理独立走 replaceAll,不混入项目 update) |
+| 项目 `create` | 入参带 `states[]`(全量状态列表)。建 project 后事务内调 `ApplyStates`(硬删全插 + 校验目录/默认项)并回填 `default_state_id`,不再调 `SeedDefaultStates` |
+| 项目 `update` | 入参带 `states[]`:非 nil 时事务内 `ApplyStates` 全量替换状态并重算 `default_state_id`(nil 则跳过,不动状态) |
 
-`initialStates` 默认值(决策 #4,新项目开箱自带完整开发步骤条):
+> 状态管理无独立 create/update/delete/reorder/replaceAll 接口——状态全量列表随项目 create/update 提交,由 service 层 `ApplyStates`(Unscoped 硬删 + 批量插 + 校验每行 `(stateGroupCode, stateCode)` 在目录内、每 group ≥1 项、`is_default=Y` 恰一)统一处理。
+
+`create` 的 `states` 默认值(决策 #4,新项目开箱自带完整开发步骤条):
 ```
 [
   {backlog,   backlog,     is_default=Y},
@@ -260,15 +261,15 @@ CREATE UNIQUE INDEX udx_project_states_proj_group_state
 
 | 文件 | 改动 |
 |---|---|
-| `services/ProjectStateService.ts` | 加 `getCatalog()` / `replaceAll()`;`ProjectStateModel` 去掉 name/color/slug/isTriage,加 `stateCode`、`stateGroup`→`stateGroupCode` |
-| `state/tracker/queries.ts` | 加 `useStateCatalog()` / `useReplaceProjectStates(projectId)`(自失效 `projectStates` key) |
+| `services/ProjectStateService.ts` | 加 `getCatalog()`(状态随项目 create/update 提交,无独立 replaceAll);`ProjectStateModel` 去掉 name/color/slug/isTriage,加 `stateCode`、`stateGroup`→`stateGroupCode` |
+| `state/tracker/queries.ts` | 加 `useStateCatalog()`(全局目录,无参);状态保存复用项目 create/update mutation,无独立 replace mutation |
 | `state/tracker/keys.ts` | 加 `stateCatalog()` |
 | `components/stateDisplayName.ts` | **删除** |
 | `ProjectIssueList.tsx` | group 头标签改用目录 group 元数据(非 i18n) |
 | `KanbanView/KanbanColumn.tsx` | 列头 name 由目录解析(按 state.stateGroupCode+stateCode join) |
 | `ProjectIssueDrawer/ProjectStateSelect.tsx` | 选项 name/color 由目录 join |
 | `TrackerPage/components/ProjectStateManage/` | **新增** 状态管理模块组件(供项目编辑表单嵌入) |
-| 项目编辑抽屉 | 嵌入 `ProjectStateManage`;create 时附带 `initialStates` |
+| 项目编辑抽屉 | 嵌入 `ProjectStateManage`;create/update 时附带 `states[]` |
 | `i18n/locales/*/tracker.json` | 删除 group 标签 |
 
 ---

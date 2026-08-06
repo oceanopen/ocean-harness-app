@@ -31,13 +31,10 @@ func newProjectState(db *gorm.DB, opts ...gen.DOOption) projectState {
 	_projectState.ID = field.NewInt(tableName, "id")
 	_projectState.ProjectID = field.NewInt(tableName, "project_id")
 	_projectState.WorkspaceID = field.NewInt(tableName, "workspace_id")
-	_projectState.Name = field.NewString(tableName, "name")
-	_projectState.Color = field.NewString(tableName, "color")
-	_projectState.Slug = field.NewString(tableName, "slug")
-	_projectState.StateGroup = field.NewField(tableName, "state_group")
+	_projectState.StateGroupCode = field.NewField(tableName, "state_group_code")
+	_projectState.StateCode = field.NewString(tableName, "state_code")
 	_projectState.SortOrder = field.NewFloat64(tableName, "sort_order")
 	_projectState.IsDefault = field.NewField(tableName, "is_default")
-	_projectState.IsTriage = field.NewField(tableName, "is_triage")
 	_projectState.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectState.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_projectState.DeletedAt = field.NewField(tableName, "deleted_at")
@@ -50,20 +47,17 @@ func newProjectState(db *gorm.DB, opts ...gen.DOOption) projectState {
 type projectState struct {
 	projectStateDo projectStateDo
 
-	ALL         field.Asterisk
-	ID          field.Int
-	ProjectID   field.Int
-	WorkspaceID field.Int
-	Name        field.String
-	Color       field.String
-	Slug        field.String
-	StateGroup  field.Field
-	SortOrder   field.Float64
-	IsDefault   field.Field
-	IsTriage    field.Field
-	CreatedAt   field.Time
-	UpdatedAt   field.Time
-	DeletedAt   field.Field
+	ALL            field.Asterisk
+	ID             field.Int
+	ProjectID      field.Int
+	WorkspaceID    field.Int
+	StateGroupCode field.Field
+	StateCode      field.String
+	SortOrder      field.Float64
+	IsDefault      field.Field
+	CreatedAt      field.Time
+	UpdatedAt      field.Time
+	DeletedAt      field.Field
 
 	fieldMap map[string]field.Expr
 }
@@ -83,13 +77,10 @@ func (p *projectState) updateTableName(table string) *projectState {
 	p.ID = field.NewInt(table, "id")
 	p.ProjectID = field.NewInt(table, "project_id")
 	p.WorkspaceID = field.NewInt(table, "workspace_id")
-	p.Name = field.NewString(table, "name")
-	p.Color = field.NewString(table, "color")
-	p.Slug = field.NewString(table, "slug")
-	p.StateGroup = field.NewField(table, "state_group")
+	p.StateGroupCode = field.NewField(table, "state_group_code")
+	p.StateCode = field.NewString(table, "state_code")
 	p.SortOrder = field.NewFloat64(table, "sort_order")
 	p.IsDefault = field.NewField(table, "is_default")
-	p.IsTriage = field.NewField(table, "is_triage")
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")
 	p.DeletedAt = field.NewField(table, "deleted_at")
@@ -121,17 +112,14 @@ func (p *projectState) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (p *projectState) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 13)
+	p.fieldMap = make(map[string]field.Expr, 10)
 	p.fieldMap["id"] = p.ID
 	p.fieldMap["project_id"] = p.ProjectID
 	p.fieldMap["workspace_id"] = p.WorkspaceID
-	p.fieldMap["name"] = p.Name
-	p.fieldMap["color"] = p.Color
-	p.fieldMap["slug"] = p.Slug
-	p.fieldMap["state_group"] = p.StateGroup
+	p.fieldMap["state_group_code"] = p.StateGroupCode
+	p.fieldMap["state_code"] = p.StateCode
 	p.fieldMap["sort_order"] = p.SortOrder
 	p.fieldMap["is_default"] = p.IsDefault
-	p.fieldMap["is_triage"] = p.IsTriage
 	p.fieldMap["created_at"] = p.CreatedAt
 	p.fieldMap["updated_at"] = p.UpdatedAt
 	p.fieldMap["deleted_at"] = p.DeletedAt

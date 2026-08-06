@@ -63,14 +63,12 @@ func SetupRouter() *gin.Engine {
 				workspaceGroup.POST("/delete", controller.Workspace{}.Delete)
 			}
 
-			// projectState 模块：状态 CRUD + reorder（action 风格，POST）。
+			// projectState 模块：getList（项目状态数据）+ catalog（固定状态目录，GET）。
+			// 状态管理无独立 CRUD/reorder 接口——随项目 create/update 全量提交。
 			projectStateGroup := trackerGroup.Group("/projectState")
 			{
+				projectStateGroup.GET("/catalog", controller.ProjectState{}.Catalog)
 				projectStateGroup.POST("/getList", controller.ProjectState{}.GetList)
-				projectStateGroup.POST("/create", controller.ProjectState{}.Create)
-				projectStateGroup.POST("/update", controller.ProjectState{}.Update)
-				projectStateGroup.POST("/delete", controller.ProjectState{}.Delete)
-				projectStateGroup.POST("/reorder", controller.ProjectState{}.Reorder)
 			}
 
 			// project 模块：项目 CRUD（action 风格，POST）。

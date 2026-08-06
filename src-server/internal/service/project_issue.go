@@ -150,7 +150,7 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			if se != nil && !errors.Is(se, gorm.ErrRecordNotFound) {
 				return se
 			}
-			if se == nil && st.StateGroup == enums.STATE_GROUP_COMPLETED {
+			if se == nil && st.StateGroupCode == enums.STATE_GROUP_COMPLETED {
 				now := time.Now()
 				completedAt = &now
 			}
@@ -194,7 +194,7 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 }
 
 // Update 更新 issue 业务字段；检测 stateId 变化触发 completed_at 流转：
-// 新 state 的 state_group=completed→写 now，否则清 nil（*time.Time 指针，Save 写 NULL）。
+// 新 state 的 state_group_code=completed→写 now，否则清 nil（*time.Time 指针，Save 写 NULL）。
 // 事务内 Save + 全量同步 label 关联（labelIds）。
 func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.ProjectIssueResponseData, error) {
 	var issue *model.ProjectIssue
@@ -257,7 +257,7 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 	return list[0], nil
 }
 
-// applyStateTransition 处理 stateId 变化时的 completed_at 流转：新 state 的 state_group=completed→写 now，否则清 nil。
+// applyStateTransition 处理 stateId 变化时的 completed_at 流转：新 state 的 state_group_code=completed→写 now，否则清 nil。
 // newStateID<=0 或等于当前值为 no-op；state 不存在返回错误。orm 参数支持事务内复用（传 tx）或独立调用（传 svc.Orm）。
 func (svc ProjectIssue) applyStateTransition(orm *gorm.DB, issue *model.ProjectIssue, newStateID int) error {
 	if newStateID <= 0 || newStateID == issue.StateID {
@@ -272,7 +272,7 @@ func (svc ProjectIssue) applyStateTransition(orm *gorm.DB, issue *model.ProjectI
 		return e
 	}
 	issue.StateID = newStateID
-	if st.StateGroup == enums.STATE_GROUP_COMPLETED {
+	if st.StateGroupCode == enums.STATE_GROUP_COMPLETED {
 		now := time.Now()
 		issue.CompletedAt = &now
 	} else {
@@ -313,7 +313,7 @@ func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.Proje
 	// 项目首个 completed 组状态（无则跳过，不阻断）。
 	st, se := q.ProjectState.WithContext(svc.Context).
 		Where(q.ProjectState.ProjectID.Eq(parent.ProjectID)).
-		Where(q.ProjectState.StateGroup.Eq(enums.STATE_GROUP_COMPLETED)).
+		Where(q.ProjectState.StateGroupCode.Eq(enums.STATE_GROUP_COMPLETED)).
 		First()
 	if se != nil {
 		return nil
