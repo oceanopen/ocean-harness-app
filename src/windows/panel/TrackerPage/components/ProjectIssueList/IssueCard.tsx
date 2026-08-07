@@ -41,11 +41,13 @@ export interface IssueCardProps {
   onEdit: (issue: ProjectIssueResponseData) => void;
   onAddChild: (parent: ProjectIssueResponseData) => void;
   dnd?: IssueCardDnd;
+  // 看板模式标记：顶级卡片由 dnd 推断；内联子卡片由父级透传（子卡无 dnd）。
+  kanban?: boolean;
 }
 
 // 统一 Issue 卡片：列表与看板共用同一组件、同一外观（看板式三行 Paper 卡片）。
 // 列表/看板唯一差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
-// 三行布局：首行 [展开/占位] #id [优先级] [状态] … [进度][新增][编辑]（无标题）；
+// 三行布局：首行 [展开/占位] #id [优先级] [状态] … [进度][新增][编辑]；看板模式下新增+编辑下移到第二行标题右侧。
 // 第二行 [占位] 标题；第三行 [占位] 标签颜色横杠 … 结束日期。
 // 点击卡片主体：有子级（父级）→ 切换展开；无子级 → 打开编辑抽屉（onEdit）。
 // 所有 icon/button 不挂 Tooltip（避免遮挡鼠标），改用 aria-label。
@@ -60,10 +62,14 @@ function IssueCard({
   onEdit,
   onAddChild,
   dnd,
+  kanban,
 }: IssueCardProps) {
   const { t } = useTranslation();
   const provided = dnd?.provided;
   const isDragging = dnd?.snapshot?.isDragging ?? false;
+  // 看板模式（单一标记 kanban prop：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传；列表不传）。
+  // 看板下增加/编辑 icon 下移到第二行标题右侧，缓解首行拥挤；列表模式不变。
+  const isKanban = kanban ?? false;
 
   const hasChildren = depth === 0 && childIssues.length > 0;
   const stat = subtaskStats.get(issue.id);
@@ -220,19 +226,25 @@ function IssueCard({
       sx={rootSx}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-        {/* 首行：展开/占位 #id 优先级 状态 … 进度 新增 编辑 */}
+        {/* 首行：展开/占位 #id 优先级 状态 … [列表:进度+新增+编辑] / [看板:仅进度] */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {gutter}
           {idText}
           {priorityBadge}
           {stateBadge}
           <Box sx={{ flex: 1 }} />
-          {rightCluster}
+          {isKanban ? progressEl : rightCluster}
         </Box>
-        {/* 第二行：占位 标题 */}
+        {/* 第二行：占位 标题 … [看板:新增+编辑] */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {gutterPlaceholder}
           {nameEl}
+          {isKanban && (
+            <>
+              {addBtn}
+              {editBtn}
+            </>
+          )}
         </Box>
         {/* 第三行：占位 标签颜色横杠 … 结束日期（无标签/日期时不渲染空行） */}
         {(issue.labels.length > 0 || issue.targetDate) && (
@@ -256,6 +268,7 @@ function IssueCard({
               subtaskStats={subtaskStats}
               onEdit={onEdit}
               onAddChild={onAddChild}
+              kanban={isKanban}
             />
           ))}
         </Box>

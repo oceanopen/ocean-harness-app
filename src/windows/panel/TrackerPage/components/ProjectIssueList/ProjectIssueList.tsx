@@ -34,13 +34,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import IssueCard from './IssueCard';
 import KanbanView from './KanbanView/KanbanView';
+import { GROUP_ORDER } from './shared';
 import StateGroupCard from './StateGroupCard';
 
-// Issue 视图模式：列表（按状态组纵向分组）/ 看板（按具体状态横向分列 + 拖拽）。
+// Issue 视图模式：列表（按状态组纵向分组）/ 看板（按状态组横向分列 + 拖拽）。
 type IssueViewMode = 'list' | 'kanban';
-
-// 分组顺序固定（对齐 state_group 工作流语义）。
-const GROUP_ORDER: StateGroup[] = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'];
 
 interface IssueListProps {
   workspaceProject: WorkspaceProjectModel;
@@ -402,6 +400,8 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
             projectIssues={projectIssues}
             projectStates={projectStates}
             stateMap={stateMap}
+            groupMetaMap={groupMetaMap}
+            firstStateIdByGroup={firstStateIdByGroup}
             subtaskStats={subtaskStats}
             childrenByParent={childrenByParent}
             expandedParents={expandedParents}

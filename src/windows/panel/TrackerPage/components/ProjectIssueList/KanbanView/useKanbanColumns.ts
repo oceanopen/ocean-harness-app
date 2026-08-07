@@ -1,38 +1,42 @@
-import type { ProjectIssueResponseData } from '@src/services';
+import type { ProjectIssueResponseData, StateGroup } from '@src/services';
 import type { ProjectStateView } from '@src/state/tracker';
 import { useMemo } from 'react';
+import { GROUP_ORDER } from '../shared';
 
 export interface KanbanColumns {
-  // stateId → 该状态下的 projectIssue 列表（列内按 sortOrder 升序）。
-  columnsByState: Map<number, ProjectIssueResponseData[]>;
-  // 看板列的展示顺序（按 state.sortOrder 升序）。
-  orderedStates: ProjectStateView[];
+  // stateGroupCode → 该组下的 projectIssue 列表（列内按 sortOrder 升序）。
+  columnsByGroup: Map<StateGroup, ProjectIssueResponseData[]>;
+  // 看板列的展示顺序（GROUP_ORDER 中项目已有状态的组，含空组以便拖入）。
+  orderedGroups: StateGroup[];
 }
 
-// useKanbanColumns 把扁平 projectIssues 按 stateId 分列，供看板视图渲染。
-// 列基于状态视图全量生成（含空状态列，否则无法拖入）；列内按纯 sortOrder 升序——
-// 看板位置完全由用户拖动决定，priority 仅作卡片视觉标记（与 computeSortOrder 插值假设一致；
-// 若按 priority 主排会与只改 sortOrder 的拖拽冲突，导致卡片"弹回"）。
-// stateId 指向已删状态的 projectIssue 不入列（罕见边界，可在详情抽屉里改状态）。
+// useKanbanColumns 把扁平 projectIssues 按 stateGroupCode 分列，供看板视图渲染（与列表模式分组一致）。
+// 列基于"项目已有该组状态"生成（含 0 issue 的空组，否则无法拖入）；列内按纯 sortOrder 升序——
+// 看板位置完全由用户拖动决定。子任务（parentId≠0）不入列。stateId 指向已删状态的 issue 无法定位组 → 不入列。
 export function useKanbanColumns(projectIssues: ProjectIssueResponseData[], projectStates: ProjectStateView[]): KanbanColumns {
   return useMemo(() => {
-    const columnsByState = new Map<number, ProjectIssueResponseData[]>();
+    // stateId → stateGroupCode，用于把 issue 归入状态组列。
+    const groupOfState = new Map<number, StateGroup>();
+    const groupsWithStates = new Set<StateGroup>();
     projectStates.forEach((s) => {
-      columnsByState.set(s.id, []);
+      groupOfState.set(s.id, s.stateGroupCode);
+      groupsWithStates.add(s.stateGroupCode);
     });
+    const columnsByGroup = new Map<StateGroup, ProjectIssueResponseData[]>();
+    GROUP_ORDER.forEach(g => columnsByGroup.set(g, []));
     projectIssues.forEach((i) => {
       if (i.parentId !== 0) {
         return; // 子任务不进看板列（仅在父抽屉管理）
       }
-      const arr = columnsByState.get(i.stateId);
-      if (arr) {
-        arr.push(i);
+      const g = groupOfState.get(i.stateId);
+      if (g) {
+        columnsByGroup.get(g)?.push(i);
       }
     });
-    columnsByState.forEach((arr) => {
+    columnsByGroup.forEach((arr) => {
       arr.sort((a, b) => a.sortOrder - b.sortOrder);
     });
-    const orderedStates = [...projectStates].sort((a, b) => a.sortOrder - b.sortOrder);
-    return { columnsByState, orderedStates };
+    const orderedGroups = GROUP_ORDER.filter(g => groupsWithStates.has(g));
+    return { columnsByGroup, orderedGroups };
   }, [projectIssues, projectStates]);
 }

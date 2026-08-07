@@ -1,4 +1,4 @@
-import type { ProjectIssueResponseData } from '@src/services';
+import type { ProjectIssueResponseData, StateGroup, StateGroupMeta } from '@src/services';
 import type { ProjectStateView } from '@src/state/tracker';
 import type { Dispatch, SetStateAction } from 'react';
 import type { SubtaskStats } from '../shared';
@@ -13,6 +13,9 @@ interface KanbanViewProps {
   projectIssues: ProjectIssueResponseData[];
   projectStates: ProjectStateView[];
   stateMap: Map<number, ProjectStateView>;
+  // 状态组元数据（列头组名/色）+ 各组首个子状态 id（跨组拖拽目标 / 列内新增预选）。
+  groupMetaMap: Map<StateGroup, StateGroupMeta>;
+  firstStateIdByGroup: Partial<Record<StateGroup, number>>;
   subtaskStats: SubtaskStats;
   childrenByParent: Map<number, ProjectIssueResponseData[]>;
   expandedParents: Set<number>;
@@ -25,15 +28,15 @@ interface KanbanViewProps {
 }
 
 // 看板视图：DragDropContext 容器 + 横向铺列（固定列宽 + 横向滚动）。
-// 分列用 useKanbanColumns（按 stateId），拖拽逻辑用 useKanbanDnd（与渲染解耦）。
+// 列 = 状态组（与列表模式分组一致），分列用 useKanbanColumns（按 stateGroupCode），拖拽逻辑用 useKanbanDnd（与渲染解耦）。
 // 注：看板展示全量 projectIssues（不应用列表的筛选，避免破坏列结构与拖拽排序基准）。
 // 卡片复用统一 IssueCard（variant=kanban），交互回调与列表同源。
-function KanbanView({ projectIssues, projectStates, stateMap, subtaskStats, childrenByParent, expandedParents, setIssues, onAddIssue, onEdit, onAddChild, onToggleExpand, showToast }: KanbanViewProps) {
+function KanbanView({ projectIssues, projectStates, stateMap, groupMetaMap, firstStateIdByGroup, subtaskStats, childrenByParent, expandedParents, setIssues, onAddIssue, onEdit, onAddChild, onToggleExpand, showToast }: KanbanViewProps) {
   const { t } = useTranslation();
-  const { columnsByState, orderedStates } = useKanbanColumns(projectIssues, projectStates);
+  const { columnsByGroup, orderedGroups } = useKanbanColumns(projectIssues, projectStates);
   const onDragEnd = useKanbanDnd({
-    columnsByState,
-    stateMap,
+    columnsByGroup,
+    firstStateIdByGroup,
     setIssues,
     showToast,
     moveFailedText: message => t('tracker:projectIssue.toast.moveFailed', { message }),
@@ -50,16 +53,18 @@ function KanbanView({ projectIssues, projectStates, stateMap, subtaskStats, chil
   return (
     <DragDropContext onDragEnd={onDragEnd}>
       <Box sx={{ display: 'flex', gap: 1.5, height: '100%', overflow: 'auto', p: 1.5 }}>
-        {orderedStates.map(state => (
+        {orderedGroups.map(g => (
           <KanbanColumn
-            key={state.id}
-            state={state}
-            projectIssues={columnsByState.get(state.id) ?? []}
+            key={g}
+            group={g}
+            groupColor={groupMetaMap.get(g)?.color}
+            groupName={groupMetaMap.get(g)?.name ?? g}
+            projectIssues={columnsByGroup.get(g) ?? []}
             stateMap={stateMap}
             subtaskStats={subtaskStats}
             childrenByParent={childrenByParent}
             expandedParents={expandedParents}
-            onAddIssue={onAddIssue}
+            onAdd={() => onAddIssue(firstStateIdByGroup[g] ?? 0)}
             onEdit={onEdit}
             onAddChild={onAddChild}
             onToggleExpand={onToggleExpand}
