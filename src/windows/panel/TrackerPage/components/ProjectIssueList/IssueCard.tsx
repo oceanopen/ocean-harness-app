@@ -76,6 +76,8 @@ function IssueCard({
   const isKanban = kanban ?? false;
 
   const hasChildren = depth === 0 && childIssues.length > 0;
+  // 列表模式父卡展开其子任务（子任务作为兄弟 DOM 平级渲染）；用于切换父卡底部间距与子任务块显隐。
+  const showListChildren = hasChildren && expanded && !isKanban;
   const stat = subtaskStats.get(issue.id);
 
   // 打开时刻冻结的"现在"，用于逾期判断（new Date(str) 解析为纯函数）。
@@ -96,7 +98,8 @@ function IssueCard({
         display: 'flex',
         flexDirection: 'column',
         p: 1,
-        mb: 0.75,
+        // 列表展开时让出底部间距，由兄弟子任务块的 mt/mb 接管父→子、子→下一父间距。
+        mb: showListChildren ? 0 : 0.75,
         borderRadius: 1,
         bgcolor: 'background.paper',
         border: 1,
@@ -214,111 +217,150 @@ function IssueCard({
     </Box>
   );
 
-  return (
-    <Box
-      {...provided?.draggableProps}
-      {...provided?.dragHandleProps}
-      ref={provided?.innerRef}
-      onClick={(e: MouseEvent<HTMLDivElement>) => {
-        e.stopPropagation();
-        if (hasChildren) {
-          onToggleExpand?.(issue.id);
-        } else {
-          onEdit(issue);
-        }
-      }}
-      sx={rootSx}
-    >
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-        {/* 首行：展开/占位 #id 优先级 状态 … [列表:进度+新增+编辑] / [看板:仅进度] */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {gutter}
-          {idText}
-          {priorityBadge}
-          {stateBadge}
-          <Box sx={{ flex: 1 }} />
-          {isKanban ? progressEl : rightCluster}
-        </Box>
-        {/* 第二行：占位 标题 … [看板:新增+编辑] */}
+  // 卡片主体（首行/第二行/第三行），看板/列表双 return 分支共用，避免重复。
+  const cardBodyEl = (
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      {/* 首行：展开/占位 #id 优先级 状态 … [列表:进度+新增+编辑] / [看板:仅进度] */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {gutter}
+        {idText}
+        {priorityBadge}
+        {stateBadge}
+        <Box sx={{ flex: 1 }} />
+        {isKanban ? progressEl : rightCluster}
+      </Box>
+      {/* 第二行：占位 标题 … [看板:新增+编辑] */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {gutterPlaceholder}
+        {nameEl}
+        {isKanban && (
+          <>
+            {addBtn}
+            {editBtn}
+          </>
+        )}
+      </Box>
+      {/* 第三行：占位 标签颜色横杠 … 结束日期（无标签/日期时不渲染空行） */}
+      {(issue.labels.length > 0 || issue.targetDate) && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {gutterPlaceholder}
-          {nameEl}
-          {isKanban && (
-            <>
-              {addBtn}
-              {editBtn}
-            </>
-          )}
+          {labelBars ?? <Box sx={{ flex: 1 }} />}
+          {dateEl}
         </Box>
-        {/* 第三行：占位 标签颜色横杠 … 结束日期（无标签/日期时不渲染空行） */}
-        {(issue.labels.length > 0 || issue.targetDate) && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {gutterPlaceholder}
-            {labelBars ?? <Box sx={{ flex: 1 }} />}
-            {dateEl}
+      )}
+    </Box>
+  );
+
+  // 点击卡片主体：有子级（父级）→ 切换展开；无子级 → 打开编辑抽屉（onEdit）。
+  const handleCardClick = (e: MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    if (hasChildren) {
+      onToggleExpand?.(issue.id);
+    } else {
+      onEdit(issue);
+    }
+  };
+
+  // 看板模式：父卡整卡为拖把手（dnd 由外层 Draggable 注入），子卡内联嵌套且不可拖。
+  // 保留原单根 Box + 嵌套结构不变（看板子卡不可拖，无合成 click 冒泡问题，无需解嵌套）。
+  if (isKanban) {
+    return (
+      <Box
+        {...provided?.draggableProps}
+        {...provided?.dragHandleProps}
+        ref={provided?.innerRef}
+        onClick={handleCardClick}
+        sx={rootSx}
+      >
+        {cardBodyEl}
+        {/* 内联子卡片（仅顶级 + 展开 + 有子 issue）；缩进使子卡优先级色点对齐父级。看板子卡纯渲染、不可拖。 */}
+        {depth === 0 && expanded && childIssues.length > 0 && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', mt: 0.5, pl: CHILD_INDENT_PL }}>
+            {childIssues.map(child => (
+              <IssueCard
+                key={child.id}
+                issue={child}
+                depth={1}
+                stateMap={stateMap}
+                subtaskStats={subtaskStats}
+                onEdit={onEdit}
+                onAddChild={onAddChild}
+                kanban={isKanban}
+              />
+            ))}
           </Box>
         )}
       </Box>
+    );
+  }
 
-      {/* 内联子卡片（仅顶级 + 展开 + 有子 issue）；缩进使子卡优先级色点对齐父级。
-          列表模式：子任务可拖拽排序（DragDropContext + Droppable + Draggable）；
-          看板模式：父卡整卡为拖把手，子任务不拖（避免冲突），纯渲染。 */}
-      {depth === 0 && expanded && childIssues.length > 0 && (
-        isKanban
-          ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', mt: 0.5, pl: CHILD_INDENT_PL }}>
-                {childIssues.map(child => (
-                  <IssueCard
-                    key={child.id}
-                    issue={child}
-                    depth={1}
-                    stateMap={stateMap}
-                    subtaskStats={subtaskStats}
-                    onEdit={onEdit}
-                    onAddChild={onAddChild}
-                    kanban={isKanban}
-                  />
-                ))}
-              </Box>
-            )
-          : (
-              <DragDropContext onDragEnd={(r) => {
-                if (r.destination && r.source.index !== r.destination.index) {
-                  onReorderChild?.(issue.id, r.source.index, r.destination.index);
-                }
-              }}
+  // 列表模式：子任务块与父卡 DOM 平级（兄弟），不再嵌套在父卡根 Box 内。
+  // 关键：列表子任务可拖拽（@hello-pangea/dnd 拖拽结束会合成一个 click），若子任务块嵌套在父卡根 Box 内，
+  // 该合成 click 会冒泡到父卡 onClick → 误触 toggleExpand → 父卡折叠。平级后冒泡链从结构上消失。
+  // （showListChildren 已在上方 rootSx 处定义。）
+
+  return (
+    <>
+      <Box
+        {...provided?.draggableProps}
+        {...provided?.dragHandleProps}
+        ref={provided?.innerRef}
+        onClick={handleCardClick}
+        sx={rootSx}
+      >
+        {cardBodyEl}
+      </Box>
+      {/* 子任务拖拽块：独立 DragDropContext + 单 Droppable，子任务仅能在同父内排序（结构物理隔离）。
+          作为父卡的兄弟 DOM，其内部间隙的 click 不会冒泡到父卡 onClick。
+          展开时父卡让出 mb:0，由本块 mt:0.5 接管父→子间距、mb:0.75 接管子→下一父间距，保持原视觉。 */}
+      {showListChildren && (
+        <DragDropContext
+          onDragEnd={(r) => {
+            if (r.destination && r.source.index !== r.destination.index) {
+              onReorderChild?.(issue.id, r.source.index, r.destination.index);
+            }
+          }}
+        >
+          <Droppable droppableId={`children-${issue.id}`}>
+            {childProvided => (
+              <Box
+                ref={childProvided.innerRef}
+                {...childProvided.droppableProps}
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  mt: 0.5,
+                  mb: 0.75,
+                  // 平级补偿：子任务块与父卡同为卡片容器的直接子元素，需补上原本嵌套在父卡内时享有的
+                  // 内容区偏移(border 1px + p:1 8px = 9px)，使子卡左右边界与色点重新对齐父卡（复刻嵌套视觉）。
+                  mx: '9px',
+                  pl: CHILD_INDENT_PL,
+                  gap: 0.5,
+                }}
               >
-                <Droppable droppableId={`children-${issue.id}`}>
-                  {childProvided => (
-                    <Box
-                      ref={childProvided.innerRef}
-                      {...childProvided.droppableProps}
-                      sx={{ display: 'flex', flexDirection: 'column', mt: 0.5, pl: CHILD_INDENT_PL, gap: 0.5 }}
-                    >
-                      {childIssues.map((child, idx) => (
-                        <Draggable key={child.id} draggableId={String(child.id)} index={idx}>
-                          {(dragProvided, dragSnapshot) => (
-                            <IssueCard
-                              issue={child}
-                              depth={1}
-                              stateMap={stateMap}
-                              subtaskStats={subtaskStats}
-                              onEdit={onEdit}
-                              onAddChild={onAddChild}
-                              kanban={isKanban}
-                              dnd={{ provided: dragProvided, snapshot: dragSnapshot }}
-                            />
-                          )}
-                        </Draggable>
-                      ))}
-                      {childProvided.placeholder}
-                    </Box>
-                  )}
-                </Droppable>
-              </DragDropContext>
-            )
+                {childIssues.map((child, idx) => (
+                  <Draggable key={child.id} draggableId={String(child.id)} index={idx}>
+                    {(dragProvided, dragSnapshot) => (
+                      <IssueCard
+                        issue={child}
+                        depth={1}
+                        stateMap={stateMap}
+                        subtaskStats={subtaskStats}
+                        onEdit={onEdit}
+                        onAddChild={onAddChild}
+                        kanban={isKanban}
+                        dnd={{ provided: dragProvided, snapshot: dragSnapshot }}
+                      />
+                    )}
+                  </Draggable>
+                ))}
+                {childProvided.placeholder}
+              </Box>
+            )}
+          </Droppable>
+        </DragDropContext>
       )}
-    </Box>
+    </>
   );
 }
 
