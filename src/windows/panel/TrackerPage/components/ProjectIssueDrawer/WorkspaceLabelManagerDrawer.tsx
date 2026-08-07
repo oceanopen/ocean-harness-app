@@ -1,6 +1,7 @@
 import type { WorkspaceLabelModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
+  CloseOutlined as CloseOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
 } from '@mui/icons-material';
@@ -14,6 +15,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  Drawer,
   IconButton,
   Snackbar,
   TextField,
@@ -38,17 +40,17 @@ const COLOR_PRESETS = [
 
 type ToastSeverity = 'success' | 'error';
 
-// workspace 标签管理弹窗（CRUD）：顶部新建/编辑表单（name + 色板/hex + description）+ 已有标签列表。
+// workspace 标签管理抽屉（CRUD）：顶部新建/编辑表单（name + 色板/hex + description）+ 已有标签列表。
 // 由父组件按需挂载。create 不传 sortOrder（后端 MAX+10000）；update 直接覆盖 color/description；
 // delete 级联清 projectIssue 关联。每次变更调 onChanged 让父级重拉。
-interface LabelManagerDialogProps {
+interface LabelManagerDrawerProps {
   workspaceId: number;
   labels: WorkspaceLabelModel[];
   onClose: () => void;
   onChanged: () => void;
 }
 
-function WorkspaceLabelManagerDialog({ workspaceId, labels, onClose, onChanged }: LabelManagerDialogProps) {
+function WorkspaceLabelManagerDrawer({ workspaceId, labels, onClose, onChanged }: LabelManagerDrawerProps) {
   const { t } = useTranslation();
   const [editId, setEditId] = useState<number | null>(null);
   const [name, setName] = useState('');
@@ -129,10 +131,26 @@ function WorkspaceLabelManagerDialog({ workspaceId, labels, onClose, onChanged }
   };
 
   return (
-    <Dialog open onClose={submitting || deleting ? undefined : onClose} fullWidth maxWidth="sm">
-      <DialogTitle>{t('tracker:workspaceLabel.title')}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+    <Drawer
+      anchor="right"
+      open
+      // 提交/删除中禁止背景点击/Esc 关闭，避免半成品状态丢失。
+      onClose={submitting || deleting ? undefined : onClose}
+      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '40%' } } }}
+    >
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* 头部 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
+            {t('tracker:workspaceLabel.title')}
+          </Typography>
+          <IconButton size="small" onClick={onClose} disabled={submitting || deleting} aria-label={t('tracker:workspaceLabel.close')}>
+            <CloseOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        {/* 内容 */}
+        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {/* 新建/编辑表单 */}
           <TextField
             label={t('tracker:workspaceLabel.name')}
@@ -235,12 +253,14 @@ function WorkspaceLabelManagerDialog({ workspaceId, labels, onClose, onChanged }
             </Typography>
           )}
         </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button color="inherit" onClick={onClose} disabled={submitting || deleting}>
-          {t('tracker:workspaceLabel.close')}
-        </Button>
-      </DialogActions>
+
+        {/* 底部操作栏：一律左对齐 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Button color="inherit" onClick={onClose} disabled={submitting || deleting}>
+            {t('tracker:workspaceLabel.close')}
+          </Button>
+        </Box>
+      </Box>
 
       {/* 删除确认 */}
       <Dialog open={deleteTarget !== null} onClose={deleting ? undefined : () => setDeleteTarget(null)}>
@@ -266,8 +286,8 @@ function WorkspaceLabelManagerDialog({ workspaceId, labels, onClose, onChanged }
       >
         <Alert severity={toast.severity} variant="filled">{toast.text}</Alert>
       </Snackbar>
-    </Dialog>
+    </Drawer>
   );
 }
 
-export default WorkspaceLabelManagerDialog;
+export default WorkspaceLabelManagerDrawer;

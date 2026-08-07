@@ -11,7 +11,7 @@ import {
 } from '@src/state/localRepositories';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import AddRepositoryDialog from './components/AddRepositoryDialog';
+import AddRepositoryDrawer from './components/AddRepositoryDrawer';
 import RepositoryCard from './components/RepositoryCard';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -276,13 +276,13 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
       </Snackbar>
 
       {addDialogOpen && (
-        <AddRepositoryDialog
+        <AddRepositoryDrawer
           onClose={() => setAddDialogOpen(false)}
         />
       )}
 
       {editTarget && (
-        <AddRepositoryDialog
+        <AddRepositoryDrawer
           repo={editTarget}
           onClose={() => setEditTarget(null)}
         />

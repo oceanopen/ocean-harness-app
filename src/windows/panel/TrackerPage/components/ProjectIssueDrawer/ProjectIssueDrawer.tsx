@@ -26,7 +26,7 @@ import IssueBranchField from './IssueBranchField';
 import MarkdownEditor from './MarkdownEditor/MarkdownEditor';
 import PrioritySelect from './PrioritySelect';
 import ProjectStateSelect from './ProjectStateSelect';
-import WorkspaceLabelManagerDialog from './WorkspaceLabelManagerDialog';
+import WorkspaceLabelManagerDrawer from './WorkspaceLabelManagerDrawer';
 import WorkspaceLabelSelect from './WorkspaceLabelSelect';
 import 'dayjs/locale/zh-cn';
 
@@ -309,7 +309,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
           )}
         </Box>
 
-        {/* 底部操作栏：edit 删除+取消+保存；create 取消+创建 */}
+        {/* 底部操作栏：一律左对齐（edit 删除+取消+保存；create 取消+创建） */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
           {mode === 'edit' && (
             <Button
@@ -322,7 +322,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
               {t('tracker:projectIssue.detail.delete')}
             </Button>
           )}
-          <Box sx={{ flex: 1 }} />
           <Button color="inherit" onClick={onClose} disabled={submitting || deleting}>
             {t('tracker:projectIssue.create.cancel')}
           </Button>
@@ -333,7 +332,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
       </Box>
 
       {managerOpen && (
-        <WorkspaceLabelManagerDialog
+        <WorkspaceLabelManagerDrawer
           workspaceId={workspaceProject.workspaceId}
           labels={wsLabels}
           onClose={() => setManagerOpen(false)}

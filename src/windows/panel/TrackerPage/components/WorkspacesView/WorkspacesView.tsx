@@ -32,7 +32,7 @@ import { useToast } from '@src/shared/useToast';
 import { useDeleteWorkspace, useTrackerStore, useWorkspaces } from '@src/state/tracker';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import WorkspaceDialog from './WorkspaceDialog';
+import WorkspaceDrawer from './WorkspaceDrawer';
 
 const truncateSx = {
   overflow: 'hidden',
@@ -231,14 +231,14 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
       {snack}
 
       {addDialogOpen && (
-        <WorkspaceDialog
+        <WorkspaceDrawer
           onClose={() => setAddDialogOpen(false)}
           onCreated={handleCreated}
         />
       )}
 
       {editTarget && (
-        <WorkspaceDialog
+        <WorkspaceDrawer
           workspace={editTarget}
           onClose={() => setEditTarget(null)}
           onCreated={handleCreated}

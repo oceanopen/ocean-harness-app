@@ -1,28 +1,28 @@
 import type { WorkspaceModel } from '@src/services';
+import { CloseOutlined as CloseOutlinedIcon } from '@mui/icons-material';
 import {
   Alert,
   Box,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
+  Drawer,
+  IconButton,
   TextField,
+  Typography,
 } from '@mui/material';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// 新建/编辑工作空间弹窗。
+// 新建/编辑工作空间抽屉。
 // 传入 workspace 时为编辑模式：标题改为"编辑工作空间"、ID 只读展示、字段反显、提交调用 update；
 // 不传则为新建模式，行为不变。
 //
-// 由父组件按需挂载（{open && <WorkspaceDialog/>}）：每次打开都是全新 useState 初值，
+// 由父组件按需挂载（{open && <WorkspaceDrawer/>}）：每次打开都是全新 useState 初值，
 // 无需重置 effect；关闭即卸载。
 //
 // slug 派生（仅新建模式且用户未手动改过 slug）：name 变化 → slug = slugify(name)。
 // 用户手动编辑 slug 后置 slugTouched=true，停止派生；编辑模式初始即视为 touched（尊重既有 slug）。
-interface WorkspaceDialogProps {
+interface WorkspaceDrawerProps {
   onClose: () => void;
   onCreated: (ws: WorkspaceModel) => void;
   onUpdated?: (ws: WorkspaceModel) => void;
@@ -42,7 +42,7 @@ function slugify(input: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function WorkspaceDialog({ onClose, onCreated, onUpdated, workspace }: WorkspaceDialogProps) {
+function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: WorkspaceDrawerProps) {
   const { t } = useTranslation();
   const isEdit = !!workspace;
   const createWs = useCreateWorkspace();
@@ -97,16 +97,26 @@ function WorkspaceDialog({ onClose, onCreated, onUpdated, workspace }: Workspace
   };
 
   return (
-    <Dialog
+    <Drawer
+      anchor="right"
       open
       // 提交中禁止背景点击/Esc 关闭，避免半成品状态丢失。
       onClose={submitting ? undefined : onClose}
-      fullWidth
-      maxWidth="sm"
+      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '50%' } } }}
     >
-      <DialogTitle>{isEdit ? t('tracker:workspace.edit.title') : t('tracker:workspace.add.title')}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* 头部 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
+            {isEdit ? t('tracker:workspace.edit.title') : t('tracker:workspace.add.title')}
+          </Typography>
+          <IconButton size="small" onClick={onClose} disabled={submitting} aria-label={t('tracker:workspace.add.cancel')}>
+            <CloseOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        {/* 内容 */}
+        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {isEdit && (
             <TextField
               label={t('tracker:workspace.edit.idLabel')}
@@ -152,17 +162,19 @@ function WorkspaceDialog({ onClose, onCreated, onUpdated, workspace }: Workspace
           />
           {error && <Alert severity="error">{error}</Alert>}
         </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button color="inherit" onClick={onClose} disabled={submitting}>
-          {t('tracker:workspace.add.cancel')}
-        </Button>
-        <Button variant="contained" onClick={handleConfirm} disabled={!canSubmit}>
-          {isEdit ? t('tracker:workspace.edit.confirm') : t('tracker:workspace.add.confirm')}
-        </Button>
-      </DialogActions>
-    </Dialog>
+
+        {/* 底部操作栏：一律左对齐 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Button color="inherit" onClick={onClose} disabled={submitting}>
+            {t('tracker:workspace.add.cancel')}
+          </Button>
+          <Button variant="contained" onClick={handleConfirm} disabled={!canSubmit}>
+            {isEdit ? t('tracker:workspace.edit.confirm') : t('tracker:workspace.add.confirm')}
+          </Button>
+        </Box>
+      </Box>
+    </Drawer>
   );
 }
 
-export default WorkspaceDialog;
+export default WorkspaceDrawer;

@@ -1,6 +1,7 @@
 import type { LocalRepositoryModel, RepoSubDir } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
+  CloseOutlined as CloseOutlinedIcon,
   FolderOpen as FolderOpenIcon,
   RemoveCircleOutlined as RemoveCircleOutlinedIcon,
 } from '@mui/icons-material';
@@ -8,11 +9,8 @@ import {
   Alert,
   Box,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Divider,
+  Drawer,
   IconButton,
   InputAdornment,
   TextField,
@@ -24,8 +22,8 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// 添加/编辑本地仓库弹窗。
-interface AddRepositoryDialogProps {
+// 添加/编辑本地仓库抽屉。
+interface AddRepositoryDrawerProps {
   onClose: () => void;
   repo?: LocalRepositoryModel;
 }
@@ -42,7 +40,7 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function AddRepositoryDialog({ onClose, repo }: AddRepositoryDialogProps) {
+function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
   const { t } = useTranslation();
   const isEdit = !!repo;
   const createMu = useCreateLocalRepository();
@@ -52,7 +50,7 @@ function AddRepositoryDialog({ onClose, repo }: AddRepositoryDialogProps) {
   const [name, setName] = useState(repo?.name ?? '');
   const [localDir, setLocalDir] = useState(repo?.localDir ?? '');
   const [description, setDescription] = useState(repo?.description ?? '');
-  // 行 key 顺序生成器（同一时刻仅一个弹窗实例，顺序 id 即可保证唯一）。
+  // 行 key 顺序生成器（同一时刻仅一个抽屉实例，顺序 id 即可保证唯一）。
   const keySeqRef = useRef(0);
   const nextKey = () => `sub-${keySeqRef.current++}`;
   const [subDirs, setSubDirs] = useState<SubDirRow[]>(() =>
@@ -138,16 +136,26 @@ function AddRepositoryDialog({ onClose, repo }: AddRepositoryDialogProps) {
   };
 
   return (
-    <Dialog
+    <Drawer
+      anchor="right"
       open
       // 提交中禁止背景点击/Esc 关闭，避免半成品状态丢失。
       onClose={submitting ? undefined : onClose}
-      fullWidth
-      maxWidth="sm"
+      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '50%' } } }}
     >
-      <DialogTitle>{isEdit ? t('repositories:edit.title') : t('repositories:add.title')}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* 头部 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
+            {isEdit ? t('repositories:edit.title') : t('repositories:add.title')}
+          </Typography>
+          <IconButton size="small" onClick={onClose} disabled={submitting} aria-label={t('repositories:add.cancel')}>
+            <CloseOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        {/* 内容 */}
+        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {isEdit && (
             <TextField
               label={t('repositories:edit.idLabel')}
@@ -299,17 +307,19 @@ function AddRepositoryDialog({ onClose, repo }: AddRepositoryDialogProps) {
 
           {error && <Alert severity="error">{error}</Alert>}
         </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button color="inherit" onClick={onClose} disabled={submitting}>
-          {t('repositories:add.cancel')}
-        </Button>
-        <Button variant="contained" onClick={handleConfirm} disabled={!canSubmit}>
-          {isEdit ? t('repositories:edit.confirm') : t('repositories:add.confirm')}
-        </Button>
-      </DialogActions>
-    </Dialog>
+
+        {/* 底部操作栏：一律左对齐 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Button color="inherit" onClick={onClose} disabled={submitting}>
+            {t('repositories:add.cancel')}
+          </Button>
+          <Button variant="contained" onClick={handleConfirm} disabled={!canSubmit}>
+            {isEdit ? t('repositories:edit.confirm') : t('repositories:add.confirm')}
+          </Button>
+        </Box>
+      </Box>
+    </Drawer>
   );
 }
 
-export default AddRepositoryDialog;
+export default AddRepositoryDrawer;

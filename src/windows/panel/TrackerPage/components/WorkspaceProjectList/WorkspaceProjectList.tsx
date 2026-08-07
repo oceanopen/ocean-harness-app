@@ -25,7 +25,7 @@ import { useToast } from '@src/shared/useToast';
 import { useDeleteWorkspaceProject, useTrackerStore, useWorkspaceProjects } from '@src/state/tracker';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import WorkspaceProjectDialog from './WorkspaceProjectDialog';
+import WorkspaceProjectDrawer from './WorkspaceProjectDrawer';
 
 const truncateSx = {
   overflow: 'hidden',
@@ -216,7 +216,7 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
       {snack}
 
       {addDialogOpen && (
-        <WorkspaceProjectDialog
+        <WorkspaceProjectDrawer
           workspaceId={workspace.id}
           onClose={() => setAddDialogOpen(false)}
           onCreated={handleCreated}
@@ -224,7 +224,7 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
       )}
 
       {editTarget && (
-        <WorkspaceProjectDialog
+        <WorkspaceProjectDrawer
           workspaceId={workspace.id}
           workspaceProject={editTarget}
           onClose={() => setEditTarget(null)}

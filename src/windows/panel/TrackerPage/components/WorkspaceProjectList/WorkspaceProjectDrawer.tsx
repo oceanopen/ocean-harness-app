@@ -1,20 +1,21 @@
 import type { LocalRepositoryModel, ProjectStateItem, WorkspaceProjectModel } from '@src/services';
-import { EmojiEmotionsOutlined as EmojiEmotionsOutlinedIcon } from '@mui/icons-material';
+import {
+  CloseOutlined as CloseOutlinedIcon,
+  EmojiEmotionsOutlined as EmojiEmotionsOutlinedIcon,
+} from '@mui/icons-material';
 import {
   Alert,
   Autocomplete,
   Box,
   Button,
   Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
+  Drawer,
   IconButton,
   InputAdornment,
   Popover,
   TextField,
   Tooltip,
+  Typography,
 } from '@mui/material';
 import { useLocalRepositories } from '@src/state/localRepositories';
 import { trackerKeys, useCreateWorkspaceProject, useProjectStates, useUpdateWorkspaceProject } from '@src/state/tracker';
@@ -23,16 +24,16 @@ import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ProjectStateManage from '../ProjectStateManage';
 
-// 新建/编辑项目弹窗。
+// 新建/编辑项目抽屉。
 // 传入 workspaceProject 时为编辑模式：标题改为"编辑项目"、ID 只读展示、字段反显、提交调用 update；
 // 不传则为新建模式，行为不变。
 //
-// 由父组件按需挂载（{open && <WorkspaceProjectDialog/>}）：每次打开都是全新 useState 初值，
+// 由父组件按需挂载（{open && <WorkspaceProjectDrawer/>}）：每次打开都是全新 useState 初值，
 // 无需重置 effect；关闭即卸载。
 //
 // 与 WorkspaceDialog 的差异：项目无 slug（去 slugify/slugTouched 整套逻辑），改为 emoji 字段；
 // create 带 workspaceId、update 不带（对齐后端 ProjectCreate/UpdateRequest）。
-interface WorkspaceProjectDialogProps {
+interface WorkspaceProjectDrawerProps {
   workspaceId: number;
   onClose: () => void;
   onCreated: (p: WorkspaceProjectModel) => void;
@@ -94,7 +95,7 @@ const DEFAULT_STATES: ProjectStateItem[] = [
   { stateGroupCode: 'cancelled', stateCode: 'cancelled', sortOrder: 9000, isDefault: 'N' },
 ];
 
-function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, workspaceProject }: WorkspaceProjectDialogProps) {
+function WorkspaceProjectDrawer({ workspaceId, onClose, onCreated, onUpdated, workspaceProject }: WorkspaceProjectDrawerProps) {
   const { t } = useTranslation();
   const isEdit = !!workspaceProject;
   const createWorkspaceProject = useCreateWorkspaceProject(workspaceId);
@@ -165,16 +166,26 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
   };
 
   return (
-    <Dialog
+    <Drawer
+      anchor="right"
       open
       // 提交中禁止背景点击/Esc 关闭，避免半成品状态丢失。
       onClose={submitting ? undefined : onClose}
-      fullWidth
-      maxWidth="sm"
+      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '50%' } } }}
     >
-      <DialogTitle>{isEdit ? t('tracker:workspaceProject.edit.title') : t('tracker:workspaceProject.add.title')}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        {/* 头部 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
+            {isEdit ? t('tracker:workspaceProject.edit.title') : t('tracker:workspaceProject.add.title')}
+          </Typography>
+          <IconButton size="small" onClick={onClose} disabled={submitting} aria-label={t('tracker:workspaceProject.add.cancel')}>
+            <CloseOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Box>
+
+        {/* 内容 */}
+        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
           {isEdit && (
             <TextField
               label={t('tracker:workspaceProject.edit.idLabel')}
@@ -312,17 +323,19 @@ function WorkspaceProjectDialog({ workspaceId, onClose, onCreated, onUpdated, wo
           <ProjectStateManage states={states} onChange={setStatesOverride} disabled={submitting} />
           {error && <Alert severity="error">{error}</Alert>}
         </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button color="inherit" onClick={onClose} disabled={submitting}>
-          {t('tracker:workspaceProject.add.cancel')}
-        </Button>
-        <Button variant="contained" onClick={handleConfirm} disabled={!canSubmit}>
-          {isEdit ? t('tracker:workspaceProject.edit.confirm') : t('tracker:workspaceProject.add.confirm')}
-        </Button>
-      </DialogActions>
-    </Dialog>
+
+        {/* 底部操作栏：一律左对齐 */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Button color="inherit" onClick={onClose} disabled={submitting}>
+            {t('tracker:workspaceProject.add.cancel')}
+          </Button>
+          <Button variant="contained" onClick={handleConfirm} disabled={!canSubmit}>
+            {isEdit ? t('tracker:workspaceProject.edit.confirm') : t('tracker:workspaceProject.add.confirm')}
+          </Button>
+        </Box>
+      </Box>
+    </Drawer>
   );
 }
 
-export default WorkspaceProjectDialog;
+export default WorkspaceProjectDrawer;

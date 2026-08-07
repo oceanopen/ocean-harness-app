@@ -44,3 +44,4 @@ xattr -cr "/Applications/We Claude Terminal.app"
 
 - https://mui.com/material-ui/getting-started/
 - https://mui.com/x/introduction/
+- https://mui.com/components/
