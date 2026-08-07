@@ -45,7 +45,7 @@ export interface IssueCardProps {
 
 // 统一 Issue 卡片：列表与看板共用同一组件、同一外观（看板式三行 Paper 卡片）。
 // 列表/看板唯一差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
-// 三行布局：首行 [展开/占位][优先级色点+描述] #id … [进度][新增][编辑]（无标题）；
+// 三行布局：首行 [展开/占位] #id [优先级] [状态] … [进度][新增][编辑]（无标题）；
 // 第二行 [占位] 标题；第三行 [占位] 标签颜色横杠 … 结束日期。
 // 点击卡片主体：有子级（父级）→ 切换展开；无子级 → 打开编辑抽屉（onEdit）。
 // 所有 icon/button 不挂 Tooltip（避免遮挡鼠标），改用 aria-label。
@@ -122,10 +122,28 @@ function IssueCard({
 
   const priorityBadge = (
     <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>「</Typography>
+      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>
+        {`${t('tracker:projectIssue.detail.priority')}:`}
+      </Typography>
       <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: PRIORITY_COLOR[issue.priority], flexShrink: 0 }} />
       <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, ...truncateSx }}>
         {t(`tracker:projectIssue.priority.${issue.priority}`)}
       </Typography>
+      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>」</Typography>
+    </Box>
+  );
+  const stateBadge = state && (
+    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>「</Typography>
+      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>
+        {`${t('tracker:projectIssue.detail.state')}:`}
+      </Typography>
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: state.color || 'text.disabled', flexShrink: 0 }} />
+      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, ...truncateSx }}>
+        {state.name}
+      </Typography>
+      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>」</Typography>
     </Box>
   );
   const idText = <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>#{issue.id}</Typography>;
@@ -202,11 +220,12 @@ function IssueCard({
       sx={rootSx}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-        {/* 首行：展开/占位 优先级 #id …（无标题） 进度 新增 编辑 */}
+        {/* 首行：展开/占位 #id 优先级 状态 … 进度 新增 编辑 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {gutter}
-          {priorityBadge}
           {idText}
+          {priorityBadge}
+          {stateBadge}
           <Box sx={{ flex: 1 }} />
           {rightCluster}
         </Box>
