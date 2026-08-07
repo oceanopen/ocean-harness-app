@@ -4,11 +4,11 @@ import {
   Alert,
   Box,
   Button,
-  Drawer,
   IconButton,
   TextField,
   Typography,
 } from '@mui/material';
+import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -97,12 +97,11 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
   };
 
   return (
-    <Drawer
-      anchor="right"
+    <ResizableDrawer
       open
       // 提交中禁止背景点击/Esc 关闭，避免半成品状态丢失。
       onClose={submitting ? undefined : onClose}
-      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '50%' } } }}
+      defaultWidthPct={50}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
@@ -173,7 +172,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
           </Button>
         </Box>
       </Box>
-    </Drawer>
+    </ResizableDrawer>
   );
 }
 

@@ -8,7 +8,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Drawer,
   IconButton,
   TextField,
   Typography,
@@ -16,6 +15,7 @@ import {
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { WorkspaceLabelService } from '@src/services';
+import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
 import { useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } from '@src/state/tracker';
@@ -212,7 +212,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
       : t('tracker:projectIssue.create.title');
 
   return (
-    <Drawer anchor="right" open onClose={onClose} sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '60%' } } }}>
+    <ResizableDrawer open onClose={onClose} defaultWidthPct={60}>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
@@ -358,7 +358,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
       )}
 
       {snack}
-    </Drawer>
+    </ResizableDrawer>
   );
 }
 

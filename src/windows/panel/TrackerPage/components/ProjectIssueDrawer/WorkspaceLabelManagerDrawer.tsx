@@ -15,13 +15,13 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  Drawer,
   IconButton,
   Snackbar,
   TextField,
   Typography,
 } from '@mui/material';
 import { WorkspaceLabelService } from '@src/services';
+import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -131,12 +131,11 @@ function WorkspaceLabelManagerDrawer({ workspaceId, labels, onClose, onChanged }
   };
 
   return (
-    <Drawer
-      anchor="right"
+    <ResizableDrawer
       open
       // 提交/删除中禁止背景点击/Esc 关闭，避免半成品状态丢失。
       onClose={submitting || deleting ? undefined : onClose}
-      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '40%' } } }}
+      defaultWidthPct={40}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
@@ -286,7 +285,7 @@ function WorkspaceLabelManagerDrawer({ workspaceId, labels, onClose, onChanged }
       >
         <Alert severity={toast.severity} variant="filled">{toast.text}</Alert>
       </Snackbar>
-    </Drawer>
+    </ResizableDrawer>
   );
 }
 

@@ -9,7 +9,6 @@ import {
   Box,
   Button,
   Chip,
-  Drawer,
   IconButton,
   InputAdornment,
   Popover,
@@ -17,6 +16,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useLocalRepositories } from '@src/state/localRepositories';
 import { trackerKeys, useCreateWorkspaceProject, useProjectStates, useUpdateWorkspaceProject } from '@src/state/tracker';
 import { useQueryClient } from '@tanstack/react-query';
@@ -166,12 +166,11 @@ function WorkspaceProjectDrawer({ workspaceId, onClose, onCreated, onUpdated, wo
   };
 
   return (
-    <Drawer
-      anchor="right"
+    <ResizableDrawer
       open
       // 提交中禁止背景点击/Esc 关闭，避免半成品状态丢失。
       onClose={submitting ? undefined : onClose}
-      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '50%' } } }}
+      defaultWidthPct={50}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
@@ -334,7 +333,7 @@ function WorkspaceProjectDrawer({ workspaceId, onClose, onCreated, onUpdated, wo
           </Button>
         </Box>
       </Box>
-    </Drawer>
+    </ResizableDrawer>
   );
 }
 

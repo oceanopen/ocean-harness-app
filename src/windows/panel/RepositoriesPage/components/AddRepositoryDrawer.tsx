@@ -10,13 +10,13 @@ import {
   Box,
   Button,
   Divider,
-  Drawer,
   IconButton,
   InputAdornment,
   TextField,
   Typography,
 } from '@mui/material';
 import { basename, relativeSubDir } from '@src/shared/repoPath';
+import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCreateLocalRepository, useUpdateLocalRepository } from '@src/state/localRepositories';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useRef, useState } from 'react';
@@ -136,12 +136,11 @@ function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
   };
 
   return (
-    <Drawer
-      anchor="right"
+    <ResizableDrawer
       open
       // 提交中禁止背景点击/Esc 关闭，避免半成品状态丢失。
       onClose={submitting ? undefined : onClose}
-      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: '50%' } } }}
+      defaultWidthPct={50}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
@@ -318,7 +317,7 @@ function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
           </Button>
         </Box>
       </Box>
-    </Drawer>
+    </ResizableDrawer>
   );
 }
 
