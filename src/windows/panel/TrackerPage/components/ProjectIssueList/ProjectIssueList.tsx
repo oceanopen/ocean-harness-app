@@ -23,6 +23,7 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
+import { ProjectIssueService } from '@src/services';
 import { useToast } from '@src/shared/useToast';
 import { trackerKeys, useProjectIssues, useProjectStateViews } from '@src/state/tracker';
 import { PRIORITY_WEIGHT } from '@src/windows/panel/TrackerPage/components/priorityMeta';
@@ -30,10 +31,11 @@ import PrioritySelect from '@src/windows/panel/TrackerPage/components/ProjectIss
 import ProjectIssueDrawer from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectIssueDrawer';
 import ProjectStateSelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectStateSelect';
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import IssueCard from './IssueCard';
 import KanbanView from './KanbanView/KanbanView';
+import { computeSortOrder } from './KanbanView/useKanbanDnd';
 import { GROUP_ORDER } from './shared';
 import StateGroupCard from './StateGroupCard';
 
@@ -141,6 +143,36 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     }
     return m;
   }, [projectStates]);
+
+  // 子任务拖拽重排（列表模式）：同父内仅改 sortOrder（stateId 不变），复用 move API + computeSortOrder。
+  // 乐观更新即时反馈，失败用快照整表回滚 + toast；成功用后端返回值二次校正（与看板拖拽同一套机制）。
+  const reorderSnapshotRef = useRef<ProjectIssueResponseData[] | null>(null);
+  const handleReorderChild = useCallback((parentId: number, from: number, to: number) => {
+    const siblings = childrenByParent.get(parentId) ?? [];
+    const moved = siblings[from];
+    if (!moved) {
+      return;
+    }
+    const remaining = siblings.filter(i => i.id !== moved.id);
+    const newSortOrder = computeSortOrder(remaining, to);
+    updateProjectIssues((prev) => {
+      reorderSnapshotRef.current = prev;
+      return prev.map(i => (i.id === moved.id ? { ...i, sortOrder: newSortOrder } : i));
+    });
+    ProjectIssueService.move({ id: moved.id, stateId: moved.stateId, sortOrder: newSortOrder })
+      .then((updated) => {
+        reorderSnapshotRef.current = null;
+        updateProjectIssues(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+      })
+      .catch((e) => {
+        if (reorderSnapshotRef.current) {
+          updateProjectIssues(reorderSnapshotRef.current);
+          reorderSnapshotRef.current = null;
+        }
+        const msg = e instanceof Error ? e.message : String(e);
+        showToast(t('tracker:projectIssue.toast.moveFailed', { message: msg }), 'error');
+      });
+  }, [childrenByParent, updateProjectIssues, showToast, t]);
 
   // 客户端筛选 + 按 stateGroup 分组 + 组内排序。
   const grouped = useMemo(() => {
@@ -458,6 +490,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
                           onToggleExpand={toggleExpand}
                           onEdit={setEditIssue}
                           onAddChild={openCreateChild}
+                          onReorderChild={handleReorderChild}
                         />
                       ))}
                     </Box>

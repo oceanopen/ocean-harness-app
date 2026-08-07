@@ -4,6 +4,7 @@ import type { ProjectIssueResponseData } from '@src/services';
 import type { ProjectStateView } from '@src/state/tracker';
 import type { MouseEvent } from 'react';
 import type { SubtaskStats } from './shared';
+import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
 import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
@@ -41,8 +42,10 @@ export interface IssueCardProps {
   onEdit: (issue: ProjectIssueResponseData) => void;
   onAddChild: (parent: ProjectIssueResponseData) => void;
   dnd?: IssueCardDnd;
-  // 看板模式标记：顶级卡片由 dnd 推断；内联子卡片由父级透传（子卡无 dnd）。
+  // 看板模式标记：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传。
   kanban?: boolean;
+  // 子任务拖拽重排回调（仅列表模式启用）。
+  onReorderChild?: (parentId: number, from: number, to: number) => void;
 }
 
 // 统一 Issue 卡片：列表与看板共用同一组件、同一外观（看板式三行 Paper 卡片）。
@@ -63,6 +66,7 @@ function IssueCard({
   onAddChild,
   dnd,
   kanban,
+  onReorderChild,
 }: IssueCardProps) {
   const { t } = useTranslation();
   const provided = dnd?.provided;
@@ -212,9 +216,9 @@ function IssueCard({
 
   return (
     <Box
-      {...(depth === 0 ? provided?.draggableProps : undefined)}
-      {...(depth === 0 ? provided?.dragHandleProps : undefined)}
-      ref={depth === 0 ? provided?.innerRef : undefined}
+      {...provided?.draggableProps}
+      {...provided?.dragHandleProps}
+      ref={provided?.innerRef}
       onClick={(e: MouseEvent<HTMLDivElement>) => {
         e.stopPropagation();
         if (hasChildren) {
@@ -256,22 +260,63 @@ function IssueCard({
         )}
       </Box>
 
-      {/* 内联子卡片（仅顶级 + 展开 + 有子 issue）；缩进使子卡优先级色点对齐父级 */}
+      {/* 内联子卡片（仅顶级 + 展开 + 有子 issue）；缩进使子卡优先级色点对齐父级。
+          列表模式：子任务可拖拽排序（DragDropContext + Droppable + Draggable）；
+          看板模式：父卡整卡为拖把手，子任务不拖（避免冲突），纯渲染。 */}
       {depth === 0 && expanded && childIssues.length > 0 && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', mt: 0.5, pl: CHILD_INDENT_PL }}>
-          {childIssues.map(child => (
-            <IssueCard
-              key={child.id}
-              issue={child}
-              depth={1}
-              stateMap={stateMap}
-              subtaskStats={subtaskStats}
-              onEdit={onEdit}
-              onAddChild={onAddChild}
-              kanban={isKanban}
-            />
-          ))}
-        </Box>
+        isKanban
+          ? (
+              <Box sx={{ display: 'flex', flexDirection: 'column', mt: 0.5, pl: CHILD_INDENT_PL }}>
+                {childIssues.map(child => (
+                  <IssueCard
+                    key={child.id}
+                    issue={child}
+                    depth={1}
+                    stateMap={stateMap}
+                    subtaskStats={subtaskStats}
+                    onEdit={onEdit}
+                    onAddChild={onAddChild}
+                    kanban={isKanban}
+                  />
+                ))}
+              </Box>
+            )
+          : (
+              <DragDropContext onDragEnd={(r) => {
+                if (r.destination && r.source.index !== r.destination.index) {
+                  onReorderChild?.(issue.id, r.source.index, r.destination.index);
+                }
+              }}
+              >
+                <Droppable droppableId={`children-${issue.id}`}>
+                  {childProvided => (
+                    <Box
+                      ref={childProvided.innerRef}
+                      {...childProvided.droppableProps}
+                      sx={{ display: 'flex', flexDirection: 'column', mt: 0.5, pl: CHILD_INDENT_PL, gap: 0.5 }}
+                    >
+                      {childIssues.map((child, idx) => (
+                        <Draggable key={child.id} draggableId={String(child.id)} index={idx}>
+                          {(dragProvided, dragSnapshot) => (
+                            <IssueCard
+                              issue={child}
+                              depth={1}
+                              stateMap={stateMap}
+                              subtaskStats={subtaskStats}
+                              onEdit={onEdit}
+                              onAddChild={onAddChild}
+                              kanban={isKanban}
+                              dnd={{ provided: dragProvided, snapshot: dragSnapshot }}
+                            />
+                          )}
+                        </Draggable>
+                      ))}
+                      {childProvided.placeholder}
+                    </Box>
+                  )}
+                </Droppable>
+              </DragDropContext>
+            )
       )}
     </Box>
   );
