@@ -27,6 +27,19 @@ xattr -cr "/Applications/We Claude Terminal.app"
 
 > Dev 与 Release 使用不同 identifier，数据自动隔离。`~` 为用户主目录；Windows `%APPDATA%` 对应 `C:\Users\<用户名>\AppData\Roaming`；Linux 遵循 XDG 规范，若设置了 `XDG_DATA_HOME` 则以其替代 `~/.local/share`。
 
+## 查看服务 SQLite 数据库
+
+应用内置的 Go 旁路服务（HTTP sidecar）持有独立的业务数据库，文件名固定为 `server.db`，位于 `app_data_dir` 下的 `app-server/db/` 子目录，与本地配置库 `app.db` 相互隔离。同样可用 [DBeaver](https://dbeaver.io/) 查看：
+
+| 平台    | 环境    | 路径                                                                               |
+| ------- | ------- | ---------------------------------------------------------------------------------- |
+| macOS   | Release | `~/Library/Application Support/com.we.claude.terminal/app-server/db/server.db`     |
+| macOS   | Dev     | `~/Library/Application Support/com.we.claude.terminal.dev/app-server/db/server.db` |
+| Windows | Release | `%APPDATA%\com.we.claude.terminal\app-server\db\server.db`                         |
+| Windows | Dev     | `%APPDATA%\com.we.claude.terminal.dev\app-server\db\server.db`                     |
+| Linux   | Release | `~/.local/share/com.we.claude.terminal/app-server/db/server.db`                    |
+| Linux   | Dev     | `~/.local/share/com.we.claude.terminal.dev/app-server/db/server.db`                |
+
 ## 设计
 
 - https://mui.com/material-ui/getting-started/

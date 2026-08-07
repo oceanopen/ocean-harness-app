@@ -257,15 +257,15 @@ fn transition_state(app: &AppHandle, state: &HttpServerState, new: HttpServerRun
     );
 }
 
-/// 解析 app_data_dir 下的 go-server 数据目录并确保存在，返回 (log_dir, sqlite_dir)。
-/// 命名空间到 go-server/ 子目录，避免与 Rust 自身的 app.db 等文件混放。
+/// 解析 app_data_dir 下的 app-server 数据目录并确保存在，返回 (log_dir, sqlite_dir)。
+/// 命名空间到 app-server/ 子目录，避免与 Rust 自身的 app.db 等文件混放。
 fn resolve_dirs(app: &AppHandle) -> Result<(String, String), String> {
     let data_dir: PathBuf = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("resolve app_data_dir failed: {e}"))?;
-    let log_dir = data_dir.join("go-server").join("logs");
-    let sqlite_dir = data_dir.join("go-server").join("db");
+    let log_dir = data_dir.join("app-server").join("logs");
+    let sqlite_dir = data_dir.join("app-server").join("db");
     fs::create_dir_all(&log_dir).map_err(|e| format!("mkdir log_dir failed: {e}"))?;
     fs::create_dir_all(&sqlite_dir).map_err(|e| format!("mkdir sqlite_dir failed: {e}"))?;
     Ok((

@@ -135,8 +135,8 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 
 由 Rust 从 `app_data_dir` 派生并注入（dev/release 自动隔离到独立 `app_data_dir`）：
 
-- 日志：`<app_data_dir>/go-server/logs/{app.log, app.error.log}`（lumberjack 轮转：20MB/文件、保留 30 天）
-- sqlite：`<app_data_dir>/go-server/db/server.db`
+- 日志：`<app_data_dir>/app-server/logs/{app.log, app.error.log}`（lumberjack 轮转：20MB/文件、保留 30 天）
+- sqlite：`<app_data_dir>/app-server/db/server.db`
 
 ## 本地调试
 
