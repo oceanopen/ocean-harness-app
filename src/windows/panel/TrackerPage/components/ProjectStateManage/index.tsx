@@ -1,7 +1,7 @@
 import type { ProjectStateItem, StateGroup, StateMeta } from '@src/services';
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
 import { DragIndicator as DragIndicatorIcon } from '@mui/icons-material';
-import { Box, Checkbox, CircularProgress, Radio, Typography } from '@mui/material';
+import { Box, Checkbox, CircularProgress, Divider, Radio, Typography } from '@mui/material';
 import { useStateCatalog } from '@src/state/tracker';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -125,10 +125,11 @@ function ProjectStateManage({ states, onChange, disabled }: ProjectStateManagePr
   const devStepMetas = (statesByGroup.get('started') ?? []).filter(m => m.code !== 'in_progress');
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
       <Typography variant="caption" color="text.secondary">
         {t('tracker:workspaceProject.stateManage.title')}
       </Typography>
+      <Divider />
       {GROUP_ORDER.map((g) => {
         const groupMeta = groups.find(x => x.code === g);
         const metas = statesByGroup.get(g) ?? [];
@@ -161,10 +162,11 @@ function ProjectStateManage({ states, onChange, disabled }: ProjectStateManagePr
               );
             })}
             {g === 'started' && devStepOrder.length > 0 && (
-              <Box sx={{ pl: 2.5, mt: 0.5 }}>
+              <Box sx={{ mt: 0.5, ml: 2.5, border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 <Typography variant="caption" color="text.secondary">
                   {t('tracker:workspaceProject.stateManage.stepOrder')}
                 </Typography>
+                <Divider />
                 <DragDropContext onDragEnd={(r) => {
                   if (r.destination && r.source.index !== r.destination.index) {
                     reorderStep(r.source.index, r.destination.index);
@@ -173,7 +175,7 @@ function ProjectStateManage({ states, onChange, disabled }: ProjectStateManagePr
                 >
                   <Droppable droppableId="devSteps">
                     {provided => (
-                      <Box ref={provided.innerRef} {...provided.droppableProps} sx={{ mt: 0.5 }}>
+                      <Box ref={provided.innerRef} {...provided.droppableProps} sx={{ mt: 0.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                         {devStepOrder.map((code, idx) => {
                           const meta = devStepMetas.find(m => m.code === code);
                           if (!meta) {
@@ -186,7 +188,18 @@ function ProjectStateManage({ states, onChange, disabled }: ProjectStateManagePr
                                   ref={p.innerRef}
                                   {...p.draggableProps}
                                   {...p.dragHandleProps}
-                                  sx={{ display: 'flex', alignItems: 'center', gap: 0.5, py: 0.25 }}
+                                  sx={{
+                                    'display': 'flex',
+                                    'alignItems': 'center',
+                                    'gap': 0.75,
+                                    'px': 1,
+                                    'py': 0.75,
+                                    'borderRadius': 1,
+                                    'bgcolor': 'action.hover',
+                                    'cursor': 'grab',
+                                    '&:active': { cursor: 'grabbing' },
+                                    '&:hover': { bgcolor: 'action.selected' },
+                                  }}
                                 >
                                   <DragIndicatorIcon fontSize="small" color="action" />
                                   <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: meta.color }} />
