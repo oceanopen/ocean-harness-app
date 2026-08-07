@@ -5,7 +5,7 @@
 // 本文件仅负责：窗口创建、命令包装（get_claude_sessions / navigate_to_claude_session）。
 
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, State, WebviewUrl,
+    AppHandle, Emitter, LogicalPosition, Manager, State, WebviewUrl,
     WebviewWindowBuilder,
 };
 
@@ -246,10 +246,8 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
         .unwrap_or(DEFAULT_SIZE);
 
     let panel_win = match app.get_webview_window("panel") {
-        Some(w) => {
-            let _ = w.set_size(LogicalSize::new(width, height));
-            w
-        }
+        // 窗口已存在（从隐藏恢复）：尊重用户上次的尺寸/位置/最大化状态，不强制重设。
+        Some(w) => w,
         None => {
             let product = app
                 .config()
@@ -262,11 +260,18 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
                 WebviewUrl::App("panel.html".into()),
             )
             .title(format!("{product} - 控制台"))
-            .inner_size(width, height)
+            .inner_size(width, height) // 还原尺寸：取消最大化后回到此 85% 屏尺寸
+            .maximized(true) // 默认全屏（最大化）：首次打开即占满工作区
             .center()
             .skip_taskbar(true)
             .build()
             .map_err(|e| e.to_string())?;
+
+            // 定位到托盘所在屏：最大化时无视觉影响，但决定还原后落在哪块屏。
+            if let Some(m) = &monitor {
+                let (x, y) = work_area_center(m, width, height);
+                let _ = win.set_position(LogicalPosition::new(x, y));
+            }
 
             let w = win.clone();
             win.on_window_event(move |event| {
@@ -279,11 +284,6 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
             win
         }
     };
-
-    if let Some(m) = &monitor {
-        let (x, y) = work_area_center(m, width, height);
-        let _ = panel_win.set_position(LogicalPosition::new(x, y));
-    }
 
     let _ = panel_win.show();
     let _ = panel_win.unminimize();
