@@ -49,7 +49,7 @@
     "empty": "No tasks in development",
     "selectHint": "Select a task to view dev steps",
     "noSteps": "No dev steps configured for this project",
-    "startDevHint": "This task hasn't entered the dev flow. Starting dev will advance it to worktree init.",
-    "staleHint": "Task not found or moved out of dev flow"
+    "staleHint": "Task not found or moved out of dev flow",
+    "toggleSteps": "Toggle steps panel"
   }
 }

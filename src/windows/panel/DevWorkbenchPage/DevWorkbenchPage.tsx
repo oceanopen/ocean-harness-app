@@ -1,10 +1,13 @@
 import {
   CleaningServicesOutlined as CleaningServicesOutlinedIcon,
   RefreshOutlined as RefreshOutlinedIcon,
+  ViewSidebar as ViewSidebarIcon,
+  ViewSidebarOutlined as ViewSidebarOutlinedIcon,
 } from '@mui/icons-material';
 import { Box, IconButton, Typography } from '@mui/material';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useProjectIssues, useProjectStateViews } from '@src/state/tracker';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import DevStepper from './components/DevStepper/DevStepper';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
@@ -12,13 +15,14 @@ import StateBadge from './components/StateBadge';
 
 // DevWorkbenchPage：控制台「开发工作台」（执行面：worktree→开发→PR→清理）。
 // 左右两栏（无横跨全宽顶栏，页面名由 PanelApp 顶部面包屑显示）：
-// 左栏 = 任务树；右栏 = 顶部操作栏（选中 issue 的 #id + 名称 + 操作入口）+ 内容区（步骤条，模块 C）。
-// 顶层按 selectedProjectId 查询 issue（实时派生，避免 store 快照陈旧），顶部与内容区共享同一 issue。
+// 左栏 = 任务树；右栏 = 顶部操作栏（切换步骤条 + #id+名称 + 状态 + 操作入口）+ 内容区（纵向步骤条[可隐藏] + 步骤内容[模块 D]）。
+// 顶层按 selectedProjectId 查询 issue（实时派生，避免 store 快照陈旧）。
 export default function DevWorkbenchPage() {
   const { t } = useTranslation();
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
   const selectedProjectId = useDevWorkbenchStore(s => s.selectedProjectId);
-  // 未选时 selectedProjectId 为 null → 用 0 占位（后端返回空，无副作用）；选中后即时命中 tracker 同 key 缓存。
+  // 纵向步骤条侧栏开关（默认隐藏，避免占用空间）；点顶栏切换 icon 展开。保活时 state 保留。
+  const [stepsPanelOpen, setStepsPanelOpen] = useState(false);
   const { data: issues = [] } = useProjectIssues(selectedProjectId ?? 0);
   const { viewMap } = useProjectStateViews(selectedProjectId ?? 0);
   const issue = issues.find(i => i.id === selectedIssueId);
@@ -44,20 +48,29 @@ export default function DevWorkbenchPage() {
 
       {/* 右栏：顶部操作栏 + 内容区 */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* 顶部操作栏：选中 issue 的 #id + 名称 + 占位操作按钮（待 C/P3 接入；不挂 Tooltip） */}
+        {/* 顶部操作栏：切换步骤条 + 选中 issue 的 #id + 名称 + 状态徽章 + 占位按钮（不挂 Tooltip） */}
         <Box
           sx={{
             height: 48,
             flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
-            px: 2,
-            gap: 1,
+            px: 1,
+            gap: 0.5,
             borderBottom: 1,
             borderColor: 'divider',
             bgcolor: 'background.paper',
           }}
         >
+          <IconButton
+            size="small"
+            onClick={() => setStepsPanelOpen(o => !o)}
+            aria-label={t('panel:devWorkbench.toggleSteps')}
+            disabled={!hasSelection}
+            sx={{ color: 'text.secondary' }}
+          >
+            {stepsPanelOpen ? <ViewSidebarIcon /> : <ViewSidebarOutlinedIcon />}
+          </IconButton>
           {hasSelection && issue && (
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }} noWrap>
               <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>#{issue.id}</Box>
@@ -78,27 +91,33 @@ export default function DevWorkbenchPage() {
           </Box>
         </Box>
 
-        {/* 内容区：步骤条（模块 C）；当前步骤内容区待模块 D */}
-        <Box sx={{ flex: 1, overflow: 'auto' }}>
-          {!hasSelection
-            ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
-                  <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.selectHint')}</Typography>
-                </Box>
-              )
-            : issue && selectedProjectId != null
+        {/* 内容区：纵向步骤条（可隐藏）+ 步骤内容区 */}
+        <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          {stepsPanelOpen && hasSelection && issue && selectedProjectId != null && (
+            <Box sx={{ width: 200, flexShrink: 0, borderRight: 1, borderColor: 'divider', overflow: 'auto', p: 2 }}>
+              <DevStepper issue={issue} projectId={selectedProjectId} />
+            </Box>
+          )}
+          <Box sx={{ flex: 1, overflow: 'auto' }}>
+            {!hasSelection
               ? (
-                  <Box sx={{ p: 2 }}>
-                    <DevStepper issue={issue} projectId={selectedProjectId} />
-                    {/* TODO(D): 当前步骤内容区（按 stateCode 切换：wt_init/developing/pr_open/cleanup） */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+                    <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.selectHint')}</Typography>
                   </Box>
                 )
-              : (
-                  // 陈旧 id（issue 被删/移出）：实时派生自然兜底。
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
-                    <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.staleHint')}</Typography>
-                  </Box>
-                )}
+              : issue && selectedProjectId != null
+                ? (
+                    <Box sx={{ p: 2 }}>
+                      {/* TODO(D): 当前步骤内容区（按 stateCode 切换：wt_init/developing/pr_open/cleanup） */}
+                      <Typography variant="body2" color="text.secondary">步骤内容待模块 D 实施</Typography>
+                    </Box>
+                  )
+                : (
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+                      <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.staleHint')}</Typography>
+                    </Box>
+                  )}
+          </Box>
         </Box>
       </Box>
     </Box>

@@ -49,7 +49,7 @@
     "empty": "暂无开发中的任务",
     "selectHint": "选择左侧任务查看开发步骤",
     "noSteps": "该项目未配置开发步骤",
-    "startDevHint": "该任务尚未进入开发流程，开始开发后将推进到「worktree初始化」",
-    "staleHint": "任务不存在或已移出开发流程"
+    "staleHint": "任务不存在或已移出开发流程",
+    "toggleSteps": "切换步骤条"
   }
 }

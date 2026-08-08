@@ -1,5 +1,5 @@
 import type { ProjectIssueResponseData } from '@src/services';
-import { Alert, Box, Step, StepLabel, Stepper, Typography } from '@mui/material';
+import { Box, Step, StepLabel, Stepper, Typography } from '@mui/material';
 import { useProjectStateViews } from '@src/state/tracker';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,11 +28,8 @@ export default function DevStepper({ issue, projectId }: { issue: ProjectIssueRe
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {!isInDevFlow && (
-        <Alert severity="info">{t('panel:devWorkbench.startDevHint')}</Alert>
-      )}
-      <Stepper activeStep={isInDevFlow ? currentIndex : -1} alternativeLabel>
+    <Box>
+      <Stepper activeStep={isInDevFlow ? currentIndex : -1} orientation="vertical">
         {steps.map(step => (
           <Step key={step.id}>
             <StepLabel>{step.name}</StepLabel>
