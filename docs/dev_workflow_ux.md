@@ -209,10 +209,10 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ### 12.3 模块 C:步骤条
 
-- [ ] **C1** 取当前项目 started 组「进行中」之外子 state(`wt_init/developing/pr_open/cleanup`),按 `sortOrder` 排序
-- [ ] **C2** 步骤状态计算 — `✓已完成`(stateId 已越过) / `●进行中`(= 当前 stateId) / `○待办`
-- [ ] **C3** MUI `Stepper` 渲染
-- [ ] **C4** 点步骤回看(已完成只读、进行中可操作)
+- [x] **C1** 取当前项目 started 组「进行中」之外子 state(`wt_init/developing/pr_open/cleanup`),按 `sortOrder` 排序
+- [x] **C2** 步骤状态计算 — `✓已完成`(stateId 已越过) / `●进行中`(= 当前 stateId) / `○待办`
+- [x] **C3** MUI `Stepper` 渲染
+- [ ] **C4** 点步骤回看(已完成只读、进行中可操作) — 推迟到模块 D(本期步骤条只展示不点击)
 
 ### 12.4 模块 D:步骤内容区(按 `stateCode` switch)
 

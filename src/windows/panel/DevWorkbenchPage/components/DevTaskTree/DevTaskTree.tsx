@@ -16,8 +16,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
-const truncateSx = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const;
+import StateBadge from '../StateBadge';
 
 // DevTaskTree：开发工作台左任务树——跨所有工作空间展示 started 组的 issue。
 // 三级：workspace → project → dev issue。复用 MUI List 组件族（ListSubheader / ListItemButton / Chip）的内置样式，
@@ -129,18 +128,13 @@ function DevIssueRow({ issue, viewMap }: { issue: ProjectIssueResponseData; view
   const view = viewMap.get(issue.stateId);
 
   return (
-    <ListItemButton selected={selected} onClick={() => selectIssue(selected ? null : issue.id)} sx={{ mx: 0.5, borderRadius: 1 }}>
+    <ListItemButton selected={selected} onClick={() => selectIssue(selected ? null : issue)} sx={{ mx: 0.5, borderRadius: 1 }}>
       {/* 占位箭头：与 project 折叠头的箭头 ListItemIcon 同宽，使任务名与项目名左对齐 */}
       <ListItemIcon sx={{ minWidth: 'auto', mr: 0.5, visibility: 'hidden' }}>
         <KeyboardArrowRightRoundedIcon fontSize="small" />
       </ListItemIcon>
       <ListItemText primary={issue.name} slotProps={{ primary: { noWrap: true } }} />
-      {view && (
-        <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: view.color || 'text.disabled' }} />
-          <Typography variant="caption" sx={{ color: 'text.secondary', ...truncateSx }}>{view.name}</Typography>
-        </Box>
-      )}
+      <StateBadge view={view} />
     </ListItemButton>
   );
 }
