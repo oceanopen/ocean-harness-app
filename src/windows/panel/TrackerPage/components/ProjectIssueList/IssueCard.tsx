@@ -9,6 +9,7 @@ import {
   AddOutlined as AddOutlinedIcon,
   AssignmentOutlined as AssignmentOutlinedIcon,
   CalendarMonthOutlined as CalendarMonthOutlinedIcon,
+  DragIndicatorOutlined as DragIndicatorOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
   KeyboardArrowDownRounded as KeyboardArrowDownRoundedIcon,
   KeyboardArrowRightRounded as KeyboardArrowRightRoundedIcon,
@@ -153,6 +154,25 @@ function IssueCard({
   // 行内占位（让第二、三行内容与首行优先级色点左对齐）。
   const gutterPlaceholder = depth === 0 && <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0 }} />;
 
+  // 第二行标题左侧拖拽标识（depth=0 顶级卡才有；位于展开/折叠 icon 正下方的 28px 列内）。
+  // 纯视觉标识：看板正常色提示可拖（整卡即柄），列表禁用色提示不可拖。不改 dragHandleProps 挂载方式。
+  const dragIndicatorEl = depth === 0 && (
+    <Box
+      sx={{
+        width: GUTTER_WIDTH,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: isKanban ? 'text.secondary' : 'text.disabled',
+        opacity: isKanban ? 1 : 0.4,
+        cursor: isKanban ? 'grab' : 'not-allowed',
+      }}
+    >
+      <DragIndicatorOutlinedIcon fontSize="small" />
+    </Box>
+  );
+
   const priorityBadge = (
     <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
       <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>「</Typography>
@@ -249,9 +269,9 @@ function IssueCard({
         <Box sx={{ flex: 1 }} />
         {isKanban ? progressEl : rightCluster}
       </Box>
-      {/* 第二行：占位 标题 … [看板:新增+编辑] */}
+      {/* 第二行：拖拽标识 标题 … [看板:新增+编辑] */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        {gutterPlaceholder}
+        {dragIndicatorEl}
         {nameEl}
         {isKanban && (
           <>
