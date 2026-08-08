@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import DevStepper from './components/DevStepper/DevStepper';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import StateBadge from './components/StateBadge';
+import StepContent from './components/StepContent/StepContent';
 
 // DevWorkbenchPage：控制台「开发工作台」（执行面：worktree→开发→PR→清理）。
 // 左右两栏（无横跨全宽顶栏，页面名由 PanelApp 顶部面包屑显示）：
@@ -28,6 +29,14 @@ export default function DevWorkbenchPage() {
   const issue = issues.find(i => i.id === selectedIssueId);
   const view = issue ? viewMap.get(issue.stateId) : undefined;
   const hasSelection = selectedIssueId != null && selectedProjectId != null;
+  // 步骤条点击查看的步骤 stateCode（null = 默认 issue 当前步骤）；切换 issue 时重置回当前（adjust during render）。
+  const [viewingStateCode, setViewingStateCode] = useState<string | null>(null);
+  const [viewingIssueId, setViewingIssueId] = useState<number | null>(selectedIssueId);
+  if (selectedIssueId !== viewingIssueId) {
+    setViewingIssueId(selectedIssueId);
+    setViewingStateCode(null);
+  }
+  const currentViewingCode = viewingStateCode ?? view?.stateCode;
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
@@ -95,7 +104,7 @@ export default function DevWorkbenchPage() {
         <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {stepsPanelOpen && hasSelection && issue && selectedProjectId != null && (
             <Box sx={{ width: 200, flexShrink: 0, borderRight: 1, borderColor: 'divider', overflow: 'auto', p: 2 }}>
-              <DevStepper issue={issue} projectId={selectedProjectId} />
+              <DevStepper issue={issue} projectId={selectedProjectId} activeStepCode={viewingStateCode} onStepClick={setViewingStateCode} />
             </Box>
           )}
           <Box sx={{ flex: 1, overflow: 'auto' }}>
@@ -108,8 +117,7 @@ export default function DevWorkbenchPage() {
               : issue && selectedProjectId != null
                 ? (
                     <Box sx={{ p: 2 }}>
-                      {/* TODO(D): 当前步骤内容区（按 stateCode 切换：wt_init/developing/pr_open/cleanup） */}
-                      <Typography variant="body2" color="text.secondary">步骤内容待模块 D 实施</Typography>
+                      <StepContent issue={issue} projectId={selectedProjectId} stateCode={currentViewingCode} />
                     </Box>
                   )
                 : (

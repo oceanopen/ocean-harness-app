@@ -212,14 +212,14 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 - [x] **C1** 取当前项目 started 组「进行中」之外子 state(`wt_init/developing/pr_open/cleanup`),按 `sortOrder` 排序
 - [x] **C2** 步骤状态计算 — `✓已完成`(stateId 已越过) / `●进行中`(= 当前 stateId) / `○待办`
 - [x] **C3** MUI `Stepper` 渲染
-- [ ] **C4** 点步骤回看(已完成只读、进行中可操作) — 推迟到模块 D(本期步骤条只展示不点击)
+- [x] **C4** 点步骤切换查看(StepButton 可点，右内容区按查看的步骤切换内容)
 
 ### 12.4 模块 D:步骤内容区(按 `stateCode` switch)
 
-- [ ] **D1 `wt_init`** — worktree 初始化表单:复用 `IssueBranchField` 的 `useLocalRepositories`+`useLocalBranches`,扩展 baseRef/devBranch/worktree 路径预览;`[创建并开始]` 调 `startDev` 桩 + 创建成功推进 stateId
-- [ ] **D2 `developing`** — 终端占位框 + 提示条;快捷操作行复用 `RepositoryCard` `openTarget`(:119) + `bindings` 三函数 `openInEditor/openInTerminal/openInFileManager`(VSCode/iTerm2/访达);`[开发完成]`推进
-- [ ] **D3 `pr_open`** — PR 配置卡(源分支 devBranch 只读 / 目标分支 baseBranch 可改 / 标题默认 issue 名 / 描述默认 issue.description) + 构造 compare URL 打开并记录 prUrl;`[合并完成]`推进
-- [ ] **D4 `cleanup`** — 清理确认卡(列删除项 worktree 路径+分支、未提交改动警告);`[清理并完成]`调 `pty_stop_for_worktree`+`removeWorktree` 桩 → completed;`[仅停止,保留 worktree]`→cancelled
+- [x] **D1 `wt_init`** — worktree 初始化表单:复用 `IssueBranchField` 的 `useLocalRepositories`+`useLocalBranches`,扩展 baseRef/devBranch/worktree 路径预览;`[创建并开始]` 调 `startDev` 桩 + 创建成功推进 stateId
+- [x] **D2 `developing`** — 终端占位框 + 提示条;快捷操作行复用 `RepositoryCard` `openTarget`(:119) + `bindings` 三函数 `openInEditor/openInTerminal/openInFileManager`(VSCode/iTerm2/访达);`[开发完成]`推进
+- [x] **D3 `pr_open`** — PR 配置卡(源分支 devBranch 只读 / 目标分支 baseBranch 可改 / 标题默认 issue 名 / 描述默认 issue.description) + 构造 compare URL 打开并记录 prUrl;`[合并完成]`推进
+- [x] **D4 `cleanup`** — 清理确认卡(列删除项 worktree 路径+分支、未提交改动警告);`[清理并完成]`调 `pty_stop_for_worktree`+`removeWorktree` 桩 → completed;`[仅停止,保留 worktree]`→cancelled
 
 ### 12.5 模块 E:状态机推进(stateId 流转)
 

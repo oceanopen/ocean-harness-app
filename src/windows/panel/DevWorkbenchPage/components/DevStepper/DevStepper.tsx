@@ -1,14 +1,23 @@
 import type { ProjectIssueResponseData } from '@src/services';
-import { Box, Step, StepLabel, Stepper, Typography } from '@mui/material';
+import { Step, StepButton, Stepper, Typography } from '@mui/material';
 import { useProjectStateViews } from '@src/state/tracker';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// DevStepper：选中 issue 的开发步骤条。
-// 步骤序列 = issue 所属项目 started 组的开发步骤子 state（排除「进行中」in_progress），按 sortOrder 排序。
-// 当前步骤 = issue.stateId 在序列中的位置；之前的步骤已完成、之后待办（MUI Stepper activeStep 驱动）。
-// in_progress（stateId 不在序列）→ 全部待办 + 「开始开发」提示（推进到 wt_init 留模块 E）。
-export default function DevStepper({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
+// DevStepper：选中 issue 的开发步骤条（可点击切换查看）。
+// 步骤序列 = started 组开发步骤（排除进行中 in_progress），按 sortOrder。
+// activeStep：activeStepCode 指定（点击查看的步骤）则高亮该步骤，否则回落 issue 当前进度（currentIndex）。
+// 点 StepButton → onStepClick(stateCode)，DevWorkbenchPage 据此切换右内容区查看的步骤。
+interface DevStepperProps {
+  issue: ProjectIssueResponseData;
+  projectId: number;
+  /** 当前查看的步骤 stateCode（null = 用 issue 当前进度步骤）。 */
+  activeStepCode?: string | null;
+  /** 点击步骤回调（切换查看）。 */
+  onStepClick?: (stateCode: string) => void;
+}
+
+export default function DevStepper({ issue, projectId, activeStepCode, onStepClick }: DevStepperProps) {
   const { t } = useTranslation();
   const { views } = useProjectStateViews(projectId);
 
@@ -19,7 +28,8 @@ export default function DevStepper({ issue, projectId }: { issue: ProjectIssueRe
     [views],
   );
   const currentIndex = steps.findIndex(s => s.id === issue.stateId);
-  const isInDevFlow = currentIndex >= 0;
+  const viewingIndex = activeStepCode ? steps.findIndex(s => s.stateCode === activeStepCode) : -1;
+  const activeStep = viewingIndex >= 0 ? viewingIndex : (currentIndex >= 0 ? currentIndex : -1);
 
   if (steps.length === 0) {
     return (
@@ -28,14 +38,12 @@ export default function DevStepper({ issue, projectId }: { issue: ProjectIssueRe
   }
 
   return (
-    <Box>
-      <Stepper activeStep={isInDevFlow ? currentIndex : -1} orientation="vertical">
-        {steps.map(step => (
-          <Step key={step.id}>
-            <StepLabel>{step.name}</StepLabel>
-          </Step>
-        ))}
-      </Stepper>
-    </Box>
+    <Stepper activeStep={activeStep} orientation="vertical" nonLinear>
+      {steps.map(step => (
+        <Step key={step.id}>
+          <StepButton onClick={() => onStepClick?.(step.stateCode)}>{step.name}</StepButton>
+        </Step>
+      ))}
+    </Stepper>
   );
 }
