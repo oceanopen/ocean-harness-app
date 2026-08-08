@@ -232,11 +232,17 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 		issue.RepositoryBranch = repoBranch
 
 		// stateId 变化 → completed_at 流转。
+		oldStateGroup, _ := svc.getStateGroupCode(tx, issue.StateID)
 		wasCompleted := issue.CompletedAt != nil
 		if e := svc.applyStateTransition(tx, issue, req.StateID); e != nil {
 			return e
 		}
 		if e := iq.Save(issue); e != nil {
+			return e
+		}
+		// 父→子状态联动：跨 stateGroup 变更时子继承父新 stateId。
+		newStateGroup, _ := svc.getStateGroupCode(tx, issue.StateID)
+		if e := svc.maybeSyncChildrenState(tx, issue, oldStateGroup, newStateGroup); e != nil {
 			return e
 		}
 		// 仅当本任务本次"变为完成"时触发父联动（须在自身完成态落库后，否则兄弟查询读到旧值导致永不联动）。
@@ -324,6 +330,45 @@ func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.Proje
 	return q.ProjectIssue.WithContext(svc.Context).Save(parent)
 }
 
+// getStateGroupCode 查某 stateId 所属的 state_group_code（事务内复用 orm 传 tx）。stateId<=0 返回空串。
+func (svc ProjectIssue) getStateGroupCode(orm *gorm.DB, stateId int) (string, error) {
+	if stateId <= 0 {
+		return "", nil
+	}
+	q := query.Use(orm)
+	st, e := q.ProjectState.WithContext(svc.Context).Where(q.ProjectState.ID.Eq(stateId)).First()
+	if e != nil {
+		return "", e
+	}
+	return string(st.StateGroupCode), nil
+}
+
+// maybeSyncChildrenState 父→子状态联动：若 issue 是父（ParentID==0）且本次 stateId 跨 stateGroup 变更，
+// 把其全部子任务的 stateId 同步为父的新 stateId（复用 applyStateTransition 口径写 completedAt）。
+// 同 stateGroup 变更（如 in_progress→developing）不触发——子状态保持不变。orm 传 tx 以复用事务。
+func (svc ProjectIssue) maybeSyncChildrenState(orm *gorm.DB, parent *model.ProjectIssue, oldStateGroup, newStateGroup string) error {
+	if parent.ParentID != 0 || oldStateGroup == newStateGroup {
+		return nil // 不是父，或同 stateGroup（不跨组，不同步）
+	}
+	q := query.Use(orm)
+	children, e := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ParentID.Eq(parent.ID)).Find()
+	if e != nil {
+		return e
+	}
+	for _, c := range children {
+		if c.StateID == parent.StateID {
+			continue // 已同状态
+		}
+		if e := svc.applyStateTransition(orm, c, parent.StateID); e != nil {
+			return e
+		}
+		if e := q.ProjectIssue.WithContext(svc.Context).Save(c); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
 // syncIssueLabels 全量同步某 issue 的 label 关联为 labelIDs（事务内调用，orm 传 tx）。
 // diff 策略（保留软删记录，与原 toggleIssue 恢复式语义一致）：
 //   - 现有(含软删)且在目标中 + 已软删 → 恢复（清 deleted_at）；
@@ -389,11 +434,17 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 		issue = found
 
 		issue.SortOrder = req.SortOrder
+		oldStateGroup, _ := svc.getStateGroupCode(tx, issue.StateID)
 		wasCompleted := issue.CompletedAt != nil
 		if e := svc.applyStateTransition(tx, issue, req.StateID); e != nil {
 			return e
 		}
 		if e := iq.Save(issue); e != nil {
+			return e
+		}
+		// 父→子状态联动：跨 stateGroup 变更时子继承父新 stateId。
+		newStateGroup, _ := svc.getStateGroupCode(tx, issue.StateID)
+		if e := svc.maybeSyncChildrenState(tx, issue, oldStateGroup, newStateGroup); e != nil {
 			return e
 		}
 		// 看板拖入 completed 列：子任务全完成 → 父自动完成（须在自身完成态落库后）。

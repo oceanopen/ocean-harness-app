@@ -93,7 +93,16 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
         sortOrder: newSortOrder,
         completedAt: destGroup === 'completed' ? new Date().toISOString() : null,
       };
-      return prev.map(i => (i.id === issueId ? moved : i));
+      // 跨组拖父：子乐观继承父新 stateId（后端 maybeSyncChildrenState 会同步，缓存跟进避免手动刷新）。
+      return prev.map((i) => {
+        if (i.id === issueId) {
+          return moved;
+        }
+        if (isCrossGroup && i.parentId === issueId) {
+          return { ...i, stateId: targetStateId, completedAt: moved.completedAt };
+        }
+        return i;
+      });
     });
 
     inFlightRef.current.add(issueId);
@@ -105,7 +114,16 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
       .then((updated) => {
         snapshotRef.current = null;
         // 用后端权威返回值二次校正（completedAt/sortOrder/stateId 实际写入值）。
-        setIssues(prev => prev.map(i => (i.id === updated.id ? updated : i)));
+        // 跨组拖父时后端已同步子（maybeSyncChildrenState），缓存也跟进子。
+        setIssues(prev => prev.map((i) => {
+          if (i.id === updated.id) {
+            return updated;
+          }
+          if (isCrossGroup && i.parentId === updated.id) {
+            return { ...i, stateId: updated.stateId, completedAt: updated.completedAt };
+          }
+          return i;
+        }));
       })
       .catch((e) => {
         if (snapshotRef.current) {
