@@ -229,8 +229,8 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ### 12.6 模块 F:与事项管理桥接
 
-- [ ] **F1** `ProjectIssueDrawer.tsx` — footer(:313) 或 IssueBranchField 后(:296) 加「开始开发」按钮(条件:issue 处 backlog/unstarted/started + `localRepositoryId≠0` + 项目 started 组有非 in_progress 子 state) → **跳转开发工作台 + 自动选中该 issue(`selectIssue(id)`) + 右栏展示其基本信息**;issue 仍在 `in_progress`,进入工作台后由用户在右栏操作区推进到首个开发步骤(`wt_init`)
-- [ ] **F2** `IssueCard.tsx` `stateBadge`(:216) — 加 onClick 跳工作台(条件 `stateGroupCode==='started' && stateCode!=='in_progress'`);徽章渲染零改动(已用 state name+color)
+- [x] **F1** `ProjectIssueDrawer.tsx` — footer(:313) 或 IssueBranchField 后(:296) 加「开始开发」按钮(条件:issue 处 backlog/unstarted/started + `localRepositoryId≠0` + 项目 started 组有非 in_progress 子 state) → **跳转开发工作台 + 自动选中该 issue(`selectIssue(id)`) + 右栏展示其基本信息**;issue 仍在 `in_progress`,进入工作台后由用户在右栏操作区推进到首个开发步骤(`wt_init`)
+- [x] **F2** `IssueCard.tsx` `stateBadge`(:216) — 加 onClick 跳工作台(条件 `stateGroupCode==='started' && stateCode!=='in_progress'`);徽章渲染零改动(已用 state name+color)
 
 ### 12.7 模块 G:后端桩接口(P1)
 

@@ -16,6 +16,8 @@ import {
 } from '@mui/icons-material';
 import { Box, IconButton, Typography } from '@mui/material';
 import { formatDate } from '@src/shared/time';
+import { useDevWorkbenchStore } from '@src/state/devWorkbench';
+import { useCommandPalette } from '@src/windows/panel/commandPalette/CommandPaletteContext';
 import { PRIORITY_COLOR } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -84,6 +86,8 @@ function IssueCard({
   onReorderChild,
 }: IssueCardProps) {
   const { t } = useTranslation();
+  const { navigate } = useCommandPalette();
+  const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
   const provided = dnd?.provided;
   const isDragging = dnd?.snapshot?.isDragging ?? false;
   // 看板模式（单一标记 kanban prop：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传；列表不传）。
@@ -213,8 +217,22 @@ function IssueCard({
       <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>」</Typography>
     </Box>
   );
+  // F2：started 组非 in_progress 的子状态徽章可点击，跳转开发工作台定位该 issue。
+  const canJumpToDev = !!state && state.stateGroupCode === 'started';
   const stateBadge = state && (
-    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+    <Box
+      sx={[
+        { display: 'inline-flex', alignItems: 'center', gap: 0.5, flexShrink: 0, cursor: canJumpToDev ? 'pointer' : 'inherit' },
+        ...(canJumpToDev ? [{ '&:hover': { opacity: 0.7 } }] : []),
+      ]}
+      onClick={canJumpToDev
+        ? (e: MouseEvent) => {
+            e.stopPropagation();
+            selectIssue(issue);
+            navigate('devWorkbench');
+          }
+        : undefined}
+    >
       <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>「</Typography>
       <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>
         {`${t('tracker:projectIssue.detail.state')}:`}

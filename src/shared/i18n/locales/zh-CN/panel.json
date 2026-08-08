@@ -74,6 +74,7 @@
     "noWorktree": "无 worktree 记录",
     "branch": "分支",
     "cleanupComplete": "清理并完成",
-    "stopOnly": "仅停止，保留 worktree"
+    "stopOnly": "仅停止，保留 worktree",
+    "enterDev": "进入开发"
   }
 }

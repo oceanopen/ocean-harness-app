@@ -1,6 +1,6 @@
 import type { Priority, ProjectIssueResponseData, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
 import type { ProjectStateView } from '@src/state/tracker';
-import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon } from '@mui/icons-material';
+import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon } from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -18,7 +18,9 @@ import { WorkspaceLabelService } from '@src/services';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
+import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } from '@src/state/tracker';
+import { useCommandPalette } from '@src/windows/panel/commandPalette/CommandPaletteContext';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -53,6 +55,8 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
   const { t, i18n } = useTranslation();
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
   const isCreateSub = mode === 'create' && !!parentIssue;
+  const { navigate } = useCommandPalette();
+  const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
   const createProjectIssue = useCreateProjectIssue(workspaceProject.id);
   const updateProjectIssue = useUpdateProjectIssue(workspaceProject.id);
   const deleteProjectIssue = useDeleteProjectIssue(workspaceProject.id);
@@ -73,6 +77,25 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
+  // F1「进入开发」可用条件（按钮始终展示，不满足时 disabled + title 提示原因）：
+  //  issue 当前 stateGroup 为 started（进行中）才可进入开发工作台。
+  //  仓库关联/开发步骤在工作台内引导（D1 表单选仓库、DevStepper noSteps 提示），不在此阻断。
+  const issueStateGroup = projectIssue ? projectStates.find(s => s.id === projectIssue.stateId)?.stateGroupCode : undefined;
+  const canEnterDev = mode === 'edit' && !!projectIssue && issueStateGroup === 'started';
+  // 禁用原因（首个不满足条件，按钮 title hover 提示；空串=可启用）。
+  const enterDevDisabledReason = !projectIssue
+    ? '请先保存 issue'
+    : issueStateGroup !== 'started'
+      ? '仅进行中状态可进入开发'
+      : '';
+  const handleEnterDev = () => {
+    if (!projectIssue) {
+      return;
+    }
+    selectIssue(projectIssue);
+    onClose();
+    navigate('devWorkbench');
+  };
   const { show: showToast, snack } = useToast();
 
   const loadWsLabels = useCallback(async () => {
@@ -311,6 +334,17 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
 
         {/* 底部操作栏：一律左对齐（edit 删除+取消+保存；create 取消+创建） */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+          {mode === 'edit' && (
+            <Button
+              size="small"
+              startIcon={<DeveloperModeOutlinedIcon />}
+              onClick={handleEnterDev}
+              disabled={!canEnterDev || submitting || deleting}
+              title={!canEnterDev ? enterDevDisabledReason : undefined}
+            >
+              {t('panel:devWorkbench.enterDev')}
+            </Button>
+          )}
           {mode === 'edit' && (
             <Button
               color="error"

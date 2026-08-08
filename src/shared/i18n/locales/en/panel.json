@@ -74,6 +74,7 @@
     "noWorktree": "No worktree record",
     "branch": "Branch",
     "cleanupComplete": "Cleanup and complete",
-    "stopOnly": "Stop only, keep worktree"
+    "stopOnly": "Stop only, keep worktree",
+    "enterDev": "Enter dev"
   }
 }
