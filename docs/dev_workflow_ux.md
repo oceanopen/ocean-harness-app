@@ -193,11 +193,11 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ### 12.1 模块 A:工作台骨架与路由接入
 
-- [ ] **A1** MenuKey 加 `'devWorkbench'` — `commandPalette/types.ts:6`(SSOT 一处改,TS 报错驱动补全;后端 `navigate_to` 是 `Option<String>` 无类型约束,**不改 Rust**)
-- [ ] **A2** 侧栏菜单项 — `PanelApp.tsx` `menuItems`(:127) 追加 + icon import;条件渲染区(:308) 挂载 `<DevWorkbenchPage/>`;保活则加 `devWorkbenchMounted` state + 在 `navigate` 回调/侧栏 onClick/`EVENT_PANEL_NAVIGATE` 监听三处补 `setDevWorkbenchMounted(true)`,用 `display:none` 包裹(照 tracker :312-317)
-- [ ] **A3** 命令面板 `nav.devWorkbench` — `commands.tsx` navigation 组(:18-54) 追加 + icon import
-- [ ] **A4** i18n 文案 — `panel.json`(zh-CN/en) 加 `menu.devWorkbench` + `commandPalette.nav.devWorkbench`
-- [ ] **A5** 新建 `DevWorkbenchPage/DevWorkbenchPage.tsx` — 复刻 `TrackerPage.tsx:36-105` 的 3-zone shell(顶栏 48px + 左固定宽 + 右弹性),顶栏右侧加「刷新」「清理中心」占位;顶栏切换按钮用 `aria-label`,不挂 Tooltip
+- [x] **A1** MenuKey 加 `'devWorkbench'` — `commandPalette/types.ts:6`(SSOT 一处改,TS 报错驱动补全;后端 `navigate_to` 是 `Option<String>` 无类型约束,**不改 Rust**)
+- [x] **A2** 侧栏菜单项 — `PanelApp.tsx` `menuItems`(:127) 追加 + icon import;条件渲染区(:308) 挂载 `<DevWorkbenchPage/>`;保活则加 `devWorkbenchMounted` state + 在 `navigate` 回调/侧栏 onClick/`EVENT_PANEL_NAVIGATE` 监听三处补 `setDevWorkbenchMounted(true)`,用 `display:none` 包裹(照 tracker :312-317)
+- [x] **A3** 命令面板 `nav.devWorkbench` — `commands.tsx` navigation 组(:18-54) 追加 + icon import
+- [x] **A4** i18n 文案 — `panel.json`(zh-CN/en) 加 `menu.devWorkbench` + `commandPalette.nav.devWorkbench`
+- [x] **A5** 新建 `DevWorkbenchPage/DevWorkbenchPage.tsx` — 复刻 `TrackerPage.tsx:36-105` 的 3-zone shell(顶栏 48px + 左固定宽 + 右弹性),顶栏右侧加「刷新」「清理中心」占位;顶栏切换按钮用 `aria-label`,不挂 Tooltip
 
 ### 12.2 模块 B:左侧任务树
 

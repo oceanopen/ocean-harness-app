@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 
 // panel 顶级页面标识（与 PanelApp 的 MenuKey 同源；此处为 SSOT，PanelApp 反向 import 复用，
 // 避免 union 字面量双份维护导致不一致）。后端 EVENT_PANEL_NAVIGATE payload 亦为同集合字符串。
-export type MenuKey = 'claudeSessions' | 'repositories' | 'serverStatus' | 'tracker';
+export type MenuKey = 'claudeSessions' | 'repositories' | 'serverStatus' | 'tracker' | 'devWorkbench';
 
 // 命令分组：导航 / 动作 / 跳转。决定 Dialog 内 Command.Group 的渲染顺序与分组标题。
 export type CommandGroup = 'navigation' | 'action' | 'jump';

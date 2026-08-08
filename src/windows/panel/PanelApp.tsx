@@ -2,6 +2,7 @@ import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
 import type { MenuKey } from './commandPalette/types';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import DeveloperModeOutlinedIcon from '@mui/icons-material/DeveloperModeOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
@@ -39,6 +40,7 @@ import { useTranslation } from 'react-i18next';
 import ClaudeSessionsPage from './ClaudeSessionsPage/ClaudeSessionsPage';
 import CommandPaletteProvider from './commandPalette/CommandPaletteProvider';
 import CommandPaletteTrigger from './commandPalette/CommandPaletteTrigger';
+import DevWorkbenchPage from './DevWorkbenchPage/DevWorkbenchPage';
 import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
 import ServerStatusPage from './ServerStatusPage';
 import TrackerPage from './TrackerPage/TrackerPage';
@@ -129,6 +131,7 @@ function PanelApp() {
     { key: 'serverStatus', label: t('panel:menu.serverStatus'), icon: <LanOutlinedIcon /> },
     { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
     { key: 'tracker', label: t('panel:menu.tracker'), icon: <SpaceDashboardOutlinedIcon /> },
+    { key: 'devWorkbench', label: t('panel:menu.devWorkbench'), icon: <DeveloperModeOutlinedIcon /> },
   ];
   // 顶部导航栏页面标题：当前激活菜单项 label；单层面包屑，预留未来主/子菜单扩展。
   const activeLabel = menuItems.find(item => item.key === activeMenu)?.label ?? '';
@@ -315,6 +318,7 @@ function PanelApp() {
                 <TrackerPage />
               </Box>
             )}
+            {activeMenu === 'devWorkbench' && <DevWorkbenchPage />}
           </Box>
         </Box>
       </Box>

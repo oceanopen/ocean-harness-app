@@ -1,6 +1,7 @@
 import type { CommandConfig } from './types';
 import {
   DashboardOutlined as DashboardOutlinedIcon,
+  DeveloperModeOutlined as DeveloperModeOutlinedIcon,
   FolderOutlined as FolderOutlinedIcon,
   LanOutlined as LanOutlinedIcon,
   SensorsOutlined as SensorsOutlinedIcon,
@@ -50,6 +51,15 @@ export const commands: CommandConfig[] = [
     icon: <SpaceDashboardOutlinedIcon />,
     keywords: ['tracker', 'workspace', 'projectIssue', 'kanban', '项目事项管理', '看板'],
     action: ctx => ctx.navigate('tracker'),
+    closeOnSelect: true,
+  },
+  {
+    id: 'nav.devWorkbench',
+    group: 'navigation',
+    titleI18nKey: 'panel:commandPalette.nav.devWorkbench',
+    icon: <DeveloperModeOutlinedIcon />,
+    keywords: ['devWorkbench', 'dev', 'workbench', '开发工作台', '开发'],
+    action: ctx => ctx.navigate('devWorkbench'),
     closeOnSelect: true,
   },
 

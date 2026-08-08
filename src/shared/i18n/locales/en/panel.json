@@ -4,7 +4,8 @@
     "claudeSessions": "Claude Sessions",
     "repositories": "Repository Management",
     "serverStatus": "Service Status",
-    "tracker": "Project & Issue Management"
+    "tracker": "Project & Issue Management",
+    "devWorkbench": "Dev Workbench"
   },
   "sidebar": {
     "collapse": "Collapse sidebar",
@@ -31,7 +32,8 @@
       "claudeSessions": "Go to Claude Sessions",
       "repositories": "Go to Repository Management",
       "serverStatus": "Go to Service Status",
-      "tracker": "Go to Project & Issue Management"
+      "tracker": "Go to Project & Issue Management",
+      "devWorkbench": "Go to Dev Workbench"
     },
     "action": {
       "settings": "Open Settings",
