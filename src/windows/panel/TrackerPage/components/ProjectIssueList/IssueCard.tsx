@@ -111,8 +111,10 @@ function IssueCard({
   // depth=1 子卡片用轻量缩进行（与父卡片视觉区分）；depth=0 用 Paper 卡片（列表/看板一致）。
   const rootSx: SxProps<Theme> = depth === 1
     ? [
-        { display: 'flex', flexDirection: 'column', px: 1, py: 0.5, my: 0.25, borderRadius: 0.75, bgcolor: 'action.hover', cursor: 'pointer' },
+        { display: 'flex', flexDirection: 'column', px: 1, py: 0.5, my: 0.25, borderRadius: 0.75, bgcolor: 'action.hover', cursor: 'pointer', position: 'relative' },
         { '&:hover': { bgcolor: 'action.selected' } },
+        { '&:hover .child-drag-indicator': { opacity: 1 } },
+        { '&:hover .child-drag-indicator.child-drag-indicator-disabled': { opacity: 0.4 } },
       ]
     : {
         display: 'flex',
@@ -167,6 +169,31 @@ function IssueCard({
         color: isKanban ? 'text.secondary' : 'text.disabled',
         opacity: isKanban ? 1 : 0.4,
         cursor: isKanban ? 'grab' : 'not-allowed',
+      }}
+    >
+      <DragIndicatorOutlinedIcon fontSize="small" />
+    </Box>
+  );
+
+  // 子任务卡（depth=1）左侧缩进空白处的拖拽标识：hover 子卡时显现，颜色反映可拖性
+  // （列表可拖→正常色，看板不可拖→禁用色）。绝对定位到子卡左侧 28px 缩进区（子块 pl 留白），不改子卡首行/第二行布局。
+  const childDragIndicatorEl = depth === 1 && (
+    <Box
+      className={isKanban ? 'child-drag-indicator child-drag-indicator-disabled' : 'child-drag-indicator'}
+      aria-hidden
+      sx={{
+        position: 'absolute',
+        left: -GUTTER_WIDTH,
+        top: 0,
+        bottom: 0,
+        width: GUTTER_WIDTH,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: isKanban ? 'text.disabled' : 'text.secondary',
+        opacity: 0,
+        pointerEvents: 'none',
+        transition: 'opacity 0.15s ease',
       }}
     >
       <DragIndicatorOutlinedIcon fontSize="small" />
@@ -375,6 +402,7 @@ function IssueCard({
         onClick={handleCardClick}
         sx={rootSx}
       >
+        {childDragIndicatorEl}
         {cardBodyEl}
       </Box>
       {renderChildrenBlock()}
