@@ -61,6 +61,8 @@ function PanelApp() {
   // tracker 保活：首次切到项目事项管理时置 true（仅升不降），配合下方 display:none 隐藏而非卸载，
   // 保留选中工作空间/项目与已加载列表等全部 state（仅会话内，重启重新初始化）。
   const [trackerMounted, setTrackerMounted] = useState(false);
+  // devWorkbench 保活：同 tracker，首次切到开发工作台时置 true（仅升不降），display:none 隐藏保留左树选中/步骤进度。
+  const [devWorkbenchMounted, setDevWorkbenchMounted] = useState(false);
   // tracker 三级选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
   const currentWorkspaceId = useTrackerStore(s => s.selectedWorkspace?.id ?? null);
   // 选中实体名供命令面板 jump 命令声明式渲染名称注释（id 用于逻辑判断，name 用于展示）。
@@ -77,6 +79,8 @@ function PanelApp() {
     setActiveMenu(menu);
     if (menu === 'tracker') {
       setTrackerMounted(true);
+    } else if (menu === 'devWorkbench') {
+      setDevWorkbenchMounted(true);
     }
   }, []);
   const openSettings = useCallback(() => {
@@ -106,6 +110,8 @@ function PanelApp() {
       // 首次切到项目事项管理时挂载 tracker（保活），在事件源头标记，避免 effect 里 setState。
       if (e.payload === 'tracker') {
         setTrackerMounted(true);
+      } else if (e.payload === 'devWorkbench') {
+        setDevWorkbenchMounted(true);
       }
     });
     return () => {
@@ -204,6 +210,8 @@ function PanelApp() {
                   setActiveMenu(item.key);
                   if (item.key === 'tracker') {
                     setTrackerMounted(true);
+                  } else if (item.key === 'devWorkbench') {
+                    setDevWorkbenchMounted(true);
                   }
                 }}
                 {...(collapsed ? { 'aria-label': item.label } : {})}
@@ -318,7 +326,11 @@ function PanelApp() {
                 <TrackerPage />
               </Box>
             )}
-            {activeMenu === 'devWorkbench' && <DevWorkbenchPage />}
+            {devWorkbenchMounted && (
+              <Box sx={{ height: '100%', display: activeMenu === 'devWorkbench' ? 'block' : 'none' }}>
+                <DevWorkbenchPage />
+              </Box>
+            )}
           </Box>
         </Box>
       </Box>

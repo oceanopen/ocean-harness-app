@@ -50,7 +50,7 @@
 ```
 
 - **顶栏**:工作空间切换条(同 tracker 48px bar)+ 右侧「清理中心」批量入口。
-- **左任务树**:workspace → project → **处于开发流程的 issue**(其 `stateId` 落在 `started` 组「进行中」之外的子 state)。默认只显示这些;可切换显示已归档(completed/cancelled)。
+- **左任务树**:workspace → project → **`started` 组的全部 issue**(含进行中 `in_progress` 与各开发步骤子 state,按 `stateGroup` 聚合)。子状态切换在右栏操作区进行;可切换显示已归档(completed/cancelled)。
 - **右侧**:issue 头部(meta + 回链)→ 步骤条 → 当前步骤内容区 → 取消动作。
 
 ---
@@ -201,10 +201,10 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ### 12.2 模块 B:左侧任务树
 
-- [ ] **B1** 新建 `src/state/devWorkbench/queries.ts` — 查询处于开发流程的 issue(`stateId` 落在 started 组、`stateCode !== 'in_progress'` 的子 state),复用 tracker issue/state 数据
-- [ ] **B2** 左树组件 — workspace→project→issue 三级树,行 = issue 标题 + 子状态徽章
-- [ ] **B3** 行内徽章 — 直接用 `ProjectStateView`(`queries.ts:71-80`) 的 name+color,数据已就绪无需映射
-- [ ] **B4** 选中态 + 右侧联动(点行 → 右侧渲染该 issue 步骤条+内容)
+- [x] **B1** 新建 `src/state/devWorkbench/queries.ts` — 查询 `started` 组的全部 issue(`stateGroupCode === 'started'`,含进行中 `in_progress`;子状态切换在右栏),复用 tracker issue/state 数据
+- [x] **B2** 左树组件 — workspace→project→issue 三级树,行 = issue 标题 + 子状态徽章
+- [x] **B3** 行内徽章 — 直接用 `ProjectStateView`(`queries.ts:71-80`) 的 name+color,数据已就绪无需映射
+- [x] **B4** 选中态 + 右侧联动(点行 → 右侧渲染该 issue 步骤条+内容)
 - [ ] **B5** 归档过滤 — 默认只显处理中,可切显已归档(completed/cancelled)
 
 ### 12.3 模块 C:步骤条
@@ -229,7 +229,7 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ### 12.6 模块 F:与事项管理桥接
 
-- [ ] **F1** `ProjectIssueDrawer.tsx` — footer(:313) 或 IssueBranchField 后(:296) 加「开始开发」按钮(条件:issue 处 backlog/unstarted/started + `localRepositoryId≠0` + 项目 started 组有非 in_progress 子 state) → 跳工作台并定位 issue(或就地推进 stateId 到首个开发步骤再跳)
+- [ ] **F1** `ProjectIssueDrawer.tsx` — footer(:313) 或 IssueBranchField 后(:296) 加「开始开发」按钮(条件:issue 处 backlog/unstarted/started + `localRepositoryId≠0` + 项目 started 组有非 in_progress 子 state) → **跳转开发工作台 + 自动选中该 issue(`selectIssue(id)`) + 右栏展示其基本信息**;issue 仍在 `in_progress`,进入工作台后由用户在右栏操作区推进到首个开发步骤(`wt_init`)
 - [ ] **F2** `IssueCard.tsx` `stateBadge`(:216) — 加 onClick 跳工作台(条件 `stateGroupCode==='started' && stateCode!=='in_progress'`);徽章渲染零改动(已用 state name+color)
 
 ### 12.7 模块 G:后端桩接口(P1)

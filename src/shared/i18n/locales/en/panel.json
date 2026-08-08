@@ -44,5 +44,9 @@
       "project": "Jump to Project",
       "projectDisabledHint": "Select a workspace first"
     }
+  },
+  "devWorkbench": {
+    "empty": "No tasks in development",
+    "selectHint": "Select a task to view dev steps"
   }
 }

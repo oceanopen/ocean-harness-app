@@ -44,5 +44,9 @@
       "project": "跳到项目",
       "projectDisabledHint": "需先选择工作空间"
     }
+  },
+  "devWorkbench": {
+    "empty": "暂无开发中的任务",
+    "selectHint": "选择左侧任务查看开发步骤"
   }
 }
