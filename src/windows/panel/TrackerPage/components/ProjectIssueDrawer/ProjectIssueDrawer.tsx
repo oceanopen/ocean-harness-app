@@ -56,6 +56,12 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
   const { t, i18n } = useTranslation();
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
   const isCreateSub = mode === 'create' && !!parentIssue;
+  // 子 issue（create-child 或 edit-child）：顶部显示「所属父任务」只读字段。
+  // 父任务名来自 parentIssue（create-child 传入 / edit-child 由 ProjectIssueList 解析后传入）；解析失败回退 #parentId。
+  const isChild = isCreateSub || (mode === 'edit' && (projectIssue?.parentId ?? 0) > 0);
+  const parentTaskLabel = parentIssue
+    ? `#${parentIssue.id} ${parentIssue.name}`
+    : (projectIssue?.parentId ? `#${projectIssue.parentId}` : '');
   const { navigate } = useCommandPalette();
   const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
   const createProjectIssue = useCreateProjectIssue(workspaceProject.id);
@@ -250,15 +256,22 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
 
         {/* 内容 */}
         <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {/* 新建子 issue：顶部只读父信息条（不可修改） */}
-          {isCreateSub && parentIssue && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 1, borderRadius: 1, bgcolor: 'action.hover' }}>
-              <Typography variant="caption" color="text.secondary">{t('tracker:projectIssue.detail.parentIssue')}</Typography>
-              <Typography variant="body2" sx={{ fontWeight: 600 }}>#{parentIssue.id}</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ ...({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } as const) }}>
-                {parentIssue.name}
-              </Typography>
-            </Box>
+          {/* 所属项目（只读，create+edit 均显）；子 issue 额外显「所属父任务」 */}
+          <TextField
+            label={t('tracker:projectIssue.detail.belongingProject')}
+            value={workspaceProject.name}
+            fullWidth
+            slotProps={{ input: { readOnly: true } }}
+            variant="filled"
+          />
+          {isChild && (
+            <TextField
+              label={t('tracker:projectIssue.detail.belongingParentTask')}
+              value={parentTaskLabel}
+              fullWidth
+              slotProps={{ input: { readOnly: true } }}
+              variant="filled"
+            />
           )}
           <TextField
             label={t('tracker:projectIssue.detail.name')}

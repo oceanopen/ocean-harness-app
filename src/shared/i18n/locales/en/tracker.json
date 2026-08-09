@@ -75,6 +75,7 @@
     "edit": {
       "title": "Edit project",
       "idLabel": "ID",
+      "belongingWorkspace": "Workspace",
       "confirm": "Save"
     },
     "stateManage": {
@@ -176,6 +177,8 @@
     "detail": {
       "close": "Close",
       "parentIssue": "Parent issue",
+      "belongingProject": "Project",
+      "belongingParentTask": "Parent task",
       "name": "Name",
       "description": "Description",
       "state": "State",

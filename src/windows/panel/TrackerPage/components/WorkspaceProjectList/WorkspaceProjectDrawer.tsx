@@ -35,6 +35,7 @@ import ProjectStateManage from '../ProjectStateManage';
 // create 带 workspaceId、update 不带（对齐后端 ProjectCreate/UpdateRequest）。
 interface WorkspaceProjectDrawerProps {
   workspaceId: number;
+  workspaceName: string;
   onClose: () => void;
   onCreated: (p: WorkspaceProjectModel) => void;
   onUpdated?: (p: WorkspaceProjectModel) => void;
@@ -95,7 +96,7 @@ const DEFAULT_STATES: ProjectStateItem[] = [
   { stateGroupCode: 'cancelled', stateCode: 'cancelled', sortOrder: 9000, isDefault: 'N' },
 ];
 
-function WorkspaceProjectDrawer({ workspaceId, onClose, onCreated, onUpdated, workspaceProject }: WorkspaceProjectDrawerProps) {
+function WorkspaceProjectDrawer({ workspaceId, workspaceName, onClose, onCreated, onUpdated, workspaceProject }: WorkspaceProjectDrawerProps) {
   const { t } = useTranslation();
   const isEdit = !!workspaceProject;
   const createWorkspaceProject = useCreateWorkspaceProject(workspaceId);
@@ -185,6 +186,14 @@ function WorkspaceProjectDrawer({ workspaceId, onClose, onCreated, onUpdated, wo
 
         {/* 内容 */}
         <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* 所属工作空间（只读，create+edit 均显，确认归属上下文） */}
+          <TextField
+            label={t('tracker:workspaceProject.edit.belongingWorkspace')}
+            value={workspaceName}
+            fullWidth
+            slotProps={{ input: { readOnly: true } }}
+            variant="filled"
+          />
           {isEdit && (
             <TextField
               label={t('tracker:workspaceProject.edit.idLabel')}

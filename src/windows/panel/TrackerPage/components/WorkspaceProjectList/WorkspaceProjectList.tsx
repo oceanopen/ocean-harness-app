@@ -218,6 +218,7 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
       {addDialogOpen && (
         <WorkspaceProjectDrawer
           workspaceId={workspace.id}
+          workspaceName={workspace.name}
           onClose={() => setAddDialogOpen(false)}
           onCreated={handleCreated}
         />
@@ -226,6 +227,7 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
       {editTarget && (
         <WorkspaceProjectDrawer
           workspaceId={workspace.id}
+          workspaceName={workspace.name}
           workspaceProject={editTarget}
           onClose={() => setEditTarget(null)}
           onCreated={handleCreated}

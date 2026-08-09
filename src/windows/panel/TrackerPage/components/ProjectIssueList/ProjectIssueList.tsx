@@ -533,6 +533,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
         <ProjectIssueDrawer
           mode="edit"
           projectIssue={editIssue}
+          parentIssue={editIssue.parentId ? projectIssues.find(p => p.id === editIssue.parentId) : undefined}
           workspaceProject={workspaceProject}
           projectStates={projectStates}
           stateGroups={stateGroups}

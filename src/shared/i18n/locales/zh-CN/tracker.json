@@ -75,6 +75,7 @@
     "edit": {
       "title": "编辑项目",
       "idLabel": "ID",
+      "belongingWorkspace": "所属工作空间",
       "confirm": "保存"
     },
     "stateManage": {
@@ -176,6 +177,8 @@
     "detail": {
       "close": "关闭",
       "parentIssue": "父级 Issue",
+      "belongingProject": "所属项目",
+      "belongingParentTask": "所属父任务",
       "name": "名称",
       "description": "描述",
       "state": "状态",
