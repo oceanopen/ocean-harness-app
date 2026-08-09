@@ -23,7 +23,7 @@ export default function WtInitStep({ issue }: { issue: ProjectIssueResponseData 
 
   return (
     <Stack spacing={2}>
-      <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.wtInitHint')}</Typography>
+      <Typography variant="body2" color="text.secondary">配置 worktree 初始化参数</Typography>
       <Autocomplete
         size="small"
         options={repos}
@@ -53,7 +53,7 @@ export default function WtInitStep({ issue }: { issue: ProjectIssueResponseData 
       <Box sx={{ p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
         <Typography variant="caption" color="text.secondary">{t('panel:devWorkbench.worktreePath')}</Typography>
         <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {worktreePathPreview || t('panel:devWorkbench.worktreePathEmpty')}
+          {worktreePathPreview || '未选择仓库'}
         </Typography>
       </Box>
       <Box>

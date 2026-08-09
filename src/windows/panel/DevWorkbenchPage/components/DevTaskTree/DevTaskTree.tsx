@@ -15,7 +15,6 @@ import {
 } from '@src/state/tracker';
 import { useQueries } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import StateBadge from '../StateBadge';
 
 // DevTaskTree：开发工作台左任务树——跨所有工作空间展示 started 组的 issue。
@@ -23,7 +22,6 @@ import StateBadge from '../StateBadge';
 // 选中态/hover 走 ListItemButton selected（与侧栏一致），最大限度复用 MUI、少手写 sx。
 // 数据复用 tracker 缓存；过滤走 filterDevIssues（started 组）。选中 issue → useDevWorkbenchStore。
 export default function DevTaskTree() {
-  const { t } = useTranslation();
   const { data: workspaces = [], isLoading } = useWorkspaces();
 
   if (isLoading && workspaces.length === 0) {
@@ -36,7 +34,7 @@ export default function DevTaskTree() {
   if (workspaces.length === 0) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
-        <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.empty')}</Typography>
+        <Typography variant="body2" color="text.secondary">暂无开发中的任务</Typography>
       </Box>
     );
   }

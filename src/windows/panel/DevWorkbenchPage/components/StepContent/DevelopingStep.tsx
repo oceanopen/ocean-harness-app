@@ -22,7 +22,7 @@ export default function DevelopingStep({ issue, projectId }: { issue: ProjectIss
   const repo = repos.find(r => r.id === issue.localRepositoryId);
   const dir = repo?.localDir ?? ''; // P1 兜底
   const { views } = useProjectStateViews(projectId);
-  const { advance, advancing } = useAdvanceDevStep(projectId);
+  const { advance, advancing, snack } = useAdvanceDevStep(projectId);
 
   const openIn = (target: 'editor' | 'terminal' | 'finder') => {
     if (!dir) {
@@ -45,7 +45,7 @@ export default function DevelopingStep({ issue, projectId }: { issue: ProjectIss
 
   return (
     <Stack spacing={2}>
-      <Alert severity="info">{t('panel:devWorkbench.developingHint')}</Alert>
+      <Alert severity="info">嵌入式终端即将支持，当前可点下方按钮在外部终端/编辑器开发</Alert>
       <Box sx={{
         minHeight: 160,
         border: 1,
@@ -56,7 +56,7 @@ export default function DevelopingStep({ issue, projectId }: { issue: ProjectIss
         justifyContent: 'center',
       }}
       >
-        <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.terminalPlaceholder')}</Typography>
+        <Typography variant="body2" color="text.secondary">嵌入式终端（P2）</Typography>
       </Box>
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         <Button size="small" startIcon={<CodeOutlinedIcon />} disabled={!dir} onClick={() => openIn('editor')}>
@@ -74,6 +74,7 @@ export default function DevelopingStep({ issue, projectId }: { issue: ProjectIss
           {t('panel:devWorkbench.devComplete')}
         </Button>
       </Box>
+      {snack}
     </Stack>
   );
 }

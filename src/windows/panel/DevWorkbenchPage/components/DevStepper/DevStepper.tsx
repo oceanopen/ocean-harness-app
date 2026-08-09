@@ -2,7 +2,6 @@ import type { ProjectIssueResponseData } from '@src/services';
 import { Step, StepButton, Stepper, Typography } from '@mui/material';
 import { useProjectStateViews } from '@src/state/tracker';
 import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 // DevStepper：选中 issue 的开发步骤条（可点击切换查看）。
 // 步骤序列 = started 组开发步骤（排除进行中 in_progress），按 sortOrder。
@@ -18,7 +17,6 @@ interface DevStepperProps {
 }
 
 export default function DevStepper({ issue, projectId, activeStepCode, onStepClick }: DevStepperProps) {
-  const { t } = useTranslation();
   const { views } = useProjectStateViews(projectId);
 
   const steps = useMemo(
@@ -33,7 +31,7 @@ export default function DevStepper({ issue, projectId, activeStepCode, onStepCli
 
   if (steps.length === 0) {
     return (
-      <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.noSteps')}</Typography>
+      <Typography variant="body2" color="text.secondary">该项目未配置开发步骤</Typography>
     );
   }
 

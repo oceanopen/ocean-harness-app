@@ -111,7 +111,7 @@ export default function DevWorkbenchPage() {
             {!hasSelection
               ? (
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
-                    <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.selectHint')}</Typography>
+                    <Typography variant="body2" color="text.secondary">选择左侧任务查看开发步骤</Typography>
                   </Box>
                 )
               : issue && selectedProjectId != null
@@ -122,7 +122,7 @@ export default function DevWorkbenchPage() {
                   )
                 : (
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
-                      <Typography variant="body2" color="text.secondary">{t('panel:devWorkbench.staleHint')}</Typography>
+                      <Typography variant="body2" color="text.secondary">任务不存在或已移出开发流程</Typography>
                     </Box>
                   )}
           </Box>

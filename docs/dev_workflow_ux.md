@@ -223,9 +223,9 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ### 12.5 模块 E:状态机推进(stateId 流转)
 
-- [ ] **E1** 推进 hook — 照搬 `useKanbanDnd.ts` 乐观更新范式(预估下一 started 子 state 的 stateId → `ProjectIssueService.move`(:103) → 权威校正/失败整表回滚)
-- [ ] **E2** 取消流程 — 任意进行中步骤→cancelled,脏改动二次确认
-- [ ] **E3** cleanup→completed 自动归档 — 后端 `applyStateTransition`(`project_issue.go:262`) 已支持 completed 组写 `completed_at`,前端仅推进 stateId
+- [x] **E1** 推进 hook — `useAdvanceDevStep` 调 `ProjectIssueService.move`(保留原 sortOrder) + invalidate 重拉;补 catch+toast 失败提示 + 双击锁(`src/state/devWorkbench/queries.ts`)。经评估**维持 invalidate-after**(本地 server 延迟可忽略,且与代码库「乐观仅看板拖拽、mutation 走 invalidate」既有分工一致),未采用 useKanbanDnd 乐观+回滚范式
+- [x] **E2** 取消流程 — `[仅停止]` 弹确认 Dialog→cancelled 组首个(`CleanupStep.tsx`,范式照 `WorkspaceProjectList` 删除确认)。P1 无真实 worktree/git status,**统一弹确认**(不区分脏改动);P2 接 git status 后细化
+- [x] **E3** cleanup→completed 自动归档 — `[清理并完成]` 弹二次确认框→推进 stateId→completed 组首个(后端 `applyStateTransition` 自动写 `completed_at`)。P1 **advance-only**(不真删 worktree,加 info Alert 提示);真两阶段编排 pty_stop+removeWorktree 待模块 G2
 
 ### 12.6 模块 F:与事项管理桥接
 

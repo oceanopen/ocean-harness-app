@@ -19,7 +19,7 @@ export default function PrOpenStep({ issue, projectId }: { issue: ProjectIssueRe
   const repo = repos.find(r => r.id === issue.localRepositoryId);
   const { data: branches = [] } = useLocalBranches(issue.localRepositoryId);
   const { views } = useProjectStateViews(projectId);
-  const { advance, advancing } = useAdvanceDevStep(projectId);
+  const { advance, advancing, snack } = useAdvanceDevStep(projectId);
   const head = issue.repositoryBranch;
   const [base, setBase] = useState(repo?.currentBranch ?? 'main');
   const [title, setTitle] = useState(issue.name);
@@ -43,7 +43,7 @@ export default function PrOpenStep({ issue, projectId }: { issue: ProjectIssueRe
 
   return (
     <Stack spacing={2}>
-      <Alert severity="info">{t('panel:devWorkbench.prHint')}</Alert>
+      <Alert severity="info">填写分支与标题，打开 compare 页创建 PR</Alert>
       <Box sx={{ display: 'flex', gap: 1 }}>
         <Autocomplete
           size="small"
@@ -73,6 +73,7 @@ export default function PrOpenStep({ issue, projectId }: { issue: ProjectIssueRe
           {t('panel:devWorkbench.prComplete')}
         </Button>
       </Box>
+      {snack}
     </Stack>
   );
 }
