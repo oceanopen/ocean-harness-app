@@ -13,7 +13,7 @@ export default function StepContent({ issue, projectId, stateCode }: {
 }) {
   switch (stateCode) {
     case 'wt_init':
-      return <WtInitStep issue={issue} />;
+      return <WtInitStep issue={issue} projectId={projectId} />;
     case 'developing':
       return <DevelopingStep issue={issue} projectId={projectId} />;
     case 'pr_open':

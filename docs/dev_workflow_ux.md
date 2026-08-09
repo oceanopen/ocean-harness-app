@@ -93,7 +93,7 @@
   - 开发分支名(自动建议 `<prefix>/<issueKey>-<slug>`,可编辑)
   - worktree 路径预览(只读,按 `worktree_term.md` §5.3 派生)
   - 启动命令(可选,默认取 `appConfig` post-open 命令)
-  - `[创建 worktree 并开始]` → 调 Go `startDev`,创建过程**就地内联展示**(占在终端将来要占的同一帧,不用模态 spinner)
+  - `[创建 worktree 并开始]` → 调 Go `createWorktree`,创建过程**就地内联展示**(占在终端将来要占的同一帧,不用模态 spinner)
 - **已初始化** → 同表单进入"已就绪"只读态,回填当前 worktree 信息,带 `[调整/重新初始化]` 次按钮。
 - **推进**:创建成功 → 自动把 issue `stateId` 后移到下一个 started 子 state(通常是「开发中」)。
 
@@ -113,7 +113,7 @@
 ### Step · 待清理(`state_code=cleanup`)
 - 清理确认卡:列出将删除项(worktree 路径、分支);若 `git status` 有未提交改动则警告;
 - `[清理并完成]` → 按 `worktree_term.md` §9.3 两阶段编排(先 `pty_stop_for_worktree` 停 PTY,再 `removeWorktree`)→ `stateId` 移到 **completed 组**(自动归档);
-- `[仅停止开发,保留 worktree]` 次按钮 → 取消流程但留工作区(`stateId` → cancelled 组)。
+- 取消开发(→ cancelled)不在执行面:改由「事项管理」(规划面,完整状态控制)处理(原 `[仅停止,保留 worktree]` 按钮已移除——保留孤儿 worktree 无意义)。
 
 ---
 
@@ -132,7 +132,7 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 ```
 
 - **前进靠显式按钮**(无静默推进),仅最终 cleanup→completed 是用户描述的自动归档;
-- **取消**任意进行中步骤 → cancelled(若有未提交改动二次确认);
+- **取消**(→ cancelled)不在开发工作台执行面:改由「事项管理」(规划面,完整状态控制)处理(原 `[仅停止,保留 worktree]` 按钮已移除);
 - done/cancelled 后从左树移除(归档),但仍能在「项目事项管理」的已完成/已取消列看到。
 
 ---
@@ -156,7 +156,7 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ## 10. 分阶段落地
 
-- **P1(本期,终端占位)**:开发工作台骨架(左树 + 步骤条)→ worktree初始化表单调 Go `startDev` → 开发中终端占位 + 外部终端/编辑器打开 → 生成PR compare URL → 待清理调 stop+remove。`stateId` 推进串联全流程;子状态徽章双视图回显;tracker 加「开始开发」桥接。**后端用桩接口即可跑通完整可点框架。**
+- **P1(本期,终端占位)**:开发工作台骨架(左树 + 步骤条)→ worktree初始化表单调 Go `createWorktree` → 开发中终端占位 + 外部终端/编辑器打开 → 生成PR compare URL → 待清理调 stop+remove。`stateId` 推进串联全流程;子状态徽章双视图回显;tracker 加「开始开发」桥接。**后端用桩接口即可跑通完整可点框架。**
 - **P2**:开发中占位换成真 xterm(对应 `worktree_term.md` 阶段 2–4)+ 左树活动指示点。
 - **P3**:真 PR 创建 + 清理中心批量入口 + 配置跳过开关。
 
@@ -189,7 +189,7 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 | 页面保活 | 复刻 tracker 保活(`devWorkbenchMounted` + `display:none`) | 左树选中态 + 步骤进度需跨视图保留 |
 | 工作空间 store | 共享 tracker store(`useTrackerStore`) | issue 数据挂 workspace→project,共享 `selectedWorkspace` 最省事,命令面板跳转零改动 |
 | state 层 | 新建 `src/state/devWorkbench/`(照 state 层架构模板),queries 复用 tracker issue/state 数据 + 自有左树选中态 | 域隔离干净 |
-| 后端桩语言 | Go(§6 提示 `startDev`),依 `worktree_term.md` | worktree/PTY 真实现见该文档;P1 返回桩数据跑通 UI |
+| 后端桩语言 | Go(§6 提示 `createWorktree`),依 `worktree_term.md` | worktree/PTY 真实现见该文档;P1 返回桩数据跑通 UI |
 
 ### 12.1 模块 A:工作台骨架与路由接入
 
@@ -216,15 +216,15 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ### 12.4 模块 D:步骤内容区(按 `stateCode` switch)
 
-- [x] **D1 `wt_init`** — worktree 初始化表单:复用 `IssueBranchField` 的 `useLocalRepositories`+`useLocalBranches`,扩展 baseRef/devBranch/worktree 路径预览;`[创建并开始]` 调 `startDev` 桩 + 创建成功推进 stateId
-- [x] **D2 `developing`** — 终端占位框 + 提示条;快捷操作行复用 `RepositoryCard` `openTarget`(:119) + `bindings` 三函数 `openInEditor/openInTerminal/openInFileManager`(VSCode/iTerm2/访达);`[开发完成]`推进
-- [x] **D3 `pr_open`** — PR 配置卡(源分支 devBranch 只读 / 目标分支 baseBranch 可改 / 标题默认 issue 名 / 描述默认 issue.description) + 构造 compare URL 打开并记录 prUrl;`[合并完成]`推进
-- [x] **D4 `cleanup`** — 清理确认卡(列删除项 worktree 路径+分支、未提交改动警告);`[清理并完成]`调 `pty_stop_for_worktree`+`removeWorktree` 桩 → completed;`[仅停止,保留 worktree]`→cancelled
+- [x] **D1 `wt_init`** — worktree 初始化表单:复用 `IssueBranchField` 的 `useLocalRepositories`+`useLocalBranches`,扩展 baseRef/devBranch/worktree 路径预览;`[创建并开始]`弹确认框→调 `createWorktree` 桩 + 创建成功推进 stateId
+- [x] **D2 `developing`** — 终端占位框 + 提示条;快捷操作行复用 `RepositoryCard` `openTarget`(:119) + `bindings` 三函数 `openInEditor/openInTerminal/openInFileManager`(VSCode/iTerm2/访达);`[开发完成]`弹确认框→推进
+- [x] **D3 `pr_open`** — PR 配置卡(源分支 devBranch 只读 / 目标分支 baseBranch 可改 / 标题默认 issue 名 / 描述默认 issue.description) + 构造 compare URL 打开并记录 prUrl;`[合并完成]`弹确认框→推进
+- [x] **D4 `cleanup`** — 清理确认卡(列删除项 worktree 路径+分支、未提交改动警告);`[清理并完成]`调 `pty_stop_for_worktree`+`removeWorktree` 桩 → completed(取消→cancelled 改由事项管理处理,原 `[仅停止]` 按钮已移除)
 
 ### 12.5 模块 E:状态机推进(stateId 流转)
 
 - [x] **E1** 推进 hook — `useAdvanceDevStep` 调 `ProjectIssueService.move`(保留原 sortOrder) + invalidate 重拉;补 catch+toast 失败提示 + 双击锁(`src/state/devWorkbench/queries.ts`)。经评估**维持 invalidate-after**(本地 server 延迟可忽略,且与代码库「乐观仅看板拖拽、mutation 走 invalidate」既有分工一致),未采用 useKanbanDnd 乐观+回滚范式
-- [x] **E2** 取消流程 — `[仅停止]` 弹确认 Dialog→cancelled 组首个(`CleanupStep.tsx`,范式照 `WorkspaceProjectList` 删除确认)。P1 无真实 worktree/git status,**统一弹确认**(不区分脏改动);P2 接 git status 后细化
+- [x] **E2** ~~取消流程~~ — 原 `[仅停止]` 弹确认 Dialog→cancelled 已移除(「保留孤儿 worktree」无意义);取消改由「事项管理」(规划面)处理
 - [x] **E3** cleanup→completed 自动归档 — `[清理并完成]` 弹二次确认框→推进 stateId→completed 组首个(后端 `applyStateTransition` 自动写 `completed_at`)。P1 **advance-only**(不真删 worktree,加 info Alert 提示);真两阶段编排 pty_stop+removeWorktree 待模块 G2
 
 ### 12.6 模块 F:与事项管理桥接
@@ -234,9 +234,9 @@ started 组:worktree初始化 ─▶ 开发中 ─▶ 待合并PR ─▶ 待清�
 
 ### 12.7 模块 G:后端桩接口(P1)
 
-- [ ] **G1** `startDev` 桩(Go,§6 提示;接收 issue+仓库+分支,返回假 worktree 记录)
-- [ ] **G2** `removeWorktree` + `pty_stop_for_worktree` 桩(Go,§9.3 两阶段编排:先停 PTY 再删 worktree)
-- [ ] **G3** 前端 service 封装(照 `ProjectIssueService` 风格) + 调用;P1 桩数据跑通 UI,真实现等 `worktree_term.md` 落地
+- [x] **G1** `createWorktree`(Go `/api/tracker/issueWorktree/createWorktree`)—结构化桩:建 `t_issue_worktrees` 表(迁移 `20260809001` + gormgen + `IssueWorktreeStatus` 枚举),派生假 worktree 路径写 active 记录(幂等,不真调 gitutil);`getList` 真查作 worktreePath/worktreeId SSOT
+- [x] **G2** `removeWorktree`(Go,软删 status=removed)+ `pty_stop_for_worktree`(Rust `src-tauri/src/pty/mod.rs`,P1 桩恒返 0,锁定 §9.3 两阶段契约;返回 u32 而非 usize 适配 specta BigInt 禁令);前端 D4 按 §9.3 编排 pty_stop→removeWorktree
+- [x] **G3** 前端 `IssueWorktreeService` + `src/state/issueWorktree/`(`useIssueWorktrees` + `useCreateWorktreeAndAdvance`/`useCleanupAndAdvance` 编排 hook);D1/D4 接线(顺带 D2 openIn 接真 worktree 路径);P1 桩数据跑通 UI,真实现等 `worktree_term.md` 阶段 1–5 落地
 
 ### 12.8 P2 / P3 概要
 

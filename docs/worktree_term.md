@@ -188,21 +188,21 @@ func WorktreeBranchExists(repoDir, branch string) (bool, error)
 
 ### 6.2 service / controller / router（沿用项目 Api/Service 范式）
 ```
-internal/service/issue_worktree.go        // StartDev / StopDev / ListByIssue / Reconcile
+internal/service/issue_worktree.go        // CreateWorktree / StopDev / ListByIssue / Reconcile
 internal/controller/issue_worktree.go     // 嵌入 apis.Api，链式装配
 internal/dal/types/issue_worktree.go      // Request/Response DTO
 ```
 路由（全 POST，前缀 `/api`，加在 `router/router.go`）：
 | 路由 | 说明 |
 |---|---|
-| `/api/tracker/issueWorktree/startDev` | 校验 issue/仓库 → `WorktreeAdd` → 写 `t_issue_worktrees` → 返回 `{worktreeId, worktreePath, branch}` |
+| `/api/tracker/issueWorktree/createWorktree` | 校验 issue/仓库 → `WorktreeAdd` → 写 `t_issue_worktrees` → 返回 `{worktreeId, worktreePath, branch}` |
 | `/api/tracker/issueWorktree/stopDev` | 软删 `t_issue_worktrees`（status=removed）→ **不在此删 worktree**（删由前端先停 PTY 后调 `removeWorktree`） |
 | `/api/tracker/issueWorktree/removeWorktree` | `WorktreeRemove`（前置：前端已停 PTY）→ 物理清理 |
 | `/api/tracker/issueWorktree/getList` | 列某 issue 的 worktree（带 status） |
 | `/api/tracker/issueWorktree/getInfo` | 单个 worktree 详情（含 `git status` 摘要） |
 | `/api/tracker/issueWorktree/reconcile` | 对比 `WorktreeList` 与 DB，标记 stale（路径消失）行 |
 
-`startDev` 校验（移植既有 `validateIssueRepo` 思路）：仓库须属于项目关联仓库；分支不冲突；worktree 路径不重复。
+`createWorktree` 校验（移植既有 `validateIssueRepo` 思路）：仓库须属于项目关联仓库；分支不冲突；worktree 路径不重复。
 
 ---
 
@@ -307,14 +307,14 @@ src/components/Terminal/usePtySession.ts   // hook：spawn / 清理 / 数据流�
 ### 8.3 状态层（沿用 `state/<domain>/{keys,queries}.ts` 范式）
 ```
 src/state/issueWorktree/keys.ts
-src/state/issueWorktree/queries.ts   // useIssueWorktrees / startDev / stopDev / removeWorktree mutations
+src/state/issueWorktree/queries.ts   // useIssueWorktrees / createWorktree / stopDev / removeWorktree mutations
 ```
 
 ### 8.4 开发流程 UI（挂在 `ProjectIssueDrawer` 或 issue 卡片）
 - issue 详情抽屉新增 **「开始开发」** 按钮 / 区块：
   - 预填：仓库（issue 的 `localRepositoryId`，可选项目关联仓库）、基准分支、新分支名（默认 `<prefix>/<issueKey>-<slug>`）。
   - 可选「启动命令」（默认取 `appConfig.TERMINAL_POST_OPEN_COMMAND_KEY`）。
-- 点击 → `startDev`(Go) 拿 `worktreePath` → `pty_spawn`(Rust, cwd=worktreePath) → 打开 `TerminalView`。
+- 点击 → `createWorktree`(Go) 拿 `worktreePath` → `pty_spawn`(Rust, cwd=worktreePath) → 打开 `TerminalView`。
 - 终端区显示：分支、worktree 路径、关联 issue；操作：打开宿主终端 / 编辑器（复用既有 Rust 命令）、停止开发。
 - 多 worktree：Tab 或列表切换（本期单终端优先）。
 
@@ -345,7 +345,7 @@ src/state/issueWorktree/queries.ts   // useIssueWorktrees / startDev / stopDev /
 ```
 Web                         Rust(PTY)                    Go(worktree/数据)
  │                                                          
- ├─ startDev(payload) ──────────────────────────────────▶ 校验 → WorktreeAdd → 写 t_issue_worktrees
+ ├─ createWorktree(payload) ──────────────────────────────────▶ 校验 → WorktreeAdd → 写 t_issue_worktrees
  │ ◀──────────────────── { worktreeId, worktreePath, branch } ──────────────────────────
  ├─ pty_spawn({worktreeId, cwd:worktreePath, …}) ─▶ 登记 session，启动 PTY
  │ ◀──────── SessionId ───────────────────────────
@@ -403,7 +403,7 @@ PTY 在 Rust `tauri::State` 中天然抗前端刷新（agent 常驻近乎白送�
 **阶段 1：Go worktree 运维（无 UI、无终端）**
 - `gitutil/worktree.go`（List/Add/Remove）+ 单测。
 - 迁移 `t_issue_worktrees` + enums + gencode。
-- `service/controller/router` 的 `startDev/stopDev/getList/reconcile`。
+- `service/controller/router` 的 `createWorktree/stopDev/getList/reconcile`。
 - 验证：curl 调通创建/列举/删除 worktree，DB 落盘正确。
 
 **阶段 2：Rust 嵌入式终端（最小可用）**

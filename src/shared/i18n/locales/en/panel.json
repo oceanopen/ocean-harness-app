@@ -63,7 +63,6 @@
     "prComplete": "Merge complete",
     "branch": "Branch",
     "cleanupComplete": "Cleanup and complete",
-    "stopOnly": "Stop only, keep worktree",
     "enterDev": "Enter dev"
   }
 }

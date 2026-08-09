@@ -96,6 +96,12 @@ export const commands = {
 	 *  注：init 自动启动场景不调用本命令（按需求仅在服务状态页开关触发）。
 	 */
 	cleanupOrphanHttpServer: () => typedError<null, string>(__TAURI_INVOKE("cleanup_orphan_http_server")),
+	/**
+	 *  删除 worktree 前置：停掉该 worktree 绑定的全部 PTY，返回停止的会话数。
+	 *  P1 桩：PTY 未实现，恒返回 0。P2 落地 portable-pty 后接入 PtySessionStore，按 worktreeId 批量 kill 绑定会话。
+	 *  返回 u32（非 usize）：specta 禁止导出 BigInt 类型（usize/i64 等）以避免前端精度损失（docs/worktree_term.md §7.3 的 usize 在此适配为 u32，语义不变）。
+	 */
+	ptyStopForWorktree: (worktreeId: string) => __TAURI_INVOKE<number>("pty_stop_for_worktree", { worktreeId }),
 };
 
 /* Types */

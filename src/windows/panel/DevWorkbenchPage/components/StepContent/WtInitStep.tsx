@@ -1,13 +1,17 @@
 import type { ProjectIssueResponseData } from '@src/services';
-import { Autocomplete, Box, Button, Stack, TextField, Typography } from '@mui/material';
+import { Autocomplete, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
+import { getNextDevStepStateId } from '@src/state/devWorkbench';
+import { useCreateWorktreeAndAdvance, useIssueWorktrees } from '@src/state/issueWorktree';
 import { useLocalBranches, useLocalRepositories } from '@src/state/localRepositories';
+import { useProjectStateViews } from '@src/state/tracker';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // WtInitStep（D1）：worktree 初始化表单。
-// 仓库 + baseRef（基准分支）+ devBranch（开发分支）+ worktree 路径预览（按 worktree_term.md §5.3 派生占位）。
-// [创建并开始] 当前 disabled——后端 startDev 桩待模块 G；表单交互可用（填值），点击暂不触发后端。
-export default function WtInitStep({ issue }: { issue: ProjectIssueResponseData }) {
+// 仓库 + baseRef（基准分支）+ devBranch（开发分支）+ worktree 路径预览。
+// [创建并开始] 弹确认框→调 createWorktree（P1 桩：后端派生假路径写记录）→ 推进 stateId 到首个开发步骤（developing）。
+// worktree 路径：优先用已有 active worktree 记录（createWorktree 创建后回填），否则派生占位预览。
+export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
   const { t } = useTranslation();
   const { data: repos = [] } = useLocalRepositories();
   const [repoId, setRepoId] = useState(issue.localRepositoryId);
@@ -15,11 +19,31 @@ export default function WtInitStep({ issue }: { issue: ProjectIssueResponseData 
   const { data: branches = [] } = useLocalBranches(repoId);
   const [baseRef, setBaseRef] = useState(repo?.currentBranch ?? '');
   const [devBranch, setDevBranch] = useState(`issue-${issue.id}`);
-  // P1 桩：路径按 <localDir>-worktree-<issueId> 派生（真派生规则见 worktree_term.md §5.3，待 G 落地）。
+  const { data: worktrees = [] } = useIssueWorktrees(issue.id);
+  const activeWorktree = worktrees[0]; // P1 1:1
+  const { views } = useProjectStateViews(projectId);
+  const { run: runCreateWorktree, running: starting, snack: startSnack } = useCreateWorktreeAndAdvance(projectId);
+  const [startOpen, setStartOpen] = useState(false);
+
+  // 预览：优先用已有 active worktree 路径（createWorktree 创建后回填），否则派生占位。
   const worktreePathPreview = useMemo(
-    () => (repo ? `${repo.localDir}-worktree-${issue.id}` : ''),
-    [repo, issue.id],
+    () => activeWorktree?.worktreePath ?? (repo ? `${repo.localDir}-worktree-${issue.id}` : ''),
+    [activeWorktree, repo, issue.id],
   );
+  // 推进目标：wt_init → 下一个开发步骤（developing）。
+  const targetStateId = getNextDevStepStateId(issue.stateId, views);
+
+  const onStart = () => {
+    setStartOpen(false);
+    if (repoId === 0 || !devBranch || targetStateId == null) {
+      return;
+    }
+    void runCreateWorktree(
+      { issueId: issue.id, localRepositoryId: repoId, baseRef, branch: devBranch },
+      issue,
+      targetStateId,
+    );
+  };
 
   return (
     <Stack spacing={2}>
@@ -57,9 +81,25 @@ export default function WtInitStep({ issue }: { issue: ProjectIssueResponseData 
         </Typography>
       </Box>
       <Box>
-        {/* TODO(G): startDev 桩接入后启用，成功后推进 stateId 到 developing */}
-        <Button variant="contained" disabled>{t('panel:devWorkbench.createAndStart')}</Button>
+        <Button
+          variant="contained"
+          disabled={starting || targetStateId == null || repoId === 0 || !devBranch}
+          onClick={() => setStartOpen(true)}
+        >
+          {t('panel:devWorkbench.createAndStart')}
+        </Button>
       </Box>
+      <Dialog open={startOpen} onClose={starting ? undefined : () => setStartOpen(false)}>
+        <DialogTitle>确认创建 worktree 并开始？</DialogTitle>
+        <DialogContent>
+          <Typography>将基于分支「{devBranch}」创建 worktree 并推进到「开发中」步骤。</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={() => setStartOpen(false)} disabled={starting}>取消</Button>
+          <Button color="primary" variant="contained" onClick={onStart} disabled={starting}>确认创建</Button>
+        </DialogActions>
+      </Dialog>
+      {startSnack}
     </Stack>
   );
 }

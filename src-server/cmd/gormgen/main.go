@@ -35,9 +35,10 @@ func main() {
 	// 2) 装配生成器（输出目录 / 模式 / 字段映射 / 命名策略）。
 	InitGen()
 
-	// 3) 注册业务表：tracker 模块 6 张 + 本地仓库 1 张。
+	// 3) 注册业务表：tracker 模块 6 张 + 本地仓库 1 张 + issue worktree 元数据 1 张。
 	GenModelTracker()
 	GenModelLocalRepository()
+	GenModelIssueWorktree()
 
 	// 4) 落盘到 internal/dal（query/model 子包）。
 	G.Execute()

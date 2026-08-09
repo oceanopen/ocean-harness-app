@@ -63,7 +63,6 @@
     "prComplete": "合并完成",
     "branch": "分支",
     "cleanupComplete": "清理并完成",
-    "stopOnly": "仅停止，保留 worktree",
     "enterDev": "进入开发"
   }
 }

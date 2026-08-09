@@ -1,5 +1,5 @@
 import type { ProjectIssueResponseData } from '@src/services';
-import { Alert, Autocomplete, Box, Button, Stack, TextField } from '@mui/material';
+import { Alert, Autocomplete, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from '@mui/material';
 import { buildCompareUrl } from '@src/shared/gitRemote';
 import { getNextDevStepStateId, useAdvanceDevStep } from '@src/state/devWorkbench';
 import { useLocalBranches, useLocalRepositories } from '@src/state/localRepositories';
@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 // PR 配置卡：目标分支 base（可改）+ 源分支 head（=issue.repositoryBranch 只读）+ 标题（默认 issue.name）。
 // [打开 compare 页] 构造 GitHub/GitLab compare URL（gitRemote.buildCompareUrl）用 plugin-shell 打开；
 // 真 PR 创建见 worktree_term.md（本期非目标，先「引导式 compare URL」顶住，§9.2）。
-// [合并完成] 推进到下一个开发步骤（cleanup）。
+// [合并完成] 弹确认框→推进到下一个开发步骤（cleanup）。
 export default function PrOpenStep({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
   const { t } = useTranslation();
   const { data: repos = [] } = useLocalRepositories();
@@ -23,6 +23,7 @@ export default function PrOpenStep({ issue, projectId }: { issue: ProjectIssueRe
   const head = issue.repositoryBranch;
   const [base, setBase] = useState(repo?.currentBranch ?? 'main');
   const [title, setTitle] = useState(issue.name);
+  const [completeOpen, setCompleteOpen] = useState(false);
 
   const compareUrl = useMemo(
     () => (repo && head ? buildCompareUrl(repo.remoteUrl, base, head) : null),
@@ -35,6 +36,7 @@ export default function PrOpenStep({ issue, projectId }: { issue: ProjectIssueRe
     }
   };
   const onComplete = () => {
+    setCompleteOpen(false);
     const next = getNextDevStepStateId(issue.stateId, views);
     if (next != null) {
       void advance(issue, next);
@@ -69,10 +71,20 @@ export default function PrOpenStep({ issue, projectId }: { issue: ProjectIssueRe
         </Button>
       </Box>
       <Box>
-        <Button variant="contained" disabled={advancing} onClick={onComplete}>
+        <Button variant="contained" disabled={advancing} onClick={() => setCompleteOpen(true)}>
           {t('panel:devWorkbench.prComplete')}
         </Button>
       </Box>
+      <Dialog open={completeOpen} onClose={advancing ? undefined : () => setCompleteOpen(false)}>
+        <DialogTitle>确认合并完成？</DialogTitle>
+        <DialogContent>
+          <Typography>将推进到「待清理」步骤。</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button color="inherit" onClick={() => setCompleteOpen(false)} disabled={advancing}>取消</Button>
+          <Button color="primary" variant="contained" onClick={onComplete} disabled={advancing}>确认完成</Button>
+        </DialogActions>
+      </Dialog>
       {snack}
     </Stack>
   );

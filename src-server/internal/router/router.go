@@ -102,6 +102,15 @@ func SetupRouter() *gin.Engine {
 				projectIssueGroup.POST("/delete", controller.ProjectIssue{}.Delete)
 				projectIssueGroup.POST("/move", controller.ProjectIssue{}.Move)
 			}
+
+			// issueWorktree 模块：issue 开发流程 worktree 元数据（createWorktree/removeWorktree/getList，action 风格，POST）。
+			// P1 桩（Module G）：createWorktree 写假路径记录、getList 真查作 worktreePath/worktreeId SSOT；真实现见 worktree_term.md §6。
+			issueWorktreeGroup := trackerGroup.Group("/issueWorktree")
+			{
+				issueWorktreeGroup.POST("/createWorktree", controller.IssueWorktree{}.CreateWorktree)
+				issueWorktreeGroup.POST("/removeWorktree", controller.IssueWorktree{}.RemoveWorktree)
+				issueWorktreeGroup.POST("/getList", controller.IssueWorktree{}.GetList)
+			}
 		}
 	}
 
