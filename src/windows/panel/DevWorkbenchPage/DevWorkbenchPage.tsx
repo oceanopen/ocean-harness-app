@@ -6,10 +6,10 @@ import {
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
 } from '@mui/icons-material';
 import { Box, CircularProgress, IconButton, Typography } from '@mui/material';
-import { useDevWorkbenchStore } from '@src/state/devWorkbench';
+import { getDevSteps, useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useProjectIssues, useProjectStateViews } from '@src/state/tracker';
 import { DEV_IID_PARAM, DEV_PID_PARAM, DEV_STEP_PARAM, numParam } from '@src/windows/panel/routes';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMatch, useSearchParams } from 'react-router-dom';
 import DevStepper from './components/DevStepper/DevStepper';
@@ -41,18 +41,31 @@ export default function DevWorkbenchPage() {
   // 加载用 pid：URL 优先（reload/恢复），否则 store（隐藏保活时 URL 无 dev 参数）。
   const loadPid = urlPid ?? selectedProjectId;
   const { data: issues = [], isLoading: issuesLoading } = useProjectIssues(loadPid ?? 0);
-  const { viewMap } = useProjectStateViews(loadPid ?? 0);
+  const { views, viewMap } = useProjectStateViews(loadPid ?? 0);
 
   // 有效选中：URL 优先，否则 store（保活）。
   const effIssueId = urlIid ?? selectedIssueId;
   const hasSelection = effIssueId != null && loadPid != null;
   const issue = issues.find(i => i.id === effIssueId);
   const view = issue ? viewMap.get(issue.stateId) : undefined;
-  // 当前查看步骤：URL step 优先，否则回落 issue 当前进度。切 issue 时 URL 不带 step → 自动回落，无需旧渲染期 setState 重置 hack。
-  const currentViewingCode = urlStep ?? view?.stateCode;
+  // 默认查看步骤：URL step 优先；否则回落 issue 当前 state——若该 state 非开发步骤（如 in_progress），
+  // 回落第一步，避免右栏空。切 issue 时 URL 不带 step → 自动回落。
+  const devSteps = useMemo(() => getDevSteps(views), [views]);
+  const fallbackCode = view && devSteps.some(s => s.stateCode === view.stateCode)
+    ? view.stateCode
+    : devSteps[0]?.stateCode;
+  const currentViewingCode = urlStep ?? fallbackCode;
 
-  // 纵向步骤条侧栏开关（默认隐藏，避免占用空间）；点顶栏切换 icon 展开。保活时 state 保留。
+  // 纵向步骤条侧栏开关：选中任务时按 state 设默认（非开发中展开、开发中收起），之后用户可手动切换。
+  // 仅在 issue 切换时重置默认（ref 追踪上次设默认的 issue id）；同任务内推进状态不重置，保留用户开合偏好。
   const [stepsPanelOpen, setStepsPanelOpen] = useState(false);
+  const stepsPanelDefaultedForRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (issue && view && issue.id !== stepsPanelDefaultedForRef.current) {
+      stepsPanelDefaultedForRef.current = issue.id;
+      setStepsPanelOpen(view.stateCode !== 'developing');
+    }
+  }, [issue, view]);
 
   // URL → store 单向同步（仅活动路由）：有 iid 回写 issue（含其 projectId）；无 iid 清空；隐藏不动。
   useEffect(() => {
@@ -146,7 +159,7 @@ export default function DevWorkbenchPage() {
         <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {stepsPanelOpen && hasSelection && issue && loadPid != null && (
             <Box sx={{ width: 200, flexShrink: 0, borderRight: 1, borderColor: 'divider', overflow: 'auto', p: 2 }}>
-              <DevStepper issue={issue} projectId={loadPid} activeStepCode={urlStep} onStepClick={handleStepClick} />
+              <DevStepper issue={issue} projectId={loadPid} activeStepCode={currentViewingCode} onStepClick={handleStepClick} />
             </Box>
           )}
           <Box sx={{ flex: 1, overflow: 'auto' }}>

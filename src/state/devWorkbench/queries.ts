@@ -43,6 +43,17 @@ export function getFirstStateIdOfGroup(
 }
 
 /**
+ * 开发步骤序列（started 组排除进行中 in_progress，按 sortOrder 升序）。
+ * wt_init→developing→pr_open→cleanup；SSOT 供 DevStepper 渲染、getNextDevStepStateId 推进、
+ * DevWorkbenchPage 默认选中第一步复用，避免过滤逻辑多处漂移。
+ */
+export function getDevSteps(views: ProjectStateView[]): ProjectStateView[] {
+  return views
+    .filter(v => v.stateGroupCode === 'started' && v.stateCode !== 'in_progress')
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+/**
  * 取 issue 推进到的下一个开发步骤 stateId：
  * - 当前在开发步骤序列：下一个开发步骤（wt_init→developing→pr_open→cleanup，排除进行中 in_progress）
  * - 已是最后一步（cleanup）：completed 组首个 state（自动归档）
@@ -52,9 +63,7 @@ export function getNextDevStepStateId(
   currentStateId: number,
   views: ProjectStateView[],
 ): number | null {
-  const steps = views
-    .filter(v => v.stateGroupCode === 'started' && v.stateCode !== 'in_progress')
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const steps = getDevSteps(views);
   const idx = steps.findIndex(s => s.id === currentStateId);
   if (idx < 0) {
     return null;

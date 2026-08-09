@@ -1,5 +1,6 @@
 import type { ProjectIssueResponseData } from '@src/services';
 import { Step, StepButton, Stepper, Typography } from '@mui/material';
+import { getDevSteps } from '@src/state/devWorkbench';
 import { useProjectStateViews } from '@src/state/tracker';
 import { useMemo } from 'react';
 
@@ -19,12 +20,7 @@ interface DevStepperProps {
 export default function DevStepper({ issue, projectId, activeStepCode, onStepClick }: DevStepperProps) {
   const { views } = useProjectStateViews(projectId);
 
-  const steps = useMemo(
-    () => views
-      .filter(v => v.stateGroupCode === 'started' && v.stateCode !== 'in_progress')
-      .sort((a, b) => a.sortOrder - b.sortOrder),
-    [views],
-  );
+  const steps = useMemo(() => getDevSteps(views), [views]);
   const currentIndex = steps.findIndex(s => s.id === issue.stateId);
   const viewingIndex = activeStepCode ? steps.findIndex(s => s.stateCode === activeStepCode) : -1;
   const activeStep = viewingIndex >= 0 ? viewingIndex : (currentIndex >= 0 ? currentIndex : -1);
