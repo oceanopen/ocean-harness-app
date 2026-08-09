@@ -261,17 +261,24 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
             )
             .title(format!("{product} - 控制台"))
             .inner_size(width, height) // 还原尺寸：取消最大化后回到此 85% 屏尺寸
-            .maximized(true) // 默认全屏（最大化）：首次打开即占满工作区
-            .center()
+            // 先隐藏：等下方定位 + 最大化完成后再由 panel_win.show() 显现，避免初帧跳动。
+            .visible(false)
             .skip_taskbar(true)
             .build()
             .map_err(|e| e.to_string())?;
 
-            // 定位到托盘所在屏：最大化时无视觉影响，但决定还原后落在哪块屏。
+            // 必须在 maximize 之前定位：macOS 上对已最大化（zoom）态的窗口调用 set_position
+            // 会破坏 zoom 定位、但保留撑开的全屏尺寸，导致「尺寸=全屏、左上角≠(0,0)」的错位窗口。
+            // 先定还原坐标（托盘所在屏 work_area 居中，探测失败回退主屏居中），系统把它保存为还原帧。
             if let Some(m) = &monitor {
                 let (x, y) = work_area_center(m, width, height);
                 let _ = win.set_position(LogicalPosition::new(x, y));
+            } else {
+                let _ = win.center();
             }
+
+            // 最后最大化：以工作区原点正确撑满；还原帧保留上面的居中坐标，取消最大化后回到 85% 居中。
+            let _ = win.maximize();
 
             let w = win.clone();
             win.on_window_event(move |event| {
