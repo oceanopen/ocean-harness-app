@@ -13,8 +13,10 @@ import {
   useWorkspaceProjects,
   useWorkspaces,
 } from '@src/state/tracker';
+import { DEV_IID_PARAM, DEV_PID_PARAM } from '@src/windows/panel/routes';
 import { useQueries } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import StateBadge from '../StateBadge';
 
 // DevTaskTree：开发工作台左任务树——跨所有工作空间展示 started 组的 issue。
@@ -122,11 +124,25 @@ function ProjectNode({ project }: { project: WorkspaceProjectModel }) {
 function DevIssueRow({ issue, viewMap }: { issue: ProjectIssueResponseData; viewMap: Map<number, ProjectStateView> }) {
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
   const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
+  const navigate = useNavigate();
   const selected = selectedIssueId === issue.id;
   const view = viewMap.get(issue.stateId);
 
   return (
-    <ListItemButton selected={selected} onClick={() => selectIssue(selected ? null : issue)} sx={{ mx: 0.5, borderRadius: 1 }}>
+    <ListItemButton
+      selected={selected}
+      onClick={() => {
+        // 选中/取消都同步 URL（pid+iid）+ store（供本行高亮即时刷新；URL→store 主同步在 DevWorkbenchPage）。
+        if (selected) {
+          selectIssue(null);
+          navigate('/devWorkbench');
+        } else {
+          selectIssue(issue);
+          navigate(`/devWorkbench?${DEV_PID_PARAM}=${issue.projectId}&${DEV_IID_PARAM}=${issue.id}`);
+        }
+      }}
+      sx={{ mx: 0.5, borderRadius: 1 }}
+    >
       {/* 占位箭头：与 project 折叠头的箭头 ListItemIcon 同宽，使任务名与项目名左对齐 */}
       <ListItemIcon sx={{ minWidth: 'auto', mr: 0.5, visibility: 'hidden' }}>
         <KeyboardArrowRightRoundedIcon fontSize="small" />
