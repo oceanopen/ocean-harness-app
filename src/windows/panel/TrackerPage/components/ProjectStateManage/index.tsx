@@ -19,9 +19,10 @@ interface ProjectStateManageProps {
 }
 
 // 项目编辑表单内的「状态管理」模块（docs/issue.md §4）。
-// 从状态目录（第 2 层）按 group 渲染可勾选项；每 group ≥1（末项禁用取消）；started 组开发步骤
-// （进行中除外）可拖序；每行 radio 改默认状态（isDefault 每项目恰一）。勾选/拖序/改默认均经
-// onChange 全量回吐 ProjectStateItem[]（sortOrder 按 GROUP_ORDER × 组内顺序全局递增重排）。
+// 从状态目录（第 2 层）按 group 渲染可勾选项；每 group 首项（目录 sortOrder 升序第一项）强制勾选
+// 不可取消，且每 group ≥1（末项亦禁用取消）；默认状态全局单选，仅各 group 首项可设（非首项 radio 置灰）。
+// started 组开发步骤（进行中除外）可拖序。勾选/拖序/改默认均经 onChange 全量回吐 ProjectStateItem[]
+// （sortOrder 按 GROUP_ORDER × 组内顺序全局递增重排）。
 function ProjectStateManage({ states, onChange, disabled }: ProjectStateManageProps) {
   const { t } = useTranslation();
   const catalog = useStateCatalog();
@@ -48,6 +49,10 @@ function ProjectStateManage({ states, onChange, disabled }: ProjectStateManagePr
     }
     return m;
   }, [catalog.data]);
+
+  // isFirstInGroup：m 是否其所在 group 的目录首项（sortOrder 升序第一项）。首项强制勾选不可取消，
+  // 且仅首项可设默认（非首项 radio 置灰）。基于固定目录序，与用户启用集合无关（"仅约束新操作"）。
+  const isFirstInGroup = (m: StateMeta) => (statesByGroup.get(m.groupCode) ?? [])[0]?.code === m.code;
 
   // buildOutput：按 GROUP_ORDER × 组内顺序（started 开发步骤按 devStepOrder、进行中置首）重排，
   // sortOrder 全局递增（1000 步进），isDefault 按 defaultKey 标记。
@@ -82,9 +87,9 @@ function ProjectStateManage({ states, onChange, disabled }: ProjectStateManagePr
     const key = keyOf(meta.groupCode, meta.code);
     const next = new Set(selected);
     if (next.has(key)) {
-      // 每 group ≥1：取消最后一个时阻止。
+      // 首项强制勾选不可取消；且每 group ≥1（末项禁用取消）。
       const inGroup = states.filter(it => it.stateGroupCode === meta.groupCode).length;
-      if (inGroup <= 1) {
+      if (isFirstInGroup(meta) || inGroup <= 1) {
         return;
       }
       next.delete(key);
@@ -143,19 +148,20 @@ function ProjectStateManage({ states, onChange, disabled }: ProjectStateManagePr
             {metas.map((m) => {
               const key = keyOf(m.groupCode, m.code);
               const checked = selected.has(key);
-              const disableUncheck = checked && inGroup <= 1; // 每 group ≥1：末项禁用取消
+              const isFirst = isFirstInGroup(m); // 目录首项：强制勾选不可取消
+              const disableUncheck = checked && (isFirst || inGroup <= 1); // 首项 / 末项禁用取消
               return (
                 <Box key={key} sx={{ display: 'flex', alignItems: 'center', pl: 2.5 }}>
                   <Checkbox size="small" checked={checked} disabled={disabled || disableUncheck} onChange={() => toggle(m)} />
                   <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: m.color, ml: 0.5 }} />
                   <Typography variant="body2" sx={{ ml: 0.75 }}>{m.name}</Typography>
-                  {/* 默认状态 radio：同 name 互斥，全局恰一；仅已勾选项可设为默认 */}
+                  {/* 默认状态 radio：同 name 互斥，全局恰一；仅各 group 首项（且已勾选）可设默认，非首项置灰 */}
                   <Radio
                     size="small"
                     name="stateManageDefault"
                     checked={key === defaultKey}
                     onChange={() => setDefault(key)}
-                    disabled={disabled || !checked}
+                    disabled={disabled || !isFirst || !checked}
                     sx={{ ml: 'auto' }}
                   />
                 </Box>
