@@ -20,12 +20,15 @@ function ClaudeSessionList({ sessions, onOpenTerminal }: ClaudeSessionListProps)
     <Box
       sx={{
         p: 2,
-        overflow: 'auto',
         display: 'grid',
         gap: 2,
-        gridTemplateColumns: '1fr',
-        maxWidth: 1000,
-        mx: 'auto',
+        // 响应式 1-2 列：与 RepositoriesPage 一致（窄屏 1 列，md 起两列）。
+        gridTemplateColumns: {
+          xs: '1fr',
+          sm: 'repeat(1, 1fr)',
+          md: 'repeat(2, 1fr)',
+          lg: 'repeat(2, 1fr)',
+        },
         alignItems: 'start',
       }}
     >

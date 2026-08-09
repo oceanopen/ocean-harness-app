@@ -1,6 +1,7 @@
 import type { ClaudeSessionInfo, TerminalApp } from '@src/shared/bindings';
+import type { ReactNode } from 'react';
 import { SiIntellijidea, SiIterm2 } from '@icons-pack/react-simple-icons';
-import { Terminal as TerminalIcon } from '@mui/icons-material';
+import { FolderOutlined as FolderOutlinedIcon, HistoryOutlined as HistoryOutlinedIcon, Terminal as TerminalIcon } from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -40,6 +41,39 @@ function VsCodeIcon() {
   );
 }
 
+const truncateSx = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+} as const;
+
+// 卡片信息行：固定 18px 图标列 + 标签列(minWidth:50) + 值列(minWidth:0 支持 ellipsis)。
+// 复刻 RepositoryCard 的 InfoRow，保持两页卡片视觉一致（项目无共享卡片组件，按页面自包含惯例本地复制）。
+function InfoRow({ icon, label, children }: { icon: ReactNode; label?: string; children: ReactNode }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.75 }}>
+      <Box
+        sx={{
+          width: 18,
+          flexShrink: 0,
+          color: 'text.disabled',
+          display: 'flex',
+          justifyContent: 'center',
+        }}
+      >
+        {icon}
+      </Box>
+      {label && (
+        <Typography variant="caption" sx={{ color: 'text.disabled', flexShrink: 0, minWidth: 50 }}>
+          {label}
+        </Typography>
+      )}
+      {/* minWidth:0 让 flex 子项内文本 ellipsis 生效 */}
+      <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'flex-start' }}>{children}</Box>
+    </Box>
+  );
+}
+
 interface ClaudeSessionCardProps {
   session: ClaudeSessionInfo;
   onOpenTerminal: (pid: number) => void;
@@ -67,7 +101,7 @@ function ClaudeSessionCard({ session, onOpenTerminal }: ClaudeSessionCardProps) 
   }, [session.cwd]);
 
   return (
-    <Card variant="outlined">
+    <Card variant="outlined" sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardHeader
         title={session.projectName || session.cwd}
         slotProps={{ title: { fontWeight: 600, noWrap: true } }}
@@ -85,23 +119,29 @@ function ClaudeSessionCard({ session, onOpenTerminal }: ClaudeSessionCardProps) 
         )}
       />
       <Divider />
-      <CardContent>
-        <Typography
-          color="text.secondary"
-          sx={{
-            fontFamily: 'monospace',
-            fontSize: '0.75rem',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            mb: 0.5,
-          }}
-        >
-          {session.cwd}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.5 }}>
-          {formatRelativeTime(session.updatedAt, t)} | {formatDate(session.updatedAt, 'YYYY-MM-DD HH:mm:ss')}
-        </Typography>
+      <CardContent sx={{ flex: 1 }}>
+        <InfoRow icon={<FolderOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('claudeSessions:card.dirLabel')}>
+          <Typography
+            variant="caption"
+            title={session.cwd}
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: '0.75rem',
+              textAlign: 'left',
+              display: 'block',
+              width: '100%',
+              minWidth: 0,
+              ...truncateSx,
+            }}
+          >
+            {session.cwd}
+          </Typography>
+        </InfoRow>
+        <InfoRow icon={<HistoryOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('claudeSessions:card.timeLabel')}>
+          <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+            {formatRelativeTime(session.updatedAt, t)} | {formatDate(session.updatedAt, 'YYYY-MM-DD HH:mm:ss')}
+          </Typography>
+        </InfoRow>
       </CardContent>
       <Divider />
       <CardActions sx={{ display: 'flex', justifyContent: 'space-between' }}>

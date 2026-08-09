@@ -26,6 +26,10 @@
     "vscode": "VSCode",
     "idea": "IntelliJ IDEA"
   },
+  "card": {
+    "dirLabel": "Directory",
+    "timeLabel": "Last updated"
+  },
   "toast": {
     "unsupportedHostApp": "Unrecognized host terminal. Please launch Claude Code in iTerm2 or Terminal.app",
     "osaScriptFailed": "Failed to navigate: {{stderr}}",

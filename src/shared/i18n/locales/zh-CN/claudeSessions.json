@@ -26,6 +26,10 @@
     "vscode": "VSCode",
     "idea": "IntelliJ IDEA"
   },
+  "card": {
+    "dirLabel": "工作目录",
+    "timeLabel": "最近更新"
+  },
   "toast": {
     "unsupportedHostApp": "未识别的宿主终端，请在 iTerm2 或 Terminal.app 中启动 Claude Code",
     "osaScriptFailed": "跳转终端失败：{{stderr}}",
