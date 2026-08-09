@@ -33,10 +33,9 @@ func newIssueWorktree(db *gorm.DB, opts ...gen.DOOption) issueWorktree {
 	_issueWorktree.IssueID = field.NewInt(tableName, "issue_id")
 	_issueWorktree.LocalRepositoryID = field.NewInt(tableName, "local_repository_id")
 	_issueWorktree.WorktreePath = field.NewString(tableName, "worktree_path")
-	_issueWorktree.Branch = field.NewString(tableName, "branch")
-	_issueWorktree.BaseRef = field.NewString(tableName, "base_ref")
+	_issueWorktree.WorktreeBranch = field.NewString(tableName, "worktree_branch")
+	_issueWorktree.BaseBranch = field.NewString(tableName, "base_branch")
 	_issueWorktree.Status = field.NewField(tableName, "status")
-	_issueWorktree.LastActiveAt = field.NewTime(tableName, "last_active_at")
 	_issueWorktree.CreatedAt = field.NewTime(tableName, "created_at")
 	_issueWorktree.DeletedAt = field.NewField(tableName, "deleted_at")
 
@@ -54,10 +53,9 @@ type issueWorktree struct {
 	IssueID           field.Int
 	LocalRepositoryID field.Int
 	WorktreePath      field.String
-	Branch            field.String
-	BaseRef           field.String
+	WorktreeBranch    field.String
+	BaseBranch        field.String
 	Status            field.Field
-	LastActiveAt      field.Time
 	CreatedAt         field.Time
 	DeletedAt         field.Field
 
@@ -81,10 +79,9 @@ func (i *issueWorktree) updateTableName(table string) *issueWorktree {
 	i.IssueID = field.NewInt(table, "issue_id")
 	i.LocalRepositoryID = field.NewInt(table, "local_repository_id")
 	i.WorktreePath = field.NewString(table, "worktree_path")
-	i.Branch = field.NewString(table, "branch")
-	i.BaseRef = field.NewString(table, "base_ref")
+	i.WorktreeBranch = field.NewString(table, "worktree_branch")
+	i.BaseBranch = field.NewString(table, "base_branch")
 	i.Status = field.NewField(table, "status")
-	i.LastActiveAt = field.NewTime(table, "last_active_at")
 	i.CreatedAt = field.NewTime(table, "created_at")
 	i.DeletedAt = field.NewField(table, "deleted_at")
 
@@ -115,16 +112,15 @@ func (i *issueWorktree) GetFieldByName(fieldName string) (field.OrderExpr, bool)
 }
 
 func (i *issueWorktree) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 11)
+	i.fieldMap = make(map[string]field.Expr, 10)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["worktree_id"] = i.WorktreeID
 	i.fieldMap["issue_id"] = i.IssueID
 	i.fieldMap["local_repository_id"] = i.LocalRepositoryID
 	i.fieldMap["worktree_path"] = i.WorktreePath
-	i.fieldMap["branch"] = i.Branch
-	i.fieldMap["base_ref"] = i.BaseRef
+	i.fieldMap["worktree_branch"] = i.WorktreeBranch
+	i.fieldMap["base_branch"] = i.BaseBranch
 	i.fieldMap["status"] = i.Status
-	i.fieldMap["last_active_at"] = i.LastActiveAt
 	i.fieldMap["created_at"] = i.CreatedAt
 	i.fieldMap["deleted_at"] = i.DeletedAt
 }

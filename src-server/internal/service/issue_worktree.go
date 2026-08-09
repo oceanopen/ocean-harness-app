@@ -27,7 +27,7 @@ const worktreeRoot = "<worktree-root-placeholder>"
 // （支持清理后用同一分支重启），避免 UNIQUE 冲突；不存在则创建。
 // 成功后由前端推进 issue.stateId 到首个开发步骤（developing）。
 func (svc IssueWorktree) CreateWorktree(req *types.IssueWorktreeCreateWorktreeRequest) (*types.IssueWorktreeResponseData, error) {
-	worktreePath := fmt.Sprintf("%s/issue-%d-%s", worktreeRoot, req.IssueID, req.Branch)
+	worktreePath := fmt.Sprintf("%s/issue-%d-%s", worktreeRoot, req.IssueID, req.WorktreeBranch)
 	worktreeID := fmt.Sprintf("%d::%s", req.LocalRepositoryID, worktreePath)
 	var wt *model.IssueWorktree
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -38,8 +38,8 @@ func (svc IssueWorktree) CreateWorktree(req *types.IssueWorktreeCreateWorktreeRe
 		if e == nil {
 			found.Status = enums.ISSUE_WORKTREE_STATUS_ACTIVE
 			found.WorktreePath = worktreePath
-			found.Branch = req.Branch
-			found.BaseRef = req.BaseRef
+			found.WorktreeBranch = req.WorktreeBranch
+			found.BaseBranch = req.BaseBranch
 			if e := wq.Save(found); e != nil {
 				return e
 			}
@@ -54,8 +54,8 @@ func (svc IssueWorktree) CreateWorktree(req *types.IssueWorktreeCreateWorktreeRe
 			IssueID:           req.IssueID,
 			LocalRepositoryID: req.LocalRepositoryID,
 			WorktreePath:      worktreePath,
-			Branch:            req.Branch,
-			BaseRef:           req.BaseRef,
+			WorktreeBranch:    req.WorktreeBranch,
+			BaseBranch:        req.BaseBranch,
 			Status:            enums.ISSUE_WORKTREE_STATUS_ACTIVE,
 		}
 		return wq.Create(wt)

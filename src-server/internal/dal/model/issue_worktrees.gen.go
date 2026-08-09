@@ -17,13 +17,12 @@ const TableNameIssueWorktree = "t_issue_worktrees"
 type IssueWorktree struct {
 	ID                int                       `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
 	WorktreeID        string                    `gorm:"column:worktree_id;type:TEXT;not null" json:"worktreeId"`
-	IssueID           int                       `gorm:"column:issue_id;type:INTEGER;index:idx_issue_worktrees_issue,priority:1" json:"issueId"`
-	LocalRepositoryID int                       `gorm:"column:local_repository_id;type:INTEGER;index:idx_issue_worktrees_repo,priority:1" json:"localRepositoryId"`
+	IssueID           int                       `gorm:"column:issue_id;type:INTEGER" json:"issueId"`
+	LocalRepositoryID int                       `gorm:"column:local_repository_id;type:INTEGER" json:"localRepositoryId"`
 	WorktreePath      string                    `gorm:"column:worktree_path;type:TEXT" json:"worktreePath"`
-	Branch            string                    `gorm:"column:branch;type:TEXT" json:"branch"`
-	BaseRef           string                    `gorm:"column:base_ref;type:TEXT" json:"baseRef"`
+	WorktreeBranch    string                    `gorm:"column:worktree_branch;type:TEXT" json:"worktreeBranch"`
+	BaseBranch        string                    `gorm:"column:base_branch;type:TEXT" json:"baseBranch"`
 	Status            enums.IssueWorktreeStatus `gorm:"column:status;type:TEXT" json:"status"`
-	LastActiveAt      *time.Time                `gorm:"column:last_active_at;type:DATETIME" json:"lastActiveAt"`
 	CreatedAt         time.Time                 `gorm:"column:created_at;type:DATETIME" json:"createdAt"`
 	DeletedAt         gorm.DeletedAt            `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
 }

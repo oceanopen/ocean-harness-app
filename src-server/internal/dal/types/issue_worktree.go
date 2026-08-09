@@ -8,12 +8,12 @@ import (
 // P1 桩（Module G）：createWorktree 派生假 worktree 路径写记录（不真调 git worktree add）；真实现见 worktree_term.md §6。
 
 // IssueWorktreeCreateWorktreeRequest POST /api/tracker/issueWorktree/createWorktree 入参。
-// branch 为开发分支名；baseRef 为基准分支（如 origin/main，P1 桩仅存档，真实现用作 git worktree add 的 <baseRef>）。
+// worktreeBranch 为开发分支名；baseBranch 为基准分支（如 origin/main，P1 桩仅存档，真实现用作 git worktree add 的基准）。
 type IssueWorktreeCreateWorktreeRequest struct {
 	IssueID           int    `json:"issueId" binding:"required"`
 	LocalRepositoryID int    `json:"localRepositoryId" binding:"required"`
-	BaseRef           string `json:"baseRef"`
-	Branch            string `json:"branch" binding:"required"`
+	BaseBranch        string `json:"baseBranch"`
+	WorktreeBranch    string `json:"worktreeBranch" binding:"required"`
 }
 
 // IssueWorktreeRemoveWorktreeRequest POST /api/tracker/issueWorktree/removeWorktree 入参。

@@ -13,10 +13,9 @@ export interface IssueWorktreeModel {
   issueId: number;
   localRepositoryId: number;
   worktreePath: string; // P1 桩为派生占位路径
-  branch: string;
-  baseRef: string;
+  worktreeBranch: string;
+  baseBranch: string;
   status: IssueWorktreeStatus;
-  lastActiveAt: string | null;
   createdAt: string;
   deletedAt?: string | null;
 }
@@ -25,8 +24,8 @@ export interface IssueWorktreeModel {
 export interface IssueWorktreeCreateWorktreeRequest {
   issueId: number;
   localRepositoryId: number;
-  baseRef?: string; // 基准分支（P1 桩仅存档）
-  branch: string; // 开发分支名
+  baseBranch?: string; // 基准分支（P1 桩仅存档）
+  worktreeBranch: string; // 开发分支名
 }
 
 // POST /api/tracker/issueWorktree/removeWorktree 入参。前置：前端已调 pty_stop_for_worktree 停 PTY（§9.3）。

@@ -138,15 +138,13 @@ CREATE TABLE t_issue_worktrees (
     issue_id            INTEGER NOT NULL,               -- t_project_issues.id
     local_repository_id INTEGER NOT NULL,               -- t_local_repositories.id
     worktree_path       TEXT    NOT NULL,               -- 绝对路径
-    branch              TEXT    NOT NULL,               -- worktree 所在分支
-    base_ref            TEXT,                            -- 创建时的基准（如 origin/main）
+    worktree_branch     TEXT    NOT NULL,               -- worktree 所在分支
+    base_branch         TEXT,                           -- 创建时的基准分支（如 origin/main）
     status              TEXT    NOT NULL DEFAULT 'active', -- active | stale | removed
-    last_active_at      DATETIME,                       -- PTY 有输出时由 Rust 经事件回写（可选）
     created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at          DATETIME                        -- 软删除，与 tracker 域一致
 );
-CREATE INDEX idx_issue_worktrees_issue ON t_issue_worktrees(issue_id);
-CREATE INDEX idx_issue_worktrees_repo  ON t_issue_worktrees(local_repository_id);
+-- 普通索引按项目约定「数据量较小、本期暂不建」不加（worktree_id UNIQUE 已隐式索引）；后续按查询热点 idx_ 追加。
 -- 无 DB 外键（项目约定），issue/仓库合法性由 service 层校验
 ```
 > 与 issue 既有 `repository_branch` 的关系：`repository_branch` 表示「issue 关心的分支」（既有语义不变）；`t_issue_worktrees` 表示「为开发而创建的隔离工作区」。一个 issue 可有 0..N 个 worktree（本期 UI 侧重 1:1，模型支持 1:N）。

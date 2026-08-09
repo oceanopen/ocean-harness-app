@@ -17,7 +17,7 @@ export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueRe
   const [repoId, setRepoId] = useState(issue.localRepositoryId);
   const repo = repos.find(r => r.id === repoId);
   const { data: branches = [] } = useLocalBranches(repoId);
-  const [baseRef, setBaseRef] = useState(repo?.currentBranch ?? '');
+  const [baseBranch, setBaseBranch] = useState(repo?.currentBranch ?? '');
   const [devBranch, setDevBranch] = useState(`issue-${issue.id}`);
   const { data: worktrees = [] } = useIssueWorktrees(issue.id);
   const activeWorktree = worktrees[0]; // P1 1:1
@@ -39,7 +39,7 @@ export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueRe
       return;
     }
     void runCreateWorktree(
-      { issueId: issue.id, localRepositoryId: repoId, baseRef, branch: devBranch },
+      { issueId: issue.id, localRepositoryId: repoId, baseBranch, worktreeBranch: devBranch },
       issue,
       targetStateId,
     );
@@ -55,7 +55,7 @@ export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueRe
         value={repo ?? null}
         onChange={(_e, v) => {
           setRepoId(v?.id ?? 0);
-          setBaseRef(v?.currentBranch ?? '');
+          setBaseBranch(v?.currentBranch ?? '');
         }}
         isOptionEqualToValue={(a, b) => a.id === b.id}
         renderInput={params => <TextField {...params} label={t('panel:devWorkbench.repo')} />}
@@ -64,8 +64,8 @@ export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueRe
         size="small"
         freeSolo
         options={branches}
-        inputValue={baseRef}
-        onInputChange={(_e, v) => setBaseRef(v)}
+        inputValue={baseBranch}
+        onInputChange={(_e, v) => setBaseBranch(v)}
         renderInput={params => <TextField {...params} label={t('panel:devWorkbench.baseRef')} />}
       />
       <TextField
