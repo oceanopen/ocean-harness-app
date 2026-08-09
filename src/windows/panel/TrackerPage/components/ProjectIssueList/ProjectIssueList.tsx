@@ -342,6 +342,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
               value={stateFilter}
               onChange={setStateFilter}
               projectStates={projectStates}
+              stateGroups={stateGroups}
               label={t('tracker:projectIssue.filter.state')}
               allOption={t('tracker:projectIssue.filter.allStates')}
               sx={{ minWidth: 120 }}
@@ -509,6 +510,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
           mode="create"
           workspaceProject={workspaceProject}
           projectStates={projectStates}
+          stateGroups={stateGroups}
           initialStateId={createInitialStateId}
           onClose={closeCreate}
           onCreated={handleCreated}
@@ -520,6 +522,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
           mode="create"
           workspaceProject={workspaceProject}
           projectStates={projectStates}
+          stateGroups={stateGroups}
           parentIssue={createChildParent}
           onClose={() => setCreateChildParent(null)}
           onCreated={handleChildCreated}
@@ -532,6 +535,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
           projectIssue={editIssue}
           workspaceProject={workspaceProject}
           projectStates={projectStates}
+          stateGroups={stateGroups}
           onClose={() => setEditIssue(null)}
           onUpdated={handleUpdated}
           onDeleted={handleDeleted}

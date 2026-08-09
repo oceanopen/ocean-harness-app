@@ -1,4 +1,4 @@
-import type { Priority, ProjectIssueResponseData, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
+import type { Priority, ProjectIssueResponseData, StateGroupMeta, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
 import type { ProjectStateView } from '@src/state/tracker';
 import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon } from '@mui/icons-material';
 import {
@@ -36,6 +36,7 @@ interface ProjectIssueDrawerProps {
   mode: 'create' | 'edit';
   workspaceProject: WorkspaceProjectModel;
   projectStates: ProjectStateView[];
+  stateGroups: StateGroupMeta[]; // 状态分组元数据，下传给状态下拉按 stateGroup 分组渲染
   projectIssue?: ProjectIssueResponseData; // edit 模式必传
   // create 模式预选状态（如分组头"+"快捷新建时传入该组首个状态）。
   initialStateId?: number;
@@ -51,7 +52,7 @@ interface ProjectIssueDrawerProps {
 // 成功后关闭抽屉 + 父级刷新列表；失败 drawer 内弹 error toast（成功 toast 由父级统一弹）。
 // mode 决定：初值来源、提交 API、头部标题/元信息/删除按钮显隐。
 // create + parentIssue：新建子 issue（顶部只读父信息条 + parentId）。
-function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssue, initialStateId, parentIssue, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
+function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups, projectIssue, initialStateId, parentIssue, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
   const { t, i18n } = useTranslation();
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
   const isCreateSub = mode === 'create' && !!parentIssue;
@@ -282,7 +283,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, projectIssu
           <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale={isZh ? 'zh-cn' : 'en'}>
             <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 1.5, alignItems: 'center' }}>
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.state')}</Typography>
-              <ProjectStateSelect value={stateId} projectStates={projectStates} onChange={setStateId} disabled={submitting || deleting} />
+              <ProjectStateSelect value={stateId} projectStates={projectStates} stateGroups={stateGroups} onChange={setStateId} disabled={submitting || deleting} />
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.priority')}</Typography>
               <PrioritySelect value={priority} onChange={setPriority} disabled={submitting || deleting} />
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.startDate')}</Typography>
