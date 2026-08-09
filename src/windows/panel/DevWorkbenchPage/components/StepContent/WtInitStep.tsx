@@ -74,12 +74,13 @@ export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueRe
         value={devBranch}
         onChange={e => setDevBranch(e.target.value)}
       />
-      <Box sx={{ p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-        <Typography variant="caption" color="text.secondary">{t('panel:devWorkbench.worktreePath')}</Typography>
-        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-          {worktreePathPreview || '未选择仓库'}
-        </Typography>
-      </Box>
+      <TextField
+        label={t('panel:devWorkbench.worktreePath')}
+        value={worktreePathPreview || '未选择仓库'}
+        fullWidth
+        slotProps={{ input: { readOnly: true } }}
+        variant="filled"
+      />
       <Box>
         <Button
           variant="contained"
