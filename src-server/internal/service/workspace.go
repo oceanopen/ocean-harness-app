@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"path/filepath"
 
 	"gorm.io/gorm"
 
@@ -37,6 +38,20 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 	return ws, nil
 }
 
+// validateWorktreeRoot 校验 worktree 存放目录：非空时必须为绝对路径。
+// §4.1 worktreeId = repoId::absPath 契约——相对路径会污染永久共享键（本期不支持改名，§5.3），
+// 故在 service 层（SSOT，不信任 client）拒绝相对路径。不用 filepath.Abs 自动转换：
+// "~" 不会被展开、sidecar CWD 不可控，应让用户用目录选择器重选绝对路径。
+func validateWorktreeRoot(worktreeRoot string) error {
+	if worktreeRoot == "" {
+		return nil
+	}
+	if !filepath.IsAbs(worktreeRoot) {
+		return errors.New("worktree 存放目录必须为绝对路径")
+	}
+	return nil
+}
+
 // Create 创建 workspace，采用「恢复式 upsert」：按 slug 含软删记录（Unscoped）查询——
 //   - 未删同 slug → 报「记录重复」；
 //   - 已删同 slug → 恢复：业务字段覆盖 + deleted_at 清空 + 保留 id/created_at（Save 自动刷新 updated_at）；
@@ -45,6 +60,9 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 // gorm 对含 gorm.DeletedAt 的模型自动给所有查询加 WHERE deleted_at IS NULL（只看未删行）。
 // .Unscoped() 关掉这个自动过滤，让查询/写入把已软删的行也包括进来。
 func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*model.Workspace, error) {
+	if err := validateWorktreeRoot(req.WorktreeRoot); err != nil {
+		return nil, err
+	}
 	q := query.Use(svc.Orm)
 	wq := q.Workspace.WithContext(svc.Context)
 
@@ -53,6 +71,7 @@ func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*model.Workspace
 		if existing.DeletedAt.Valid {
 			existing.Name = req.Name
 			existing.Description = req.Description
+			existing.WorktreeRoot = req.WorktreeRoot
 			existing.DeletedAt = gorm.DeletedAt{} // 清空 → deleted_at = NULL（须 Unscoped 才能改写）
 			if e := wq.Unscoped().Save(existing); e != nil {
 				return nil, e
@@ -65,7 +84,7 @@ func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*model.Workspace
 		return nil, err
 	}
 
-	ws := &model.Workspace{Name: req.Name, Slug: req.Slug, Description: req.Description}
+	ws := &model.Workspace{Name: req.Name, Slug: req.Slug, Description: req.Description, WorktreeRoot: req.WorktreeRoot}
 	if e := wq.Create(ws); e != nil {
 		return nil, e
 	}
@@ -74,6 +93,9 @@ func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*model.Workspace
 
 // Update 更新 workspace：slug 唯一性校验（排除自身、仅未删）后保存。
 func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace, error) {
+	if err := validateWorktreeRoot(req.WorktreeRoot); err != nil {
+		return nil, err
+	}
 	q := query.Use(svc.Orm)
 	wq := q.Workspace.WithContext(svc.Context)
 
@@ -93,6 +115,7 @@ func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace
 	ws.Name = req.Name
 	ws.Slug = req.Slug
 	ws.Description = req.Description
+	ws.WorktreeRoot = req.WorktreeRoot
 	if e := wq.Save(ws); e != nil {
 		return nil, e
 	}

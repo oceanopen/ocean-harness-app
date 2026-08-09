@@ -15,6 +15,9 @@
       "slug": "Slug",
       "slugPlaceholder": "lowercase letters, digits, hyphens",
       "slugHint": "Auto-derived from name, editable",
+      "worktreeRoot": "Worktree dir",
+      "worktreeRootPlaceholder": "Select or enter directory (absolute path)",
+      "browse": "Browse",
       "description": "Description",
       "descriptionPlaceholder": "Enter description (optional)",
       "confirm": "OK",
@@ -223,15 +226,6 @@
     "delete": "Delete",
     "deleteConfirmMsg": "Delete label \"{{name}}\"? It will be removed from all issues.",
     "empty": "No labels"
-  },
-  "toast": {
-    "loadFailed": "Load failed: {{message}}",
-    "created": "Workspace \"{{name}}\" created",
-    "createFailed": "Create failed: {{message}}",
-    "updated": "Workspace \"{{name}}\" updated",
-    "updateFailed": "Update failed: {{message}}",
-    "deleted": "Workspace deleted",
-    "deleteFailed": "Delete failed: {{message}}"
   },
   "time": {
     "justNow": "just now",

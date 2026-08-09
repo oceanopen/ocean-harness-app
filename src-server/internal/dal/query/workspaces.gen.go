@@ -35,6 +35,7 @@ func newWorkspace(db *gorm.DB, opts ...gen.DOOption) workspace {
 	_workspace.CreatedAt = field.NewTime(tableName, "created_at")
 	_workspace.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_workspace.DeletedAt = field.NewField(tableName, "deleted_at")
+	_workspace.WorktreeRoot = field.NewString(tableName, "worktree_root")
 	_workspace.WorkspaceProjectList = workspaceHasManyWorkspaceProjectList{
 		db: db.Session(&gorm.Session{}),
 
@@ -86,6 +87,7 @@ type workspace struct {
 	CreatedAt            field.Time
 	UpdatedAt            field.Time
 	DeletedAt            field.Field
+	WorktreeRoot         field.String
 	WorkspaceProjectList workspaceHasManyWorkspaceProjectList
 
 	WorkspaceLabelList workspaceHasManyWorkspaceLabelList
@@ -112,6 +114,7 @@ func (w *workspace) updateTableName(table string) *workspace {
 	w.CreatedAt = field.NewTime(table, "created_at")
 	w.UpdatedAt = field.NewTime(table, "updated_at")
 	w.DeletedAt = field.NewField(table, "deleted_at")
+	w.WorktreeRoot = field.NewString(table, "worktree_root")
 
 	w.fillFieldMap()
 
@@ -138,7 +141,7 @@ func (w *workspace) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (w *workspace) fillFieldMap() {
-	w.fieldMap = make(map[string]field.Expr, 9)
+	w.fieldMap = make(map[string]field.Expr, 10)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["name"] = w.Name
 	w.fieldMap["slug"] = w.Slug
@@ -146,6 +149,7 @@ func (w *workspace) fillFieldMap() {
 	w.fieldMap["created_at"] = w.CreatedAt
 	w.fieldMap["updated_at"] = w.UpdatedAt
 	w.fieldMap["deleted_at"] = w.DeletedAt
+	w.fieldMap["worktree_root"] = w.WorktreeRoot
 
 }
 

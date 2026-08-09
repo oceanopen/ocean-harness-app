@@ -80,11 +80,11 @@ wt_init ──[创建并开始]──▶ developing ──[开发完成]──�
 - **目标**：`WorktreeList/Add/Remove/BranchExists`，照 `gitutil.go` 实态（`gitOutput` 风格、`os/exec`、无超时）；写操作新增返回 `(string,error)` 的 helper（合并 stderr 进 error，因 add/remove 失败原因须回传）；写前用 `IsRepo` 校验；`add` 用 `--no-track`。
 - **验证**：单测覆盖 add/list/remove/prune 正常 + 分支冲突/路径占用/脏工作区。
 
-### 🔄 任务 1.2 — worktreeRoot 配置 + 路径派生
-- **文件**：`src/shared/appConfig.ts` + `src-tauri/src/shared/app_config.rs`（双端镜像加 `worktree_root` key，默认 `~/Library/Application Support/<App>/worktrees`）+ Go 侧路径派生工具
-- **当前**：`service/issue_worktree.go` 的 `worktreeRoot = "<worktree-root-placeholder>"`，CreateWorktree 派生假路径。
-- **目标**：`<root>/<repoName>/<sanitizedName>` 派生；名称清洗（拒绝 `..`/`.`，不安全字符 collapse `-`）；分支命名 `<prefix?>/<issueKey>-<slug>`。
-- **验证**：配置前后端读写贯通；清洗覆盖中英文/emoji/路径穿越。
+### ✅ 任务 1.2 — worktreeRoot 配置 + 路径派生（per-workspace 改造）
+- **文件**：`migrations/20260809002_add_workspace_worktree_root.sql`（t_workspaces 加 worktree_root）+ `service/workspace.go`/`dal/types/workspace.go`（Create/Update 透传）+ `gitutil/naming.go`（RepoNameFromRemoteURL + 单测）+ `service/issue_worktree.go`（CreateWorktree 真路径派生，删 placeholder）+ 前端 `WorkspaceService.ts`/`WorkspaceDrawer.tsx`（目录选择器，参考 AddRepositoryDrawer）/i18n
+- **设计变更**（取代原全局 appConfig 方案）：探明 Go sidecar 读不到 appConfig（与 Rust 配置物理隔离，仅 `GO_SERVER_*` 环境变量桥接），改为 **per-workspace**——worktreeRoot 配在 `t_workspaces.worktree_root`，Go CreateWorktree 查 issue→workspace 直接拿（本就要查），无需环境变量、不动 Rust。worktree 跟着工作空间走，不同工作空间可不同存放位置。
+- **目标**：派生 `<worktreeRoot>/<repoName>/workspace_{wid}-project_{pid}-issue_{iid}`；repoName 从 remote_url 的 `/xxx.git` 末段解析（空回退 filepath.Base(local_dir)）；worktreeRoot 为空报错要求配置；末段用稳定 id 段（取代 issue 标题清洗——标题含中文/emoji 清洗复杂）。
+- **验证**：go build + gitutil 单测（SSH/HTTPS/subgroup）+ tsc 通过。本期只派生路径写记录，不真调 git worktree add（任务 1.3 才建目录）。
 
 ### ⬜ 任务 1.3 — D1 worktree 真创建
 - **文件**：`src-server/internal/service/issue_worktree.go`（改 CreateWorktree）+ `dal/types/issue_worktree.go`（入参按需）
@@ -148,8 +148,11 @@ CREATE TABLE t_issue_worktrees (
 - 与 issue 既有 `repository_branch` 正交：`repository_branch`=issue 关心的分支；本表=为开发创建的隔离工作区。一个 issue 可 0..N worktree（本期 UI 1:1）。
 - gencode 用 `gen.FieldType("status","enums.IssueWorktreeStatus")` 映射 typed 枚举；枚举包须先于 gencode 存在。
 
-### 4.3 落盘路径约定
-`<worktreeRoot>/<repoName>/<sanitizedName>`；repoName 取仓库名/目录名；sanitizedName=issue 标题+id 清洗。分支命名 `<prefix?>/<issueKey>-<slug>`。
+### 4.3 落盘路径约定（per-workspace，任务 1.2 落地）
+`<workspace.worktreeRoot>/<repoName>/workspace_{wid}-project_{pid}-issue_{iid}`：
+- **worktreeRoot**：配在 `t_workspaces.worktree_root`（跟着工作空间走），workspace 编辑表单用目录选择器配置；为空 CreateWorktree 报错要求配置。取代原全局 appConfig 方案（Go 读不到 appConfig，per-workspace DB 字段 Go 直接查，无需环境变量/不动 Rust）。
+- **repoName**：从 `t_local_repositories.remote_url` 的 `/xxx.git` 末段解析（`gitutil.RepoNameFromRemoteURL`，覆盖 SSH/HTTPS/subgroup）；remote_url 为空回退 `filepath.Base(local_dir)`。
+- **末段**：`workspace_{wid}-project_{pid}-issue_{iid}`（id 段，全局唯一，取代原 issue 标题清洗——标题含中文/emoji 清洗复杂，改用稳定 id 段）。
 
 ### 4.4 Go 范式（service/controller/router）
 - **gitutil**：`gitOutput(dir,args...)` = `exec.Command("git","-C",dir,args...).Output()`，**无超时、stderr 丢弃**（失败返回 `""`）。写操作需新增 error helper。**注意：原文档「`gitExecFileAsync`（超时、合并 stderr）」在本项目不存在，以代码为准。**

@@ -3,6 +3,8 @@ package service
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -11,6 +13,7 @@ import (
 	"we-claude-terminal/go-server/internal/dal/model"
 	"we-claude-terminal/go-server/internal/dal/query"
 	"we-claude-terminal/go-server/internal/dal/types"
+	"we-claude-terminal/go-server/internal/gitutil"
 )
 
 // IssueWorktree 对应 /api/tracker/issueWorktree 命名空间下的业务逻辑（issue 开发流程 worktree 元数据）。
@@ -19,18 +22,64 @@ type IssueWorktree struct {
 	apis.Service
 }
 
-// worktreeRoot P1 桩根目录占位（worktree_term.md §5.3 真派生含 repoName/sanitizedName，待 P2 接 gitutil 落地）。
-const worktreeRoot = "<worktree-root-placeholder>"
-
-// CreateWorktree 为 issue 创建 worktree 记录（P1 桩：派生假路径，不真调 git）。
-// 幂等 + 重入安全：按 worktreeId（UNIQUE）查——已存在（active 或 removed）则重置为 active + 更新字段
-// （支持清理后用同一分支重启），避免 UNIQUE 冲突；不存在则创建。
+// CreateWorktree 为 issue 创建 worktree 记录：派生 per-workspace 真实落盘路径（仍不真调 git worktree add，
+// 真实建目录见任务 1.3）。幂等 + 重入安全：按 worktreeId（UNIQUE）查——已存在（active 或 removed）则
+// 重置为 active + 更新字段（支持清理后用同一分支重启），避免 UNIQUE 冲突；不存在则创建。
+//
+// 路径派生（docs/worktree_lifecycle.md §4.3，per-workspace 改造）：
+//
+//	<workspace.worktreeRoot>/<repoName>/workspace_{wid}-project_{pid}-issue_{iid}
+//
+// repoName 从 local_repository.remote_url 的 /xxx.git 末段解析；remote_url 为空回退 filepath.Base(local_dir)。
+// workspace.worktreeRoot 为空（用户未配）报错，要求先在工作空间设置配置 worktree 存放目录。
 // 成功后由前端推进 issue.stateId 到首个开发步骤（developing）。
 func (svc IssueWorktree) CreateWorktree(req *types.IssueWorktreeCreateWorktreeRequest) (*types.IssueWorktreeResponseData, error) {
-	worktreePath := fmt.Sprintf("%s/issue-%d-%s", worktreeRoot, req.IssueID, req.WorktreeBranch)
+	q := query.Use(svc.Orm)
+
+	// 1) 查 issue：拿 workspaceId/projectId（issue 直接带两字段，无需经 project 中转）。
+	issue, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.IssueID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("事项不存在")
+		}
+		return nil, err
+	}
+
+	// 2) 查 workspace 拿 worktreeRoot（per-workspace 配置，为空报错要求配置）。
+	ws, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(issue.WorkspaceID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("工作空间不存在")
+		}
+		return nil, err
+	}
+	if strings.TrimSpace(ws.WorktreeRoot) == "" {
+		return nil, errors.New("请先在工作空间设置中配置 worktree 存放目录")
+	}
+
+	// 3) 查 local_repository 拿 remote_url 解析 repoName；remote_url 为空回退本地目录名。
+	repo, err := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(req.LocalRepositoryID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("仓库不存在")
+		}
+		return nil, err
+	}
+	repoName := gitutil.RepoNameFromRemoteURL(repo.RemoteURL)
+	if repoName == "" {
+		repoName = filepath.Base(repo.LocalDir) // remote_url 缺失时用本地目录名兜底
+	}
+
+	// 4) 派生落盘路径与跨端共享键（§4.1 worktreeId = repoId::absPath）。
+	worktreePath := filepath.Join(
+		strings.TrimSpace(ws.WorktreeRoot),
+		repoName,
+		fmt.Sprintf("workspace_%d-project_%d-issue_%d", ws.ID, issue.ProjectID, req.IssueID),
+	)
 	worktreeID := fmt.Sprintf("%d::%s", req.LocalRepositoryID, worktreePath)
+
 	var wt *model.IssueWorktree
-	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
+	err = svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
 		wq := q.IssueWorktree.WithContext(svc.Context)
 		// 按 worktreeId 查（UNIQUE）：已存在则重置 active + 更新字段，避免 UNIQUE 冲突。

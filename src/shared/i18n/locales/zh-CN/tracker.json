@@ -15,6 +15,9 @@
       "slug": "标识（slug）",
       "slugPlaceholder": "小写字母、数字、连字符",
       "slugHint": "由名称自动生成，可手动修改",
+      "worktreeRoot": "worktree 存放目录",
+      "worktreeRootPlaceholder": "请选择或输入目录（绝对路径）",
+      "browse": "浏览",
       "description": "描述",
       "descriptionPlaceholder": "请输入描述（选填）",
       "confirm": "确定",
@@ -223,15 +226,6 @@
     "delete": "删除",
     "deleteConfirmMsg": "确认删除标签「{{name}}」？将自动从所有 Issue 上移除。",
     "empty": "暂无标签"
-  },
-  "toast": {
-    "loadFailed": "加载失败：{{message}}",
-    "created": "工作空间「{{name}}」创建成功",
-    "createFailed": "创建失败：{{message}}",
-    "updated": "工作空间「{{name}}」更新成功",
-    "updateFailed": "更新失败：{{message}}",
-    "deleted": "工作空间已删除",
-    "deleteFailed": "删除失败：{{message}}"
   },
   "time": {
     "justNow": "刚刚",

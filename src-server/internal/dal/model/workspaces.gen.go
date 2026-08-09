@@ -21,6 +21,7 @@ type Workspace struct {
 	CreatedAt            time.Time           `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt            time.Time           `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 	DeletedAt            gorm.DeletedAt      `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
+	WorktreeRoot         string              `gorm:"column:worktree_root;type:TEXT;not null;default:''" json:"worktreeRoot"`
 	WorkspaceProjectList []*WorkspaceProject `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceProjectList,omitempty"`
 	WorkspaceLabelList   []*WorkspaceLabel   `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceLabelList,omitempty"`
 }

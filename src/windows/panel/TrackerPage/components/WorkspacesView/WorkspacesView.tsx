@@ -69,12 +69,12 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
 
   // 创建/更新成功：mutation 内部已 invalidate（列表自动刷新），回调仅弹 toast。
   const handleCreated = useCallback((ws: WorkspaceModel) => {
-    showToast(t('tracker:workspace.toast.created', { name: ws.name }), 'success');
-  }, [t, showToast]);
+    showToast(`工作空间「${ws.name}」创建成功`, 'success');
+  }, [showToast]);
 
   const handleUpdated = useCallback((ws: WorkspaceModel) => {
-    showToast(t('tracker:workspace.toast.updated', { name: ws.name }), 'success');
-  }, [t, showToast]);
+    showToast(`工作空间「${ws.name}」更新成功`, 'success');
+  }, [showToast]);
 
   const handleConfirmDelete = useCallback(async () => {
     if (!deleteTarget) {
@@ -83,15 +83,15 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
     setDeleting(true);
     try {
       await deleteWs.mutateAsync(deleteTarget.id);
-      showToast(t('tracker:workspace.toast.deleted'), 'success');
+      showToast('工作空间已删除', 'success');
       setDeleteTarget(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast(t('tracker:workspace.toast.deleteFailed', { message: msg }), 'error');
+      showToast(`删除失败：${msg}`, 'error');
     } finally {
       setDeleting(false);
     }
-  }, [deleteTarget, deleteWs, t, showToast]);
+  }, [deleteTarget, deleteWs, showToast]);
 
   const ready = !isLoading && !isError;
 
