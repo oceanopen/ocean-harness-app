@@ -71,44 +71,46 @@ wt_init ──[创建并开始]──▶ developing ──[开发完成]──�
 ## 3. 任务清单（主线）
 
 > 按序执行；每个任务独立实现 + 验证。任务 1.7 可选，不阻塞模块 2。
+>
+> 状态图例：✅ 已完成 · 🔄 进行中 · ⬜ 待办
 
-### 任务 1.1 — gitutil worktree 写操作封装
+### ✅ 任务 1.1 — gitutil worktree 写操作封装
 - **文件**：`src-server/internal/gitutil/worktree.go`（新增）+ 单测
 - **当前**：`gitutil.go` 只有只读（IsRepo/ParseInfo/LocalBranches），无任何 worktree 函数。
 - **目标**：`WorktreeList/Add/Remove/BranchExists`，照 `gitutil.go` 实态（`gitOutput` 风格、`os/exec`、无超时）；写操作新增返回 `(string,error)` 的 helper（合并 stderr 进 error，因 add/remove 失败原因须回传）；写前用 `IsRepo` 校验；`add` 用 `--no-track`。
 - **验证**：单测覆盖 add/list/remove/prune 正常 + 分支冲突/路径占用/脏工作区。
 
-### 任务 1.2 — worktreeRoot 配置 + 路径派生
+### 🔄 任务 1.2 — worktreeRoot 配置 + 路径派生
 - **文件**：`src/shared/appConfig.ts` + `src-tauri/src/shared/app_config.rs`（双端镜像加 `worktree_root` key，默认 `~/Library/Application Support/<App>/worktrees`）+ Go 侧路径派生工具
 - **当前**：`service/issue_worktree.go` 的 `worktreeRoot = "<worktree-root-placeholder>"`，CreateWorktree 派生假路径。
 - **目标**：`<root>/<repoName>/<sanitizedName>` 派生；名称清洗（拒绝 `..`/`.`，不安全字符 collapse `-`）；分支命名 `<prefix?>/<issueKey>-<slug>`。
 - **验证**：配置前后端读写贯通；清洗覆盖中英文/emoji/路径穿越。
 
-### 任务 1.3 — D1 worktree 真创建
+### ⬜ 任务 1.3 — D1 worktree 真创建
 - **文件**：`src-server/internal/service/issue_worktree.go`（改 CreateWorktree）+ `dal/types/issue_worktree.go`（入参按需）
 - **当前**：CreateWorktree 派生假路径写记录（不真调 git），P1 幂等逻辑（按 worktreeId UNIQUE 重置 active）已就位。
 - **目标**：真路径派生（1.2）→ `validateIssueRepo`（入参只有 IssueID+LocalRepositoryID，须先查 issue 拿 project_id 再查中间表）→ `WorktreeBranchExists` 防冲突 → `WorktreeAdd`；保留幂等。
 - **验证**：某 issue「创建并开始」→ 磁盘真生成 worktree 目录、DB 记录路径正确、推进到 developing。
 
-### 任务 1.4 — D3 PR：githost 平台抽象包
+### ⬜ 任务 1.4 — D3 PR：githost 平台抽象包
 - **文件**：`src-server/internal/githost/`（新增包）+ 单测
 - **当前**：无 Go 侧 PR 能力；前端 `gitRemote.ts` 有 host 解析（仅 compare URL）。
 - **目标**：`DetectProvider(remoteURL)` 解析 host（github.com/gitlab.com/自建）+ `Provider` 接口（`CreatePullRequest`/`MergePullRequest`）+ `GitHubProvider`/`GitLabProvider`（REST API，`net/http` 标准库）+ owner/repo 解析（参考 gitRemote.ts，含 GitLab subgroup）。
 - **验证**：单测覆盖 host 检测、owner/repo 解析；可选集成测试真打 API。
 
-### 任务 1.5 — D3 PR：token + 端点 + 前端接线
+### ⬜ 任务 1.5 — D3 PR：token + 端点 + 前端接线
 - **文件**：`appConfig.ts`/`app_config.rs`（加 `github_token`/`gitlab_token`）+ 设置页 token UI + `service/issue_worktree.go`（CreatePullRequest + 端点 `createPr`，可选 `mergePr`）+ `router.go` 注册 + `IssueWorktreeService.ts` + `PrOpenStep.tsx`
 - **当前**：PrOpenStep「引导式 compare URL」（buildCompareUrl + plugin-shell 打开），不真创建 PR。
 - **目标**：token 经 appConfig（前端读 → 随 body 传 Go，Go 不持久化/不入日志）；有 token 调 `createPr` 真创建并展示返回 `prUrl`，无 token 走 `buildCompareUrl` fallback。
 - **验证**：填 base/head/title → 平台真生成 PR、prUrl 可点开；无 token 回退 compare 页。
 
-### 任务 1.6 — D4 worktree 真清理
+### ⬜ 任务 1.6 — D4 worktree 真清理
 - **文件**：`src-server/internal/service/issue_worktree.go`（改 RemoveWorktree）
 - **当前**：RemoveWorktree 仅软删（status=removed），不真删目录；前端 `useCleanupAndAdvance` 编排顺序（先 pty_stop_for_worktree 再 removeWorktree）已就位。
 - **目标**：软删 + `WorktreeRemove`（真删目录 + prune）。前置约束由前端编排满足（本期 pty_stop 为 no-op 桩）。
 - **验证**：「清理并完成」→ worktree 目录真删除、记录软删、推进 completed 自动归档。
 
-### 任务 1.7（可选/健壮性）— reconcile + getInfo
+### ⬜ 任务 1.7（可选/健壮性）— reconcile + getInfo
 - **文件**：`service/issue_worktree.go`（Reconcile/GetInfo）+ controller/router 注册 `reconcile`/`getInfo`
 - **当前**：无 reconcile/getInfo。
 - **目标**：Reconcile 对比 `WorktreeList` 与 DB 标 stale（路径消失）；GetInfo 返回 `git status` 摘要。

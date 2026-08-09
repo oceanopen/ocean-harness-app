@@ -50,32 +50,34 @@
 ## 3. 任务清单（主线）
 
 > 依赖模块 1 完成（1.6 后即可启动）。按序执行；每个任务独立实现 + 验证。
+>
+> 状态图例：✅ 已完成 · 🔄 进行中 · ⬜ 待办
 
-### 任务 2.1 — portable-pty 接入 + PtyProvider 骨架
+### ⬜ 任务 2.1 — portable-pty 接入 + PtyProvider 骨架
 - **文件**：`src-tauri/Cargo.toml`（加 `portable-pty = "0.8"`，**不引 tokio/anyhow**）+ `src-tauri/src/pty/{provider,local_provider,session,state}.rs`（拆分）
 - **当前**：`pty/mod.rs` 仅 `pty_stop_for_worktree` 桩；portable-pty 未引入；项目明确不用 tokio（异步走 `std::thread::spawn`）。
 - **目标**：`PtyProvider` trait + `LocalPtyProvider`（portable-pty 实现）；`PtySession`（id/worktreeId/cwd/handle）；`PtySessionStore`（照 `ClaudeSessionStore`：`Mutex<HashMap>` + Default + `init(app)`）。
 - **验证**：编译通过；`LocalPtyProvider::spawn` 在临时目录起 shell 不崩。
 
-### 任务 2.2 — PTY 命令 + 输出通道 + 退出回收
+### ⬜ 任务 2.2 — PTY 命令 + 输出通道 + 退出回收
 - **文件**：`src-tauri/src/pty/mod.rs`（命令）+ `src-tauri/src/lib.rs`（注册命令到 `:42` 后、`.typ::<T>()` 注册纯 payload 类型、`RunEvent::Exit:160` 加 `pty::shutdown_all`）+ `events.rs`/`events.ts`（若走 emit）
 - **当前**：仅 `pty_stop_for_worktree` 注册；输出通道无（项目零 Channel、纯 emit）。
 - **目标**：`pty_spawn/write/resize/shutdown/list`（`pty_stop_for_worktree` 桩暂留，2.5 变真）；输出通道 **先 spike `Channel<PtyData>` 验证 tauri-specta**，不行回退 `emit(EVENT_PTY_DATA/EXIT)`（双份维护）；specta 约束（计数 u32、时间戳 i64 标 Number、cols/rows u16）。
 - **验证**：临时目录 spawn shell，打字有回显、resize 生效；`gen:bindings` 无 panic、bindings.ts 含新命令。
 
-### 任务 2.3 — ring buffer + reattach（刷新重载 scrollback）
+### ⬜ 任务 2.3 — ring buffer + reattach（刷新重载 scrollback）
 - **文件**：`src-tauri/src/pty/session.rs`（环形缓冲）+ `mod.rs`（`pty_exists`/`pty_reattach` 命令 + 注册）
 - **当前**：session 无 ring；无 exists/reattach 命令。
 - **目标**：PTY 输出始终先入有界 ring 再推 listener；reattach 把 ring 一次性 replay 再切实时流；session 不存在返回 false。
 - **验证**：spawn → 刷新前端 → `pty_reattach` 重载 scrollback 后接实时流；边界（有界、TUI 错位可接受）。
 
-### 任务 2.4 — xterm 终端组件 + 双向流
+### ⬜ 任务 2.4 — xterm 终端组件 + 双向流
 - **文件**：`package.json`（加 `@xterm/xterm`/`addon-fit`/`addon-webgl`）+ `DevWorkbenchPage/components/StepContent/EmbeddedTerminal/{TerminalView,usePtySession}.tsx`（新增，PascalCase 目录）
 - **当前**：DevelopingStep 是占位 Box；无 xterm 依赖；项目零 Channel（前端 7 处全 `listen`，无 `new Channel`）。
 - **目标**：xterm 封装（`onData`→`pty_write`、`onResize`→`pty_resize`、Channel/emit→`write`）；挂载优先 `pty_exists`+`pty_reattach`，不存在才 `pty_spawn`；卸载 `pty_shutdown`；import xterm.css；密集 UI 去 Tooltip、报错硬编码中文、按钮标签走 i18n。
 - **验证**：开终端、双向流正常、刷新后 scrollback 重载、关闭无泄漏。
 
-### 任务 2.5 — D2 接入 + pty_stop_for_worktree 真实现
+### ⬜ 任务 2.5 — D2 接入 + pty_stop_for_worktree 真实现
 - **文件**：`DevelopingStep.tsx:54-65`（占位框 → `<EmbeddedTerminal worktreeId dir />`，与外部终端按钮并列）+ `src-tauri/src/pty/mod.rs`（`pty_stop_for_worktree` 从恒返 0 改为按 worktreeId 批量 kill 绑定 PTY）
 - **当前**：D2 占位框；`pty_stop_for_worktree` 恒返 0；模块 1 D4 的 `useCleanupAndAdvance` 调用点已就位。
 - **目标**：嵌入式终端接入 D2；`pty_stop_for_worktree` 变真，联动模块 1 任务 1.6 的 D4 编排（前端调用点无需改）。
