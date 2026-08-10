@@ -30,8 +30,12 @@ export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueRe
     () => activeWorktree?.worktreePath ?? (repo ? `${repo.localDir}-worktree-${issue.id}` : ''),
     [activeWorktree, repo, issue.id],
   );
-  // 推进目标：wt_init → 下一个开发步骤（developing）。
-  const targetStateId = getNextDevStepStateId(issue.stateId, views);
+  // 推进目标：WtInitStep 固定是 wt_init 步骤，"创建并开始"推进到 wt_init 的下一个开发步骤（developing）。
+  // 基于 wt_init 的 stateId 算 next（而非 issue.stateId）：issue 可能在 in_progress（wt_init 前驱，被
+  // getDevSteps 排除 → getNextDevStepStateId 返回 null），但 WtInitStep 的推进目标与 issue 当前态无关——
+  // in_progress 与 wt_init issue 点"创建并开始"都应推进到 developing（创建即开始开发）。
+  const wtInitView = views.find(v => v.stateCode === 'wt_init');
+  const targetStateId = wtInitView ? getNextDevStepStateId(wtInitView.id, views) : null;
 
   const onStart = () => {
     setStartOpen(false);
