@@ -92,7 +92,7 @@ wt_init ──[创建并开始]──▶ developing ──[开发完成]──�
 - **目标**：真路径派生（1.2）→ `validateIssueRepo(orm, projectID, repoID, branch)`（入参 projectID 非 IssueID；CreateWorktree 已查 issue 拿 `issue.ProjectID` 直接传，校验 repo 属于 project 关联仓库集合）→ `WorktreeExists` 防目录已存在（幂等跳过）+ `WorktreeBranchExists` 防分支冲突 → `WorktreeAdd`；保留幂等。git 写盘在事务外，事务失败不回滚磁盘（reconcile 兜底）。
 - **验证**：某 issue「创建并开始」→ 磁盘真生成 worktree 目录、DB 记录路径正确、推进到 developing。
 
-### ⬜ 任务 1.4 — D3 PR：githost 平台抽象包
+### ✅ 任务 1.4 — D3 PR：githost 平台抽象包
 - **文件**：`src-server/internal/githost/`（新增包）+ 单测
 - **当前**：无 Go 侧 PR 能力；前端 `gitRemote.ts` 有 host 解析（仅 compare URL）。
 - **目标**：`DetectProvider(remoteURL)` 解析 host（github.com/gitlab.com/自建）+ `Provider` 接口（`CreatePullRequest`/`MergePullRequest`）+ `GitHubProvider`/`GitLabProvider`（REST API，`net/http` 标准库）+ owner/repo 解析（参考 gitRemote.ts，含 GitLab subgroup）。
