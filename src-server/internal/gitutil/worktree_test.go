@@ -116,6 +116,45 @@ func TestWorktreeList(t *testing.T) {
 	require.Equal(t, "b", branchByPath[filepath.Join(sandbox, "wt2")])
 }
 
+func TestWorktreeExists(t *testing.T) {
+	skipIfNoGit(t)
+	repoDir, sandbox := newTestRepo(t)
+	wtPath := filepath.Join(sandbox, "wt1")
+
+	// 未创建：不存在
+	exists, err := WorktreeExists(repoDir, wtPath)
+	require.NoError(t, err)
+	require.False(t, exists)
+
+	// 创建后：存在
+	require.NoError(t, WorktreeAdd(repoDir, wtPath, "feature", ""))
+	exists, err = WorktreeExists(repoDir, wtPath)
+	require.NoError(t, err)
+	require.True(t, exists)
+
+	// 主仓库目录本身也是现有工作区
+	exists, err = WorktreeExists(repoDir, repoDir)
+	require.NoError(t, err)
+	require.True(t, exists)
+}
+
+func TestWorktreeExists_SymlinkPath(t *testing.T) {
+	skipIfNoGit(t)
+	repoDir, sandbox := newTestRepo(t)
+	wtPath := filepath.Join(sandbox, "wt1")
+	require.NoError(t, WorktreeAdd(repoDir, wtPath, "feature", ""))
+
+	// sandbox 的符号链接别名：经别名路径访问同一 worktree，git list 存解析后的真实路径，
+	// WorktreeExists 须解析输入的符号链接路径后比对，否则假阴性（macOS /tmp→/private/tmp 场景）。
+	link := filepath.Join(sandbox, "link")
+	require.NoError(t, os.Symlink(sandbox, link))
+	linkedWtPath := filepath.Join(link, "wt1")
+
+	exists, err := WorktreeExists(repoDir, linkedWtPath)
+	require.NoError(t, err)
+	require.True(t, exists)
+}
+
 func TestWorktreeRemove_Success(t *testing.T) {
 	skipIfNoGit(t)
 	repoDir, sandbox := newTestRepo(t)

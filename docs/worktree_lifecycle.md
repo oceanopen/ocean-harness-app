@@ -86,10 +86,10 @@ wt_init ──[创建并开始]──▶ developing ──[开发完成]──�
 - **目标**：派生 `<worktreeRoot>/<repoName>/workspace_{wid}-project_{pid}-issue_{iid}`；repoName 从 remote_url 的 `/xxx.git` 末段解析（空回退 filepath.Base(local_dir)）；worktreeRoot 为空报错要求配置；末段用稳定 id 段（取代 issue 标题清洗——标题含中文/emoji 清洗复杂）。
 - **验证**：go build + gitutil 单测（SSH/HTTPS/subgroup）+ tsc 通过。本期只派生路径写记录，不真调 git worktree add（任务 1.3 才建目录）。
 
-### ⬜ 任务 1.3 — D1 worktree 真创建
+### ✅ 任务 1.3 — D1 worktree 真创建
 - **文件**：`src-server/internal/service/issue_worktree.go`（改 CreateWorktree）+ `dal/types/issue_worktree.go`（入参按需）
 - **当前**：CreateWorktree 派生假路径写记录（不真调 git），P1 幂等逻辑（按 worktreeId UNIQUE 重置 active）已就位。
-- **目标**：真路径派生（1.2）→ `validateIssueRepo`（入参只有 IssueID+LocalRepositoryID，须先查 issue 拿 project_id 再查中间表）→ `WorktreeBranchExists` 防冲突 → `WorktreeAdd`；保留幂等。
+- **目标**：真路径派生（1.2）→ `validateIssueRepo(orm, projectID, repoID, branch)`（入参 projectID 非 IssueID；CreateWorktree 已查 issue 拿 `issue.ProjectID` 直接传，校验 repo 属于 project 关联仓库集合）→ `WorktreeExists` 防目录已存在（幂等跳过）+ `WorktreeBranchExists` 防分支冲突 → `WorktreeAdd`；保留幂等。git 写盘在事务外，事务失败不回滚磁盘（reconcile 兜底）。
 - **验证**：某 issue「创建并开始」→ 磁盘真生成 worktree 目录、DB 记录路径正确、推进到 developing。
 
 ### ⬜ 任务 1.4 — D3 PR：githost 平台抽象包

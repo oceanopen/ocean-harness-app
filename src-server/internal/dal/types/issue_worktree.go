@@ -5,10 +5,10 @@ import (
 )
 
 // IssueWorktree 对应 /api/tracker/issueWorktree 命名空间下各 action 的入参/响应（issue 开发流程 worktree 元数据）。
-// P1 桩（Module G）：createWorktree 派生假 worktree 路径写记录（不真调 git worktree add）；真实现见 worktree_term.md §6。
+// createWorktree 真创建 worktree 目录（gitutil.WorktreeAdd）+ 仓库归属校验；详见 docs/worktree_lifecycle.md。
 
 // IssueWorktreeCreateWorktreeRequest POST /api/tracker/issueWorktree/createWorktree 入参。
-// worktreeBranch 为开发分支名；baseBranch 为基准分支（如 origin/main，P1 桩仅存档，真实现用作 git worktree add 的基准）。
+// worktreeBranch 为开发分支名；baseBranch 为基准分支（如 origin/main，用作 git worktree add 的基准，空则从 HEAD 派生）。
 type IssueWorktreeCreateWorktreeRequest struct {
 	IssueID           int    `json:"issueId" binding:"required"`
 	LocalRepositoryID int    `json:"localRepositoryId" binding:"required"`

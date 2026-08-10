@@ -17,14 +17,17 @@ import (
 )
 
 // IssueWorktree 对应 /api/tracker/issueWorktree 命名空间下的业务逻辑（issue 开发流程 worktree 元数据）。
-// P1 桩（Module G）：createWorktree 派生假 worktree 路径写记录（不真调 git worktree add）；真实现见 worktree_term.md §6。
+// CreateWorktree 真创建 worktree 目录（gitutil.WorktreeAdd）+ 仓库归属校验 + 分支冲突检查；详见 docs/worktree_lifecycle.md。
 type IssueWorktree struct {
 	apis.Service
 }
 
-// CreateWorktree 为 issue 创建 worktree 记录：派生 per-workspace 真实落盘路径（仍不真调 git worktree add，
-// 真实建目录见任务 1.3）。幂等 + 重入安全：按 worktreeId（UNIQUE）查——已存在（active 或 removed）则
-// 重置为 active + 更新字段（支持清理后用同一分支重启），避免 UNIQUE 冲突；不存在则创建。
+// CreateWorktree 为 issue 创建 worktree：派生 per-workspace 落盘路径 → 仓库归属校验 → 真建 worktree 目录
+// （gitutil.WorktreeAdd）→ 事务内幂等写记录。
+//
+// 幂等 + 重入安全：按 worktreeId（UNIQUE）查——已存在（active 或 removed）则重置为 active + 更新字段
+// （支持清理后用同一分支重启），避免 UNIQUE 冲突；不存在则创建。物理 worktree 目录由 WorktreeExists 判断，
+// 已存在则跳过 add（覆盖重试/清理桩后重建/手动删目录后重建三种场景），不存在则 add。
 //
 // 路径派生（docs/worktree_lifecycle.md §4.3，per-workspace 改造）：
 //
@@ -32,6 +35,7 @@ type IssueWorktree struct {
 //
 // repoName 从 local_repository.remote_url 的 /xxx.git 末段解析；remote_url 为空回退 filepath.Base(local_dir)。
 // workspace.worktreeRoot 为空（用户未配）报错，要求先在工作空间设置配置 worktree 存放目录。
+// git 写盘在事务外（git 是真相源）；事务失败不回滚磁盘，靠 reconcile 兜底（WorktreeExists 保证重试不阻塞）。
 // 成功后由前端推进 issue.stateId 到首个开发步骤（developing）。
 func (svc IssueWorktree) CreateWorktree(req *types.IssueWorktreeCreateWorktreeRequest) (*types.IssueWorktreeResponseData, error) {
 	q := query.Use(svc.Orm)
@@ -77,6 +81,30 @@ func (svc IssueWorktree) CreateWorktree(req *types.IssueWorktreeCreateWorktreeRe
 		fmt.Sprintf("workspace_%d-project_%d-issue_%d", ws.ID, issue.ProjectID, req.IssueID),
 	)
 	worktreeID := fmt.Sprintf("%d::%s", req.LocalRepositoryID, worktreePath)
+
+	// 5) 校验仓库归属：repo 必须属于 issue 所在 project 的关联仓库集合（防 issue 关联了不属于 project 的仓库）。
+	//    validateIssueRepo 入参是 projectID（非 IssueID），CreateWorktree 已查 issue 拿到 issue.ProjectID 直接传。
+	piSvc := ProjectIssue{}
+	svc.MakeService(&piSvc.Service)
+	if _, _, ve := piSvc.validateIssueRepo(svc.Orm, issue.ProjectID, req.LocalRepositoryID, ""); ve != nil {
+		return nil, ve
+	}
+
+	// 6) 事务外确保物理 worktree 存在（git 是真相源）：WorktreeExists 判断目标路径是否已是现有 worktree——
+	//    幂等/重试场景目录已在则跳过 add，不存在则 WorktreeBranchExists 防分支冲突后 WorktreeAdd 真建目录。
+	//    baseBranch 为空时 WorktreeAdd 从当前 HEAD 派生。git 写盘在事务外，事务失败不回滚磁盘（reconcile 兜底）。
+	exists, err := gitutil.WorktreeExists(repo.LocalDir, worktreePath)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		if gitutil.WorktreeBranchExists(repo.LocalDir, req.WorktreeBranch) {
+			return nil, fmt.Errorf("开发分支已存在：%s", req.WorktreeBranch)
+		}
+		if err := gitutil.WorktreeAdd(repo.LocalDir, worktreePath, req.WorktreeBranch, req.BaseBranch); err != nil {
+			return nil, err
+		}
+	}
 
 	var wt *model.IssueWorktree
 	err = svc.Orm.Transaction(func(tx *gorm.DB) error {

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -81,6 +82,27 @@ func WorktreeList(dir string) ([]Worktree, error) {
 		return nil, err
 	}
 	return parseWorktreeList(out), nil
+}
+
+// WorktreeExists 判断 path 是否是 dir 所属仓库的现有工作区（含主工作区）。
+// worktree 创建前判断目标路径是否已占用：幂等/重试场景目录已存在则跳过 add，避免重复 add 失败。
+func WorktreeExists(dir, path string) (bool, error) {
+	list, err := WorktreeList(dir)
+	if err != nil {
+		return false, err
+	}
+	// git worktree list 输出符号链接解析后的真实路径（macOS /tmp→/private/tmp 等）；
+	// 解析输入 path 使比对一致。路径不存在（首次创建）时 EvalSymlinks 报错，保留原值——
+	// 此时 list 中也不会有它，正确返回 false。
+	if resolved, e := filepath.EvalSymlinks(path); e == nil {
+		path = resolved
+	}
+	for _, w := range list {
+		if w.Path == path {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // WorktreeAdd 在 dir 所属仓库创建工作区：于 <path> 处基于 <baseBranch> 检出新分支 <branch>。
