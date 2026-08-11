@@ -172,7 +172,10 @@ export default function DevWorkbenchPage() {
               : issue && loadPid != null
                 ? (
                     <Box sx={{ p: 2 }}>
-                      <StepContent issue={issue} projectId={loadPid} stateCode={currentViewingCode} />
+                      {/* key={issue.id}：切 issue 强制重挂载 step 子组件，让各 step 的 useState 按
+                          新 issue 重新初始化（仓库/分支/路径预览重载或清空），不受上个 issue 表单残留影响。
+                          与 TrackerPage ProjectIssueList 的 key={projectId} 重挂载约定一致。 */}
+                      <StepContent key={issue.id} issue={issue} projectId={loadPid} stateCode={currentViewingCode} />
                     </Box>
                   )
                 : issuesLoading
