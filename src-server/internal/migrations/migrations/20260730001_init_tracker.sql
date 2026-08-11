@@ -1,6 +1,7 @@
 -- +goose Up
--- 工作空间 / 项目 / Issue / 本地仓库 管理：基线 8 张业务表（最终态，已合并历次增量迁移：
--- 20260804001 local_repositories、20260804002 项目↔仓库中间表+issue 分支、20260806002 states 引用模型）。
+-- 工作空间 / 项目 / Issue / 本地仓库 管理：基线 9 张业务表（最终态，已合并历次增量迁移：
+-- 20260804001 local_repositories、20260804002 项目↔仓库中间表+issue 分支、20260806002 states 引用模型、
+-- 20260809001 issue_worktrees、20260809002 workspace.worktree_root、20260811001 local_repository.default_branch）。
 -- 命名格式：YYYYMMDD + 三位序号 + _name.sql；启动时 goose 自动向前迁移（仅 Up，见 initialize/migrate.go）。
 --
 -- 约定：
@@ -20,13 +21,14 @@
 
 -- t_workspaces：顶层容器（个人可建多个，如「个人 / 工作 / 开源」）。
 CREATE TABLE t_workspaces (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT     NOT NULL,
-    slug        TEXT     NOT NULL,
-    description TEXT     NOT NULL DEFAULT '',
-    created_at  DATETIME NOT NULL,
-    updated_at  DATETIME NOT NULL,
-    deleted_at  DATETIME
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT     NOT NULL,
+    slug          TEXT     NOT NULL,
+    description   TEXT     NOT NULL DEFAULT '',
+    worktree_root TEXT     NOT NULL DEFAULT '',  -- issue 开发流程 worktree 存放根目录（per-workspace，空则要求配置）
+    created_at    DATETIME NOT NULL,
+    updated_at    DATETIME NOT NULL,
+    deleted_at    DATETIME
 );
 CREATE UNIQUE INDEX udx_workspaces_slug ON t_workspaces (slug);
 
@@ -121,6 +123,7 @@ CREATE TABLE t_local_repositories (
     sub_dir_list        TEXT     NOT NULL DEFAULT '[]',
     remote_url          TEXT     NOT NULL DEFAULT '',
     current_branch      TEXT     NOT NULL DEFAULT '',
+    default_branch      TEXT     NOT NULL DEFAULT '',  -- 仓库默认分支（origin/HEAD），worktree 基准分支默认值
     last_commit_at      INTEGER  NOT NULL DEFAULT 0,
     last_commit_message TEXT     NOT NULL DEFAULT '',
     created_at          DATETIME NOT NULL,
@@ -139,3 +142,21 @@ CREATE TABLE t_project_local_repositories (
 );
 CREATE UNIQUE INDEX udx_project_local_repositories_pid_lrid
     ON t_project_local_repositories (workspace_project_id, local_repository_id);
+
+-- t_issue_worktrees：issue 开发流程的 worktree 元数据（docs/worktree_term.md §5.1）。
+-- worktree_id = `${localRepositoryId}::${absWorktreePath}`，Go 与 Rust 共享键（前端穿针引线）。
+-- 与 issue 既有 repository_branch 正交：本表是「为开发创建的隔离工作区」的物理生命周期（status）；
+-- 开发阶段（init/developing/pull_request/cleanup）由 issue.stateId 在 started 组开发步骤子 state 上推进表达，不存本表。
+-- 普通索引按项目约定「数据量较小、本期暂不建」不加（worktree_id UNIQUE 已隐式索引）；后续按查询热点 idx_ 追加。
+CREATE TABLE t_issue_worktrees (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    worktree_id         TEXT     NOT NULL UNIQUE,        -- ${repoId}::${absPath}，跨端共享键
+    issue_id            INTEGER  NOT NULL,               -- t_project_issues.id
+    local_repository_id INTEGER  NOT NULL,               -- t_local_repositories.id
+    worktree_path       TEXT     NOT NULL,               -- 绝对路径（P1 桩为派生占位）
+    worktree_branch     TEXT     NOT NULL,               -- worktree 所在分支
+    base_branch         TEXT     NOT NULL DEFAULT '',    -- 创建时的基准分支（如 origin/main）
+    status              TEXT     NOT NULL,               -- active|stale|removed（typed enum，无默认值）
+    created_at          DATETIME NOT NULL,
+    deleted_at          DATETIME                         -- 软删除，与 tracker 域一致
+);

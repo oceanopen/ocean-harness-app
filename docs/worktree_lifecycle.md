@@ -40,7 +40,7 @@ init ──[创建并开始]──▶ developing ──[开发完成]──▶ p
 ### 2.1 P1 已有（可复用，无需重建）
 | 能力 | 位置 |
 |---|---|
-| worktree 元数据表 | `t_issue_worktrees`（迁移 `20260809001_create_issue_worktrees.sql`） |
+| worktree 元数据表 | `t_issue_worktrees`（迁移 `20260730001_init_tracker.sql`） |
 | typed 枚举 | `internal/dal/enums/issue_worktree_status.go`（active/stale/removed + Value） |
 | gencode DO/Query | `model/issue_worktrees.gen.go` / `query/issue_worktrees.gen.go` |
 | service 桩 | `internal/service/issue_worktree.go`（CreateWorktree 派生**假**路径 / RemoveWorktree 软删 / GetList） |
@@ -81,7 +81,7 @@ init ──[创建并开始]──▶ developing ──[开发完成]──▶ p
 - **验证**：单测覆盖 add/list/remove/prune 正常 + 分支冲突/路径占用/脏工作区。
 
 ### ✅ 任务 1.2 — worktreeRoot 配置 + 路径派生（per-workspace 改造）
-- **文件**：`migrations/20260809002_add_workspace_worktree_root.sql`（t_workspaces 加 worktree_root）+ `service/workspace.go`/`dal/types/workspace.go`（Create/Update 透传）+ `gitutil/naming.go`（RepoNameFromRemoteURL + 单测）+ `service/issue_worktree.go`（CreateWorktree 真路径派生，删 placeholder）+ 前端 `WorkspaceService.ts`/`WorkspaceDrawer.tsx`（目录选择器，参考 AddRepositoryDrawer）/i18n
+- **文件**：`migrations/20260730001_init_tracker.sql`（t_workspaces 加 worktree_root）+ `service/workspace.go`/`dal/types/workspace.go`（Create/Update 透传）+ `gitutil/naming.go`（RepoNameFromRemoteURL + 单测）+ `service/issue_worktree.go`（CreateWorktree 真路径派生，删 placeholder）+ 前端 `WorkspaceService.ts`/`WorkspaceDrawer.tsx`（目录选择器，参考 AddRepositoryDrawer）/i18n
 - **设计变更**（取代原全局 appConfig 方案）：探明 Go sidecar 读不到 appConfig（与 Rust 配置物理隔离，仅 `GO_SERVER_*` 环境变量桥接），改为 **per-workspace**——worktreeRoot 配在 `t_workspaces.worktree_root`，Go CreateWorktree 查 issue→workspace 直接拿（本就要查），无需环境变量、不动 Rust。worktree 跟着工作空间走，不同工作空间可不同存放位置。
 - **目标**：派生 `<worktreeRoot>/<repoName>/workspace_{wid}-project_{pid}-issue_{iid}`；repoName 从 remote_url 的 `/xxx.git` 末段解析（空回退 filepath.Base(local_dir)）；worktreeRoot 为空报错要求配置；末段用稳定 id 段（取代 issue 标题清洗——标题含中文/emoji 清洗复杂）。
 - **验证**：go build + gitutil 单测（SSH/HTTPS/subgroup）+ tsc 通过。本期只派生路径写记录，不真调 git worktree add（任务 1.3 才建目录）。
