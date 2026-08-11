@@ -44,6 +44,7 @@ import CommandPaletteTrigger from './commandPalette/CommandPaletteTrigger';
 import DevWorkbenchPage from './DevWorkbenchPage/DevWorkbenchPage';
 import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
 import { DEFAULT_MENU, menuToPath, pathToMenu, TRACKER_WID_PARAM } from './routes';
+import ServerStatusIndicator from './ServerStatusIndicator';
 import ServerStatusPage from './ServerStatusPage';
 import TrackerPage from './TrackerPage/TrackerPage';
 
@@ -166,7 +167,9 @@ function PanelApp() {
     { key: 'tracker', label: t('panel:menu.tracker'), icon: <SpaceDashboardOutlinedIcon /> },
     { key: 'devWorkbench', label: t('panel:menu.devWorkbench'), icon: <DeveloperModeOutlinedIcon /> },
   ];
-  // 顶部导航栏页面标题：当前激活菜单项 label；单层面包屑，预留未来主/子菜单扩展。
+  // 侧栏隐藏菜单：不渲染入口但页面仍可达（服务状态经顶栏指示器跳转进入）。
+  const SIDEBAR_HIDDEN: ReadonlySet<MenuKey> = new Set<MenuKey>(['serverStatus']);
+  // 顶部导航栏页面标题：当前激活菜单项 label（含隐藏菜单，故仍从全量 menuItems 查）；单层面包屑，预留未来主/子菜单扩展。
   const activeLabel = menuItems.find(item => item.key === activeMenu)?.label ?? '';
 
   return (
@@ -229,7 +232,7 @@ function PanelApp() {
             )}
           </Box>
           <List sx={{ px: collapsed ? 0 : 1 }}>
-            {menuItems.map(item => (
+            {menuItems.filter(item => !SIDEBAR_HIDDEN.has(item.key)).map(item => (
               <ListItemButton
                 key={item.key}
                 selected={activeMenu === item.key}
@@ -326,6 +329,7 @@ function PanelApp() {
             </Breadcrumbs>
             <Box sx={{ flex: 1 }} />
             <CommandPaletteTrigger />
+            <ServerStatusIndicator />
             <IconButton
               size="small"
               aria-label={t('settings:title')}
