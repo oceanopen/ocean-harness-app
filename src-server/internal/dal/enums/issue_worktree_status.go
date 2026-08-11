@@ -6,7 +6,7 @@ import (
 )
 
 // IssueWorktreeStatus worktree 物理生命周期状态（t_issue_worktrees.status）。取值 active/stale/removed。
-// 与 issue 的开发阶段（wt_init/developing/pr_open/cleanup，由 stateId 表达）正交：本枚举只描述 worktree 自身物理状态。
+// 与 issue 的开发阶段（init/developing/pull_request/cleanup，由 stateId 表达）正交：本枚举只描述 worktree 自身物理状态。
 type IssueWorktreeStatus string
 
 const (

@@ -6,7 +6,7 @@ import { useLocalRepositories } from '@src/state/localRepositories';
 import { useProjectStateViews } from '@src/state/tracker';
 import { useState } from 'react';
 
-// CleanupStep（D4）：待清理。
+// CleanupStep（D4）：清理。
 // 清理确认卡（列将清理的 worktree 路径 + 分支）。
 // [清理并完成] 弹确认框→pty_stop_for_worktree + removeWorktree（两阶段，§9.3）→ 推进 stateId→completed 组首个（自动归档）。
 //   P1 桩：pty_stop 恒返 0、removeWorktree 软删记录（不真删目录）；真删见 worktree_term.md §9.3。

@@ -7,12 +7,12 @@ import { useProjectStateViews } from '@src/state/tracker';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
 import { useMemo, useState } from 'react';
 
-// PullRequestOpenStep（D3）：生成 PR。
+// PullRequestStep（D3）：生成 PR。
 // PR 配置卡：目标分支 base（可改）+ 源分支 head（=issue.repositoryBranch 只读）+ 标题（默认 issue.name）。
 // [打开 compare 页] 构造 GitHub/GitLab compare URL（gitRemote.buildCompareUrl）用 plugin-shell 打开；
 // 真 PR 创建见 worktree_term.md（本期非目标，先「引导式 compare URL」顶住，§9.2）。
 // [合并完成] 弹确认框→推进到下一个开发步骤（cleanup）。
-export default function PullRequestOpenStep({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
+export default function PullRequestStep({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
   const { data: repos = [] } = useLocalRepositories();
   const repo = repos.find(r => r.id === issue.localRepositoryId);
   const { data: branches = [] } = useLocalBranches(issue.localRepositoryId);
@@ -76,7 +76,7 @@ export default function PullRequestOpenStep({ issue, projectId }: { issue: Proje
       <Dialog open={dialogConfirmOpen} onClose={advancing ? undefined : () => setDialogConfirmOpen(false)}>
         <DialogTitle>确认合并完成？</DialogTitle>
         <DialogContent>
-          <Typography>将推进到「待清理」步骤。</Typography>
+          <Typography>将推进到「清理」步骤。</Typography>
         </DialogContent>
         <DialogActions>
           <Button color="inherit" onClick={() => setDialogConfirmOpen(false)} disabled={advancing}>取消</Button>

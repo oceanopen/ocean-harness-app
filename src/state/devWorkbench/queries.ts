@@ -44,7 +44,7 @@ export function getFirstStateIdOfGroup(
 
 /**
  * 开发步骤序列（started 组排除进行中 in_progress，按 sortOrder 升序）。
- * wt_init→developing→pr_open→cleanup；SSOT 供 DevStepper 渲染、getNextDevStepStateId 推进、
+ * init→developing→pull_request→cleanup；SSOT 供 DevStepper 渲染、getNextDevStepStateId 推进、
  * DevWorkbenchPage 默认选中第一步复用，避免过滤逻辑多处漂移。
  */
 export function getDevSteps(views: ProjectStateView[]): ProjectStateView[] {
@@ -55,7 +55,7 @@ export function getDevSteps(views: ProjectStateView[]): ProjectStateView[] {
 
 /**
  * 取 issue 推进到的下一个开发步骤 stateId：
- * - 当前在开发步骤序列：下一个开发步骤（wt_init→developing→pr_open→cleanup，排除进行中 in_progress）
+ * - 当前在开发步骤序列：下一个开发步骤（init→developing→pull_request→cleanup，排除进行中 in_progress）
  * - 已是最后一步（cleanup）：completed 组首个 state（自动归档）
  * - 当前不在开发步骤序列（如 in_progress）：返回 null（不推进，调用方不显示推进按钮）
  */

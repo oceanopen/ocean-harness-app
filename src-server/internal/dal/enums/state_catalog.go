@@ -47,8 +47,8 @@ func (s StateGroup) Value() (driver.Value, error) {
 
 // StateGroupMeta 描述一个状态分组的展示元数据（列表分组头/分组排序用）。
 type StateGroupMeta struct {
-	Code      StateGroup `json:"code"`      // state_group_code
-	Name      string     `json:"name"`      // 中文展示名，Go 直出，不走 i18n
+	Code      StateGroup `json:"code"` // state_group_code
+	Name      string     `json:"name"` // 中文展示名，Go 直出，不走 i18n
 	Color     string     `json:"color"`
 	SortOrder float64    `json:"sortOrder"`
 }
@@ -93,10 +93,10 @@ var StateCatalog = []StateMeta{
 	{GroupCode: STATE_GROUP_BACKLOG, Code: "backlog", Name: "待办池", Color: "#94a3b8", SortOrder: 10000},
 	{GroupCode: STATE_GROUP_UNSTARTED, Code: "todo", Name: "未开始", Color: "#475569", SortOrder: 20000},
 	{GroupCode: STATE_GROUP_STARTED, Code: "in_progress", Name: "进行中", Color: "#f59e0b", SortOrder: 30000},
-	{GroupCode: STATE_GROUP_STARTED, Code: "wt_init", Name: "worktree初始化", Color: "#0ea5e9", SortOrder: 31000},
+	{GroupCode: STATE_GROUP_STARTED, Code: "init", Name: "初始化", Color: "#0ea5e9", SortOrder: 31000},
 	{GroupCode: STATE_GROUP_STARTED, Code: "developing", Name: "开发中", Color: "#2563eb", SortOrder: 32000},
-	{GroupCode: STATE_GROUP_STARTED, Code: "pr_open", Name: "待合并PR", Color: "#7c3aed", SortOrder: 33000},
-	{GroupCode: STATE_GROUP_STARTED, Code: "cleanup", Name: "待清理", Color: "#ea580c", SortOrder: 34000},
+	{GroupCode: STATE_GROUP_STARTED, Code: "pull_request", Name: "合并请求", Color: "#7c3aed", SortOrder: 33000},
+	{GroupCode: STATE_GROUP_STARTED, Code: "cleanup", Name: "清理", Color: "#ea580c", SortOrder: 34000},
 	{GroupCode: STATE_GROUP_COMPLETED, Code: "done", Name: "已完成", Color: "#16a34a", SortOrder: 40000},
 	{GroupCode: STATE_GROUP_CANCELLED, Code: "cancelled", Name: "已取消", Color: "#ef4444", SortOrder: 50000},
 }

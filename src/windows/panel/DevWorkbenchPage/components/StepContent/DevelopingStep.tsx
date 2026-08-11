@@ -16,7 +16,7 @@ import { useState } from 'react';
 // DevelopingStep（D2）：开发中。
 // 终端占位（嵌入式终端 P2，见 worktree_term.md）+ 外部打开按钮行（VSCode/iTerm2/访达，复用 bindings 三函数）。
 // worktree 路径优先用 createWorktree 创建的 active worktree 路径，无则回退主仓库 localDir。
-// [开发完成] 弹确认框→推进 stateId 到下一个开发步骤（pr_open）。
+// [开发完成] 弹确认框→推进 stateId 到下一个开发步骤（pull_request）。
 export default function DevelopingStep({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
   const { data: repos = [] } = useLocalRepositories();
   const repo = repos.find(r => r.id === issue.localRepositoryId);
@@ -80,7 +80,7 @@ export default function DevelopingStep({ issue, projectId }: { issue: ProjectIss
       <Dialog open={dialogConfirmOpen} onClose={advancing ? undefined : () => setDialogConfirmOpen(false)}>
         <DialogTitle>确认开发完成？</DialogTitle>
         <DialogContent>
-          <Typography>将推进到「待合并 PR」步骤。</Typography>
+          <Typography>将推进到「合并请求」步骤。</Typography>
         </DialogContent>
         <DialogActions>
           <Button color="inherit" onClick={() => setDialogConfirmOpen(false)} disabled={advancing}>取消</Button>

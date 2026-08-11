@@ -3,7 +3,7 @@ import { request } from './http';
 // issue 开发流程 worktree 元数据（对应 Go /api/tracker/issueWorktree/*）。
 // P1 桩（Module G）：createWorktree 后端派生假 worktree 路径写记录（不真调 git worktree add）；真实现见 docs/worktree_term.md §6。
 
-// worktree 物理生命周期状态（与 issue 开发阶段 wt_init/developing/pr_open/cleanup 正交）。
+// worktree 物理生命周期状态（与 issue 开发阶段 init/developing/pull_request/cleanup 正交）。
 export type IssueWorktreeStatus = 'active' | 'stale' | 'removed';
 
 // IssueWorktreeModel worktree 记录。worktreeId = `${repoId}::${absPath}`，Go 与 Rust 共享键。

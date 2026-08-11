@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { basenameOfPath, deriveWorktreePath, repoNameFromRemoteUrl } from './worktreePath';
 
-// WorktreeInitStep（D1）：worktree 初始化表单（Card 布局：标题 + 表单项 + footer 按钮）。
+// InitStep（D1）：初始化表单（Card 布局：标题 + 表单项 + footer 按钮）。
 // 仓库 + baseBranch（基准分支）+ devBranch（开发分支）+ worktree 路径预览。
 // 双模式：加载时按 useIssueWorktrees 判断是否已有 active worktree——
 //   无 → 创建模式：[创建并开始] 弹确认框→调 createWorktree（后端真创建 git worktree）→ 推进 stateId 到 developing。
@@ -20,7 +20,7 @@ import { basenameOfPath, deriveWorktreePath, repoNameFromRemoteUrl } from './wor
 // 切 issue 时由父级 DevWorkbenchPage 的 key={issue.id} 强制重挂载本组件，表单按新 issue 重新初始化
 // （有仓库/worktree 信息则展示默认值，无则清空），不受上个 issue 表单残留影响。
 // 注：步骤操作内容一律硬编码中文（不走 i18n）；仅菜单/路由等必要地方支持 i18n。
-export default function WorktreeInitStep({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
+export default function InitStep({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
   const navigate = useNavigate();
   const { data: repos = [] } = useLocalRepositories();
   const { data: worktrees = [] } = useIssueWorktrees(issue.id);
@@ -65,8 +65,8 @@ export default function WorktreeInitStep({ issue, projectId }: { issue: ProjectI
     return deriveWorktreePath(worktreeRoot, repoName, issue.workspaceId, issue.projectId, issue.id);
   }, [activeWorktree, worktreeConfigured, worktreeRoot, repo, issue]);
 
-  // 推进目标（仅创建模式用）：WorktreeInitStep 固定是 wt_init 步骤，"创建并开始"推进到 developing。
-  const worktreeInitView = views.find(v => v.stateCode === 'wt_init');
+  // 推进目标（仅创建模式用）：InitStep 固定是 init 步骤，"创建并开始"推进到 developing。
+  const worktreeInitView = views.find(v => v.stateCode === 'init');
   const targetStateId = worktreeInitView ? getNextDevStepStateId(worktreeInitView.id, views) : null;
 
   const onConfirm = () => {

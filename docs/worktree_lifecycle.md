@@ -13,17 +13,17 @@
 **4 步状态机**（issue 的 `stateId` 在 `started` 组开发步骤子 state 上推进，阶段不另建表）：
 
 ```
-wt_init ──[创建并开始]──▶ developing ──[开发完成]──▶ pr_open ──[合并完成]──▶ cleanup ──[清理并完成]──▶ completed（自动归档）
+init ──[创建并开始]──▶ developing ──[开发完成]──▶ pull_request ──[合并完成]──▶ cleanup ──[清理并完成]──▶ completed（自动归档）
                                                                                                     │
                                                                             cancelled ◀──（由「事项管理」规划面处理，不在开发流程执行面）
 ```
 
 | 步骤 | 含义 | 本期 |
 |---|---|---|
-| **wt_init** | worktree 初始化：选仓库/基准/开发分支 → 创建 worktree | P2：真 `git worktree add` + 真路径 |
+| **init** | 初始化：选仓库/基准/开发分支 → 创建 worktree | P2：真 `git worktree add` + 真路径 |
 | **developing** | 开发中 | **手动**（外部终端 + 手动扭转状态，P1 已有）→ 模块 2 补嵌入式终端 |
-| **pr_open** | 待合并 PR | P2：平台 REST API 创建 PR（替代「引导式 compare URL」） |
-| **cleanup** | 待清理：删 worktree | P2：真 `git worktree remove` + prune |
+| **pull_request** | 合并请求 | P2：平台 REST API 创建 PR（替代「引导式 compare URL」） |
+| **cleanup** | 清理：删 worktree | P2：真 `git worktree remove` + prune |
 
 - `cleanup`（最后一步）→ 推进到 `completed` 组首个 state（**自动归档**）。
 - `cancelled` 不在开发流程执行面，由「事项管理」（规划面）处理。
@@ -47,7 +47,7 @@ wt_init ──[创建并开始]──▶ developing ──[开发完成]──�
 | controller/router | `internal/controller/issue_worktree.go` / `router/router.go:106-113`（三路由已注册） |
 | git 只读封装 | `gitutil/gitutil.go`（IsRepo/ParseInfo/LocalBranches） |
 | 仓库合法性校验 | `service/project_issue.go:557 validateIssueRepo` |
-| DevWorkbench 4 步 | `DevWorkbenchPage/`（WtInitStep/DevelopingStep/PrOpenStep/CleanupStep） |
+| DevWorkbench 4 步 | `DevWorkbenchPage/`（InitStep/DevelopingStep/PullRequestStep/CleanupStep） |
 | 状态机 | `src/state/devWorkbench/queries.ts` |
 | worktree 编排 hook | `src/state/issueWorktree/queries.ts`（useCreateWorktreeAndAdvance / useCleanupAndAdvance） |
 | compare URL | `src/shared/gitRemote.ts buildCompareUrl`（D3 现状用） |
@@ -99,8 +99,8 @@ wt_init ──[创建并开始]──▶ developing ──[开发完成]──�
 - **验证**：单测覆盖 host 检测、owner/repo 解析；可选集成测试真打 API。
 
 ### ⬜ 任务 1.5 — D3 PR：token + 端点 + 前端接线
-- **文件**：`appConfig.ts`/`app_config.rs`（加 `github_token`/`gitlab_token`）+ 设置页 token UI + `service/issue_worktree.go`（CreatePullRequest + 端点 `createPr`，可选 `mergePr`）+ `router.go` 注册 + `IssueWorktreeService.ts` + `PrOpenStep.tsx`
-- **当前**：PrOpenStep「引导式 compare URL」（buildCompareUrl + plugin-shell 打开），不真创建 PR。
+- **文件**：`appConfig.ts`/`app_config.rs`（加 `github_token`/`gitlab_token`）+ 设置页 token UI + `service/issue_worktree.go`（CreatePullRequest + 端点 `createPr`，可选 `mergePr`）+ `router.go` 注册 + `IssueWorktreeService.ts` + `PullRequestStep.tsx`
+- **当前**：PullRequestStep「引导式 compare URL」（buildCompareUrl + plugin-shell 打开），不真创建 PR。
 - **目标**：token 经 appConfig（前端读 → 随 body 传 Go，Go 不持久化/不入日志）；有 token 调 `createPr` 真创建并展示返回 `prUrl`，无 token 走 `buildCompareUrl` fallback。
 - **验证**：填 base/head/title → 平台真生成 PR、prUrl 可点开；无 token 回退 compare 页。
 
@@ -165,7 +165,7 @@ CREATE TABLE t_issue_worktrees (
 
 ### 4.6 数据流（D1/D2/D3/D4 端到端，手动开发）
 - **D1**：`createWorktree`（Go：校验→WorktreeAdd→写表）→ `move(developing)` → invalidate。
-- **D2**（手动）：`openInTerminal(worktreePath)`（外部终端）→ 用户开发 → `[开发完成]` → `move(pr_open)`。
+- **D2**（手动）：`openInTerminal(worktreePath)`（外部终端）→ 用户开发 → `[开发完成]` → `move(pull_request)`。
 - **D3**：`createPr`（Go：githost.CreatePullRequest，无 token 走 compare URL）→ `[合并完成]` → `move(cleanup)`。
 - **D4**：`pty_stop_for_worktree`（no-op）→ `removeWorktree`（Go：WorktreeRemove+软删）→ `move(completed)`。
 
