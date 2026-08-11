@@ -12,7 +12,7 @@ xattr -cr "/Applications/We Claude Terminal.app"
 
 > 若未安装到默认路径，请将路径替换为实际的 `.app` 路径。
 
-## 查看本地 SQLite 数据库
+## 查看应用 SQLite 数据库
 
 可以用 [DBeaver](https://dbeaver.io/) 查看 sqlite 数据库（文件名固定为 `app.db`，位于 Tauri 的 `app_data_dir` 下）：
 
