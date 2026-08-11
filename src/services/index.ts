@@ -8,6 +8,7 @@ export type {
   IssueWorktreeModel,
   IssueWorktreeRemoveWorktreeRequest,
   IssueWorktreeStatus,
+  IssueWorktreeUpdateWorktreeRequest,
 } from './IssueWorktreeService';
 
 export { LocalRepositoryService } from './LocalRepositoryService';

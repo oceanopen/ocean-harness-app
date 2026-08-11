@@ -52,6 +52,8 @@
     "devBranch": "开发分支",
     "worktreePath": "worktree 路径",
     "createAndStart": "创建 worktree 并开始",
+    "update": "更新",
+    "recordId": "记录 ID",
     "openEditor": "编辑器打开",
     "openTerminal": "终端打开",
     "openFinder": "访达打开",

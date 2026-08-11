@@ -52,6 +52,8 @@
     "devBranch": "Dev branch",
     "worktreePath": "Worktree path",
     "createAndStart": "Create worktree and start",
+    "update": "Update",
+    "recordId": "Record ID",
     "openEditor": "Open in editor",
     "openTerminal": "Open in terminal",
     "openFinder": "Open in finder",

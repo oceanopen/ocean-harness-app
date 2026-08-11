@@ -82,8 +82,8 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
   const [wsLabels, setWsLabels] = useState<WorkspaceLabelModel[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [managerOpen, setManagerOpen] = useState(false);
+  const [dialogDeleteOpen, setDialogDeleteOpen] = useState(false);
+  const [drawerManagerOpen, setDrawerManagerOpen] = useState(false);
   // F1「进入开发」可用条件（按钮始终展示，不满足时 disabled + title 提示原因）：
   //  issue 当前 stateGroup 为 started（进行中）才可进入开发工作台。
   //  仓库关联/开发步骤在工作台内引导（D1 表单选仓库、DevStepper noSteps 提示），不在此阻断。
@@ -230,7 +230,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
       showToast(t('tracker:projectIssue.toast.deleteFailed', { message: msg }), 'error');
     } finally {
       setDeleting(false);
-      setDeleteOpen(false);
+      setDialogDeleteOpen(false);
     }
   };
 
@@ -321,7 +321,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
             issueLabels={labels}
             options={wsLabels}
             onToggle={handleToggleLabel}
-            onOpenManager={() => setManagerOpen(true)}
+            onOpenManager={() => setDrawerManagerOpen(true)}
             disabled={submitting || deleting}
           />
           <IssueBranchField
@@ -364,7 +364,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
               color="error"
               size="small"
               startIcon={<DeleteOutlinedIcon />}
-              onClick={() => setDeleteOpen(true)}
+              onClick={() => setDialogDeleteOpen(true)}
               disabled={submitting || deleting}
             >
               {t('tracker:projectIssue.detail.delete')}
@@ -379,23 +379,23 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
         </Box>
       </Box>
 
-      {managerOpen && (
+      {drawerManagerOpen && (
         <WorkspaceLabelManagerDrawer
           workspaceId={workspaceProject.workspaceId}
           labels={wsLabels}
-          onClose={() => setManagerOpen(false)}
+          onClose={() => setDrawerManagerOpen(false)}
           onChanged={loadWsLabels}
         />
       )}
 
       {mode === 'edit' && (
-        <Dialog open={deleteOpen} onClose={deleting ? undefined : () => setDeleteOpen(false)}>
+        <Dialog open={dialogDeleteOpen} onClose={deleting ? undefined : () => setDialogDeleteOpen(false)}>
           <DialogTitle>{t('tracker:projectIssue.detail.deleteTitle')}</DialogTitle>
           <DialogContent>
             <Typography>{t('tracker:projectIssue.detail.deleteConfirmMsg', { name: projectIssue?.name ?? '' })}</Typography>
           </DialogContent>
           <DialogActions>
-            <Button color="inherit" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+            <Button color="inherit" onClick={() => setDialogDeleteOpen(false)} disabled={deleting}>
               {t('tracker:projectIssue.detail.cancel')}
             </Button>
             <Button color="error" variant="contained" onClick={handleDelete} disabled={deleting}>

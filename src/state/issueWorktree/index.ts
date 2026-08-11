@@ -1,2 +1,2 @@
 export { issueWorktreeKeys } from './keys';
-export { useCleanupAndAdvance, useCreateWorktreeAndAdvance, useIssueWorktrees } from './queries';
+export { useCleanupAndAdvance, useCreateWorktreeAndAdvance, useIssueWorktrees, useUpdateWorktree } from './queries';

@@ -5,7 +5,6 @@ import { useCleanupAndAdvance, useIssueWorktrees } from '@src/state/issueWorktre
 import { useLocalRepositories } from '@src/state/localRepositories';
 import { useProjectStateViews } from '@src/state/tracker';
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 // CleanupStep（D4）：待清理。
 // 清理确认卡（列将清理的 worktree 路径 + 分支）。
@@ -13,9 +12,8 @@ import { useTranslation } from 'react-i18next';
 //   P1 桩：pty_stop 恒返 0、removeWorktree 软删记录（不真删目录）；真删见 worktree_term.md §9.3。
 //   无 active worktree 记录时退化为仅推进状态（advance-only）。
 // 取消开发（→cancelled）不在执行面：改由「事项管理」（规划面，完整状态控制）处理。
-// 注：弹窗/提示/报错文案按 i18n 策略硬编码中文（便于排查），仅按钮与短标签走 i18n。
+// 注：步骤操作内容一律硬编码中文（不走 i18n，便于排查）；仅菜单/路由等必要地方支持 i18n。
 export default function CleanupStep({ issue, projectId }: { issue: ProjectIssueResponseData; projectId: number }) {
-  const { t } = useTranslation();
   const { data: repos = [] } = useLocalRepositories();
   const repo = repos.find(r => r.id === issue.localRepositoryId);
   const { views } = useProjectStateViews(projectId);
@@ -23,12 +21,12 @@ export default function CleanupStep({ issue, projectId }: { issue: ProjectIssueR
   const activeWorktree = worktrees[0]; // P1 1:1
   const { advance, advancing, snack } = useAdvanceDevStep(projectId);
   const { run: runCleanup, running: cleaning, snack: cleanupSnack } = useCleanupAndAdvance(projectId);
-  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [dialogCleanupOpen, setDialogCleanupOpen] = useState(false);
   const busy = advancing || cleaning;
 
   const completedId = getFirstStateIdOfGroup('completed', views);
   const onCleanup = () => {
-    setCleanupOpen(false);
+    setDialogCleanupOpen(false);
     if (completedId == null) {
       return;
     }
@@ -48,21 +46,21 @@ export default function CleanupStep({ issue, projectId }: { issue: ProjectIssueR
           {activeWorktree?.worktreePath ?? (repo ? `${repo.localDir}-worktree-${issue.id}` : '无 worktree 记录')}
         </Typography>
         {issue.repositoryBranch && (
-          <Typography variant="body2">{t('panel:devWorkbench.branch')}: {issue.repositoryBranch}</Typography>
+          <Typography variant="body2">分支: {issue.repositoryBranch}</Typography>
         )}
       </Paper>
       <Box>
-        <Button variant="contained" disabled={busy || completedId == null} onClick={() => setCleanupOpen(true)}>
-          {t('panel:devWorkbench.cleanupComplete')}
+        <Button variant="contained" disabled={busy || completedId == null} onClick={() => setDialogCleanupOpen(true)}>
+          清理并完成
         </Button>
       </Box>
-      <Dialog open={cleanupOpen} onClose={busy ? undefined : () => setCleanupOpen(false)}>
+      <Dialog open={dialogCleanupOpen} onClose={busy ? undefined : () => setDialogCleanupOpen(false)}>
         <DialogTitle>确认完成并归档？</DialogTitle>
         <DialogContent>
           <Typography>将停止终端、清理 worktree 记录并推进到「已完成」（自动归档）。</Typography>
         </DialogContent>
         <DialogActions>
-          <Button color="inherit" onClick={() => setCleanupOpen(false)} disabled={busy}>取消</Button>
+          <Button color="inherit" onClick={() => setDialogCleanupOpen(false)} disabled={busy}>取消</Button>
           <Button color="primary" variant="contained" onClick={onCleanup} disabled={busy}>确认完成</Button>
         </DialogActions>
       </Dialog>

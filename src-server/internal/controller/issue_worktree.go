@@ -60,3 +60,19 @@ func (api IssueWorktree) GetList(ctx *gin.Context) {
 	}
 	api.JsonOK(data)
 }
+
+// UpdateWorktree POST /api/tracker/issueWorktree/updateWorktree：更新已有 worktree（分支变了删旧重建，不变 no-op）。
+func (api IssueWorktree) UpdateWorktree(ctx *gin.Context) {
+	req := &types.IssueWorktreeUpdateWorktreeRequest{}
+	svc := service.IssueWorktree{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.UpdateWorktree(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}

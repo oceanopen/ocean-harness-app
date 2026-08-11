@@ -59,7 +59,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
   const [stateFilter, setStateFilter] = useState<number | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<StateGroup>>(() => new Set());
-  const [createOpen, setCreateOpen] = useState(false);
+  const [drawerCreateOpen, setDrawerCreateOpen] = useState(false);
   // 创建抽屉预选状态：分组头"+"快捷新建时传入该组首个状态，工具栏/空态新建为 undefined。
   const [createInitialStateId, setCreateInitialStateId] = useState<number | undefined>(undefined);
   // 新建子 issue 的父 issue（非空即打开"新建子 issue"抽屉）。
@@ -272,10 +272,10 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   // 打开/关闭创建抽屉：openCreate 可预选状态（分组头"+"传该组首个状态；其余入口不预选）。
   const openCreate = useCallback((stateId?: number) => {
     setCreateInitialStateId(stateId);
-    setCreateOpen(true);
+    setDrawerCreateOpen(true);
   }, []);
   const closeCreate = useCallback(() => {
-    setCreateOpen(false);
+    setDrawerCreateOpen(false);
     setCreateInitialStateId(undefined);
   }, []);
 
@@ -505,7 +505,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
 
       {snack}
 
-      {createOpen && (
+      {drawerCreateOpen && (
         <ProjectIssueDrawer
           mode="create"
           workspaceProject={workspaceProject}

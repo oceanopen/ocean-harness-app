@@ -1,4 +1,4 @@
-import type { IssueWorktreeCreateWorktreeRequest, ProjectIssueResponseData } from '@src/services';
+import type { IssueWorktreeCreateWorktreeRequest, IssueWorktreeUpdateWorktreeRequest, ProjectIssueResponseData } from '@src/services';
 import { IssueWorktreeService, ProjectIssueService } from '@src/services';
 import { commands } from '@src/shared/bindings';
 import { useToast } from '@src/shared/useToast';
@@ -41,9 +41,10 @@ export function useCreateWorktreeAndAdvance(projectId: number) {
         qc.invalidateQueries({ queryKey: issueWorktreeKeys.list(req.issueId) }),
         qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),
       ]);
+      showToast('worktree 创建成功', 'success');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast(`开始开发失败：${msg}`, 'error');
+      showToast(`worktree 创建失败：${msg}`, 'error');
     } finally {
       setRunning(false);
     }
@@ -74,9 +75,35 @@ export function useCleanupAndAdvance(projectId: number) {
         qc.invalidateQueries({ queryKey: issueWorktreeKeys.list(issue.id) }),
         qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),
       ]);
+      showToast('清理成功', 'success');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       showToast(`清理失败：${msg}`, 'error');
+    } finally {
+      setRunning(false);
+    }
+  };
+  return { run, running, snack };
+}
+
+// useUpdateWorktree：D1 更新模式——updateWorktree（分支变了删旧重建，不变 no-op）→ invalidate worktree list。
+// 不推进 stateId（更新模式 issue 已在 developing 或更后）；照 useCreateWorktreeAndAdvance 范式（try/catch + toast + loading）。
+export function useUpdateWorktree() {
+  const qc = useQueryClient();
+  const { show: showToast, snack } = useToast();
+  const [running, setRunning] = useState(false);
+  const run = async (req: IssueWorktreeUpdateWorktreeRequest, issueId: number) => {
+    if (running) {
+      return;
+    }
+    setRunning(true);
+    try {
+      await IssueWorktreeService.updateWorktree(req);
+      await qc.invalidateQueries({ queryKey: issueWorktreeKeys.list(issueId) });
+      showToast('worktree 更新成功', 'success');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast(`worktree 更新失败：${msg}`, 'error');
     } finally {
       setRunning(false);
     }

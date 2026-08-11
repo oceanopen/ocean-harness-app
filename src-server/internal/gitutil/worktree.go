@@ -153,6 +153,17 @@ func WorktreeBranchExists(dir, branch string) bool {
 	return exec.Command("git", "-C", dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
 }
 
+// DeleteBranch 强制删除 dir 所属仓库的本地分支（git branch -D <branch>）。
+// -D 即使有未合并提交也删。updateWorktree 重建同分支时删旧 ref，让 WorktreeAdd -b 重新创建
+// （git worktree add -b 对已存在分支失败）。注意：删 ref 会丢弃该分支未合并提交，仅在确认重建时调用。
+func DeleteBranch(dir, branch string) error {
+	if !IsRepo(dir) {
+		return fmt.Errorf("非 git 仓库：%s", dir)
+	}
+	_, err := gitRun(dir, "branch", "-D", branch)
+	return err
+}
+
 // FetchRemoteBranch 拉取远程指定分支（`git fetch <remote> <branch>`），更新其 remote-tracking ref。
 // best-effort 语义：远程无此分支 / 网络不可达时返回 error；调用方通常按 RemoteBranchExists 结果决策，
 // 忽略此 error（已有 remote-tracking ref 则用之，否则回退本地基准），故不在此处中断流程。

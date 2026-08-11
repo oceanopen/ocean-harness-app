@@ -189,3 +189,87 @@ func (svc IssueWorktree) GetList(req *types.IssueWorktreeGetListRequest) ([]*typ
 	}
 	return out, nil
 }
+
+// UpdateWorktree 更新已有 worktree：按 id 查记录，比对 仓库+基准分支+开发分支 三项——
+//   - 三项全一致：查物理 worktree（WorktreeExists）——存在则 no-op 返回现记录；不存在则 CreateWorktree 重建（幂等）。
+//   - 任一不同：WorktreeRemove 强删旧物理 worktree（force，未提交改动会丢失）；若仓库变（worktreeId 变）硬删旧记录，
+//     再 CreateWorktree 建新（worktreeId 变则新建记录，否则幂等更新同记录）。
+//
+// worktreeId=repoId::path：仓库变→repoId 前缀 + repoName 路径都变→worktreeId 变→CreateWorktree 新建记录（故旧记录须硬删避免 getList 两条）。
+func (svc IssueWorktree) UpdateWorktree(req *types.IssueWorktreeUpdateWorktreeRequest) (*types.IssueWorktreeResponseData, error) {
+	q := query.Use(svc.Orm)
+	wt, err := q.IssueWorktree.WithContext(svc.Context).Where(q.IssueWorktree.ID.Eq(req.ID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("worktree 记录不存在")
+		}
+		return nil, err
+	}
+
+	// 三项比对：仓库 + 基准分支 + 开发分支。
+	sameTriple := req.LocalRepositoryID == wt.LocalRepositoryID &&
+		req.BaseBranch == wt.BaseBranch &&
+		req.WorktreeBranch == wt.WorktreeBranch
+
+	if sameTriple {
+		// 三项全一致：查物理 worktree 是否存在。
+		repo, e := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(wt.LocalRepositoryID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return nil, errors.New("仓库不存在")
+			}
+			return nil, e
+		}
+		exists, e := gitutil.WorktreeExists(repo.LocalDir, wt.WorktreePath)
+		if e != nil {
+			return nil, e
+		}
+		if exists {
+			return &types.IssueWorktreeResponseData{IssueWorktree: wt}, nil // 物理存在：no-op 返回现记录
+		}
+		// 物理不存在：删残留 ref（目录被手动删但 ref 在，-b 对已存在分支失败）+ CreateWorktree 重建。
+		if gitutil.WorktreeBranchExists(repo.LocalDir, req.WorktreeBranch) {
+			if e := gitutil.DeleteBranch(repo.LocalDir, req.WorktreeBranch); e != nil {
+				return nil, e
+			}
+		}
+		return svc.CreateWorktree(&types.IssueWorktreeCreateWorktreeRequest{
+			IssueID:           wt.IssueID,
+			LocalRepositoryID: req.LocalRepositoryID,
+			BaseBranch:        req.BaseBranch,
+			WorktreeBranch:    req.WorktreeBranch,
+		})
+	}
+
+	// 任一不同：删旧物理 + 建新。
+	oldRepo, e := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(wt.LocalRepositoryID)).First()
+	if e != nil {
+		if errors.Is(e, gorm.ErrRecordNotFound) {
+			return nil, errors.New("仓库不存在")
+		}
+		return nil, e
+	}
+	if e := gitutil.WorktreeRemove(oldRepo.LocalDir, wt.WorktreePath, true); e != nil {
+		return nil, e
+	}
+	// 旧 worktreeBranch ref 可能仍在（worktreeBranch 不变时）；删它让 CreateWorktree 用 -b 重建
+	// （git worktree add -b 对已存在分支失败）。worktreeBranch 变时新名通常不存在，跳过。
+	// 注意：删 ref 会丢弃该分支未合并提交——符合「删旧建新」语义。
+	if gitutil.WorktreeBranchExists(oldRepo.LocalDir, req.WorktreeBranch) {
+		if e := gitutil.DeleteBranch(oldRepo.LocalDir, req.WorktreeBranch); e != nil {
+			return nil, e
+		}
+	}
+	// 仓库变→worktreeId 变→CreateWorktree 新建记录；硬删旧记录避免 getList 返回两条 active。
+	if req.LocalRepositoryID != wt.LocalRepositoryID {
+		if e := svc.Orm.Unscoped().Where("id = ?", wt.ID).Delete(&model.IssueWorktree{}).Error; e != nil {
+			return nil, e
+		}
+	}
+	return svc.CreateWorktree(&types.IssueWorktreeCreateWorktreeRequest{
+		IssueID:           wt.IssueID,
+		LocalRepositoryID: req.LocalRepositoryID,
+		BaseBranch:        req.BaseBranch,
+		WorktreeBranch:    req.WorktreeBranch,
+	})
+}

@@ -111,6 +111,7 @@ func SetupRouter() *gin.Engine {
 				issueWorktreeGroup.POST("/createWorktree", controller.IssueWorktree{}.CreateWorktree)
 				issueWorktreeGroup.POST("/removeWorktree", controller.IssueWorktree{}.RemoveWorktree)
 				issueWorktreeGroup.POST("/getList", controller.IssueWorktree{}.GetList)
+				issueWorktreeGroup.POST("/updateWorktree", controller.IssueWorktree{}.UpdateWorktree)
 			}
 		}
 	}

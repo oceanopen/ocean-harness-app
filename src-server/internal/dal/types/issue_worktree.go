@@ -27,6 +27,15 @@ type IssueWorktreeGetListRequest struct {
 	IssueID int `json:"issueId" binding:"required"`
 }
 
+// IssueWorktreeUpdateWorktreeRequest POST /api/tracker/issueWorktree/updateWorktree 入参。
+// 比对 仓库+基准分支+开发分支 三项：全一致→查物理决定重建/no-op；任一不同→删旧建新（仓库变硬删旧记录）。
+type IssueWorktreeUpdateWorktreeRequest struct {
+	ID                int    `json:"id" binding:"required"`
+	LocalRepositoryID int    `json:"localRepositoryId" binding:"required"`
+	BaseBranch        string `json:"baseBranch"`
+	WorktreeBranch    string `json:"worktreeBranch" binding:"required"`
+}
+
 // IssueWorktreeResponseData worktree 响应：嵌入 DO（JSON 平铺 worktree 字段）。
 // status 为 typed 枚举（active/stale/removed）；worktreeId/worktreePath 为前端展示与 removeWorktree 调用所需的共享键。
 type IssueWorktreeResponseData struct {

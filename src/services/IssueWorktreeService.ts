@@ -33,6 +33,14 @@ export interface IssueWorktreeRemoveWorktreeRequest {
   worktreeId: string;
 }
 
+// POST /api/tracker/issueWorktree/updateWorktree 的入参（比对仓库+基准分支+开发分支三项，任一不同删旧建新）。
+export interface IssueWorktreeUpdateWorktreeRequest {
+  id: number;
+  localRepositoryId: number;
+  baseBranch?: string;
+  worktreeBranch: string;
+}
+
 // POST /api/tracker/issueWorktree/getList 入参。
 export interface IssueWorktreeGetListRequest {
   issueId: number;
@@ -52,5 +60,10 @@ export class IssueWorktreeService {
   // getList：列某 issue 的 active worktree（前端作 worktreePath/worktreeId 的 SSOT）。
   static getList(req: IssueWorktreeGetListRequest): Promise<IssueWorktreeModel[]> {
     return request<IssueWorktreeModel[]>('POST', '/api/tracker/issueWorktree/getList', req);
+  }
+
+  // updateWorktree：更新已有 worktree（分支变了删旧重建，不变 no-op），返回更新后的实体。
+  static updateWorktree(req: IssueWorktreeUpdateWorktreeRequest): Promise<IssueWorktreeModel> {
+    return request<IssueWorktreeModel>('POST', '/api/tracker/issueWorktree/updateWorktree', req);
   }
 }
