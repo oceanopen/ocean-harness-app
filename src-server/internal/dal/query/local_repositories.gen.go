@@ -39,6 +39,7 @@ func newLocalRepository(db *gorm.DB, opts ...gen.DOOption) localRepository {
 	_localRepository.LastCommitMessage = field.NewString(tableName, "last_commit_message")
 	_localRepository.CreatedAt = field.NewTime(tableName, "created_at")
 	_localRepository.UpdatedAt = field.NewTime(tableName, "updated_at")
+	_localRepository.DefaultBranch = field.NewString(tableName, "default_branch")
 
 	_localRepository.fillFieldMap()
 
@@ -60,6 +61,7 @@ type localRepository struct {
 	LastCommitMessage field.String
 	CreatedAt         field.Time
 	UpdatedAt         field.Time
+	DefaultBranch     field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -87,6 +89,7 @@ func (l *localRepository) updateTableName(table string) *localRepository {
 	l.LastCommitMessage = field.NewString(table, "last_commit_message")
 	l.CreatedAt = field.NewTime(table, "created_at")
 	l.UpdatedAt = field.NewTime(table, "updated_at")
+	l.DefaultBranch = field.NewString(table, "default_branch")
 
 	l.fillFieldMap()
 
@@ -115,7 +118,7 @@ func (l *localRepository) GetFieldByName(fieldName string) (field.OrderExpr, boo
 }
 
 func (l *localRepository) fillFieldMap() {
-	l.fieldMap = make(map[string]field.Expr, 11)
+	l.fieldMap = make(map[string]field.Expr, 12)
 	l.fieldMap["id"] = l.ID
 	l.fieldMap["name"] = l.Name
 	l.fieldMap["local_dir"] = l.LocalDir
@@ -127,6 +130,7 @@ func (l *localRepository) fillFieldMap() {
 	l.fieldMap["last_commit_message"] = l.LastCommitMessage
 	l.fieldMap["created_at"] = l.CreatedAt
 	l.fieldMap["updated_at"] = l.UpdatedAt
+	l.fieldMap["default_branch"] = l.DefaultBranch
 }
 
 func (l localRepository) clone(db *gorm.DB) localRepository {

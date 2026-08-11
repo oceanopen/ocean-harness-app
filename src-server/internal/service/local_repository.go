@@ -244,6 +244,7 @@ func (svc LocalRepository) findAll() ([]types.LocalRepositoryResponseData, error
 func applyGitInfo(r *model.LocalRepository, info gitutil.Info) {
 	r.RemoteURL = info.RemoteURL
 	r.CurrentBranch = info.Branch
+	r.DefaultBranch = info.DefaultBranch
 	r.LastCommitAt = int(info.LastCommitAt) // DO LastCommitAt 为 int（64 位平台等价 int64）
 	r.LastCommitMessage = info.LastCommitMessage
 }

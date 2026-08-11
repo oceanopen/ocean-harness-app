@@ -101,7 +101,19 @@ func (svc IssueWorktree) CreateWorktree(req *types.IssueWorktreeCreateWorktreeRe
 		if gitutil.WorktreeBranchExists(repo.LocalDir, req.WorktreeBranch) {
 			return nil, fmt.Errorf("开发分支已存在：%s", req.WorktreeBranch)
 		}
-		if err := gitutil.WorktreeAdd(repo.LocalDir, worktreePath, req.WorktreeBranch, req.BaseBranch); err != nil {
+		// 基准分支按「远程」为准：baseBranch 非空时先 best-effort fetch origin/<baseBranch>，
+		// 若 origin 上存在该分支则以 origin/<baseBranch>（远程最新）为起点；否则回退本地 baseBranch
+		// （兼容纯本地分支）。baseBranch 为空则从当前 HEAD 派生（WorktreeAdd 原行为）。
+		// fetch 失败（网络不可达 / 远程无此分支）不阻塞——按 RemoteBranchExists 决策：
+		// 已有 remote-tracking ref 则用之（可能略旧），否则回退本地。
+		base := req.BaseBranch
+		if base != "" {
+			_ = gitutil.FetchRemoteBranch(repo.LocalDir, "origin", base)
+			if gitutil.RemoteBranchExists(repo.LocalDir, "origin", base) {
+				base = "origin/" + base
+			}
+		}
+		if err := gitutil.WorktreeAdd(repo.LocalDir, worktreePath, req.WorktreeBranch, base); err != nil {
 			return nil, err
 		}
 	}

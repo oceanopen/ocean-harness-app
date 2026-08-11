@@ -69,6 +69,7 @@ type LocalRepositoryResponseData struct {
 	SubDirList        []RepoSubDir `json:"subDirList"`
 	RemoteURL         string       `json:"remoteUrl"`
 	CurrentBranch     string       `json:"currentBranch"`
+	DefaultBranch     string       `json:"defaultBranch"`
 	LastCommitAt      int          `json:"lastCommitAt"`
 	LastCommitMessage string       `json:"lastCommitMessage"`
 	CreatedAt         time.Time    `json:"createdAt"`
@@ -85,6 +86,7 @@ func (LocalRepositoryResponseData) FromModel(r *model.LocalRepository) LocalRepo
 		SubDirList:        []RepoSubDir{},
 		RemoteURL:         r.RemoteURL,
 		CurrentBranch:     r.CurrentBranch,
+		DefaultBranch:     r.DefaultBranch,
 		LastCommitAt:      r.LastCommitAt,
 		LastCommitMessage: r.LastCommitMessage,
 		CreatedAt:         r.CreatedAt,

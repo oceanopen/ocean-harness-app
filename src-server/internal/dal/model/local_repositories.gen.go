@@ -23,6 +23,7 @@ type LocalRepository struct {
 	LastCommitMessage string    `gorm:"column:last_commit_message;type:TEXT;not null;default:''" json:"lastCommitMessage"`
 	CreatedAt         time.Time `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt         time.Time `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	DefaultBranch     string    `gorm:"column:default_branch;type:TEXT;not null;default:''" json:"defaultBranch"`
 }
 
 // TableName LocalRepository's table name

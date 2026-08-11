@@ -14,6 +14,7 @@ export interface LocalRepositoryModel {
   subDirList: RepoSubDir[];
   remoteUrl: string;
   currentBranch: string;
+  defaultBranch: string;
   lastCommitAt: number; // 毫秒时间戳；无提交为 0
   lastCommitMessage: string;
   createdAt: string;

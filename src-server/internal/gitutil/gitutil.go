@@ -14,6 +14,7 @@ import (
 type Info struct {
 	RemoteURL         string // origin remote；无 origin 留空
 	Branch            string // 当前分支；detached HEAD 留空
+	DefaultBranch     string // 默认分支（origin/HEAD 指向的远程默认分支）；未克隆/无 origin 留空
 	LastCommitAt      int64  // 最近提交时间（毫秒时间戳）；无提交为 0
 	LastCommitMessage string // 最近提交标题；无提交留空
 }
@@ -46,6 +47,8 @@ func ParseInfo(dir string) Info {
 		branch = ""
 	}
 
+	defaultBranch := DefaultBranch(dir)
+
 	// 一次 log 调用同时取提交时间(%ct)与标题(%s)，换行分隔；subject 不含换行，SplitN 安全。
 	var lastCommitAt int64
 	var lastCommitMsg string
@@ -62,6 +65,7 @@ func ParseInfo(dir string) Info {
 	return Info{
 		RemoteURL:         remoteURL,
 		Branch:            branch,
+		DefaultBranch:     defaultBranch,
 		LastCommitAt:      lastCommitAt,
 		LastCommitMessage: lastCommitMsg,
 	}
@@ -77,4 +81,15 @@ func LocalBranches(dir string) []string {
 		return nil
 	}
 	return strings.Split(out, "\n")
+}
+
+// DefaultBranch 解析 dir 的默认分支（origin/HEAD 指向的远程默认分支）。
+// `git symbolic-ref --short refs/remotes/origin/HEAD` 输出形如 "origin/main"，剥 "origin/" 前缀得 "main"。
+// 克隆仓库由 git 自动设置 origin/HEAD；本地 init 未克隆 / 无 origin / 未设置时返回 ""（调用方回退）。
+func DefaultBranch(dir string) string {
+	out := gitOutput(dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+	if out == "" {
+		return ""
+	}
+	return strings.TrimPrefix(out, "origin/")
 }

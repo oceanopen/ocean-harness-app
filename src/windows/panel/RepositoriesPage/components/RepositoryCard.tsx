@@ -9,6 +9,7 @@ import {
   EditOutlined as EditOutlinedIcon,
   FolderOutlined as FolderOutlinedIcon,
   HistoryOutlined as HistoryOutlinedIcon,
+  StarBorderOutlined as StarBorderOutlinedIcon,
 } from '@mui/icons-material';
 import {
   Box,
@@ -97,6 +98,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
   const { t } = useTranslation();
   const hasRemote = repo.remoteUrl.length > 0;
   const hasBranch = repo.currentBranch.length > 0;
+  const hasDefaultBranch = repo.defaultBranch.length > 0;
   const hasCommit = repo.lastCommitAt > 0;
   const hasSubDirs = repo.subDirList.length > 0;
 
@@ -211,6 +213,18 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
           <Typography variant="caption" sx={{ ...truncateSx, color: hasRemote ? 'text.primary' : 'text.disabled' }} title={repo.remoteUrl}>
             {hasRemote ? repo.remoteUrl : t('repositories:card.noRemote')}
           </Typography>
+        </InfoRow>
+
+        <InfoRow icon={<StarBorderOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('repositories:card.defaultBranchLabel')}>
+          {hasDefaultBranch
+            ? (
+                <Chip size="small" variant="outlined" label={repo.defaultBranch} />
+              )
+            : (
+                <Typography variant="caption" sx={{ color: 'text.disabled' }}>
+                  {t('repositories:card.noDefaultBranch')}
+                </Typography>
+              )}
         </InfoRow>
 
         <InfoRow icon={<AccountTreeIcon sx={{ fontSize: '0.95rem' }} />} label={t('repositories:card.branchLabel')}>

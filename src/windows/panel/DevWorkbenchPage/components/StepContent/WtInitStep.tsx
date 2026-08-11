@@ -26,7 +26,8 @@ export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueRe
   const [repoId, setRepoId] = useState(issue.localRepositoryId);
   const repo = repos.find(r => r.id === repoId);
   const { data: branches = [] } = useLocalBranches(repoId);
-  const [baseBranch, setBaseBranch] = useState(repo?.currentBranch ?? '');
+  // 基准分支默认值：优先仓库默认分支（origin/HEAD 真实默认分支），缺失回退当前分支。
+  const [baseBranch, setBaseBranch] = useState(repo?.defaultBranch || repo?.currentBranch || '');
   const [devBranch, setDevBranch] = useState(`issue-${issue.id}`);
   const { data: worktrees = [] } = useIssueWorktrees(issue.id);
   const activeWorktree = worktrees[0]; // 1:1
@@ -86,7 +87,8 @@ export default function WtInitStep({ issue, projectId }: { issue: ProjectIssueRe
               value={repo ?? null}
               onChange={(_e, v) => {
                 setRepoId(v?.id ?? 0);
-                setBaseBranch(v?.currentBranch ?? '');
+                // 切仓库后重新派生基准分支默认值（新仓库默认分支 → 当前分支）。
+                setBaseBranch(v?.defaultBranch || v?.currentBranch || '');
               }}
               isOptionEqualToValue={(a, b) => a.id === b.id}
               renderInput={params => <TextField {...params} label={t('panel:devWorkbench.repo')} />}

@@ -152,3 +152,22 @@ func WorktreePrune(dir string) error {
 func WorktreeBranchExists(dir, branch string) bool {
 	return exec.Command("git", "-C", dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch).Run() == nil
 }
+
+// FetchRemoteBranch 拉取远程指定分支（`git fetch <remote> <branch>`），更新其 remote-tracking ref。
+// best-effort 语义：远程无此分支 / 网络不可达时返回 error；调用方通常按 RemoteBranchExists 结果决策，
+// 忽略此 error（已有 remote-tracking ref 则用之，否则回退本地基准），故不在此处中断流程。
+func FetchRemoteBranch(dir, remote, branch string) error {
+	if !IsRepo(dir) {
+		return fmt.Errorf("非 git 仓库：%s", dir)
+	}
+	_, err := gitRun(dir, "fetch", remote, branch)
+	return err
+}
+
+// RemoteBranchExists 判断 dir 所属仓库是否存在指定远程分支的 remote-tracking ref
+// （`git show-ref --verify --quiet refs/remotes/<remote>/<branch>`）：退出码 0 存在、非 0 不存在。
+// 与 WorktreeBranchExists（本地 refs/heads/）对称，仅查远程跟踪 ref，不触发网络请求。
+func RemoteBranchExists(dir, remote, branch string) bool {
+	return exec.Command("git", "-C", dir, "show-ref", "--verify", "--quiet",
+		fmt.Sprintf("refs/remotes/%s/%s", remote, branch)).Run() == nil
+}
