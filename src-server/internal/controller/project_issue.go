@@ -94,6 +94,23 @@ func (api ProjectIssue) Move(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
+// UpdateState POST /api/tracker/projectIssue/updateState：仅推进 issue 状态（不碰 sortOrder，
+// 复用 move 的 completed_at 流转 + 父子联动）。供编排场景调用（createWorktree/cleanup/advanceDevStep）。
+func (api ProjectIssue) UpdateState(ctx *gin.Context) {
+	req := &types.ProjectIssueUpdateStateRequest{}
+	svc := service.ProjectIssue{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.UpdateState(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}
+
 // Delete POST /api/tracker/projectIssue/delete：软删除 issue（级联清其 label 关联）。
 func (api ProjectIssue) Delete(ctx *gin.Context) {
 	req := &types.ProjectIssueDeleteRequest{}

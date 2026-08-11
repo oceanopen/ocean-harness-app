@@ -71,6 +71,13 @@ type ProjectIssueMoveRequest struct {
 	SortOrder float64 `json:"sortOrder"`
 }
 
+// ProjectIssueUpdateStateRequest 是 POST /api/tracker/projectIssue/updateState 的入参
+// （编排推进状态：仅 stateId 变化触发 completed_at 流转 + 父子联动，不碰 sortOrder 与业务字段）。
+type ProjectIssueUpdateStateRequest struct {
+	ID      int `json:"id" binding:"required"`
+	StateID int `json:"stateId" binding:"required"`
+}
+
 // ProjectIssueDeleteRequest 是 POST /api/tracker/projectIssue/delete 的入参。
 type ProjectIssueDeleteRequest struct {
 	ID int `json:"id" binding:"required"`

@@ -20,7 +20,7 @@ export function useIssueWorktrees(issueId: number) {
   });
 }
 
-// useCreateWorktreeAndAdvance：D1 [创建并开始] 编排——createWorktree（建 worktree 记录）→ move 推进 stateId 到首个开发步骤。
+// useCreateWorktreeAndAdvance：D1 [创建并开始] 编排——createWorktree（建 worktree 记录）→ updateState 推进 stateId 到首个开发步骤。
 export function useCreateWorktreeAndAdvance(projectId: number) {
   const qc = useQueryClient();
   const { show: showToast, snack } = useToast();
@@ -36,7 +36,7 @@ export function useCreateWorktreeAndAdvance(projectId: number) {
     setRunning(true);
     try {
       await IssueWorktreeService.createWorktree(req);
-      await ProjectIssueService.move({ id: issue.id, stateId: targetStateId, sortOrder: issue.sortOrder });
+      await ProjectIssueService.updateState({ id: issue.id, stateId: targetStateId });
       await Promise.all([
         qc.invalidateQueries({ queryKey: issueWorktreeKeys.list(req.issueId) }),
         qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),
@@ -51,7 +51,7 @@ export function useCreateWorktreeAndAdvance(projectId: number) {
   return { run, running, snack };
 }
 
-// useCleanupAndAdvance：D4 [清理并完成] 编排——pty_stop_for_worktree（停 PTY）→ removeWorktree（软删记录）→ move 推进 completed。
+// useCleanupAndAdvance：D4 [清理并完成] 编排——pty_stop_for_worktree（停 PTY）→ removeWorktree（软删记录）→ updateState 推进 completed。
 // §9.3 两阶段强约束：先停 PTY 再删 worktree（否则文件锁）。
 export function useCleanupAndAdvance(projectId: number) {
   const qc = useQueryClient();
@@ -69,7 +69,7 @@ export function useCleanupAndAdvance(projectId: number) {
     try {
       await commands.ptyStopForWorktree(worktreeId); // Rust 桩（P1 恒返 0）；invoke reject 时抛入 catch
       await IssueWorktreeService.removeWorktree({ worktreeId });
-      await ProjectIssueService.move({ id: issue.id, stateId: targetStateId, sortOrder: issue.sortOrder });
+      await ProjectIssueService.updateState({ id: issue.id, stateId: targetStateId });
       await Promise.all([
         qc.invalidateQueries({ queryKey: issueWorktreeKeys.list(issue.id) }),
         qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),

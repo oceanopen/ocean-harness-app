@@ -31,6 +31,7 @@ export type {
   ProjectIssueMoveRequest,
   ProjectIssueResponseData,
   ProjectIssueUpdateRequest,
+  ProjectIssueUpdateStateRequest,
 } from './ProjectIssueService';
 
 export { ProjectStateService } from './ProjectStateService';

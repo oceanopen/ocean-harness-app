@@ -465,6 +465,55 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 	return list[0], nil
 }
 
+// UpdateState 仅推进 issue 状态：stateId 变化触发 completed_at 流转 + 父→子跨组联动 +
+// 子全完成→父自动完成。事务内执行，不碰 sortOrder 与其他业务字段（由 move/update 维护）。
+// 与 Move 同构，仅省去 sortOrder 写入——编排推进状态不应关心卡片排序。
+func (svc ProjectIssue) UpdateState(req *types.ProjectIssueUpdateStateRequest) (*types.ProjectIssueResponseData, error) {
+	var issue *model.ProjectIssue
+	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
+		q := query.Use(tx)
+		iq := q.ProjectIssue.WithContext(svc.Context)
+
+		found, e := iq.Where(q.ProjectIssue.ID.Eq(req.ID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return errors.New("issue 不存在")
+			}
+			return e
+		}
+		issue = found
+
+		oldStateGroup, _ := svc.getStateGroupCode(tx, issue.StateID)
+		wasCompleted := issue.CompletedAt != nil
+		if e := svc.applyStateTransition(tx, issue, req.StateID); e != nil {
+			return e
+		}
+		if e := iq.Save(issue); e != nil {
+			return e
+		}
+		// 父→子状态联动：跨 stateGroup 变更时子继承父新 stateId。
+		newStateGroup, _ := svc.getStateGroupCode(tx, issue.StateID)
+		if e := svc.maybeSyncChildrenState(tx, issue, oldStateGroup, newStateGroup); e != nil {
+			return e
+		}
+		// 推进到 completed：子任务全完成 → 父自动完成（须在自身完成态落库后）。
+		if !wasCompleted && issue.CompletedAt != nil {
+			if e := svc.maybeAutoCompleteParent(tx, issue); e != nil {
+				return e
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	list, err := svc.assembleWithLabels([]*model.ProjectIssue{issue})
+	if err != nil {
+		return nil, err
+	}
+	return list[0], nil
+}
+
 // Delete 软删除 issue（无 DB 外键），事务内级联软删其 t_issue_labels 关联与子任务（+ 子任务 label 关联），避免悬挂。
 func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {

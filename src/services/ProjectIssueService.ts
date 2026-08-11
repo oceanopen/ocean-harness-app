@@ -78,6 +78,12 @@ export interface ProjectIssueMoveRequest {
   sortOrder: number;
 }
 
+// POST /api/tracker/projectIssue/updateState 的入参（编排推进状态，仅改 stateId 不改 sortOrder）。
+export interface ProjectIssueUpdateStateRequest {
+  id: number;
+  stateId: number;
+}
+
 export class ProjectIssueService {
   // getList：返回指定项目的 issue 列表（含 labels）。
   static getList(req: ProjectIssueGetListRequest): Promise<ProjectIssueResponseData[]> {
@@ -102,5 +108,10 @@ export class ProjectIssueService {
   // move：看板拖拽单卡移动（改 stateId + sortOrder），返回移动后的实体。
   static move(req: ProjectIssueMoveRequest): Promise<ProjectIssueResponseData> {
     return request<ProjectIssueResponseData>('POST', '/api/tracker/projectIssue/move', req);
+  }
+
+  // updateState：编排推进状态（仅改 stateId，sortOrder 由后端保留原值），返回更新后的实体。
+  static updateState(req: ProjectIssueUpdateStateRequest): Promise<ProjectIssueResponseData> {
+    return request<ProjectIssueResponseData>('POST', '/api/tracker/projectIssue/updateState', req);
   }
 }

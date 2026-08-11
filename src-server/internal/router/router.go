@@ -101,6 +101,7 @@ func SetupRouter() *gin.Engine {
 				projectIssueGroup.POST("/update", controller.ProjectIssue{}.Update)
 				projectIssueGroup.POST("/delete", controller.ProjectIssue{}.Delete)
 				projectIssueGroup.POST("/move", controller.ProjectIssue{}.Move)
+				projectIssueGroup.POST("/updateState", controller.ProjectIssue{}.UpdateState)
 			}
 
 			// issueWorktree 模块：issue 开发流程 worktree 元数据（createWorktree/removeWorktree/getList，action 风格，POST）。

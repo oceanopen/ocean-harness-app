@@ -77,8 +77,8 @@ export function getNextDevStepStateId(
 }
 
 /**
- * 推进 issue stateId 的 hook：调 ProjectIssueService.move（保留原 sortOrder）+ invalidate 该 project 的 issues 缓存。
- * 不做乐观更新（move 成功后 invalidate 自动刷新 DevTaskTree/右栏；advancing=true 防双击）。
+ * 推进 issue stateId 的 hook：调 ProjectIssueService.updateState（仅改 stateId，不碰 sortOrder）+ invalidate 该 project 的 issues 缓存。
+ * 不做乐观更新（updateState 成功后 invalidate 自动刷新 DevTaskTree/右栏；advancing=true 防双击）。
  * 失败时弹 toast（硬编码中文报错，含后端错误信息——按 i18n 策略，报错类不走 key 便于排查）；snack 由调用方渲染（照 useToast「hook 返回 snack 元素」范式）。
  */
 export function useAdvanceDevStep(projectId: number) {
@@ -91,10 +91,9 @@ export function useAdvanceDevStep(projectId: number) {
     }
     setAdvancing(true);
     try {
-      await ProjectIssueService.move({
+      await ProjectIssueService.updateState({
         id: issue.id,
         stateId: targetStateId,
-        sortOrder: issue.sortOrder,
       });
       await qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) });
     } catch (e) {
