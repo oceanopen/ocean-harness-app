@@ -107,7 +107,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
   const [menuAction, setMenuAction] = useState<OpenAction | null>(null);
 
   // Java 项目判断（pom.xml / build.gradle / build.gradle.kts）：
-  // 决定 VSCode/IDEA 哪个禁用——Java 项目优先 IDEA，其他优先 VSCode（同 ClaudeSessionCard）。
+  // 仅用于控制 IDEA——非 Java 项目禁用 IDEA；VSCode 在任何项目下都可用（同 ClaudeSessionCard）。
   // 命令返回裸 Promise<boolean>（非 typedError），错误时 fallback false（按非 Java 处理）。
   const [isJava, setIsJava] = useState(false);
   useEffect(() => {
@@ -252,7 +252,6 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             size="small"
-            disabled={isJava}
             onClick={e => handleActionClick('vscode', e)}
             startIcon={<VsCodeIcon />}
           >

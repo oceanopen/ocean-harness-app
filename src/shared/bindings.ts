@@ -38,7 +38,7 @@ export const commands = {
 	openInEditor: (editor: string, cwd: string) => typedError<null, string>(__TAURI_INVOKE("open_in_editor", { editor, cwd })),
 	/**
 	 *  判断 cwd 是否 Java 项目（Maven pom.xml 或 Gradle build.gradle/build.gradle.kts）。
-	 *  前端据此禁用 VSCode/IDEA 中不合适的那一个，保留两个按钮便于未来扩展。
+	 *  前端据此在非 Java 项目下禁用 IDEA（VSCode 在任何项目下都可用）。
 	 */
 	isJavaProject: (cwd: string) => __TAURI_INVOKE<boolean>("is_java_project", { cwd }),
 	/**
