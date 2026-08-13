@@ -38,7 +38,11 @@ func (svc ProjectState) GetCatalog() (*types.CatalogResponse, error) {
 	}, nil
 }
 
-// ApplyStates 全量替换某 project 的状态：硬删该 project 全部 state 行 → 校验入参 → 批量插入。
+// ApplyStates 全量同步某 project 的状态：按稳定键 (state_group_code, state_code) 做 diff——
+// 命中行保留 id（仅更新 sort_order/is_default），多余行硬删，新增行插入。状态 id 因此稳定，
+// 不再因「先删后插换 id」导致 t_project_issues.state_id 悬挂（issue 状态徽章变空的根因）。
+// 同步修复悬挂引用：该项目任何 state_id 不在合法集合内的 issue，一律回落到默认状态——一次覆盖
+// 「本次被移除的状态曾引用的 issue」与「历史 bug 遗留的悬挂 issue」。
 // 用 svc.Orm——调用方（project create/update）在事务内把 svc.Orm 覆写为 tx 以纳入同一事务。
 // 校验：每条 (stateGroupCode, stateCode) 命中 StateCatalog 且不重复；每个 group ≥1 项；is_default=Y 恰好一条。
 // 返回 is_default 那条的 id，供调用方回填 project.default_state_id。
@@ -76,32 +80,89 @@ func (svc ProjectState) ApplyStates(projectID, workspaceID int, items []types.Pr
 	q := query.Use(svc.Orm)
 	wq := q.ProjectState.WithContext(svc.Context)
 
-	// 2) 硬删该 project 全部 state 行（Unscoped：避免软删行占用全局唯一索引 udx_project_states_proj_group_state）。
-	if _, e := wq.Unscoped().Where(q.ProjectState.ProjectID.Eq(projectID)).Delete(); e != nil {
+	// 2) 读现有活行（gorm 自动过滤软删），按稳定键建映射。
+	existing, e := wq.Where(q.ProjectState.ProjectID.Eq(projectID)).Find()
+	if e != nil {
+		return 0, e
+	}
+	existingByKey := make(map[string]*model.ProjectState, len(existing))
+	for _, r := range existing {
+		existingByKey[string(r.StateGroupCode)+"|"+r.StateCode] = r
+	}
+	// 硬删历史软删残留行（deleted_at IS NOT NULL）——唯一索引 udx_project_states_proj_group_state
+	// 不含 deleted_at，软删行仍占位，不清除会导致新增同 (project, group, code) 行冲突。
+	if _, e := wq.Unscoped().
+		Where(q.ProjectState.ProjectID.Eq(projectID), q.ProjectState.DeletedAt.IsNotNull()).
+		Delete(); e != nil {
 		return 0, e
 	}
 
-	// 3) 批量插入。
-	states := make([]*model.ProjectState, 0, len(items))
+	// 3) diff：命中行保留 id（仅更新 sort_order/is_default），未命中行收集待插；记录合法 id 与待删旧 id。
+	validIDs := make([]int, 0, len(items))
+	removedIDs := make([]int, 0)
+	toCreate := make([]*model.ProjectState, 0, len(items))
+	defaultStateID := 0
 	for _, it := range items {
-		states = append(states, &model.ProjectState{
-			ProjectID:      projectID,
-			WorkspaceID:    workspaceID,
-			StateGroupCode: it.StateGroupCode,
-			StateCode:      it.StateCode,
-			SortOrder:      it.SortOrder,
-			IsDefault:      it.IsDefault,
-		})
-	}
-	if e := wq.Create(states...); e != nil {
-		return 0, e
-	}
-
-	// 4) 取 is_default 那条的 id（defaultCnt==1 已校验，必然命中）。
-	for _, s := range states {
-		if s.IsDefault == enums.YES_NO_Y {
-			return s.ID, nil
+		key := string(it.StateGroupCode) + "|" + it.StateCode
+		if r, hit := existingByKey[key]; hit {
+			if _, e := wq.Where(q.ProjectState.ID.Eq(r.ID)).
+				UpdateColumn(q.ProjectState.SortOrder, it.SortOrder); e != nil {
+				return 0, e
+			}
+			if _, e := wq.Where(q.ProjectState.ID.Eq(r.ID)).
+				UpdateColumn(q.ProjectState.IsDefault, it.IsDefault); e != nil {
+				return 0, e
+			}
+			validIDs = append(validIDs, r.ID)
+			if it.IsDefault == enums.YES_NO_Y {
+				defaultStateID = r.ID
+			}
+		} else {
+			toCreate = append(toCreate, &model.ProjectState{
+				ProjectID:      projectID,
+				WorkspaceID:    workspaceID,
+				StateGroupCode: it.StateGroupCode,
+				StateCode:      it.StateCode,
+				SortOrder:      it.SortOrder,
+				IsDefault:      it.IsDefault,
+			})
 		}
 	}
-	return 0, nil
+	if len(toCreate) > 0 {
+		if e := wq.Create(toCreate...); e != nil {
+			return 0, e
+		}
+		for _, s := range toCreate {
+			validIDs = append(validIDs, s.ID)
+			if s.IsDefault == enums.YES_NO_Y {
+				defaultStateID = s.ID
+			}
+		}
+	}
+	// existing 里不在 items 的活行 = 被移除的状态，待硬删。
+	for key, r := range existingByKey {
+		if _, keep := seen[key]; !keep {
+			removedIDs = append(removedIDs, r.ID)
+		}
+	}
+	if defaultStateID == 0 {
+		return 0, errors.New("默认状态未确定")
+	}
+
+	// 4) 硬删被移除的状态行（Unscoped 防占唯一索引）。
+	if len(removedIDs) > 0 {
+		if _, e := wq.Unscoped().Where(q.ProjectState.ID.In(removedIDs...)).Delete(); e != nil {
+			return 0, e
+		}
+	}
+
+	// 5) 修复悬挂引用：该项目任何 state_id 不在合法集合 validIDs 内的 issue，回落到默认状态。
+	iq := q.ProjectIssue.WithContext(svc.Context)
+	if _, e := iq.
+		Where(q.ProjectIssue.ProjectID.Eq(projectID), q.ProjectIssue.StateID.NotIn(validIDs...)).
+		UpdateColumn(q.ProjectIssue.StateID, defaultStateID); e != nil {
+		return 0, e
+	}
+
+	return defaultStateID, nil
 }
