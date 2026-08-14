@@ -97,7 +97,7 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 顶栏：计数 + 搜索 + 新建 */}
+      {/* 顶栏：计数 + 搜索 + 刷新（新建入口上收到外层标题栏 add icon，此处不再放新建按钮） */}
       <Box
         sx={{
           p: 2,
@@ -120,13 +120,6 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
           sx={{ flexGrow: 1, minWidth: 120 }}
         />
         <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-          <Button
-            variant="contained"
-            startIcon={<AddOutlinedIcon />}
-            onClick={() => setAddDialogOpen(true)}
-          >
-            {t('tracker:workspace.actions.add')}
-          </Button>
           <IconButton
             size="small"
             onClick={() => void refetch()}

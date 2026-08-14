@@ -2,9 +2,16 @@
   "workspace": {
     "summary": "{{total}} workspaces",
     "current": "Current workspace: ",
+    "empty": {
+      "title": "No workspaces",
+      "desc": "Click \"New workspace\" to get started",
+      "noMatch": "No matching workspaces"
+    },
+    "selectHint": "Please select a workspace first",
     "search": "Search by name",
     "actions": {
       "add": "New workspace",
+      "addShort": "Add workspace",
       "switch": "Switch workspace",
       "refresh": "Refresh"
     },
@@ -41,11 +48,6 @@
       "confirmMsg": "Delete workspace \"{{name}}\"? This cannot be undone.",
       "confirm": "Delete",
       "cancel": "Cancel"
-    },
-    "empty": {
-      "title": "No workspaces",
-      "desc": "Click \"New workspace\" to get started",
-      "noMatch": "No matching workspaces"
     },
     "error": {
       "title": "Failed to load workspaces",

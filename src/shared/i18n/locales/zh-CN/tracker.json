@@ -2,9 +2,16 @@
   "workspace": {
     "summary": "共 {{total}} 个工作空间",
     "current": "当前工作空间：",
+    "empty": {
+      "title": "暂无工作空间",
+      "desc": "点击「新建工作空间」开始管理",
+      "noMatch": "没有匹配的工作空间"
+    },
+    "selectHint": "请先选择工作空间",
     "search": "按名称搜索",
     "actions": {
       "add": "新建工作空间",
+      "addShort": "新建工作空间",
       "switch": "切换工作空间",
       "refresh": "刷新"
     },
@@ -41,11 +48,6 @@
       "confirmMsg": "确认删除工作空间「{{name}}」？此操作不可恢复。",
       "confirm": "删除",
       "cancel": "取消"
-    },
-    "empty": {
-      "title": "暂无工作空间",
-      "desc": "点击「新建工作空间」开始管理",
-      "noMatch": "没有匹配的工作空间"
     },
     "error": {
       "title": "加载工作空间列表失败",
