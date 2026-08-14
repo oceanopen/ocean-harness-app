@@ -81,6 +81,11 @@ export function defaultHttpServerPort(mode: string): number {
 export const PANEL_SIDEBAR_COLLAPSED_KEY = 'panel_sidebar_collapsed';
 export const DEFAULT_PANEL_SIDEBAR_COLLAPSED = YES_NO.NO;
 
+// 开发工作台左栏 issue 任务树折叠状态。值用 YesNo，缺失视为 NO（默认展开）。
+// 同为纯前端偏好（参照 panel_sidebar_collapsed 先例）。
+export const PANEL_DEV_TREE_COLLAPSED_KEY = 'panel_dev_tree_collapsed';
+export const DEFAULT_PANEL_DEV_TREE_COLLAPSED = YES_NO.NO;
+
 // commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，
 // 保持 getAppConfig/setAppConfig 的对外 API 不变（错误时 throw）。
 export async function getAppConfig(key: string): Promise<string | null> {

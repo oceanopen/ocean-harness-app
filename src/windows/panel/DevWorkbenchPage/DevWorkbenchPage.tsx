@@ -2,14 +2,31 @@ import type { ProjectIssueResponseData } from '@src/services';
 import {
   CleaningServicesOutlined as CleaningServicesOutlinedIcon,
   RefreshOutlined as RefreshOutlinedIcon,
+  ViewSidebar as ViewSidebarIcon,
+  ViewSidebarOutlined as ViewSidebarOutlinedIcon,
 } from '@mui/icons-material';
-import { Box, Chip, CircularProgress, IconButton, Typography } from '@mui/material';
+import { Box, Chip, CircularProgress, IconButton, Typography, useTheme } from '@mui/material';
+import {
+  DEFAULT_PANEL_DEV_TREE_COLLAPSED,
+  isYes,
+  PANEL_DEV_TREE_COLLAPSED_KEY,
+  parseYesNo,
+  setAppConfig,
+  toYesNo,
+} from '@src/shared/appConfig';
+import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam } from '@src/windows/panel/routes';
 import { useEffect } from 'react';
 import { useMatch, useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
+
+// 左栏折叠状态 decode：缺失/非法值回落到默认（展开）。
+// 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
+function decodeDevTreeCollapsed(raw: string | null): boolean {
+  return isYes(parseYesNo(raw, DEFAULT_PANEL_DEV_TREE_COLLAPSED));
+}
 
 // DevWorkbenchPage：控制台「开发工作台」骨架页。
 // 原固定开发步骤流程（init→developing→pull_request→cleanup，基于 started 组子状态）已移除，
@@ -19,6 +36,7 @@ import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 //   ?pid=<projectId>&iid=<issueId>   选中 issue（项目→issue，issue 靠 project 加载，故 pid 同在 URL）
 // 本页单向同步 URL→store（仅活动路由）；隐藏保活时 store 跨顶层切换不丢。
 export default function DevWorkbenchPage() {
+  const theme = useTheme();
   const [searchParams] = useSearchParams();
   const urlPid = numParam(searchParams.get(DEV_PID_PARAM));
   const urlIid = numParam(searchParams.get(DEV_IID_PARAM));
@@ -28,6 +46,11 @@ export default function DevWorkbenchPage() {
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
   const selectedProjectId = useDevWorkbenchStore(s => s.selectedProjectId);
   const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
+  // 左栏 issue 任务树折叠态：订阅 config（跨重启持久化、多窗口同步，参照 PanelApp 侧边栏）。
+  const issueTreeCollapsed = useConfigValue(PANEL_DEV_TREE_COLLAPSED_KEY, decodeDevTreeCollapsed, false);
+  const toggleIssueTreeCollapsed = () => {
+    void setAppConfig(PANEL_DEV_TREE_COLLAPSED_KEY, toYesNo(!issueTreeCollapsed));
+  };
 
   // 加载用 pid：URL 优先（reload/恢复），否则 store（隐藏保活时 URL 无 dev 参数）。
   const loadPid = urlPid ?? selectedProjectId;
@@ -58,24 +81,31 @@ export default function DevWorkbenchPage() {
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* 左栏：任务树（workspace→project→dev issue 三级，跨所有工作空间） */}
+      {/* 左栏：任务树（workspace→project→dev issue 三级，跨所有工作空间）。
+          恒渲染 + width 过渡动画折叠（参照 PanelApp 侧边栏），折叠到 0 后右栏占满整宽。 */}
       <Box
         sx={{
-          width: 260,
+          width: issueTreeCollapsed ? 0 : 260,
           flexShrink: 0,
-          borderRight: 1,
+          borderRight: issueTreeCollapsed ? 0 : 1,
           borderColor: 'divider',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          transition: theme.transitions.create(['width'], {
+            duration: theme.transitions.duration.standard,
+            easing: theme.transitions.easing.sharp,
+          }),
         }}
       >
-        <DevTaskTree />
+        <Box sx={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <DevTaskTree />
+        </Box>
       </Box>
 
       {/* 右栏：顶部操作栏 + 内容区 */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* 顶部操作栏：选中 issue 的 #id + 名称 + 状态徽章 + 占位按钮（不挂 Tooltip） */}
+        {/* 顶部操作栏：左栏折叠开关 + 选中 issue 的 #id + 名称 + 状态徽章 + 占位按钮（不挂 Tooltip） */}
         <Box
           sx={{
             height: 48,
@@ -89,6 +119,14 @@ export default function DevWorkbenchPage() {
             bgcolor: 'background.paper',
           }}
         >
+          <IconButton
+            size="small"
+            onClick={toggleIssueTreeCollapsed}
+            aria-label={issueTreeCollapsed ? '显示任务列表' : '隐藏任务列表'}
+            sx={{ color: 'text.secondary' }}
+          >
+            {issueTreeCollapsed ? <ViewSidebarOutlinedIcon /> : <ViewSidebarIcon />}
+          </IconButton>
           {hasSelection && issue && (
             <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
               <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>#{issue.id}</Box>
