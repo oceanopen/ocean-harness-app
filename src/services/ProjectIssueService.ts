@@ -1,3 +1,4 @@
+import type { StateCode } from '@src/state/tracker/stateMeta';
 import type { WorkspaceLabelModel } from './WorkspaceLabelService';
 import { request } from './http';
 
@@ -9,7 +10,7 @@ export interface ProjectIssueResponseData {
   workspaceId: number;
   name: string;
   description: string; // issue 描述：markdown 源文本（前端 Milkdown 编辑器产出，非 HTML）
-  stateId: number;
+  stateCode: StateCode; // 固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，见 stateMeta）
   priority: Priority;
   sortOrder: number;
   parentId: number;
@@ -28,7 +29,7 @@ export interface ProjectIssueResponseData {
 export interface ProjectIssueGetListRequest {
   projectId: number;
   orderBy?: string; // id/sort_order/priority/created_at，空则 sort_order
-  stateId?: number;
+  stateCode?: StateCode;
   priority?: Priority;
   labelId?: number;
   keyword?: string;
@@ -44,7 +45,7 @@ export interface ProjectIssueCreateRequest {
   isDraft?: 'Y' | 'N';
   startDate?: string;
   targetDate?: string;
-  stateId?: number; // 0 → 取 project.default_state_id
+  stateCode?: StateCode; // 空值 → 后端默认 BACKLOG
   parentId?: number; // 0=顶级，>0=子任务（须与父同 project，仅一层）
   labelIds?: number[];
   localRepositoryId?: number; // 0=未关联；>0 须属于当前项目关联仓库
@@ -56,14 +57,14 @@ export interface ProjectIssueUpdateRequest {
   id: number;
   name: string;
   description?: string;
-  stateId?: number;
+  stateCode?: StateCode;
   priority?: Priority;
   isDraft?: 'Y' | 'N';
   startDate?: string;
   targetDate?: string;
   labelIds?: number[];
   localRepositoryId?: number; // 0=清除关联；>0 须属于当前项目关联仓库
-  repositoryBranch?: string; // 分支名；localRepositoryId=0 时后端强制清空
+  repositoryBranch?: string; // localRepositoryId=0 时后端强制清空
 }
 
 // POST /api/tracker/projectIssue/delete 的入参。
@@ -74,14 +75,8 @@ export interface ProjectIssueDeleteRequest {
 // POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）。
 export interface ProjectIssueMoveRequest {
   id: number;
-  stateId: number;
+  stateCode: StateCode;
   sortOrder: number;
-}
-
-// POST /api/tracker/projectIssue/updateState 的入参（编排推进状态，仅改 stateId 不改 sortOrder）。
-export interface ProjectIssueUpdateStateRequest {
-  id: number;
-  stateId: number;
 }
 
 export class ProjectIssueService {
@@ -105,13 +100,8 @@ export class ProjectIssueService {
     return request<void>('POST', '/api/tracker/projectIssue/delete', req);
   }
 
-  // move：看板拖拽单卡移动（改 stateId + sortOrder），返回移动后的实体。
+  // move：看板拖拽单卡移动（改 stateCode + sortOrder），返回移动后的实体。
   static move(req: ProjectIssueMoveRequest): Promise<ProjectIssueResponseData> {
     return request<ProjectIssueResponseData>('POST', '/api/tracker/projectIssue/move', req);
-  }
-
-  // updateState：编排推进状态（仅改 stateId，sortOrder 由后端保留原值），返回更新后的实体。
-  static updateState(req: ProjectIssueUpdateStateRequest): Promise<ProjectIssueResponseData> {
-    return request<ProjectIssueResponseData>('POST', '/api/tracker/projectIssue/updateState', req);
   }
 }

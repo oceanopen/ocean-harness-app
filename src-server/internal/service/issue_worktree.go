@@ -36,7 +36,7 @@ type IssueWorktree struct {
 // repoName 从 local_repository.remote_url 的 /xxx.git 末段解析；remote_url 为空回退 filepath.Base(local_dir)。
 // workspace.worktreeRoot 为空（用户未配）报错，要求先在工作空间设置配置 worktree 存放目录。
 // git 写盘在事务外（git 是真相源）；事务失败不回滚磁盘，靠 reconcile 兜底（WorktreeExists 保证重试不阻塞）。
-// 成功后由前端推进 issue.stateId 到首个开发步骤（developing）。
+// 创建成功后不推进 issue 状态（原开发步骤推进流程已移除，后续由 AI 驱动流程接管）。
 func (svc IssueWorktree) CreateWorktree(req *types.IssueWorktreeCreateWorktreeRequest) (*types.IssueWorktreeResponseData, error) {
 	q := query.Use(svc.Orm)
 

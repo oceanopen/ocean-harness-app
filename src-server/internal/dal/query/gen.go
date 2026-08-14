@@ -22,7 +22,6 @@ var (
 	LocalRepository        *localRepository
 	ProjectIssue           *projectIssue
 	ProjectLocalRepository *projectLocalRepository
-	ProjectState           *projectState
 	Workspace              *workspace
 	WorkspaceLabel         *workspaceLabel
 	WorkspaceProject       *workspaceProject
@@ -35,7 +34,6 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	LocalRepository = &Q.LocalRepository
 	ProjectIssue = &Q.ProjectIssue
 	ProjectLocalRepository = &Q.ProjectLocalRepository
-	ProjectState = &Q.ProjectState
 	Workspace = &Q.Workspace
 	WorkspaceLabel = &Q.WorkspaceLabel
 	WorkspaceProject = &Q.WorkspaceProject
@@ -49,7 +47,6 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		LocalRepository:        newLocalRepository(db, opts...),
 		ProjectIssue:           newProjectIssue(db, opts...),
 		ProjectLocalRepository: newProjectLocalRepository(db, opts...),
-		ProjectState:           newProjectState(db, opts...),
 		Workspace:              newWorkspace(db, opts...),
 		WorkspaceLabel:         newWorkspaceLabel(db, opts...),
 		WorkspaceProject:       newWorkspaceProject(db, opts...),
@@ -64,7 +61,6 @@ type Query struct {
 	LocalRepository        localRepository
 	ProjectIssue           projectIssue
 	ProjectLocalRepository projectLocalRepository
-	ProjectState           projectState
 	Workspace              workspace
 	WorkspaceLabel         workspaceLabel
 	WorkspaceProject       workspaceProject
@@ -82,7 +78,6 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		LocalRepository:        q.LocalRepository.clone(db),
 		ProjectIssue:           q.ProjectIssue.clone(db),
 		ProjectLocalRepository: q.ProjectLocalRepository.clone(db),
-		ProjectState:           q.ProjectState.clone(db),
 		Workspace:              q.Workspace.clone(db),
 		WorkspaceLabel:         q.WorkspaceLabel.clone(db),
 		WorkspaceProject:       q.WorkspaceProject.clone(db),
@@ -105,7 +100,6 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		LocalRepository:        q.LocalRepository.replaceDB(db),
 		ProjectIssue:           q.ProjectIssue.replaceDB(db),
 		ProjectLocalRepository: q.ProjectLocalRepository.replaceDB(db),
-		ProjectState:           q.ProjectState.replaceDB(db),
 		Workspace:              q.Workspace.replaceDB(db),
 		WorkspaceLabel:         q.WorkspaceLabel.replaceDB(db),
 		WorkspaceProject:       q.WorkspaceProject.replaceDB(db),
@@ -118,7 +112,6 @@ type queryCtx struct {
 	LocalRepository        ILocalRepositoryDo
 	ProjectIssue           IProjectIssueDo
 	ProjectLocalRepository IProjectLocalRepositoryDo
-	ProjectState           IProjectStateDo
 	Workspace              IWorkspaceDo
 	WorkspaceLabel         IWorkspaceLabelDo
 	WorkspaceProject       IWorkspaceProjectDo
@@ -131,7 +124,6 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 		LocalRepository:        q.LocalRepository.WithContext(ctx),
 		ProjectIssue:           q.ProjectIssue.WithContext(ctx),
 		ProjectLocalRepository: q.ProjectLocalRepository.WithContext(ctx),
-		ProjectState:           q.ProjectState.WithContext(ctx),
 		Workspace:              q.Workspace.WithContext(ctx),
 		WorkspaceLabel:         q.WorkspaceLabel.WithContext(ctx),
 		WorkspaceProject:       q.WorkspaceProject.WithContext(ctx),

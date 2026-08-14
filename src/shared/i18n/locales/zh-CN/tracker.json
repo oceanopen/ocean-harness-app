@@ -81,17 +81,13 @@
       "belongingWorkspace": "所属工作空间",
       "confirm": "保存"
     },
-    "stateManage": {
-      "title": "状态管理（勾选启用，每组至少保留 1 项；进行中外的子步骤可拖序）",
-      "stepOrder": "子步骤顺序（拖动调整）"
-    },
     "card": {
       "edit": "编辑",
       "delete": "删除"
     },
     "delete": {
       "title": "删除项目",
-      "confirmMsg": "确认删除项目「{{name}}」？其下所有状态与 Issue 将一并删除，且不可恢复。",
+      "confirmMsg": "确认删除项目「{{name}}」？其下所有 Issue 将一并删除，且不可恢复。",
       "confirm": "删除",
       "cancel": "取消"
     },

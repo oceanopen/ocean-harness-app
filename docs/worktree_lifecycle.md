@@ -4,13 +4,15 @@
 >
 > **本模块定位**：issue 隔离工作区从创建到清理的完整生命周期。**开发阶段（D2）本期手动**——外部终端 + 手动扭转 issue 状态；嵌入式终端见模块 2。
 > **范围**：worktree 创建 → 手动开发 → PR → 清理。本期仅本地。
-> **现状基线**：issue_worktree 的 P1 脚手架已大面积存在（Go 表/桩 + Web DevWorkbench 4 步流程）。本模块任务是「P1 桩 → P2 真实现」。
+> **现状基线**：issue_worktree 的 P1 脚手架已大面积存在（Go 表/桩 + issueWorktree 接口）。本模块任务是「P1 桩 → P2 真实现」。
+>
+> **⚠️ 架构变更（2026-08）**：原「Web DevWorkbench 4 步流程」（init/developing/pull_request/cleanup 以 started 组子 state 推进）已随状态模型扁平化（固定 5 状态 state_code）整体移除；前端步骤编排（DevStepper/StepContent/useAdvanceDevStep）已删除，DevWorkbench 仅保留骨架页待接 AI 驱动流程。Go 侧 issueWorktree 接口（createWorktree/removeWorktree/getList/updateWorktree）保留，后续封装 tools/MCP 复用。本文中涉及「4 步状态机」「步骤推进」的描述仅作历史设计参考。
 
 ---
 
 ## 1. 模块概览
 
-**4 步状态机**（issue 的 `stateId` 在 `started` 组开发步骤子 state 上推进，阶段不另建表）：
+**原 4 步状态机**（已移除，历史设计参考——issue 的开发阶段曾以 `started` 组开发步骤子 state 推进）：
 
 ```
 init ──[创建并开始]──▶ developing ──[开发完成]──▶ pull_request ──[合并完成]──▶ cleanup ──[清理并完成]──▶ completed（自动归档）
@@ -27,11 +29,11 @@ init ──[创建并开始]──▶ developing ──[开发完成]──▶ p
 
 - `cleanup`（最后一步）→ 推进到 `completed` 组首个 state（**自动归档**）。
 - `cancelled` 不在开发流程执行面，由「事项管理」（规划面）处理。
-- 状态推进统一走 `ProjectIssueService.move({ id, stateId, sortOrder })`；前端 `getNextDevStepStateId` / `useAdvanceDevStep`（`src/state/devWorkbench/queries.ts`）驱动。
+- 状态模型已扁平化：issue 状态为固定 5 值 `state_code`（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED），状态推进走 `ProjectIssueService.move({ id, stateCode, sortOrder })`/`update`；原 `getNextDevStepStateId`/`useAdvanceDevStep` 已删除。
 
 **先后顺序**：本模块（worktree 生命周期）先做通 → 模块 2（嵌入式终端）后补。两者靠 `worktreeId` + `removeWorktree` API 桥接。
 
-**涉及端**：Go（worktree 运维 + 元数据 + PR）、Web（DevWorkbench 4 步编排）、Rust（`pty_stop_for_worktree` 桩，本模块范围内 no-op）。
+**涉及端**：Go（worktree 运维 + 元数据 + PR，接口保留待封装 tools/MCP）、Rust（`pty_stop_for_worktree` 桩，本模块范围内 no-op）。
 
 ---
 
@@ -47,9 +49,7 @@ init ──[创建并开始]──▶ developing ──[开发完成]──▶ p
 | controller/router | `internal/controller/issue_worktree.go` / `router/router.go:106-113`（三路由已注册） |
 | git 只读封装 | `gitutil/gitutil.go`（IsRepo/ParseInfo/LocalBranches） |
 | 仓库合法性校验 | `service/project_issue.go:557 validateIssueRepo` |
-| DevWorkbench 4 步 | `DevWorkbenchPage/`（InitStep/DevelopingStep/PullRequestStep/CleanupStep） |
-| 状态机 | `src/state/devWorkbench/queries.ts` |
-| worktree 编排 hook | `src/state/issueWorktree/queries.ts`（useCreateWorktreeAndAdvance / useCleanupAndAdvance） |
+| worktree HTTP 服务 | `src/services/IssueWorktreeService.ts`（Go issueWorktree 接口保留，待封装 tools/MCP） |
 | compare URL | `src/shared/gitRemote.ts buildCompareUrl`（D3 现状用） |
 | 外部打开 | `commands.openInTerminal/openInEditor/openInFileManager`（D2 手动开发落点） |
 | Rust PTY 停止桩 | `src-tauri/src/pty/mod.rs pty_stop_for_worktree`（恒返 0） |
@@ -90,7 +90,7 @@ init ──[创建并开始]──▶ developing ──[开发完成]──▶ p
 - **文件**：`src-server/internal/service/issue_worktree.go`（改 CreateWorktree）+ `dal/types/issue_worktree.go`（入参按需）
 - **当前**：CreateWorktree 派生假路径写记录（不真调 git），P1 幂等逻辑（按 worktreeId UNIQUE 重置 active）已就位。
 - **目标**：真路径派生（1.2）→ `validateIssueRepo(orm, projectID, repoID, branch)`（入参 projectID 非 IssueID；CreateWorktree 已查 issue 拿 `issue.ProjectID` 直接传，校验 repo 属于 project 关联仓库集合）→ `WorktreeExists` 防目录已存在（幂等跳过）+ `WorktreeBranchExists` 防分支冲突 → `WorktreeAdd`；保留幂等。git 写盘在事务外，事务失败不回滚磁盘（reconcile 兜底）。
-- **验证**：某 issue「创建并开始」→ 磁盘真生成 worktree 目录、DB 记录路径正确、推进到 developing。
+- **验证**：某 issue 创建 worktree → 磁盘真生成 worktree 目录、DB 记录路径正确。
 
 ### ✅ 任务 1.4 — D3 PR：githost 平台抽象包
 - **文件**：`src-server/internal/githost/`（新增包）+ 单测
@@ -144,7 +144,7 @@ CREATE TABLE t_issue_worktrees (
     deleted_at          DATETIME                          -- 软删除
 );
 ```
-- 开发流程阶段不在本表：`status` 只描述 worktree 物理生命周期，与开发阶段（stateId）正交。
+- 开发流程阶段不在本表：`status` 只描述 worktree 物理生命周期，与 issue 状态（state_code 固定 5 值枚举）正交。
 - 与 issue 既有 `repository_branch` 正交：`repository_branch`=issue 关心的分支；本表=为开发创建的隔离工作区。一个 issue 可 0..N worktree（本期 UI 1:1）。
 - gencode 用 `gen.FieldType("status","enums.IssueWorktreeStatus")` 映射 typed 枚举；枚举包须先于 gencode 存在。
 
@@ -164,10 +164,10 @@ CREATE TABLE t_issue_worktrees (
 按「git 操作集中 Go」，PR 创建放 Go（避免 webview CORS、避免 token 落前端内存）。`githost` 包做 host 检测 + REST 调用；token 由前端从 appConfig 读后随请求传 Go（Go 不持久化）。owner/repo 从 `t_local_repositories.remote_url` 解析。
 
 ### 4.6 数据流（D1/D2/D3/D4 端到端，手动开发）
-- **D1**：`createWorktree`（Go：校验→WorktreeAdd→写表）→ `move(developing)` → invalidate。
-- **D2**（手动）：`openInTerminal(worktreePath)`（外部终端）→ 用户开发 → `[开发完成]` → `move(pull_request)`。
-- **D3**：`createPr`（Go：githost.CreatePullRequest，无 token 走 compare URL）→ `[合并完成]` → `move(cleanup)`。
-- **D4**：`pty_stop_for_worktree`（no-op）→ `removeWorktree`（Go：WorktreeRemove+软删）→ `move(completed)`。
+- **D1**：`createWorktree`（Go：校验→WorktreeAdd→写表）。原「→ move(developing) 推进步骤」已移除。
+- **D2**（手动）：`openInTerminal(worktreePath)`（外部终端）→ 用户开发（状态由用户在事项管理面流转）。
+- **D3**：`createPr`（Go：githost.CreatePullRequest，无 token 走 compare URL）。
+- **D4**：`pty_stop_for_worktree`（no-op）→ `removeWorktree`（Go：WorktreeRemove+软删）。
 
 ---
 

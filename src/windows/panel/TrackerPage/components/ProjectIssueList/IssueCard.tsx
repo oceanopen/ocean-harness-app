@@ -1,7 +1,6 @@
 import type { DraggableProvided, DraggableStateSnapshot } from '@hello-pangea/dnd';
 import type { SxProps, Theme } from '@mui/material';
 import type { ProjectIssueResponseData } from '@src/services';
-import type { ProjectStateView } from '@src/state/tracker';
 import type { MouseEvent, ReactNode } from 'react';
 import type { SubtaskStats } from './shared';
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
@@ -16,11 +15,11 @@ import {
 } from '@mui/icons-material';
 import { Box, IconButton, Typography } from '@mui/material';
 import { formatDate } from '@src/shared/time';
-import { useDevWorkbenchStore } from '@src/state/devWorkbench';
-import { useCommandPalette } from '@src/windows/panel/commandPalette/CommandPaletteContext';
+import { STATE_MAP } from '@src/state/tracker';
 import { PRIORITY_COLOR } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate as useRouterNavigate } from 'react-router-dom';
 import { GUTTER_WIDTH, truncateSx } from './shared';
 
 // 子卡片容器缩进：gutter(28) + 首行 gap(8) - 子卡 px(8) = 28，使子卡内容起点恰为 gutter+gap，
@@ -50,7 +49,6 @@ export interface IssueCardDnd {
 export interface IssueCardProps {
   issue: ProjectIssueResponseData;
   depth?: number; // 0=顶级（可展开/可新增子），1=子任务（叶节点）
-  stateMap: Map<number, ProjectStateView>;
   subtaskStats: SubtaskStats;
   // 子 issue（已按 sortOrder 排序）；展开时内联渲染。子卡片不传（叶节点）。
   childIssues?: ProjectIssueResponseData[];
@@ -74,7 +72,6 @@ export interface IssueCardProps {
 function IssueCard({
   issue,
   depth = 0,
-  stateMap,
   subtaskStats,
   childIssues = [],
   expanded = false,
@@ -86,8 +83,7 @@ function IssueCard({
   onReorderChild,
 }: IssueCardProps) {
   const { t } = useTranslation();
-  const { navigate } = useCommandPalette();
-  const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
+  const routerNavigate = useRouterNavigate();
   const provided = dnd?.provided;
   const isDragging = dnd?.snapshot?.isDragging ?? false;
   // 看板模式（单一标记 kanban prop：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传；列表不传）。
@@ -106,11 +102,11 @@ function IssueCard({
 
   // 打开时刻冻结的"现在"，用于逾期判断（new Date(str) 解析为纯函数）。
   const [now] = useState(() => Date.now());
-  const state = stateMap.get(issue.stateId);
+  const state = STATE_MAP.get(issue.stateCode);
   const overdue = !!issue.targetDate
     && new Date(issue.targetDate).getTime() < now
-    && state?.stateGroupCode !== 'completed'
-    && state?.stateGroupCode !== 'cancelled';
+    && issue.stateCode !== 'DONE'
+    && issue.stateCode !== 'CANCELLED';
 
   // depth=1 子卡片用轻量缩进行（与父卡片视觉区分）；depth=0 用 Paper 卡片（列表/看板一致）。
   const rootSx: SxProps<Theme> = depth === 1
@@ -217,8 +213,8 @@ function IssueCard({
       <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>」</Typography>
     </Box>
   );
-  // F2：started 组非 in_progress 的子状态徽章可点击，跳转开发工作台定位该 issue。
-  const canJumpToDev = !!state && state.stateGroupCode === 'started';
+  // F2：进行中（IN_PROGRESS）状态徽章可点击，跳转开发工作台定位该 issue。
+  const canJumpToDev = issue.stateCode === 'IN_PROGRESS';
   const stateBadge = state && (
     <Box
       sx={[
@@ -228,8 +224,7 @@ function IssueCard({
       onClick={canJumpToDev
         ? (e: MouseEvent) => {
             e.stopPropagation();
-            selectIssue(issue);
-            navigate('devWorkbench');
+            routerNavigate(`/devWorkbench?pid=${issue.projectId}&iid=${issue.id}`);
           }
         : undefined}
     >
@@ -361,7 +356,6 @@ function IssueCard({
               key={child.id}
               issue={child}
               depth={1}
-              stateMap={stateMap}
               subtaskStats={subtaskStats}
               onEdit={onEdit}
               onAddChild={onAddChild}
@@ -392,7 +386,6 @@ function IssueCard({
                     <IssueCard
                       issue={child}
                       depth={1}
-                      stateMap={stateMap}
                       subtaskStats={subtaskStats}
                       onEdit={onEdit}
                       onAddChild={onAddChild}

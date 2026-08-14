@@ -46,7 +46,6 @@
     }
   },
   "devWorkbench": {
-    "toggleSteps": "切换步骤条",
     "repo": "仓库",
     "baseRef": "基准分支",
     "devBranch": "开发分支",

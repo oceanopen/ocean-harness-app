@@ -81,17 +81,13 @@
       "belongingWorkspace": "Workspace",
       "confirm": "Save"
     },
-    "stateManage": {
-      "title": "State management (check to enable, keep at least 1 per group; sub-steps except In progress are draggable)",
-      "stepOrder": "Sub-step order (drag to reorder)"
-    },
     "card": {
       "edit": "Edit",
       "delete": "Delete"
     },
     "delete": {
       "title": "Delete project",
-      "confirmMsg": "Delete project \"{{name}}\"? All its states and issues will be deleted, and this cannot be undone.",
+      "confirmMsg": "Delete project \"{{name}}\"? All its issues will be deleted, and this cannot be undone.",
       "confirm": "Delete",
       "cancel": "Cancel"
     },

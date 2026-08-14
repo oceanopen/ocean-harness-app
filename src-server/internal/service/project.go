@@ -50,8 +50,7 @@ func (svc Project) GetInfo(req *types.ProjectGetInfoRequest) (*types.ProjectResp
 }
 
 // Create 新建 project（允许重名、无业务唯一键，普通插入）。
-// 同一事务内：插入 project → ApplyStates 全量写入状态（校验目录/默认项 + 回填 default_state_id）→ 全量写入关联仓库。
-// 返回响应含本批写入的 localRepositoryIds。
+// 同一事务内：插入 project → 全量写入关联仓库。返回响应含本批写入的 localRepositoryIds。
 func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectResponseData, error) {
 	created := &model.WorkspaceProject{}
 	var repoIDs []int
@@ -70,23 +69,8 @@ func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectRespon
 			return e
 		}
 
-		// 2) 全量写入项目状态（随项目一起保存）：把 tx 透传给 ProjectState service，纳入同一事务。
-		stateSvc := ProjectState{}
-		svc.MakeService(&stateSvc.Service)
-		stateSvc.Orm = tx
-		defaultStateID, e := stateSvc.ApplyStates(created.ID, req.WorkspaceID, req.States)
-		if e != nil {
-			return e
-		}
-
-		// 3) 回填 default_state_id（ApplyStates 返回 is_default 那条的 id）。
-		created.DefaultStateID = defaultStateID
-		if _, e = pq.Where(q.WorkspaceProject.ID.Eq(created.ID)).
-			UpdateColumn(q.WorkspaceProject.DefaultStateID, created.DefaultStateID); e != nil {
-			return e
-		}
-
-		// 4) 全量写入关联仓库（随项目信息一起保存），返回有效 id 列表。
+		// 2) 全量写入关联仓库（随项目信息一起保存），返回有效 id 列表。
+		var e error
 		repoIDs, e = svc.replaceAssociatedRepositories(tx, created.ID, req.LocalRepositoryIDs)
 		return e
 	})
@@ -96,8 +80,8 @@ func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectRespon
 	return &types.ProjectResponseData{WorkspaceProject: created, LocalRepositoryIDs: repoIDs}, nil
 }
 
-// Update 更新 project 的 name/description/emoji（不动 workspaceId）+ 全量覆盖关联仓库 +（States 非 nil 时）全量替换状态。
-// 关联/状态均采用「先全量删后全量插」策略：不做 diff，前端只传最终列表。状态替换时重算 default_state_id。
+// Update 更新 project 的 name/description/emoji（不动 workspaceId）+ 全量覆盖关联仓库。
+// 关联采用「先全量删后全量插」策略：不做 diff，前端只传最终列表。
 func (svc Project) Update(req *types.ProjectUpdateRequest) (*types.ProjectResponseData, error) {
 	var p *model.WorkspaceProject
 	var repoIDs []int
@@ -121,25 +105,7 @@ func (svc Project) Update(req *types.ProjectUpdateRequest) (*types.ProjectRespon
 		}
 		// 全量覆盖关联仓库（无 diff）。
 		repoIDs, e = svc.replaceAssociatedRepositories(tx, req.ID, req.LocalRepositoryIDs)
-		if e != nil {
-			return e
-		}
-		// 全量替换项目状态（States 非 nil 时）：硬删全插 + 重算 default_state_id。
-		if req.States != nil {
-			stateSvc := ProjectState{}
-			svc.MakeService(&stateSvc.Service)
-			stateSvc.Orm = tx
-			defaultStateID, se := stateSvc.ApplyStates(req.ID, p.WorkspaceID, req.States)
-			if se != nil {
-				return se
-			}
-			if _, e = pq.Where(q.WorkspaceProject.ID.Eq(req.ID)).
-				UpdateColumn(q.WorkspaceProject.DefaultStateID, defaultStateID); e != nil {
-				return e
-			}
-			p.DefaultStateID = defaultStateID
-		}
-		return nil
+		return e
 	})
 	if err != nil {
 		return nil, err
@@ -147,7 +113,7 @@ func (svc Project) Update(req *types.ProjectUpdateRequest) (*types.ProjectRespon
 	return &types.ProjectResponseData{WorkspaceProject: p, LocalRepositoryIDs: repoIDs}, nil
 }
 
-// Delete 软删除 project（无 DB 外键），事务内级联软删其下 state 与 issue + 硬删项目↔仓库中间表记录。
+// Delete 软删除 project（无 DB 外键），事务内级联软删其下 issue + 硬删项目↔仓库中间表记录。
 // issue 下挂的 t_issue_labels 不在此清理，留给 label/issue 模块统一处理（本期该表无数据）。
 func (svc Project) Delete(req *types.ProjectDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -165,17 +131,12 @@ func (svc Project) Delete(req *types.ProjectDeleteRequest) error {
 			Where(q.WorkspaceProject.ID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 3) 级联软删其下 state（限定 projectId 防跨项目）。
-		if _, e := q.ProjectState.WithContext(svc.Context).
-			Where(q.ProjectState.ProjectID.Eq(req.ID)).Delete(); e != nil {
-			return e
-		}
-		// 4) 级联软删其下 issue。
+		// 3) 级联软删其下 issue。
 		if _, e := q.ProjectIssue.WithContext(svc.Context).
 			Where(q.ProjectIssue.ProjectID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 5) 硬删项目↔仓库中间表记录（中间表无 deleted_at）。
+		// 4) 硬删项目↔仓库中间表记录（中间表无 deleted_at）。
 		if _, e := q.ProjectLocalRepository.WithContext(svc.Context).
 			Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(req.ID)).Delete(); e != nil {
 			return e

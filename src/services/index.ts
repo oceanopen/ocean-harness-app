@@ -32,19 +32,7 @@ export type {
   ProjectIssueMoveRequest,
   ProjectIssueResponseData,
   ProjectIssueUpdateRequest,
-  ProjectIssueUpdateStateRequest,
 } from './ProjectIssueService';
-
-export { ProjectStateService } from './ProjectStateService';
-export type {
-  CatalogResponse,
-  ProjectStateGetListRequest,
-  ProjectStateItem,
-  ProjectStateModel,
-  StateGroup,
-  StateGroupMeta,
-  StateMeta,
-} from './ProjectStateService';
 
 export { WorkspaceLabelService } from './WorkspaceLabelService';
 export type {

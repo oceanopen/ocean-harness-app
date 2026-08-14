@@ -1,4 +1,5 @@
-import type { Priority, ProjectIssueResponseData, StateGroup, StateGroupMeta, WorkspaceProjectModel } from '@src/services';
+import type { Priority, ProjectIssueResponseData, WorkspaceProjectModel } from '@src/services';
+import type { StateCode } from '@src/state/tracker';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   AddOutlined as AddOutlinedIcon,
@@ -25,7 +26,7 @@ import {
 } from '@mui/material';
 import { ProjectIssueService } from '@src/services';
 import { useToast } from '@src/shared/useToast';
-import { trackerKeys, useProjectIssues, useProjectStateViews } from '@src/state/tracker';
+import { STATE_MAP, STATE_ORDER, trackerKeys, useProjectIssues } from '@src/state/tracker';
 import { PRIORITY_WEIGHT } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import PrioritySelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/PrioritySelect';
 import ProjectIssueDrawer from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectIssueDrawer';
@@ -36,7 +37,6 @@ import { useTranslation } from 'react-i18next';
 import IssueCard from './IssueCard';
 import KanbanView from './KanbanView/KanbanView';
 import { computeSortOrder } from './KanbanView/useKanbanDnd';
-import { GROUP_ORDER } from './shared';
 import StateGroupCard from './StateGroupCard';
 
 // Issue 视图模式：列表（按状态组纵向分组）/ 看板（按状态组横向分列 + 拖拽）。
@@ -47,21 +47,20 @@ interface IssueListProps {
 }
 
 // Issue 列表（嵌于 tracker 三栏壳的右栏）。
-// projectIssue/state 列表走 useProjectIssues/useProjectStates（与抽屉/看板/卡片共享缓存）；增删改走 mutation（在抽屉内），
+// projectIssue 列表走 useProjectIssues（与抽屉/看板/卡片共享缓存；状态为双端固定常量）；增删改走 mutation（在抽屉内），
 // 本页回调仅弹 toast（mutation 内部 invalidate）。看板拖拽乐观更新经 updateProjectIssues 适配器写回 Query 缓存。
 function ProjectIssueList({ workspaceProject }: IssueListProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError, isFetching: issuesFetching } = useProjectIssues(workspaceProject.id);
-  const { views: projectStates, viewMap: stateMap, groups: stateGroups, isLoading: statesLoading, isError: statesError, isFetching: statesFetching } = useProjectStateViews(workspaceProject.id);
   const { show: showToast, snack } = useToast();
   const [keyword, setKeyword] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
-  const [stateFilter, setStateFilter] = useState<number | 'all'>('all');
-  const [collapsed, setCollapsed] = useState<Set<StateGroup>>(() => new Set());
+  const [stateFilter, setStateFilter] = useState<StateCode | 'all'>('all');
+  const [collapsed, setCollapsed] = useState<Set<StateCode>>(() => new Set());
   const [drawerCreateOpen, setDrawerCreateOpen] = useState(false);
-  // 创建抽屉预选状态：分组头"+"快捷新建时传入该组首个状态，工具栏/空态新建为 undefined。
-  const [createInitialStateId, setCreateInitialStateId] = useState<number | undefined>(undefined);
+  // 创建抽屉预选状态：分组头"+"快捷新建时传入该分组状态，工具栏/空态新建为 undefined。
+  const [createInitialStateCode, setCreateInitialStateCode] = useState<StateCode | undefined>(undefined);
   // 新建子 issue 的父 issue（非空即打开"新建子 issue"抽屉）。
   const [createChildParent, setCreateChildParent] = useState<ProjectIssueResponseData | null>(null);
   // 编辑抽屉：无子级卡片点击或编辑 icon 进入。
@@ -86,13 +85,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
       return typeof action === 'function' ? action(base) : action;
     });
   }, [qc, workspaceProject.id]);
-
-  // 分组元数据目录（列表分组头取中文名/色，非 i18n；对齐 docs/issue.md §6）。
-  const groupMetaMap = useMemo(() => {
-    const m = new Map<StateGroup, StateGroupMeta>();
-    stateGroups.forEach(g => m.set(g.code, g));
-    return m;
-  }, [stateGroups]);
 
   // 各父 issue 的子任务统计（done/total），用于卡片进度小标（从全量扁平 issue 派生）。
   const subtaskStats = useMemo(() => {
@@ -129,22 +121,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     return m;
   }, [projectIssues]);
 
-  // 各状态组的首个状态 id（sortOrder 升序），供分组头"+"快捷新建预选该组状态。
-  const firstStateIdByGroup = useMemo(() => {
-    const m: Partial<Record<StateGroup, number>> = {};
-    for (const sg of GROUP_ORDER) {
-      const sorted = projectStates
-        .filter(s => s.stateGroupCode === sg)
-        .sort((a, b) => a.sortOrder - b.sortOrder);
-      const first = sorted[0];
-      if (first) {
-        m[sg] = first.id;
-      }
-    }
-    return m;
-  }, [projectStates]);
-
-  // 子任务拖拽重排（列表模式）：同父内仅改 sortOrder（stateId 不变），复用 move API + computeSortOrder。
+  // 子任务拖拽重排（列表模式）：同父内仅改 sortOrder（stateCode 不变），复用 move API + computeSortOrder。
   // 乐观更新即时反馈，失败用快照整表回滚 + toast；成功用后端返回值二次校正（与看板拖拽同一套机制）。
   const reorderSnapshotRef = useRef<ProjectIssueResponseData[] | null>(null);
   const handleReorderChild = useCallback((parentId: number, from: number, to: number) => {
@@ -159,7 +136,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
       reorderSnapshotRef.current = prev;
       return prev.map(i => (i.id === moved.id ? { ...i, sortOrder: newSortOrder } : i));
     });
-    ProjectIssueService.move({ id: moved.id, stateId: moved.stateId, sortOrder: newSortOrder })
+    ProjectIssueService.move({ id: moved.id, stateCode: moved.stateCode, sortOrder: newSortOrder })
       .then((updated) => {
         reorderSnapshotRef.current = null;
         updateProjectIssues(prev => prev.map(i => (i.id === updated.id ? updated : i)));
@@ -174,7 +151,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
       });
   }, [childrenByParent, updateProjectIssues, showToast, t]);
 
-  // 客户端筛选 + 按 stateGroup 分组 + 组内排序。
+  // 客户端筛选 + 按 stateCode 分组 + 组内排序。
   const grouped = useMemo(() => {
     const q = keyword.trim().toLowerCase();
     const filtered = projectIssues.filter((i) => {
@@ -187,24 +164,18 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
       if (priorityFilter !== 'all' && i.priority !== priorityFilter) {
         return false;
       }
-      if (stateFilter !== 'all' && i.stateId !== stateFilter) {
+      if (stateFilter !== 'all' && i.stateCode !== stateFilter) {
         return false;
       }
       return true;
     });
-    const buckets: Record<StateGroup, ProjectIssueResponseData[]> = {
-      backlog: [],
-      unstarted: [],
-      started: [],
-      completed: [],
-      cancelled: [],
-    };
+    const buckets = new Map<StateCode, ProjectIssueResponseData[]>(
+      STATE_ORDER.map(code => [code, [] as ProjectIssueResponseData[]]),
+    );
     filtered.forEach((i) => {
-      // stateId 未知（如状态被删）fallback 到 backlog，保证 projectIssue 不丢。
-      const group = stateMap.get(i.stateId)?.stateGroupCode ?? 'backlog';
-      buckets[group].push(i);
+      buckets.get(i.stateCode)?.push(i);
     });
-    Object.values(buckets).forEach(arr => arr.sort((a, b) => {
+    buckets.forEach(arr => arr.sort((a, b) => {
       const dw = PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority];
       if (dw !== 0) {
         return dw;
@@ -212,14 +183,14 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
       return a.sortOrder - b.sortOrder;
     }));
     return buckets;
-  }, [projectIssues, keyword, priorityFilter, stateFilter, stateMap]);
+  }, [projectIssues, keyword, priorityFilter, stateFilter]);
 
   const totalCount = useMemo(
-    () => Object.values(grouped).reduce((sum, arr) => sum + arr.length, 0),
+    () => Array.from(grouped.values()).reduce((sum, arr) => sum + arr.length, 0),
     [grouped],
   );
 
-  const toggleGroup = useCallback((g: StateGroup) => {
+  const toggleGroup = useCallback((g: StateCode) => {
     setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(g)) {
@@ -269,24 +240,24 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     showToast(t('tracker:projectIssue.toast.deleted'), 'success');
   }, [showToast]);
 
-  // 打开/关闭创建抽屉：openCreate 可预选状态（分组头"+"传该组首个状态；其余入口不预选）。
-  const openCreate = useCallback((stateId?: number) => {
-    setCreateInitialStateId(stateId);
+  // 打开/关闭创建抽屉：openCreate 可预选状态（分组头"+"传该分组状态；其余入口不预选）。
+  const openCreate = useCallback((stateCode?: StateCode) => {
+    setCreateInitialStateCode(stateCode);
     setDrawerCreateOpen(true);
   }, []);
   const closeCreate = useCallback(() => {
     setDrawerCreateOpen(false);
-    setCreateInitialStateId(undefined);
+    setCreateInitialStateCode(undefined);
   }, []);
 
   const openCreateChild = useCallback((parent: ProjectIssueResponseData) => {
     setCreateChildParent(parent);
   }, []);
 
-  const isLoading = issuesLoading || statesLoading;
-  const isError = issuesError || statesError;
-  // 后台刷新中（驱动刷新按钮的禁用与旋转）：两个 query 任一在拉取即为刷新中。
-  const refreshing = issuesFetching || statesFetching;
+  const isLoading = issuesLoading;
+  const isError = issuesError;
+  // 后台刷新中（驱动刷新按钮的禁用与旋转）。
+  const refreshing = issuesFetching;
   const ready = !isLoading && !isError;
 
   return (
@@ -341,8 +312,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
             <ProjectStateSelect
               value={stateFilter}
               onChange={setStateFilter}
-              projectStates={projectStates}
-              stateGroups={stateGroups}
               label={t('tracker:projectIssue.filter.state')}
               allOption={t('tracker:projectIssue.filter.allStates')}
               sx={{ minWidth: 120 }}
@@ -391,7 +360,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
                   size="small"
                   onClick={() => {
                     void qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(workspaceProject.id) });
-                    void qc.invalidateQueries({ queryKey: trackerKeys.projectStates(workspaceProject.id) });
                   }}
                 >
                   {t('tracker:projectIssue.error.retry')}
@@ -431,10 +399,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
         {ready && projectIssues.length > 0 && viewMode === 'kanban' && (
           <KanbanView
             projectIssues={projectIssues}
-            projectStates={projectStates}
-            stateMap={stateMap}
-            groupMetaMap={groupMetaMap}
-            firstStateIdByGroup={firstStateIdByGroup}
             subtaskStats={subtaskStats}
             childrenByParent={childrenByParent}
             expandedParents={expandedParents}
@@ -455,27 +419,28 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
         )}
         {ready && viewMode === 'list' && totalCount > 0 && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 1.5 }}>
-            {GROUP_ORDER.map((g) => {
-              const arr = grouped[g];
+            {STATE_ORDER.map((code) => {
+              const arr = grouped.get(code) ?? [];
               if (arr.length === 0) {
                 return null;
               }
-              const isCollapsed = collapsed.has(g);
+              const isCollapsed = collapsed.has(code);
+              const meta = STATE_MAP.get(code);
               return (
                 <Paper
-                  key={g}
+                  key={code}
                   variant="outlined"
                   sx={{ display: 'flex', flexDirection: 'column', borderRadius: 1, bgcolor: 'background.default' }}
                 >
-                  <Box sx={{ px: 2, py: 1, cursor: 'pointer' }} onClick={() => toggleGroup(g)}>
+                  <Box sx={{ px: 2, py: 1, cursor: 'pointer' }} onClick={() => toggleGroup(code)}>
                     <StateGroupCard
                       leading={isCollapsed
                         ? <ExpandMoreOutlinedIcon fontSize="small" color="action" />
                         : <ExpandLessOutlinedIcon fontSize="small" color="action" />}
-                      color={groupMetaMap.get(g)?.color}
-                      name={groupMetaMap.get(g)?.name ?? g}
+                      color={meta?.color}
+                      name={meta?.name ?? code}
                       count={arr.length}
-                      onAdd={() => openCreate(firstStateIdByGroup[g])}
+                      onAdd={() => openCreate(code)}
                     />
                   </Box>
                   <Collapse in={!isCollapsed}>
@@ -484,7 +449,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
                         <IssueCard
                           key={projectIssue.id}
                           issue={projectIssue}
-                          stateMap={stateMap}
                           subtaskStats={subtaskStats}
                           childIssues={childrenByParent.get(projectIssue.id) ?? []}
                           expanded={expandedParents.has(projectIssue.id)}
@@ -509,9 +473,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
         <ProjectIssueDrawer
           mode="create"
           workspaceProject={workspaceProject}
-          projectStates={projectStates}
-          stateGroups={stateGroups}
-          initialStateId={createInitialStateId}
+          initialStateCode={createInitialStateCode}
           onClose={closeCreate}
           onCreated={handleCreated}
         />
@@ -521,8 +483,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
         <ProjectIssueDrawer
           mode="create"
           workspaceProject={workspaceProject}
-          projectStates={projectStates}
-          stateGroups={stateGroups}
           parentIssue={createChildParent}
           onClose={() => setCreateChildParent(null)}
           onCreated={handleChildCreated}
@@ -535,8 +495,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
           projectIssue={editIssue}
           parentIssue={editIssue.parentId ? projectIssues.find(p => p.id === editIssue.parentId) : undefined}
           workspaceProject={workspaceProject}
-          projectStates={projectStates}
-          stateGroups={stateGroups}
           onClose={() => setEditIssue(null)}
           onUpdated={handleUpdated}
           onDeleted={handleDeleted}

@@ -1,10 +1,6 @@
 import type {
-  CatalogResponse,
   ProjectIssueCreateRequest,
   ProjectIssueUpdateRequest,
-  ProjectStateModel,
-  StateGroup,
-  StateMeta,
   WorkspaceCreateRequest,
   WorkspaceProjectCreateRequest,
   WorkspaceProjectUpdateRequest,
@@ -12,17 +8,16 @@ import type {
 } from '@src/services';
 import {
   ProjectIssueService,
-  ProjectStateService,
   WorkspaceProjectService,
   WorkspaceService,
 } from '@src/services';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
 import { trackerKeys } from './keys';
 import { useTrackerStore } from './store';
 
 // ─── 读取（query）───
 // 列表查询：消费方共享同一 queryKey 即共享缓存（命令面板二级页与主页面不会重复请求）。
+// 状态为双端固定常量（stateMeta.ts），无状态相关 query。
 
 /** 全部工作空间。 */
 export function useWorkspaces() {
@@ -47,86 +42,6 @@ export function useProjectIssues(projectId: number) {
     queryKey: trackerKeys.projectIssues(projectId),
     queryFn: () => ProjectIssueService.getList({ projectId }),
   });
-}
-
-/** 指定项目的状态列表。 */
-export function useProjectStates(projectId: number) {
-  return useQuery({
-    queryKey: trackerKeys.projectStates(projectId),
-    queryFn: () => ProjectStateService.getList({ projectId }),
-  });
-}
-
-/** 状态目录（全局常量，与项目无关）。staleTime Infinity：目录固定不变，永不过期。 */
-export function useStateCatalog() {
-  return useQuery({
-    queryKey: trackerKeys.stateCatalog(),
-    queryFn: () => ProjectStateService.getCatalog(),
-    staleTime: Infinity,
-  });
-}
-
-// ProjectStateView：ProjectStateModel join 状态目录后的展示视图。
-// name/color/icon 来自目录 StateMeta（按 stateGroupCode+stateCode 定位），供看板列头/卡片/下拉直接展示。
-export interface ProjectStateView {
-  id: number;
-  stateGroupCode: StateGroup;
-  stateCode: string;
-  name: string;
-  color: string;
-  icon: string;
-  sortOrder: number;
-  isDefault: 'Y' | 'N';
-}
-
-// buildStateViews 把项目状态行 join 状态目录，得到带展示元数据的视图。
-// 目录未加载返回 []；某行未命中（不该发生）时 name 回退为 stateCode、color 留空，保证不崩。
-export function buildStateViews(states: ProjectStateModel[], catalog: CatalogResponse | undefined): ProjectStateView[] {
-  if (!catalog) {
-    return [];
-  }
-  const metaMap = new Map<string, StateMeta>();
-  for (const s of catalog.states) {
-    metaMap.set(`${s.groupCode}|${s.code}`, s);
-  }
-  return states.map((st) => {
-    const meta = metaMap.get(`${st.stateGroupCode}|${st.stateCode}`);
-    return {
-      id: st.id,
-      stateGroupCode: st.stateGroupCode,
-      stateCode: st.stateCode,
-      name: meta?.name ?? st.stateCode,
-      color: meta?.color ?? '',
-      icon: meta?.icon ?? '',
-      sortOrder: st.sortOrder,
-      isDefault: st.isDefault,
-    };
-  });
-}
-
-/**
- * 指定项目的状态视图（join 目录后带 name/color/icon）+ 分组元数据 + 加载态。
- *  views/viewMap 供看板列头/卡片/下拉直接展示；groups 供列表分组头取目录 group 元数据（非 i18n）。
- */
-export function useProjectStateViews(projectId: number) {
-  const statesQuery = useProjectStates(projectId);
-  const catalog = useStateCatalog();
-  const states = statesQuery.data ?? [];
-  return useMemo(() => {
-    const views = buildStateViews(states, catalog.data);
-    const viewMap = new Map<number, ProjectStateView>();
-    for (const v of views) {
-      viewMap.set(v.id, v);
-    }
-    return {
-      views,
-      viewMap,
-      groups: catalog.data?.groups ?? [],
-      isLoading: statesQuery.isLoading || catalog.isLoading,
-      isFetching: statesQuery.isFetching || catalog.isFetching,
-      isError: statesQuery.isError || catalog.isError,
-    };
-  }, [states, catalog.data, statesQuery.isLoading, statesQuery.isFetching, statesQuery.isError, catalog.isLoading, catalog.isFetching, catalog.isError]);
 }
 
 // ─── 写操作（mutation）───

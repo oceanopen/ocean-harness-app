@@ -46,7 +46,7 @@ func (api Project) GetInfo(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Create POST /api/tracker/project/create：创建项目（事务内种 5 默认状态 + 回填 default_state_id）。
+// Create POST /api/tracker/project/create：创建项目（事务内同步关联仓库）。
 func (api Project) Create(ctx *gin.Context) {
 	req := &types.ProjectCreateRequest{}
 	svc := service.Project{}

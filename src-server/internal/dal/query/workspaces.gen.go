@@ -32,19 +32,14 @@ func newWorkspace(db *gorm.DB, opts ...gen.DOOption) workspace {
 	_workspace.Name = field.NewString(tableName, "name")
 	_workspace.Slug = field.NewString(tableName, "slug")
 	_workspace.Description = field.NewString(tableName, "description")
+	_workspace.WorktreeRoot = field.NewString(tableName, "worktree_root")
 	_workspace.CreatedAt = field.NewTime(tableName, "created_at")
 	_workspace.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_workspace.DeletedAt = field.NewField(tableName, "deleted_at")
-	_workspace.WorktreeRoot = field.NewString(tableName, "worktree_root")
 	_workspace.WorkspaceProjectList = workspaceHasManyWorkspaceProjectList{
 		db: db.Session(&gorm.Session{}),
 
 		RelationField: field.NewRelation("WorkspaceProjectList", "model.WorkspaceProject"),
-		ProjectStateList: struct {
-			field.RelationField
-		}{
-			RelationField: field.NewRelation("WorkspaceProjectList.ProjectStateList", "model.ProjectState"),
-		},
 		ProjectIssueList: struct {
 			field.RelationField
 			IssueLabelList struct {
@@ -84,10 +79,10 @@ type workspace struct {
 	Name                 field.String
 	Slug                 field.String
 	Description          field.String
+	WorktreeRoot         field.String
 	CreatedAt            field.Time
 	UpdatedAt            field.Time
 	DeletedAt            field.Field
-	WorktreeRoot         field.String
 	WorkspaceProjectList workspaceHasManyWorkspaceProjectList
 
 	WorkspaceLabelList workspaceHasManyWorkspaceLabelList
@@ -111,10 +106,10 @@ func (w *workspace) updateTableName(table string) *workspace {
 	w.Name = field.NewString(table, "name")
 	w.Slug = field.NewString(table, "slug")
 	w.Description = field.NewString(table, "description")
+	w.WorktreeRoot = field.NewString(table, "worktree_root")
 	w.CreatedAt = field.NewTime(table, "created_at")
 	w.UpdatedAt = field.NewTime(table, "updated_at")
 	w.DeletedAt = field.NewField(table, "deleted_at")
-	w.WorktreeRoot = field.NewString(table, "worktree_root")
 
 	w.fillFieldMap()
 
@@ -146,10 +141,10 @@ func (w *workspace) fillFieldMap() {
 	w.fieldMap["name"] = w.Name
 	w.fieldMap["slug"] = w.Slug
 	w.fieldMap["description"] = w.Description
+	w.fieldMap["worktree_root"] = w.WorktreeRoot
 	w.fieldMap["created_at"] = w.CreatedAt
 	w.fieldMap["updated_at"] = w.UpdatedAt
 	w.fieldMap["deleted_at"] = w.DeletedAt
-	w.fieldMap["worktree_root"] = w.WorktreeRoot
 
 }
 
@@ -174,9 +169,6 @@ type workspaceHasManyWorkspaceProjectList struct {
 
 	field.RelationField
 
-	ProjectStateList struct {
-		field.RelationField
-	}
 	ProjectIssueList struct {
 		field.RelationField
 		IssueLabelList struct {

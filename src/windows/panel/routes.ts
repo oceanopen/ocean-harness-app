@@ -4,11 +4,10 @@ import type { MenuKey } from './commandPalette/types';
 // 风格：全 query——path 仅承载顶层页面，子状态走查询参数（顺序无关、全可选、单一路由形态）。
 // 子状态 query 键名（跨页统一，读写共用常量，避免散落魔法字符串拼错而静默破坏 URL↔store 同步）：
 //   tracker:      wid=<workspaceId>            （项目选中态保留 store，不入 URL）
-//   devWorkbench: pid=<projectId> & iid=<issueId> & step=<stateCode>
+//   devWorkbench: pid=<projectId> & iid=<issueId>
 export const TRACKER_WID_PARAM = 'wid';
 export const DEV_PID_PARAM = 'pid';
 export const DEV_IID_PARAM = 'iid';
-export const DEV_STEP_PARAM = 'step';
 
 // 默认页（index '/' 重定向目标；pathToMenu 未知路径回落）。
 export const DEFAULT_MENU: MenuKey = 'claudeSessions';

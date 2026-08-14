@@ -1,6 +1,5 @@
-import type { StateGroup } from '@src/services';
-
 // Issue 列表/看板/卡片共用的非组件常量与类型（独立成文件，避免页面导出非组件触发 react-refresh 规则）。
+// 状态顺序/元数据统一从 @src/state/tracker 的 STATE_ORDER/STATE_MAP 取（双端固定常量）。
 
 // 父 issue 的子任务统计（done/total），列表行/看板卡/统一卡片的进度小标共用。
 export type SubtaskStats = Map<number, { done: number; total: number }>;
@@ -14,6 +13,3 @@ export const truncateSx = {
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 } as const;
-
-// 状态组固定顺序（对齐 state_group 工作流语义，列表分组与看板列共用）。
-export const GROUP_ORDER: StateGroup[] = ['backlog', 'unstarted', 'started', 'completed', 'cancelled'];

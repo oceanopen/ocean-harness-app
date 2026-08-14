@@ -33,16 +33,9 @@ func newWorkspaceProject(db *gorm.DB, opts ...gen.DOOption) workspaceProject {
 	_workspaceProject.Name = field.NewString(tableName, "name")
 	_workspaceProject.Description = field.NewString(tableName, "description")
 	_workspaceProject.Emoji = field.NewString(tableName, "emoji")
-	_workspaceProject.DefaultStateID = field.NewInt(tableName, "default_state_id")
 	_workspaceProject.CreatedAt = field.NewTime(tableName, "created_at")
 	_workspaceProject.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_workspaceProject.DeletedAt = field.NewField(tableName, "deleted_at")
-	_workspaceProject.ProjectStateList = workspaceProjectHasManyProjectStateList{
-		db: db.Session(&gorm.Session{}),
-
-		RelationField: field.NewRelation("ProjectStateList", "model.ProjectState"),
-	}
-
 	_workspaceProject.ProjectIssueList = workspaceProjectHasManyProjectIssueList{
 		db: db.Session(&gorm.Session{}),
 
@@ -74,12 +67,9 @@ type workspaceProject struct {
 	Name             field.String
 	Description      field.String
 	Emoji            field.String
-	DefaultStateID   field.Int
 	CreatedAt        field.Time
 	UpdatedAt        field.Time
 	DeletedAt        field.Field
-	ProjectStateList workspaceProjectHasManyProjectStateList
-
 	ProjectIssueList workspaceProjectHasManyProjectIssueList
 
 	ProjectLocalRepositoryList workspaceProjectHasManyProjectLocalRepositoryList
@@ -104,7 +94,6 @@ func (w *workspaceProject) updateTableName(table string) *workspaceProject {
 	w.Name = field.NewString(table, "name")
 	w.Description = field.NewString(table, "description")
 	w.Emoji = field.NewString(table, "emoji")
-	w.DefaultStateID = field.NewInt(table, "default_state_id")
 	w.CreatedAt = field.NewTime(table, "created_at")
 	w.UpdatedAt = field.NewTime(table, "updated_at")
 	w.DeletedAt = field.NewField(table, "deleted_at")
@@ -136,13 +125,12 @@ func (w *workspaceProject) GetFieldByName(fieldName string) (field.OrderExpr, bo
 }
 
 func (w *workspaceProject) fillFieldMap() {
-	w.fieldMap = make(map[string]field.Expr, 12)
+	w.fieldMap = make(map[string]field.Expr, 10)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["workspace_id"] = w.WorkspaceID
 	w.fieldMap["name"] = w.Name
 	w.fieldMap["description"] = w.Description
 	w.fieldMap["emoji"] = w.Emoji
-	w.fieldMap["default_state_id"] = w.DefaultStateID
 	w.fieldMap["created_at"] = w.CreatedAt
 	w.fieldMap["updated_at"] = w.UpdatedAt
 	w.fieldMap["deleted_at"] = w.DeletedAt
@@ -151,8 +139,6 @@ func (w *workspaceProject) fillFieldMap() {
 
 func (w workspaceProject) clone(db *gorm.DB) workspaceProject {
 	w.workspaceProjectDo.ReplaceConnPool(db.Statement.ConnPool)
-	w.ProjectStateList.db = db.Session(&gorm.Session{Initialized: true})
-	w.ProjectStateList.db.Statement.ConnPool = db.Statement.ConnPool
 	w.ProjectIssueList.db = db.Session(&gorm.Session{Initialized: true})
 	w.ProjectIssueList.db.Statement.ConnPool = db.Statement.ConnPool
 	w.ProjectLocalRepositoryList.db = db.Session(&gorm.Session{Initialized: true})
@@ -162,91 +148,9 @@ func (w workspaceProject) clone(db *gorm.DB) workspaceProject {
 
 func (w workspaceProject) replaceDB(db *gorm.DB) workspaceProject {
 	w.workspaceProjectDo.ReplaceDB(db)
-	w.ProjectStateList.db = db.Session(&gorm.Session{})
 	w.ProjectIssueList.db = db.Session(&gorm.Session{})
 	w.ProjectLocalRepositoryList.db = db.Session(&gorm.Session{})
 	return w
-}
-
-type workspaceProjectHasManyProjectStateList struct {
-	db *gorm.DB
-
-	field.RelationField
-}
-
-func (a workspaceProjectHasManyProjectStateList) Where(conds ...field.Expr) *workspaceProjectHasManyProjectStateList {
-	if len(conds) == 0 {
-		return &a
-	}
-
-	exprs := make([]clause.Expression, 0, len(conds))
-	for _, cond := range conds {
-		exprs = append(exprs, cond.BeCond().(clause.Expression))
-	}
-	a.db = a.db.Clauses(clause.Where{Exprs: exprs})
-	return &a
-}
-
-func (a workspaceProjectHasManyProjectStateList) WithContext(ctx context.Context) *workspaceProjectHasManyProjectStateList {
-	a.db = a.db.WithContext(ctx)
-	return &a
-}
-
-func (a workspaceProjectHasManyProjectStateList) Session(session *gorm.Session) *workspaceProjectHasManyProjectStateList {
-	a.db = a.db.Session(session)
-	return &a
-}
-
-func (a workspaceProjectHasManyProjectStateList) Model(m *model.WorkspaceProject) *workspaceProjectHasManyProjectStateListTx {
-	return &workspaceProjectHasManyProjectStateListTx{a.db.Model(m).Association(a.Name())}
-}
-
-func (a workspaceProjectHasManyProjectStateList) Unscoped() *workspaceProjectHasManyProjectStateList {
-	a.db = a.db.Unscoped()
-	return &a
-}
-
-type workspaceProjectHasManyProjectStateListTx struct{ tx *gorm.Association }
-
-func (a workspaceProjectHasManyProjectStateListTx) Find() (result []*model.ProjectState, err error) {
-	return result, a.tx.Find(&result)
-}
-
-func (a workspaceProjectHasManyProjectStateListTx) Append(values ...*model.ProjectState) (err error) {
-	targetValues := make([]interface{}, len(values))
-	for i, v := range values {
-		targetValues[i] = v
-	}
-	return a.tx.Append(targetValues...)
-}
-
-func (a workspaceProjectHasManyProjectStateListTx) Replace(values ...*model.ProjectState) (err error) {
-	targetValues := make([]interface{}, len(values))
-	for i, v := range values {
-		targetValues[i] = v
-	}
-	return a.tx.Replace(targetValues...)
-}
-
-func (a workspaceProjectHasManyProjectStateListTx) Delete(values ...*model.ProjectState) (err error) {
-	targetValues := make([]interface{}, len(values))
-	for i, v := range values {
-		targetValues[i] = v
-	}
-	return a.tx.Delete(targetValues...)
-}
-
-func (a workspaceProjectHasManyProjectStateListTx) Clear() error {
-	return a.tx.Clear()
-}
-
-func (a workspaceProjectHasManyProjectStateListTx) Count() int64 {
-	return a.tx.Count()
-}
-
-func (a workspaceProjectHasManyProjectStateListTx) Unscoped() *workspaceProjectHasManyProjectStateListTx {
-	a.tx = a.tx.Unscoped()
-	return &a
 }
 
 type workspaceProjectHasManyProjectIssueList struct {

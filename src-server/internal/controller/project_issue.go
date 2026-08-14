@@ -46,7 +46,7 @@ func (api ProjectIssue) GetInfo(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Create POST /api/tracker/projectIssue/create：创建 issue（默认 state 取 project.default_state_id、sort_order 自算）。
+// Create POST /api/tracker/projectIssue/create：创建 issue（默认状态 BACKLOG、sort_order 自算）。
 func (api ProjectIssue) Create(ctx *gin.Context) {
 	req := &types.ProjectIssueCreateRequest{}
 	svc := service.ProjectIssue{}
@@ -62,7 +62,7 @@ func (api ProjectIssue) Create(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Update POST /api/tracker/projectIssue/update：更新 issue（stateId 变化触发 completed_at 流转）。
+// Update POST /api/tracker/projectIssue/update：更新 issue（stateCode 变化触发 completed_at 流转）。
 func (api ProjectIssue) Update(ctx *gin.Context) {
 	req := &types.ProjectIssueUpdateRequest{}
 	svc := service.ProjectIssue{}
@@ -78,7 +78,7 @@ func (api ProjectIssue) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Move POST /api/tracker/projectIssue/move：看板拖拽单卡移动（写 sortOrder + stateId 流转 completed_at）。
+// Move POST /api/tracker/projectIssue/move：看板拖拽单卡移动（写 sortOrder + stateCode 流转 completed_at）。
 func (api ProjectIssue) Move(ctx *gin.Context) {
 	req := &types.ProjectIssueMoveRequest{}
 	svc := service.ProjectIssue{}
@@ -87,23 +87,6 @@ func (api ProjectIssue) Move(ctx *gin.Context) {
 		return
 	}
 	data, err := svc.Move(req)
-	if err != nil {
-		api.JsonFail(err)
-		return
-	}
-	api.JsonOK(data)
-}
-
-// UpdateState POST /api/tracker/projectIssue/updateState：仅推进 issue 状态（不碰 sortOrder，
-// 复用 move 的 completed_at 流转 + 父子联动）。供编排场景调用（createWorktree/cleanup/advanceDevStep）。
-func (api ProjectIssue) UpdateState(ctx *gin.Context) {
-	req := &types.ProjectIssueUpdateStateRequest{}
-	svc := service.ProjectIssue{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
-		return
-	}
-	data, err := svc.UpdateState(req)
 	if err != nil {
 		api.JsonFail(err)
 		return

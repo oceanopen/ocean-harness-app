@@ -1,5 +1,6 @@
 import type { DropResult } from '@hello-pangea/dnd';
-import type { ProjectIssueResponseData, StateGroup } from '@src/services';
+import type { ProjectIssueResponseData } from '@src/services';
+import type { StateCode } from '@src/state/tracker';
 import type { Dispatch, SetStateAction } from 'react';
 import { ProjectIssueService } from '@src/services';
 import { useCallback, useRef } from 'react';
@@ -10,9 +11,7 @@ const STEP = 10000;
 const EPSILON = 1e-6;
 
 export interface UseKanbanDndOptions {
-  columnsByGroup: Map<StateGroup, ProjectIssueResponseData[]>;
-  // 各状态组的首个子状态 id（跨组拖拽的目标 stateId）。
-  firstStateIdByGroup: Partial<Record<StateGroup, number>>;
+  columnsByState: Map<StateCode, ProjectIssueResponseData[]>;
   setIssues: Dispatch<SetStateAction<ProjectIssueResponseData[]>>;
   showToast: (text: string, severity: ToastSeverity) => void;
   moveFailedText: (message: string) => string;
@@ -39,12 +38,11 @@ export function computeSortOrder(col: ProjectIssueResponseData[], index: number)
   return (lower + upper) / 2;
 }
 
-// useKanbanDnd 封装看板拖拽的 onDragEnd（列 = 状态组）：
-// 同组拖拽 → 保留子状态 stateId、只重排 sortOrder；跨组拖拽 → stateId 落到目标组首个子状态。
-// 按 destGroup 预估 completedAt（completed 组置当前时间，与后端规则字面对齐；后端二次校正）。
+// useKanbanDnd 封装看板拖拽的 onDragEnd（列 = 状态）：
+// 目标列 stateCode 即卡片新状态。按 destState 预估 completedAt（DONE 置当前时间，与后端规则字面对齐；后端二次校正）。
 // 乐观更新即时反馈，失败用 setIssues 前的快照整表回滚 + toast；用后端权威返回值二次校正。
 export function useKanbanDnd(opts: UseKanbanDndOptions) {
-  const { columnsByGroup, firstStateIdByGroup, setIssues, showToast, moveFailedText } = opts;
+  const { columnsByState, setIssues, showToast, moveFailedText } = opts;
   // 回滚快照：在 setIssues 的 updater 内捕获更新前的最新 state，失败时整表恢复。
   const snapshotRef = useRef<ProjectIssueResponseData[] | null>(null);
   // 同卡飞行中串行化：避免快速连拖同一张卡导致 fetch 响应乱序覆盖乐观状态。
@@ -60,26 +58,19 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
     }
 
     const issueId = Number(draggableId);
-    // 看板列 droppableId 即状态组 code（source/destination 同源）。
-    const sourceGroup = source.droppableId as StateGroup;
-    const destGroup = destination.droppableId as StateGroup;
-    const isCrossGroup = sourceGroup !== destGroup;
+    // 看板列 droppableId 即状态 code（source/destination 同源）。
+    const sourceState = source.droppableId as StateCode;
+    const destState = destination.droppableId as StateCode;
+    const isCrossState = sourceState !== destState;
 
     // 同卡飞行中：忽略本次拖拽，防止与在途请求乱序叠加（本地 server 瞬时，正常交互不触发）。
     if (inFlightRef.current.has(issueId)) {
       return;
     }
 
-    // 目标列快照剔除自身（同组下拖时 self 仍在列内，需排除以免 index 错位）。
-    const destCol = (columnsByGroup.get(destGroup) ?? []).filter(i => i.id !== issueId);
+    // 目标列快照剔除自身（同列下拖时 self 仍在列内，需排除以免 index 错位）。
+    const destCol = (columnsByState.get(destState) ?? []).filter(i => i.id !== issueId);
     const newSortOrder = computeSortOrder(destCol, destination.index);
-
-    // issue 当前 stateId：从源列查（同组拖拽时保留它）；跨组则取目标组首个子状态。
-    const sourceIssue = (columnsByGroup.get(sourceGroup) ?? []).find(i => i.id === issueId);
-    const currentStateId = sourceIssue?.stateId ?? 0;
-    const targetStateId = isCrossGroup
-      ? (firstStateIdByGroup[destGroup] ?? currentStateId)
-      : currentStateId;
 
     setIssues((prev) => {
       snapshotRef.current = prev;
@@ -89,17 +80,17 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
       }
       const moved: ProjectIssueResponseData = {
         ...projectIssue,
-        stateId: targetStateId,
+        stateCode: destState,
         sortOrder: newSortOrder,
-        completedAt: destGroup === 'completed' ? new Date().toISOString() : null,
+        completedAt: destState === 'DONE' ? new Date().toISOString() : null,
       };
-      // 跨组拖父：子乐观继承父新 stateId（后端 maybeSyncChildrenState 会同步，缓存跟进避免手动刷新）。
+      // 跨列拖父：子乐观继承父新状态（后端 maybeSyncChildrenState 会同步，缓存跟进避免手动刷新）。
       return prev.map((i) => {
         if (i.id === issueId) {
           return moved;
         }
-        if (isCrossGroup && i.parentId === issueId) {
-          return { ...i, stateId: targetStateId, completedAt: moved.completedAt };
+        if (isCrossState && i.parentId === issueId) {
+          return { ...i, stateCode: destState, completedAt: moved.completedAt };
         }
         return i;
       });
@@ -108,19 +99,19 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
     inFlightRef.current.add(issueId);
     ProjectIssueService.move({
       id: issueId,
-      stateId: targetStateId,
+      stateCode: destState,
       sortOrder: newSortOrder,
     })
       .then((updated) => {
         snapshotRef.current = null;
-        // 用后端权威返回值二次校正（completedAt/sortOrder/stateId 实际写入值）。
-        // 跨组拖父时后端已同步子（maybeSyncChildrenState），缓存也跟进子。
+        // 用后端权威返回值二次校正（completedAt/sortOrder/stateCode 实际写入值）。
+        // 跨列拖父时后端已同步子（maybeSyncChildrenState），缓存也跟进子。
         setIssues(prev => prev.map((i) => {
           if (i.id === updated.id) {
             return updated;
           }
-          if (isCrossGroup && i.parentId === updated.id) {
-            return { ...i, stateId: updated.stateId, completedAt: updated.completedAt };
+          if (isCrossState && i.parentId === updated.id) {
+            return { ...i, stateCode: updated.stateCode, completedAt: updated.completedAt };
           }
           return i;
         }));
@@ -136,5 +127,5 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
       .finally(() => {
         inFlightRef.current.delete(issueId);
       });
-  }, [columnsByGroup, firstStateIdByGroup, setIssues, showToast, moveFailedText]);
+  }, [columnsByState, setIssues, showToast, moveFailedText]);
 }

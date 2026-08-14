@@ -33,7 +33,7 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.WorkspaceID = field.NewInt(tableName, "workspace_id")
 	_projectIssue.Name = field.NewString(tableName, "name")
 	_projectIssue.Description = field.NewString(tableName, "description")
-	_projectIssue.StateID = field.NewInt(tableName, "state_id")
+	_projectIssue.StateCode = field.NewField(tableName, "state_code")
 	_projectIssue.Priority = field.NewField(tableName, "priority")
 	_projectIssue.SortOrder = field.NewFloat64(tableName, "sort_order")
 	_projectIssue.ParentID = field.NewInt(tableName, "parent_id")
@@ -66,7 +66,7 @@ type projectIssue struct {
 	WorkspaceID       field.Int
 	Name              field.String
 	Description       field.String
-	StateID           field.Int
+	StateCode         field.Field
 	Priority          field.Field
 	SortOrder         field.Float64
 	ParentID          field.Int
@@ -101,7 +101,7 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.WorkspaceID = field.NewInt(table, "workspace_id")
 	p.Name = field.NewString(table, "name")
 	p.Description = field.NewString(table, "description")
-	p.StateID = field.NewInt(table, "state_id")
+	p.StateCode = field.NewField(table, "state_code")
 	p.Priority = field.NewField(table, "priority")
 	p.SortOrder = field.NewFloat64(table, "sort_order")
 	p.ParentID = field.NewInt(table, "parent_id")
@@ -148,7 +148,7 @@ func (p *projectIssue) fillFieldMap() {
 	p.fieldMap["workspace_id"] = p.WorkspaceID
 	p.fieldMap["name"] = p.Name
 	p.fieldMap["description"] = p.Description
-	p.fieldMap["state_id"] = p.StateID
+	p.fieldMap["state_code"] = p.StateCode
 	p.fieldMap["priority"] = p.Priority
 	p.fieldMap["sort_order"] = p.SortOrder
 	p.fieldMap["parent_id"] = p.ParentID

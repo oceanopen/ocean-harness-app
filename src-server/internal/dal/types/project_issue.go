@@ -6,15 +6,15 @@ import (
 )
 
 // 每 action 一个独立 Request 类型。issue 用全局自增 id 标识（无 issue key）；
-// stateId 由 create 时取 project.default_state_id（不入参）；sortOrder 由 service 自算（不入参）；
-// priority/isDraft 为 typed 枚举（前端传，空值由 service 规范为 none/N）。
+// stateCode 为固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，新建默认 BACKLOG）；
+// sortOrder 由 service 自算（不入参）；priority/isDraft 为 typed 枚举（前端传，空值由 service 规范为 none/N）。
 
 // ProjectIssueGetListRequest 是 POST /api/tracker/projectIssue/getList 的入参。
-// groupBy 由前端对扁平列表自行分组，后端不接收；orderBy 不传则按 sort_order 升序。
+// 分组由前端对扁平列表自行分组，后端不接收；orderBy 不传则按 sort_order 升序。
 type ProjectIssueGetListRequest struct {
 	ProjectID int            `json:"projectId" binding:"required"`
 	OrderBy   string         `json:"orderBy"` // id/sort_order/priority/created_at，空则 sort_order
-	StateID   int            `json:"stateId"`
+	StateCode enums.StateCode `json:"stateCode"`
 	Priority  enums.Priority `json:"priority"`
 	LabelID   int            `json:"labelId"`
 	Keyword   string         `json:"keyword"`
@@ -26,56 +26,49 @@ type ProjectIssueGetInfoRequest struct {
 }
 
 // ProjectIssueCreateRequest 是 POST /api/tracker/projectIssue/create 的入参。
-// stateId 不传（后端取 project.default_state_id）；sortOrder 不传（后端自算同 project MAX+10000）。
+// stateCode 空值取默认 BACKLOG；sortOrder 不传（后端自算同 project MAX+10000）。
 // parentId>0 时创建为子任务（后端校验父存在 + 同 project + 仅一层）。
 type ProjectIssueCreateRequest struct {
-	ProjectID         int            `json:"projectId" binding:"required"`
-	WorkspaceID       int            `json:"workspaceId" binding:"required"`
-	Name              string         `json:"name" binding:"required,max=255"`
-	Description       string         `json:"description" binding:"omitempty"`
-	Priority          enums.Priority `json:"priority"`
-	IsDraft           enums.YesNo    `json:"isDraft"`
-	StartDate         string         `json:"startDate" binding:"omitempty"`
-	TargetDate        string         `json:"targetDate" binding:"omitempty"`
-	StateID           int            `json:"stateId"`           // 0 → 取 project.default_state_id
-	ParentID          int            `json:"parentId"`          // 0=顶级，>0=子任务（须与父同 project，仅一层）
-	LabelIDs          []int          `json:"labelIds"`          // 全量覆盖该 issue 的 label 关联
-	LocalRepositoryID int            `json:"localRepositoryId"` // 0=未关联；>0 须属于当前项目关联仓库
-	RepositoryBranch  string         `json:"repositoryBranch"`  // 分支名；localRepositoryId=0 时由 service 强制清空
+	ProjectID         int             `json:"projectId" binding:"required"`
+	WorkspaceID       int             `json:"workspaceId" binding:"required"`
+	Name              string          `json:"name" binding:"required,max=255"`
+	Description       string          `json:"description" binding:"omitempty"`
+	Priority          enums.Priority  `json:"priority"`
+	IsDraft           enums.YesNo     `json:"isDraft"`
+	StartDate         string          `json:"startDate" binding:"omitempty"`
+	TargetDate        string          `json:"targetDate" binding:"omitempty"`
+	StateCode         enums.StateCode `json:"stateCode"`         // 空值 → 默认 BACKLOG
+	ParentID          int             `json:"parentId"`          // 0=顶级，>0=子任务（须与父同 project，仅一层）
+	LabelIDs          []int           `json:"labelIds"`          // 全量覆盖该 issue 的 label 关联
+	LocalRepositoryID int             `json:"localRepositoryId"` // 0=未关联；>0 须属于当前项目关联仓库
+	RepositoryBranch  string          `json:"repositoryBranch"`  // 分支名；localRepositoryId=0 时由 service 强制清空
 }
 
 // ProjectIssueUpdateRequest 是 POST /api/tracker/projectIssue/update 的入参。
-// stateId 变化触发 completed_at 流转：新 state 的 state_group=completed→写 now，否则清 NULL。
+// stateCode 变化触发 completed_at 流转：DONE→写 now，否则清 NULL。
 // labelIds 全量覆盖该 issue 的 label 关联（事务内 diff：恢复已删/软删多余/插入新增）。
 // 不变更 projectId/workspaceId/sortOrder（sortOrder 后续拖拽迭代维护）。
 type ProjectIssueUpdateRequest struct {
-	ID                int            `json:"id" binding:"required"`
-	Name              string         `json:"name" binding:"required,max=255"`
-	Description       string         `json:"description" binding:"omitempty"`
-	StateID           int            `json:"stateId"`
-	Priority          enums.Priority `json:"priority"`
-	IsDraft           enums.YesNo    `json:"isDraft"`
-	StartDate         string         `json:"startDate" binding:"omitempty"`
-	TargetDate        string         `json:"targetDate" binding:"omitempty"`
-	LabelIDs          []int          `json:"labelIds"`          // 全量覆盖该 issue 的 label 关联
-	LocalRepositoryID int            `json:"localRepositoryId"` // 0=清除关联；>0 须属于当前项目关联仓库
-	RepositoryBranch  string         `json:"repositoryBranch"`  // 分支名；localRepositoryId=0 时强制清空
+	ID                int             `json:"id" binding:"required"`
+	Name              string          `json:"name" binding:"required,max=255"`
+	Description       string          `json:"description" binding:"omitempty"`
+	StateCode         enums.StateCode `json:"stateCode"`
+	Priority          enums.Priority  `json:"priority"`
+	IsDraft           enums.YesNo     `json:"isDraft"`
+	StartDate         string          `json:"startDate" binding:"omitempty"`
+	TargetDate        string          `json:"targetDate" binding:"omitempty"`
+	LabelIDs          []int           `json:"labelIds"`          // 全量覆盖该 issue 的 label 关联
+	LocalRepositoryID int             `json:"localRepositoryId"` // 0=清除关联；>0 须属于当前项目关联仓库
+	RepositoryBranch  string          `json:"repositoryBranch"`  // 分支名；localRepositoryId=0 时强制清空
 }
 
 // ProjectIssueMoveRequest 是 POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）。
-// 前端按分数插值算好 sortOrder 传上来后端写库；stateId 变化触发 completed_at 流转。
+// 前端按分数插值算好 sortOrder 传上来后端写库；stateCode 变化触发 completed_at 流转。
 // 不碰 name/description/priority 等业务字段（由 update 维护）。
 type ProjectIssueMoveRequest struct {
-	ID        int     `json:"id" binding:"required"`
-	StateID   int     `json:"stateId" binding:"required"`
-	SortOrder float64 `json:"sortOrder"`
-}
-
-// ProjectIssueUpdateStateRequest 是 POST /api/tracker/projectIssue/updateState 的入参
-// （编排推进状态：仅 stateId 变化触发 completed_at 流转 + 父子联动，不碰 sortOrder 与业务字段）。
-type ProjectIssueUpdateStateRequest struct {
-	ID      int `json:"id" binding:"required"`
-	StateID int `json:"stateId" binding:"required"`
+	ID        int             `json:"id" binding:"required"`
+	StateCode enums.StateCode `json:"stateCode" binding:"required"`
+	SortOrder float64         `json:"sortOrder"`
 }
 
 // ProjectIssueDeleteRequest 是 POST /api/tracker/projectIssue/delete 的入参。

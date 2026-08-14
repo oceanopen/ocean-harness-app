@@ -46,7 +46,6 @@
     }
   },
   "devWorkbench": {
-    "toggleSteps": "Toggle steps panel",
     "repo": "Repository",
     "baseRef": "Base branch",
     "devBranch": "Dev branch",

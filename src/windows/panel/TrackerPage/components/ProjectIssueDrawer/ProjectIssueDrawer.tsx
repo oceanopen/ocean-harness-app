@@ -1,5 +1,5 @@
-import type { Priority, ProjectIssueResponseData, StateGroupMeta, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
-import type { ProjectStateView } from '@src/state/tracker';
+import type { Priority, ProjectIssueResponseData, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
+import type { StateCode } from '@src/state/tracker';
 import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon } from '@mui/icons-material';
 import {
   Box,
@@ -18,12 +18,11 @@ import { WorkspaceLabelService } from '@src/services';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
-import { useDevWorkbenchStore } from '@src/state/devWorkbench';
-import { useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } from '@src/state/tracker';
-import { useCommandPalette } from '@src/windows/panel/commandPalette/CommandPaletteContext';
+import { STATE_CODE_DEFAULT, useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } from '@src/state/tracker';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate as useRouterNavigate } from 'react-router-dom';
 import IssueBranchField from './IssueBranchField';
 import MarkdownEditor from './MarkdownEditor/MarkdownEditor';
 import PrioritySelect from './PrioritySelect';
@@ -35,11 +34,9 @@ import 'dayjs/locale/zh-cn';
 interface ProjectIssueDrawerProps {
   mode: 'create' | 'edit';
   workspaceProject: WorkspaceProjectModel;
-  projectStates: ProjectStateView[];
-  stateGroups: StateGroupMeta[]; // 状态分组元数据，下传给状态下拉按 stateGroup 分组渲染
   projectIssue?: ProjectIssueResponseData; // edit 模式必传
-  // create 模式预选状态（如分组头"+"快捷新建时传入该组首个状态）。
-  initialStateId?: number;
+  // create 模式预选状态（如分组头"+"快捷新建时传入该分组状态）。
+  initialStateCode?: StateCode;
   // create 模式新建子 issue 时传入父 issue：顶部展示只读父信息条，提交时带 parentId，并预填父状态。
   parentIssue?: ProjectIssueResponseData;
   onClose: () => void;
@@ -52,8 +49,9 @@ interface ProjectIssueDrawerProps {
 // 成功后关闭抽屉 + 父级刷新列表；失败 drawer 内弹 error toast（成功 toast 由父级统一弹）。
 // mode 决定：初值来源、提交 API、头部标题/元信息/删除按钮显隐。
 // create + parentIssue：新建子 issue（顶部只读父信息条 + parentId）。
-function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups, projectIssue, initialStateId, parentIssue, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
+function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialStateCode, parentIssue, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
   const { t, i18n } = useTranslation();
+  const routerNavigate = useRouterNavigate();
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
   const isCreateSub = mode === 'create' && !!parentIssue;
   // 子 issue（create-child 或 edit-child）：顶部显示「所属父任务」只读字段。
@@ -62,16 +60,13 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
   const parentTaskLabel = parentIssue
     ? `#${parentIssue.id} ${parentIssue.name}`
     : (projectIssue?.parentId ? `#${projectIssue.parentId}` : '');
-  const { navigate } = useCommandPalette();
-  const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
   const createProjectIssue = useCreateProjectIssue(workspaceProject.id);
   const updateProjectIssue = useUpdateProjectIssue(workspaceProject.id);
   const deleteProjectIssue = useDeleteProjectIssue(workspaceProject.id);
   // 属性字段本地态（挂载即按 mode/projectIssue 初始化，每次打开新挂载，无需 reset effect）。
-  const defaultStateId = projectStates.find(s => s.isDefault === 'Y')?.id ?? projectStates[0]?.id ?? 0;
   const [name, setName] = useState(projectIssue?.name ?? '');
   const [description, setDescription] = useState(projectIssue?.description ?? '');
-  const [stateId, setStateId] = useState(projectIssue?.stateId ?? initialStateId ?? parentIssue?.stateId ?? defaultStateId);
+  const [stateCode, setStateCode] = useState<StateCode>(projectIssue?.stateCode ?? initialStateCode ?? parentIssue?.stateCode ?? STATE_CODE_DEFAULT);
   const [priority, setPriority] = useState<Priority>(projectIssue?.priority ?? 'none');
   const [startDate, setStartDate] = useState(projectIssue?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(projectIssue?.targetDate ?? '');
@@ -85,23 +80,20 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
   const [dialogDeleteOpen, setDialogDeleteOpen] = useState(false);
   const [drawerManagerOpen, setDrawerManagerOpen] = useState(false);
   // F1「进入开发」可用条件（按钮始终展示，不满足时 disabled + title 提示原因）：
-  //  issue 当前 stateGroup 为 started（进行中）才可进入开发工作台。
-  //  仓库关联/开发步骤在工作台内引导（D1 表单选仓库、DevStepper noSteps 提示），不在此阻断。
-  const issueStateGroup = projectIssue ? projectStates.find(s => s.id === projectIssue.stateId)?.stateGroupCode : undefined;
-  const canEnterDev = mode === 'edit' && !!projectIssue && issueStateGroup === 'started';
+  //  issue 当前状态为 IN_PROGRESS（进行中）才可进入开发工作台。
+  const canEnterDev = mode === 'edit' && !!projectIssue && projectIssue.stateCode === 'IN_PROGRESS';
   // 禁用原因（首个不满足条件，按钮 title hover 提示；空串=可启用）。
   const enterDevDisabledReason = !projectIssue
     ? '请先保存 issue'
-    : issueStateGroup !== 'started'
+    : projectIssue.stateCode !== 'IN_PROGRESS'
       ? '仅进行中状态可进入开发'
       : '';
   const handleEnterDev = () => {
     if (!projectIssue) {
       return;
     }
-    selectIssue(projectIssue);
     onClose();
-    navigate('devWorkbench');
+    routerNavigate(`/devWorkbench?pid=${projectIssue.projectId}&iid=${projectIssue.id}`);
   };
   const { show: showToast, snack } = useToast();
 
@@ -138,7 +130,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
   const dirty = mode === 'edit' && !!projectIssue && (
     name !== projectIssue.name
     || description !== projectIssue.description
-    || stateId !== projectIssue.stateId
+    || stateCode !== projectIssue.stateCode
     || priority !== projectIssue.priority
     || startDate !== projectIssue.startDate
     || targetDate !== projectIssue.targetDate
@@ -178,7 +170,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
           priority,
           startDate,
           targetDate,
-          stateId,
+          stateCode,
           labelIds: labels.map(l => l.id),
           localRepositoryId,
           repositoryBranch,
@@ -192,7 +184,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
           id: projectIssue!.id,
           name: name.trim(),
           description,
-          stateId,
+          stateCode,
           priority,
           startDate,
           targetDate,
@@ -296,7 +288,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectStates, stateGroups
           <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale={isZh ? 'zh-cn' : 'en'}>
             <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 1.5, alignItems: 'center' }}>
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.state')}</Typography>
-              <ProjectStateSelect value={stateId} projectStates={projectStates} stateGroups={stateGroups} onChange={setStateId} disabled={submitting || deleting} />
+              <ProjectStateSelect value={stateCode} onChange={setStateCode} disabled={submitting || deleting} />
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.priority')}</Typography>
               <PrioritySelect value={priority} onChange={setPriority} disabled={submitting || deleting} />
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.startDate')}</Typography>

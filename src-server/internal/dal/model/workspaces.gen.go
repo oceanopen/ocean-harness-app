@@ -18,10 +18,10 @@ type Workspace struct {
 	Name                 string              `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Slug                 string              `gorm:"column:slug;type:TEXT;not null;uniqueIndex:udx_workspaces_slug,priority:1" json:"slug"`
 	Description          string              `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
-	CreatedAt            time.Time           `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
+	WorktreeRoot         string              `gorm:"column:worktree_root;type:TEXT;not null;default:''" json:"worktreeRoot"`
+	CreatedAt            time.Time           `gorm:"column:created_at;type:DATETIME" json:"createdAt"`
 	UpdatedAt            time.Time           `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 	DeletedAt            gorm.DeletedAt      `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
-	WorktreeRoot         string              `gorm:"column:worktree_root;type:TEXT;not null;default:''" json:"worktreeRoot"`
 	WorkspaceProjectList []*WorkspaceProject `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceProjectList,omitempty"`
 	WorkspaceLabelList   []*WorkspaceLabel   `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceLabelList,omitempty"`
 }
