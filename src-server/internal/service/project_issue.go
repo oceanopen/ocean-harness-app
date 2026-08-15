@@ -145,31 +145,32 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			completedAt = &now
 		}
 
-		// local_repository_id > 0 须属于当前项目关联仓库；=0 时连 branch 一并清空（无仓库则分支无意义）。
-		repoID, repoBranch, ve := svc.validateIssueRepo(tx, req.ProjectID, req.LocalRepositoryID, req.RepositoryBranch)
+		// 关联仓库+分支列表：逐项校验（仓库必选、不重复、须属于项目关联仓库）后写关联表。
+		repoBranchList, ve := svc.validateIssueRepoList(tx, req.ProjectID, req.RepositoryBranchList)
 		if ve != nil {
 			return ve
 		}
 
 		created = &model.ProjectIssue{
-			ID:                uuid.Must(uuid.NewV7()).String(),
-			ProjectID:         req.ProjectID,
-			WorkspaceID:       req.WorkspaceID,
-			Name:              req.Name,
-			Description:       req.Description,
-			StateCode:         stateCode,
-			Priority:          priority,
-			SortOrder:         sortOrder,
-			ParentID:          parentID,
-			IsDraft:           isDraft,
-			StartDate:         req.StartDate,
-			TargetDate:        req.TargetDate,
-			CompletedAt:       completedAt,
-			LocalRepositoryID: repoID,
-			RepositoryBranch:  repoBranch,
+			ID:          uuid.Must(uuid.NewV7()).String(),
+			ProjectID:   req.ProjectID,
+			WorkspaceID: req.WorkspaceID,
+			Name:        req.Name,
+			Description: req.Description,
+			StateCode:   stateCode,
+			Priority:    priority,
+			SortOrder:   sortOrder,
+			ParentID:    parentID,
+			IsDraft:     isDraft,
+			StartDate:   req.StartDate,
+			TargetDate:  req.TargetDate,
+			CompletedAt: completedAt,
 		}
 		if ce := q.ProjectIssue.WithContext(svc.Context).Create(created); ce != nil {
 			return ce
+		}
+		if se := svc.syncIssueRepos(tx, created.ID, repoBranchList); se != nil {
+			return se
 		}
 		return svc.syncIssueLabels(tx, created.ID, req.LabelIDs)
 	})
@@ -213,13 +214,11 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 			issue.IsDraft = req.IsDraft
 		}
 
-		// local_repository_id > 0 须属于 issue 所属项目关联仓库；=0 清除关联（连 branch 一并清空）。
-		repoID, repoBranch, ve := svc.validateIssueRepo(tx, issue.ProjectID, req.LocalRepositoryID, req.RepositoryBranch)
+		// 关联仓库+分支列表：逐项校验（仓库必选、不重复、须属于项目关联仓库）后全量替换关联表。
+		repoBranchList, ve := svc.validateIssueRepoList(tx, issue.ProjectID, req.RepositoryBranchList)
 		if ve != nil {
 			return ve
 		}
-		issue.LocalRepositoryID = repoID
-		issue.RepositoryBranch = repoBranch
 
 		// stateCode 变化 → completed_at 流转。
 		oldStateCode := issue.StateCode
@@ -239,6 +238,9 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 			if e := svc.maybeAutoCompleteParent(tx, issue); e != nil {
 				return e
 			}
+		}
+		if se := svc.syncIssueRepos(tx, issue.ID, repoBranchList); se != nil {
+			return se
 		}
 		return svc.syncIssueLabels(tx, issue.ID, req.LabelIDs)
 	})
@@ -426,7 +428,8 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 	return list[0], nil
 }
 
-// Delete 软删除 issue（无 DB 外键），事务内级联软删其 t_issue_labels 关联与子任务（+ 子任务 label 关联），避免悬挂。
+// Delete 软删除 issue（无 DB 外键），事务内级联：软删其 t_issue_labels 关联、硬删其 t_issue_local_repositories
+// 关联（无 deleted_at）与子任务（+ 子任务的 label / 仓库分支关联），避免悬挂。
 func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
@@ -442,7 +445,10 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 		if _, e := q.IssueLabel.WithContext(svc.Context).Where(q.IssueLabel.IssueID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 级联软删子任务（parent_id 指向本 issue）+ 子任务的 label 关联。
+		if _, e := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.Eq(req.ID)).Delete(); e != nil {
+			return e
+		}
+		// 级联软删子任务（parent_id 指向本 issue）+ 子任务的 label / 仓库分支关联。
 		children, ce := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ParentID.Eq(req.ID)).Find()
 		if ce != nil {
 			return ce
@@ -458,13 +464,17 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 			if _, e := q.IssueLabel.WithContext(svc.Context).Where(q.IssueLabel.IssueID.In(childIDs...)).Delete(); e != nil {
 				return e
 			}
+			if _, e := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.In(childIDs...)).Delete(); e != nil {
+				return e
+			}
 		}
 		return nil
 	})
 }
 
-// assembleWithLabels 批量组装 issue 的 label 列表（3 次查询避免 N+1）：
-// issues → t_issue_labels（按 issue_id 批查）→ t_workspace_labels（按 label_id 批查）→ 按 issue 分组。
+// assembleWithLabels 批量组装 issue 的 label 列表与关联仓库+分支列表（4 次查询避免 N+1）：
+// issues → t_issue_labels（按 issue_id 批查）→ t_workspace_labels（按 label_id 批查）
+// → t_issue_local_repositories（按 issue_id 批查）→ 按 issue 分组。
 func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*types.ProjectIssueResponseData, error) {
 	result := make([]*types.ProjectIssueResponseData, 0, len(issues))
 	if len(issues) == 0 {
@@ -480,12 +490,23 @@ func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*typ
 	if err != nil {
 		return nil, err
 	}
+	issueRepos, err := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.In(issueIDs...)).Find()
+	if err != nil {
+		return nil, err
+	}
 
 	issueToLabelIDs := make(map[string][]int, len(issues))
 	labelIDSet := make(map[int]struct{})
 	for _, il := range issueLabels {
 		issueToLabelIDs[il.IssueID] = append(issueToLabelIDs[il.IssueID], il.LabelID)
 		labelIDSet[il.LabelID] = struct{}{}
+	}
+	issueToRepoBranches := make(map[string][]types.IssueRepositoryBranch, len(issues))
+	for _, r := range issueRepos {
+		issueToRepoBranches[r.IssueID] = append(issueToRepoBranches[r.IssueID], types.IssueRepositoryBranch{
+			LocalRepositoryID: r.LocalRepositoryID,
+			RepositoryBranch:  r.RepositoryBranch,
+		})
 	}
 
 	labelMap := make(map[int]*model.WorkspaceLabel, len(labelIDSet))
@@ -510,27 +531,77 @@ func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*typ
 				labels = append(labels, l)
 			}
 		}
-		result = append(result, &types.ProjectIssueResponseData{ProjectIssue: i, Labels: labels})
+		repoBranchList, ok := issueToRepoBranches[i.ID]
+		if !ok {
+			repoBranchList = []types.IssueRepositoryBranch{}
+		}
+		result = append(result, &types.ProjectIssueResponseData{
+			ProjectIssue:         i,
+			Labels:               labels,
+			RepositoryBranchList: repoBranchList,
+		})
 	}
 	return result, nil
 }
 
-// validateIssueRepo 校验 issue 关联的本地仓库（localRepositoryId > 0 时）属于 projectID 的关联仓库集合。
-// 返回规范后的 (localRepositoryID, repositoryBranch)：repoID<=0 时强制返回 (0,"")（无仓库则分支无意义）。
-// orm 传 tx 以复用调用方事务。
-func (svc ProjectIssue) validateIssueRepo(orm *gorm.DB, projectID, repoID int, branch string) (int, string, error) {
-	if repoID <= 0 {
-		return 0, "", nil
+// syncIssueRepos 全量同步某 issue 的关联仓库+分支为 list（写 t_issue_local_repositories，事务内调用，orm 传 tx）。
+// 关联表无 deleted_at（硬删）：先删该 issue 全部关联再插入（列表经 validateIssueRepoList 已校验，量小无需 diff）。
+func (svc ProjectIssue) syncIssueRepos(orm *gorm.DB, issueID string, list []types.IssueRepositoryBranch) error {
+	q := query.Use(orm)
+	if _, e := q.IssueLocalRepository.WithContext(svc.Context).
+		Where(q.IssueLocalRepository.IssueID.Eq(issueID)).Delete(); e != nil {
+		return e
+	}
+	if len(list) == 0 {
+		return nil
+	}
+	links := make([]*model.IssueLocalRepository, 0, len(list))
+	for _, rb := range list {
+		links = append(links, &model.IssueLocalRepository{
+			IssueID:           issueID,
+			LocalRepositoryID: rb.LocalRepositoryID,
+			RepositoryBranch:  rb.RepositoryBranch,
+		})
+	}
+	return q.IssueLocalRepository.WithContext(svc.Context).Create(links...)
+}
+
+// validateIssueRepoList 校验 issue 关联的仓库+分支列表：逐项 localRepositoryId > 0（前端空行未选仓库报错）、
+// 同一仓库不重复（每仓库至多一行）且属于 projectID 的关联仓库集合（一次批量查中间表，避免逐项 Count）。
+// 返回原列表（校验通过即原样落库）。orm 传 tx 以复用调用方事务。
+func (svc ProjectIssue) validateIssueRepoList(orm *gorm.DB, projectID int, list []types.IssueRepositoryBranch) ([]types.IssueRepositoryBranch, error) {
+	if len(list) == 0 {
+		return nil, nil
 	}
 	q := query.Use(orm)
-	count, e := q.ProjectLocalRepository.WithContext(svc.Context).
+	projectRepoIDs := make(map[int]struct{}, len(list))
+	for _, rb := range list {
+		if rb.LocalRepositoryID <= 0 {
+			return nil, errors.New("关联仓库不能为空")
+		}
+		if _, dup := projectRepoIDs[rb.LocalRepositoryID]; dup {
+			return nil, errors.New("仓库重复关联")
+		}
+		projectRepoIDs[rb.LocalRepositoryID] = struct{}{}
+	}
+	repoIDs := make([]int, 0, len(projectRepoIDs))
+	for id := range projectRepoIDs {
+		repoIDs = append(repoIDs, id)
+	}
+	links, e := q.ProjectLocalRepository.WithContext(svc.Context).
 		Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(projectID)).
-		Where(q.ProjectLocalRepository.LocalRepositoryID.Eq(repoID)).Count()
+		Where(q.ProjectLocalRepository.LocalRepositoryID.In(repoIDs...)).Find()
 	if e != nil {
-		return 0, "", e
+		return nil, e
 	}
-	if count == 0 {
-		return 0, "", errors.New("该仓库未关联到当前项目")
+	linked := make(map[int]struct{}, len(links))
+	for _, l := range links {
+		linked[l.LocalRepositoryID] = struct{}{}
 	}
-	return repoID, branch, nil
+	for id := range projectRepoIDs {
+		if _, ok := linked[id]; !ok {
+			return nil, errors.New("该仓库未关联到当前项目")
+		}
+	}
+	return list, nil
 }

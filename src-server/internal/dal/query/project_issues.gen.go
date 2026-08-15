@@ -41,8 +41,6 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.TargetDate = field.NewString(tableName, "target_date")
 	_projectIssue.CompletedAt = field.NewTime(tableName, "completed_at")
 	_projectIssue.IsDraft = field.NewField(tableName, "is_draft")
-	_projectIssue.LocalRepositoryID = field.NewInt(tableName, "local_repository_id")
-	_projectIssue.RepositoryBranch = field.NewString(tableName, "repository_branch")
 	_projectIssue.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectIssue.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_projectIssue.DeletedAt = field.NewField(tableName, "deleted_at")
@@ -50,6 +48,12 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 		db: db.Session(&gorm.Session{}),
 
 		RelationField: field.NewRelation("IssueLabelList", "model.IssueLabel"),
+	}
+
+	_projectIssue.IssueLocalRepositoryList = projectIssueHasManyIssueLocalRepositoryList{
+		db: db.Session(&gorm.Session{}),
+
+		RelationField: field.NewRelation("IssueLocalRepositoryList", "model.IssueLocalRepository"),
 	}
 
 	_projectIssue.fillFieldMap()
@@ -60,26 +64,26 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 type projectIssue struct {
 	projectIssueDo projectIssueDo
 
-	ALL               field.Asterisk
-	ID                field.String
-	ProjectID         field.Int
-	WorkspaceID       field.Int
-	Name              field.String
-	Description       field.String
-	StateCode         field.Field
-	Priority          field.Field
-	SortOrder         field.Float64
-	ParentID          field.String
-	StartDate         field.String
-	TargetDate        field.String
-	CompletedAt       field.Time
-	IsDraft           field.Field
-	LocalRepositoryID field.Int
-	RepositoryBranch  field.String
-	CreatedAt         field.Time
-	UpdatedAt         field.Time
-	DeletedAt         field.Field
-	IssueLabelList    projectIssueHasManyIssueLabelList
+	ALL            field.Asterisk
+	ID             field.String
+	ProjectID      field.Int
+	WorkspaceID    field.Int
+	Name           field.String
+	Description    field.String
+	StateCode      field.Field
+	Priority       field.Field
+	SortOrder      field.Float64
+	ParentID       field.String
+	StartDate      field.String
+	TargetDate     field.String
+	CompletedAt    field.Time
+	IsDraft        field.Field
+	CreatedAt      field.Time
+	UpdatedAt      field.Time
+	DeletedAt      field.Field
+	IssueLabelList projectIssueHasManyIssueLabelList
+
+	IssueLocalRepositoryList projectIssueHasManyIssueLocalRepositoryList
 
 	fieldMap map[string]field.Expr
 }
@@ -109,8 +113,6 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.TargetDate = field.NewString(table, "target_date")
 	p.CompletedAt = field.NewTime(table, "completed_at")
 	p.IsDraft = field.NewField(table, "is_draft")
-	p.LocalRepositoryID = field.NewInt(table, "local_repository_id")
-	p.RepositoryBranch = field.NewString(table, "repository_branch")
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")
 	p.DeletedAt = field.NewField(table, "deleted_at")
@@ -142,7 +144,7 @@ func (p *projectIssue) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (p *projectIssue) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 19)
+	p.fieldMap = make(map[string]field.Expr, 18)
 	p.fieldMap["id"] = p.ID
 	p.fieldMap["project_id"] = p.ProjectID
 	p.fieldMap["workspace_id"] = p.WorkspaceID
@@ -156,8 +158,6 @@ func (p *projectIssue) fillFieldMap() {
 	p.fieldMap["target_date"] = p.TargetDate
 	p.fieldMap["completed_at"] = p.CompletedAt
 	p.fieldMap["is_draft"] = p.IsDraft
-	p.fieldMap["local_repository_id"] = p.LocalRepositoryID
-	p.fieldMap["repository_branch"] = p.RepositoryBranch
 	p.fieldMap["created_at"] = p.CreatedAt
 	p.fieldMap["updated_at"] = p.UpdatedAt
 	p.fieldMap["deleted_at"] = p.DeletedAt
@@ -168,12 +168,15 @@ func (p projectIssue) clone(db *gorm.DB) projectIssue {
 	p.projectIssueDo.ReplaceConnPool(db.Statement.ConnPool)
 	p.IssueLabelList.db = db.Session(&gorm.Session{Initialized: true})
 	p.IssueLabelList.db.Statement.ConnPool = db.Statement.ConnPool
+	p.IssueLocalRepositoryList.db = db.Session(&gorm.Session{Initialized: true})
+	p.IssueLocalRepositoryList.db.Statement.ConnPool = db.Statement.ConnPool
 	return p
 }
 
 func (p projectIssue) replaceDB(db *gorm.DB) projectIssue {
 	p.projectIssueDo.ReplaceDB(db)
 	p.IssueLabelList.db = db.Session(&gorm.Session{})
+	p.IssueLocalRepositoryList.db = db.Session(&gorm.Session{})
 	return p
 }
 
@@ -254,6 +257,87 @@ func (a projectIssueHasManyIssueLabelListTx) Count() int64 {
 }
 
 func (a projectIssueHasManyIssueLabelListTx) Unscoped() *projectIssueHasManyIssueLabelListTx {
+	a.tx = a.tx.Unscoped()
+	return &a
+}
+
+type projectIssueHasManyIssueLocalRepositoryList struct {
+	db *gorm.DB
+
+	field.RelationField
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryList) Where(conds ...field.Expr) *projectIssueHasManyIssueLocalRepositoryList {
+	if len(conds) == 0 {
+		return &a
+	}
+
+	exprs := make([]clause.Expression, 0, len(conds))
+	for _, cond := range conds {
+		exprs = append(exprs, cond.BeCond().(clause.Expression))
+	}
+	a.db = a.db.Clauses(clause.Where{Exprs: exprs})
+	return &a
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryList) WithContext(ctx context.Context) *projectIssueHasManyIssueLocalRepositoryList {
+	a.db = a.db.WithContext(ctx)
+	return &a
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryList) Session(session *gorm.Session) *projectIssueHasManyIssueLocalRepositoryList {
+	a.db = a.db.Session(session)
+	return &a
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryList) Model(m *model.ProjectIssue) *projectIssueHasManyIssueLocalRepositoryListTx {
+	return &projectIssueHasManyIssueLocalRepositoryListTx{a.db.Model(m).Association(a.Name())}
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryList) Unscoped() *projectIssueHasManyIssueLocalRepositoryList {
+	a.db = a.db.Unscoped()
+	return &a
+}
+
+type projectIssueHasManyIssueLocalRepositoryListTx struct{ tx *gorm.Association }
+
+func (a projectIssueHasManyIssueLocalRepositoryListTx) Find() (result []*model.IssueLocalRepository, err error) {
+	return result, a.tx.Find(&result)
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryListTx) Append(values ...*model.IssueLocalRepository) (err error) {
+	targetValues := make([]interface{}, len(values))
+	for i, v := range values {
+		targetValues[i] = v
+	}
+	return a.tx.Append(targetValues...)
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryListTx) Replace(values ...*model.IssueLocalRepository) (err error) {
+	targetValues := make([]interface{}, len(values))
+	for i, v := range values {
+		targetValues[i] = v
+	}
+	return a.tx.Replace(targetValues...)
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryListTx) Delete(values ...*model.IssueLocalRepository) (err error) {
+	targetValues := make([]interface{}, len(values))
+	for i, v := range values {
+		targetValues[i] = v
+	}
+	return a.tx.Delete(targetValues...)
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryListTx) Clear() error {
+	return a.tx.Clear()
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryListTx) Count() int64 {
+	return a.tx.Count()
+}
+
+func (a projectIssueHasManyIssueLocalRepositoryListTx) Unscoped() *projectIssueHasManyIssueLocalRepositoryListTx {
 	a.tx = a.tx.Unscoped()
 	return &a
 }

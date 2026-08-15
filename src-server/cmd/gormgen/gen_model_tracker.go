@@ -5,7 +5,7 @@ import (
 	"gorm.io/gen/field"
 )
 
-// GenModelTracker 注册 tracker 模块 5 张业务表及其父子关联，生成对应 DO（PO 层）。
+// GenModelTracker 注册 tracker 模块业务表及其父子关联，生成对应 DO（PO 层）。
 // 结构名取「单数、无 t_ 前缀」；表间无 DB 外键，此处 HasMany 为 gorm/gen 逻辑关联（仅生成结构体字段 + Preload）。
 // HasMany 在父表选项引用子表模板，故按「叶子优先」顺序创建。
 func GenModelTracker() {
@@ -16,6 +16,10 @@ func GenModelTracker() {
 	label := G.GenerateModelAs("t_workspace_labels", "WorkspaceLabel")
 	// 项目 ↔ 本地仓库 多对多中间表：无关联关系，service 层手动 JOIN 查询（与表间无 DB 外键约定一致）。
 	projectLocalRepository := G.GenerateModelAs("t_project_local_repositories", "ProjectLocalRepository")
+	// issue ↔ 本地仓库+分支 关联表：issue_id 同为 TEXT uuid；service 层批量组装（同 t_issue_labels 模式）。
+	issueLocalRepository := G.GenerateModelAs("t_issue_local_repositories", "IssueLocalRepository",
+		gen.FieldType("issue_id", "string"),
+	)
 
 	issue := G.GenerateModelAs("t_project_issues", "ProjectIssue",
 		// issue 主键为 TEXT uuid 字符串（与 claude session_id 同格式）；parent_id 同为 uuid（顶级=NULL）。
@@ -33,6 +37,14 @@ func GenModelTracker() {
 				"references": []string{"ID"},      // 父表 t_project_issues.id
 			},
 			JSONTag: "issueLabelList,omitempty",
+		}),
+		gen.FieldRelate(field.HasMany, "IssueLocalRepositoryList", issueLocalRepository, &field.RelateConfig{
+			RelateSlicePointer: true,
+			GORMTag: field.GormTag{
+				"foreignKey": []string{"IssueID"}, // 子表 t_issue_local_repositories.issue_id
+				"references": []string{"ID"},      // 父表 t_project_issues.id
+			},
+			JSONTag: "issueLocalRepositoryList,omitempty",
 		}),
 	)
 
@@ -74,5 +86,5 @@ func GenModelTracker() {
 		}),
 	)
 
-	G.ApplyBasic(workspace, project, issue, label, issueLabel, projectLocalRepository)
+	G.ApplyBasic(workspace, project, issue, label, issueLabel, projectLocalRepository, issueLocalRepository)
 }

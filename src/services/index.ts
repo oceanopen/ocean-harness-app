@@ -15,6 +15,7 @@ export type {
 
 export { ProjectIssueService } from './ProjectIssueService';
 export type {
+  IssueRepositoryBranchModel,
   Priority,
   ProjectIssueCreateRequest,
   ProjectIssueDeleteRequest,

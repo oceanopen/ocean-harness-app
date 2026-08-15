@@ -186,8 +186,6 @@
       "labels": "标签",
       "branch": "关联分支",
       "branchPlaceholder": "选择或输入分支名",
-      "branchRepoPlaceholder": "选择仓库",
-      "branchNoRepoOption": "无关联仓库",
       "branchNoRepoHint": "请先在项目设置中关联仓库",
       "createdAt": "创建于",
       "completedAt": "完成于",

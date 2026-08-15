@@ -1,6 +1,7 @@
 -- +goose Up
--- 工作空间 / 项目 / Issue / 本地仓库 管理：基线 7 张业务表（最终态，已合并历次增量迁移：
--- 20260804001 local_repositories、20260804002 项目↔仓库中间表+issue 分支、20260811001 local_repository.default_branch）。
+-- 工作空间 / 项目 / Issue / 本地仓库 管理：基线 8 张业务表（最终态，已合并历次增量迁移：
+-- 20260804001 local_repositories、20260804002 项目↔仓库中间表、20260811001 local_repository.default_branch、
+-- issue 仓库+分支多选（曾为 issue 表两列/JSON 列，现独立关联表 t_issue_local_repositories））。
 -- 命名格式：YYYYMMDD + 三位序号 + _name.sql；启动时 goose 自动向前迁移（仅 Up，见 initialize/migrate.go）。
 --
 -- 约定：
@@ -47,7 +48,8 @@ CREATE TABLE t_workspace_projects (
 -- 后续将作为工作空间运行任务目录的唯一标识）；sort_order 列表排序权重；priority 五级枚举。
 -- state_code 为固定 5 值 typed 枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，元数据见 enums.StateCatalog，
 -- 无 state_id/项目级状态行）；DONE 触发 issue.completed_at。
--- parent_id / local_repository_id 逻辑指向他表，但不建 DB 外键。
+-- parent_id 逻辑指向 t_project_issues.id，不建 DB 外键。
+-- issue 关联的多仓库+分支在独立关联表 t_issue_local_repositories（同 label 关联 t_issue_labels 模式）。
 CREATE TABLE t_project_issues (
     id                  TEXT PRIMARY KEY,
     project_id          INTEGER  NOT NULL,
@@ -62,8 +64,6 @@ CREATE TABLE t_project_issues (
     target_date         TEXT,
     completed_at        DATETIME,
     is_draft            TEXT     NOT NULL,
-    local_repository_id INTEGER,
-    repository_branch   TEXT     NOT NULL DEFAULT '',
     created_at          DATETIME NOT NULL,
     updated_at          DATETIME NOT NULL,
     deleted_at          DATETIME
@@ -123,3 +123,17 @@ CREATE TABLE t_project_local_repositories (
 );
 CREATE UNIQUE INDEX udx_project_local_repositories_pid_lrid
     ON t_project_local_repositories (workspace_project_id, local_repository_id);
+
+-- t_issue_local_repositories：issue ↔ 本地仓库+分支 多对多关联表（issue 可关联多个仓库，每仓库至多一条并带分支名）。
+-- repository_branch 为分支名文本引用（freeSolo 可手输，不校验存在性）；无 DB 外键。
+-- 无 deleted_at：随 issue 软删/项目解绑仓库/仓库删除，由 service 层事务级联硬删（见各 service 注释）。
+CREATE TABLE t_issue_local_repositories (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id             TEXT     NOT NULL,
+    local_repository_id  INTEGER NOT NULL,
+    repository_branch    TEXT     NOT NULL DEFAULT '',
+    created_at           DATETIME NOT NULL,
+    updated_at           DATETIME NOT NULL
+);
+CREATE UNIQUE INDEX udx_issue_local_repositories_iid_lrid
+    ON t_issue_local_repositories (issue_id, local_repository_id);

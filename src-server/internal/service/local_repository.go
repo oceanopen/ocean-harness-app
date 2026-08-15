@@ -142,7 +142,7 @@ func (svc LocalRepository) Update(req *types.LocalRepositoryUpdateRequest) (type
 
 // Delete 物理删除仓库（无 deleted_at，释放 localDir 供重新添加）。
 // 事务内级联清理（避免悬挂引用）：硬删中间表 t_project_local_repositories 关联记录 +
-// 清空指向该仓库的 issue 分支引用（local_repository_id 与 repository_branch）。
+// 硬删 issue↔仓库关联表 t_issue_local_repositories 中指向该仓库的记录。
 func (svc LocalRepository) Delete(req *types.LocalRepositoryDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
@@ -155,19 +155,10 @@ func (svc LocalRepository) Delete(req *types.LocalRepositoryDeleteRequest) error
 			Where(q.ProjectLocalRepository.LocalRepositoryID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 3) 清空指向该仓库的 issue 分支引用。顺序敏感：先 repository_branch（此时 local_repository_id 仍 = req.ID，
-		//    WHERE 命中），再 local_repository_id（否则第二次 WHERE 已被第一次清零而不命中）。
-		if _, e := q.ProjectIssue.WithContext(svc.Context).
-			Where(q.ProjectIssue.LocalRepositoryID.Eq(req.ID)).
-			UpdateColumn(q.ProjectIssue.RepositoryBranch, ""); e != nil {
-			return e
-		}
-		if _, e := q.ProjectIssue.WithContext(svc.Context).
-			Where(q.ProjectIssue.LocalRepositoryID.Eq(req.ID)).
-			UpdateColumn(q.ProjectIssue.LocalRepositoryID, 0); e != nil {
-			return e
-		}
-		return nil
+		// 3) 硬删 issue↔仓库关联记录（关联表无归属维度，按仓库 id 全局清）。
+		_, e := q.IssueLocalRepository.WithContext(svc.Context).
+			Where(q.IssueLocalRepository.LocalRepositoryID.Eq(req.ID)).Delete()
+		return e
 	})
 }
 

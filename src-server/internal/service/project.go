@@ -82,6 +82,8 @@ func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectRespon
 
 // Update 更新 project 的 name/description/emoji（不动 workspaceId）+ 全量覆盖关联仓库。
 // 关联采用「先全量删后全量插」策略：不做 diff，前端只传最终列表。
+// 被解绑的仓库同步硬删该项目 issue 关联表中的对应记录（与仓库删除级联口径一致），
+// 否则 issue 编辑保存时回显悬挂关联会被 validateIssueRepoList 拒绝（改任何字段都无法保存）。
 func (svc Project) Update(req *types.ProjectUpdateRequest) (*types.ProjectResponseData, error) {
 	var p *model.WorkspaceProject
 	var repoIDs []int
@@ -103,14 +105,66 @@ func (svc Project) Update(req *types.ProjectUpdateRequest) (*types.ProjectRespon
 		if e := pq.Save(p); e != nil {
 			return e
 		}
+		// 全量覆盖前先记旧关联集合，用于解绑 diff。
+		oldLinks, e := q.ProjectLocalRepository.WithContext(svc.Context).
+			Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(req.ID)).Find()
+		if e != nil {
+			return e
+		}
+		oldSet := make(map[int]struct{}, len(oldLinks))
+		for _, l := range oldLinks {
+			oldSet[l.LocalRepositoryID] = struct{}{}
+		}
 		// 全量覆盖关联仓库（无 diff）。
 		repoIDs, e = svc.replaceAssociatedRepositories(tx, req.ID, req.LocalRepositoryIDs)
+		if e != nil {
+			return e
+		}
+		// 级联清理：被解绑仓库（旧有且新无）从该项目 issue 的关联表 t_issue_local_repositories 中硬删，
+		// 否则 issue 编辑保存时回显悬挂关联会被 validateIssueRepoList 拒绝（改任何字段都无法保存）。
+		newSet := repoIDsToSet(req.LocalRepositoryIDs)
+		unbound := make([]int, 0, len(oldSet))
+		for id := range oldSet {
+			if _, keep := newSet[id]; !keep {
+				unbound = append(unbound, id)
+			}
+		}
+		if len(unbound) == 0 {
+			return nil
+		}
+		// 该项目的 issue（软删自动过滤），按解绑仓库删其关联记录。
+		projIssues, e := q.ProjectIssue.WithContext(svc.Context).
+			Where(q.ProjectIssue.ProjectID.Eq(req.ID)).Find()
+		if e != nil {
+			return e
+		}
+		if len(projIssues) == 0 {
+			return nil
+		}
+		issueIDs := make([]string, 0, len(projIssues))
+		for _, i := range projIssues {
+			issueIDs = append(issueIDs, i.ID)
+		}
+		_, e = q.IssueLocalRepository.WithContext(svc.Context).
+			Where(q.IssueLocalRepository.IssueID.In(issueIDs...)).
+			Where(q.IssueLocalRepository.LocalRepositoryID.In(unbound...)).Delete()
 		return e
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &types.ProjectResponseData{WorkspaceProject: p, LocalRepositoryIDs: repoIDs}, nil
+}
+
+// repoIDsToSet 把请求里的仓库 id 列表转为集合（去重 + 过滤 <=0），用于新旧关联 diff。
+func repoIDsToSet(repoIDs []int) map[int]struct{} {
+	set := make(map[int]struct{}, len(repoIDs))
+	for _, rid := range repoIDs {
+		if rid > 0 {
+			set[rid] = struct{}{}
+		}
+	}
+	return set
 }
 
 // Delete 软删除 project（无 DB 外键），事务内级联软删其下 issue + 硬删项目↔仓库中间表记录。

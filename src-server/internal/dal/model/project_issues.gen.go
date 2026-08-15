@@ -15,25 +15,24 @@ const TableNameProjectIssue = "t_project_issues"
 
 // ProjectIssue mapped from table <t_project_issues>
 type ProjectIssue struct {
-	ID                string          `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
-	ProjectID         int             `gorm:"column:project_id;type:INTEGER;not null" json:"projectId"`
-	WorkspaceID       int             `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
-	Name              string          `gorm:"column:name;type:TEXT;not null" json:"name"`
-	Description       string          `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
-	StateCode         enums.StateCode `gorm:"column:state_code;type:TEXT;not null" json:"stateCode"`
-	Priority          enums.Priority  `gorm:"column:priority;type:TEXT;not null" json:"priority"`
-	SortOrder         float64         `gorm:"column:sort_order;type:REAL;not null" json:"sortOrder"`
-	ParentID          string          `gorm:"column:parent_id;type:TEXT" json:"parentId"`
-	StartDate         string          `gorm:"column:start_date;type:TEXT" json:"startDate"`
-	TargetDate        string          `gorm:"column:target_date;type:TEXT" json:"targetDate"`
-	CompletedAt       *time.Time      `gorm:"column:completed_at;type:DATETIME" json:"completedAt"`
-	IsDraft           enums.YesNo     `gorm:"column:is_draft;type:TEXT;not null" json:"isDraft"`
-	LocalRepositoryID int             `gorm:"column:local_repository_id;type:INTEGER" json:"localRepositoryId"`
-	RepositoryBranch  string          `gorm:"column:repository_branch;type:TEXT;not null;default:''" json:"repositoryBranch"`
-	CreatedAt         time.Time       `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
-	UpdatedAt         time.Time       `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	DeletedAt         gorm.DeletedAt  `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
-	IssueLabelList    []*IssueLabel   `gorm:"foreignKey:IssueID;references:ID" json:"issueLabelList,omitempty"`
+	ID                       string                  `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
+	ProjectID                int                     `gorm:"column:project_id;type:INTEGER;not null" json:"projectId"`
+	WorkspaceID              int                     `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
+	Name                     string                  `gorm:"column:name;type:TEXT;not null" json:"name"`
+	Description              string                  `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
+	StateCode                enums.StateCode         `gorm:"column:state_code;type:TEXT;not null" json:"stateCode"`
+	Priority                 enums.Priority          `gorm:"column:priority;type:TEXT;not null" json:"priority"`
+	SortOrder                float64                 `gorm:"column:sort_order;type:REAL;not null" json:"sortOrder"`
+	ParentID                 string                  `gorm:"column:parent_id;type:TEXT" json:"parentId"`
+	StartDate                string                  `gorm:"column:start_date;type:TEXT" json:"startDate"`
+	TargetDate               string                  `gorm:"column:target_date;type:TEXT" json:"targetDate"`
+	CompletedAt              *time.Time              `gorm:"column:completed_at;type:DATETIME" json:"completedAt"`
+	IsDraft                  enums.YesNo             `gorm:"column:is_draft;type:TEXT;not null" json:"isDraft"`
+	CreatedAt                time.Time               `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
+	UpdatedAt                time.Time               `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	DeletedAt                gorm.DeletedAt          `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
+	IssueLabelList           []*IssueLabel           `gorm:"foreignKey:IssueID;references:ID" json:"issueLabelList,omitempty"`
+	IssueLocalRepositoryList []*IssueLocalRepository `gorm:"foreignKey:IssueID;references:ID" json:"issueLocalRepositoryList,omitempty"`
 }
 
 // TableName ProjectIssue's table name

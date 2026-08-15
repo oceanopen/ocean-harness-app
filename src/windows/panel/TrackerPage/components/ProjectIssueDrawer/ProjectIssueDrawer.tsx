@@ -1,4 +1,4 @@
-import type { Priority, ProjectIssueResponseData, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
+import type { IssueRepositoryBranchModel, Priority, ProjectIssueResponseData, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
 import type { StateCode } from '@src/state/tracker';
 import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon } from '@mui/icons-material';
 import {
@@ -18,12 +18,13 @@ import { WorkspaceLabelService } from '@src/services';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
+import { useLocalRepositories } from '@src/state/localRepositories';
 import { STATE_CODE_DEFAULT, useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } from '@src/state/tracker';
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate as useRouterNavigate } from 'react-router-dom';
-import IssueBranchField from './IssueBranchField';
+import IssueRepoBranchTable from './IssueRepoBranchTable';
 import MarkdownEditor from './MarkdownEditor/MarkdownEditor';
 import PrioritySelect from './PrioritySelect';
 import ProjectStateSelect from './ProjectStateSelect';
@@ -71,9 +72,20 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const [startDate, setStartDate] = useState(projectIssue?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(projectIssue?.targetDate ?? '');
   const [labels, setLabels] = useState<WorkspaceLabelModel[]>(projectIssue?.labels ?? []);
-  // 关联分支：localRepositoryId 逻辑指向项目关联仓库，repositoryBranch 为分支名（freeSolo 可手输）。
-  const [localRepositoryId, setLocalRepositoryId] = useState(projectIssue?.localRepositoryId ?? 0);
-  const [repositoryBranch, setRepositoryBranch] = useState(projectIssue?.repositoryBranch ?? '');
+  // 关联仓库+分支列表（多选）：create 的默认行由全局仓库缓存派生（项目关联仓库各一行、分支预填默认分支，
+  // 数据异步就绪后自动出现，无需 effect 初始化）；用户在 table 里增删改后存 override（此后不再用派生值）。
+  // edit 按回显数据初始化 override。
+  const allReposQuery = useLocalRepositories();
+  const defaultRepoBranchRows = useMemo<IssueRepositoryBranchModel[]>(() => {
+    const repoMap = new Map((allReposQuery.data ?? []).map(r => [r.id, r]));
+    return (workspaceProject.localRepositoryIds ?? [])
+      .filter(id => repoMap.has(id))
+      .map(id => ({ localRepositoryId: id, repositoryBranch: repoMap.get(id)!.defaultBranch ?? '' }));
+  }, [allReposQuery.data, workspaceProject.localRepositoryIds]);
+  const [repoBranchRowsOverride, setRepoBranchRowsOverride] = useState<IssueRepositoryBranchModel[] | null>(
+    mode === 'edit' ? (projectIssue?.repositoryBranchList ?? []) : null,
+  );
+  const repoBranchRows = repoBranchRowsOverride ?? defaultRepoBranchRows;
   const [wsLabels, setWsLabels] = useState<WorkspaceLabelModel[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -127,6 +139,17 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     return false;
   })();
 
+  // 关联仓库+分支列表是否相对原值变化（逐行比较，覆盖增/删/改）。
+  const repoBranchDirty = (() => {
+    const orig = projectIssue?.repositoryBranchList ?? [];
+    if (repoBranchRows.length !== orig.length) {
+      return true;
+    }
+    return repoBranchRows.some((row, i) =>
+      row.localRepositoryId !== orig[i].localRepositoryId
+      || row.repositoryBranch !== orig[i].repositoryBranch);
+  })();
+
   const dirty = mode === 'edit' && !!projectIssue && (
     name !== projectIssue.name
     || description !== projectIssue.description
@@ -134,12 +157,14 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     || priority !== projectIssue.priority
     || startDate !== projectIssue.startDate
     || targetDate !== projectIssue.targetDate
-    || localRepositoryId !== (projectIssue.localRepositoryId ?? 0)
-    || repositoryBranch !== (projectIssue.repositoryBranch ?? '')
+    || repoBranchDirty
     || labelsDirty
   );
 
-  const canSubmit = mode === 'create' ? name.trim().length > 0 : !!dirty;
+  // 存在未选仓库的行（空行）时不可保存（后端也会校验报错，前端先行禁用）。
+  const hasEmptyRepoRow = repoBranchRows.some(row => row.localRepositoryId <= 0);
+
+  const canSubmit = (mode === 'create' ? name.trim().length > 0 : !!dirty) && !hasEmptyRepoRow;
 
   // labels 本地切换（不发请求）：create/edit 统一，提交时随 create/update 一起发。
   const handleToggleLabel = useCallback((labelId: number) => {
@@ -152,10 +177,9 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     });
   }, [wsLabels]);
 
-  // IssueBranchField 受控回调：仓库或分支任一变化都同步本地态（提交统一在 handleSave）。
-  const handleBranchChange = useCallback((repoId: number, branch: string) => {
-    setLocalRepositoryId(repoId);
-    setRepositoryBranch(branch);
+  // IssueRepoBranchTable 受控回调：行增删/仓库分支变化都存 override（提交统一在 handleSave）。
+  const handleRepoBranchRowsChange = useCallback((rows: IssueRepositoryBranchModel[]) => {
+    setRepoBranchRowsOverride(rows);
   }, []);
 
   const handleSave = async () => {
@@ -172,8 +196,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           targetDate,
           stateCode,
           labelIds: labels.map(l => l.id),
-          localRepositoryId,
-          repositoryBranch,
+          repositoryBranchList: repoBranchRows,
           // 新建子 issue 带父 id（顶级创建不传，走后端默认 0）。
           ...(parentIssue ? { parentId: parentIssue.id } : {}),
         });
@@ -189,8 +212,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           startDate,
           targetDate,
           labelIds: labels.map(l => l.id),
-          localRepositoryId,
-          repositoryBranch,
+          repositoryBranchList: repoBranchRows,
         });
         onUpdated?.(updated);
         onClose();
@@ -316,11 +338,10 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
             onOpenManager={() => setDrawerManagerOpen(true)}
             disabled={submitting || deleting}
           />
-          <IssueBranchField
+          <IssueRepoBranchTable
             localRepositoryIds={workspaceProject.localRepositoryIds ?? []}
-            localRepositoryId={localRepositoryId}
-            repositoryBranch={repositoryBranch}
-            onChange={handleBranchChange}
+            rows={repoBranchRows}
+            onChange={handleRepoBranchRowsChange}
             disabled={submitting || deleting}
           />
           {/* 元信息（仅 edit） */}

@@ -186,8 +186,6 @@
       "labels": "Labels",
       "branch": "Branch",
       "branchPlaceholder": "Select or enter branch name",
-      "branchRepoPlaceholder": "Select repository",
-      "branchNoRepoOption": "No associated repository",
       "branchNoRepoHint": "Associate a repository in project settings first",
       "createdAt": "Created",
       "completedAt": "Completed",
