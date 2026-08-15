@@ -53,19 +53,19 @@ export interface IssueCardProps {
   // 子 issue（已按 sortOrder 排序）；展开时内联渲染。子卡片不传（叶节点）。
   childIssues?: ProjectIssueResponseData[];
   expanded?: boolean;
-  onToggleExpand?: (id: number) => void;
+  onToggleExpand?: (id: string) => void;
   onEdit: (issue: ProjectIssueResponseData) => void;
   onAddChild: (parent: ProjectIssueResponseData) => void;
   dnd?: IssueCardDnd;
   // 看板模式标记：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传。
   kanban?: boolean;
   // 子任务拖拽重排回调（仅列表模式启用）。
-  onReorderChild?: (parentId: number, from: number, to: number) => void;
+  onReorderChild?: (parentId: string, from: number, to: number) => void;
 }
 
 // 统一 Issue 卡片：列表与看板共用同一组件、同一外观（看板式三行 Paper 卡片）。
 // 列表/看板唯一差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
-// 三行布局：首行 [展开/占位] #id [优先级] [状态] … [进度][新增][编辑]；看板模式下新增+编辑下移到第二行标题右侧。
+// 三行布局：首行 [展开/占位] id尾8位 [优先级] [状态] … [进度][新增][编辑]；看板模式下新增+编辑下移到第二行标题右侧。
 // 第二行 [占位] 标题；第三行 [占位] 标签颜色横杠 … 结束日期。
 // 点击卡片主体：有子级（父级）→ 切换展开；无子级 → 打开编辑抽屉（onEdit）。
 // 所有 icon/button 不挂 Tooltip（避免遮挡鼠标），改用 aria-label。
@@ -239,7 +239,12 @@ function IssueCard({
       <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>」</Typography>
     </Box>
   );
-  const idText = <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0 }}>#{issue.id}</Typography>;
+  // issue id 为 uuid：过长截断展示（尾 8 位即可肉眼区分）。
+  const idText = (
+    <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, fontFamily: 'monospace' }}>
+      …{issue.id.slice(-8)}
+    </Typography>
+  );
   const nameEl = <Typography variant="body2" sx={{ flex: 1, minWidth: 0, ...truncateSx }}>{issue.name}</Typography>;
 
   const progressEl = stat && stat.total > 0 && (
@@ -300,7 +305,7 @@ function IssueCard({
   // 卡片主体（首行/第二行/第三行），看板/列表双 return 分支共用，避免重复。
   const cardBodyEl = (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-      {/* 首行：展开/占位 #id 优先级 状态 … [列表:进度+新增+编辑] / [看板:仅进度] */}
+      {/* 首行：展开/占位 id尾8位 优先级 状态 … [列表:进度+新增+编辑] / [看板:仅进度] */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         {gutter}
         {idText}
@@ -381,7 +386,7 @@ function IssueCard({
               sx={blockSx}
             >
               {childIssues.map((child, idx) => (
-                <Draggable key={child.id} draggableId={String(child.id)} index={idx}>
+                <Draggable key={child.id} draggableId={child.id} index={idx}>
                   {(dragProvided, dragSnapshot) => (
                     <IssueCard
                       issue={child}

@@ -66,7 +66,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   // 编辑抽屉：无子级卡片点击或编辑 icon 进入。
   const [editIssue, setEditIssue] = useState<ProjectIssueResponseData | null>(null);
   // 展开的父 issue 集合（列表/看板共享，内联展开子 issue 卡片）。
-  const [expandedParents, setExpandedParents] = useState<Set<number>>(() => new Set());
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(() => new Set());
   // 视图模式按项目持久化（localStorage），默认列表。
   const [viewMode, setViewMode] = useState<IssueViewMode>(
     () => (localStorage.getItem(`tracker.viewMode.${workspaceProject.id}`) === 'kanban' ? 'kanban' : 'list'),
@@ -88,9 +88,9 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
 
   // 各父 issue 的子任务统计（done/total），用于卡片进度小标（从全量扁平 issue 派生）。
   const subtaskStats = useMemo(() => {
-    const m = new Map<number, { done: number; total: number }>();
+    const m = new Map<string, { done: number; total: number }>();
     for (const i of projectIssues) {
-      if (i.parentId <= 0) {
+      if (i.parentId === '') {
         continue;
       }
       const s = m.get(i.parentId) ?? { done: 0, total: 0 };
@@ -105,9 +105,9 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
 
   // 各父 issue 的子 issue 列表（按 sortOrder 升序），用于卡片内联展开渲染。
   const childrenByParent = useMemo(() => {
-    const m = new Map<number, ProjectIssueResponseData[]>();
+    const m = new Map<string, ProjectIssueResponseData[]>();
     for (const i of projectIssues) {
-      if (i.parentId <= 0) {
+      if (i.parentId === '') {
         continue;
       }
       const arr = m.get(i.parentId);
@@ -124,7 +124,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   // 子任务拖拽重排（列表模式）：同父内仅改 sortOrder（stateCode 不变），复用 move API + computeSortOrder。
   // 乐观更新即时反馈，失败用快照整表回滚 + toast；成功用后端返回值二次校正（与看板拖拽同一套机制）。
   const reorderSnapshotRef = useRef<ProjectIssueResponseData[] | null>(null);
-  const handleReorderChild = useCallback((parentId: number, from: number, to: number) => {
+  const handleReorderChild = useCallback((parentId: string, from: number, to: number) => {
     const siblings = childrenByParent.get(parentId) ?? [];
     const moved = siblings[from];
     if (!moved) {
@@ -155,7 +155,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   const grouped = useMemo(() => {
     const q = keyword.trim().toLowerCase();
     const filtered = projectIssues.filter((i) => {
-      if (i.parentId !== 0) {
+      if (i.parentId !== '') {
         return false; // 子任务不进主列表（随父卡片内联展开）
       }
       if (q && !i.name.toLowerCase().includes(q)) {
@@ -202,7 +202,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     });
   }, []);
 
-  const toggleExpand = useCallback((id: number) => {
+  const toggleExpand = useCallback((id: string) => {
     setExpandedParents((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
@@ -235,7 +235,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     showToast(t('tracker:projectIssue.toast.updated'), 'success');
   }, [showToast, t]);
 
-  const handleDeleted = useCallback((issueId: number) => {
+  const handleDeleted = useCallback((issueId: string) => {
     setEditIssue(prev => (prev?.id === issueId ? null : prev));
     showToast(t('tracker:projectIssue.toast.deleted'), 'success');
   }, [showToast]);

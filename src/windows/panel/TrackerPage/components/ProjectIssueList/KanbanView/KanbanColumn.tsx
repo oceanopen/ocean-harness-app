@@ -11,12 +11,12 @@ interface KanbanColumnProps {
   stateCode: StateCode;
   projectIssues: ProjectIssueResponseData[];
   subtaskStats: SubtaskStats;
-  childrenByParent: Map<number, ProjectIssueResponseData[]>;
-  expandedParents: Set<number>;
+  childrenByParent: Map<string, ProjectIssueResponseData[]>;
+  expandedParents: Set<string>;
   onAdd: () => void;
   onEdit: (projectIssue: ProjectIssueResponseData) => void;
   onAddChild: (parent: ProjectIssueResponseData) => void;
-  onToggleExpand: (id: number) => void;
+  onToggleExpand: (id: string) => void;
 }
 
 // 看板列（Droppable，列 = 状态）：列头复用 StateGroupCard（状态色点+名称+计数+新增icon）；
@@ -49,7 +49,7 @@ function KanbanColumn({ stateCode, projectIssues, subtaskStats, childrenByParent
           </Box>
           <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
             {projectIssues.map((projectIssue, index) => (
-              <Draggable key={projectIssue.id} draggableId={String(projectIssue.id)} index={index}>
+              <Draggable key={projectIssue.id} draggableId={projectIssue.id} index={index}>
                 {(dragProvided, dragSnapshot) => (
                   <IssueCard
                     issue={projectIssue}

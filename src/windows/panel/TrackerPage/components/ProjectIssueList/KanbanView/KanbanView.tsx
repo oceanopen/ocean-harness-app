@@ -12,13 +12,13 @@ import { useKanbanDnd } from './useKanbanDnd';
 interface KanbanViewProps {
   projectIssues: ProjectIssueResponseData[];
   subtaskStats: SubtaskStats;
-  childrenByParent: Map<number, ProjectIssueResponseData[]>;
-  expandedParents: Set<number>;
+  childrenByParent: Map<string, ProjectIssueResponseData[]>;
+  expandedParents: Set<string>;
   setIssues: Dispatch<SetStateAction<ProjectIssueResponseData[]>>;
   onAddIssue: (stateCode: StateCode) => void;
   onEdit: (projectIssue: ProjectIssueResponseData) => void;
   onAddChild: (parent: ProjectIssueResponseData) => void;
-  onToggleExpand: (id: number) => void;
+  onToggleExpand: (id: string) => void;
   showToast: (text: string, severity: 'success' | 'error') => void;
 }
 

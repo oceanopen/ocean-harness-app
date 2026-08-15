@@ -43,3 +43,8 @@ export function numParam(value: string | null): number | null {
   const n = Number(value);
   return Number.isInteger(n) ? n : null;
 }
+
+// 解析查询参数为非空字符串 id（如 issue uuid）；缺失/空返回 null。
+export function strParam(value: string | null): string | null {
+  return value == null || value === '' ? null : value;
+}

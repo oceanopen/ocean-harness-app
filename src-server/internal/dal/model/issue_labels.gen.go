@@ -15,7 +15,7 @@ const TableNameIssueLabel = "t_issue_labels"
 // IssueLabel mapped from table <t_issue_labels>
 type IssueLabel struct {
 	ID        int            `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
-	IssueID   int            `gorm:"column:issue_id;type:INTEGER;not null;uniqueIndex:udx_issue_labels_issue_id_label_id,priority:1" json:"issueId"`
+	IssueID   string         `gorm:"column:issue_id;type:TEXT;not null;uniqueIndex:udx_issue_labels_issue_id_label_id,priority:1" json:"issueId"`
 	LabelID   int            `gorm:"column:label_id;type:INTEGER;not null;uniqueIndex:udx_issue_labels_issue_id_label_id,priority:2" json:"labelId"`
 	CreatedAt time.Time      `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt time.Time      `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`

@@ -42,7 +42,7 @@ interface ProjectIssueDrawerProps {
   onClose: () => void;
   onCreated?: (projectIssue: ProjectIssueResponseData) => void;
   onUpdated?: (projectIssue: ProjectIssueResponseData) => void;
-  onDeleted?: (issueId: number) => void;
+  onDeleted?: (issueId: string) => void;
 }
 
 // Issue 抽屉（create/edit 共用）。所有字段（含 labels）本地态，点保存/创建一次性提交，
@@ -55,11 +55,11 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
   const isCreateSub = mode === 'create' && !!parentIssue;
   // 子 issue（create-child 或 edit-child）：顶部显示「所属父任务」只读字段。
-  // 父任务名来自 parentIssue（create-child 传入 / edit-child 由 ProjectIssueList 解析后传入）；解析失败回退 #parentId。
-  const isChild = isCreateSub || (mode === 'edit' && (projectIssue?.parentId ?? 0) > 0);
+  // 父任务名来自 parentIssue（create-child 传入 / edit-child 由 ProjectIssueList 解析后传入）；解析失败回退父 id 尾段。
+  const isChild = isCreateSub || (mode === 'edit' && !!projectIssue?.parentId);
   const parentTaskLabel = parentIssue
-    ? `#${parentIssue.id} ${parentIssue.name}`
-    : (projectIssue?.parentId ? `#${projectIssue.parentId}` : '');
+    ? `${parentIssue.name}`
+    : (projectIssue?.parentId ? `…${projectIssue.parentId.slice(-8)}` : '');
   const createProjectIssue = useCreateProjectIssue(workspaceProject.id);
   const updateProjectIssue = useUpdateProjectIssue(workspaceProject.id);
   const deleteProjectIssue = useDeleteProjectIssue(workspaceProject.id);
@@ -226,9 +226,9 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     }
   };
 
-  // 头部标题：edit 显示 #id 名称；create-sub 显示"新建子 Issue"；其余 create 显示"新建 Issue"。
+  // 头部标题：edit 显示 id 尾 8 位 + 名称（uuid 过长，与卡片/工作台同款截断）；create-sub 显示"新建子 Issue"；其余 create 显示"新建 Issue"。
   const title = mode === 'edit'
-    ? `#${projectIssue?.id} ${projectIssue?.name ?? ''}`
+    ? `…${projectIssue?.id.slice(-8)} ${projectIssue?.name ?? ''}`
     : isCreateSub
       ? t('tracker:projectIssue.create.subTitle')
       : t('tracker:projectIssue.create.title');

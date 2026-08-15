@@ -29,7 +29,7 @@ func newIssueLabel(db *gorm.DB, opts ...gen.DOOption) issueLabel {
 	tableName := _issueLabel.issueLabelDo.TableName()
 	_issueLabel.ALL = field.NewAsterisk(tableName)
 	_issueLabel.ID = field.NewInt(tableName, "id")
-	_issueLabel.IssueID = field.NewInt(tableName, "issue_id")
+	_issueLabel.IssueID = field.NewString(tableName, "issue_id")
 	_issueLabel.LabelID = field.NewInt(tableName, "label_id")
 	_issueLabel.CreatedAt = field.NewTime(tableName, "created_at")
 	_issueLabel.UpdatedAt = field.NewTime(tableName, "updated_at")
@@ -45,7 +45,7 @@ type issueLabel struct {
 
 	ALL       field.Asterisk
 	ID        field.Int
-	IssueID   field.Int
+	IssueID   field.String
 	LabelID   field.Int
 	CreatedAt field.Time
 	UpdatedAt field.Time
@@ -67,7 +67,7 @@ func (i issueLabel) As(alias string) *issueLabel {
 func (i *issueLabel) updateTableName(table string) *issueLabel {
 	i.ALL = field.NewAsterisk(table)
 	i.ID = field.NewInt(table, "id")
-	i.IssueID = field.NewInt(table, "issue_id")
+	i.IssueID = field.NewString(table, "issue_id")
 	i.LabelID = field.NewInt(table, "label_id")
 	i.CreatedAt = field.NewTime(table, "created_at")
 	i.UpdatedAt = field.NewTime(table, "updated_at")

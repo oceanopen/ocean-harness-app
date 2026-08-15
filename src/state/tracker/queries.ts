@@ -134,7 +134,7 @@ export function useUpdateProjectIssue(projectId: number) {
 export function useDeleteProjectIssue(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => ProjectIssueService.delete({ id }),
+    mutationFn: (id: string) => ProjectIssueService.delete({ id }),
     onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),
   });
 }

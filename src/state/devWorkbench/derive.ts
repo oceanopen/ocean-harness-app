@@ -1,11 +1,11 @@
 import type { ProjectIssueResponseData } from '@src/services';
 
 // devWorkbench 域派生工具。
-// dev issue = 顶级（parentId===0）且 stateCode 为 IN_PROGRESS 的 issue（左树聚合全部进行中任务）。
+// dev issue = 顶级（parentId 为空串）且 stateCode 为 IN_PROGRESS 的 issue（左树聚合全部进行中任务）。
 
 /** 判断 issue 是否进入开发工作台左树（进行中的顶级 issue）。 */
 export function isDevIssue(issue: ProjectIssueResponseData): boolean {
-  if (issue.parentId !== 0) {
+  if (issue.parentId !== '') {
     return false; // 子任务不进开发工作台树
   }
   return issue.stateCode === 'IN_PROGRESS';

@@ -7,7 +7,7 @@
 --   - 业务表统一 t_ 前缀，且表名带「所属关系」前缀：顶级 t_workspaces / t_local_repositories 保持，
 --     子表以直接父单数作前缀（t_workspace_projects / t_project_issues /
 --     t_workspace_labels / t_issue_labels / t_project_local_repositories）；
---   - 主键统一自增 INTEGER；
+--   - 主键统一自增 INTEGER（例外：t_project_issues.id 为 TEXT uuid）；
 --   - 公共字段 created_at/updated_at（DATETIME，gorm 自动维护）+ deleted_at（DATETIME，软删除 = gorm.DeletedAt）；
 --     t_local_repositories / t_project_local_repositories 无 deleted_at（物理删除）；
 --   - 唯一索引 udx_ 前缀且【全局唯一】（不带 WHERE deleted_at IS NULL）——已删除记录仍占用唯一键，
@@ -30,7 +30,7 @@ CREATE TABLE t_workspaces (
 );
 CREATE UNIQUE INDEX udx_workspaces_slug ON t_workspaces (slug);
 
--- t_workspace_projects：项目，所属 workspace。允许重名（个人场景靠 id 区分），无短码；issue 用全局自增 id 标识。
+-- t_workspace_projects：项目，所属 workspace。允许重名（个人场景靠 id 区分），无短码。
 CREATE TABLE t_workspace_projects (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id     INTEGER  NOT NULL,
@@ -43,12 +43,13 @@ CREATE TABLE t_workspace_projects (
 );
 
 -- t_project_issues：核心工作项，所属 project。
--- issue 用全局自增 id 标识（无 issue key、无独立 sequence_id）；sort_order 列表排序权重；priority 五级枚举。
+-- issue 主键 id 为 TEXT uuid 字符串（与 claude session_id 同格式，Create 时由 service 生成 uuid v7；
+-- 后续将作为工作空间运行任务目录的唯一标识）；sort_order 列表排序权重；priority 五级枚举。
 -- state_code 为固定 5 值 typed 枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，元数据见 enums.StateCatalog，
 -- 无 state_id/项目级状态行）；DONE 触发 issue.completed_at。
 -- parent_id / local_repository_id 逻辑指向他表，但不建 DB 外键。
 CREATE TABLE t_project_issues (
-    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    id                  TEXT PRIMARY KEY,
     project_id          INTEGER  NOT NULL,
     workspace_id        INTEGER  NOT NULL,
     name                TEXT     NOT NULL,
@@ -56,7 +57,7 @@ CREATE TABLE t_project_issues (
     state_code          TEXT     NOT NULL,
     priority            TEXT     NOT NULL,
     sort_order          REAL     NOT NULL DEFAULT 0,
-    parent_id           INTEGER,
+    parent_id           TEXT,
     start_date          TEXT,
     target_date         TEXT,
     completed_at        DATETIME,
@@ -84,7 +85,7 @@ CREATE TABLE t_workspace_labels (
 -- t_issue_labels：issue ↔ label 多对多关联，所属 issue。
 CREATE TABLE t_issue_labels (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    issue_id   INTEGER  NOT NULL,
+    issue_id   TEXT     NOT NULL,
     label_id   INTEGER  NOT NULL,
     created_at DATETIME NOT NULL,
     updated_at DATETIME NOT NULL,

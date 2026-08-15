@@ -5,7 +5,7 @@ import { request } from './http';
 export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
 
 export interface ProjectIssueResponseData {
-  id: number;
+  id: string; // uuid 字符串
   projectId: number;
   workspaceId: number;
   name: string;
@@ -13,7 +13,7 @@ export interface ProjectIssueResponseData {
   stateCode: StateCode; // 固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，见 stateMeta）
   priority: Priority;
   sortOrder: number;
-  parentId: number;
+  parentId: string; // 父任务 uuid（空串=顶级）
   startDate: string;
   targetDate: string;
   completedAt: string | null;
@@ -28,7 +28,7 @@ export interface ProjectIssueResponseData {
 // POST /api/tracker/projectIssue/getList 的入参。
 export interface ProjectIssueGetListRequest {
   projectId: number;
-  orderBy?: string; // id/sort_order/priority/created_at，空则 sort_order
+  orderBy?: string; // created_at/sort_order/priority，空则 sort_order
   stateCode?: StateCode;
   priority?: Priority;
   labelId?: number;
@@ -46,7 +46,7 @@ export interface ProjectIssueCreateRequest {
   startDate?: string;
   targetDate?: string;
   stateCode?: StateCode; // 空值 → 后端默认 BACKLOG
-  parentId?: number; // 0=顶级，>0=子任务（须与父同 project，仅一层）
+  parentId?: string; // 空串=顶级，非空=子任务（须与父同 project，仅一层）
   labelIds?: number[];
   localRepositoryId?: number; // 0=未关联；>0 须属于当前项目关联仓库
   repositoryBranch?: string; // 分支名；localRepositoryId=0 时后端强制清空
@@ -54,7 +54,7 @@ export interface ProjectIssueCreateRequest {
 
 // POST /api/tracker/projectIssue/update 的入参。
 export interface ProjectIssueUpdateRequest {
-  id: number;
+  id: string;
   name: string;
   description?: string;
   stateCode?: StateCode;
@@ -69,12 +69,12 @@ export interface ProjectIssueUpdateRequest {
 
 // POST /api/tracker/projectIssue/delete 的入参。
 export interface ProjectIssueDeleteRequest {
-  id: number;
+  id: string;
 }
 
 // POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）。
 export interface ProjectIssueMoveRequest {
-  id: number;
+  id: string;
   stateCode: StateCode;
   sortOrder: number;
 }

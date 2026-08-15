@@ -7,8 +7,8 @@ import { create } from 'zustand';
 // 不启用 persist：选中态仅会话内有效（与 tracker 一致，重启重新初始化）。
 // 左栏折叠态不在此处——走 appConfig 持久化（PANEL_DEV_TREE_COLLAPSED_KEY，见 DevWorkbenchPage）。
 interface DevWorkbenchSelectionState {
-  // 当前选中的开发任务 issue id + 其所属 project id（右栏据此查询 issue 详情）。
-  selectedIssueId: number | null;
+  // 当前选中的开发任务 issue id（uuid 字符串）+ 其所属 project id（右栏据此查询 issue 详情）。
+  selectedIssueId: string | null;
   selectedProjectId: number | null;
   selectIssue: (issue: ProjectIssueResponseData | null) => void;
 }

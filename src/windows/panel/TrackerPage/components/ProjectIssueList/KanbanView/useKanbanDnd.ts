@@ -46,7 +46,7 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
   // 回滚快照：在 setIssues 的 updater 内捕获更新前的最新 state，失败时整表恢复。
   const snapshotRef = useRef<ProjectIssueResponseData[] | null>(null);
   // 同卡飞行中串行化：避免快速连拖同一张卡导致 fetch 响应乱序覆盖乐观状态。
-  const inFlightRef = useRef<Set<number>>(new Set());
+  const inFlightRef = useRef<Set<string>>(new Set());
 
   return useCallback((result: DropResult) => {
     const { source, destination, draggableId } = result;
@@ -57,7 +57,8 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
       return;
     }
 
-    const issueId = Number(draggableId);
+    // issue id 为 uuid 字符串，draggableId 直接即 id（不再数值化）。
+    const issueId = draggableId;
     // 看板列 droppableId 即状态 code（source/destination 同源）。
     const sourceState = source.droppableId as StateCode;
     const destState = destination.droppableId as StateCode;

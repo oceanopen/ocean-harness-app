@@ -17,7 +17,7 @@ import {
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
-import { DEV_IID_PARAM, DEV_PID_PARAM, numParam } from '@src/windows/panel/routes';
+import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
 import { useEffect } from 'react';
 import { useMatch, useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
@@ -39,7 +39,7 @@ export default function DevWorkbenchPage() {
   const theme = useTheme();
   const [searchParams] = useSearchParams();
   const urlPid = numParam(searchParams.get(DEV_PID_PARAM));
-  const urlIid = numParam(searchParams.get(DEV_IID_PARAM));
+  const urlIid = strParam(searchParams.get(DEV_IID_PARAM)); // issue id 为 uuid 字符串
   // 仅当 devWorkbench 是当前活动路由时才同步；隐藏时保留 store 保活。
   const isActive = useMatch('/devWorkbench') != null;
 
@@ -105,7 +105,7 @@ export default function DevWorkbenchPage() {
 
       {/* 右栏：顶部操作栏 + 内容区 */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* 顶部操作栏：左栏折叠开关 + 选中 issue 的 #id + 名称 + 状态徽章 + 占位按钮（不挂 Tooltip） */}
+        {/* 顶部操作栏：左栏折叠开关 + 选中 issue 的 id 尾 8 位 + 名称 + 状态徽章 + 占位按钮（不挂 Tooltip） */}
         <Box
           sx={{
             height: 48,
@@ -129,7 +129,9 @@ export default function DevWorkbenchPage() {
           </IconButton>
           {hasSelection && issue && (
             <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
-              <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>#{issue.id}</Box>
+              <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400, fontFamily: 'monospace' }}>
+                …{issue.id.slice(-8)}
+              </Box>
               {' '}
               {issue.name}
             </Typography>

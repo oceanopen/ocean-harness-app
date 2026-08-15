@@ -15,7 +15,7 @@ const TableNameProjectIssue = "t_project_issues"
 
 // ProjectIssue mapped from table <t_project_issues>
 type ProjectIssue struct {
-	ID                int             `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
+	ID                string          `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
 	ProjectID         int             `gorm:"column:project_id;type:INTEGER;not null" json:"projectId"`
 	WorkspaceID       int             `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
 	Name              string          `gorm:"column:name;type:TEXT;not null" json:"name"`
@@ -23,7 +23,7 @@ type ProjectIssue struct {
 	StateCode         enums.StateCode `gorm:"column:state_code;type:TEXT;not null" json:"stateCode"`
 	Priority          enums.Priority  `gorm:"column:priority;type:TEXT;not null" json:"priority"`
 	SortOrder         float64         `gorm:"column:sort_order;type:REAL;not null" json:"sortOrder"`
-	ParentID          int             `gorm:"column:parent_id;type:INTEGER" json:"parentId"`
+	ParentID          string          `gorm:"column:parent_id;type:TEXT" json:"parentId"`
 	StartDate         string          `gorm:"column:start_date;type:TEXT" json:"startDate"`
 	TargetDate        string          `gorm:"column:target_date;type:TEXT" json:"targetDate"`
 	CompletedAt       *time.Time      `gorm:"column:completed_at;type:DATETIME" json:"completedAt"`

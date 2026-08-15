@@ -28,7 +28,7 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 
 	tableName := _projectIssue.projectIssueDo.TableName()
 	_projectIssue.ALL = field.NewAsterisk(tableName)
-	_projectIssue.ID = field.NewInt(tableName, "id")
+	_projectIssue.ID = field.NewString(tableName, "id")
 	_projectIssue.ProjectID = field.NewInt(tableName, "project_id")
 	_projectIssue.WorkspaceID = field.NewInt(tableName, "workspace_id")
 	_projectIssue.Name = field.NewString(tableName, "name")
@@ -36,7 +36,7 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.StateCode = field.NewField(tableName, "state_code")
 	_projectIssue.Priority = field.NewField(tableName, "priority")
 	_projectIssue.SortOrder = field.NewFloat64(tableName, "sort_order")
-	_projectIssue.ParentID = field.NewInt(tableName, "parent_id")
+	_projectIssue.ParentID = field.NewString(tableName, "parent_id")
 	_projectIssue.StartDate = field.NewString(tableName, "start_date")
 	_projectIssue.TargetDate = field.NewString(tableName, "target_date")
 	_projectIssue.CompletedAt = field.NewTime(tableName, "completed_at")
@@ -61,7 +61,7 @@ type projectIssue struct {
 	projectIssueDo projectIssueDo
 
 	ALL               field.Asterisk
-	ID                field.Int
+	ID                field.String
 	ProjectID         field.Int
 	WorkspaceID       field.Int
 	Name              field.String
@@ -69,7 +69,7 @@ type projectIssue struct {
 	StateCode         field.Field
 	Priority          field.Field
 	SortOrder         field.Float64
-	ParentID          field.Int
+	ParentID          field.String
 	StartDate         field.String
 	TargetDate        field.String
 	CompletedAt       field.Time
@@ -96,7 +96,7 @@ func (p projectIssue) As(alias string) *projectIssue {
 
 func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.ALL = field.NewAsterisk(table)
-	p.ID = field.NewInt(table, "id")
+	p.ID = field.NewString(table, "id")
 	p.ProjectID = field.NewInt(table, "project_id")
 	p.WorkspaceID = field.NewInt(table, "workspace_id")
 	p.Name = field.NewString(table, "name")
@@ -104,7 +104,7 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.StateCode = field.NewField(table, "state_code")
 	p.Priority = field.NewField(table, "priority")
 	p.SortOrder = field.NewFloat64(table, "sort_order")
-	p.ParentID = field.NewInt(table, "parent_id")
+	p.ParentID = field.NewString(table, "parent_id")
 	p.StartDate = field.NewString(table, "start_date")
 	p.TargetDate = field.NewString(table, "target_date")
 	p.CompletedAt = field.NewTime(table, "completed_at")

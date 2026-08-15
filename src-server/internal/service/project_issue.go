@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"we-claude-terminal/go-server/internal/apis"
@@ -14,7 +15,8 @@ import (
 )
 
 // ProjectIssue 对应 /api/tracker/projectIssue 命名空间下的业务逻辑。
-// issue 用全局自增 id 标识（无 issue key）；state_code 为固定 5 值枚举（无 state_id/项目级状态行）；
+// issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，Create 时生成 uuid v7（时间有序），
+// 后续作为工作空间运行任务目录标识）；state_code 为固定 5 值枚举（无 state_id/项目级状态行）；
 // completed_at 为 *time.Time（未完成=nil/完成=&time）。
 type ProjectIssue struct {
 	apis.Service
@@ -43,7 +45,7 @@ func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types
 		if len(issueLabels) == 0 {
 			return []*types.ProjectIssueResponseData{}, nil
 		}
-		ids := make([]int, 0, len(issueLabels))
+		ids := make([]string, 0, len(issueLabels))
 		for _, il := range issueLabels {
 			ids = append(ids, il.IssueID)
 		}
@@ -51,8 +53,6 @@ func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types
 	}
 
 	switch req.OrderBy {
-	case "id":
-		iq = iq.Order(q.ProjectIssue.ID.Asc())
 	case "created_at":
 		iq = iq.Order(q.ProjectIssue.CreatedAt.Desc())
 	case "priority":
@@ -93,9 +93,9 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
 
-		// parent_id：>0 时为子任务，校验父存在 + 同 project + 仅一层（父自身不能是子任务）。
+		// parent_id：非空时为子任务，校验父存在 + 同 project + 仅一层（父自身不能是子任务）。
 		parentID := req.ParentID
-		if parentID > 0 {
+		if parentID != "" {
 			parent, pe := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(parentID)).First()
 			if errors.Is(pe, gorm.ErrRecordNotFound) {
 				return errors.New("父任务不存在")
@@ -106,7 +106,7 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			if parent.ProjectID != req.ProjectID {
 				return errors.New("子任务须与父任务同项目")
 			}
-			if parent.ParentID != 0 {
+			if parent.ParentID != "" {
 				return errors.New("仅支持一层子任务")
 			}
 		}
@@ -152,6 +152,7 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 		}
 
 		created = &model.ProjectIssue{
+			ID:                uuid.Must(uuid.NewV7()).String(),
 			ProjectID:         req.ProjectID,
 			WorkspaceID:       req.WorkspaceID,
 			Name:              req.Name,
@@ -270,10 +271,10 @@ func (svc ProjectIssue) applyStateTransition(orm *gorm.DB, issue *model.ProjectI
 	return nil
 }
 
-// maybeAutoCompleteParent 状态联动：若 issue 是子任务（ParentID>0）且其全部兄弟均已完成，
+// maybeAutoCompleteParent 状态联动：若 issue 是子任务（ParentID 非空）且其全部兄弟均已完成，
 // 则把父任务流转到 DONE。仅做"全完成→完成父"单方向；父已完成/不存在时静默跳过（不阻断主流程）。orm 传 tx 以复用事务。
 func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.ProjectIssue) error {
-	if issue.ParentID <= 0 {
+	if issue.ParentID == "" {
 		return nil
 	}
 	q := query.Use(orm)
@@ -304,11 +305,11 @@ func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.Proje
 	return q.ProjectIssue.WithContext(svc.Context).Save(parent)
 }
 
-// maybeSyncChildrenState 父→子状态联动：若 issue 是父（ParentID==0）且本次 stateCode 发生变化，
+// maybeSyncChildrenState 父→子状态联动：若 issue 是父（ParentID 为空串）且本次 stateCode 发生变化，
 // 把其全部子任务的 stateCode 同步为父的新 stateCode（复用 applyStateTransition 口径写 completedAt）。
 // orm 传 tx 以复用事务。
 func (svc ProjectIssue) maybeSyncChildrenState(orm *gorm.DB, parent *model.ProjectIssue, oldStateCode enums.StateCode) error {
-	if parent.ParentID != 0 || oldStateCode == parent.StateCode {
+	if parent.ParentID != "" || oldStateCode == parent.StateCode {
 		return nil // 不是父，或状态未变（不同步）
 	}
 	q := query.Use(orm)
@@ -337,7 +338,7 @@ func (svc ProjectIssue) maybeSyncChildrenState(orm *gorm.DB, parent *model.Proje
 //   - 目标中且无任何现有记录 → 插入。
 //
 // labelIDs 在内部去重。
-func (svc ProjectIssue) syncIssueLabels(orm *gorm.DB, issueID int, labelIDs []int) error {
+func (svc ProjectIssue) syncIssueLabels(orm *gorm.DB, issueID string, labelIDs []int) error {
 	q := query.Use(orm)
 	ilq := q.IssueLabel.WithContext(svc.Context)
 
@@ -447,7 +448,7 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 			return ce
 		}
 		if len(children) > 0 {
-			childIDs := make([]int, 0, len(children))
+			childIDs := make([]string, 0, len(children))
 			for _, c := range children {
 				childIDs = append(childIDs, c.ID)
 			}
@@ -471,7 +472,7 @@ func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*typ
 	}
 	q := query.Use(svc.Orm)
 
-	issueIDs := make([]int, 0, len(issues))
+	issueIDs := make([]string, 0, len(issues))
 	for _, i := range issues {
 		issueIDs = append(issueIDs, i.ID)
 	}
@@ -480,7 +481,7 @@ func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*typ
 		return nil, err
 	}
 
-	issueToLabelIDs := make(map[int][]int, len(issues))
+	issueToLabelIDs := make(map[string][]int, len(issues))
 	labelIDSet := make(map[int]struct{})
 	for _, il := range issueLabels {
 		issueToLabelIDs[il.IssueID] = append(issueToLabelIDs[il.IssueID], il.LabelID)
