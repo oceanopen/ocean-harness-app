@@ -14,10 +14,10 @@
     "iterm2SplitDirection": "iTerm2 split direction",
     "terminalPostOpenCommand": "Run after opening terminal",
     "httpServerPort": "HTTP server port",
-    "workspaceBaseDir": "Default workspace directory"
+    "workspaceBaseDir": "Workspace base directory"
   },
   "placeholder": {
-    "workspaceBaseDir": "Not set. Pick a directory to use as the default workspace directory"
+    "workspaceBaseDir": "Not set. Pick a directory to use as the workspace base directory"
   },
   "option": {
     "followSystem": "Follow system",
