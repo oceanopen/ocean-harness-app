@@ -13,19 +13,17 @@ type WorkspaceGetInfoRequest struct {
 
 // WorkspaceCreateRequest 是 POST /api/tracker/workspace/create 的入参。
 type WorkspaceCreateRequest struct {
-	Name         string `json:"name" binding:"required,max=100"`
-	Slug         string `json:"slug" binding:"required,max=100"`
-	Description  string `json:"description" binding:"omitempty,max=500"`
-	WorktreeRoot string `json:"worktreeRoot" binding:"omitempty,max=500"`
+	Name        string `json:"name" binding:"required,max=100"`
+	Slug        string `json:"slug" binding:"required,max=100"`
+	Description string `json:"description" binding:"omitempty,max=500"`
 }
 
 // WorkspaceUpdateRequest 是 POST /api/tracker/workspace/update 的入参。
 type WorkspaceUpdateRequest struct {
-	ID           int    `json:"id" binding:"required"`
-	Name         string `json:"name" binding:"required,max=100"`
-	Slug         string `json:"slug" binding:"required,max=100"`
-	Description  string `json:"description" binding:"omitempty,max=500"`
-	WorktreeRoot string `json:"worktreeRoot" binding:"omitempty,max=500"`
+	ID          int    `json:"id" binding:"required"`
+	Name        string `json:"name" binding:"required,max=100"`
+	Slug        string `json:"slug" binding:"required,max=100"`
+	Description string `json:"description" binding:"omitempty,max=500"`
 }
 
 // WorkspaceDeleteRequest 是 POST /api/tracker/workspace/delete 的入参。

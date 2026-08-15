@@ -1,4 +1,3 @@
-mod pty;
 mod sessions;
 mod shared;
 mod terminal;
@@ -39,7 +38,6 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::http_server::http_server_status,
             shared::http_server::set_http_server_enabled,
             shared::http_server::cleanup_orphan_http_server,
-            pty::pty_stop_for_worktree,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。

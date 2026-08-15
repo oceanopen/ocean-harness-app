@@ -46,24 +46,6 @@
     }
   },
   "devWorkbench": {
-    "repo": "仓库",
-    "baseRef": "基准分支",
-    "devBranch": "开发分支",
-    "worktreePath": "worktree 路径",
-    "createAndStart": "创建 worktree 并开始",
-    "update": "更新",
-    "recordId": "记录 ID",
-    "openEditor": "编辑器打开",
-    "openTerminal": "终端打开",
-    "openFinder": "访达打开",
-    "devComplete": "开发完成",
-    "prBase": "目标分支",
-    "prHead": "源分支",
-    "prTitle": "PR 标题",
-    "openCompare": "打开 compare 页",
-    "prComplete": "合并完成",
-    "branch": "分支",
-    "cleanupComplete": "清理并完成",
     "enterDev": "进入开发"
   }
 }

@@ -18,7 +18,6 @@ import (
 var (
 	Q                      = new(Query)
 	IssueLabel             *issueLabel
-	IssueWorktree          *issueWorktree
 	LocalRepository        *localRepository
 	ProjectIssue           *projectIssue
 	ProjectLocalRepository *projectLocalRepository
@@ -30,7 +29,6 @@ var (
 func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	*Q = *Use(db, opts...)
 	IssueLabel = &Q.IssueLabel
-	IssueWorktree = &Q.IssueWorktree
 	LocalRepository = &Q.LocalRepository
 	ProjectIssue = &Q.ProjectIssue
 	ProjectLocalRepository = &Q.ProjectLocalRepository
@@ -43,7 +41,6 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 	return &Query{
 		db:                     db,
 		IssueLabel:             newIssueLabel(db, opts...),
-		IssueWorktree:          newIssueWorktree(db, opts...),
 		LocalRepository:        newLocalRepository(db, opts...),
 		ProjectIssue:           newProjectIssue(db, opts...),
 		ProjectLocalRepository: newProjectLocalRepository(db, opts...),
@@ -57,7 +54,6 @@ type Query struct {
 	db *gorm.DB
 
 	IssueLabel             issueLabel
-	IssueWorktree          issueWorktree
 	LocalRepository        localRepository
 	ProjectIssue           projectIssue
 	ProjectLocalRepository projectLocalRepository
@@ -74,7 +70,6 @@ func (q *Query) clone(db *gorm.DB) *Query {
 	return &Query{
 		db:                     db,
 		IssueLabel:             q.IssueLabel.clone(db),
-		IssueWorktree:          q.IssueWorktree.clone(db),
 		LocalRepository:        q.LocalRepository.clone(db),
 		ProjectIssue:           q.ProjectIssue.clone(db),
 		ProjectLocalRepository: q.ProjectLocalRepository.clone(db),
@@ -96,7 +91,6 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 	return &Query{
 		db:                     db,
 		IssueLabel:             q.IssueLabel.replaceDB(db),
-		IssueWorktree:          q.IssueWorktree.replaceDB(db),
 		LocalRepository:        q.LocalRepository.replaceDB(db),
 		ProjectIssue:           q.ProjectIssue.replaceDB(db),
 		ProjectLocalRepository: q.ProjectLocalRepository.replaceDB(db),
@@ -108,7 +102,6 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 
 type queryCtx struct {
 	IssueLabel             IIssueLabelDo
-	IssueWorktree          IIssueWorktreeDo
 	LocalRepository        ILocalRepositoryDo
 	ProjectIssue           IProjectIssueDo
 	ProjectLocalRepository IProjectLocalRepositoryDo
@@ -120,7 +113,6 @@ type queryCtx struct {
 func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
 		IssueLabel:             q.IssueLabel.WithContext(ctx),
-		IssueWorktree:          q.IssueWorktree.WithContext(ctx),
 		LocalRepository:        q.LocalRepository.WithContext(ctx),
 		ProjectIssue:           q.ProjectIssue.WithContext(ctx),
 		ProjectLocalRepository: q.ProjectLocalRepository.WithContext(ctx),

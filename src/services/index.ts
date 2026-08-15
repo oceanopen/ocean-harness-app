@@ -1,16 +1,6 @@
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 
-export { IssueWorktreeService } from './IssueWorktreeService';
-export type {
-  IssueWorktreeCreateWorktreeRequest,
-  IssueWorktreeGetListRequest,
-  IssueWorktreeModel,
-  IssueWorktreeRemoveWorktreeRequest,
-  IssueWorktreeStatus,
-  IssueWorktreeUpdateWorktreeRequest,
-} from './IssueWorktreeService';
-
 export { LocalRepositoryService } from './LocalRepositoryService';
 export type {
   LocalRepositoryCreateRequest,

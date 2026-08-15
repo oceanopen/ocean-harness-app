@@ -5,7 +5,6 @@ export interface WorkspaceModel {
   name: string;
   slug: string;
   description: string;
-  worktreeRoot: string;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -19,7 +18,6 @@ export interface WorkspaceCreateRequest {
   name: string;
   slug: string;
   description?: string;
-  worktreeRoot?: string;
 }
 
 // POST /api/tracker/workspace/update 的入参。
@@ -28,7 +26,6 @@ export interface WorkspaceUpdateRequest {
   name: string;
   slug: string;
   description?: string;
-  worktreeRoot?: string;
 }
 
 // POST /api/tracker/workspace/delete 的入参。

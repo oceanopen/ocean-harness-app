@@ -1,17 +1,8 @@
 import type { WorkspaceModel } from '@src/services';
-import { CloseOutlined as CloseOutlinedIcon, FolderOpen as FolderOpenIcon } from '@mui/icons-material';
-import {
-  Alert,
-  Box,
-  Button,
-  IconButton,
-  InputAdornment,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { CloseOutlined as CloseOutlinedIcon } from '@mui/icons-material';
+import { Alert, Box, Button, IconButton, TextField, Typography } from '@mui/material';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -52,7 +43,6 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
   const [name, setName] = useState(workspace?.name ?? '');
   const [slug, setSlug] = useState(workspace?.slug ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
-  const [worktreeRoot, setWorktreeRoot] = useState(workspace?.worktreeRoot ?? '');
   // 编辑模式初始即视为已触碰：改 name 不应覆盖既有 slug。
   const [slugTouched, setSlugTouched] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
@@ -72,15 +62,6 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     setError(null);
   };
 
-  const handleBrowseWorktreeRoot = async () => {
-    // directory: true 多选关闭，返回 string | null。
-    const selected = await openDialog({ directory: true, multiple: false });
-    if (typeof selected === 'string') {
-      setWorktreeRoot(selected);
-      setError(null);
-    }
-  };
-
   const canSubmit = name.trim().length > 0 && slug.trim().length > 0 && !submitting;
 
   const handleConfirm = async () => {
@@ -91,7 +72,6 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
         name: name.trim(),
         slug: slug.trim(),
         description: description.trim(),
-        worktreeRoot: worktreeRoot.trim(),
       };
       if (isEdit && workspace) {
         const updated = await updateWs.mutateAsync({ id: workspace.id, ...payload });
@@ -155,33 +135,6 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             fullWidth
             disabled={submitting}
             helperText={t('tracker:workspace.add.slugHint')}
-          />
-          <TextField
-            label={t('tracker:workspace.add.worktreeRoot')}
-            placeholder={t('tracker:workspace.add.worktreeRootPlaceholder')}
-            value={worktreeRoot}
-            onChange={(e) => {
-              setWorktreeRoot(e.target.value);
-              setError(null);
-            }}
-            fullWidth
-            disabled={submitting}
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      edge="end"
-                      onClick={handleBrowseWorktreeRoot}
-                      disabled={submitting}
-                      aria-label={t('tracker:workspace.add.browse')}
-                    >
-                      <FolderOpenIcon />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              },
-            }}
           />
           <TextField
             label={t('tracker:workspace.add.description')}
