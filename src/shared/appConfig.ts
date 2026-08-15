@@ -86,6 +86,11 @@ export const DEFAULT_PANEL_SIDEBAR_COLLAPSED = YES_NO.NO;
 export const PANEL_DEV_TREE_COLLAPSED_KEY = 'panel_dev_tree_collapsed';
 export const DEFAULT_PANEL_DEV_TREE_COLLAPSED = YES_NO.NO;
 
+// 工作空间默认根目录（新建/导入项目类流程的目录选择起点）。空串 = 未设置，消费方自行兜底。
+// 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 panel_sidebar_collapsed 先例）。
+export const WORKSPACE_BASE_DIR_KEY = 'workspace_base_dir';
+export const DEFAULT_WORKSPACE_BASE_DIR = '';
+
 // commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，
 // 保持 getAppConfig/setAppConfig 的对外 API 不变（错误时 throw）。
 export async function getAppConfig(key: string): Promise<string | null> {

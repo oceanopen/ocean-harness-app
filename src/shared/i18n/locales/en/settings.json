@@ -3,6 +3,7 @@
   "menu": {
     "appConfig": "App Settings",
     "monitorConfig": "Monitor Config",
+    "projectConfig": "Project Config",
     "serviceConfig": "Service Config",
     "about": "About"
   },
@@ -12,7 +13,11 @@
     "pollInterval": "Fallback poll interval",
     "iterm2SplitDirection": "iTerm2 split direction",
     "terminalPostOpenCommand": "Run after opening terminal",
-    "httpServerPort": "HTTP server port"
+    "httpServerPort": "HTTP server port",
+    "workspaceBaseDir": "Default workspace directory"
+  },
+  "placeholder": {
+    "workspaceBaseDir": "Not set. Pick a directory to use as the default workspace directory"
   },
   "option": {
     "followSystem": "Follow system",

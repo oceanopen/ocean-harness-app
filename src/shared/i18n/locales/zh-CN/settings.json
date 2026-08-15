@@ -3,6 +3,7 @@
   "menu": {
     "appConfig": "应用设置",
     "monitorConfig": "终端监听配置",
+    "projectConfig": "项目配置",
     "serviceConfig": "服务配置",
     "about": "关于"
   },
@@ -12,7 +13,11 @@
     "pollInterval": "兜底轮询周期",
     "iterm2SplitDirection": "iTerm2 分屏方向",
     "terminalPostOpenCommand": "打开终端后执行",
-    "httpServerPort": "HTTP 服务端口"
+    "httpServerPort": "HTTP 服务端口",
+    "workspaceBaseDir": "工作空间默认目录"
+  },
+  "placeholder": {
+    "workspaceBaseDir": "未设置，选择目录后将作为默认工作空间目录"
   },
   "option": {
     "followSystem": "跟随系统",

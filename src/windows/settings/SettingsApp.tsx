@@ -1,3 +1,4 @@
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HttpOutlinedIcon from '@mui/icons-material/HttpOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
@@ -19,9 +20,10 @@ import { useTranslation } from 'react-i18next';
 import AboutPage from './AboutPage';
 import AppConfigPage from './AppConfigPage';
 import MonitorConfigPage from './MonitorConfigPage';
+import ProjectConfigPage from './ProjectConfigPage';
 import ServiceConfigPage from './ServiceConfigPage';
 
-type MenuKey = 'appConfig' | 'monitorConfig' | 'serviceConfig' | 'about';
+type MenuKey = 'appConfig' | 'monitorConfig' | 'projectConfig' | 'serviceConfig' | 'about';
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
@@ -34,6 +36,7 @@ function SettingsApp() {
   const menuItems: { key: MenuKey; label: string; icon: React.ReactNode }[] = [
     { key: 'appConfig', label: t('settings:menu.appConfig'), icon: <SettingsOutlinedIcon /> },
     { key: 'monitorConfig', label: t('settings:menu.monitorConfig'), icon: <SensorsOutlinedIcon /> },
+    { key: 'projectConfig', label: t('settings:menu.projectConfig'), icon: <FolderOutlinedIcon /> },
     { key: 'serviceConfig', label: t('settings:menu.serviceConfig'), icon: <HttpOutlinedIcon /> },
     { key: 'about', label: t('settings:menu.about'), icon: <InfoOutlinedIcon /> },
   ];
@@ -152,6 +155,7 @@ function SettingsApp() {
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
           {activeMenu === 'appConfig' && <AppConfigPage />}
           {activeMenu === 'monitorConfig' && <MonitorConfigPage />}
+          {activeMenu === 'projectConfig' && <ProjectConfigPage />}
           {activeMenu === 'serviceConfig' && <ServiceConfigPage />}
           {activeMenu === 'about' && <AboutPage />}
         </Box>
