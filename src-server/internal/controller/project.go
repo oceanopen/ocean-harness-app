@@ -78,7 +78,7 @@ func (api Project) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Delete POST /api/tracker/project/delete：软删除项目（级联清其下 state/issue）。
+// Delete POST /api/tracker/project/delete：删除项目（级联删其下 issue 及关联）。
 func (api Project) Delete(ctx *gin.Context) {
 	req := &types.ProjectDeleteRequest{}
 	svc := service.Project{}

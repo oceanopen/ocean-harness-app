@@ -17,7 +17,7 @@ type Workspace struct {
 	apis.Service
 }
 
-// GetList 返回全部 workspace（软删自动过滤），按 id 倒序（新建在前）。
+// GetList 返回全部 workspace，按 id 倒序（新建在前）。
 func (svc Workspace) GetList(req *types.WorkspaceGetListRequest) ([]*model.Workspace, error) {
 	_ = req // 当前无筛选条件，预留
 	q := query.Use(svc.Orm)
@@ -37,31 +37,14 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 	return ws, nil
 }
 
-// Create 创建 workspace，采用「恢复式 upsert」：按 slug 含软删记录（Unscoped）查询——
-//   - 未删同 slug → 报「记录重复」；
-//   - 已删同 slug → 恢复：业务字段覆盖 + deleted_at 清空 + 保留 id/created_at（Save 自动刷新 updated_at）；
-//   - 不存在 → 正常插入。
-//
-// gorm 对含 gorm.DeletedAt 的模型自动给所有查询加 WHERE deleted_at IS NULL（只看未删行）。
-// .Unscoped() 关掉这个自动过滤，让查询/写入把已软删的行也包括进来。
+// Create 创建 workspace（slug 查重后插入；物理删除时代 slug 已删即释放，无需恢复分支）。
 func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*model.Workspace, error) {
 	q := query.Use(svc.Orm)
 	wq := q.Workspace.WithContext(svc.Context)
 
-	existing, err := wq.Unscoped().Where(q.Workspace.Slug.Eq(req.Slug)).First()
-	if err == nil {
-		if existing.DeletedAt.Valid {
-			existing.Name = req.Name
-			existing.Description = req.Description
-			existing.DeletedAt = gorm.DeletedAt{} // 清空 → deleted_at = NULL（须 Unscoped 才能改写）
-			if e := wq.Unscoped().Save(existing); e != nil {
-				return nil, e
-			}
-			return existing, nil
-		}
+	if _, err := wq.Where(q.Workspace.Slug.Eq(req.Slug)).First(); err == nil {
 		return nil, errors.New("记录重复：slug 已存在")
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 
@@ -72,7 +55,7 @@ func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*model.Workspace
 	return ws, nil
 }
 
-// Update 更新 workspace：slug 唯一性校验（排除自身、仅未删）后保存。
+// Update 更新 workspace：slug 唯一性校验（排除自身）后保存。
 func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace, error) {
 	q := query.Use(svc.Orm)
 	wq := q.Workspace.WithContext(svc.Context)
@@ -99,16 +82,37 @@ func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace
 	return ws, nil
 }
 
-// Delete 软删除 workspace（gorm 自动写 deleted_at）。先确认存在，避免静默忽略。
+// Delete 物理删除 workspace（无 DB 外键），事务内级联清理其下全部数据，避免悬挂：
+// project（deleteProjectCascade：issue + label/仓库关联 + 项目↔仓库中间表）+ 其下 label（t_workspace_labels）。
+// label 属 workspace 维度（所有项目共享），其 issue 关联已随 project 级联清理，此处删 label 本体即可。
 func (svc Workspace) Delete(req *types.WorkspaceDeleteRequest) error {
-	q := query.Use(svc.Orm)
-	wq := q.Workspace.WithContext(svc.Context)
-	if _, err := wq.Where(q.Workspace.ID.Eq(req.ID)).First(); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("工作空间不存在")
+	return svc.Orm.Transaction(func(tx *gorm.DB) error {
+		q := query.Use(tx)
+		if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(req.ID)).First(); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("工作空间不存在")
+			}
+			return err
 		}
-		return err
-	}
-	_, err := wq.Where(q.Workspace.ID.Eq(req.ID)).Delete()
-	return err
+		if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(req.ID)).Delete(); err != nil {
+			return err
+		}
+		// 级联删其下 label 本体（其 issue 关联随下方 project 级联清理）。
+		if _, e := q.WorkspaceLabel.WithContext(svc.Context).
+			Where(q.WorkspaceLabel.WorkspaceID.Eq(req.ID)).Delete(); e != nil {
+			return e
+		}
+		// 级联删其下 project（含 project 自身的全部级联）。
+		projects, pe := q.WorkspaceProject.WithContext(svc.Context).
+			Where(q.WorkspaceProject.WorkspaceID.Eq(req.ID)).Find()
+		if pe != nil {
+			return pe
+		}
+		for _, p := range projects {
+			if e := deleteProjectCascade(svc.Context, tx, p.ID); e != nil {
+				return e
+			}
+		}
+		return nil
+	})
 }

@@ -9,7 +9,6 @@ export interface WorkspaceProjectModel {
   emoji: string;
   createdAt: string;
   updatedAt: string;
-  deletedAt: string | null;
   localRepositoryIds: number[]; // 关联的本地仓库 id 列表（随 getList/create/update 返回）
 }
 

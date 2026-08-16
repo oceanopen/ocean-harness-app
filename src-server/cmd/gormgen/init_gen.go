@@ -37,9 +37,8 @@ func InitGen() {
 
 	// 字段类型覆盖（按列名全局匹配，跨表生效）。仅放所有表共用的列；
 	// is_default/is_triage/is_draft 仅个别表拥有，放各表 GenerateModelAs 的 per-model FieldType（见 gen_model_*.go）。
-	G.WithOpts(
-		gen.FieldType("deleted_at", "gorm.DeletedAt"),
-	)
+	// 注：全部表物理删除（无 deleted_at 列），无全局软删映射。
+	G.WithOpts()
 
 	// 生成文件名去 t_ 前缀，避免文件名带业务表前缀。
 	G.WithFileNameStrategy(func(tableName string) (fileName string) {

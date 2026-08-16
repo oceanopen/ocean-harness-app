@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	"gorm.io/gorm"
@@ -17,7 +18,7 @@ type Project struct {
 	apis.Service
 }
 
-// GetList 返回某 workspace 下全部 project（软删自动过滤），按 id 倒序（新建在前）。
+// GetList 返回某 workspace 下全部 project，按 id 倒序（新建在前）。
 // Preload 关联仓库中间表，装配为 localRepositoryIds 随项目一起返回（前端编辑回显/issue 仓库下拉直接用）。
 func (svc Project) GetList(req *types.ProjectGetListRequest) ([]*types.ProjectResponseData, error) {
 	q := query.Use(svc.Orm)
@@ -132,7 +133,7 @@ func (svc Project) Update(req *types.ProjectUpdateRequest) (*types.ProjectRespon
 		if len(unbound) == 0 {
 			return nil
 		}
-		// 该项目的 issue（软删自动过滤），按解绑仓库删其关联记录。
+		// 该项目的 issue，按解绑仓库删其关联记录。
 		projIssues, e := q.ProjectIssue.WithContext(svc.Context).
 			Where(q.ProjectIssue.ProjectID.Eq(req.ID)).Find()
 		if e != nil {
@@ -167,12 +168,11 @@ func repoIDsToSet(repoIDs []int) map[int]struct{} {
 	return set
 }
 
-// Delete 软删除 project（无 DB 外键），事务内级联软删其下 issue + 硬删项目↔仓库中间表记录。
-// issue 下挂的 t_issue_labels 不在此清理，留给 label/issue 模块统一处理（本期该表无数据）。
+// Delete 物理删除 project（无 DB 外键），事务内级联清理其下全部数据（deleteProjectCascade）。
 func (svc Project) Delete(req *types.ProjectDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
-		// 1) 确认 project 存在（软删自动过滤已删行）。
+		// 1) 确认 project 存在。
 		if _, e := q.WorkspaceProject.WithContext(svc.Context).
 			Where(q.WorkspaceProject.ID.Eq(req.ID)).First(); e != nil {
 			if errors.Is(e, gorm.ErrRecordNotFound) {
@@ -180,23 +180,50 @@ func (svc Project) Delete(req *types.ProjectDeleteRequest) error {
 			}
 			return e
 		}
-		// 2) 软删 project（gorm 自动写 deleted_at）。
-		if _, e := q.WorkspaceProject.WithContext(svc.Context).
-			Where(q.WorkspaceProject.ID.Eq(req.ID)).Delete(); e != nil {
-			return e
-		}
-		// 3) 级联软删其下 issue。
-		if _, e := q.ProjectIssue.WithContext(svc.Context).
-			Where(q.ProjectIssue.ProjectID.Eq(req.ID)).Delete(); e != nil {
-			return e
-		}
-		// 4) 硬删项目↔仓库中间表记录（中间表无 deleted_at）。
-		if _, e := q.ProjectLocalRepository.WithContext(svc.Context).
-			Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(req.ID)).Delete(); e != nil {
-			return e
-		}
-		return nil
+		// 2) 级联删除（project 本体 + issue + 关联表 + 中间表）。
+		return deleteProjectCascade(svc.Context, tx, req.ID)
 	})
+}
+
+// deleteProjectCascade 物理删除 project 及其全部下挂数据（无 DB 外键，service 层手动级联）：
+// project 本体 → 其下 issue → 这些 issue 的 t_issue_labels / t_issue_local_repositories 关联
+// → 项目↔仓库中间表 t_project_local_repositories。ctx 为调用方 service 的 Context；orm 传 tx 复用事务。
+// 供 Project.Delete 与 Workspace.Delete（级联删其下 project）共用。
+func deleteProjectCascade(ctx context.Context, orm *gorm.DB, projectID int) error {
+	q := query.Use(orm)
+	// 1) 删 project 本体。
+	if _, e := q.WorkspaceProject.WithContext(ctx).
+		Where(q.WorkspaceProject.ID.Eq(projectID)).Delete(); e != nil {
+		return e
+	}
+	// 2) 查其下 issue，删 issue 本体 + 两种关联。
+	issues, e := q.ProjectIssue.WithContext(ctx).
+		Where(q.ProjectIssue.ProjectID.Eq(projectID)).Find()
+	if e != nil {
+		return e
+	}
+	if len(issues) > 0 {
+		issueIDs := make([]string, 0, len(issues))
+		for _, i := range issues {
+			issueIDs = append(issueIDs, i.ID)
+		}
+		if _, e := q.ProjectIssue.WithContext(ctx).
+			Where(q.ProjectIssue.ID.In(issueIDs...)).Delete(); e != nil {
+			return e
+		}
+		if _, e := q.IssueLabel.WithContext(ctx).
+			Where(q.IssueLabel.IssueID.In(issueIDs...)).Delete(); e != nil {
+			return e
+		}
+		if _, e := q.IssueLocalRepository.WithContext(ctx).
+			Where(q.IssueLocalRepository.IssueID.In(issueIDs...)).Delete(); e != nil {
+			return e
+		}
+	}
+	// 3) 删项目↔仓库中间表记录。
+	_, e = q.ProjectLocalRepository.WithContext(ctx).
+		Where(q.ProjectLocalRepository.WorkspaceProjectID.Eq(projectID)).Delete()
+	return e
 }
 
 // replaceAssociatedRepositories 全量替换项目的关联仓库：先删该项目全部中间表记录，再插入 repoIDs。

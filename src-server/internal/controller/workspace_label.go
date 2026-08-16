@@ -78,7 +78,7 @@ func (api WorkspaceLabel) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Delete POST /api/tracker/workspaceLabel/delete：软删除标签（级联清 issue 关联）。
+// Delete POST /api/tracker/workspaceLabel/delete：删除标签（级联清 issue 关联）。
 func (api WorkspaceLabel) Delete(ctx *gin.Context) {
 	req := &types.WorkspaceLabelDeleteRequest{}
 	svc := service.WorkspaceLabel{}

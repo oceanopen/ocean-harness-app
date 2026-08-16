@@ -7,7 +7,6 @@ export interface WorkspaceModel {
   description: string;
   createdAt: string;
   updatedAt: string;
-  deletedAt: string | null;
 }
 
 // POST /api/tracker/workspace/getList 的入参（当前无参，预留筛选位）。

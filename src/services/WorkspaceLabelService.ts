@@ -9,7 +9,6 @@ export interface WorkspaceLabelModel {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
-  deletedAt: string | null;
 }
 
 // POST /api/tracker/workspaceLabel/getList 的入参（按 workspaceId 查全部）。

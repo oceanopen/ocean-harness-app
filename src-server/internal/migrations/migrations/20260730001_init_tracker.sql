@@ -9,10 +9,9 @@
 --     子表以直接父单数作前缀（t_workspace_projects / t_project_issues /
 --     t_workspace_labels / t_issue_labels / t_project_local_repositories）；
 --   - 主键统一自增 INTEGER（例外：t_project_issues.id 为 TEXT uuid）；
---   - 公共字段 created_at/updated_at（DATETIME，gorm 自动维护）+ deleted_at（DATETIME，软删除 = gorm.DeletedAt）；
---     t_local_repositories / t_project_local_repositories 无 deleted_at（物理删除）；
---   - 唯一索引 udx_ 前缀且【全局唯一】（不带 WHERE deleted_at IS NULL）——已删除记录仍占用唯一键，
---     配合 service 层「恢复式 upsert」；命名 udx_{表名去t_}_{列名...}（SQLite 索引名 schema 级全局唯一，带表名段避免跨表重名）；
+--   - 公共字段 created_at/updated_at（DATETIME，gorm 自动维护）；【全部表物理删除】（单用户本地个人数据，
+--     无恢复需求，Delete 即 DELETE）；唯一索引随行删除自然释放；
+--   - 唯一索引 udx_ 前缀；命名 udx_{表名去t_}_{列名...}（SQLite 索引名 schema 级全局唯一，带表名段避免跨表重名）；
 --   - 普通索引：数据量较小，本期暂不建，后续按查询热点按 idx_{表名去t_}_{列名} 追加；
 --   - 【无 DB 外键约束】表间不建 FOREIGN KEY，跨表关联一律通过 SQL JOIN 或应用层组装查询；
 --     数据级联清理（如删 workspace 连带清其下 project/issue/label）由 service 层手动处理；
@@ -26,8 +25,7 @@ CREATE TABLE t_workspaces (
     slug          TEXT     NOT NULL,
     description   TEXT     NOT NULL DEFAULT '',
     created_at    DATETIME NOT NULL,
-    updated_at    DATETIME NOT NULL,
-    deleted_at    DATETIME
+    updated_at    DATETIME NOT NULL
 );
 CREATE UNIQUE INDEX udx_workspaces_slug ON t_workspaces (slug);
 
@@ -39,8 +37,7 @@ CREATE TABLE t_workspace_projects (
     description      TEXT     NOT NULL DEFAULT '',
     emoji            TEXT     NOT NULL DEFAULT '',
     created_at       DATETIME NOT NULL,
-    updated_at       DATETIME NOT NULL,
-    deleted_at       DATETIME
+    updated_at       DATETIME NOT NULL
 );
 
 -- t_project_issues：核心工作项，所属 project。
@@ -65,8 +62,7 @@ CREATE TABLE t_project_issues (
     completed_at        DATETIME,
     is_draft            TEXT     NOT NULL,
     created_at          DATETIME NOT NULL,
-    updated_at          DATETIME NOT NULL,
-    deleted_at          DATETIME
+    updated_at          DATETIME NOT NULL
 );
 
 -- t_workspace_labels：标签，所属 workspace；所有项目共享一套通用标签（无 project 级归属）。
@@ -78,8 +74,7 @@ CREATE TABLE t_workspace_labels (
     description  TEXT     NOT NULL DEFAULT '',
     sort_order   REAL     NOT NULL DEFAULT 0,
     created_at   DATETIME NOT NULL,
-    updated_at   DATETIME NOT NULL,
-    deleted_at   DATETIME
+    updated_at   DATETIME NOT NULL
 );
 
 -- t_issue_labels：issue ↔ label 多对多关联，所属 issue。
@@ -88,14 +83,12 @@ CREATE TABLE t_issue_labels (
     issue_id   TEXT     NOT NULL,
     label_id   INTEGER  NOT NULL,
     created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL,
-    deleted_at DATETIME
+    updated_at DATETIME NOT NULL
 );
 CREATE UNIQUE INDEX udx_issue_labels_issue_id_label_id ON t_issue_labels (issue_id, label_id);
 
 -- t_local_repositories：本地仓库（顶层资源，无 workspace 归属）。
 -- sub_dir_list 存 JSON 文本（monorepo 子目录列表），由 service 层负责 []RepoSubDir ↔ JSON 序列化。
--- 无 deleted_at：随移除物理删除（见 local_repository service.Delete）。
 CREATE TABLE t_local_repositories (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     name                TEXT     NOT NULL,
@@ -112,8 +105,7 @@ CREATE TABLE t_local_repositories (
 );
 CREATE UNIQUE INDEX udx_local_repositories_local_dir ON t_local_repositories (local_dir);
 
--- t_project_local_repositories：项目 ↔ 本地仓库 多对多中间表。
--- 无 deleted_at：随项目/仓库物理删除而硬删关联记录（见 service 层事务级联清理）。
+-- t_project_local_repositories：项目 ↔ 本地仓库 多对多中间表（随项目/仓库删除由 service 层事务级联清理）。
 CREATE TABLE t_project_local_repositories (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_project_id INTEGER NOT NULL,
@@ -125,8 +117,8 @@ CREATE UNIQUE INDEX udx_project_local_repositories_pid_lrid
     ON t_project_local_repositories (workspace_project_id, local_repository_id);
 
 -- t_issue_local_repositories：issue ↔ 本地仓库+分支 多对多关联表（issue 可关联多个仓库，每仓库至多一条并带分支名）。
--- repository_branch 为分支名文本引用（freeSolo 可手输，不校验存在性）；无 DB 外键。
--- 无 deleted_at：随 issue 软删/项目解绑仓库/仓库删除，由 service 层事务级联硬删（见各 service 注释）。
+-- repository_branch 为分支名文本引用（freeSolo 可手输，不校验存在性）；无 DB 外键；
+-- 随 issue 删除/项目解绑仓库/仓库删除，由 service 层事务级联清理（见各 service 注释）。
 CREATE TABLE t_issue_local_repositories (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     issue_id             TEXT     NOT NULL,

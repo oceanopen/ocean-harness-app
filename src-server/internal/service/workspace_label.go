@@ -18,7 +18,7 @@ type WorkspaceLabel struct {
 	apis.Service
 }
 
-// GetList 返回某 workspace 下全部 label（软删自动过滤），按 sort_order、id 升序。
+// GetList 返回某 workspace 下全部 label，按 sort_order、id 升序。
 func (svc WorkspaceLabel) GetList(req *types.WorkspaceLabelGetListRequest) ([]*model.WorkspaceLabel, error) {
 	q := query.Use(svc.Orm)
 	return q.WorkspaceLabel.WithContext(svc.Context).
@@ -88,11 +88,11 @@ func (svc WorkspaceLabel) Update(req *types.WorkspaceLabelUpdateRequest) (*model
 	return l, nil
 }
 
-// Delete 软删除 label（无 DB 外键），事务内级联软删 t_issue_labels 里该 label 的全部关联，避免悬挂。
+// Delete 物理删除 label（无 DB 外键），事务内级联删 t_issue_labels 里该 label 的全部关联，避免悬挂。
 func (svc WorkspaceLabel) Delete(req *types.WorkspaceLabelDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
-		// 1) 确认 label 存在（软删自动过滤已删行）。
+		// 1) 确认 label 存在。
 		if _, e := q.WorkspaceLabel.WithContext(svc.Context).
 			Where(q.WorkspaceLabel.ID.Eq(req.ID)).First(); e != nil {
 			if errors.Is(e, gorm.ErrRecordNotFound) {
@@ -100,12 +100,12 @@ func (svc WorkspaceLabel) Delete(req *types.WorkspaceLabelDeleteRequest) error {
 			}
 			return e
 		}
-		// 2) 软删 label。
+		// 2) 物理删除 label。
 		if _, e := q.WorkspaceLabel.WithContext(svc.Context).
 			Where(q.WorkspaceLabel.ID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 3) 级联软删该 label 的 issue 关联（限定 labelId）。
+		// 3) 级联删该 label 的 issue 关联（限定 labelId）。
 		if _, e := q.IssueLabel.WithContext(svc.Context).
 			Where(q.IssueLabel.LabelID.Eq(req.ID)).Delete(); e != nil {
 			return e

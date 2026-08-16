@@ -280,7 +280,7 @@ func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.Proje
 		return nil
 	}
 	q := query.Use(orm)
-	// 兄弟（含自身）：同 parent_id、未软删；任一未完成则不联动。
+	// 兄弟（含自身）：同 parent_id；任一未完成则不联动。
 	siblings, e := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ParentID.Eq(issue.ParentID)).Find()
 	if e != nil {
 		return e
@@ -334,10 +334,9 @@ func (svc ProjectIssue) maybeSyncChildrenState(orm *gorm.DB, parent *model.Proje
 }
 
 // syncIssueLabels 全量同步某 issue 的 label 关联为 labelIDs（事务内调用，orm 传 tx）。
-// diff 策略（保留软删记录，与原 toggleIssue 恢复式语义一致）：
-//   - 现有(含软删)且在目标中 + 已软删 → 恢复（清 deleted_at）；
-//   - 现有(未删)且不在目标中 → 软删；
-//   - 目标中且无任何现有记录 → 插入。
+// 全表物理删除（无软删恢复语义），diff 退化为两分支：
+//   - 现有且不在目标中 → 删除；
+//   - 目标中且无现有记录 → 插入。
 //
 // labelIDs 在内部去重。
 func (svc ProjectIssue) syncIssueLabels(orm *gorm.DB, issueID string, labelIDs []int) error {
@@ -349,22 +348,15 @@ func (svc ProjectIssue) syncIssueLabels(orm *gorm.DB, issueID string, labelIDs [
 		target[id] = struct{}{}
 	}
 
-	existings, err := ilq.Unscoped().Where(q.IssueLabel.IssueID.Eq(issueID)).Find()
+	existings, err := ilq.Where(q.IssueLabel.IssueID.Eq(issueID)).Find()
 	if err != nil {
 		return err
 	}
 	existingSet := make(map[int]struct{}, len(existings))
 	for _, il := range existings {
 		existingSet[il.LabelID] = struct{}{}
-		_, want := target[il.LabelID]
-		switch {
-		case want && il.DeletedAt.Valid:
-			il.DeletedAt = gorm.DeletedAt{} // 恢复
-			if e := ilq.Unscoped().Save(il); e != nil {
-				return e
-			}
-		case !want && !il.DeletedAt.Valid:
-			if _, e := ilq.Where(q.IssueLabel.ID.Eq(il.ID)).Delete(); e != nil { // 软删
+		if _, want := target[il.LabelID]; !want {
+			if _, e := ilq.Where(q.IssueLabel.ID.Eq(il.ID)).Delete(); e != nil {
 				return e
 			}
 		}
@@ -428,8 +420,8 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 	return list[0], nil
 }
 
-// Delete 软删除 issue（无 DB 外键），事务内级联：软删其 t_issue_labels 关联、硬删其 t_issue_local_repositories
-// 关联（无 deleted_at）与子任务（+ 子任务的 label / 仓库分支关联），避免悬挂。
+// Delete 物理删除 issue（无 DB 外键），事务内级联：删其 t_issue_labels / t_issue_local_repositories
+// 两种关联与子任务（+ 子任务的 label / 仓库分支关联），避免悬挂。
 func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
@@ -448,7 +440,7 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 		if _, e := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 级联软删子任务（parent_id 指向本 issue）+ 子任务的 label / 仓库分支关联。
+		// 级联删子任务（parent_id 指向本 issue）+ 子任务的 label / 仓库分支关联。
 		children, ce := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ParentID.Eq(req.ID)).Find()
 		if ce != nil {
 			return ce
@@ -545,7 +537,7 @@ func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*typ
 }
 
 // syncIssueRepos 全量同步某 issue 的关联仓库+分支为 list（写 t_issue_local_repositories，事务内调用，orm 传 tx）。
-// 关联表无 deleted_at（硬删）：先删该 issue 全部关联再插入（列表经 validateIssueRepoList 已校验，量小无需 diff）。
+// 先删该 issue 全部关联再插入（列表经 validateIssueRepoList 已校验，量小无需 diff）。
 func (svc ProjectIssue) syncIssueRepos(orm *gorm.DB, issueID string, list []types.IssueRepositoryBranch) error {
 	q := query.Use(orm)
 	if _, e := q.IssueLocalRepository.WithContext(svc.Context).

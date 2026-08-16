@@ -206,11 +206,11 @@ import (
 )
 
 q := query.Use(global.SqliteDB)
-// 建表后 id 自动回填；软删除自动过滤 deleted_at
+// 建表后 id 自动回填；全部表物理删除（无 deleted_at）
 if err := q.Workspace.WithContext(ctx).Create(&model.Workspace{Name: "个人", Slug: "personal"}); err != nil { ... }
 ws, err := q.Workspace.WithContext(ctx).Where(q.Workspace.Slug.Eq("personal")).First()
 ```
 
 > nullable 列（`parent_id`/`completed_at`/`start_date`/`target_date` 等）未开 `FieldNullable`，按零值表「未设置」（id 自增从 1 起，0 即未设置；时间用 `IsZero()`）。清空（如 issue 流转出 completed 时 `completed_at`）由 service 层显式 `Update("completed_at", nil)` 处理。
 
-**依赖版本：** `gorm.io/gen` 生态目前锁定 `gorm v1.25.x`（不支持 gorm v1.31）。`go.mod` 固定 `gorm v1.25.12` + `gen v0.3.28` + `dbresolver v1.5.3`（v0.3.28 修复了 sqlite 下 `ScanType` 为空导致生成期 panic 的问题）。`is_*` 列映射为 `bool`、`deleted_at` 映射为 `gorm.DeletedAt`、JSON 标签为小驼峰。
+**依赖版本：** `gorm.io/gen` 生态目前锁定 `gorm v1.25.x`（不支持 gorm v1.31）。`go.mod` 固定 `gorm v1.25.12` + `gen v0.3.28` + `dbresolver v1.5.3`（v0.3.28 修复了 sqlite 下 `ScanType` 为空导致生成期 panic 的问题）。`is_*` 列映射为 `bool`、JSON 标签为小驼峰（全部表物理删除，无 deleted_at 列）。

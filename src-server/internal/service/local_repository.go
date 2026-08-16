@@ -140,7 +140,7 @@ func (svc LocalRepository) Update(req *types.LocalRepositoryUpdateRequest) (type
 	return types.LocalRepositoryResponseData{}.FromModel(r), nil
 }
 
-// Delete 物理删除仓库（无 deleted_at，释放 localDir 供重新添加）。
+// Delete 物理删除仓库（释放 localDir 供重新添加）。
 // 事务内级联清理（避免悬挂引用）：硬删中间表 t_project_local_repositories 关联记录 +
 // 硬删 issue↔仓库关联表 t_issue_local_repositories 中指向该仓库的记录。
 func (svc LocalRepository) Delete(req *types.LocalRepositoryDeleteRequest) error {

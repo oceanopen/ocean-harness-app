@@ -36,7 +36,6 @@ func newWorkspaceLabel(db *gorm.DB, opts ...gen.DOOption) workspaceLabel {
 	_workspaceLabel.SortOrder = field.NewFloat64(tableName, "sort_order")
 	_workspaceLabel.CreatedAt = field.NewTime(tableName, "created_at")
 	_workspaceLabel.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_workspaceLabel.DeletedAt = field.NewField(tableName, "deleted_at")
 
 	_workspaceLabel.fillFieldMap()
 
@@ -55,7 +54,6 @@ type workspaceLabel struct {
 	SortOrder   field.Float64
 	CreatedAt   field.Time
 	UpdatedAt   field.Time
-	DeletedAt   field.Field
 
 	fieldMap map[string]field.Expr
 }
@@ -80,7 +78,6 @@ func (w *workspaceLabel) updateTableName(table string) *workspaceLabel {
 	w.SortOrder = field.NewFloat64(table, "sort_order")
 	w.CreatedAt = field.NewTime(table, "created_at")
 	w.UpdatedAt = field.NewTime(table, "updated_at")
-	w.DeletedAt = field.NewField(table, "deleted_at")
 
 	w.fillFieldMap()
 
@@ -109,7 +106,7 @@ func (w *workspaceLabel) GetFieldByName(fieldName string) (field.OrderExpr, bool
 }
 
 func (w *workspaceLabel) fillFieldMap() {
-	w.fieldMap = make(map[string]field.Expr, 9)
+	w.fieldMap = make(map[string]field.Expr, 8)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["workspace_id"] = w.WorkspaceID
 	w.fieldMap["name"] = w.Name
@@ -118,7 +115,6 @@ func (w *workspaceLabel) fillFieldMap() {
 	w.fieldMap["sort_order"] = w.SortOrder
 	w.fieldMap["created_at"] = w.CreatedAt
 	w.fieldMap["updated_at"] = w.UpdatedAt
-	w.fieldMap["deleted_at"] = w.DeletedAt
 }
 
 func (w workspaceLabel) clone(db *gorm.DB) workspaceLabel {

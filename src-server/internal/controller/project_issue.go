@@ -94,7 +94,7 @@ func (api ProjectIssue) Move(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Delete POST /api/tracker/projectIssue/delete：软删除 issue（级联清其 label 关联）。
+// Delete POST /api/tracker/projectIssue/delete：删除 issue（级联清其 label/仓库关联与子任务）。
 func (api ProjectIssue) Delete(ctx *gin.Context) {
 	req := &types.ProjectIssueDeleteRequest{}
 	svc := service.ProjectIssue{}

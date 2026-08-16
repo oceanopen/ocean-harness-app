@@ -6,8 +6,6 @@ package model
 
 import (
 	"time"
-
-	"gorm.io/gorm"
 )
 
 const TableNameWorkspace = "t_workspaces"
@@ -20,7 +18,6 @@ type Workspace struct {
 	Description          string              `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
 	CreatedAt            time.Time           `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt            time.Time           `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	DeletedAt            gorm.DeletedAt      `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
 	WorkspaceProjectList []*WorkspaceProject `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceProjectList,omitempty"`
 	WorkspaceLabelList   []*WorkspaceLabel   `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceLabelList,omitempty"`
 }

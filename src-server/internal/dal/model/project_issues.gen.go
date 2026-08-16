@@ -7,8 +7,6 @@ package model
 import (
 	"time"
 	"we-claude-terminal/go-server/internal/dal/enums"
-
-	"gorm.io/gorm"
 )
 
 const TableNameProjectIssue = "t_project_issues"
@@ -30,7 +28,6 @@ type ProjectIssue struct {
 	IsDraft                  enums.YesNo             `gorm:"column:is_draft;type:TEXT;not null" json:"isDraft"`
 	CreatedAt                time.Time               `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt                time.Time               `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	DeletedAt                gorm.DeletedAt          `gorm:"column:deleted_at;type:DATETIME" json:"deletedAt"`
 	IssueLabelList           []*IssueLabel           `gorm:"foreignKey:IssueID;references:ID" json:"issueLabelList,omitempty"`
 	IssueLocalRepositoryList []*IssueLocalRepository `gorm:"foreignKey:IssueID;references:ID" json:"issueLocalRepositoryList,omitempty"`
 }

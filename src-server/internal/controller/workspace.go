@@ -46,7 +46,7 @@ func (api Workspace) GetInfo(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Create POST /api/tracker/workspace/create：创建工作空间（恢复式 upsert）。
+// Create POST /api/tracker/workspace/create：创建工作空间（slug 查重后插入）。
 func (api Workspace) Create(ctx *gin.Context) {
 	req := &types.WorkspaceCreateRequest{}
 	svc := service.Workspace{}
@@ -78,7 +78,7 @@ func (api Workspace) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Delete POST /api/tracker/workspace/delete：软删除工作空间。
+// Delete POST /api/tracker/workspace/delete：删除工作空间（级联删其下 project 及关联）。
 func (api Workspace) Delete(ctx *gin.Context) {
 	req := &types.WorkspaceDeleteRequest{}
 	svc := service.Workspace{}

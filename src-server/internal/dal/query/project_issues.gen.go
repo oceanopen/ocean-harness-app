@@ -43,7 +43,6 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.IsDraft = field.NewField(tableName, "is_draft")
 	_projectIssue.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectIssue.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_projectIssue.DeletedAt = field.NewField(tableName, "deleted_at")
 	_projectIssue.IssueLabelList = projectIssueHasManyIssueLabelList{
 		db: db.Session(&gorm.Session{}),
 
@@ -80,7 +79,6 @@ type projectIssue struct {
 	IsDraft        field.Field
 	CreatedAt      field.Time
 	UpdatedAt      field.Time
-	DeletedAt      field.Field
 	IssueLabelList projectIssueHasManyIssueLabelList
 
 	IssueLocalRepositoryList projectIssueHasManyIssueLocalRepositoryList
@@ -115,7 +113,6 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.IsDraft = field.NewField(table, "is_draft")
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")
-	p.DeletedAt = field.NewField(table, "deleted_at")
 
 	p.fillFieldMap()
 
@@ -144,7 +141,7 @@ func (p *projectIssue) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (p *projectIssue) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 18)
+	p.fieldMap = make(map[string]field.Expr, 17)
 	p.fieldMap["id"] = p.ID
 	p.fieldMap["project_id"] = p.ProjectID
 	p.fieldMap["workspace_id"] = p.WorkspaceID
@@ -160,7 +157,6 @@ func (p *projectIssue) fillFieldMap() {
 	p.fieldMap["is_draft"] = p.IsDraft
 	p.fieldMap["created_at"] = p.CreatedAt
 	p.fieldMap["updated_at"] = p.UpdatedAt
-	p.fieldMap["deleted_at"] = p.DeletedAt
 
 }
 

@@ -33,7 +33,6 @@ func newIssueLabel(db *gorm.DB, opts ...gen.DOOption) issueLabel {
 	_issueLabel.LabelID = field.NewInt(tableName, "label_id")
 	_issueLabel.CreatedAt = field.NewTime(tableName, "created_at")
 	_issueLabel.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_issueLabel.DeletedAt = field.NewField(tableName, "deleted_at")
 
 	_issueLabel.fillFieldMap()
 
@@ -49,7 +48,6 @@ type issueLabel struct {
 	LabelID   field.Int
 	CreatedAt field.Time
 	UpdatedAt field.Time
-	DeletedAt field.Field
 
 	fieldMap map[string]field.Expr
 }
@@ -71,7 +69,6 @@ func (i *issueLabel) updateTableName(table string) *issueLabel {
 	i.LabelID = field.NewInt(table, "label_id")
 	i.CreatedAt = field.NewTime(table, "created_at")
 	i.UpdatedAt = field.NewTime(table, "updated_at")
-	i.DeletedAt = field.NewField(table, "deleted_at")
 
 	i.fillFieldMap()
 
@@ -98,13 +95,12 @@ func (i *issueLabel) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (i *issueLabel) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 6)
+	i.fieldMap = make(map[string]field.Expr, 5)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["issue_id"] = i.IssueID
 	i.fieldMap["label_id"] = i.LabelID
 	i.fieldMap["created_at"] = i.CreatedAt
 	i.fieldMap["updated_at"] = i.UpdatedAt
-	i.fieldMap["deleted_at"] = i.DeletedAt
 }
 
 func (i issueLabel) clone(db *gorm.DB) issueLabel {

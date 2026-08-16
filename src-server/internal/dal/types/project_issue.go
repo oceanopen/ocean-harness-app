@@ -51,7 +51,7 @@ type ProjectIssueCreateRequest struct {
 
 // ProjectIssueUpdateRequest 是 POST /api/tracker/projectIssue/update 的入参。
 // stateCode 变化触发 completed_at 流转：DONE→写 now，否则清 NULL。
-// labelIds 全量覆盖该 issue 的 label 关联（事务内 diff：恢复已删/软删多余/插入新增）。
+// labelIds 全量覆盖该 issue 的 label 关联（事务内 diff：删多余/插入新增）。
 // 不变更 projectId/workspaceId/sortOrder（sortOrder 后续拖拽迭代维护）。
 type ProjectIssueUpdateRequest struct {
 	ID                   string                  `json:"id" binding:"required"`

@@ -35,7 +35,6 @@ func newWorkspaceProject(db *gorm.DB, opts ...gen.DOOption) workspaceProject {
 	_workspaceProject.Emoji = field.NewString(tableName, "emoji")
 	_workspaceProject.CreatedAt = field.NewTime(tableName, "created_at")
 	_workspaceProject.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_workspaceProject.DeletedAt = field.NewField(tableName, "deleted_at")
 	_workspaceProject.ProjectIssueList = workspaceProjectHasManyProjectIssueList{
 		db: db.Session(&gorm.Session{}),
 
@@ -74,7 +73,6 @@ type workspaceProject struct {
 	Emoji            field.String
 	CreatedAt        field.Time
 	UpdatedAt        field.Time
-	DeletedAt        field.Field
 	ProjectIssueList workspaceProjectHasManyProjectIssueList
 
 	ProjectLocalRepositoryList workspaceProjectHasManyProjectLocalRepositoryList
@@ -101,7 +99,6 @@ func (w *workspaceProject) updateTableName(table string) *workspaceProject {
 	w.Emoji = field.NewString(table, "emoji")
 	w.CreatedAt = field.NewTime(table, "created_at")
 	w.UpdatedAt = field.NewTime(table, "updated_at")
-	w.DeletedAt = field.NewField(table, "deleted_at")
 
 	w.fillFieldMap()
 
@@ -130,7 +127,7 @@ func (w *workspaceProject) GetFieldByName(fieldName string) (field.OrderExpr, bo
 }
 
 func (w *workspaceProject) fillFieldMap() {
-	w.fieldMap = make(map[string]field.Expr, 10)
+	w.fieldMap = make(map[string]field.Expr, 9)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["workspace_id"] = w.WorkspaceID
 	w.fieldMap["name"] = w.Name
@@ -138,7 +135,6 @@ func (w *workspaceProject) fillFieldMap() {
 	w.fieldMap["emoji"] = w.Emoji
 	w.fieldMap["created_at"] = w.CreatedAt
 	w.fieldMap["updated_at"] = w.UpdatedAt
-	w.fieldMap["deleted_at"] = w.DeletedAt
 
 }
 
