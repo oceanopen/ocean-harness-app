@@ -61,6 +61,18 @@ pub struct PtySpawned {
     pub fresh: bool,
 }
 
+/// pty_reattach 成功荷载：scrollback 随返回值一次性送达，实时流走已换装的 Channel。
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PtyReattached {
+    /// 会话锚点 = issue uuid。
+    pub issue_id: String,
+    /// 会话是否已退出（true = 前端直接展示终态 + 重开按钮，不期待实时流）。
+    pub exited: bool,
+    /// ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。
+    pub scrollback: String,
+}
+
 /// PTY 后端抽象。本期仅 LocalPtyProvider；远程 provider（SSH）为后续扩展预留。
 pub trait PtyProvider: Send + Sync {
     /// 启动会话（幂等）：未退出会话复用并换装 listener；已退出会话移除重起（重开语义）。
@@ -72,9 +84,15 @@ pub trait PtyProvider: Send + Sync {
     fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String>;
     /// 关闭单个会话（kill shell + 移出 store）。
     fn shutdown(&self, id: &str) -> Result<(), String>;
-    /// 替换会话 listener（reattach 用，任务 3 经命令层暴露）。
-    #[allow(dead_code)]
-    fn set_listener(&self, id: &str, listener: Channel<PtyEvent>) -> Result<(), String>;
+    /// 会话是否存在（含已退出；前端挂载时探测，存在则 reattach，不存在才 spawn）。
+    fn exists(&self, id: &str) -> bool;
+    /// 重挂会话：ring 快照随返回值送达 + 换装 listener 从快照点续流。
+    /// 已退出会话照常返回（exited=true + 退出前 scrollback）；不存在返回 None。
+    fn reattach(
+        &self,
+        id: &str,
+        listener: Channel<PtyEvent>,
+    ) -> Result<Option<PtyReattached>, String>;
     /// 列出全部会话快照。
     fn list(&self) -> Vec<PtySessionInfo>;
     /// 从 store 取会话引用（reattach/list 内部用，不出命令边界）。

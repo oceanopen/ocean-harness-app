@@ -165,12 +165,13 @@ src/windows/panel/DevWorkbenchPage/components/EmbeddedTerminal/
 - **验证**：`pnpm gen:bindings` 无 panic、bindings.ts 含新命令；临时目录 spawn shell 打字有回显、resize 生效；退出 app 无孤儿 shell 进程。
 - **落地记录**：Channel spike 通过（tauri-specta rc.25 原生支持参数 `Channel<T>`，含 `mapChannel` 反序列化注入），emit 备选未采用。输出/退出走单 `Channel<PtyEvent>`（`{kind:"data",data}`/`{kind:"exit"}`，UTF-8 边界切分见 session.rs `Utf8Tail`）；命令注册 5 个（spawn/write/resize/shutdown/list_sessions），exists/reattach 留任务 3；`RunEvent::Exit` 已挂 `pty::shutdown_all`。
 
-### 🔄 任务 3 — ring buffer + reattach
+### ✅ 任务 3 — ring buffer + reattach
 - **文件**：`pty/session.rs`（环形缓冲）+ `pty/mod.rs`（`pty_exists`/`pty_reattach`）
 - **目标**：输出先入有界 ring 再推 listener；reattach replay 后切实时流。
 - **验证**：spawn → 刷新前端 → scrollback 重载后接实时流；`find /` 高频输出不撑爆（backpressure：ring 有界覆盖旧数据）。
+- **落地记录**：ring = `VecDeque<String>`（存 Utf8Tail 切分后完整块，256KB 有界、超限队首丢整块保证 replay 合法 UTF-8）；ring 与 listener 合并一把锁（`push_and_emit` 入 ring→推流原子序，reattach 快照+换装同临界区无缝续流）；`PtyReattached{issueId,exited,scrollback}` scrollback 随命令返回值一次性送达；已退出会话 reattach 返回 exited=true+退出前 scrollback（Exit 事件不重发，靠 exited 字段）。前端真实刷新场景验证留任务 4 组件接入后。
 
-### ⬜ 任务 4 — xterm 组件 + 工作台接入
+### 🔄 任务 4 — xterm 组件 + 工作台接入
 - **文件**：`package.json`（xterm 三依赖）+ `EmbeddedTerminal/{EmbeddedTerminal,TerminalView,usePtySession}.tsx`
 - **目标**：替换 `DevWorkbenchPage.tsx:158-183` 空态为终端；`workspace_base_dir` 未配置/目录不存在两个错误态（§3.2）；切换 issue 时旧终端 unmount 不销毁会话（仅断订阅），回切 reattach。
 - **验证**：选中 issue 开终端、双向流、resize 正常；切走再切回 scrollback 还在；F5 刷新 scrollback 重载；关闭终端按钮干净退出。

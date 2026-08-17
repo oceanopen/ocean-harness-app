@@ -45,6 +45,8 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_resize,
             pty::pty_shutdown,
             pty::pty_list_sessions,
+            pty::pty_exists,
+            pty::pty_reattach,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。

@@ -10,7 +10,7 @@
 // ring buffer（scrollback 重载用）在任务 3 接入 SessionIo。
 
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{Child, MasterPty};
@@ -29,41 +29,131 @@ pub enum PtyEvent {
     Exit,
 }
 
+/// ring 容量上限（字节）。有界覆盖：超限时从队首丢整块（不切半个字串，保证 replay
+/// 恒为合法 UTF-8）。256 KB 足够常规 scrollback 重载；TUI 全屏 replay 可能轻微错位，
+/// 由应用自重绘（与 orca 行为一致）。
+const RING_LIMIT_BYTES: usize = 256 * 1024;
+
 /// 会话输出侧共享内核。reader 线程与命令层（reattach 换 listener）各持 Arc。
+/// ring 与 listener 合并一把锁：「入 ring → 推 listener」原子有序——reattach 的
+/// snapshot（ring 快照）与换装 listener 在同临界区内完成，实时流从快照点无缝续接，
+/// 不丢块也不重放已 snapshot 的块。
 pub struct SessionIo {
-    /// 当前输出订阅者（webview 传来的 Channel）。None = 无订阅（webview 已断开/未挂载），
-    /// 输出静默丢弃。Mutex 短临界区：reader 每块输出 lock 一次取快照。
-    pub listener: Mutex<Option<Channel<PtyEvent>>>,
+    /// ring（scrollback）+ 当前 listener。None = 无订阅（webview 断开/未挂载），
+    /// 输出只入 ring 不外发，刷新回来 replay 可见断开期间历史。
+    inner: Mutex<SessionInner>,
+    /// ring 累计字节数（含块本身，队首丢弃时同步扣减）。只在 inner 锁内读写，
+    /// atomic 仅为满足跨线程共享（SessionIo 需 Sync）。
+    ring_bytes: AtomicUsize,
     /// shell 退出标志（reader EOF 置位）。PtySession.exited 语义合并至此，
     /// reader 线程与命令层（list/重开判定）共享同一事实源。
     pub exited: AtomicBool,
 }
 
+struct SessionInner {
+    ring: std::collections::VecDeque<String>,
+    listener: Option<Channel<PtyEvent>>,
+}
+
 impl SessionIo {
     pub fn new() -> Self {
         Self {
-            listener: Mutex::new(None),
+            inner: Mutex::new(SessionInner {
+                ring: std::collections::VecDeque::new(),
+                listener: None,
+            }),
+            ring_bytes: AtomicUsize::new(0),
             exited: AtomicBool::new(false),
         }
     }
 
-    /// 替换 listener（spawn/reattach 装载）。返回旧值供调用方感知替换。
-    pub fn set_listener(&self, channel: Channel<PtyEvent>) -> Option<Channel<PtyEvent>> {
-        self.listener
-            .lock()
-            .expect("SessionIo listener mutex poisoned")
-            .replace(channel)
+    /// reader 输出路径：入 ring（有界覆盖）→ 推 listener，同一临界区。
+    pub fn push_and_emit(&self, text: String) {
+        let bytes = text.len();
+        let listener = {
+            let mut inner = self
+                .inner
+                .lock()
+                .expect("SessionIo mutex poisoned");
+            inner.ring.push_back(text.clone());
+            self.ring_bytes
+                .fetch_add(bytes, Ordering::Relaxed);
+            // 超限从队首丢整块。新块自身 > 上限的极端情况（单块 >256KB）也丢到只剩它。
+            while self.ring_bytes.load(Ordering::Relaxed) > RING_LIMIT_BYTES {
+                match inner.ring.pop_front() {
+                    Some(dropped) => {
+                        self.ring_bytes
+                            .fetch_sub(dropped.len(), Ordering::Relaxed);
+                    }
+                    None => break,
+                }
+            }
+            inner.listener.clone()
+        };
+        // send 在锁外：eval 可能因大 payload 走 fetch 通道，不让 IPC 传输占住会话锁。
+        if let Some(channel) = listener {
+            let _ = channel.send(PtyEvent::Data { data: text });
+        }
     }
 
-    /// 推送事件：无订阅者或 send 失败（旧 webview 已销毁）均静默丢弃。
-    fn emit(&self, event: PtyEvent) {
-        let snapshot = self
-            .listener
+    /// reattach：ring 快照 + exited + 换装 listener，同一临界区（快照点续流）。
+    /// scrollback 为 ring 全量拼接；已退出会话也照常返回（前端展示终态 + scrollback）。
+    pub fn reattach(&self, channel: Channel<PtyEvent>) -> (String, bool) {
+        let mut inner = self
+            .inner
             .lock()
-            .expect("SessionIo listener mutex poisoned")
-            .clone();
-        if let Some(channel) = snapshot {
-            let _ = channel.send(event);
+            .expect("SessionIo mutex poisoned");
+        let scrollback = inner
+            .ring
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("");
+        inner.listener = Some(channel);
+        (scrollback, self.exited.load(Ordering::SeqCst))
+    }
+
+    /// spawn 路径装 listener（首挂载，ring 此刻必为空，无需快照）。
+    pub fn set_listener(&self, channel: Channel<PtyEvent>) {
+        let mut inner = self
+            .inner
+            .lock()
+            .expect("SessionIo mutex poisoned");
+        inner.listener = Some(channel);
+    }
+
+    /// ring 快照（不换装 listener；list/调试用，当前无调用方——保留给任务 4 状态栏）。
+    #[allow(dead_code)]
+    pub fn snapshot(&self) -> String {
+        let inner = self
+            .inner
+            .lock()
+            .expect("SessionIo mutex poisoned");
+        inner
+            .ring
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    /// ring 累计字节数（测试用）。
+    #[allow(dead_code)]
+    pub fn ring_len(&self) -> usize {
+        self.ring_bytes.load(Ordering::Relaxed)
+    }
+
+    /// 推送退出事件（仅在 listener 在场时发一次；刷新错过 Exit 靠 reattach 的 exited 字段补知会）。
+    fn emit_exit(&self) {
+        let listener = {
+            let inner = self
+                .inner
+                .lock()
+                .expect("SessionIo mutex poisoned");
+            inner.listener.clone()
+        };
+        if let Some(channel) = listener {
+            let _ = channel.send(PtyEvent::Exit);
         }
     }
 }
@@ -109,8 +199,9 @@ impl Utf8Tail {
     }
 }
 
-/// reader 线程：阻塞读 PTY 输出 → UTF-8 切分 → 推 listener；EOF/Err → 置 exited + Exit 事件。
-/// spawn 时启动，持 Arc<SessionIo> 与 cloned reader，不碰 store（会话移除后仍会读到 EOF 自然退出）。
+/// reader 线程：阻塞读 PTY 输出 → UTF-8 切分 → 入 ring + 推 listener；
+/// EOF/Err → 置 exited + Exit 事件。spawn 时启动，持 Arc<SessionIo> 与 cloned reader，
+/// 不碰 store（会话移除后仍会读到 EOF 自然退出）。
 pub fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, io: Arc<SessionIo>) {
     std::thread::spawn(move || {
         let mut tail = Utf8Tail::new();
@@ -121,14 +212,14 @@ pub fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, io: Arc<SessionIo>)
                 Ok(n) => {
                     let text = tail.take_complete(&buf[..n]);
                     if !text.is_empty() {
-                        io.emit(PtyEvent::Data { data: text });
+                        io.push_and_emit(text);
                     }
                 }
                 Err(_) => break, // PTY 关闭（kill 后）
             }
         }
         io.exited.store(true, Ordering::SeqCst);
-        io.emit(PtyEvent::Exit);
+        io.emit_exit();
     });
 }
 
@@ -237,5 +328,44 @@ mod tests {
         let hao = "好".as_bytes();
         assert_eq!(tail.take_complete(&hao[..2]), "");
         assert_eq!(tail.take_complete(&hao[2..]), "好");
+    }
+
+    /// ring 有界覆盖：灌入超上限数据后总量不超限、队首整块被丢、内容仍为合法 UTF-8。
+    #[test]
+    fn ring_bounded_overwrite() {
+        let io = SessionIo::new();
+        // 每块 64KB（"甲" 3 字节 × ~21k），灌 8 块 = 512KB > 256KB 上限。
+        let block = "甲".repeat(64 * 1024 / 3);
+        for _ in 0..8 {
+            io.push_and_emit(block.clone());
+        }
+        assert!(
+            io.ring_len() <= 256 * 1024,
+            "ring 超限: {}",
+            io.ring_len()
+        );
+        let snapshot = io.snapshot();
+        assert!(snapshot.len() <= 256 * 1024);
+        // 拼接后仍为合法 UTF-8（丢整块不切半字符）
+        assert_eq!(snapshot.chars().count(), snapshot.len() / 3);
+        assert!(snapshot.chars().all(|c| c == '甲'));
+    }
+
+    /// reattach 快照 + 续流：无 listener 期间输出入 ring；reattach 换装后 scrollback
+    /// 含先前内容且 exited=false（活会话）。
+    #[test]
+    fn reattach_returns_scrollback_and_exited() {
+        let io = SessionIo::new();
+        io.push_and_emit("hello ".to_string());
+        io.push_and_emit("terminal".to_string());
+        let (scrollback, exited) = io.reattach(Channel::new(|_| Ok(())));
+        assert_eq!(scrollback, "hello terminal");
+        assert!(!exited);
+
+        // 已退出会话：exited=true 且 scrollback 保留退出前内容。
+        io.exited.store(true, Ordering::SeqCst);
+        let (scrollback2, exited2) = io.reattach(Channel::new(|_| Ok(())));
+        assert_eq!(scrollback2, "hello terminal");
+        assert!(exited2);
     }
 }

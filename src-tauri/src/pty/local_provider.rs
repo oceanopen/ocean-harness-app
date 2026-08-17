@@ -17,7 +17,7 @@ use std::sync::atomic::Ordering;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use tauri::ipc::Channel;
 
-use super::provider::{PtyProvider, PtySessionInfo, PtySpawned, SpawnOpts};
+use super::provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, SpawnOpts};
 use super::session::{PtyEvent, PtySession, SessionIo, spawn_reader_thread};
 use super::state::PtySessionStore;
 
@@ -215,13 +215,35 @@ impl PtyProvider for LocalPtyProvider {
         }
     }
 
-    fn set_listener(&self, id: &str, listener: Channel<PtyEvent>) -> Result<(), String> {
+    fn exists(&self, id: &str) -> bool {
+        let map = self
+            .store
+            .0
+            .lock()
+            .expect("PtySessionStore mutex poisoned");
+        map.contains_key(id)
+    }
+
+    fn reattach(
+        &self,
+        id: &str,
+        listener: Channel<PtyEvent>,
+    ) -> Result<Option<PtyReattached>, String> {
         let mut listener = Some(listener);
+        // 不存在返回 Ok(None)（前端转 spawn），与「会话不存在」的 Err 语义区分。
         self.with_session(id, &mut |s| {
-            if let Some(l) = listener.take() {
-                s.io.set_listener(l);
-            }
+            let (scrollback, exited) = s.io.reattach(
+                listener
+                    .take()
+                    .expect("reattach listener consumed once"),
+            );
+            Some(PtyReattached {
+                issue_id: s.issue_id.clone(),
+                exited,
+                scrollback,
+            })
         })
+        .or(Ok(None))
     }
 
     fn list(&self) -> Vec<PtySessionInfo> {
@@ -264,14 +286,11 @@ impl PtyProvider for LocalPtyProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
-    use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
-    /// Channel 不可在测试外构造（on_message 绑 webview eval），测试用 reader 直读。
-    /// 冒烟：spawn → 幂等复用（fresh=false）→ 写 echo → resize → 回显 → shutdown 清空。
-    /// reader 线程已由 spawn 启动；此处另 clone 一个 reader 消费（多 reader 各得全量副本不成立——
-    /// 实际共享同一 fd，读到交错块，但断言只需"出现过回显"足够鲁棒）。
+    /// Channel 不可在测试外构造（on_message 绑 webview eval），测试用裸 on_message 构造
+    ///（send 走 no-op 丢弃）；输出断言统一走 ring snapshot，不与 reader 线程抢 fd。
+    /// 冒烟：spawn → 幂等复用（fresh=false）→ 写 echo → resize → ring 见回显 → shutdown 清空。
     #[test]
     fn spawn_write_read_shutdown() {
         let provider = LocalPtyProvider::new();
@@ -305,50 +324,87 @@ mod tests {
             .unwrap();
         provider.resize(&issue_id, 100, 30).unwrap();
 
-        // 从 store 取 cloned reader（reader 线程持有同 fd 的另一 clone，读交错但断言鲁棒）。
-        let reader = {
-            let mut map = provider.store.0.lock().unwrap();
-            let session = map.get_mut(&issue_id).unwrap();
-            session.master.try_clone_reader().unwrap()
-        };
-
-        // reader 线程：逐块增量转发（不等 EOF——shell 常驻永无 EOF，等齐会假死）。
-        let (tx, rx) = mpsc::channel::<Vec<u8>>();
-        std::thread::spawn(move || {
-            let mut buf = [0u8; 4096];
-            let mut reader = reader;
-            loop {
-                match reader.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        if tx.send(buf[..n].to_vec()).is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-
+        // 不再 clone 第二个 reader（与 reader 线程竞争同一 fd 会各读走一半字节）。
+        // 输出断言改走 ring：reader 线程把全部输出入 ring，轮询 snapshot 直到含回显。
         let deadline = Instant::now() + Duration::from_secs(8);
         let mut out = String::new();
         while Instant::now() < deadline {
-            match rx.try_recv() {
-                Ok(chunk) => {
-                    out.push_str(&String::from_utf8_lossy(&chunk));
-                    if out.contains("PTY_SMOKE_OK") {
-                        break;
-                    }
-                }
-                Err(_) => std::thread::sleep(Duration::from_millis(100)),
+            out = provider
+                .with_session(&issue_id, &mut |s| s.io.snapshot())
+                .unwrap();
+            if out.contains("PTY_SMOKE_OK") {
+                break;
             }
+            std::thread::sleep(Duration::from_millis(100));
         }
         assert!(
             out.contains("PTY_SMOKE_OK"),
-            "未读到 echo 回显，输出: {out}"
+            "未读到 echo 回显，ring: {out}"
         );
 
         provider.shutdown(&issue_id).unwrap();
         assert!(provider.list().is_empty());
+    }
+
+    /// reattach 全链路：spawn 产出输出后 exists=true；reattach 返回 scrollback 含
+    /// 之前输出且 exited=false；不存在的会话 reattach 返回 None、exists=false。
+    #[test]
+    fn reattach_via_provider() {
+        let provider = LocalPtyProvider::new();
+        let tmp = std::env::temp_dir().join("pty-reattach-test");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let issue_id = "reattach-test-issue".to_string();
+        provider
+            .spawn(
+                SpawnOpts {
+                    issue_id: issue_id.clone(),
+                    cwd: tmp.to_string_lossy().into_owned(),
+                    cols: 80,
+                    rows: 24,
+                },
+                Channel::new(|_| Ok(())),
+            )
+            .unwrap();
+
+        assert!(provider.exists(&issue_id));
+        assert!(!provider.exists("no-such-issue"));
+
+        provider
+            .write(&issue_id, b"echo REATTACH_MARK\r\n")
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let ring = provider
+                .with_session(&issue_id, &mut |s| s.io.snapshot())
+                .unwrap();
+            if ring.contains("REATTACH_MARK") || Instant::now() > deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        // reattach：scrollback 含历史输出 + 换装 listener（裸 Channel，send 丢弃）。
+        let reattached = provider
+            .reattach(&issue_id, Channel::new(|_| Ok(())))
+            .unwrap()
+            .expect("会话存在应返回 Some");
+        assert_eq!(reattached.issue_id, issue_id);
+        assert!(!reattached.exited);
+        assert!(
+            reattached.scrollback.contains("REATTACH_MARK"),
+            "scrollback: {}",
+            reattached.scrollback
+        );
+
+        // 不存在的会话：reattach None（前端转 spawn 路径）。
+        assert!(
+            provider
+                .reattach("no-such-issue", Channel::new(|_| Ok(())))
+                .unwrap()
+                .is_none()
+        );
+
+        provider.shutdown(&issue_id).unwrap();
     }
 }

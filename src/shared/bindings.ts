@@ -109,6 +109,20 @@ export const commands = {
 	ptyShutdown: (issueId: string) => typedError<null, string>(__TAURI_INVOKE("pty_shutdown", { issueId })),
 	/**  列出全部会话快照（调试/后续状态栏用）。 */
 	ptyListSessions: () => __TAURI_INVOKE<PtySessionInfo[]>("pty_list_sessions"),
+	/**  会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。 */
+	ptyExists: (issueId: string) => __TAURI_INVOKE<boolean>("pty_exists", { issueId }),
+	/**
+	 *  重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
+	 *  已退出会话照常返回（exited=true）；不存在返回 None（前端转 pty_spawn）。
+	 */
+	ptyReattach: (issueId: string, onEvent: Channel<PtyEvent>) => typedError<{
+	/**  会话锚点 = issue uuid。 */
+	issueId: string,
+	/**  会话是否已退出（true = 前端直接展示终态 + 重开按钮，不期待实时流）。 */
+	exited: boolean,
+	/**  ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。 */
+	scrollback: string,
+} | null, string>(__TAURI_INVOKE("pty_reattach", { issueId, onEvent })),
 };
 
 /* Types */
@@ -226,6 +240,16 @@ export type PtyEvent =
 { kind: "data"; data: string } | 
 /**  shell 已退出（正常 exit / 被 kill）。会话仍在 store，前端可重开（重新 spawn）。 */
 { kind: "exit" };
+
+/**  pty_reattach 成功荷载：scrollback 随返回值一次性送达，实时流走已换装的 Channel。 */
+export type PtyReattached = {
+	/**  会话锚点 = issue uuid。 */
+	issueId: string,
+	/**  会话是否已退出（true = 前端直接展示终态 + 重开按钮，不期待实时流）。 */
+	exited: boolean,
+	/**  ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。 */
+	scrollback: string,
+};
 
 /**  会话信息快照（pty_list_sessions 返回，调试/后续状态栏用）。 */
 export type PtySessionInfo = {

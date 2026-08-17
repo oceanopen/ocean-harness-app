@@ -20,7 +20,7 @@ pub mod session;
 pub mod state;
 
 use local_provider::LocalPtyProvider;
-use provider::{PtyProvider, PtySessionInfo, PtySpawned, SpawnOpts};
+use provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, SpawnOpts};
 use session::PtyEvent;
 use state::PtySessionStore;
 
@@ -68,6 +68,24 @@ pub fn pty_shutdown(issue_id: String) -> Result<(), String> {
 #[specta::specta]
 pub fn pty_list_sessions() -> Vec<PtySessionInfo> {
     provider().list()
+}
+
+/// 会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。
+#[tauri::command]
+#[specta::specta]
+pub fn pty_exists(issue_id: String) -> bool {
+    provider().exists(&issue_id)
+}
+
+/// 重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
+/// 已退出会话照常返回（exited=true）；不存在返回 None（前端转 pty_spawn）。
+#[tauri::command]
+#[specta::specta]
+pub fn pty_reattach(
+    issue_id: String,
+    on_event: tauri::ipc::Channel<PtyEvent>,
+) -> Result<Option<PtyReattached>, String> {
+    provider().reattach(&issue_id, on_event)
 }
 
 /// 应用退出时（RunEvent::Exit）调用：遍历 store kill 全部 shell 并清空。
