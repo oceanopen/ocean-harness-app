@@ -154,12 +154,12 @@ src/windows/panel/DevWorkbenchPage/components/EmbeddedTerminal/
 >
 > 状态图例：✅ 已完成 · 🔄 进行中 · ⬜ 待办
 
-### ⬜ 任务 1 — portable-pty 接入 + PtyProvider 骨架
+### ✅ 任务 1 — portable-pty 接入 + PtyProvider 骨架
 - **文件**：`src-tauri/Cargo.toml`（加 `portable-pty = "0.8"`，**不引 tokio/anyhow**）+ `src-tauri/src/pty/{provider,local_provider,session,state}.rs`
 - **目标**：`PtyProvider` trait + `LocalPtyProvider`；`PtySession`（id/cwd/handle/ring 占位）；`PtySessionStore` 照 `ClaudeSessionStore` 范式（`Mutex<HashMap>` + Default + `init(app)`）。
 - **验证**：编译通过；临时目录 spawn shell 不崩。
 
-### ⬜ 任务 2 — PTY 命令 + 输出通道 spike + 退出回收
+### 🔄 任务 2 — PTY 命令 + 输出通道 spike + 退出回收
 - **文件**：`pty/mod.rs`（§3.3 七命令）+ `lib.rs`（注册命令、`.typ::<T>()` 注册 payload 类型、`RunEvent::Exit:158` 加 `pty::shutdown_all`）
 - **目标**：spike `Channel<PtyData>` 过 tauri-specta；不行回退 emit（`events.rs`/`events.ts` 双份追加 `EVENT_PTY_DATA`/`EVENT_PTY_EXIT`）。`pty_spawn` 幂等。
 - **验证**：`pnpm gen:bindings` 无 panic、bindings.ts 含新命令；临时目录 spawn shell 打字有回显、resize 生效；退出 app 无孤儿 shell 进程。

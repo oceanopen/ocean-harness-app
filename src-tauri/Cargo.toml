@@ -65,3 +65,6 @@ notify = "6"
 notify-debouncer-mini = "0.4.1"
 dirs = "5"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+# 嵌入式终端 PTY（dev workbench 一 issue 一终端）。纯阻塞 API，reader 线程配 std::thread，
+# 不引入 tokio；依赖树仅 libc/nix/serial2 等原生库。0.8 已过时，0.9 API 一致（已 spike 验证）。
+portable-pty = "0.9"

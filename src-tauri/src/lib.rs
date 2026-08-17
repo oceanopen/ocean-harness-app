@@ -1,3 +1,4 @@
+mod pty;
 mod sessions;
 mod shared;
 mod terminal;
