@@ -277,6 +277,11 @@ export type PtySpawned = {
 	startedAt: number,
 	/**  本次是否新起 shell（false = 复用现有会话，如 webview 刷新后重挂）。 */
 	fresh: boolean,
+	/**
+	 *  复用会话时的 ring 快照（StrictMode 双挂载/快速重挂场景回放早期输出）；
+	 *  全新 spawn 恒为空串。
+	 */
+	scrollback: string,
 };
 
 /**

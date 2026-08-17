@@ -39,7 +39,12 @@ pub fn pty_spawn(
     opts: SpawnOpts,
     on_event: tauri::ipc::Channel<PtyEvent>,
 ) -> Result<PtySpawned, String> {
-    provider().spawn(opts, on_event)
+    let result = provider().spawn(opts, on_event);
+    match &result {
+        Ok(s) => log::info!("[pty] spawn ok issue_id={} fresh={} scrollback={}", s.issue_id, s.fresh, s.scrollback.len()),
+        Err(e) => log::warn!("[pty] spawn failed: {}", e),
+    }
+    result
 }
 
 /// 键盘输入写入会话。
@@ -85,7 +90,11 @@ pub fn pty_reattach(
     issue_id: String,
     on_event: tauri::ipc::Channel<PtyEvent>,
 ) -> Result<Option<PtyReattached>, String> {
-    provider().reattach(&issue_id, on_event)
+    let result = provider().reattach(&issue_id, on_event);
+    if let Ok(Some(r)) = &result {
+        log::info!("[pty] reattach issue_id={} exited={} scrollback={}", issue_id, r.exited, r.scrollback.len());
+    }
+    result
 }
 
 /// 应用退出时（RunEvent::Exit）调用：遍历 store kill 全部 shell 并清空。

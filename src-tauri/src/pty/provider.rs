@@ -59,6 +59,9 @@ pub struct PtySpawned {
     pub started_at: i64,
     /// 本次是否新起 shell（false = 复用现有会话，如 webview 刷新后重挂）。
     pub fresh: bool,
+    /// 复用会话时的 ring 快照（StrictMode 双挂载/快速重挂场景回放早期输出）；
+    /// 全新 spawn 恒为空串。
+    pub scrollback: String,
 }
 
 /// pty_reattach 成功荷载：scrollback 随返回值一次性送达，实时流走已换装的 Channel。

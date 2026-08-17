@@ -72,7 +72,7 @@ impl LocalPtyProvider {
             .map_err(|e| format!("take pty writer failed: {e}"))?;
 
         let io = Arc::new(SessionIo::new());
-        io.set_listener(listener);
+        io.set_listener(listener.clone());
         let started_at = chrono::Utc::now().timestamp_millis();
         let session = PtySession::new(
             opts.issue_id.clone(),
@@ -91,9 +91,12 @@ impl LocalPtyProvider {
                 .0
                 .lock()
                 .expect("PtySessionStore mutex poisoned");
-            // 二次确认：并发 spawn 同 issueId 的败者 kill 刚起的 shell 让位，不覆盖先入会话。
-            if let Some(existing) = map.get(&opts.issue_id) {
+            // 二次确认：并发 spawn 同 issueId 的败者 kill 刚起的 shell 让位，不覆盖先入会话，
+            // 但把现有会话的 listener 换成自己的——败者（如 StrictMode 第二遍挂载）才是
+            // 存活的前端，不换装则现有会话持续向已销毁的旧 Channel 推流（数据全丢）。
+            if let Some(existing) = map.get_mut(&opts.issue_id) {
                 if !existing.exited() {
+                    existing.io.set_listener(listener.clone());
                     let _ = session.shutdown();
                     return Ok(self.snapshot(existing));
                 }
@@ -113,10 +116,11 @@ impl LocalPtyProvider {
             pid,
             started_at,
             fresh: true,
+            scrollback: String::new(),
         })
     }
 
-    /// 从现有会话生成快照荷载。
+    /// 从现有会话生成快照荷载（scrollback 由调用方按需覆写）。
     fn snapshot(&self, s: &PtySession) -> PtySpawned {
         PtySpawned {
             issue_id: s.issue_id.clone(),
@@ -128,6 +132,7 @@ impl LocalPtyProvider {
                 .unwrap_or(0),
             started_at: s.started_at,
             fresh: false,
+            scrollback: String::new(),
         }
     }
 }
@@ -148,6 +153,12 @@ fn resolve_shell() -> (String, Vec<String>) {
 impl PtyProvider for LocalPtyProvider {
     /// 启动会话（幂等）：未退出复用 + 换装 listener；已退出移除重起（重开语义）。
     fn spawn(&self, opts: SpawnOpts, listener: Channel<PtyEvent>) -> Result<PtySpawned, String> {
+        // 目录预检：portable-pty 对不存在的 cwd 不报错而是静默回退到父进程 cwd
+        // （实测 shell 会起在家目录），违背「spawn 失败自然暴露」的设计预期。
+        // 显式校验让前端走「任务目录不存在」错误态。
+        if !std::path::Path::new(&opts.cwd).is_dir() {
+            return Err(format!("任务目录不存在：{}", opts.cwd));
+        }
         let existing = {
             let map = self
                 .store
@@ -157,7 +168,9 @@ impl PtyProvider for LocalPtyProvider {
             map.get(&opts.issue_id).map(|s| !s.exited())
         };
         match existing {
-            // 未退出：复用，换装 listener（webview 刷新后重挂路径）。
+            // 未退出：复用。同一临界区内快照 ring + 换装 listener——StrictMode 双挂载
+            // 场景第二遍 spawn 复用会话时，prompt 等早期输出已随第一遍（已死的）
+            // listener 丢弃，须回放 ring 才不空白。
             Some(true) => {
                 let mut map = self
                     .store
@@ -165,8 +178,11 @@ impl PtyProvider for LocalPtyProvider {
                     .lock()
                     .expect("PtySessionStore mutex poisoned");
                 if let Some(session) = map.get_mut(&opts.issue_id) {
-                    session.io.set_listener(listener);
-                    return Ok(self.snapshot(session));
+                    let (scrollback, exited) = session.io.reattach(listener);
+                    debug_assert!(!exited, "未退出分支不会 exited");
+                    let mut spawned = self.snapshot(session);
+                    spawned.scrollback = scrollback;
+                    return Ok(spawned);
                 }
                 // 惊人罕见：刚才还在、此刻没了（并发 shutdown）——走全新 spawn。
                 self.spawn_fresh(&opts, listener)

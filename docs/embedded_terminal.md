@@ -137,14 +137,31 @@ app 退出 → RunEvent::Exit → pty::shutdown_all（仿 http_server：SIGTERM�
 
 ```
 src/windows/panel/DevWorkbenchPage/components/EmbeddedTerminal/
-  EmbeddedTerminal.tsx   // 容器：读 workspace_base_dir、派生 cwd、空态/错误态处理
-  TerminalView.tsx       // xterm 封装（onData/onResize/输出写入；import '@xterm/xterm/css/xterm.css'）
-  usePtySession.ts       // 会话 hook：exists→reattach→spawn 编排、Channel/emit 订阅、清理
+  EmbeddedTerminal.tsx          // 容器：读 workspace_base_dir、派生 cwd、空态/错误态处理、writeData ref 桥
+  TerminalView.tsx              // xterm 封装（onData/onResize/输出桥上抛；import '@xterm/xterm/css/xterm.css'）
+  TerminalErrorBoundary.tsx     // 终端区错误边界（xterm 崩溃降级为卡片，不白屏整页）
+  usePtySession.ts              // 会话 hook：exists→reattach→spawn 顺序编排、Channel 订阅、尺寸补发
 ```
 
-依赖新增：`@xterm/xterm`、`@xterm/addon-fit`、`@xterm/addon-webgl`。
+依赖：`@xterm/xterm@6`、`@xterm/addon-fit`、`@xterm/addon-webgl`（渲染失败自动回退 dom）。
 
 组件规范遵循项目约定：目录 PascalCase、密集 UI 不挂 Tooltip（用 aria-label）、报错/提示硬编码中文、按钮文案不需要 i18n（非菜单/路由）。
+
+### 3.9 前端范式约定（函数式 / 面向过程，强制）
+
+> 本节为终端嵌入模块的**前端强制规范**，后续终端相关改动（含自动执行 claude 模块）一律遵守。来源：2026-08-17 调试实战教训。
+
+**核心原则：事件处理一律函数式、显式顺序；不做响应式 ref 转发层。**
+
+1. **回调链直传，不做 ref 代理**：`terminal.onData(onData)` 直接用 props/参数——父层负责传**稳定引用**（`useCallback`，deps 收敛到最小）。禁止「onDataRef.current = onData 每渲染同步」这类 ref 转发层（响应式味道，时序不透明）。唯一例外见第 3 条。
+2. **mount effect 按显式顺序建齐，cleanup 严格逆序**：建实例 → loadAddon → open → 事件接线 → 桥上抛 → focus → observer → 初始 fit；卸载反向逐个拆除。禁止依赖「React 某时刻会帮我同步」的隐式时序。
+3. **Channel 数据桥必须是 ref**（唯一例外）：PTY 输出可在任何时刻到达（含 StrictMode 双挂载窗口、attach 完成前），`writeDataRef.current` 直读直写、**绝不经 React state**——state 桥在 React 19 StrictMode 下实测出现「fn→null→fn 连续 setState 后回调闭包仍读到 null」，输出全丢（黑屏假死）。教训：**外部推送型数据源 → ref；用户交互型数据流 → state。**
+4. **effect 内同步 setState 仅限状态机重置**（connecting 重入），其余状态变更由异步回调（attach.then/catch、Channel onEvent）驱动。
+5. **错误处理直白化**：`unwrap(...).catch(warn)` 一处一责；可预期失败降级 `console.debug`（如 attach 未就绪期间的 resize not found），真错误 `console.warn/info` 带 issueId。
+6. **诊断日志规范**（长期保留，排障生命线）：
+   - 前端：`[pty] attach failed / session exit / write|resize|shutdown failed`（warn）、`resize skipped (session not ready)`（debug）；逐块数据/逐键输入**不打**（噪声）。
+   - Rust（dev 日志）：`spawn ok|failed / reattach / shutdown / shutdown_all` 各一行；逐 write 不打。
+   - 约定前缀 `[pty]`，grep 友好。
 
 ---
 
@@ -171,10 +188,11 @@ src/windows/panel/DevWorkbenchPage/components/EmbeddedTerminal/
 - **验证**：spawn → 刷新前端 → scrollback 重载后接实时流；`find /` 高频输出不撑爆（backpressure：ring 有界覆盖旧数据）。
 - **落地记录**：ring = `VecDeque<String>`（存 Utf8Tail 切分后完整块，256KB 有界、超限队首丢整块保证 replay 合法 UTF-8）；ring 与 listener 合并一把锁（`push_and_emit` 入 ring→推流原子序，reattach 快照+换装同临界区无缝续流）；`PtyReattached{issueId,exited,scrollback}` scrollback 随命令返回值一次性送达；已退出会话 reattach 返回 exited=true+退出前 scrollback（Exit 事件不重发，靠 exited 字段）。前端真实刷新场景验证留任务 4 组件接入后。
 
-### 🔄 任务 4 — xterm 组件 + 工作台接入
+### ✅ 任务 4 — xterm 组件 + 工作台接入
 - **文件**：`package.json`（xterm 三依赖）+ `EmbeddedTerminal/{EmbeddedTerminal,TerminalView,usePtySession}.tsx`
 - **目标**：替换 `DevWorkbenchPage.tsx:158-183` 空态为终端；`workspace_base_dir` 未配置/目录不存在两个错误态（§3.2）；切换 issue 时旧终端 unmount 不销毁会话（仅断订阅），回切 reattach。
 - **验证**：选中 issue 开终端、双向流、resize 正常；切走再切回 scrollback 还在；F5 刷新 scrollback 重载；关闭终端按钮干净退出。
+- **落地记录**：三组件齐（EmbeddedTerminal 容器/TerminalView xterm 封装/usePtySession 编排 hook，目录 PascalCase 文件 camelCase）；webgl 渲染器 + 失败自动回退 dom；工具栏「关闭终端」+ exited 态「重开」；`useConfigValue` 读 base_dir 派生 cwd；目录不存在错误态仅提示+重试（外部终端入口按用户决策砍掉）；DevWorkbenchPage 以 `key={issue.id}` 挂载（切换即重挂载，unmount 仅断订阅）。tsc/eslint(0 error)/web:build 通过；dev 真机交互验证由用户后续手动执行（2026-08-17 跳过）。
 
 ### ⬜ 任务 5 — issue 删除联动（可选，小）
 - **文件**：issue 删除调用链（前端 tracker queries → 先 `pty_shutdown(issueId)` 再走删除接口）
@@ -212,6 +230,25 @@ scrollback 有界（256 KB）；**整 app 退出终端即断**（非 daemon）�
 | worktree 目录为 cwd | `工作空间根目录/<issue-uuid>` 为 cwd |
 
 **远程终端扩展预留**：`PtyProvider` trait + `SpawnOpts` 抽象保留；将来加 SSH provider 时命令层与前端组件不变。
+
+### 5.7 真机调试实录与坑位档案（2026-08-17）
+
+任务 4 真机接入时连续踩坑，以下按「现象 → 根因 → 修复」归档（全部实证，勿凭直觉回退）：
+
+| # | 现象 | 根因 | 修复（保留） |
+|---|---|---|---|
+| 1 | 点击任务白屏，`TypeError e.length`（xterm.write 内部） | 响应式 state 桥：StrictMode 双挂载下 `setWriteData(fn→null→fn)` 后闭包仍读到 null → `terminal.write(null)` | writeData 改 **ref 桥**（§3.9 第 3 条）；另加 write 非字符串守卫 + TerminalErrorBoundary 兜底 |
+| 2 | shell 起在家目录（cwd 错） | portable-pty 对不存在 cwd **静默回退**父进程 cwd，不报错 | Rust spawn 前显式 `Path::is_dir` 预检 → Err「任务目录不存在：<路径>」 |
+| 3 | 黑屏无 prompt（数据链通） | StrictMode 双 spawn：第二遍复用会话不回放 ring，早期输出随第一遍已死 listener 丢失 | spawn 复用分支走 `reattach`（快照+换装同临界区）；`PtySpawned` 增 `scrollback` 字段；前端 `fresh=false` 时回放 |
+| 4 | `Couldn't find callback id` 刷屏 + 无输出 | 并发 spawn 败者只 kill 自己 shell，未把现有会话 listener 换成存活前端的 Channel | 败者路径 `existing.io.set_listener(listener)` |
+| 5 | 键盘无反应 | xterm 6 `open()` 不自动聚焦 | mount 即 `terminal.focus()` + 容器 mousedown 兜底 |
+| 6 | resize `not found` ×2（挂载期） | fit 上报先于 spawn 完成，良性竞态 | attach 就绪后按积压尺寸补发一次（`pendingSizeRef`） |
+| 7 | （已昭雪）webgl 渲染器曾疑似致渲染循环死 | 真凶是 #1 的 state 桥，webgl 无罪；恢复后真机验证正常 | 已恢复 webgl + 失败自动回退 dom（try/catch）；若再出现渲染异常先查 #1 同款桥问题 |
+
+**排障方法论**（下次少走弯路）：
+- 先分层数定位：`ps + lsof`（进程树/cwd）→ Rust dev 日志（命令进出）→ 前端 console（事件链）——本轮 80% 的时间耗在跳层猜测上
+- `[pty]` 前缀日志（§3.9 第 6 条）是分层定位的基础设施，保留勿删
+- `Couldn't find callback id` 警告 = Tauri 官方提示 reload 期间旧异步操作推已销毁回调，**无害**
 
 ---
 
