@@ -6,15 +6,19 @@
 //     会永久挂起。
 //   - cwd 不存在时 spawn_command 直接报错，由前端捕获展示「任务目录不存在」。
 //
-// reader 线程（输出推前端 + ring buffer）与退出通知在任务 2（输出通道 spike）接入；
-// 本文件先落 spawn/write/resize/shutdown 的会话生命周期骨架。
+// spawn 即启动 reader 线程（session::spawn_reader_thread）：输出经 UTF-8 边界切分后
+// 推 listener Channel；EOF 置 exited + Exit 事件。重复 spawn 语义（§3.4/§5.2）：
+//   - 未退出会话：复用，换装新 listener（webview 刷新后旧 Channel 失效）
+//   - 已退出会话：移除旧会话重起 shell（前端「重开」按钮路径）
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use tauri::ipc::Channel;
 
-use super::provider::{PtyProvider, PtySessionInfo, SpawnOpts};
-use super::session::PtySession;
+use super::provider::{PtyProvider, PtySessionInfo, PtySpawned, SpawnOpts};
+use super::session::{PtyEvent, PtySession, SessionIo, spawn_reader_thread};
 use super::state::PtySessionStore;
 
 /// 本机 PTY 后端。持有全局会话存储；provider 实例本身无状态，
@@ -29,35 +33,13 @@ impl LocalPtyProvider {
             store: PtySessionStore::default(),
         }
     }
-}
 
-impl Default for LocalPtyProvider {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// 解析用户 shell：$SHELL 优先，缺失回退 /bin/zsh（macOS 默认）。
-/// 返回 (程序, 参数)——交互式 shell 需要 -i。
-fn resolve_shell() -> (String, Vec<String>) {
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    (shell, vec!["-i".to_string()])
-}
-
-impl PtyProvider for LocalPtyProvider {
-    /// 启动会话（幂等）：同 issueId 已有会话（含已退出待重开的）直接返回现有。
-    fn spawn(&self, opts: SpawnOpts) -> Result<String, String> {
-        {
-            let map = self
-                .store
-                .0
-                .lock()
-                .expect("PtySessionStore mutex poisoned");
-            if map.contains_key(&opts.issue_id) {
-                return Ok(opts.issue_id);
-            }
-        }
-
+    /// 起一个新 shell 会话并入库（不检查已存在——调用方 spawn 决定复用/重起）。
+    fn spawn_fresh(
+        &self,
+        opts: &SpawnOpts,
+        listener: Channel<PtyEvent>,
+    ) -> Result<PtySpawned, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -89,6 +71,8 @@ impl PtyProvider for LocalPtyProvider {
             .take_writer()
             .map_err(|e| format!("take pty writer failed: {e}"))?;
 
+        let io = Arc::new(SessionIo::new());
+        io.set_listener(listener);
         let started_at = chrono::Utc::now().timestamp_millis();
         let session = PtySession::new(
             opts.issue_id.clone(),
@@ -96,8 +80,10 @@ impl PtyProvider for LocalPtyProvider {
             pair.master,
             writer,
             child,
+            Arc::clone(&io),
             started_at,
         );
+        spawn_reader_thread(reader, io);
 
         {
             let mut map = self
@@ -106,23 +92,102 @@ impl PtyProvider for LocalPtyProvider {
                 .lock()
                 .expect("PtySessionStore mutex poisoned");
             // 二次确认：并发 spawn 同 issueId 的败者 kill 刚起的 shell 让位，不覆盖先入会话。
-            if map.contains_key(&opts.issue_id) {
-                let _ = session.shutdown();
-                return Ok(opts.issue_id);
+            if let Some(existing) = map.get(&opts.issue_id) {
+                if !existing.exited() {
+                    let _ = session.shutdown();
+                    return Ok(self.snapshot(existing));
+                }
             }
             map.insert(opts.issue_id.clone(), session);
         }
 
-        // reader 持有 cloned reader；任务 2 在此启动 reader 线程（ring + 推前端）。
-        // 当前骨架无消费者，drop 释放 fd。
-        drop(reader);
         log::info!(
             "[pty] spawned session issue_id={} pid={} cwd={}",
             opts.issue_id,
             pid,
             opts.cwd
         );
-        Ok(opts.issue_id)
+        Ok(PtySpawned {
+            issue_id: opts.issue_id.clone(),
+            cwd: opts.cwd.clone(),
+            pid,
+            started_at,
+            fresh: true,
+        })
+    }
+
+    /// 从现有会话生成快照荷载。
+    fn snapshot(&self, s: &PtySession) -> PtySpawned {
+        PtySpawned {
+            issue_id: s.issue_id.clone(),
+            cwd: s.cwd.clone(),
+            pid: s
+                .child
+                .try_lock()
+                .map(|c| c.process_id().unwrap_or(0))
+                .unwrap_or(0),
+            started_at: s.started_at,
+            fresh: false,
+        }
+    }
+}
+
+impl Default for LocalPtyProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// 解析用户 shell：$SHELL 优先，缺失回退 /bin/zsh（macOS 默认）。
+/// 返回 (程序, 参数)——交互式 shell 需要 -i。
+fn resolve_shell() -> (String, Vec<String>) {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    (shell, vec!["-i".to_string()])
+}
+
+impl PtyProvider for LocalPtyProvider {
+    /// 启动会话（幂等）：未退出复用 + 换装 listener；已退出移除重起（重开语义）。
+    fn spawn(&self, opts: SpawnOpts, listener: Channel<PtyEvent>) -> Result<PtySpawned, String> {
+        let existing = {
+            let map = self
+                .store
+                .0
+                .lock()
+                .expect("PtySessionStore mutex poisoned");
+            map.get(&opts.issue_id).map(|s| !s.exited())
+        };
+        match existing {
+            // 未退出：复用，换装 listener（webview 刷新后重挂路径）。
+            Some(true) => {
+                let mut map = self
+                    .store
+                    .0
+                    .lock()
+                    .expect("PtySessionStore mutex poisoned");
+                if let Some(session) = map.get_mut(&opts.issue_id) {
+                    session.io.set_listener(listener);
+                    return Ok(self.snapshot(session));
+                }
+                // 惊人罕见：刚才还在、此刻没了（并发 shutdown）——走全新 spawn。
+                self.spawn_fresh(&opts, listener)
+            }
+            // 已退出：移除旧会话（kill 兜底）后重起。
+            Some(false) => {
+                {
+                    let mut map = self
+                        .store
+                        .0
+                        .lock()
+                        .expect("PtySessionStore mutex poisoned");
+                    if let Some(session) = map.remove(&opts.issue_id) {
+                        let _ = session.shutdown();
+                    }
+                }
+                self.spawn_fresh(&opts, listener)
+            }
+            // 不存在：全新 spawn。
+            None => self.spawn_fresh(&opts, listener),
+        }
     }
 
     fn write(&self, id: &str, data: &[u8]) -> Result<(), String> {
@@ -150,6 +215,15 @@ impl PtyProvider for LocalPtyProvider {
         }
     }
 
+    fn set_listener(&self, id: &str, listener: Channel<PtyEvent>) -> Result<(), String> {
+        let mut listener = Some(listener);
+        self.with_session(id, &mut |s| {
+            if let Some(l) = listener.take() {
+                s.io.set_listener(l);
+            }
+        })
+    }
+
     fn list(&self) -> Vec<PtySessionInfo> {
         let map = self
             .store
@@ -165,7 +239,7 @@ impl PtyProvider for LocalPtyProvider {
                     .try_lock()
                     .map(|c| c.process_id().unwrap_or(0))
                     .unwrap_or(0),
-                exited: s.exited.load(Ordering::SeqCst),
+                exited: s.io.exited.load(Ordering::SeqCst),
                 started_at: s.started_at,
             })
             .collect()
@@ -194,8 +268,10 @@ mod tests {
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
-    /// 冒烟：临时目录 spawn → 写 echo → reader 线程增量读到回显 → shutdown 干净退出。
-    /// reader 逐块发送（不等 EOF——shell 常驻时无 EOF，等齐会假死），与生产流式形态一致。
+    /// Channel 不可在测试外构造（on_message 绑 webview eval），测试用 reader 直读。
+    /// 冒烟：spawn → 幂等复用（fresh=false）→ 写 echo → resize → 回显 → shutdown 清空。
+    /// reader 线程已由 spawn 启动；此处另 clone 一个 reader 消费（多 reader 各得全量副本不成立——
+    /// 实际共享同一 fd，读到交错块，但断言只需"出现过回显"足够鲁棒）。
     #[test]
     fn spawn_write_read_shutdown() {
         let provider = LocalPtyProvider::new();
@@ -203,40 +279,40 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
 
         let issue_id = "smoke-test-issue".to_string();
-        let id = provider
-            .spawn(SpawnOpts {
-                issue_id: issue_id.clone(),
-                cwd: tmp.to_string_lossy().into_owned(),
-                cols: 80,
-                rows: 24,
-            })
-            .expect("spawn failed");
-        assert_eq!(id, issue_id);
-
-        // 幂等：重复 spawn 返回同 id，不重复起 shell。
-        let again = provider
-            .spawn(SpawnOpts {
-                issue_id: issue_id.clone(),
-                cwd: tmp.to_string_lossy().into_owned(),
-                cols: 80,
-                rows: 24,
-            })
-            .unwrap();
-        assert_eq!(again, issue_id);
-
-        // 从 store 取 cloned reader（生产路径由 reader 线程持有，测试手动取）。
-        let reader = {
-            let mut map = provider.store.0.lock().unwrap();
-            let session = map.get_mut(&issue_id).unwrap();
-            session.master.try_clone_reader().unwrap()
+        let opts = SpawnOpts {
+            issue_id: issue_id.clone(),
+            cwd: tmp.to_string_lossy().into_owned(),
+            cols: 80,
+            rows: 24,
         };
+
+        // 无 webview 环境 Channel 以裸 id 构造（send 会失败，但换装/复用逻辑可验证）。
+        let spawned = provider
+            .spawn(opts.clone(), Channel::new(|_| Ok(())))
+            .unwrap();
+        assert!(spawned.fresh, "首次 spawn 应是新会话");
+
+        // 幂等：未退出会话重复 spawn → 复用（fresh=false）。
+        let again = provider
+            .spawn(opts.clone(), Channel::new(|_| Ok(())))
+            .unwrap();
+        assert!(!again.fresh, "重复 spawn 应复用现有会话");
+        assert_eq!(again.issue_id, issue_id);
+        assert_eq!(provider.list().len(), 1);
 
         provider
             .write(&issue_id, b"echo PTY_SMOKE_OK\r\n")
             .unwrap();
         provider.resize(&issue_id, 100, 30).unwrap();
 
-        // reader 线程：读到块立即转发，EOF/错误时结束。
+        // 从 store 取 cloned reader（reader 线程持有同 fd 的另一 clone，读交错但断言鲁棒）。
+        let reader = {
+            let mut map = provider.store.0.lock().unwrap();
+            let session = map.get_mut(&issue_id).unwrap();
+            session.master.try_clone_reader().unwrap()
+        };
+
+        // reader 线程：逐块增量转发（不等 EOF——shell 常驻永无 EOF，等齐会假死）。
         let (tx, rx) = mpsc::channel::<Vec<u8>>();
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
@@ -246,7 +322,7 @@ mod tests {
                     Ok(0) => break,
                     Ok(n) => {
                         if tx.send(buf[..n].to_vec()).is_err() {
-                            break; // 接收端已放弃
+                            break;
                         }
                     }
                     Err(_) => break,
@@ -254,7 +330,6 @@ mod tests {
             }
         });
 
-        // 主线程：增量累积 + 8s 截止，出现回显即成功（shell 常驻，无需等到 EOF）。
         let deadline = Instant::now() + Duration::from_secs(8);
         let mut out = String::new();
         while Instant::now() < deadline {

@@ -159,12 +159,13 @@ src/windows/panel/DevWorkbenchPage/components/EmbeddedTerminal/
 - **目标**：`PtyProvider` trait + `LocalPtyProvider`；`PtySession`（id/cwd/handle/ring 占位）；`PtySessionStore` 照 `ClaudeSessionStore` 范式（`Mutex<HashMap>` + Default + `init(app)`）。
 - **验证**：编译通过；临时目录 spawn shell 不崩。
 
-### 🔄 任务 2 — PTY 命令 + 输出通道 spike + 退出回收
+### ✅ 任务 2 — PTY 命令 + 输出通道 spike + 退出回收
 - **文件**：`pty/mod.rs`（§3.3 七命令）+ `lib.rs`（注册命令、`.typ::<T>()` 注册 payload 类型、`RunEvent::Exit:158` 加 `pty::shutdown_all`）
 - **目标**：spike `Channel<PtyData>` 过 tauri-specta；不行回退 emit（`events.rs`/`events.ts` 双份追加 `EVENT_PTY_DATA`/`EVENT_PTY_EXIT`）。`pty_spawn` 幂等。
 - **验证**：`pnpm gen:bindings` 无 panic、bindings.ts 含新命令；临时目录 spawn shell 打字有回显、resize 生效；退出 app 无孤儿 shell 进程。
+- **落地记录**：Channel spike 通过（tauri-specta rc.25 原生支持参数 `Channel<T>`，含 `mapChannel` 反序列化注入），emit 备选未采用。输出/退出走单 `Channel<PtyEvent>`（`{kind:"data",data}`/`{kind:"exit"}`，UTF-8 边界切分见 session.rs `Utf8Tail`）；命令注册 5 个（spawn/write/resize/shutdown/list_sessions），exists/reattach 留任务 3；`RunEvent::Exit` 已挂 `pty::shutdown_all`。
 
-### ⬜ 任务 3 — ring buffer + reattach
+### 🔄 任务 3 — ring buffer + reattach
 - **文件**：`pty/session.rs`（环形缓冲）+ `pty/mod.rs`（`pty_exists`/`pty_reattach`）
 - **目标**：输出先入有界 ring 再推 listener；reattach replay 后切实时流。
 - **验证**：spawn → 刷新前端 → scrollback 重载后接实时流；`find /` 高频输出不撑爆（backpressure：ring 有界覆盖旧数据）。

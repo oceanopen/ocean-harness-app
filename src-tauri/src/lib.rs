@@ -11,6 +11,7 @@ use tauri_specta::{Builder, collect_commands};
 // run()（注册 invoke handler）与 bin/export_bindings.rs（生成 TS 绑定）共用此函数，
 // 保证命令清单单一来源，避免两份注册表漂移。
 pub fn build_specta_builder() -> Builder<tauri::Wry> {
+    use crate::pty::session::PtyEvent;
     use crate::shared::types::{
         AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, TerminalApp,
         YesNo,
@@ -39,6 +40,11 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::http_server::http_server_status,
             shared::http_server::set_http_server_enabled,
             shared::http_server::cleanup_orphan_http_server,
+            pty::pty_spawn,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_shutdown,
+            pty::pty_list_sessions,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。
@@ -48,6 +54,9 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         .typ::<YesNo>()
         .typ::<ClaudeSessionInfo>()
         .typ::<NavErr>()
+        // PtyEvent 是 Channel<PtyEvent> 的泛型载荷（Channel 本身在参数签名中可见，
+        // 但泛型参数类型需显式注册才能导出 union 定义）。
+        .typ::<PtyEvent>()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -95,6 +104,7 @@ pub fn run() {
 
             shared::app_config::init(app)?;
             shared::state::claude_sessions::init(app)?;
+            pty::state::init(app)?;
             windows::tray::setup(app)?;
 
             // 先 rescan 填充 ClaudeSessionStore 并广播首批快照，保证后续 pet_claude_sessions_task / pet
@@ -155,10 +165,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // 应用退出时回收 Go 服务子进程（kill + wait），避免孤儿进程。
+            // 应用退出时回收子进程：Go 服务（kill + wait）与全部 PTY shell，避免孤儿进程。
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<shared::http_server::HttpServerState>() {
                     shared::http_server::shutdown(state.inner());
+                }
+                if let Some(state) = app.try_state::<pty::state::PtySessionStore>() {
+                    pty::shutdown_all(state.inner());
                 }
             }
         });
