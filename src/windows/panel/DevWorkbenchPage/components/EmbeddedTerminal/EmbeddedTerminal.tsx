@@ -52,9 +52,11 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
 
   const cwd = baseDir ? `${baseDir}/${issueId}` : null;
 
+  // hooks 顶层无条件调用（React 规则）；cwd=null 时 usePtySession 返回哑会话（不发 spawn，
+  // status 恒 'connecting'），下方引导分支先于 spinner 渲染，不会闪错态。
   const session = usePtySession({
     issueId,
-    cwd: cwd ?? '',
+    cwd,
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS,
     onData: handleTerminalData,
@@ -69,7 +71,7 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
     });
   }, []);
 
-  // 错误态一：工作空间根目录未设置（配置为空串）——不 spawn，引导去设置
+  // 错误态一：工作空间根目录未设置（配置为空串）——哑会话不发 spawn，引导去设置
   if (cwd == null) {
     return (
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
@@ -79,12 +81,16 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
     );
   }
 
-  // 错误态二：spawn 失败（典型为任务目录不存在——本模块不创建目录，skills 集成职责）
+  // 错误态二：spawn 失败（典型为任务目录不存在——本模块不创建目录，skills 集成职责）。
+  // 双出口：重试（目录已被外部建好的场景）/ 打开设置（根目录配置错了的场景）。
   if (session.status === 'error') {
     return (
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
         <Typography variant="body2" color="text.secondary">{session.errorMessage ?? `任务目录不存在：${cwd}`}</Typography>
-        <Button size="small" onClick={session.reopen}>重试</Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button size="small" onClick={session.reopen}>重试</Button>
+          <Button size="small" startIcon={<SettingsOutlinedIcon />} onClick={openSettings}>打开设置</Button>
+        </Box>
       </Box>
     );
   }

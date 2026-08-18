@@ -30,7 +30,9 @@ export interface UsePtySessionResult {
 
 interface UsePtySessionArgs {
   issueId: string;
-  cwd: string;
+  // 工作目录。null = 未就绪（工作空间根目录未设置）：不进编排（不发 spawn），返回哑会话；
+  // 由 null 变有值时（设置页配置后 useConfigValue 事件回写触发重渲染）自动重新编排。
+  cwd: string | null;
   // 初始尺寸（挂载后 TerminalView fit 实测会再 resize 校正）
   cols: number;
   rows: number;
@@ -47,6 +49,9 @@ interface UsePtySessionArgs {
 // ——会话与 ring 常驻（切 issue/切菜单仅断订阅，回切 reattach 重载）。
 async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): Promise<'active' | 'exited'> {
   const { issueId, cwd, cols, rows } = args;
+  if (cwd == null) {
+    throw new Error('unreachable: attach called with null cwd (guarded by effect)');
+  }
   if (await commands.ptyExists(issueId)) {
     const channel = new Channel<PtyEvent>();
     channel.onmessage = onEvent;
@@ -75,11 +80,25 @@ export function usePtySession({ issueId, cwd, cols, rows, onData }: UsePtySessio
   // attach 期间 fit 已经上报的最新尺寸：attach 完成前 ptyResize 会因会话不存在
   // 被后端拒（日志实证），就绪后按积压值补发一次，保证 PTY winsize 与前端一致。
   const pendingSizeRef = useRef<{ cols: number; rows: number } | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
+  // 编排标识（issueId/cwd/attempt 串联）：依赖变化 → 新一轮编排应从 'connecting' 起步。
+  // 用「上轮 key 不一致则渲染期重置」替代 effect 内同步 setState（react/set-state-in-effect，
+  // 同 PanelApp mounted 标志的渲染期调整模式）——仅重置一次，不触发额外提交。
+  const attachKey = `${issueId}\n${cwd ?? ''}\n${attempt}`;
+  const lastAttachKeyRef = useRef<string | null>(null);
+  if (lastAttachKeyRef.current !== attachKey) {
+    lastAttachKeyRef.current = attachKey;
     setStatus('connecting');
     setErrorMessage(null);
+  }
+
+  useEffect(() => {
+    // 就绪守卫：根目录未设置（cwd=null）不进编排——不发 exists/spawn，杜绝启动期对
+    // 不存在目录的无效 spawn（后端 WARN「任务目录不存在」刷屏的源头）。
+    // 守卫期间 status 停留 'connecting'（哑会话语义）；父层对 cwd==null 有独立引导分支先渲染。
+    if (cwd == null) {
+      return;
+    }
+    let cancelled = false;
 
     // 事件处理函数式：data → 输出；exit → 终态。cancelled 后到达的旧流静默丢弃。
     const onEvent = (e: PtyEvent) => {
