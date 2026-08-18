@@ -11,6 +11,8 @@ import {
   WorkspaceProjectService,
   WorkspaceService,
 } from '@src/services';
+import { commands } from '@src/shared/bindings';
+import { logOnError } from '@src/shared/commands';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { trackerKeys } from './keys';
 import { useTrackerStore } from './store';
@@ -131,11 +133,14 @@ export function useUpdateProjectIssue(projectId: number) {
   });
 }
 
-/** 删除 projectIssue。 */
+/** 删除 projectIssue。先关其终端（issue 即 PTY 锚点，不关则孤儿会话占 store 至 app 退出）。 */
 export function useDeleteProjectIssue(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => ProjectIssueService.delete({ id }),
+    mutationFn: async (id: string) => {
+      await logOnError(commands.ptyShutdown(id), 'pty');
+      return ProjectIssueService.delete({ id });
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),
   });
 }
