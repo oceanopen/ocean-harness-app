@@ -1,18 +1,25 @@
-use tauri::{LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 
+use crate::shared::events::EVENT_SETTINGS_NAVIGATE;
 use crate::shared::screen::{
     DEFAULT_SIZE, SETTINGS_RATIO, find_monitor_for_tray, ratio_size, work_area_center,
 };
 
 #[tauri::command]
 #[specta::specta]
-pub fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
+pub fn show_settings_window(
+    app: tauri::AppHandle,
+    navigate_to: Option<String>,
+) -> Result<(), String> {
     // 按 tray.rect() 所在屏算尺寸；探测失败用 DEFAULT_SIZE 兜底，后续 set_position 也跳过。
     let monitor = find_monitor_for_tray(&app, "tray");
     let (width, height) = monitor
         .as_ref()
         .map(|m| ratio_size(m, SETTINGS_RATIO))
         .unwrap_or(DEFAULT_SIZE);
+
+    // 窗口是否已存在：决定深链用事件（二次唤起，webview 已就绪）还是初始 URL（首开）。
+    let settings_win_is_existing = app.get_webview_window("settings").is_some();
 
     let settings_win = match app.get_webview_window("settings") {
         Some(w) => {
@@ -26,10 +33,16 @@ pub fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
                 .product_name
                 .as_deref()
                 .unwrap_or("We Claude Terminal");
+            // 首开深链走初始 URL（settings.html#/<section>，HashRouter 直接消费）而非事件：
+            // build() 返回时 webview 尚未加载、前端 listen 未注册，此时 emit_to 必然丢失。
+            let url = match &navigate_to {
+                Some(section) => format!("settings.html#/{section}").into(),
+                None => "settings.html".into(),
+            };
             let win = WebviewWindowBuilder::new(
                 &app,
                 "settings",
-                WebviewUrl::App("settings.html".into()),
+                WebviewUrl::App(url),
             )
             .title(format!("{product} - 系统设置"))
             .inner_size(width, height)
@@ -61,6 +74,12 @@ pub fn show_settings_window(app: tauri::AppHandle) -> Result<(), String> {
     let _ = settings_win.show();
     let _ = settings_win.unminimize();
     let _ = settings_win.set_focus();
+
+    // 二次唤起深链走事件（此时 webview 已就绪、listen 已注册）；首开深链已在上方写入初始 URL。
+    // 无参不 emit，保留上次分区 hash——窗口 hide 不销毁，hash 天然存活。
+    if let (true, Some(section)) = (settings_win_is_existing, navigate_to) {
+        let _ = app.emit_to("settings", EVENT_SETTINGS_NAVIGATE, section);
+    }
 
     Ok(())
 }

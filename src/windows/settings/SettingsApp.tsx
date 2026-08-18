@@ -15,23 +15,43 @@ import {
   useTheme,
 } from '@mui/material';
 import appIcon from '@src/assets/app-icon.svg';
-import { useState } from 'react';
+import { EVENT_SETTINGS_NAVIGATE } from '@src/shared/events';
+import { listen } from '@tauri-apps/api/event';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import AboutPage from './AboutPage';
 import AppConfigPage from './AppConfigPage';
 import MonitorConfigPage from './MonitorConfigPage';
 import ProjectConfigPage from './ProjectConfigPage';
+import { DEFAULT_MENU, isMenuKey, MENU_PATHS, menuToPath, pathToMenu, type MenuKey } from './routes';
 import ServiceConfigPage from './ServiceConfigPage';
-
-type MenuKey = 'appConfig' | 'monitorConfig' | 'projectConfig' | 'serviceConfig' | 'about';
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
 
 function SettingsApp() {
   const { t } = useTranslation();
-  const [activeMenu, setActiveMenu] = useState<MenuKey>('appConfig');
+  // 活动分区由 URL pathname 派生（路由控制页面展示，对齐 panel 窗口）。
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeMenu = pathToMenu(location.pathname);
   const theme = useTheme();
+
+  // 分区跳转：settings 无子状态，直跳基础 path。
+  const goMenu = useCallback((menu: MenuKey) => {
+    navigate(menuToPath(menu));
+  }, [navigate]);
+
+  // 深链：show_settings_window(navigate_to=Some) 后 emit_to("settings")，宽容解析非法值回落默认分区。
+  useEffect(() => {
+    const unlisten = listen<string>(EVENT_SETTINGS_NAVIGATE, (e) => {
+      navigate(isMenuKey(e.payload) ? menuToPath(e.payload) : menuToPath(DEFAULT_MENU));
+    });
+    return () => {
+      unlisten.then(fn => fn()).catch(err => console.warn('[SettingsApp] unlisten settings:navigate failed:', err));
+    };
+  }, [navigate]);
 
   const menuItems: { key: MenuKey; label: string; icon: React.ReactNode }[] = [
     { key: 'appConfig', label: t('settings:menu.appConfig'), icon: <SettingsOutlinedIcon /> },
@@ -91,7 +111,7 @@ function SettingsApp() {
             <ListItemButton
               key={item.key}
               selected={activeMenu === item.key}
-              onClick={() => setActiveMenu(item.key)}
+              onClick={() => goMenu(item.key)}
               sx={{
                 'borderRadius': 2,
                 'mb': 0.5,
@@ -151,13 +171,17 @@ function SettingsApp() {
             </Typography>
           </Breadcrumbs>
         </Box>
-        {/* 页面内容区：各页面自带 header 原样保留。 */}
+        {/* 页面内容区：声明式路由（各页面自带 header 原样保留）；'/' 与未知路径 replace 归一到默认分区。 */}
         <Box sx={{ flex: 1, overflow: 'hidden' }}>
-          {activeMenu === 'appConfig' && <AppConfigPage />}
-          {activeMenu === 'monitorConfig' && <MonitorConfigPage />}
-          {activeMenu === 'projectConfig' && <ProjectConfigPage />}
-          {activeMenu === 'serviceConfig' && <ServiceConfigPage />}
-          {activeMenu === 'about' && <AboutPage />}
+          <Routes>
+            <Route path="/" element={<Navigate to={menuToPath(DEFAULT_MENU)} replace />} />
+            <Route path={MENU_PATHS.appConfig} element={<AppConfigPage />} />
+            <Route path={MENU_PATHS.monitorConfig} element={<MonitorConfigPage />} />
+            <Route path={MENU_PATHS.projectConfig} element={<ProjectConfigPage />} />
+            <Route path={MENU_PATHS.serviceConfig} element={<ServiceConfigPage />} />
+            <Route path={MENU_PATHS.about} element={<AboutPage />} />
+            <Route path="*" element={<Navigate to={menuToPath(DEFAULT_MENU)} replace />} />
+          </Routes>
         </Box>
       </Box>
     </Box>

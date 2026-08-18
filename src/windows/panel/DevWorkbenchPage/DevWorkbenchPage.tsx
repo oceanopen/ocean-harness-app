@@ -19,7 +19,7 @@ import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
 import { useEffect } from 'react';
-import { useMatch, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import EmbeddedTerminal from './components/EmbeddedTerminal/EmbeddedTerminal';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
@@ -36,14 +36,12 @@ function decodeDevTreeCollapsed(raw: string | null): boolean {
 //
 // 路由接入（全 query 风格）：issue 选中由 URL 驱动——
 //   ?pid=<projectId>&iid=<issueId>   选中 issue（项目→issue，issue 靠 project 加载，故 pid 同在 URL）
-// 本页单向同步 URL→store（仅活动路由）；隐藏保活时 store 跨顶层切换不丢。
+// 本页单向同步 URL→store。store 全局，页面卸载/重挂载（声明式路由切走即卸载）不丢选中。
 export default function DevWorkbenchPage() {
   const theme = useTheme();
   const [searchParams] = useSearchParams();
   const urlPid = numParam(searchParams.get(DEV_PID_PARAM));
   const urlIid = strParam(searchParams.get(DEV_IID_PARAM)); // issue id 为 uuid 字符串
-  // 仅当 devWorkbench 是当前活动路由时才同步；隐藏时保留 store 保活。
-  const isActive = useMatch('/devWorkbench') != null;
 
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
   const selectedProjectId = useDevWorkbenchStore(s => s.selectedProjectId);
@@ -54,21 +52,18 @@ export default function DevWorkbenchPage() {
     void setAppConfig(PANEL_DEV_TREE_COLLAPSED_KEY, toYesNo(!issueTreeCollapsed));
   };
 
-  // 加载用 pid：URL 优先（reload/恢复），否则 store（隐藏保活时 URL 无 dev 参数）。
+  // 加载用 pid：URL 优先（reload/恢复），否则 store（URL 无 dev 参数的兜底）；null 时不发请求。
   const loadPid = urlPid ?? selectedProjectId;
-  const { data: issues = [], isLoading: issuesLoading } = useProjectIssues(loadPid ?? 0);
+  const { data: issues = [], isLoading: issuesLoading } = useProjectIssues(loadPid);
 
-  // 有效选中：URL 优先，否则 store（保活）。
+  // 有效选中：URL 优先，否则 store。
   const effIssueId = urlIid ?? selectedIssueId;
   const hasSelection = effIssueId != null && loadPid != null;
   const issue = issues.find(i => i.id === effIssueId);
   const stateMeta = issue ? STATE_MAP.get(issue.stateCode) : undefined;
 
-  // URL → store 单向同步（仅活动路由）：有 iid 回写 issue（含其 projectId）；无 iid 清空；隐藏不动。
+  // URL → store 单向同步：有 iid 回写 issue（含其 projectId）；无 iid 清空。
   useEffect(() => {
-    if (!isActive) {
-      return;
-    }
     if (urlIid == null) {
       if (selectedIssueId != null) {
         selectIssue(null);
@@ -79,7 +74,7 @@ export default function DevWorkbenchPage() {
         selectIssue(target);
       }
     }
-  }, [isActive, urlIid, issues, selectedIssueId, selectIssue]);
+  }, [urlIid, issues, selectedIssueId, selectIssue]);
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>

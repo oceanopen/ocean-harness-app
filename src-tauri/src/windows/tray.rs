@@ -263,7 +263,8 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 crate::windows::tray::refresh_menu_texts(app);
             }
             "settings" => {
-                if let Err(e) = crate::windows::settings::show_settings_window(app.clone()) {
+                // 托盘为通用入口：不传深链分区，保留上次分区（无深链事件）。
+                if let Err(e) = crate::windows::settings::show_settings_window(app.clone(), None) {
                     log::warn!("failed to open settings window: {e}");
                 }
             }

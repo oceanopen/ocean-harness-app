@@ -7,7 +7,7 @@ import { useTrackerStore, useWorkspaceProjects, useWorkspaces } from '@src/state
 import { numParam, TRACKER_WID_PARAM } from '@src/windows/panel/routes';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMatch, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import ProjectIssueList from './components/ProjectIssueList/ProjectIssueList';
 import WorkspaceProjectList from './components/WorkspaceProjectList/WorkspaceProjectList';
 import WorkspaceDrawer from './components/WorkspacesView/WorkspaceDrawer';
@@ -21,15 +21,13 @@ import WorkspacesView from './components/WorkspacesView/WorkspacesView';
 // 右侧 icon 组 [新建空间 | 展开空间列表]。空间卡片网格（WorkspacesView 完整视图）以页面内
 // 绝对定位叠层盖在主体内容上方（铺满标题栏以下区域，非弹窗样式）；未选时默认展开，选中后可再开。
 //
-// 路由接入（全 query 风格）：工作空间选中态由 URL ?wid=<id> 驱动；本页单向同步 URL→store（仅活动路由）。
-// 项目选中态保留 store（不入 URL）。保活（display:none 不卸载）时 store 跨顶层切换不丢。
+// 路由接入（全 query 风格）：工作空间选中态由 URL ?wid=<id> 驱动；本页单向同步 URL→store。
+// 项目选中态保留 store（不入 URL）。store 全局，页面卸载/重挂载（声明式路由切走即卸载）不丢选中。
 export default function TrackerPage() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const urlWid = numParam(searchParams.get(TRACKER_WID_PARAM));
-  // 仅当 tracker 是当前活动路由时才同步；隐藏（切到别的顶层页）时保留 store，避免保活选中被清。
-  const isActive = useMatch('/tracker') != null;
 
   const selected = useTrackerStore(s => s.selectedWorkspace);
   const selectWorkspace = useTrackerStore(s => s.selectWorkspace);
@@ -39,7 +37,7 @@ export default function TrackerPage() {
   // 项目列表 query：与左栏 WorkspaceProjectList 共享同一缓存（同 key），命中即零请求。
   const { data: workspaceProjects = [] } = useWorkspaceProjects(selected?.id ?? null);
   // 工作空间全量（用于按 URL wid 回查实体，reload/恢复时回写 store）；与命令面板/WorkspacesView 共享缓存。
-  const { data: workspaces = [] } = useWorkspaces();
+  const { data: workspaces = [], isPending: workspacesPending } = useWorkspaces();
 
   // 空间选择浮层开合：未选空间时默认展开（首访引导）；选中后收起，点列表 icon 可再开。
   // reload 落在 ?wid=<id> 但 store 未回写时也保持展开，避免网格→浮层闪烁。
@@ -47,14 +45,10 @@ export default function TrackerPage() {
   // 新建空间抽屉（标题栏 add icon 快捷入口）。
   const [drawerCreateOpen, setDrawerCreateOpen] = useState(false);
 
-  // URL → store 单向同步（仅活动路由）：
+  // URL → store 单向同步：
   //   有 wid 且 store 不一致 → 按实体回写（reload/前进后退恢复）；
-  //   无 wid（bare /tracker，仅浮层「切换」语义可达）→ 清空选中回网格；
-  //   非活动路由（隐藏保活）→ 不动 store。
+  //   无 wid（bare /tracker，仅浮层「切换」语义可达）→ 清空选中回网格。
   useEffect(() => {
-    if (!isActive) {
-      return;
-    }
     if (urlWid == null) {
       if (selected) {
         selectWorkspace(null);
@@ -65,7 +59,15 @@ export default function TrackerPage() {
         selectWorkspace(ws);
       }
     }
-  }, [isActive, urlWid, selected, workspaces, selectWorkspace]);
+  }, [urlWid, selected, workspaces, selectWorkspace]);
+
+  // 不可解析的 wid 兜底：加载完成但列表中无此实体（wid 指向已删除的工作空间 / 加载失败 data=[]），
+  // replace 回落 bare /tracker（上方 effect 随之清空 store、浮层展开），避免永久 spinner 无出口。
+  useEffect(() => {
+    if (urlWid != null && !workspacesPending && !workspaces.some(w => w.id === urlWid)) {
+      navigate('/tracker', { replace: true });
+    }
+  }, [urlWid, workspaces, workspacesPending, navigate]);
 
   // 选中空间（浮层卡片点击 / URL 回写同口径）：写 store + 写 URL + 收起浮层。
   const handleSelectWorkspace = (ws: Parameters<typeof selectWorkspace>[0]) => {
@@ -80,6 +82,7 @@ export default function TrackerPage() {
   };
 
   // reload 落在 ?wid=<id> 但 store 尚未回写时，显示加载态而非网格闪烁一下。
+  // （wid 不可解析时由上方兜底 effect replace 回落，不会停在此分支。）
   if (urlWid != null && !selected) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>

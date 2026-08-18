@@ -37,13 +37,13 @@ import { useTrackerStore } from '@src/state/tracker';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation, useMatch, useNavigate } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import ClaudeSessionsPage from './ClaudeSessionsPage/ClaudeSessionsPage';
 import CommandPaletteProvider from './commandPalette/CommandPaletteProvider';
 import CommandPaletteTrigger from './commandPalette/CommandPaletteTrigger';
 import DevWorkbenchPage from './DevWorkbenchPage/DevWorkbenchPage';
 import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
-import { DEFAULT_MENU, menuToPath, pathToMenu, TRACKER_WID_PARAM } from './routes';
+import { DEFAULT_MENU, MENU_PATHS, menuToPath, pathToMenu, TRACKER_WID_PARAM } from './routes';
 import ServerStatusIndicator from './ServerStatusIndicator';
 import ServerStatusPage from './ServerStatusPage';
 import TrackerPage from './TrackerPage/TrackerPage';
@@ -57,8 +57,8 @@ function decodeSidebarCollapsed(raw: string | null): boolean {
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
 
-// 保活菜单：切走不卸载，靠「记忆上次完整路径」在切回时恢复子状态（URL 本身不记得切走页的子状态）。
-const KEEPALIVE_MENUS: ReadonlySet<MenuKey> = new Set<MenuKey>(['tracker', 'devWorkbench']);
+// 子状态页：切回时经「记忆上次完整路径」恢复 URL 子状态（wid/pid/iid），页面组件随之重建。
+const PATH_MEMORY_MENUS: ReadonlySet<MenuKey> = new Set<MenuKey>(['tracker', 'devWorkbench']);
 
 function PanelApp() {
   const { t } = useTranslation();
@@ -67,11 +67,6 @@ function PanelApp() {
   const navigate = useNavigate();
   const activeMenu = pathToMenu(location.pathname);
   const [repoRefreshTrigger, setRepoRefreshTrigger] = useState(0);
-  // tracker 保活：首次切到项目事项管理时置 true（仅升不降），配合下方 display:none 隐藏而非卸载，
-  // 保留选中工作空间/项目与已加载列表等全部 state（仅会话内，重启重新初始化）。
-  const [trackerMounted, setTrackerMounted] = useState(false);
-  // devWorkbench 保活：同 tracker，首次切到开发工作台时置 true（仅升不降），display:none 隐藏保留左树选中/步骤进度。
-  const [devWorkbenchMounted, setDevWorkbenchMounted] = useState(false);
   // tracker 三级选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
   const currentWorkspaceId = useTrackerStore(s => s.selectedWorkspace?.id ?? null);
   // 选中实体名供命令面板 jump 命令声明式渲染名称注释（id 用于逻辑判断，name 用于展示）。
@@ -84,37 +79,24 @@ function PanelApp() {
     void setAppConfig(PANEL_SIDEBAR_COLLAPSED_KEY, toYesNo(!collapsed));
   };
 
-  // 记忆每个保活菜单的「上次完整路径（含 query）」：切走后再切回时恢复到子状态，而非基础路径。
-  // 这是「子状态入 URL」与「保活」共存的关键补偿——URL 不会替切走的页面保留子状态。
+  // 记忆每个子状态页的「上次完整路径（含 query）」：切走后再切回时恢复到子状态，而非基础路径——
+  // 页面已改为切走即卸载，切回经此路径记忆 + URL→store 同步重建选中态（store 全局，不随组件卸载丢）。
   const lastPathRef = useRef<Partial<Record<MenuKey, string>>>({});
   useEffect(() => {
-    if (KEEPALIVE_MENUS.has(activeMenu)) {
+    if (PATH_MEMORY_MENUS.has(activeMenu)) {
       lastPathRef.current[activeMenu] = location.pathname + location.search;
     }
   }, [activeMenu, location.pathname, location.search]);
 
-  // 统一菜单跳转：保活菜单回到记忆的上次完整路径（恢复子状态），其余回基础路径。
+  // 统一菜单跳转：子状态页回到记忆的上次完整路径（恢复子状态），其余回基础路径。
   // 命令面板 navigate、侧栏点击、后端 panel:navigate 三条入口同源，皆经此。
   const goMenu = useCallback((menu: MenuKey) => {
     navigate(lastPathRef.current[menu] ?? menuToPath(menu));
   }, [navigate]);
 
-  // 保活页首次访问时常驻挂载（仅升不降）：渲染期据 activeMenu 调整（React 推荐模式，避免 effect 内同步 setState）。
-  if (activeMenu === 'tracker' && !trackerMounted) {
-    setTrackerMounted(true);
-  } else if (activeMenu === 'devWorkbench' && !devWorkbenchMounted) {
-    setDevWorkbenchMounted(true);
-  }
-
-  // 根路径规范化：'/' → 默认页（URL 干净，便于 reload 恢复）。
-  useEffect(() => {
-    if (location.pathname === '/') {
-      navigate(menuToPath(DEFAULT_MENU), { replace: true });
-    }
-  }, [location.pathname, navigate]);
-
   const openSettings = useCallback(() => {
-    void commands.showSettingsWindow().then((res) => {
+    // panel 顶栏为通用入口：不传深链分区，保留上次分区（与托盘一致）。
+    void commands.showSettingsWindow(null).then((res) => {
       if (res.status === 'error') {
         console.warn('[PanelApp] open settings failed:', res.error);
       }
@@ -132,7 +114,7 @@ function PanelApp() {
     navigate(wid ? `/tracker?${TRACKER_WID_PARAM}=${wid}` : '/tracker');
   }, [navigate]);
 
-  // 监听后端 panel:navigate 事件，复用 goMenu 切到指定页面（含保活路径恢复）。
+  // 监听后端 panel:navigate 事件，复用 goMenu 切到指定页面（含路径记忆恢复）。
   useEffect(() => {
     const unlisten = listen<MenuKey>(EVENT_PANEL_NAVIGATE, (e) => {
       goMenu(e.payload);
@@ -339,22 +321,17 @@ function PanelApp() {
               <SettingsOutlinedIcon />
             </IconButton>
           </Box>
-          {/* 页面内容区：各页面自带 header 原样保留。 */}
+          {/* 页面内容区：声明式路由（各页面自带 header 原样保留）；'/' 与未知路径 replace 归一到默认页。 */}
           <Box sx={{ flex: 1, overflow: 'hidden' }}>
-            {activeMenu === 'claudeSessions' && <ClaudeSessionsPage />}
-            {activeMenu === 'repositories' && <RepositoriesPage windowShownTrigger={repoRefreshTrigger} />}
-            {activeMenu === 'serverStatus' && <ServerStatusPage />}
-            {/* tracker 保活：首次访问才挂载，之后常驻；切走用 display:none 隐藏，保留全部 state。 */}
-            {trackerMounted && (
-              <Box sx={{ height: '100%', display: activeMenu === 'tracker' ? 'block' : 'none' }}>
-                <TrackerPage />
-              </Box>
-            )}
-            {devWorkbenchMounted && (
-              <Box sx={{ height: '100%', display: activeMenu === 'devWorkbench' ? 'block' : 'none' }}>
-                <DevWorkbenchPage />
-              </Box>
-            )}
+            <Routes>
+              <Route path="/" element={<Navigate to={menuToPath(DEFAULT_MENU)} replace />} />
+              <Route path={MENU_PATHS.claudeSessions} element={<ClaudeSessionsPage />} />
+              <Route path={MENU_PATHS.serverStatus} element={<ServerStatusPage />} />
+              <Route path={MENU_PATHS.repositories} element={<RepositoriesPage windowShownTrigger={repoRefreshTrigger} />} />
+              <Route path={MENU_PATHS.tracker} element={<TrackerPage />} />
+              <Route path={MENU_PATHS.devWorkbench} element={<DevWorkbenchPage />} />
+              <Route path="*" element={<Navigate to={menuToPath(DEFAULT_MENU)} replace />} />
+            </Routes>
           </Box>
         </Box>
       </Box>

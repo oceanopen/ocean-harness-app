@@ -27,6 +27,10 @@ pub const EVENT_PANEL_NAVIGATE: &str = "panel:navigate";
 /// 订阅方（RepositoriesPage）据此触发数据刷新，确保用户看到的始终是最新状态。
 pub const EVENT_PANEL_SHOWN: &str = "panel:shown";
 
+/// settings 窗口导航请求（payload = 分区 MenuKey 字符串）。show_settings_window 在 show 后
+/// emit_to settings 窗口，SettingsApp 监听后切到指定分区（前端宽容解析，非法回落 appConfig）。
+pub const EVENT_SETTINGS_NAVIGATE: &str = "settings:navigate";
+
 /// HTTP 本地服务运行态变更时广播（payload = `HttpServerStatus` 快照，含 runState/address/port/mode/lastError）。
 /// run_state 三态转换（Stopped/Starting/Running）时由 http_server 的 transition_state 触发；
 /// ServerStatusPage 监听后直接以 payload 同步前端 UI，无需二次拉取。

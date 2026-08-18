@@ -61,7 +61,8 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
   });
 
   const openSettings = useCallback(() => {
-    void commands.showSettingsWindow().then((res) => {
+    // 语义化深链：错误态引导用户去「项目配置」分区设置工作空间根目录。
+    void commands.showSettingsWindow('projectConfig').then((res) => {
       if (res.status === 'error') {
         console.warn('[EmbeddedTerminal] open settings failed:', res.error);
       }

@@ -12,7 +12,8 @@ export const DEV_IID_PARAM = 'iid';
 // 默认页（index '/' 重定向目标；pathToMenu 未知路径回落）。
 export const DEFAULT_MENU: MenuKey = 'claudeSessions';
 
-const MENU_PATHS: Record<MenuKey, string> = {
+// 菜单 → 基础 path 映射：同时供 PanelApp 的 <Route path> 声明与 pathToMenu 派生消费。
+export const MENU_PATHS: Record<MenuKey, string> = {
   claudeSessions: '/claudeSessions',
   serverStatus: '/serverStatus',
   repositories: '/repositories',
@@ -20,7 +21,7 @@ const MENU_PATHS: Record<MenuKey, string> = {
   devWorkbench: '/devWorkbench',
 };
 
-// 菜单 → 基础 path（不含 query）。保活页切回时优先用「记忆的上次完整路径」，回落到此。
+// 菜单 → 基础 path（不含 query）。子状态页切回时优先用「记忆的上次完整路径」，回落到此。
 export function menuToPath(menu: MenuKey): string {
   return MENU_PATHS[menu];
 }
