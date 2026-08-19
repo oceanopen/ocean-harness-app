@@ -31,11 +31,6 @@ pub const DEFAULT_ITERM2_SPLIT_DIRECTION: &str = "horizontal";
 pub const TERMINAL_POST_OPEN_COMMAND_KEY: &str = "terminal_post_open_command";
 pub const DEFAULT_TERMINAL_POST_OPEN_COMMAND: &str = "";
 
-/// 嵌入式终端启动时自动运行的编程 CLI 工具（shell-ready 注入）。
-/// 值域：'' = 不自动运行（默认）；'claude' = 当前唯一。后端不消费值（spawn 的
-/// startup_command 由前端传入），仅 key 镜像登记。默认值与前端镜像，改动需同步。
-pub const TERMINAL_STARTUP_CODE_CLI_KEY: &str = "terminal_startup_code_cli";
-
 /// HTTP 本地服务端口（Go sidecar）。留空或越界=用模式默认（dev 9000 / release 9100，由 http_server 解析）。
 /// min/max 与前端 src/shared/appConfig.ts 镜像，且对齐 Go sidecar 的端口校验区间，改动任一处需同步另一处。
 pub const HTTP_SERVER_PORT_KEY: &str = "http_server_port";

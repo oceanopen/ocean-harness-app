@@ -29,7 +29,9 @@ export interface UsePtySessionResult {
 }
 
 interface UsePtySessionArgs {
-  issueId: string;
+  // PTY 会话锚点（store key），由调用方派生：main pane 传裸 issueId（现有语义），
+  // 附加 pane 传 `${issueId}::${paneId}`（split 分割窗口，见 terminal_02 §3.1）。
+  sessionId: string;
   // 工作目录。null = 未就绪（工作空间根目录未设置）：不进编排（不发 spawn），返回哑会话；
   // 由 null 变有值时（设置页配置后 useConfigValue 事件回写触发重渲染）自动重新编排。
   cwd: string | null;
@@ -52,14 +54,14 @@ interface UsePtySessionArgs {
 // 后端 pty_spawn 幂等，React 19 StrictMode 双挂载安全；unmount 不调 ptyShutdown
 // ——会话与 ring 常驻（切 issue/切菜单仅断订阅，回切 reattach 重载）。
 async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): Promise<'active' | 'exited'> {
-  const { issueId, cwd, cols, rows, startupCodeCli } = args;
+  const { sessionId, cwd, cols, rows, startupCodeCli } = args;
   if (cwd == null) {
     throw new Error('unreachable: attach called with null cwd (guarded by effect)');
   }
-  if (await commands.ptyExists(issueId)) {
+  if (await commands.ptyExists(sessionId)) {
     const channel = new Channel<PtyEvent>();
     channel.onmessage = onEvent;
-    const reattached = await unwrap(commands.ptyReattach(issueId, channel));
+    const reattached = await unwrap(commands.ptyReattach(sessionId, channel));
     if (reattached != null) {
       if (reattached.scrollback) {
         args.onData(reattached.scrollback, true);
@@ -70,7 +72,7 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
   const spawned = await unwrap(
-    commands.ptySpawn({ issueId, cwd, cols, rows, startupCommand: startupCodeCli || undefined }, channel),
+    commands.ptySpawn({ sessionId, cwd, cols, rows, startupCommand: startupCodeCli || undefined }, channel),
   );
   if (!spawned.fresh && spawned.scrollback) {
     args.onData(spawned.scrollback, true);
@@ -78,7 +80,7 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   return 'active';
 }
 
-export function usePtySession({ issueId, cwd, cols, rows, startupCodeCli, onData }: UsePtySessionArgs): UsePtySessionResult {
+export function usePtySession({ sessionId, cwd, cols, rows, startupCodeCli, onData }: UsePtySessionArgs): UsePtySessionResult {
   const [status, setStatus] = useState<PtySessionStatus>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 重开/重试驱动：attempt 自增触发 effect 重跑编排
@@ -86,10 +88,10 @@ export function usePtySession({ issueId, cwd, cols, rows, startupCodeCli, onData
   // attach 期间 fit 已经上报的最新尺寸：attach 完成前 ptyResize 会因会话不存在
   // 被后端拒（日志实证），就绪后按积压值补发一次，保证 PTY winsize 与前端一致。
   const pendingSizeRef = useRef<{ cols: number; rows: number } | null>(null);
-  // 编排标识（issueId/cwd/attempt 串联）：依赖变化 → 新一轮编排应从 'connecting' 起步。
+  // 编排标识（sessionId/cwd/attempt 串联）：依赖变化 → 新一轮编排应从 'connecting' 起步。
   // 用「上轮 key 不一致则渲染期重置」替代 effect 内同步 setState（react/set-state-in-effect，
   // 同 PanelApp mounted 标志的渲染期调整模式）——仅重置一次，不触发额外提交。
-  const attachKey = `${issueId}\n${cwd ?? ''}\n${startupCodeCli}\n${attempt}`;
+  const attachKey = `${sessionId}\n${cwd ?? ''}\n${startupCodeCli}\n${attempt}`;
   const lastAttachKeyRef = useRef<string | null>(null);
   if (lastAttachKeyRef.current !== attachKey) {
     lastAttachKeyRef.current = attachKey;
@@ -114,12 +116,12 @@ export function usePtySession({ issueId, cwd, cols, rows, startupCodeCli, onData
       if (e.kind === 'data') {
         onData(e.data);
       } else {
-        console.info('[pty] session exit:', issueId);
+        console.info('[pty] session exit:', sessionId);
         setStatus('exited');
       }
     };
 
-    attach({ issueId, cwd, cols, rows, startupCodeCli, onData }, onEvent)
+    attach({ sessionId, cwd, cols, rows, startupCodeCli, onData }, onEvent)
       .then((next) => {
         if (cancelled) {
           return;
@@ -127,7 +129,7 @@ export function usePtySession({ issueId, cwd, cols, rows, startupCodeCli, onData
         setStatus(next);
         const pending = pendingSizeRef.current;
         if (pending != null && (pending.cols !== cols || pending.rows !== rows)) {
-          void unwrap(commands.ptyResize(issueId, pending.cols, pending.rows)).catch((e: unknown) => {
+          void unwrap(commands.ptyResize(sessionId, pending.cols, pending.rows)).catch((e: unknown) => {
             console.warn('[pty] pending resize failed:', e);
           });
         }
@@ -135,7 +137,7 @@ export function usePtySession({ issueId, cwd, cols, rows, startupCodeCli, onData
       .catch((e: unknown) => {
         if (!cancelled) {
           const message = e instanceof Error ? e.message : String(e);
-          console.warn('[pty] attach failed:', issueId, message);
+          console.warn('[pty] attach failed:', sessionId, message);
           setStatus('error');
           setErrorMessage(message);
         }
@@ -143,36 +145,36 @@ export function usePtySession({ issueId, cwd, cols, rows, startupCodeCli, onData
     return () => {
       cancelled = true;
     };
-  }, [issueId, cwd, cols, rows, startupCodeCli, attempt, onData]);
+  }, [sessionId, cwd, cols, rows, startupCodeCli, attempt, onData]);
 
-  // 以下操作函数均为稳定引用（deps 仅 issueId），直接交给 TerminalView 接线。
+  // 以下操作函数均为稳定引用（deps 仅 sessionId），直接交给 TerminalView 接线。
   const write = useCallback((data: string) => {
-    void unwrap(commands.ptyWrite(issueId, data)).catch((e: unknown) => {
+    void unwrap(commands.ptyWrite(sessionId, data)).catch((e: unknown) => {
       console.warn('[pty] write failed:', e);
     });
-  }, [issueId]);
+  }, [sessionId]);
 
   const resize = useCallback((c: number, r: number) => {
     pendingSizeRef.current = { cols: c, rows: r };
-    void unwrap(commands.ptyResize(issueId, c, r)).catch((e: unknown) => {
+    void unwrap(commands.ptyResize(sessionId, c, r)).catch((e: unknown) => {
       // attach 进行中会话尚未就绪 → not found 属预期（就绪后 attach.then 补发），降级为 debug。
       console.debug('[pty] resize skipped (session not ready):', e);
     });
-  }, [issueId]);
+  }, [sessionId]);
 
   const reopen = useCallback(() => {
     setAttempt(n => n + 1);
   }, []);
 
   const close = useCallback(() => {
-    void unwrap(commands.ptyShutdown(issueId))
+    void unwrap(commands.ptyShutdown(sessionId))
       .then(() => {
         setStatus('exited');
       })
       .catch((e: unknown) => {
         console.warn('[pty] shutdown failed:', e);
       });
-  }, [issueId]);
+  }, [sessionId]);
 
   return { status, errorMessage, write, resize, reopen, close };
 }

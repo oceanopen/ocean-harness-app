@@ -242,10 +242,10 @@ pub fn spawn_reader_thread(
     });
 }
 
-/// 单个 PTY 会话。key 为 issueId，存于 PtySessionStore。
+/// 单个 PTY 会话。key 为会话锚点（issueId 或 issueId::paneId），存于 PtySessionStore。
 pub struct PtySession {
-    /// 会话锚点 = issue uuid。
-    pub issue_id: String,
+    /// 会话锚点（store key，见 SpawnOpts.session_id）。
+    pub session_id: String,
     /// 工作目录（前端派生的 `${workspace_base_dir}/${issueId}`）。
     pub cwd: String,
     /// PTY master 端：resize。
@@ -266,7 +266,7 @@ pub struct PtySession {
 
 impl PtySession {
     pub fn new(
-        issue_id: String,
+        session_id: String,
         cwd: String,
         master: Box<dyn MasterPty>,
         writer: Box<dyn Write + Send>,
@@ -275,7 +275,7 @@ impl PtySession {
         started_at: i64,
     ) -> Self {
         Self {
-            issue_id,
+            session_id,
             cwd,
             master,
             writer: Arc::new(Mutex::new(writer)),
@@ -302,7 +302,7 @@ impl PtySession {
         let mut writer = self.writer.lock().map_err(|_| {
             format!(
                 "pty session {} writer lock poisoned",
-                self.issue_id
+                self.session_id
             )
         })?;
         writer
@@ -328,7 +328,7 @@ impl PtySession {
         let mut child = self.child.lock().map_err(|_| {
             format!(
                 "pty session {} child lock poisoned",
-                self.issue_id
+                self.session_id
             )
         })?;
         child

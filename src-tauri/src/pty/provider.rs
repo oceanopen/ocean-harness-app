@@ -17,8 +17,9 @@ use super::session::{PtyEvent, PtySession};
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnOpts {
-    /// 会话锚点 = issue uuid（一 issue 一终端，sessionId 即 issueId）。
-    pub issue_id: String,
+    /// 会话锚点（store key）：main pane = issue uuid，附加 pane = `issueId::paneId`
+    ///（split 分割窗口，terminal_02 §3.1）。
+    pub session_id: String,
     /// 工作目录绝对路径。
     pub cwd: String,
     /// 初始列数（前端 xterm addon-fit 实测值）。
@@ -36,8 +37,8 @@ pub struct SpawnOpts {
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PtySessionInfo {
-    /// 会话锚点 = issue uuid。
-    pub issue_id: String,
+    /// 会话锚点（store key，见 SpawnOpts.session_id）。
+    pub session_id: String,
     /// 会话工作目录。
     pub cwd: String,
     /// shell 进程 pid（拿不到为 0）。
@@ -53,8 +54,8 @@ pub struct PtySessionInfo {
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PtySpawned {
-    /// 会话锚点 = issue uuid。
-    pub issue_id: String,
+    /// 会话锚点（store key，见 SpawnOpts.session_id）。
+    pub session_id: String,
     /// 会话工作目录。
     pub cwd: String,
     /// shell 进程 pid（拿不到为 0）。
@@ -73,8 +74,8 @@ pub struct PtySpawned {
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyReattached {
-    /// 会话锚点 = issue uuid。
-    pub issue_id: String,
+    /// 会话锚点（store key，见 SpawnOpts.session_id）。
+    pub session_id: String,
     /// 会话是否已退出（true = 前端直接展示终态 + 重开按钮，不期待实时流）。
     pub exited: bool,
     /// ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。

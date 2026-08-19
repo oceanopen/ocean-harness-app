@@ -1,8 +1,9 @@
 // pty 域：嵌入式终端会话生命周期管理（docs/embedded_terminal.md）。
 //
 // 与 terminal/ 域的边界：terminal/ 负责跳转/打开外部终端（iTerm2/Terminal.app），
-// 本域负责应用内 PTY 会话（spawn/写/resize/关闭/reattach）——一 issue 一终端，
-// 锚点为 issue uuid，cwd 为 `${workspace_base_dir}/${issueId}`。
+// 本域负责应用内 PTY 会话（spawn/写/resize/关闭/reattach）——会话锚点（store key）
+// 为 issue uuid（main pane）或 `issueId::paneId`（split 附加 pane，terminal_02 §3.1），
+// cwd 为 `${workspace_base_dir}/${issueId}`（同一 issue 的全部 pane 同目录）。
 //
 // 子模块：
 //   provider        —— PtyProvider trait（远程 SSH 扩展预留）+ SpawnOpts/PtySpawned/PtySessionInfo
@@ -43,8 +44,8 @@ pub fn pty_spawn(
     let result = provider().spawn(opts, on_event);
     match &result {
         Ok(s) => log::info!(
-            "[pty] spawn ok issue_id={} fresh={} scrollback={}",
-            s.issue_id,
+            "[pty] spawn ok session_id={} fresh={} scrollback={}",
+            s.session_id,
             s.fresh,
             s.scrollback.len()
         ),
@@ -56,22 +57,22 @@ pub fn pty_spawn(
 /// 键盘输入写入会话。
 #[tauri::command]
 #[specta::specta]
-pub fn pty_write(issue_id: String, data: String) -> Result<(), String> {
-    provider().write(&issue_id, data.as_bytes())
+pub fn pty_write(session_id: String, data: String) -> Result<(), String> {
+    provider().write(&session_id, data.as_bytes())
 }
 
 /// 终端尺寸变化（xterm onResize）。
 #[tauri::command]
 #[specta::specta]
-pub fn pty_resize(issue_id: String, cols: u16, rows: u16) -> Result<(), String> {
-    provider().resize(&issue_id, cols, rows)
+pub fn pty_resize(session_id: String, cols: u16, rows: u16) -> Result<(), String> {
+    provider().resize(&session_id, cols, rows)
 }
 
 /// 关闭单个会话（kill shell + 移出 store）。
 #[tauri::command]
 #[specta::specta]
-pub fn pty_shutdown(issue_id: String) -> Result<(), String> {
-    provider().shutdown(&issue_id)
+pub fn pty_shutdown(session_id: String) -> Result<(), String> {
+    provider().shutdown(&session_id)
 }
 
 /// 关闭整个 issue 的全部 pane 会话（key == issueId 或 `issueId::` 前缀）。
@@ -92,8 +93,8 @@ pub fn pty_list_sessions() -> Vec<PtySessionInfo> {
 /// 会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。
 #[tauri::command]
 #[specta::specta]
-pub fn pty_exists(issue_id: String) -> bool {
-    provider().exists(&issue_id)
+pub fn pty_exists(session_id: String) -> bool {
+    provider().exists(&session_id)
 }
 
 /// 重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
@@ -101,14 +102,14 @@ pub fn pty_exists(issue_id: String) -> bool {
 #[tauri::command]
 #[specta::specta]
 pub fn pty_reattach(
-    issue_id: String,
+    session_id: String,
     on_event: tauri::ipc::Channel<PtyEvent>,
 ) -> Result<Option<PtyReattached>, String> {
-    let result = provider().reattach(&issue_id, on_event);
+    let result = provider().reattach(&session_id, on_event);
     if let Ok(Some(r)) = &result {
         log::info!(
-            "[pty] reattach issue_id={} exited={} scrollback={}",
-            issue_id,
+            "[pty] reattach session_id={} exited={} scrollback={}",
+            session_id,
             r.exited,
             r.scrollback.len()
         );
@@ -125,11 +126,11 @@ pub fn shutdown_all(store: &PtySessionStore) {
         .expect("PtySessionStore mutex poisoned");
     let sessions: Vec<_> = map.drain().collect();
     for (_, session) in sessions {
-        let issue_id = session.issue_id.clone();
+        let session_id = session.session_id.clone();
         if let Err(e) = session.shutdown() {
             log::warn!(
                 "[pty] shutdown_all kill {} failed: {}",
-                issue_id,
+                session_id,
                 e
             );
         }

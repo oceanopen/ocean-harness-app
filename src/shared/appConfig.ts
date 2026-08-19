@@ -64,8 +64,8 @@ export const DEFAULT_TERMINAL_POST_OPEN_COMMAND = '';
 
 // 嵌入式终端启动时自动运行的编程 CLI 工具（shell-ready 注入，docs/terminal_01_auto_claude.md）。
 // 值域：'' = 不自动运行（默认）；'claude' = 当前唯一支持项，未来扩 'codex' 等。
-// 后端 Rust 侧 SpawnOpts.startup_command 为通用 Option<String>，前端把枚举值映射为命令名。
-// 与后端 app_config.rs 镜像，改动任一处需同步另一处。
+// 后端 Rust 侧 SpawnOpts.startup_command 为通用 Option<String>，前端把枚举值映射为命令名，
+// 后端不读取本 key，故无需在 config.rs 加常量副本（参照 workspace_base_dir 先例）。
 export type TerminalStartupCodeCli = '' | 'claude';
 
 export const TERMINAL_STARTUP_CODE_CLI_KEY = 'terminal_startup_code_cli';

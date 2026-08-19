@@ -102,11 +102,11 @@ export const commands = {
 	 */
 	ptySpawn: (opts: SpawnOpts, onEvent: Channel<PtyEvent>) => typedError<PtySpawned, string>(__TAURI_INVOKE("pty_spawn", { opts, onEvent })),
 	/**  键盘输入写入会话。 */
-	ptyWrite: (issueId: string, data: string) => typedError<null, string>(__TAURI_INVOKE("pty_write", { issueId, data })),
+	ptyWrite: (sessionId: string, data: string) => typedError<null, string>(__TAURI_INVOKE("pty_write", { sessionId, data })),
 	/**  终端尺寸变化（xterm onResize）。 */
-	ptyResize: (issueId: string, cols: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("pty_resize", { issueId, cols, rows })),
+	ptyResize: (sessionId: string, cols: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("pty_resize", { sessionId, cols, rows })),
 	/**  关闭单个会话（kill shell + 移出 store）。 */
-	ptyShutdown: (issueId: string) => typedError<null, string>(__TAURI_INVOKE("pty_shutdown", { issueId })),
+	ptyShutdown: (sessionId: string) => typedError<null, string>(__TAURI_INVOKE("pty_shutdown", { sessionId })),
 	/**
 	 *  关闭整个 issue 的全部 pane 会话（key == issueId 或 `issueId::` 前缀）。
 	 *  issue 删除联动调用（模块 2 split 后一 issue 多 pane，防孤儿会话）。
@@ -115,19 +115,19 @@ export const commands = {
 	/**  列出全部会话快照（调试/后续状态栏用）。 */
 	ptyListSessions: () => __TAURI_INVOKE<PtySessionInfo[]>("pty_list_sessions"),
 	/**  会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。 */
-	ptyExists: (issueId: string) => __TAURI_INVOKE<boolean>("pty_exists", { issueId }),
+	ptyExists: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_exists", { sessionId }),
 	/**
 	 *  重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
 	 *  已退出会话照常返回（exited=true）；不存在返回 None（前端转 pty_spawn）。
 	 */
-	ptyReattach: (issueId: string, onEvent: Channel<PtyEvent>) => typedError<{
-	/**  会话锚点 = issue uuid。 */
-	issueId: string,
+	ptyReattach: (sessionId: string, onEvent: Channel<PtyEvent>) => typedError<{
+	/**  会话锚点（store key，见 SpawnOpts.session_id）。 */
+	sessionId: string,
 	/**  会话是否已退出（true = 前端直接展示终态 + 重开按钮，不期待实时流）。 */
 	exited: boolean,
 	/**  ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。 */
 	scrollback: string,
-} | null, string>(__TAURI_INVOKE("pty_reattach", { issueId, onEvent })),
+} | null, string>(__TAURI_INVOKE("pty_reattach", { sessionId, onEvent })),
 };
 
 /* Types */
@@ -248,8 +248,8 @@ export type PtyEvent =
 
 /**  pty_reattach 成功荷载：scrollback 随返回值一次性送达，实时流走已换装的 Channel。 */
 export type PtyReattached = {
-	/**  会话锚点 = issue uuid。 */
-	issueId: string,
+	/**  会话锚点（store key，见 SpawnOpts.session_id）。 */
+	sessionId: string,
 	/**  会话是否已退出（true = 前端直接展示终态 + 重开按钮，不期待实时流）。 */
 	exited: boolean,
 	/**  ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。 */
@@ -258,8 +258,8 @@ export type PtyReattached = {
 
 /**  会话信息快照（pty_list_sessions 返回，调试/后续状态栏用）。 */
 export type PtySessionInfo = {
-	/**  会话锚点 = issue uuid。 */
-	issueId: string,
+	/**  会话锚点（store key，见 SpawnOpts.session_id）。 */
+	sessionId: string,
 	/**  会话工作目录。 */
 	cwd: string,
 	/**  shell 进程 pid（拿不到为 0）。 */
@@ -272,8 +272,8 @@ export type PtySessionInfo = {
 
 /**  pty_spawn 成功荷载：会话元信息，前端挂载时直接渲染（无需再查 list）。 */
 export type PtySpawned = {
-	/**  会话锚点 = issue uuid。 */
-	issueId: string,
+	/**  会话锚点（store key，见 SpawnOpts.session_id）。 */
+	sessionId: string,
 	/**  会话工作目录。 */
 	cwd: string,
 	/**  shell 进程 pid（拿不到为 0）。 */
@@ -294,8 +294,11 @@ export type PtySpawned = {
  *  目录不存在时本模块不创建（skills 集成职责），spawn 失败自然暴露。
  */
 export type SpawnOpts = {
-	/**  会话锚点 = issue uuid（一 issue 一终端，sessionId 即 issueId）。 */
-	issueId: string,
+	/**
+	 *  会话锚点（store key）：main pane = issue uuid，附加 pane = `issueId::paneId`
+	 * （split 分割窗口，terminal_02 §3.1）。
+	 */
+	sessionId: string,
 	/**  工作目录绝对路径。 */
 	cwd: string,
 	/**  初始列数（前端 xterm addon-fit 实测值）。 */

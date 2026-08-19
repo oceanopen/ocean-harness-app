@@ -110,7 +110,7 @@ TerminalPanes/
 >
 > 状态图例：✅ 已完成 · 🔄 进行中 · ⬜ 待办
 
-### ⬜ 任务 1 — usePtySession 泛化 sessionId
+### ✅ 任务 1 — usePtySession 泛化 sessionId
 - **文件**：`EmbeddedTerminal/usePtySession.ts`（参数 `issueId` → `sessionId`）+ `EmbeddedTerminal.tsx`（传 `sessionId = issueId`）
 - **目标**：hook 与 issueId 解耦，锚点由调用方派生。现有行为零变化（main pane 仍传裸 issueId）。
 - **验证**：tsc/eslint；真机现有终端全场景不回归（开/切/回切/F5/删除）。

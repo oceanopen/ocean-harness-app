@@ -71,7 +71,7 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
   // hooks 顶层无条件调用（React 规则）；cwd=null 时 usePtySession 返回哑会话（不发 spawn，
   // status 恒 'connecting'），下方引导分支先于 spinner 渲染，不会闪错态。
   const session = usePtySession({
-    issueId,
+    sessionId: issueId,
     cwd,
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS,

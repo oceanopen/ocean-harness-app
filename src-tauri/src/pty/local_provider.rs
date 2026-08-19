@@ -111,8 +111,8 @@ impl LocalPtyProvider {
                 b.enqueue_startup(startup);
                 barrier = Some(b);
                 log::info!(
-                    "[pty] shell-ready wrapped spawn issue_id={} shell={}",
-                    opts.issue_id,
+                    "[pty] shell-ready wrapped spawn session_id={} shell={}",
+                    opts.session_id,
                     shell_name
                 );
             } else {
@@ -122,8 +122,8 @@ impl LocalPtyProvider {
                 b.enqueue_startup(startup);
                 barrier = Some(b);
                 log::warn!(
-                    "[pty] shell-ready fast fallback issue_id={} shell={}",
-                    opts.issue_id,
+                    "[pty] shell-ready fast fallback session_id={} shell={}",
+                    opts.session_id,
                     shell_name
                 );
             }
@@ -147,7 +147,7 @@ impl LocalPtyProvider {
         io.set_listener(listener.clone());
         let started_at = chrono::Utc::now().timestamp_millis();
         let mut session = PtySession::new(
-            opts.issue_id.clone(),
+            opts.session_id.clone(),
             opts.cwd.clone(),
             pair.master,
             writer,
@@ -172,24 +172,24 @@ impl LocalPtyProvider {
             // 二次确认：并发 spawn 同 issueId 的败者 kill 刚起的 shell 让位，不覆盖先入会话，
             // 但把现有会话的 listener 换成自己的——败者（如 StrictMode 第二遍挂载）才是
             // 存活的前端，不换装则现有会话持续向已销毁的旧 Channel 推流（数据全丢）。
-            if let Some(existing) = map.get_mut(&opts.issue_id) {
+            if let Some(existing) = map.get_mut(&opts.session_id) {
                 if !existing.exited() {
                     existing.io.set_listener(listener.clone());
                     let _ = session.shutdown();
                     return Ok(self.snapshot(existing));
                 }
             }
-            map.insert(opts.issue_id.clone(), session);
+            map.insert(opts.session_id.clone(), session);
         }
 
         log::info!(
-            "[pty] spawned session issue_id={} pid={} cwd={}",
-            opts.issue_id,
+            "[pty] spawned session session_id={} pid={} cwd={}",
+            opts.session_id,
             pid,
             opts.cwd
         );
         Ok(PtySpawned {
-            issue_id: opts.issue_id.clone(),
+            session_id: opts.session_id.clone(),
             cwd: opts.cwd.clone(),
             pid,
             started_at,
@@ -201,7 +201,7 @@ impl LocalPtyProvider {
     /// 从现有会话生成快照荷载（scrollback 由调用方按需覆写）。
     fn snapshot(&self, s: &PtySession) -> PtySpawned {
         PtySpawned {
-            issue_id: s.issue_id.clone(),
+            session_id: s.session_id.clone(),
             cwd: s.cwd.clone(),
             pid: s
                 .child
@@ -262,7 +262,7 @@ impl PtyProvider for LocalPtyProvider {
                 .0
                 .lock()
                 .expect("PtySessionStore mutex poisoned");
-            map.get(&opts.issue_id).map(|s| !s.exited())
+            map.get(&opts.session_id).map(|s| !s.exited())
         };
         match existing {
             // 未退出：复用。同一临界区内快照 ring + 换装 listener——StrictMode 双挂载
@@ -274,7 +274,7 @@ impl PtyProvider for LocalPtyProvider {
                     .0
                     .lock()
                     .expect("PtySessionStore mutex poisoned");
-                if let Some(session) = map.get_mut(&opts.issue_id) {
+                if let Some(session) = map.get_mut(&opts.session_id) {
                     let (scrollback, exited) = session.io.reattach(listener);
                     debug_assert!(!exited, "未退出分支不会 exited");
                     let mut spawned = self.snapshot(session);
@@ -292,7 +292,7 @@ impl PtyProvider for LocalPtyProvider {
                         .0
                         .lock()
                         .expect("PtySessionStore mutex poisoned");
-                    if let Some(session) = map.remove(&opts.issue_id) {
+                    if let Some(session) = map.remove(&opts.session_id) {
                         let _ = session.shutdown();
                     }
                 }
@@ -319,9 +319,9 @@ impl PtyProvider for LocalPtyProvider {
             .expect("PtySessionStore mutex poisoned");
         match map.remove(id) {
             Some(session) => {
-                let issue_id = session.issue_id.clone();
+                let session_id = session.session_id.clone();
                 session.shutdown()?;
-                log::info!("[pty] shutdown session issue_id={}", issue_id);
+                log::info!("[pty] shutdown session session_id={}", session_id);
                 Ok(())
             }
             None => Ok(()), // 幂等：不存在视为已关闭
@@ -377,7 +377,7 @@ impl PtyProvider for LocalPtyProvider {
                     .expect("reattach listener consumed once"),
             );
             Some(PtyReattached {
-                issue_id: s.issue_id.clone(),
+                session_id: s.session_id.clone(),
                 exited,
                 scrollback,
             })
@@ -393,7 +393,7 @@ impl PtyProvider for LocalPtyProvider {
             .expect("PtySessionStore mutex poisoned");
         map.values()
             .map(|s| PtySessionInfo {
-                issue_id: s.issue_id.clone(),
+                session_id: s.session_id.clone(),
                 cwd: s.cwd.clone(),
                 pid: s
                     .child
@@ -436,9 +436,9 @@ mod tests {
         let tmp = std::env::temp_dir().join("pty-smoke-test");
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let issue_id = "smoke-test-issue".to_string();
+        let session_id = "smoke-test-issue".to_string();
         let opts = SpawnOpts {
-            issue_id: issue_id.clone(),
+            session_id: session_id.clone(),
             cwd: tmp.to_string_lossy().into_owned(),
             cols: 80,
             rows: 24,
@@ -456,13 +456,13 @@ mod tests {
             .spawn(opts.clone(), Channel::new(|_| Ok(())))
             .unwrap();
         assert!(!again.fresh, "重复 spawn 应复用现有会话");
-        assert_eq!(again.issue_id, issue_id);
+        assert_eq!(again.session_id, session_id);
         assert_eq!(provider.list().len(), 1);
 
         provider
-            .write(&issue_id, b"echo PTY_SMOKE_OK\r\n")
+            .write(&session_id, b"echo PTY_SMOKE_OK\r\n")
             .unwrap();
-        provider.resize(&issue_id, 100, 30).unwrap();
+        provider.resize(&session_id, 100, 30).unwrap();
 
         // 不再 clone 第二个 reader（与 reader 线程竞争同一 fd 会各读走一半字节）。
         // 输出断言改走 ring：reader 线程把全部输出入 ring，轮询 snapshot 直到含回显。
@@ -470,7 +470,7 @@ mod tests {
         let mut out = String::new();
         while Instant::now() < deadline {
             out = provider
-                .with_session(&issue_id, &mut |s| s.io.snapshot())
+                .with_session(&session_id, &mut |s| s.io.snapshot())
                 .unwrap();
             if out.contains("PTY_SMOKE_OK") {
                 break;
@@ -482,7 +482,7 @@ mod tests {
             "未读到 echo 回显，ring: {out}"
         );
 
-        provider.shutdown(&issue_id).unwrap();
+        provider.shutdown(&session_id).unwrap();
         assert!(provider.list().is_empty());
     }
 
@@ -494,11 +494,11 @@ mod tests {
         let tmp = std::env::temp_dir().join("pty-reattach-test");
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let issue_id = "reattach-test-issue".to_string();
+        let session_id = "reattach-test-issue".to_string();
         provider
             .spawn(
                 SpawnOpts {
-                    issue_id: issue_id.clone(),
+                    session_id: session_id.clone(),
                     cwd: tmp.to_string_lossy().into_owned(),
                     cols: 80,
                     rows: 24,
@@ -508,16 +508,16 @@ mod tests {
             )
             .unwrap();
 
-        assert!(provider.exists(&issue_id));
+        assert!(provider.exists(&session_id));
         assert!(!provider.exists("no-such-issue"));
 
         provider
-            .write(&issue_id, b"echo REATTACH_MARK\r\n")
+            .write(&session_id, b"echo REATTACH_MARK\r\n")
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(8);
         loop {
             let ring = provider
-                .with_session(&issue_id, &mut |s| s.io.snapshot())
+                .with_session(&session_id, &mut |s| s.io.snapshot())
                 .unwrap();
             if ring.contains("REATTACH_MARK") || Instant::now() > deadline {
                 break;
@@ -527,10 +527,10 @@ mod tests {
 
         // reattach：scrollback 含历史输出 + 换装 listener（裸 Channel，send 丢弃）。
         let reattached = provider
-            .reattach(&issue_id, Channel::new(|_| Ok(())))
+            .reattach(&session_id, Channel::new(|_| Ok(())))
             .unwrap()
             .expect("会话存在应返回 Some");
-        assert_eq!(reattached.issue_id, issue_id);
+        assert_eq!(reattached.session_id, session_id);
         assert!(!reattached.exited);
         assert!(
             reattached.scrollback.contains("REATTACH_MARK"),
@@ -544,7 +544,7 @@ mod tests {
             .unwrap()
             .is_none());
 
-        provider.shutdown(&issue_id).unwrap();
+        provider.shutdown(&session_id).unwrap();
     }
 
     /// shell-ready 全链路（任务 2）：startup_command 包装 spawn → marker 被 barrier
@@ -558,9 +558,9 @@ mod tests {
         std::fs::create_dir_all(&base).unwrap();
         set_app_data_dir(base.clone());
 
-        let issue_id = "shell-ready-e2e-issue".to_string();
+        let session_id = "shell-ready-e2e-issue".to_string();
         let opts = SpawnOpts {
-            issue_id: issue_id.clone(),
+            session_id: session_id.clone(),
             cwd: base.to_string_lossy().into_owned(),
             cols: 80,
             rows: 24,
@@ -573,7 +573,7 @@ mod tests {
 
         // marker 前的并发写：应被 barrier 排队（不直达 shell）。
         provider
-            .write(&issue_id, b"echo USER_QUEUED\r")
+            .write(&session_id, b"echo USER_QUEUED\r")
             .unwrap();
 
         // 轮询 ring：注入命令回显 + 执行输出出现；marker 字节绝不出现。
@@ -581,7 +581,7 @@ mod tests {
         let mut ring = String::new();
         while Instant::now() < deadline {
             ring = provider
-                .with_session(&issue_id, &mut |s| s.io.snapshot())
+                .with_session(&session_id, &mut |s| s.io.snapshot())
                 .unwrap();
             if ring.contains("WE_TERM_INJECT_OK") && ring.contains("USER_QUEUED") {
                 break;
@@ -605,7 +605,7 @@ mod tests {
             "marker 字节泄漏到前端，ring 含完整 OSC 777 序列"
         );
 
-        provider.shutdown(&issue_id).unwrap();
+        provider.shutdown(&session_id).unwrap();
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -622,7 +622,7 @@ mod tests {
             provider
                 .spawn(
                     SpawnOpts {
-                        issue_id: key.to_string(),
+                        session_id: key.to_string(),
                         cwd: tmp.to_string_lossy().into_owned(),
                         cols: 80,
                         rows: 24,
@@ -639,7 +639,7 @@ mod tests {
         let remaining: Vec<String> = provider
             .list()
             .into_iter()
-            .map(|s| s.issue_id)
+            .map(|s| s.session_id)
             .collect();
         assert_eq!(remaining, vec!["b".to_string()]);
 
