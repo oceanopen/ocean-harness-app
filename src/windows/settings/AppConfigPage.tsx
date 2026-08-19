@@ -93,7 +93,7 @@ function AppConfigPage() {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <LanguageIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-              <Typography>{t('settings:row.language')}</Typography>
+              <Typography>{t('settings:app.row.language')}</Typography>
             </Box>
             <FormControl size="small" sx={{ minWidth: 140 }}>
               <Select
@@ -124,7 +124,7 @@ function AppConfigPage() {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <PaletteOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-              <Typography>{t('settings:row.appearance')}</Typography>
+              <Typography>{t('settings:app.row.appearance')}</Typography>
             </Box>
             <FormControl size="small" sx={{ minWidth: 140 }}>
               <Select
@@ -154,13 +154,13 @@ function AppConfigPage() {
         }}
       >
         <Button onClick={handleReset} color="inherit">
-          {t('settings:button.reset')}
+          {t('settings:common.button.reset')}
         </Button>
         <Button onClick={handleCancel} disabled={!dirty} color="inherit">
-          {t('settings:button.cancel')}
+          {t('settings:common.button.cancel')}
         </Button>
         <Button onClick={handleSave} disabled={!dirty} variant="contained">
-          {t('settings:button.save')}
+          {t('settings:common.button.save')}
         </Button>
       </Box>
     </Box>

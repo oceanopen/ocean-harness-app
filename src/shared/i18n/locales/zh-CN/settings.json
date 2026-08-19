@@ -2,44 +2,75 @@
   "title": "系统设置",
   "menu": {
     "appConfig": "应用设置",
-    "monitorConfig": "终端监听配置",
+    "terminalConfig": "终端配置",
     "projectConfig": "项目配置",
     "serviceConfig": "服务配置",
     "about": "关于"
   },
-  "row": {
-    "language": "语言",
-    "appearance": "外观",
-    "pollInterval": "兜底轮询周期",
-    "iterm2SplitDirection": "iTerm2 分屏方向",
-    "terminalPostOpenCommand": "打开终端后执行",
-    "httpServerPort": "HTTP 服务端口",
-    "workspaceBaseDir": "工作空间根目录"
+  "common": {
+    "button": {
+      "reset": "恢复默认",
+      "cancel": "取消",
+      "save": "保存"
+    }
   },
-  "placeholder": {
-    "workspaceBaseDir": "未设置，选择目录后将作为工作空间根目录"
+  "app": {
+    "row": {
+      "language": "界面语言",
+      "appearance": "外观"
+    },
+    "option": {
+      "followSystem": "跟随系统",
+      "chinese": "简体中文",
+      "english": "English",
+      "light": "浅色",
+      "dark": "深色"
+    }
   },
-  "option": {
-    "followSystem": "跟随系统",
-    "light": "浅色",
-    "dark": "深色",
-    "chinese": "中文",
-    "english": "English",
-    "splitHorizontal": "上下分屏",
-    "splitVertical": "左右分屏",
-    "splitNone": "不分屏"
+  "terminal": {
+    "section": {
+      "monitorListen": "编程工具终端监听",
+      "embeddedTerminal": "应用嵌入终端"
+    },
+    "row": {
+      "pollInterval": "轮询周期",
+      "iterm2SplitDirection": "iTerm2 分屏方向",
+      "terminalPostOpenCommand": "打开终端后追加命令",
+      "startupCodeCli": "启动终端时自动运行"
+    },
+    "option": {
+      "splitHorizontal": "上下分屏",
+      "splitVertical": "左右分屏",
+      "splitNone": "不分屏",
+      "startupCodeCliNone": "不自动运行",
+      "startupCodeCliClaude": "Claude"
+    },
+    "help": {
+      "pollInterval": "即时性由文件监听负责，此处仅驱动失效会话清理与文件监听漏报兜底。",
+      "terminalPostOpenCommand": "cd 进入仓库目录后会自动执行此命令，留空则只 cd。例如 add_proxy 或 ./bootstrap.sh；多个命令可用 && 拼接，如 add_proxy && npm run dev。",
+      "startupCodeCli": "选中任务打开嵌入式终端后，shell 就绪时自动运行选定的编程 CLI 工具（如 claude）。选「不自动运行」则打开普通 shell"
+    },
+    "unit": {
+      "seconds": "秒"
+    }
   },
-  "unit": {
-    "seconds": "秒"
+  "project": {
+    "row": {
+      "workspaceBaseDir": "工作空间根目录"
+    },
+    "placeholder": {
+      "workspaceBaseDir": "未设置，选择目录后将作为工作空间根目录"
+    },
+    "help": {
+      "workspaceBaseDir": "任务的本地工作目录都在此根目录下（目录名 = 任务 ID）。嵌入式终端与外部终端打开均以此为基准"
+    }
   },
-  "help": {
-    "pollInterval": "即时性由文件监听负责，此处仅驱动失效会话清理与文件监听漏报兜底。",
-    "terminalPostOpenCommand": "cd 进入仓库目录后会自动执行此命令，留空则只 cd。例如 add_proxy 或 ./bootstrap.sh；多个命令可用 && 拼接，如 add_proxy && npm run dev。",
-    "httpServerPort": "留空使用默认端口（{{port}}），范围 3000–10000。修改后需在服务状态页手动重启服务生效。"
-  },
-  "button": {
-    "reset": "重置",
-    "cancel": "取消",
-    "save": "保存"
+  "service": {
+    "row": {
+      "httpServerPort": "HTTP 服务端口"
+    },
+    "help": {
+      "httpServerPort": "留空使用默认端口（{{port}}），范围 3000–10000。修改后需在服务状态页手动重启服务生效。"
+    }
   }
 }

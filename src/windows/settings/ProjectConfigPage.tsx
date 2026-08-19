@@ -76,12 +76,12 @@ function ProjectConfigPage() {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <FolderOpenOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-              <Typography>{t('settings:row.workspaceBaseDir')}</Typography>
+              <Typography>{t('settings:project.row.workspaceBaseDir')}</Typography>
             </Box>
             <TextField
               size="small"
               sx={{ width: 360 }}
-              placeholder={t('settings:placeholder.workspaceBaseDir')}
+              placeholder={t('settings:project.placeholder.workspaceBaseDir')}
               value={draftBaseDir}
               onChange={(e) => {
                 setDraftBaseDir(e.target.value);
@@ -94,7 +94,7 @@ function ProjectConfigPage() {
                       <IconButton
                         size="small"
                         onClick={handleBrowse}
-                        aria-label={t('settings:row.workspaceBaseDir')}
+                        aria-label={t('settings:project.row.workspaceBaseDir')}
                       >
                         <FolderOpenIcon fontSize="small" />
                       </IconButton>
@@ -118,13 +118,13 @@ function ProjectConfigPage() {
         }}
       >
         <Button onClick={handleReset} color="inherit">
-          {t('settings:button.reset')}
+          {t('settings:common.button.reset')}
         </Button>
         <Button onClick={handleCancel} disabled={!dirty} color="inherit">
-          {t('settings:button.cancel')}
+          {t('settings:common.button.cancel')}
         </Button>
         <Button onClick={handleSave} disabled={!dirty} variant="contained">
-          {t('settings:button.save')}
+          {t('settings:common.button.save')}
         </Button>
       </Box>
     </Box>

@@ -1,6 +1,12 @@
 import { SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Box, Button, Typography, useTheme } from '@mui/material';
-import { DEFAULT_WORKSPACE_BASE_DIR, WORKSPACE_BASE_DIR_KEY } from '@src/shared/appConfig';
+import {
+  DEFAULT_TERMINAL_STARTUP_CODE_CLI,
+  DEFAULT_WORKSPACE_BASE_DIR,
+  parseTerminalStartupCodeCli,
+  TERMINAL_STARTUP_CODE_CLI_KEY,
+  WORKSPACE_BASE_DIR_KEY,
+} from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useCallback, useRef } from 'react';
@@ -10,6 +16,11 @@ import { usePtySession } from './usePtySession';
 // 工作空间根目录 decode：缺失回落空串（= 未设置）。模块级保证引用稳定（useConfigValue 要求）。
 function decodeWorkspaceBaseDir(raw: string | null): string {
   return raw ?? DEFAULT_WORKSPACE_BASE_DIR;
+}
+
+// 启动自动运行 CLI decode：非法/缺失回落空串（= 不自动运行）。模块级保证引用稳定。
+function decodeStartupCodeCli(raw: string | null): string {
+  return parseTerminalStartupCodeCli(raw) ?? DEFAULT_TERMINAL_STARTUP_CODE_CLI;
 }
 
 // 初始尺寸占位：真实尺寸由 TerminalView fit 后经 onResize 校正
@@ -35,6 +46,11 @@ interface EmbeddedTerminalProps {
 export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
   const theme = useTheme();
   const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
+  const startupCodeCli = useConfigValue(
+    TERMINAL_STARTUP_CODE_CLI_KEY,
+    decodeStartupCodeCli,
+    DEFAULT_TERMINAL_STARTUP_CODE_CLI,
+  );
 
   const writeDataRef = useRef<((text: string) => void) | null>(null);
   // 稳定引用（deps=[]）：直接交给 usePtySession / TerminalView 接线，不走 ref 转发层。
@@ -59,6 +75,7 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
     cwd,
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS,
+    startupCodeCli,
     onData: handleTerminalData,
   });
 

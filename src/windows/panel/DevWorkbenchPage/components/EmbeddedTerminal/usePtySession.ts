@@ -36,6 +36,9 @@ interface UsePtySessionArgs {
   // 初始尺寸（挂载后 TerminalView fit 实测会再 resize 校正）
   cols: number;
   rows: number;
+  // 启动自动运行的编程 CLI（'' = 不注入，普通 shell）。仅 fresh spawn 生效；
+  // 已活会话（reattach/复用）不重注入——切换配置即时重编排但活会话保持原状。
+  startupCodeCli: string;
   // 输出回调（TerminalView 的 write 桥）；reattach/spawn 复用的 scrollback 也经此一次送达。
   // 要求稳定引用（父层 useCallback([])），本 hook 不做 ref 转发层。
   onData: (text: string) => void;
@@ -48,7 +51,7 @@ interface UsePtySessionArgs {
 // 后端 pty_spawn 幂等，React 19 StrictMode 双挂载安全；unmount 不调 ptyShutdown
 // ——会话与 ring 常驻（切 issue/切菜单仅断订阅，回切 reattach 重载）。
 async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): Promise<'active' | 'exited'> {
-  const { issueId, cwd, cols, rows } = args;
+  const { issueId, cwd, cols, rows, startupCodeCli } = args;
   if (cwd == null) {
     throw new Error('unreachable: attach called with null cwd (guarded by effect)');
   }
@@ -65,14 +68,16 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   }
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
-  const spawned = await unwrap(commands.ptySpawn({ issueId, cwd, cols, rows }, channel));
+  const spawned = await unwrap(
+    commands.ptySpawn({ issueId, cwd, cols, rows, startupCommand: startupCodeCli || undefined }, channel),
+  );
   if (!spawned.fresh && spawned.scrollback) {
     args.onData(spawned.scrollback);
   }
   return 'active';
 }
 
-export function usePtySession({ issueId, cwd, cols, rows, onData }: UsePtySessionArgs): UsePtySessionResult {
+export function usePtySession({ issueId, cwd, cols, rows, startupCodeCli, onData }: UsePtySessionArgs): UsePtySessionResult {
   const [status, setStatus] = useState<PtySessionStatus>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 重开/重试驱动：attempt 自增触发 effect 重跑编排
@@ -83,7 +88,7 @@ export function usePtySession({ issueId, cwd, cols, rows, onData }: UsePtySessio
   // 编排标识（issueId/cwd/attempt 串联）：依赖变化 → 新一轮编排应从 'connecting' 起步。
   // 用「上轮 key 不一致则渲染期重置」替代 effect 内同步 setState（react/set-state-in-effect，
   // 同 PanelApp mounted 标志的渲染期调整模式）——仅重置一次，不触发额外提交。
-  const attachKey = `${issueId}\n${cwd ?? ''}\n${attempt}`;
+  const attachKey = `${issueId}\n${cwd ?? ''}\n${startupCodeCli}\n${attempt}`;
   const lastAttachKeyRef = useRef<string | null>(null);
   if (lastAttachKeyRef.current !== attachKey) {
     lastAttachKeyRef.current = attachKey;
@@ -113,7 +118,7 @@ export function usePtySession({ issueId, cwd, cols, rows, onData }: UsePtySessio
       }
     };
 
-    attach({ issueId, cwd, cols, rows, onData }, onEvent)
+    attach({ issueId, cwd, cols, rows, startupCodeCli, onData }, onEvent)
       .then((next) => {
         if (cancelled) {
           return;
@@ -137,7 +142,7 @@ export function usePtySession({ issueId, cwd, cols, rows, onData }: UsePtySessio
     return () => {
       cancelled = true;
     };
-  }, [issueId, cwd, cols, rows, attempt, onData]);
+  }, [issueId, cwd, cols, rows, startupCodeCli, attempt, onData]);
 
   // 以下操作函数均为稳定引用（deps 仅 issueId），直接交给 TerminalView 接线。
   const write = useCallback((data: string) => {

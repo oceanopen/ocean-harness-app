@@ -69,7 +69,7 @@ function ServiceConfigPage() {
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                 <HttpOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-                <Typography>{t('settings:row.httpServerPort')}</Typography>
+                <Typography>{t('settings:service.row.httpServerPort')}</Typography>
               </Box>
               <TextField
                 size="small"
@@ -80,7 +80,7 @@ function ServiceConfigPage() {
                 sx={{ width: 140 }}
               />
             </Box>
-            <FormHelperText error={invalid}>{t('settings:help.httpServerPort', { port: defaultPort })}</FormHelperText>
+            <FormHelperText error={invalid}>{t('settings:service.help.httpServerPort', { port: defaultPort })}</FormHelperText>
           </Box>
         </Box>
       </Box>
@@ -96,13 +96,13 @@ function ServiceConfigPage() {
         }}
       >
         <Button onClick={handleReset} color="inherit">
-          {t('settings:button.reset')}
+          {t('settings:common.button.reset')}
         </Button>
         <Button onClick={handleCancel} disabled={!dirty} color="inherit">
-          {t('settings:button.cancel')}
+          {t('settings:common.button.cancel')}
         </Button>
         <Button onClick={handleSave} disabled={!dirty || invalid} variant="contained">
-          {t('settings:button.save')}
+          {t('settings:common.button.save')}
         </Button>
       </Box>
     </Box>

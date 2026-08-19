@@ -2,44 +2,75 @@
   "title": "Settings",
   "menu": {
     "appConfig": "App Settings",
-    "monitorConfig": "Monitor Config",
+    "terminalConfig": "Terminal Config",
     "projectConfig": "Project Config",
     "serviceConfig": "Service Config",
     "about": "About"
   },
-  "row": {
-    "language": "Language",
-    "appearance": "Appearance",
-    "pollInterval": "Fallback poll interval",
-    "iterm2SplitDirection": "iTerm2 split direction",
-    "terminalPostOpenCommand": "Run after opening terminal",
-    "httpServerPort": "HTTP server port",
-    "workspaceBaseDir": "Workspace base directory"
+  "common": {
+    "button": {
+      "reset": "Reset",
+      "cancel": "Cancel",
+      "save": "Save"
+    }
   },
-  "placeholder": {
-    "workspaceBaseDir": "Not set. Pick a directory to use as the workspace base directory"
+  "app": {
+    "row": {
+      "language": "Language",
+      "appearance": "Appearance"
+    },
+    "option": {
+      "followSystem": "Follow system",
+      "chinese": "中文",
+      "english": "English",
+      "light": "Light",
+      "dark": "Dark"
+    }
   },
-  "option": {
-    "followSystem": "Follow system",
-    "light": "Light",
-    "dark": "Dark",
-    "chinese": "中文",
-    "english": "English",
-    "splitHorizontal": "Horizontal (top-bottom)",
-    "splitVertical": "Vertical (left-right)",
-    "splitNone": "No split"
+  "terminal": {
+    "section": {
+      "monitorListen": "Coding tool terminal monitoring",
+      "embeddedTerminal": "Embedded terminal"
+    },
+    "row": {
+      "pollInterval": "Fallback poll interval",
+      "iterm2SplitDirection": "iTerm2 split direction",
+      "terminalPostOpenCommand": "Run after opening terminal",
+      "startupCodeCli": "Auto-run on terminal start"
+    },
+    "option": {
+      "splitHorizontal": "Horizontal (top-bottom)",
+      "splitVertical": "Vertical (left-right)",
+      "splitNone": "No split",
+      "startupCodeCliNone": "None",
+      "startupCodeCliClaude": "Claude"
+    },
+    "help": {
+      "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events.",
+      "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev.",
+      "startupCodeCli": "Automatically run the selected coding CLI (e.g. claude) when the shell is ready after opening the embedded terminal for a task. \"None\" opens a plain shell"
+    },
+    "unit": {
+      "seconds": "s"
+    }
   },
-  "unit": {
-    "seconds": "s"
+  "project": {
+    "row": {
+      "workspaceBaseDir": "Workspace base directory"
+    },
+    "placeholder": {
+      "workspaceBaseDir": "Not set. Pick a directory to use as the workspace base directory"
+    },
+    "help": {
+      "workspaceBaseDir": "Task working directories live under this base (directory name = task ID). Both embedded and external terminals use it as the base"
+    }
   },
-  "help": {
-    "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events.",
-    "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev.",
-    "httpServerPort": "Leave empty to use the default port ({{port}}). Range 3000–10000. Manually restart the service on the status page to apply."
-  },
-  "button": {
-    "reset": "Reset",
-    "cancel": "Cancel",
-    "save": "Save"
+  "service": {
+    "row": {
+      "httpServerPort": "HTTP server port"
+    },
+    "help": {
+      "httpServerPort": "Leave empty to use the default port ({{port}}). Range 3000–10000. Manually restart the service on the status page to apply."
+    }
   }
 }

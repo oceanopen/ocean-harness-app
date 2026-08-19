@@ -62,6 +62,19 @@ export const DEFAULT_ITERM2_SPLIT_DIRECTION: Iterm2SplitDirection = 'horizontal'
 export const TERMINAL_POST_OPEN_COMMAND_KEY = 'terminal_post_open_command';
 export const DEFAULT_TERMINAL_POST_OPEN_COMMAND = '';
 
+// 嵌入式终端启动时自动运行的编程 CLI 工具（shell-ready 注入，docs/terminal_01_auto_claude.md）。
+// 值域：'' = 不自动运行（默认）；'claude' = 当前唯一支持项，未来扩 'codex' 等。
+// 后端 Rust 侧 SpawnOpts.startup_command 为通用 Option<String>，前端把枚举值映射为命令名。
+// 与后端 app_config.rs 镜像，改动任一处需同步另一处。
+export type TerminalStartupCodeCli = '' | 'claude';
+
+export const TERMINAL_STARTUP_CODE_CLI_KEY = 'terminal_startup_code_cli';
+export const DEFAULT_TERMINAL_STARTUP_CODE_CLI: TerminalStartupCodeCli = '';
+
+export function parseTerminalStartupCodeCli(value: string | null): TerminalStartupCodeCli {
+  return value === 'claude' ? value : '';
+}
+
 // HTTP 本地服务端口（Go sidecar）。留空=用模式默认（由后端解析）。
 // min/max 与后端 app_config.rs 镜像，且对齐 Go sidecar 的端口校验区间，改动任一处需同步另一处。
 export const HTTP_SERVER_PORT_KEY = 'http_server_port';

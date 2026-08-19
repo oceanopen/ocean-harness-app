@@ -158,10 +158,20 @@ pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String>
 
 ### 3.7 配置与前端
 
-- appConfig 新 key：`terminal_auto_run_claude`（`'Y' | 'N'`，默认 `'Y'`，双端镜像）。
-- 设置页新分区「终端」（settings 菜单 + i18n key），首项即此开关；字体大小等模块 3 再入此分区。
-- `EmbeddedTerminal.tsx`：`useConfigValue(TERMINAL_AUTO_RUN_CLAUDE_KEY, ...)` 读开关 → `usePtySession` 参数增 `autoRunClaude: boolean` → attach 的 spawn opts 按开关填 `startup_command`。
-- `usePtySession` 编排不变（exists→reattach→spawn）；哑会话守卫（cwd null）不变——未配置根目录时既不 spawn 也不注入。
+- appConfig 新 key：`terminal_startup_code_cli`（枚举 `'' | 'claude'`，默认 `''`，双端镜像）。
+  > **泛化命名决策（2026-08-19，用户指示）**：原文档为布尔 `terminal_auto_run_claude`（默认 Y）。
+  > 用户要求面向未来（codex 等多 CLI 工具可选），改为单枚举 key——值同时表达「是否运行」
+  > +「运行哪种」，未来加工具只加枚举值；默认空串 = 不自动运行（工具选择属用户主动配置，
+  > 避免未预期用户被自动拉起 CLI）。后端 SpawnOpts.startup_command 本就是通用
+  > Option<String>，无写死 claude 的耦合。
+- 设置页新分区「终端」（settings 菜单 + i18n key），首项即「启动终端时自动运行」下拉
+  （不自动运行 / Claude；选项源 settingOption.ts 的 terminalStartupCodeCliOptions）；
+  字体大小等模块 3 再入此分区。
+- `EmbeddedTerminal.tsx`：`useConfigValue(TERMINAL_STARTUP_CODE_CLI_KEY, ...)` 读枚举 →
+  `usePtySession` 参数增 `startupCodeCli: string` → attach 的 spawn opts 按值填
+  `startupCommand`（空串 → undefined 不注入）。
+- `usePtySession` 编排不变（exists→reattach→spawn）；attachKey 拼入 startupCodeCli
+  （配置切换即时重编排，已活会话不重注入）；哑会话守卫（cwd null）不变。
 
 ### 3.8 诊断日志（沿用 §3.9 第 6 条规范）
 
@@ -211,10 +221,16 @@ pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String>
   - 前端 `useDeleteProjectIssue` 换 `ptyShutdownIssue(id)`——模块 2 split 接入后一 issue 多 pane 自动全关，无需再改。
   - 单测真 spawn 四会话验证前缀全关 + 幂等；19 测试全绿、tsc/eslint 通过。
 
-### ⬜ 任务 4 — 配置开关 + 设置分区 + 前端接线
+### ✅ 任务 4 — 配置开关 + 设置分区 + 前端接线
 - **文件**：`appConfig.ts`（新 key）+ settings 菜单/i18n/新分区页 + `EmbeddedTerminal.tsx` + `usePtySession.ts`
 - **目标**：§3.7。开关默认开；关时不传 startup_command（行为与现状完全一致）。
 - **验证**：tsc/eslint/web:build；真机——开关开：选中 issue 终端自动进 claude；F5 刷新不重注入（reattach）；关：普通 shell；开关切换即时生效（下次 spawn）。
+- **实施记录（2026-08-19）**：
+  - **泛化命名**（用户指示，见 §3.7 决策块）：`terminal_startup_code_cli`（`'' | 'claude'`，默认 `''`），设置分区「终端」下拉选择；选项源 `settingOption.ts` terminalStartupCodeCliOptions，扩 codex 时加枚举值 + 选项 + i18n 三处。
+  - appConfig 前端 `TERMINAL_STARTUP_CODE_CLI_KEY` + `parseTerminalStartupCodeCli` 守卫解析；后端 app_config.rs 镜像 key 常量（后端不消费值）。
+  - settings 路由 MenuKey/MENU_PATHS 增 `terminalConfig`；`TerminalConfigPage.tsx` 新增（单项 Select，draft/saved/save 模式照 MonitorConfigPage）；i18n 双语 menu/row/help/option 四键。
+  - `EmbeddedTerminal` useConfigValue 读枚举（模块级 decode）；`usePtySession` 参数 `startupCodeCli`，spawn opts `startupCommand: cli || undefined`；attachKey 拼入（切换即时重编排，活会话不重注入——§5.1 语义）。
+  - tsc/eslint/web:build 通过；bindings 无变化（纯前端配置）。真机验证并入任务 6 全场景。
 
 ### ⬜ 任务 5 — fish 回退 + 边界打磨
 - **文件**：`shell_ready.rs`（shell 类型判定与 fast 回退）+ `local_provider.rs`
