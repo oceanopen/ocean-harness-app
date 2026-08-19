@@ -25,8 +25,11 @@ interface TerminalViewProps {
   onReopen: () => void;
   // 关闭终端（工具栏）
   onClose: () => void;
-  // 输出写入桥：mount 时上抛 write(text)，unmount 置 null。父层存 ref 直读（勿走 state）。
-  onWriteReady: (write: ((text: string) => void) | null) => void;
+  // 输出写入桥：mount 时上抛 write(text, replay?)，unmount 置 null。父层存 ref
+  // 直读（勿走 state）。replay=true 表示历史回放（reattach scrollback）——写入
+  // 期间抑制 onData（见 replayDepth 注释），防止回放流里的 DA1/CPR 查询被新 xterm
+  // 实例解析并应答、应答写回 PTY 成乱码。
+  onWriteReady: (write: ((text: string, replay?: boolean) => void) | null) => void;
 }
 
 // TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——
@@ -69,15 +72,32 @@ export default function TerminalView({ theme, onData, onResize, exited, onReopen
       console.warn('[TerminalView] webgl unavailable, fallback to dom renderer:', e);
     }
 
-    // 3. 事件接线（props 由父层保证稳定，直接引用）
-    terminal.onData(onData);
+    // 3. 事件接线（props 由父层保证稳定，直接引用）。
+    //    onData 经 replayDepth 闸门：回放写入期间 xterm 对回放流里 DA1/CPR 查询
+    //    生成的应答被丢弃（不应写回 PTY——历史查询早已过期）；实时流窗口为 0 全放行。
+    let replayDepth = 0;
+    terminal.onData((data) => {
+      if (replayDepth > 0) {
+        return;
+      }
+      onData(data);
+    });
     terminal.onResize(({ cols, rows }) => onResize(cols, rows));
 
     // 4. 输出桥上抛。守卫非字符串输入（null/undefined）：xterm.write 内部直接取
     //    .length 会抛 TypeError 并在 React 19 下卸载整树（白屏），宁可丢包不可崩页。
-    onWriteReady((text: string) => {
+    //    replay 写入：write 回调在该块解析完毕后触发，配对递减 replayDepth——
+    //    解析期间（含触发查询应答的时刻）窗口恒开。
+    onWriteReady((text: string, replay?: boolean) => {
       if (typeof text === 'string' && text.length > 0) {
-        terminal.write(text);
+        if (replay) {
+          replayDepth += 1;
+          terminal.write(text, () => {
+            replayDepth -= 1;
+          });
+        } else {
+          terminal.write(text);
+        }
       } else if (text != null) {
         console.warn('[TerminalView] discard non-string terminal data:', typeof text, text);
       }

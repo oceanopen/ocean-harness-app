@@ -39,9 +39,10 @@ interface UsePtySessionArgs {
   // 启动自动运行的编程 CLI（'' = 不注入，普通 shell）。仅 fresh spawn 生效；
   // 已活会话（reattach/复用）不重注入——切换配置即时重编排但活会话保持原状。
   startupCodeCli: string;
-  // 输出回调（TerminalView 的 write 桥）；reattach/spawn 复用的 scrollback 也经此一次送达。
+  // 输出回调（TerminalView 的 write 桥）；reattach/spawn 复用的 scrollback 也经此一次
+  // 送达（replay=true 标记历史回放——TerminalView 在回放窗口抑制查询应答，防乱码）。
   // 要求稳定引用（父层 useCallback([])），本 hook 不做 ref 转发层。
-  onData: (text: string) => void;
+  onData: (text: string, replay?: boolean) => void;
 }
 
 // 挂载编排（顺序显式）：exists → 存在则 reattach（scrollback 随返回值一次回放），
@@ -61,7 +62,7 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
     const reattached = await unwrap(commands.ptyReattach(issueId, channel));
     if (reattached != null) {
       if (reattached.scrollback) {
-        args.onData(reattached.scrollback);
+        args.onData(reattached.scrollback, true);
       }
       return reattached.exited ? 'exited' : 'active';
     }
@@ -72,7 +73,7 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
     commands.ptySpawn({ issueId, cwd, cols, rows, startupCommand: startupCodeCli || undefined }, channel),
   );
   if (!spawned.fresh && spawned.scrollback) {
-    args.onData(spawned.scrollback);
+    args.onData(spawned.scrollback, true);
   }
   return 'active';
 }

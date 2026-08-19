@@ -52,17 +52,17 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
     DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   );
 
-  const writeDataRef = useRef<((text: string) => void) | null>(null);
+  const writeDataRef = useRef<((text: string, replay?: boolean) => void) | null>(null);
   // 稳定引用（deps=[]）：直接交给 usePtySession / TerminalView 接线，不走 ref 转发层。
-  const handleTerminalData = useCallback((text: string) => {
+  const handleTerminalData = useCallback((text: string, replay?: boolean) => {
     const write = writeDataRef.current;
     if (write != null) {
-      write(text);
+      write(text, replay);
     } else {
       console.warn('[EmbeddedTerminal] drop data: terminal not ready, len=', text.length);
     }
   }, []);
-  const handleWriteReady = useCallback((write: ((text: string) => void) | null) => {
+  const handleWriteReady = useCallback((write: ((text: string, replay?: boolean) => void) | null) => {
     writeDataRef.current = write;
   }, []);
 
