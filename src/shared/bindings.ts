@@ -117,6 +117,12 @@ export const commands = {
 	/**  会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。 */
 	ptyExists: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_exists", { sessionId }),
 	/**
+	 *  本会话 shell 子进程树内是否跑着 claude（terminal_03 §3.2 按钮置灰驱动）。
+	 *  进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端；
+	 *  前端事件 + 轮询混合驱动（useClaudeRunning）。
+	 */
+	ptyClaudeRunning: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_claude_running", { sessionId }),
+	/**
 	 *  重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
 	 *  已退出会话照常返回（exited=true）；不存在返回 None（前端转 pty_spawn）。
 	 */
@@ -318,6 +324,12 @@ export type SpawnOpts = {
  *  用于决定跳转时调用哪个 AppleScript 脚本。
  */
 export type TerminalApp = "ITerm2" | "Terminal" | "IntelliJ" | 
+/**
+ *  本 app（we-claude-terminal）的嵌入式 PTY 终端。跳转 = 前端聚焦对应
+ *  issue 终端（terminal_03 任务 6；当前跳转暂走 UnsupportedHostApp，
+ *  聚焦联动在后续模块接线——但监控列表不再过滤，会话可见）。
+ */
+"WeTerm" | 
 /**  未识别的宿主终端（如 VSCode 内嵌、Wezterm、Alacritty 等）。跳转按钮将禁用。 */
 "Unknown";
 

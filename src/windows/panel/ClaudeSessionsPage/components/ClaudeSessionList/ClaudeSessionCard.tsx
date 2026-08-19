@@ -24,11 +24,13 @@ const hostAppI18nKey: Record<TerminalApp, string> = {
   ITerm2: 'claudeSessions:hostApp.ITerm2',
   Terminal: 'claudeSessions:hostApp.Terminal',
   IntelliJ: 'claudeSessions:hostApp.IntelliJ',
+  WeTerm: 'claudeSessions:hostApp.WeTerm',
   Unknown: 'claudeSessions:hostApp.Unknown',
 };
 
 // 暂不支持跳转的宿主终端（前端禁用按钮，避免无效 osascript 调用）。
-const UNSUPPORTED_HOST: TerminalApp[] = ['IntelliJ', 'Unknown'];
+// WeTerm：本 app 嵌入终端，聚焦联动在后续模块接线（当前禁用跳转但不过滤展示）。
+const UNSUPPORTED_HOST: TerminalApp[] = ['IntelliJ', 'WeTerm', 'Unknown'];
 
 // VSCode 官方单色品牌图标（src/assets/vscode.svg 通过 ?raw 注入，保留 currentColor 主题色跟随）。
 function VsCodeIcon() {

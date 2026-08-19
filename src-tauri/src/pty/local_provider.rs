@@ -12,15 +12,15 @@
 //   - 已退出会话：移除旧会话重起 shell（前端「重开」按钮路径）
 
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use tauri::ipc::Channel;
 
 use super::provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, SpawnOpts};
-use super::session::{spawn_reader_thread, PtyEvent, PtySession, SessionIo};
-use super::shell_ready::{ensure_shell_ready_wrappers, ShellReadyBarrier, SHELL_READY_TIMEOUT_MS};
+use super::session::{PtyEvent, PtySession, SessionIo, spawn_reader_thread};
+use super::shell_ready::{SHELL_READY_TIMEOUT_MS, ShellReadyBarrier, ensure_shell_ready_wrappers};
 use super::state::PtySessionStore;
 
 /// shell-ready 包装文件根（app_data_dir）。setup 时注入（lib.rs），未注入时
@@ -47,6 +47,12 @@ impl LocalPtyProvider {
         Self {
             store: PtySessionStore::default(),
         }
+    }
+
+    /// 会话存储访问（spawn 写入侧的同一实例）。命令查询走此处而非
+    /// State<PtySessionStore>（app.manage 的另一实例——曾致 probe 恒 not found）。
+    pub fn store(&self) -> &PtySessionStore {
+        &self.store
     }
 
     /// 起一个新 shell 会话并入库（不检查已存在——调用方 spawn 决定复用/重起）。
@@ -539,10 +545,12 @@ mod tests {
         );
 
         // 不存在的会话：reattach None（前端转 spawn 路径）。
-        assert!(provider
-            .reattach("no-such-issue", Channel::new(|_| Ok(())))
-            .unwrap()
-            .is_none());
+        assert!(
+            provider
+                .reattach("no-such-issue", Channel::new(|_| Ok(())))
+                .unwrap()
+                .is_none()
+        );
 
         provider.shutdown(&session_id).unwrap();
     }

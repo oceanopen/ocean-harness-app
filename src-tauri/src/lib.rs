@@ -13,8 +13,7 @@ use tauri_specta::{Builder, collect_commands};
 pub fn build_specta_builder() -> Builder<tauri::Wry> {
     use crate::pty::session::PtyEvent;
     use crate::shared::types::{
-        AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, TerminalApp,
-        YesNo,
+        AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, TerminalApp, YesNo,
     };
     use crate::terminal::NavErr;
     Builder::<tauri::Wry>::new()
@@ -47,6 +46,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_shutdown_issue,
             pty::pty_list_sessions,
             pty::pty_exists,
+            pty::pty_claude_running,
             pty::pty_reattach,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），

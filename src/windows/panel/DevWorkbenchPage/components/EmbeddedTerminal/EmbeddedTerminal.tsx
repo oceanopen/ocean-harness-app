@@ -12,6 +12,7 @@ import { useConfigValue } from '@src/shared/useConfigValue';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
 import { useCallback, useRef, useState } from 'react';
 import TerminalView from './TerminalView';
+import { useClaudeRunning } from './useClaudeRunning';
 import { usePtySession } from './usePtySession';
 
 // 工作空间根目录 decode：缺失回落空串（= 未设置）。模块级保证引用稳定（useConfigValue 要求）。
@@ -115,6 +116,23 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   const handleActive = useCallback(() => {
     setActivePane(issueId, paneId);
   }, [setActivePane, issueId, paneId]);
+
+  // 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 注入 claude\r
+  // （barrier 已 Open 直通，字节语义同 Rust build_startup_submission 单行分支）。
+  // 运行态探测（按钮置灰）走 useClaudeRunning——进程真相（pid 父链匹配），
+  // 非输出流启发式。exited 覆盖条的「重开并启动 claude」保留（reopen(true)
+  // 一次性覆盖 startup_command）。
+  const claudeRunning = useClaudeRunning(sessionId, session.status);
+  const startClaude = useCallback(() => {
+    session.write('claude\r');
+  }, [session]);
+  // 「重开」（裸 shell）须包一层防 MouseEvent 误传 reopen 的 claude 形参。
+  const reopenPlain = useCallback(() => {
+    session.reopen();
+  }, [session]);
+  const reopenWithClaude = useCallback(() => {
+    session.reopen(true);
+  }, [session]);
   const handleClose = useCallback(() => {
     if (isMain) {
       setConfirmCloseOpen(true);
@@ -155,7 +173,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
         <Typography variant="body2" color="text.secondary">{session.errorMessage ?? `任务目录不存在：${cwd}`}</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button size="small" onClick={session.reopen}>重试</Button>
+          <Button size="small" onClick={reopenPlain}>重试</Button>
           <Button size="small" startIcon={<SettingsOutlinedIcon />} onClick={openSettings}>打开设置</Button>
         </Box>
       </Box>
@@ -187,7 +205,10 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         onData={session.write}
         onResize={session.resize}
         exited={session.status === 'exited'}
-        onReopen={session.reopen}
+        onReopen={reopenPlain}
+        onReopenClaude={reopenWithClaude}
+        claudeRunning={claudeRunning}
+        onStartClaude={startClaude}
         onClose={handleClose}
         onWriteReady={handleWriteReady}
         onActive={handleActive}

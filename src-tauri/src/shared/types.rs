@@ -54,6 +54,10 @@ pub enum TerminalApp {
     ITerm2,
     Terminal,
     IntelliJ,
+    /// 本 app（we-claude-terminal）的嵌入式 PTY 终端。跳转 = 前端聚焦对应
+    /// issue 终端（terminal_03 任务 6；当前跳转暂走 UnsupportedHostApp，
+    /// 聚焦联动在后续模块接线——但监控列表不再过滤，会话可见）。
+    WeTerm,
     /// 未识别的宿主终端（如 VSCode 内嵌、Wezterm、Alacritty 等）。跳转按钮将禁用。
     Unknown,
 }

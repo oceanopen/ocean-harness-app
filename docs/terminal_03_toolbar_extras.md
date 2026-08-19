@@ -110,10 +110,16 @@
   - **坑 2（计数与装饰绑定）**：addon 源码 `fireResultsChanged(!!options?.decorations)` 无 decorations 直接 return——`onDidChangeResults`（计数 n/m）永不触发。修复：搜索 options 统一带 `decorations`（matchBackground/activeMatchBackground 明暗配色；overview ruler 透明色占位满足必填）。
   - **坑 3（装饰前置）**：decorations 分支依赖 `registerDecoration` 等 proposed API，Terminal 构造须 `allowProposedApi: true`，否则带装饰的 findNext/findPrevious 抛错、**搜索全面失效**（jsdom + 同版本依赖实证）。清空词条时 `clearDecorations()` + 计数 state 手动归零（装饰清后 addon 不再发事件）。
 
-### ⬜ 任务 3 — claude 工作流组
-- **文件**：`TerminalPaneRoot.tsx`（「启动 claude」按钮）+ `EmbeddedTerminal.tsx` / `usePtySession.ts`（exited 覆盖条「重开并启动 claude」：reopen + 强制 startup_command）
+### ✅ 任务 3 — claude 工作流组
+- **文件**：`EmbeddedTerminal/TerminalView.tsx`（「启动 claude」按钮）+ `EmbeddedTerminal.tsx` / `usePtySession.ts`（exited 覆盖条「重开并启动 claude」：reopen + 强制 startup_command）+ `useClaudeRunning.ts`（新增：运行态探测）+ Rust `pty/claude_state.rs`（新增：pid 父链匹配）+ `pty/mod.rs`（`pty_claude_running` 命令）
 - **目标**：§3.2。
 - **验证**：真机——关闭自动执行配置后手动按钮进 claude；exit claude 后「重开并启动 claude」一键回到 claude；附加 pane 按钮可用。
+- **已落地（重规划终版，推翻两版中间方案）**：
+  - **按钮位置（第三版定稿）**：TerminalView 工具条内、搜索 icon 右侧（每 pane 自己的终端工具栏——跟终端走，非标题栏）。演进：文档原定 TerminalPaneRoot（无工具条作废）→ 标题栏 TerminalSplitButtons 旁 + store 传导（claudeRequests/claudeInjected——按钮层拿不到 session 实例的绕路方案，已全部回滚）→ 终版 pane 工具条内直连 `session.write('claude\r')`（barrier 已 Open 直通，字节语义同 Rust `build_startup_submission` 单行分支）。
+  - **运行态探测（核心新增）**：按钮禁用 = claude 在跑（实时）|| exited。真值来源 Rust `pty_claude_running(sessionId)`（`pty/claude_state.rs`）：`~/.claude/sessions` 活跃 claude pid 沿 `ps -o ppid=` 爬父链（上限 8 级防环），任一级命中本会话 shell pid（`child.process_id()`）即 true——进程树匹配精确到具体终端（多 pane 同 cwd 可区分），非输出流启发式。此匹配为后续「会话项点击聚焦对应终端」的公共地基。
+  - **驱动时机（useClaudeRunning hook）**：会话 active 即探测（自动注入/reattach 场景）+ `EVENT_CLAUDE_SESSIONS_CHANGED` 事件（watch 秒级——claude 启动写 json 落盘即触发，置灰快）+ 5s 轮询兜底**退出恢复**（Dead 会话 json 保留、watch 不触发，进程退出只能轮询感知）。非 active 恒 false 不探测；探测失败静默保持现值。
+  - exited 覆盖条第二按钮「重开并启动 claude」恒显示（忽略 autoRun 配置）：`reopen(true)` → `startupOverrideRef` 暂存一次性覆盖（ref 非 state——startupCodeCli 在 attachKey/effect deps，state 版会持久生效与配置变化耦合）→ attach 取用即清。
+  - **缺口修复（attach fallthrough，首版保留）**：自然退出会话仍留 store，原 attach 的 `reattached.exited` 直接短路 return 'exited'，**「重开」永远走不到 ptySpawn**（现有有效路径全靠先 ptyShutdown）。改为回放 scrollback 后 fallthrough 到 ptySpawn，Rust 端「已退出移除重起」幂等语义承接——「重开」与「重开并启动 claude」同受益。
 
 ### ⬜ 任务 4 — 字体大小设置
 - **文件**：`appConfig.ts`（`terminal_font_size`）+ 设置终端分区 + `EmbeddedTerminal.tsx` + `TerminalView.tsx`（options.fontSize 运行时更新 + refit）
@@ -125,10 +131,15 @@
 - **目标**：§3.4。
 - **验证**：真机——终端里 `ls` 输出的文件路径、`git remote -v` 的 URL 可点击打开；hover 有下划线反馈。
 
-### ⬜ 任务 6 — sessions 监听联动（enrich 识别本 app 宿主）
+### ✅ 任务 6 — sessions 监听联动（enrich 识别本 app 宿主）
 - **文件**：`src-tauri/src/sessions/enrich.rs`（classify_terminal 增变体）+ 相关类型/展示
 - **目标**：§3.5。app PTY 内 claude 进监控列表。
 - **验证**：真机——终端跑 claude 后 app 监控列表（pet/panel 消费方）出现该会话且宿主显示本 app；iTerm2 内 claude 照常识别（不回归）。
+- **已落地**：
+  - `classify_terminal` 增 `"we-claude-terminal"` → `TerminalApp::WeTerm`（dev 二进制同名——tauri.dev.conf.json 只改 identifier/productName 不改二进制名，dev/release 同名识别）；枚举变体 + specta 导出 + 两语言词条（zh「本应用」/en「WeTerm」）。
+  - 跳转分发（terminal/mod.rs dispatch/open_directory_dispatch）与前端 UNSUPPORTED_HOST（ClaudeSessionCard/ClaudeSessionItem）同步加 WeTerm——当前禁用跳转，聚焦联动（点击会话项切到对应 issue 终端页）在后续模块接线。
+  - 监控列表过滤逻辑零改动（`store.rs` 只滤 Unknown）——WeTerm 天然通过，app 内 claude 进列表。
+  - 诊断发现（顺带记录）：`rescan: N session(s)` 日志计数是 Unknown 过滤后的——嵌入终端 claude 起来后计数不含它曾造成「监听不到」的误判，实际是 classify 不识别所致（本任务修复）。
 
 ---
 

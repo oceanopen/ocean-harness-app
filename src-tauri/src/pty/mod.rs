@@ -15,6 +15,7 @@
 // 原生支持，已 spike 验证）。emit 备选（EVENT_PTY_*）未采用。
 // reattach 命令（exists/reattach + ring replay）在任务 3 接入。
 
+pub mod claude_state;
 pub mod local_provider;
 pub mod provider;
 pub mod session;
@@ -95,6 +96,17 @@ pub fn pty_list_sessions() -> Vec<PtySessionInfo> {
 #[specta::specta]
 pub fn pty_exists(session_id: String) -> bool {
     provider().exists(&session_id)
+}
+
+/// 本会话 shell 子进程树内是否跑着 claude（terminal_03 §3.2 按钮置灰驱动）。
+/// 进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端；
+/// 前端事件 + 轮询混合驱动（useClaudeRunning）。
+/// 注意：查询必须走 provider() 自持的 store（spawn 写入侧）——不能用
+/// State<PtySessionStore>（app.manage 的另一实例，恒空，曾致 probe 恒 false）。
+#[tauri::command]
+#[specta::specta]
+pub fn pty_claude_running(session_id: String) -> bool {
+    claude_state::claude_running(provider().store(), &session_id)
 }
 
 /// 重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。

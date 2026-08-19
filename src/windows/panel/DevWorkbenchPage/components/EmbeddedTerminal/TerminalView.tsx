@@ -4,6 +4,7 @@ import {
   ContentPasteOutlined as ContentPasteOutlinedIcon,
   LayersClearOutlined as LayersClearOutlinedIcon,
   SearchOutlined as SearchOutlinedIcon,
+  SmartToyOutlined as SmartToyOutlinedIcon,
 } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
 import { useToast } from '@src/shared/useToast';
@@ -34,6 +35,14 @@ interface TerminalViewProps {
   // 会话已退出：终端交互禁用 + 顶部「会话已结束」条 + 重开按钮
   exited: boolean;
   onReopen: () => void;
+  // 重开并启动 claude（terminal_03 §3.2）：reopen 后 spawn 强制带 startup_command，
+  // 一次性覆盖 autoRun 配置。恒显示（用户 exit claude 后一键回到 claude）。
+  onReopenClaude: () => void;
+  // 本终端 claude 运行态（pid 父链匹配探测，useClaudeRunning）：跑着→按钮置灰；
+  // 退出→恢复可用。驱动「启动 claude」按钮禁用态。
+  claudeRunning: boolean;
+  // 启动 claude（工具条按钮）：对活跃 shell 注入 claude\r。
+  onStartClaude: () => void;
   // 关闭终端（工具栏）
   onClose: () => void;
   // 输出写入桥：mount 时上抛 write(text, replay?)，unmount 置 null。父层存 ref
@@ -53,7 +62,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, toolbarLabel, onData, onResize, exited, onReopen, onClose, onWriteReady, onActive }: TerminalViewProps) {
+export default function TerminalView({ theme, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -267,6 +276,17 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
           <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={{ color: 'text.secondary' }}>
             <SearchOutlinedIcon fontSize="small" />
           </IconButton>
+          {/* 启动 claude（terminal_03 §3.2）：跑着置灰（探测驱动）、退出恢复、
+              exited 禁用（shell 已死注入无意义） */}
+          <IconButton
+            size="small"
+            onClick={onStartClaude}
+            disabled={claudeRunning || exited}
+            aria-label="启动 claude"
+            sx={{ color: 'text.secondary' }}
+          >
+            <SmartToyOutlinedIcon fontSize="small" />
+          </IconButton>
         </Box>
         <Box sx={{ flex: 1 }} />
         <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
@@ -295,6 +315,7 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
         >
           <Typography variant="caption" color="text.secondary">会话已结束</Typography>
           <Button size="small" onClick={onReopen} aria-label="重开终端">重开</Button>
+          <Button size="small" onClick={onReopenClaude} aria-label="重开并启动 claude">重开并启动 claude</Button>
         </Box>
       )}
       <Box

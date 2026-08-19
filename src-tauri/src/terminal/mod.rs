@@ -51,7 +51,11 @@ pub fn dispatch(host_app: TerminalApp, target: &Target<'_>) -> Result<(), NavErr
     match host_app {
         TerminalApp::ITerm2 => iterm2::focus_session(target),
         TerminalApp::Terminal => terminal_app::focus_session(target),
-        TerminalApp::IntelliJ | TerminalApp::Unknown => Err(NavErr::UnsupportedHostApp),
+        // WeTerm：本 app 嵌入终端的聚焦联动在后续模块接线（前端切到对应 issue
+        // 终端页），当前暂不支持跳转——但监控列表不过滤（区分于 Unknown）。
+        TerminalApp::IntelliJ | TerminalApp::WeTerm | TerminalApp::Unknown => {
+            Err(NavErr::UnsupportedHostApp)
+        }
     }
 }
 
@@ -65,7 +69,9 @@ pub fn open_directory_dispatch(
     match host_app {
         TerminalApp::ITerm2 => iterm2::open_directory(app, dir),
         TerminalApp::Terminal => terminal_app::open_directory(app, dir),
-        TerminalApp::IntelliJ | TerminalApp::Unknown => Err(NavErr::UnsupportedHostApp),
+        TerminalApp::IntelliJ | TerminalApp::WeTerm | TerminalApp::Unknown => {
+            Err(NavErr::UnsupportedHostApp)
+        }
     }
 }
 
