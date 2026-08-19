@@ -92,6 +92,9 @@ pub trait PtyProvider: Send + Sync {
     fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String>;
     /// 关闭单个会话（kill shell + 移出 store）。
     fn shutdown(&self, id: &str) -> Result<(), String>;
+    /// 关闭整个 issue 的全部 pane 会话（key == issueId 或 `issueId::` 前缀），
+    /// 返回关闭数。模块 2 split 后一 issue 多 pane；issue 删除时联动调用。
+    fn shutdown_issue(&self, issue_id: &str) -> Result<usize, String>;
     /// 会话是否存在（含已退出；前端挂载时探测，存在则 reattach，不存在才 spawn）。
     fn exists(&self, id: &str) -> bool;
     /// 重挂会话：ring 快照随返回值送达 + 换装 listener 从快照点续流。

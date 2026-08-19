@@ -107,6 +107,11 @@ export const commands = {
 	ptyResize: (issueId: string, cols: number, rows: number) => typedError<null, string>(__TAURI_INVOKE("pty_resize", { issueId, cols, rows })),
 	/**  关闭单个会话（kill shell + 移出 store）。 */
 	ptyShutdown: (issueId: string) => typedError<null, string>(__TAURI_INVOKE("pty_shutdown", { issueId })),
+	/**
+	 *  关闭整个 issue 的全部 pane 会话（key == issueId 或 `issueId::` 前缀）。
+	 *  issue 删除联动调用（模块 2 split 后一 issue 多 pane，防孤儿会话）。
+	 */
+	ptyShutdownIssue: (issueId: string) => typedError<null, string>(__TAURI_INVOKE("pty_shutdown_issue", { issueId })),
 	/**  列出全部会话快照（调试/后续状态栏用）。 */
 	ptyListSessions: () => __TAURI_INVOKE<PtySessionInfo[]>("pty_list_sessions"),
 	/**  会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。 */

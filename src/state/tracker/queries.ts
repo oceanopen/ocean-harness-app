@@ -133,12 +133,15 @@ export function useUpdateProjectIssue(projectId: number) {
   });
 }
 
-/** 删除 projectIssue。先关其终端（issue 即 PTY 锚点，不关则孤儿会话占 store 至 app 退出）。 */
+/**
+ * 删除 projectIssue。先关其全部终端 pane（issue 即 PTY 锚点，split 后一 issue 多 pane
+ * 需前缀全关；不关则孤儿会话占 store 至 app 退出）。
+ */
 export function useDeleteProjectIssue(projectId: number) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await logOnError(commands.ptyShutdown(id), 'pty');
+      await logOnError(commands.ptyShutdownIssue(id), 'pty');
       return ProjectIssueService.delete({ id });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),

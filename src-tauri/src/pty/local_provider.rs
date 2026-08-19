@@ -328,6 +328,32 @@ impl PtyProvider for LocalPtyProvider {
         }
     }
 
+    fn shutdown_issue(&self, issue_id: &str) -> Result<usize, String> {
+        // 锁内收集命中 key（避免持锁 kill——shutdown 可能阻塞在 waitpid 路径）。
+        let prefix = format!("{issue_id}::");
+        let hits: Vec<String> = {
+            let map = self
+                .store
+                .0
+                .lock()
+                .expect("PtySessionStore mutex poisoned");
+            map.keys()
+                .filter(|k| k.as_str() == issue_id || k.starts_with(&prefix))
+                .cloned()
+                .collect()
+        };
+        // 逐个走 shutdown（锁重入安全：shutdown 自持锁）。
+        for key in &hits {
+            self.shutdown(key)?;
+        }
+        log::info!(
+            "[pty] shutdown_issue {} closed {} sessions",
+            issue_id,
+            hits.len()
+        );
+        Ok(hits.len())
+    }
+
     fn exists(&self, id: &str) -> bool {
         let map = self
             .store
@@ -581,5 +607,44 @@ mod tests {
 
         provider.shutdown(&issue_id).unwrap();
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// shutdown_issue 前缀全关（任务 3）：store 放 `a`、`a::p1`、`a::p2`、`b`，
+    /// shutdown_issue("a") 后仅剩 `b`；不存在 key 幂等 Ok。
+    #[test]
+    fn shutdown_issue_closes_all_panes() {
+        let provider = LocalPtyProvider::new();
+        let tmp = std::env::temp_dir().join("pty-shutdown-issue-test");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let keys = ["a", "a::p1", "a::p2", "b"];
+        for key in keys {
+            provider
+                .spawn(
+                    SpawnOpts {
+                        issue_id: key.to_string(),
+                        cwd: tmp.to_string_lossy().into_owned(),
+                        cols: 80,
+                        rows: 24,
+                        startup_command: None,
+                    },
+                    Channel::new(|_| Ok(())),
+                )
+                .unwrap();
+        }
+        assert_eq!(provider.list().len(), 4);
+
+        let closed = provider.shutdown_issue("a").unwrap();
+        assert_eq!(closed, 3, "应关掉 a 与两个 pane");
+        let remaining: Vec<String> = provider
+            .list()
+            .into_iter()
+            .map(|s| s.issue_id)
+            .collect();
+        assert_eq!(remaining, vec!["b".to_string()]);
+
+        // 不存在 key：幂等 Ok + 关闭 0。
+        assert_eq!(provider.shutdown_issue("no-such").unwrap(), 0);
+        provider.shutdown("b").unwrap();
     }
 }

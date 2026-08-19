@@ -201,10 +201,15 @@ pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String>
   - reader 顺序：read → barrier.feed_output（剥 marker）→ Utf8Tail → ring/listener；EOF 时 drop_pending。SpawnOpts 增 `startup_command`（`#[serde(default)]` 向后兼容），bindings 已重新生成。fish/其他 shell 或 app_data_dir 未注入时降级裸 spawn（warn 日志），任务 5 打磨 fast 注入。
   - 测试 6 新增全绿（barrier 排序/超时/drop/纯 marker 兜底、注入字节构造、e2e 全链路），全量 41 无回归，clippy/fmt clean。
 
-### ⬜ 任务 3 — pty_shutdown_issue 命令
+### ✅ 任务 3 — pty_shutdown_issue 命令
 - **文件**：`pty/mod.rs`（新命令）+ `lib.rs`（collect_commands! 注册）+ `src/state/tracker/queries.ts`（删除联动换用新命令）
 - **目标**：前缀扫描关整个 issue 全部 pane 会话。
 - **验证**：`pnpm gen:bindings` 出新命令；单测——store 里放 `a`、`a::p1`、`a::p2`、`b`，shutdown_issue("a") 后仅剩 `b`；cargo test + tsc 通过。
+- **实施记录（2026-08-19）**：
+  - `PtyProvider` trait 增 `shutdown_issue(&str) -> Result<usize>`（返回关闭数）；LocalPtyProvider 实现——锁内收集命中 key（`== issueId` 或 `issueId::` 前缀）、锁外逐个复用 `shutdown`（kill 不持 store 锁）。
+  - 命令层薄包装 `pty_shutdown_issue`（丢弃计数，日志在 provider 层）；lib.rs collect_commands! 注册；bindings 再生成。
+  - 前端 `useDeleteProjectIssue` 换 `ptyShutdownIssue(id)`——模块 2 split 接入后一 issue 多 pane 自动全关，无需再改。
+  - 单测真 spawn 四会话验证前缀全关 + 幂等；19 测试全绿、tsc/eslint 通过。
 
 ### ⬜ 任务 4 — 配置开关 + 设置分区 + 前端接线
 - **文件**：`appConfig.ts`（新 key）+ settings 菜单/i18n/新分区页 + `EmbeddedTerminal.tsx` + `usePtySession.ts`

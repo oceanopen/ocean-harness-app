@@ -44,6 +44,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_shutdown,
+            pty::pty_shutdown_issue,
             pty::pty_list_sessions,
             pty::pty_exists,
             pty::pty_reattach,

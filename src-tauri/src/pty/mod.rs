@@ -42,7 +42,12 @@ pub fn pty_spawn(
 ) -> Result<PtySpawned, String> {
     let result = provider().spawn(opts, on_event);
     match &result {
-        Ok(s) => log::info!("[pty] spawn ok issue_id={} fresh={} scrollback={}", s.issue_id, s.fresh, s.scrollback.len()),
+        Ok(s) => log::info!(
+            "[pty] spawn ok issue_id={} fresh={} scrollback={}",
+            s.issue_id,
+            s.fresh,
+            s.scrollback.len()
+        ),
         Err(e) => log::warn!("[pty] spawn failed: {}", e),
     }
     result
@@ -69,6 +74,14 @@ pub fn pty_shutdown(issue_id: String) -> Result<(), String> {
     provider().shutdown(&issue_id)
 }
 
+/// 关闭整个 issue 的全部 pane 会话（key == issueId 或 `issueId::` 前缀）。
+/// issue 删除联动调用（模块 2 split 后一 issue 多 pane，防孤儿会话）。
+#[tauri::command]
+#[specta::specta]
+pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String> {
+    provider().shutdown_issue(&issue_id).map(|_| ())
+}
+
 /// 列出全部会话快照（调试/后续状态栏用）。
 #[tauri::command]
 #[specta::specta]
@@ -93,7 +106,12 @@ pub fn pty_reattach(
 ) -> Result<Option<PtyReattached>, String> {
     let result = provider().reattach(&issue_id, on_event);
     if let Ok(Some(r)) = &result {
-        log::info!("[pty] reattach issue_id={} exited={} scrollback={}", issue_id, r.exited, r.scrollback.len());
+        log::info!(
+            "[pty] reattach issue_id={} exited={} scrollback={}",
+            issue_id,
+            r.exited,
+            r.scrollback.len()
+        );
     }
     result
 }
