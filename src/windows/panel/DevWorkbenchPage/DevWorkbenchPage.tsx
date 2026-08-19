@@ -21,8 +21,8 @@ import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/p
 import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
-import EmbeddedTerminal from './components/EmbeddedTerminal/EmbeddedTerminal';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
+import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
 
 // 左栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
@@ -152,7 +152,8 @@ export default function DevWorkbenchPage() {
           </Box>
         </Box>
 
-        {/* 内容区：选中 issue → 嵌入式终端（一 issue 一终端，切换即重挂载；后端会话常驻） */}
+        {/* 内容区：选中 issue → 终端 split 树容器（一 issue 一布局，多 pane 各自独立
+            PTY 会话；切换 issue 即重挂载，后端会话常驻） */}
         <Box sx={{ flex: 1, minHeight: 0 }}>
           {!hasSelection
             ? (
@@ -163,7 +164,7 @@ export default function DevWorkbenchPage() {
             : issue
               ? (
                   <TerminalErrorBoundary key={issue.id}>
-                    <EmbeddedTerminal issueId={issue.id} />
+                    <TerminalPaneRoot issueId={issue.id} />
                   </TerminalErrorBoundary>
                 )
               : issuesLoading

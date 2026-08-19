@@ -1,5 +1,5 @@
 import { SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
-import { Box, Button, Typography, useTheme } from '@mui/material';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography, useTheme } from '@mui/material';
 import {
   DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   DEFAULT_WORKSPACE_BASE_DIR,
@@ -9,7 +9,8 @@ import {
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { useConfigValue } from '@src/shared/useConfigValue';
-import { useCallback, useRef } from 'react';
+import { useTerminalPanesStore } from '@src/state/terminalPanes';
+import { useCallback, useRef, useState } from 'react';
 import TerminalView from './TerminalView';
 import { usePtySession } from './usePtySession';
 
@@ -29,6 +30,9 @@ const INITIAL_ROWS = 24;
 
 interface EmbeddedTerminalProps {
   issueId: string;
+  // pane id（split 分割窗口）：'main'（默认，锚点 = 裸 issueId）| 8 位 uuid
+  // （附加 pane，锚点 = `issueId::paneId`）。
+  paneId?: string;
 }
 
 // EmbeddedTerminal：开发工作台右侧嵌入式终端容器（docs/embedded_terminal.md §3.8）。
@@ -43,14 +47,21 @@ interface EmbeddedTerminalProps {
 // writeDataRef 是全链唯一 ref 桥：Channel 数据可在任何时刻到达（含 StrictMode
 // 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下
 // 实测出现「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
-export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
+export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedTerminalProps) {
   const theme = useTheme();
+  const isMain = paneId === 'main';
   const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const startupCodeCli = useConfigValue(
     TERMINAL_STARTUP_CODE_CLI_KEY,
     decodeStartupCodeCli,
     DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   );
+  // main 关闭确认弹窗开关（附加 pane 关闭直处理，无确认）。
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  // main 已关闭态：true = 不渲染 TerminalView，整块换占位视图（无蒙层）。
+  // 「重新打开终端」清标志 + session.reopen()（ptyShutdown 已移除会话 →
+  // exists=false → 全新 spawn，main 会重新注入 startup_command）。
+  const [mainClosed, setMainClosed] = useState(false);
 
   const writeDataRef = useRef<((text: string, replay?: boolean) => void) | null>(null);
   // 稳定引用（deps=[]）：直接交给 usePtySession / TerminalView 接线，不走 ref 转发层。
@@ -67,15 +78,21 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
   }, []);
 
   const cwd = baseDir ? `${baseDir}/${issueId}` : null;
+  // 会话锚点派生（terminal_02 §3.1）：main pane = 裸 issueId（现有会话原样兼容）；
+  // 附加 pane = `issueId::paneId`（后端 store 对 key 透明，仅 pty_shutdown_issue
+  // 前缀扫描感知 `::`）。
+  const sessionId = paneId === 'main' ? issueId : `${issueId}::${paneId}`;
 
   // hooks 顶层无条件调用（React 规则）；cwd=null 时 usePtySession 返回哑会话（不发 spawn，
   // status 恒 'connecting'），下方引导分支先于 spinner 渲染，不会闪错态。
   const session = usePtySession({
-    sessionId: issueId,
+    sessionId,
     cwd,
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS,
-    startupCodeCli,
+    // 自动 CLI 仅 main pane 注入（terminal_02 §3.6：附加 pane 恒裸 shell——用户
+    // 分屏通常是要手动跑命令，不自动进 claude）。
+    startupCodeCli: isMain ? startupCodeCli : '',
     onData: handleTerminalData,
   });
 
@@ -87,6 +104,33 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
       }
     });
   }, []);
+
+  // 关闭语义分流（terminal_02 §3.5 + 用户交互反馈）：附加 pane 直处理（ptyShutdown
+  // 断会话 + store 树剪枝，pane 从树上消失）；main pane 先二次确认，确认后仅杀会话
+  // （树保单 main leaf）+ 进 mainClosed 占位态（不卸载组件，保留重新打开出口）。
+  const closePaneTree = useTerminalPanesStore(s => s.closePane);
+  const handleClose = useCallback(() => {
+    if (isMain) {
+      setConfirmCloseOpen(true);
+      return;
+    }
+    session.close();
+    closePaneTree(issueId, paneId);
+  }, [session, closePaneTree, issueId, paneId, isMain]);
+
+  // 确认关闭 main：杀会话 + 关弹窗 + 进占位态。
+  const confirmCloseMain = useCallback(() => {
+    setConfirmCloseOpen(false);
+    session.close();
+    setMainClosed(true);
+  }, [session]);
+
+  // 重新打开 main 终端：清占位态 + reopen（attempt 自增 → 重新编排 → exists=false
+  // 走全新 spawn，startup_command 重新注入）。
+  const reopenMain = useCallback(() => {
+    setMainClosed(false);
+    session.reopen();
+  }, [session]);
 
   // 错误态一：工作空间根目录未设置（配置为空串）——哑会话不发 spawn，引导去设置
   if (cwd == null) {
@@ -112,6 +156,16 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
     );
   }
 
+  // main 已关闭占位视图：整块替换 TerminalView（无蒙层），提示工作目录 + 重新打开出口。
+  if (mainClosed) {
+    return (
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
+        <Typography variant="body2" color="text.secondary">当前任务工作目录为：{cwd}</Typography>
+        <Button size="small" onClick={reopenMain}>重新打开终端</Button>
+      </Box>
+    );
+  }
+
   const terminalTheme = {
     background: theme.palette.mode === 'dark' ? '#1e1e1e' : '#ffffff',
     foreground: theme.palette.mode === 'dark' ? '#d4d4d4' : '#333333',
@@ -120,14 +174,30 @@ export default function EmbeddedTerminal({ issueId }: EmbeddedTerminalProps) {
   };
 
   return (
-    <TerminalView
-      theme={terminalTheme}
-      onData={session.write}
-      onResize={session.resize}
-      exited={session.status === 'exited'}
-      onReopen={session.reopen}
-      onClose={session.close}
-      onWriteReady={handleWriteReady}
-    />
+    <>
+      <TerminalView
+        theme={terminalTheme}
+        toolbarLabel={isMain ? 'main' : undefined}
+        onData={session.write}
+        onResize={session.resize}
+        exited={session.status === 'exited'}
+        onReopen={session.reopen}
+        onClose={handleClose}
+        onWriteReady={handleWriteReady}
+      />
+      {/* main 关闭二次确认（附加 pane 无此弹窗） */}
+      <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>关闭终端</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            关闭后终端会话将被终止，可通过「重新打开终端」重新初始化。确定关闭吗？
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button size="small" onClick={() => setConfirmCloseOpen(false)}>取消</Button>
+          <Button size="small" variant="contained" color="primary" onClick={confirmCloseMain}>关闭</Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }

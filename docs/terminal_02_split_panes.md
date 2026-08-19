@@ -115,7 +115,7 @@ TerminalPanes/
 - **目标**：hook 与 issueId 解耦，锚点由调用方派生。现有行为零变化（main pane 仍传裸 issueId）。
 - **验证**：tsc/eslint；真机现有终端全场景不回归（开/切/回切/F5/删除）。
 
-### ⬜ 任务 2 — split 树 store + TerminalPaneRoot/PaneLayout 骨架
+### ✅ 任务 2 — split 树 store + TerminalPaneRoot/PaneLayout 骨架
 - **文件**：`src/state/terminalPanes/{store,actions}.ts`（新增）+ `TerminalPanes/{TerminalPaneRoot,PaneLayout}.tsx`（新增）+ `DevWorkbenchPage.tsx`（挂载点替换）+ `EmbeddedTerminal.tsx`（props 增 paneId，sessionId 派生）
 - **目标**：§3.2/§3.3/§3.4。初始布局 = 单 main leaf；splitPane/closePane 树操作 + 二子折叠。
 - **验证**：tsc/eslint/web:build；真机——工具条分割按钮出双 pane，各自独立 shell 会话（`pty_list_sessions` 见 `issueId` + `issueId::xxx` 两 key）；关闭附加 pane 回单 pane。
@@ -125,10 +125,16 @@ TerminalPanes/
 - **目标**：§3.3 持久化 + §3.4 divider（pointer capture、clamp 0.1-0.9、水平/垂直两向）。
 - **验证**：真机——拖拽流畅无布局抖动、pane 内 xterm 随动 fit；F5 后布局还原且各 pane reattach 出 scrollback；localStorage 清空回落单 pane 不崩。
 
-### ⬜ 任务 4 — 边界与收尾（自动 claude 交互 + 活跃 pane）
+### 🔄 任务 4 — 边界与收尾（自动 claude 交互 + 活跃 pane）
 - **文件**：`EmbeddedTerminal.tsx`（附加 pane 不带 startup_command）+ `TerminalPaneRoot.tsx`（activePaneId focus 跟随 + 分割/关闭作用对象）+ 文档落地记录
 - **目标**：§3.5/§3.6。
 - **验证**：真机——main pane 自动进 claude、附加 pane 裸 shell；活跃 pane 高亮/焦点正确；关 main pane 被拦截；issue 删除后 `pty_list_sessions` 无该 issue 任何 key。
+- **已落地（用户交互反馈批次）**：
+  - 自动 CLI 仅 main pane 注入（`startupCodeCli: isMain ? cli : ''`，附加 pane 恒裸 shell）。
+  - 关闭语义分流：附加 pane 点击 X 直处理（ptyShutdown + 树剪枝卸载，无确认）；main pane 先二次确认 Dialog，确认后杀会话 + 占位视图（无蒙层）「当前任务工作目录为：{cwd}」+「重新打开终端」（reopen → 全新 spawn，startup_command 重新注入）。
+  - main pane 工具栏最左侧 'main' 标识（TerminalView `toolbarLabel` prop）。
+  - 修复 closeNode 剪枝失效（初版 leaf 分支原样返回、引用不等误判，附加 pane 关闭后杀会话但不卸载）：重写为 pruneLeaf null 标记递归剪枝 + 单子折叠 + 未命中引用原样返回，7 场景断言验证。
+- **待办**：activePaneId focus 跟随（xterm focus 事件 → store.setActivePane；当前兜底 = 树上最后一个 leaf）。
 
 ---
 

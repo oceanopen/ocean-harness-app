@@ -16,6 +16,8 @@ export interface TerminalViewTheme {
 
 interface TerminalViewProps {
   theme: TerminalViewTheme;
+  // 工具栏左侧标识（如 main pane 的 'main' 标签）。不传则不渲染。
+  toolbarLabel?: string;
   // 键盘输入（xterm onData）。要求父层传稳定引用（useCallback），本组件不代理不缓存。
   onData: (data: string) => void;
   // 尺寸变化（addon-fit 实测后的 cols/rows）。同上要求稳定引用。
@@ -38,7 +40,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, onData, onResize, exited, onReopen, onClose, onWriteReady }: TerminalViewProps) {
+export default function TerminalView({ theme, toolbarLabel, onData, onResize, exited, onReopen, onClose, onWriteReady }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -135,8 +137,14 @@ export default function TerminalView({ theme, onData, onResize, exited, onReopen
 
   return (
     <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 工具栏：右侧关闭终端（aria-label，不挂 Tooltip） */}
-      <Box sx={{ height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', px: 0.5 }}>
+      {/* 工具栏：左侧 pane 标识（main pane 专属）+ 右侧关闭终端（aria-label，不挂 Tooltip） */}
+      <Box sx={{ height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.5 }}>
+        {toolbarLabel != null && (
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', lineHeight: 1 }}>
+            {toolbarLabel}
+          </Typography>
+        )}
+        <Box sx={{ flex: 1 }} />
         <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
           <CloseOutlinedIcon fontSize="small" />
         </IconButton>
