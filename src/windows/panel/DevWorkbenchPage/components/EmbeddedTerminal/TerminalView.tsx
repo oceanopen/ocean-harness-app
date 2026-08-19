@@ -32,6 +32,10 @@ interface TerminalViewProps {
   // 期间抑制 onData（见 replayDepth 注释），防止回放流里的 DA1/CPR 查询被新 xterm
   // 实例解析并应答、应答写回 PTY 成乱码。
   onWriteReady: (write: ((text: string, replay?: boolean) => void) | null) => void;
+  // 本 pane 获得键盘焦点时上抛（xterm onFocus；blur 不报——焦点只会转移，新 pane
+  // 的 onFocus 自然接管活跃位）。父层据此写 terminalPanes store 的 activePanes
+  // （分割/关闭作用对象跟随焦点，terminal_02 §3.4）。要求稳定引用。
+  onActive?: () => void;
 }
 
 // TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——
@@ -40,7 +44,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, toolbarLabel, onData, onResize, exited, onReopen, onClose, onWriteReady }: TerminalViewProps) {
+export default function TerminalView({ theme, toolbarLabel, onData, onResize, exited, onReopen, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -85,6 +89,15 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
       onData(data);
     });
     terminal.onResize(({ cols, rows }) => onResize(cols, rows));
+    // xterm 6 公开 API 无 focus 事件（旧 onFocusChange 已移除，内部 _onFocus 属
+    // 私有）。订阅官方 DOM 结构 .xterm-helper-textarea 的 focus 事件（open 后存在；
+    // blur 不报——焦点只会转移，新 pane 的 focus 自然接管活跃位）。
+    const activeTextarea = onActive != null
+      ? container.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea')
+      : null;
+    if (onActive != null && activeTextarea != null) {
+      activeTextarea.addEventListener('focus', onActive);
+    }
 
     // 4. 输出桥上抛。守卫非字符串输入（null/undefined）：xterm.write 内部直接取
     //    .length 会抛 TypeError 并在 React 19 下卸载整树（白屏），宁可丢包不可崩页。
@@ -129,6 +142,9 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
     return () => {
       observer.disconnect();
       container.removeEventListener('mousedown', focusTerminal);
+      if (onActive != null && activeTextarea != null) {
+        activeTextarea.removeEventListener('focus', onActive);
+      }
       onWriteReady(null);
       terminal.dispose();
       container.replaceChildren();

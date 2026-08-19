@@ -125,7 +125,7 @@ TerminalPanes/
 - **目标**：§3.3 持久化 + §3.4 divider（pointer capture、clamp 0.1-0.9、水平/垂直两向）。
 - **验证**：真机——拖拽流畅无布局抖动、pane 内 xterm 随动 fit；F5 后布局还原且各 pane reattach 出 scrollback；localStorage 清空回落单 pane 不崩。
 
-### 🔄 任务 4 — 边界与收尾（自动 claude 交互 + 活跃 pane）
+### ✅ 任务 4 — 边界与收尾（自动 claude 交互 + 活跃 pane）
 - **文件**：`EmbeddedTerminal.tsx`（附加 pane 不带 startup_command）+ `TerminalPaneRoot.tsx`（activePaneId focus 跟随 + 分割/关闭作用对象）+ 文档落地记录
 - **目标**：§3.5/§3.6。
 - **验证**：真机——main pane 自动进 claude、附加 pane 裸 shell；活跃 pane 高亮/焦点正确；关 main pane 被拦截；issue 删除后 `pty_list_sessions` 无该 issue 任何 key。
@@ -134,7 +134,7 @@ TerminalPanes/
   - 关闭语义分流：附加 pane 点击 X 直处理（ptyShutdown + 树剪枝卸载，无确认）；main pane 先二次确认 Dialog，确认后杀会话 + 占位视图（无蒙层）「当前任务工作目录为：{cwd}」+「重新打开终端」（reopen → 全新 spawn，startup_command 重新注入）。
   - main pane 工具栏最左侧 'main' 标识（TerminalView `toolbarLabel` prop）。
   - 修复 closeNode 剪枝失效（初版 leaf 分支原样返回、引用不等误判，附加 pane 关闭后杀会话但不卸载）：重写为 pruneLeaf null 标记递归剪枝 + 单子折叠 + 未命中引用原样返回，7 场景断言验证。
-- **待办**：activePaneId focus 跟随（xterm focus 事件 → store.setActivePane；当前兜底 = 树上最后一个 leaf）。
+- **已落地（focus 跟随）**：TerminalView `onActive` prop（订阅 `.xterm-helper-textarea` focus 事件——xterm 6 公开 API 无 focus 事件、旧 onFocusChange 已移除、内部 `_onFocus` 属私有，DOM 结构是官方稳定路径）→ EmbeddedTerminal `setActivePane(issueId, paneId)` → TerminalSplitButtons 读 `activePanes`（hasPane 校验回落树上最后一个 leaf）。blur 不报：焦点只会转移，新 pane focus 自然接管。
 
 ---
 
