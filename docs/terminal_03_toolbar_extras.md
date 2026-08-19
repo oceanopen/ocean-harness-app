@@ -92,10 +92,11 @@
 >
 > 状态图例：✅ 已完成 · 🔄 进行中 · ⬜ 待办
 
-### ⬜ 任务 1 — @xterm/addon-search 依赖 spike
+### ✅ 任务 1 — @xterm/addon-search 依赖 spike
 - **文件**：`package.json`（试探性 add）
 - **目标**：验证私有代理可拉 `@xterm/addon-search`；能 → 安装并记录版本；不能 → 移除，任务 2 走自研降级方案。
 - **验证**：`pnpm install` 成功 + web:build 通过；或确认 502 并记录降级决策。
+- **结果**：✅ 私有代理可拉取，已安装 `@xterm/addon-search@^0.16.0`；`pnpm install` + `web:build` 均通过。任务 2 走官方 addon 方案。
 
 ### ⬜ 任务 2 — 基础操作组（清屏/复制/粘贴/搜索）
 - **文件**：`TerminalView.tsx`（工具条按钮 + 命令接线）+ `TerminalSearch.tsx`（新增：搜索条 overlay，addon 或自研）
