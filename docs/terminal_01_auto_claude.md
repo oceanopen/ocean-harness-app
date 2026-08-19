@@ -232,10 +232,16 @@ pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String>
   - `EmbeddedTerminal` useConfigValue 读枚举（模块级 decode）；`usePtySession` 参数 `startupCodeCli`，spawn opts `startupCommand: cli || undefined`；attachKey 拼入（切换即时重编排，活会话不重注入——§5.1 语义）。
   - tsc/eslint/web:build 通过；bindings 无变化（纯前端配置）。真机验证并入任务 6 全场景。
 
-### ⬜ 任务 5 — fish 回退 + 边界打磨
+### ✅ 任务 5 — fish 回退 + 边界打磨
 - **文件**：`shell_ready.rs`（shell 类型判定与 fast 回退）+ `local_provider.rs`
 - **目标**：`$SHELL` 非 zsh/bash 时 startup_command 走 fast 注入（spawn 后首输出 + 30ms），日志标注降级。
 - **验证**：临时 `SHELL=/usr/bin/fish cargo test` 相关单测；真机 fish 用户路径（如有）不卡死、命令最终执行。
+- **实施记录（2026-08-19）**：
+  - barrier 复用状态机仅增 `fast: bool` 模式位（`new_fast`）：跳过 scanner（chunk 原样放行不剥字节），首个非空输出块即 Gating→Flushing + 30ms flush；排队/超时（零输出 shell 兜底）/退出/drop 语义与 marker 模式完全复用——无第二套代码路径。
+  - spawn 分支收敛为两态：wrapped（zsh/bash 且 app_data_dir 已注入）↔ fast 回退（fish/其他 shell **或** zsh/bash 但包装文件根不可用——比原「完全跳过注入」更稳，配置了启动 CLI 的用户在任何 shell 下都有注入行为）。
+  - feed_output 重构为「锁块尾表达式产出 (out, Option<delay>)」消除早期 return 类型冲突（Rust return 绑定函数签名类型而非 let 块类型——踩坑记录）。
+  - 单测 2 新增：fast 首块触发 flush（顺序注入→stdin、不剥字节、flush 后直通）+ fast 超时兜底。全量 44 测试绿，clippy/fmt clean。
+  - `SHELL=/usr/bin/fish` env 级测试在 cargo test 并行下不安全（std::env 全局污染），真机 fish 验证并入任务 6。
 
 ### ⬜ 任务 6 — 真机验证 + 坑位归档
 - **目标**：真机全场景过一遍（首开自动进 claude / claude 内 exit 回 shell / 重开按钮再进 claude / F5 / 切 issue 回切 / 删除 issue 无孤儿 / 开关关闭路径 / 慢 rc 用户场景）。踩坑按「现象→根因→修复」归档进本文档新 §（沿用 embedded_terminal.md §5.7 范式）。

@@ -72,59 +72,59 @@ impl LocalPtyProvider {
         }
         cmd.cwd(&opts.cwd);
 
-        // startup_command 分支（任务 2）：shell 为 zsh/bash 且 app_data_dir 已注入
-        // → 包装 spawn（marker 精确锚定 + barrier）；否则降级不注入（裸 spawn，
-        // 行为与现状一致；fish 的 fast 注入降级在模块任务 5 打磨）。
+        // startup_command 分支（任务 2/5）：shell 为 zsh/bash 且 app_data_dir 已注入
+        // → 包装 spawn（marker 精确锚定 + barrier）；其余情形（fish/其他 shell、
+        // 或包装文件根不可用）统一降级 fast 注入——首个非空输出块 + 30ms 放行，
+        // 排队/超时/退出语义复用 barrier（文档 §3.2「行为降级不阻塞」）。
         let mut barrier: Option<Arc<ShellReadyBarrier>> = None;
         if let Some(startup) = &opts.startup_command {
             let shell_name = shell_basename(&prog);
             let base = app_data_dir();
-            if matches!(shell_name.as_str(), "zsh" | "bash") {
-                if let Some(base) = base {
-                    let wrappers = ensure_shell_ready_wrappers(base);
-                    match shell_name.as_str() {
-                        "zsh" => {
-                            // -l 登录式（与 Terminal.app 一致，PATH 等环境完整）；
-                            // ZDOTDIR 指向 wrapper 目录，原始 ZDOTDIR（非 wrapper 目录
-                            // 时）透传给包装 .zshenv 防嵌套丢配置。
-                            cmd = CommandBuilder::new(&prog);
-                            cmd.arg("-l");
-                            cmd.env("ZDOTDIR", &wrappers.zsh_zdotdir);
-                            if let Some(orig) = user_zdotdir_for_passthrough() {
-                                cmd.env("WE_TERM_ORIG_ZDOTDIR", orig);
-                            } else {
-                                cmd.env_remove("ZDOTDIR".to_string().as_str());
-                            }
-                            cmd.cwd(&opts.cwd);
+            let wrapped = matches!(shell_name.as_str(), "zsh" | "bash") && base.is_some();
+            if wrapped {
+                let base = base.expect("checked above");
+                let wrappers = ensure_shell_ready_wrappers(base);
+                match shell_name.as_str() {
+                    "zsh" => {
+                        // -l 登录式（与 Terminal.app 一致，PATH 等环境完整）；
+                        // ZDOTDIR 指向 wrapper 目录，原始 ZDOTDIR（非 wrapper 目录
+                        // 时）透传给包装 .zshenv 防嵌套丢配置。
+                        cmd = CommandBuilder::new(&prog);
+                        cmd.arg("-l");
+                        cmd.env("ZDOTDIR", &wrappers.zsh_zdotdir);
+                        if let Some(orig) = user_zdotdir_for_passthrough() {
+                            cmd.env("WE_TERM_ORIG_ZDOTDIR", orig);
+                        } else {
+                            cmd.env_remove("ZDOTDIR".to_string().as_str());
                         }
-                        "bash" => {
-                            cmd = CommandBuilder::new(&prog);
-                            cmd.arg("--rcfile");
-                            cmd.arg(&wrappers.bash_rcfile);
-                            cmd.cwd(&opts.cwd);
-                        }
-                        _ => unreachable!(),
+                        cmd.cwd(&opts.cwd);
                     }
-                    let b = ShellReadyBarrier::new(SHELL_READY_TIMEOUT_MS);
-                    b.enqueue_startup(startup);
-                    barrier = Some(b);
-                    log::info!(
-                        "[pty] shell-ready wrapped spawn issue_id={} shell={}",
-                        opts.issue_id,
-                        shell_name
-                    );
-                } else {
-                    log::warn!(
-                        "[pty] shell-ready skipped: app_data_dir not set, issue_id={}",
-                        opts.issue_id
-                    );
+                    "bash" => {
+                        cmd = CommandBuilder::new(&prog);
+                        cmd.arg("--rcfile");
+                        cmd.arg(&wrappers.bash_rcfile);
+                        cmd.cwd(&opts.cwd);
+                    }
+                    _ => unreachable!(),
                 }
+                let b = ShellReadyBarrier::new(SHELL_READY_TIMEOUT_MS);
+                b.enqueue_startup(startup);
+                barrier = Some(b);
+                log::info!(
+                    "[pty] shell-ready wrapped spawn issue_id={} shell={}",
+                    opts.issue_id,
+                    shell_name
+                );
             } else {
-                // fish/其他：fast 注入降级（模块任务 5 打磨），本期不注入仅标注。
+                // fast 回退：fish 等无 marker 包装的 shell，或 zsh/bash 但
+                // app_data_dir 未注入（包装文件无处落盘）。裸 spawn + fast barrier。
+                let b = ShellReadyBarrier::new_fast(SHELL_READY_TIMEOUT_MS);
+                b.enqueue_startup(startup);
+                barrier = Some(b);
                 log::warn!(
-                    "[pty] shell-ready unsupported shell {}, startup command skipped (issue_id={})",
-                    shell_name,
-                    opts.issue_id
+                    "[pty] shell-ready fast fallback issue_id={} shell={}",
+                    opts.issue_id,
+                    shell_name
                 );
             }
         }

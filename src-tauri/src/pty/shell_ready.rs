@@ -353,6 +353,9 @@ enum BarrierState {
 
 /// 锁内全部可变状态（状态机 + 排队 + scanner 归属）。
 struct BarrierInner {
+    /// fast 模式（fish 等无 marker 包装的 shell）：跳过 scanner，首个非空
+    /// 输出块即视为就绪（Gating→Flushing + 30ms flush）。排队/超时/退出复用。
+    fast: bool,
     state: BarrierState,
     /// 排队 stdin（队首 = 注入命令，spawn 侧 insert(0)；后续用户输入按序 append）。
     queued: Vec<Vec<u8>>,
@@ -374,10 +377,22 @@ pub struct ShellReadyBarrier {
 }
 
 impl ShellReadyBarrier {
-    /// 建带超时的 barrier（timeout_ms 仅测试缩短用，生产恒 SHELL_READY_TIMEOUT_MS）。
+    /// marker 模式（zsh/bash 包装 spawn）。timeout_ms 仅测试缩短用，生产恒
+    /// SHELL_READY_TIMEOUT_MS。
     pub fn new(timeout_ms: u64) -> std::sync::Arc<Self> {
+        Self::build(timeout_ms, false)
+    }
+
+    /// fast 模式（fish/其他 shell 或包装不可用时的降级）：无 marker 可扫，
+    /// 首个非空输出块即触发 30ms flush。orca StartupCommandDelivery 'fast' 同语义。
+    pub fn new_fast(timeout_ms: u64) -> std::sync::Arc<Self> {
+        Self::build(timeout_ms, true)
+    }
+
+    fn build(timeout_ms: u64, fast: bool) -> std::sync::Arc<Self> {
         let barrier = std::sync::Arc::new(Self {
             inner: std::sync::Mutex::new(BarrierInner {
+                fast,
                 state: BarrierState::Gating,
                 queued: Vec::new(),
                 scanner: ShellReadyScanner::new(),
@@ -435,29 +450,41 @@ impl ShellReadyBarrier {
 
     /// 读路径：扫描剥除 marker。返回 (剥除后输出, 是否命中)。
     /// 命中：Gating → Flushing，锁外起 flush 定时（本块带 post-marker 字节走 30ms
-    /// 短路，纯 marker 块走 200ms 兜底）。Open 态直通。
+    /// 短路，纯 marker 块走 200ms 兜底）。fast 模式：不扫 marker，首个非空块即
+    /// 就绪（chunk 原样放行）。Open 态直通。
     pub fn feed_output(&self, chunk: &[u8]) -> (Vec<u8>, bool) {
-        // result = (剥除后输出, 命中时的 flush 延迟)。
+        // scan_result = (剥除后输出, 就绪触发时的 flush 延迟)；锁块用尾表达式产出。
         let (out, flush_delay): (Vec<u8>, Option<u64>) = {
             let mut inner = self.inner.lock().expect("barrier mutex poisoned");
-            if inner.state == BarrierState::Open {
-                return (chunk.to_vec(), false);
-            }
-            let (out, hit) = inner.scanner.scan(chunk);
-            if !hit {
-                return (out, false);
-            }
-            inner.state = BarrierState::Flushing;
-            let delay = if out.is_empty() {
-                POST_READY_FLUSH_FALLBACK_MS
+            let mut to_flush: Option<u64> = None;
+            let out: Vec<u8>;
+            if inner.fast {
+                // fast 模式：无 marker 可扫（chunk 原样放行），首个非空块即就绪。
+                if chunk.is_empty() {
+                    return (chunk.to_vec(), false);
+                }
+                if inner.state == BarrierState::Gating {
+                    inner.state = BarrierState::Flushing;
+                    to_flush = Some(POST_READY_FLUSH_DELAY_MS);
+                }
+                out = chunk.to_vec();
             } else {
-                POST_READY_FLUSH_DELAY_MS
-            };
-            (out, Some(delay))
+                let (scanned, hit) = inner.scanner.scan(chunk);
+                if hit {
+                    inner.state = BarrierState::Flushing;
+                    to_flush = Some(if scanned.is_empty() {
+                        POST_READY_FLUSH_FALLBACK_MS
+                    } else {
+                        POST_READY_FLUSH_DELAY_MS
+                    });
+                }
+                out = scanned;
+            }
+            (out, to_flush)
         };
         match flush_delay {
             Some(delay) => {
-                log::info!("[pty] shell-ready marker seen");
+                log::info!("[pty] shell-ready ready (marker or fast-first-chunk)");
                 self.schedule_flush(delay);
                 (out, true)
             }
@@ -645,6 +672,44 @@ mod tests {
         }
         assert_eq!(logged.lock().unwrap().as_slice(), b"claude\rK");
         assert!(!b.gate_write(b"AFTER"), "超时后永久直通");
+    }
+
+    /// fast 模式：首块触发 30ms flush；chunk 原样放行（不剥字节）；注入命令
+    /// 先于排队 stdin；flush 后 gate 直通。
+    #[test]
+    fn barrier_fast_mode_flushes_on_first_chunk() {
+        let (logged, writer) = sink_recorder();
+        let b = ShellReadyBarrier::new_fast(SHELL_READY_TIMEOUT_MS);
+        b.install_writer(writer);
+        b.enqueue_startup("claude");
+        assert!(b.gate_write(b"USER"));
+
+        let (out, hit) = b.feed_output(b"welcome to fish\r\n");
+        assert!(hit, "fast 模式首块应触发就绪");
+        assert_eq!(out, b"welcome to fish\r\n", "fast 模式不剥字节");
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while logged.lock().unwrap().is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(logged.lock().unwrap().as_slice(), b"claude\rUSER");
+        assert!(!b.gate_write(b"AFTER"), "flush 后直通");
+    }
+
+    /// fast 模式超时兜底：零输出 shell（rc 挂死）到点强制 flush。
+    #[test]
+    fn barrier_fast_mode_timeout_flushes() {
+        let (logged, writer) = sink_recorder();
+        let b = ShellReadyBarrier::new_fast(120);
+        b.install_writer(writer);
+        b.enqueue_startup("claude");
+        assert!(b.gate_write(b"K"));
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while logged.lock().unwrap().is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(logged.lock().unwrap().as_slice(), b"claude\rK");
     }
 
     /// drop_pending：排队丢弃，gate 直通，sink 无写入。
