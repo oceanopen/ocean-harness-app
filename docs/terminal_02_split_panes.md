@@ -120,7 +120,7 @@ TerminalPanes/
 - **目标**：§3.2/§3.3/§3.4。初始布局 = 单 main leaf；splitPane/closePane 树操作 + 二子折叠。
 - **验证**：tsc/eslint/web:build；真机——工具条分割按钮出双 pane，各自独立 shell 会话（`pty_list_sessions` 见 `issueId` + `issueId::xxx` 两 key）；关闭附加 pane 回单 pane。
 
-### ⬜ 任务 3 — PaneDivider 拖拽 + 布局持久化
+### ✅ 任务 3 — PaneDivider 拖拽 + 布局持久化
 - **文件**：`TerminalPanes/PaneDivider.tsx`（新增）+ store 持久化订阅 + types.ts
 - **目标**：§3.3 持久化 + §3.4 divider（pointer capture、clamp 0.1-0.9、水平/垂直两向）。
 - **验证**：真机——拖拽流畅无布局抖动、pane 内 xterm 随动 fit；F5 后布局还原且各 pane reattach 出 scrollback；localStorage 清空回落单 pane 不崩。

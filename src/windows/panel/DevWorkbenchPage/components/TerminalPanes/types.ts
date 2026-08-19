@@ -8,20 +8,31 @@
 
 export type SplitDirection = 'horizontal' | 'vertical';
 
+/// divider 拖拽的 ratio 上下限（first 子占比 clamp 区间，文档 §3.2）。
+export const MIN_PANE_RATIO = 0.2;
+export const MAX_PANE_RATIO = 0.8;
+
 export type PaneLayoutNode
   // 叶子 = 一个终端 pane。paneId: 'main'（主 pane，锚点即 issueId）| 8 位 uuid（附加 pane）
   = | { type: 'leaf'; paneId: string }
-  // 分割节点：direction 决定 flex 方向；ratio ∈ (0.1, 0.9) 为 first 子占比
-  // （divider 拖拽 clamp，任务 3 接入）；children 恒二元（split 只作用于 leaf）。
-    | { type: 'split'; direction: SplitDirection; ratio: number; children: [PaneLayoutNode, PaneLayoutNode] };
+  // 分割节点：direction 决定 flex 方向；ratio ∈ [MIN, MAX] 为 first 子占比（divider
+  // 拖拽 setRatio 按 id 定位修改）；children 恒二元（split 只作用于 leaf）。
+  // id：split 生成时的 8 位随机标识——divider 拖拽定位目标节点用（树结构变化时
+  // 按 path 定位脆弱，按 id 稳定）。
+    | { type: 'split'; id: string; direction: SplitDirection; ratio: number; children: [PaneLayoutNode, PaneLayoutNode] };
 
 /// 主 pane id（布局树的恒存根：初始布局 = 单 main leaf，关最后一个 pane 被拦截，
 /// 保证终端区至少一个 pane——§3.5）。
 export const MAIN_PANE_ID = 'main';
 
 /// 生成附加 pane id：crypto.randomUUID() 前 8 位（orca 同长度；展示可辨识、
-/// localStorage key 短——任务 3 持久化）。
+/// localStorage key 短）。
 export function newPaneId(): string {
+  return crypto.randomUUID().slice(0, 8);
+}
+
+/// 生成 split 节点 id：与 paneId 同规格（8 位随机）。
+export function newSplitId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
 
