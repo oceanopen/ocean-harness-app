@@ -1,7 +1,5 @@
 import type { ProjectIssueResponseData } from '@src/services';
 import {
-  CleaningServicesOutlined as CleaningServicesOutlinedIcon,
-  RefreshOutlined as RefreshOutlinedIcon,
   ViewSidebar as ViewSidebarIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
 } from '@mui/icons-material';
@@ -23,6 +21,7 @@ import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
 import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
+import TerminalSplitButtons from './components/TerminalPanes/TerminalSplitButtons';
 
 // 左栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
@@ -102,7 +101,7 @@ export default function DevWorkbenchPage() {
 
       {/* 右栏：顶部操作栏 + 内容区 */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* 顶部操作栏：左栏折叠开关 + 选中 issue 的 id 尾 8 位 + 名称 + 状态徽章 + 占位按钮（不挂 Tooltip） */}
+        {/* 顶部操作栏：左栏折叠开关 + 状态徽章 + 选中 issue 的 id 尾 8 位 + 名称 + 右侧快捷区（终端分割） */}
         <Box
           sx={{
             height: 48,
@@ -124,6 +123,13 @@ export default function DevWorkbenchPage() {
           >
             {issueTreeCollapsed ? <ViewSidebarOutlinedIcon /> : <ViewSidebarIcon />}
           </IconButton>
+          {hasSelection && issue && stateMeta && (
+            <Chip
+              size="small"
+              label={stateMeta.name}
+              sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: '0.75rem', flexShrink: 0 }}
+            />
+          )}
           {hasSelection && issue && (
             <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
               <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400, fontFamily: 'monospace' }}>
@@ -133,22 +139,9 @@ export default function DevWorkbenchPage() {
               {issue.name}
             </Typography>
           )}
-          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
-            {hasSelection && issue && stateMeta && (
-              <Chip
-                size="small"
-                label={stateMeta.name}
-                sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: '0.75rem' }}
-              />
-            )}
-            {/* TODO(C): 刷新；占位 disabled + aria-hidden（屏幕阅读器跳过无用占位按钮） */}
-            <IconButton size="small" disabled aria-hidden>
-              <RefreshOutlinedIcon />
-            </IconButton>
-            {/* TODO(P3): 清理中心批量入口 */}
-            <IconButton size="small" disabled aria-hidden>
-              <CleaningServicesOutlinedIcon />
-            </IconButton>
+          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+            {/* 终端分割按钮组（作用于活跃 pane；原终端区工具条上移至此） */}
+            {hasSelection && issue && <TerminalSplitButtons issueId={issue.id} />}
           </Box>
         </Box>
 
