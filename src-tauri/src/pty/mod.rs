@@ -17,6 +17,7 @@
 pub mod local_provider;
 pub mod provider;
 pub mod session;
+pub mod shell_ready;
 pub mod state;
 
 use local_provider::LocalPtyProvider;

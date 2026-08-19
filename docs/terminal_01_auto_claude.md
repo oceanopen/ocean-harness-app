@@ -176,10 +176,17 @@ pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String>
 >
 > 状态图例：✅ 已完成 · 🔄 进行中 · ⬜ 待办
 
-### ⬜ 任务 1 — shell 包装文件生成 + marker（zsh/bash）
+### ✅ 任务 1 — shell 包装文件生成 + marker（zsh/bash）
 - **文件**：`src-tauri/src/pty/shell_ready.rs`（新增：包装文件生成 + marker 常量 + ShellReadyScanner 雏形）
 - **目标**：按需生成 ZDOTDIR 包装（.zshrc widget 链式 + .zshenv/.zprofile/.zlogin 透传）与 bash rcfile 包装到 app_data_dir；marker 字节常量 `WE_TERM_SHELL_READY_MARKER`。
 - **验证**：单测——临时 ZDOTDIR 下 `zsh -i` 手动跑包装文件，stdout 含 marker 字节；bash 同理。cargo test 通过。
+- **实施记录（2026-08-19）**：
+  - marker = `b"\x1b]777;we-term-shell-ready\x07"`；zsh 四件套（ZDOTDIR discover + 透传 + HISTFILE 修复 + widget 链式注册）；bash rcfile（login 语义自 source + bracketed paste + PROMPT_COMMAND 前置 emit marker）。
+  - widget 块**双放** `.zshrc` 与 `.zlogin`：模板对 `-i`/`-l` 两种 spawn 模式都成立（实际 spawn 参数任务 2 定，倾向 `-l` 与 Terminal.app 一致）；`.zlogin` 尾部恢复用户 ZDOTDIR。
+  - `ShellReadyScanner` 跨块边界：除尾部 ≤26 字节前缀挂起外，**buf 整段短于 marker 时须全保留**（keep_len 补 `buf.len() < marker.len() && marker.starts_with(buf)` 分支）——3 字节粒度切块测试抓出，否则跨块 marker 必漏。
+  - 幂等落盘已存在不覆写；写失败仅 warn 跳过（最坏无 marker，任务 2 超时兜底放行）。
+  - 消费方（spawn 链路）在任务 2，全部符号暂 `#[allow(dead_code)]` 标注「任务 2 接线」，接线后移除。
+  - PTY 集成测试真机跑 `/bin/zsh -l`（ZDOTDIR=wrapper、临时 HOME 隔离用户 rc）与 `/bin/bash --rcfile`：均发出 marker。7 项测试全绿，cargo test 35 全量无回归，clippy/fmt clean。
 
 ### ⬜ 任务 2 — barrier + spawn 链路接入
 - **文件**：`shell_ready.rs`（ShellReadyBarrier 完整实现）+ `session.rs`（PtySession 挂 barrier、reader 扫描剥 marker、write_input 排队）+ `local_provider.rs`（SpawnOpts.startup_command 分支：包装 spawn + barrier + 注入字节入 pending）+ `provider.rs`（SpawnOpts 字段）
