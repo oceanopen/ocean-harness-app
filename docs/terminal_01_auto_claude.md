@@ -188,10 +188,18 @@ pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String>
   - 消费方（spawn 链路）在任务 2，全部符号暂 `#[allow(dead_code)]` 标注「任务 2 接线」，接线后移除。
   - PTY 集成测试真机跑 `/bin/zsh -l`（ZDOTDIR=wrapper、临时 HOME 隔离用户 rc）与 `/bin/bash --rcfile`：均发出 marker。7 项测试全绿，cargo test 35 全量无回归，clippy/fmt clean。
 
-### ⬜ 任务 2 — barrier + spawn 链路接入
+### ✅ 任务 2 — barrier + spawn 链路接入
 - **文件**：`shell_ready.rs`（ShellReadyBarrier 完整实现）+ `session.rs`（PtySession 挂 barrier、reader 扫描剥 marker、write_input 排队）+ `local_provider.rs`（SpawnOpts.startup_command 分支：包装 spawn + barrier + 注入字节入 pending）+ `provider.rs`（SpawnOpts 字段）
 - **目标**：§3.3/§3.4/§3.5 全链路。marker 前 stdin 排队；marker + 30ms flush；5s 超时强制放行；退出丢 pending。
 - **验证**：单测——spawn 带 `startup_command: Some("echo MARKER_OK")`，ring 中出现 MARKER_OK 且**不含 marker 字节**；marker 前并发 write 被排队（顺序不断裂）；5s 超时路径单测（mock 不发 marker 的包装）；现有 smoke 测试不回归。
+- **实施记录（2026-08-19）**：
+  - **barrier 三态状态机**（Gating→Flushing→Open，单 Mutex 持全部状态）：Gating=marker 前（stdin 全排队）；Flushing=marker 后等提示符绘制（**窗口内写入仍排队**——orca isGatingWrites 语义，用户输入不得插队到注入命令前）；Open=flush 完毕直通。超时从 Gating 直跳 Open 立即 flush（永久放行，三项澄清之一）。
+  - **flush gate 双路**：marker 块带 post-marker 字节 → 30ms 短路；纯 marker 块 → 200ms 墙钟兜底（orca PostReadyFlushGate 同策略防 ECHO 双显）。
+  - **线程模型**：flush/超时各一个 detached std thread 经 `Weak<Self>` 自引用（OnceLock<Weak> 存，会话释放后定时器空转退出）；writer 换 `Arc<Mutex<>>` 共享给 flush 线程与 pty_write 命令路径（同锁串行）。
+  - **zsh 包装 spawn 用 `-l` 登录式**（三项澄清之二，与 Terminal.app 一致）；原始 ZDOTDIR 非空且非 wrapper 目录时透传 WE_TERM_ORIG_ZDOTDIR（澄清之三），否则 env_remove。
+  - **踩坑归档**：① 初版 feed_output hit 分支返回空 Vec 丢弃剥除残余（post-marker 字节丢失）——hit 时必须返回 (out, true)；② 初版 app_data_dir 的 get/set 写成了两个独立 OnceLock static（set 进 B 读 A 恒 None，包装分支静默不生效，e2e 抓出）——单 static 共享；③ e2e 断言 `contains("we-term-shell-ready")` 误中测试目录名（cwd 路径含该词）——改精确匹配完整 marker 字节序列。
+  - reader 顺序：read → barrier.feed_output（剥 marker）→ Utf8Tail → ring/listener；EOF 时 drop_pending。SpawnOpts 增 `startup_command`（`#[serde(default)]` 向后兼容），bindings 已重新生成。fish/其他 shell 或 app_data_dir 未注入时降级裸 spawn（warn 日志），任务 5 打磨 fast 注入。
+  - 测试 6 新增全绿（barrier 排序/超时/drop/纯 marker 兜底、注入字节构造、e2e 全链路），全量 41 无回归，clippy/fmt clean。
 
 ### ⬜ 任务 3 — pty_shutdown_issue 命令
 - **文件**：`pty/mod.rs`（新命令）+ `lib.rs`（collect_commands! 注册）+ `src/state/tracker/queries.ts`（删除联动换用新命令）

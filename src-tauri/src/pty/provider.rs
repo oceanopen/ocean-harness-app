@@ -25,6 +25,11 @@ pub struct SpawnOpts {
     pub cols: u16,
     /// 初始行数。
     pub rows: u16,
+    /// 启动注入命令（如 "claude"）：fresh spawn 且 shell 为 zsh/bash 时走包装
+    /// spawn（shell-ready barrier 精确锚定提示符就绪后注入）；其余 shell 走
+    /// fast 注入降级。None = 现状裸 spawn。reattach/复用分支不重注入。
+    #[serde(default)]
+    pub startup_command: Option<String>,
 }
 
 /// 会话信息快照（pty_list_sessions 返回，调试/后续状态栏用）。

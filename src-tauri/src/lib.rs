@@ -107,6 +107,13 @@ pub fn run() {
             shared::app_config::init(app)?;
             shared::state::claude_sessions::init(app)?;
             pty::state::init(app)?;
+            // shell-ready 包装文件根（app_data_dir/shell-ready）：注入失败仅 warn，
+            // startup_command 降级为裸 spawn，终端照常可用。
+            if let Ok(dir) = app.path().app_data_dir() {
+                pty::local_provider::set_app_data_dir(dir);
+            } else {
+                log::warn!("[pty] resolve app_data_dir failed, shell-ready disabled");
+            }
             windows::tray::setup(app)?;
 
             // 先 rescan 填充 ClaudeSessionStore 并广播首批快照，保证后续 pet_claude_sessions_task / pet

@@ -11,15 +11,30 @@
 //   - 未退出会话：复用，换装新 listener（webview 刷新后旧 Channel 失效）
 //   - 已退出会话：移除旧会话重起 shell（前端「重开」按钮路径）
 
-use std::sync::Arc;
+use std::path::PathBuf;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use tauri::ipc::Channel;
 
 use super::provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, SpawnOpts};
-use super::session::{PtyEvent, PtySession, SessionIo, spawn_reader_thread};
+use super::session::{spawn_reader_thread, PtyEvent, PtySession, SessionIo};
+use super::shell_ready::{ensure_shell_ready_wrappers, ShellReadyBarrier, SHELL_READY_TIMEOUT_MS};
 use super::state::PtySessionStore;
+
+/// shell-ready 包装文件根（app_data_dir）。setup 时注入（lib.rs），未注入时
+/// startup_command 降级为不注入（裸 spawn），不阻塞终端可用性。
+fn app_data_dir() -> Option<&'static PathBuf> {
+    APP_DATA_DIR.get()
+}
+
+/// setup 注入 app_data_dir（lib.rs 调用，一次性）。测试可先行注入临时目录。
+static APP_DATA_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+pub fn set_app_data_dir(dir: PathBuf) {
+    let _ = APP_DATA_DIR.set(dir);
+}
 
 /// 本机 PTY 后端。持有全局会话存储；provider 实例本身无状态，
 /// 保留 store 字段以便远程 provider 扩展时替换为连接级存储。
@@ -57,6 +72,63 @@ impl LocalPtyProvider {
         }
         cmd.cwd(&opts.cwd);
 
+        // startup_command 分支（任务 2）：shell 为 zsh/bash 且 app_data_dir 已注入
+        // → 包装 spawn（marker 精确锚定 + barrier）；否则降级不注入（裸 spawn，
+        // 行为与现状一致；fish 的 fast 注入降级在模块任务 5 打磨）。
+        let mut barrier: Option<Arc<ShellReadyBarrier>> = None;
+        if let Some(startup) = &opts.startup_command {
+            let shell_name = shell_basename(&prog);
+            let base = app_data_dir();
+            if matches!(shell_name.as_str(), "zsh" | "bash") {
+                if let Some(base) = base {
+                    let wrappers = ensure_shell_ready_wrappers(base);
+                    match shell_name.as_str() {
+                        "zsh" => {
+                            // -l 登录式（与 Terminal.app 一致，PATH 等环境完整）；
+                            // ZDOTDIR 指向 wrapper 目录，原始 ZDOTDIR（非 wrapper 目录
+                            // 时）透传给包装 .zshenv 防嵌套丢配置。
+                            cmd = CommandBuilder::new(&prog);
+                            cmd.arg("-l");
+                            cmd.env("ZDOTDIR", &wrappers.zsh_zdotdir);
+                            if let Some(orig) = user_zdotdir_for_passthrough() {
+                                cmd.env("WE_TERM_ORIG_ZDOTDIR", orig);
+                            } else {
+                                cmd.env_remove("ZDOTDIR".to_string().as_str());
+                            }
+                            cmd.cwd(&opts.cwd);
+                        }
+                        "bash" => {
+                            cmd = CommandBuilder::new(&prog);
+                            cmd.arg("--rcfile");
+                            cmd.arg(&wrappers.bash_rcfile);
+                            cmd.cwd(&opts.cwd);
+                        }
+                        _ => unreachable!(),
+                    }
+                    let b = ShellReadyBarrier::new(SHELL_READY_TIMEOUT_MS);
+                    b.enqueue_startup(startup);
+                    barrier = Some(b);
+                    log::info!(
+                        "[pty] shell-ready wrapped spawn issue_id={} shell={}",
+                        opts.issue_id,
+                        shell_name
+                    );
+                } else {
+                    log::warn!(
+                        "[pty] shell-ready skipped: app_data_dir not set, issue_id={}",
+                        opts.issue_id
+                    );
+                }
+            } else {
+                // fish/其他：fast 注入降级（模块任务 5 打磨），本期不注入仅标注。
+                log::warn!(
+                    "[pty] shell-ready unsupported shell {}, startup command skipped (issue_id={})",
+                    shell_name,
+                    opts.issue_id
+                );
+            }
+        }
+
         let child = pair
             .slave
             .spawn_command(cmd)
@@ -74,7 +146,7 @@ impl LocalPtyProvider {
         let io = Arc::new(SessionIo::new());
         io.set_listener(listener.clone());
         let started_at = chrono::Utc::now().timestamp_millis();
-        let session = PtySession::new(
+        let mut session = PtySession::new(
             opts.issue_id.clone(),
             opts.cwd.clone(),
             pair.master,
@@ -83,7 +155,13 @@ impl LocalPtyProvider {
             Arc::clone(&io),
             started_at,
         );
-        spawn_reader_thread(reader, io);
+        // barrier 接线：writer 共享句柄给 flush 线程；会话挂 barrier；reader 扫描。
+        // 顺序关键——install_writer 须在 spawn_reader_thread 前（marker 可能极快）。
+        if let Some(b) = &barrier {
+            b.install_writer(Arc::clone(&session.writer));
+            session.barrier = Some(Arc::clone(b));
+        }
+        spawn_reader_thread(reader, io, barrier);
 
         {
             let mut map = self
@@ -148,6 +226,25 @@ impl Default for LocalPtyProvider {
 fn resolve_shell() -> (String, Vec<String>) {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
     (shell, vec!["-i".to_string()])
+}
+
+/// shell 程序 basename（小写）：zsh/bash/fish… 包装分支判定用。
+fn shell_basename(prog: &str) -> String {
+    prog.rsplit('/')
+        .next()
+        .unwrap_or(prog)
+        .to_lowercase()
+}
+
+/// 用户原始 ZDOTDIR（app 进程环境）：非空且非 shell-ready wrapper 目录时透传给
+/// 包装 .zshenv（防嵌套场景丢用户自定义 ZDOTDIR）；否则 None（包装内回退 $HOME）。
+fn user_zdotdir_for_passthrough() -> Option<String> {
+    let v = std::env::var("ZDOTDIR").ok()?;
+    let normalized = v.trim_end_matches('/');
+    if normalized.is_empty() || normalized.ends_with("/shell-ready/zsh") {
+        return None;
+    }
+    Some(v)
 }
 
 impl PtyProvider for LocalPtyProvider {
@@ -319,6 +416,7 @@ mod tests {
             cwd: tmp.to_string_lossy().into_owned(),
             cols: 80,
             rows: 24,
+            startup_command: None,
         };
 
         // 无 webview 环境 Channel 以裸 id 构造（send 会失败，但换装/复用逻辑可验证）。
@@ -378,6 +476,7 @@ mod tests {
                     cwd: tmp.to_string_lossy().into_owned(),
                     cols: 80,
                     rows: 24,
+                    startup_command: None,
                 },
                 Channel::new(|_| Ok(())),
             )
@@ -414,13 +513,73 @@ mod tests {
         );
 
         // 不存在的会话：reattach None（前端转 spawn 路径）。
+        assert!(provider
+            .reattach("no-such-issue", Channel::new(|_| Ok(())))
+            .unwrap()
+            .is_none());
+
+        provider.shutdown(&issue_id).unwrap();
+    }
+
+    /// shell-ready 全链路（任务 2）：startup_command 包装 spawn → marker 被 barrier
+    /// 剥除（ring 不含 marker 字节）→ 注入命令在提示符就绪后执行（ring 出现回显）→
+    /// marker 前的用户输入被排队、顺序放行（注入命令先执行）。zsh 主路径。
+    #[test]
+    fn spawn_with_startup_command_injects_after_marker() {
+        let provider = LocalPtyProvider::new();
+        let base = std::env::temp_dir().join("we-term-shell-ready-e2e");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        set_app_data_dir(base.clone());
+
+        let issue_id = "shell-ready-e2e-issue".to_string();
+        let opts = SpawnOpts {
+            issue_id: issue_id.clone(),
+            cwd: base.to_string_lossy().into_owned(),
+            cols: 80,
+            rows: 24,
+            startup_command: Some("echo WE_TERM_INJECT_OK".to_string()),
+        };
+        let spawned = provider
+            .spawn(opts, Channel::new(|_| Ok(())))
+            .unwrap();
+        assert!(spawned.fresh);
+
+        // marker 前的并发写：应被 barrier 排队（不直达 shell）。
+        provider
+            .write(&issue_id, b"echo USER_QUEUED\r")
+            .unwrap();
+
+        // 轮询 ring：注入命令回显 + 执行输出出现；marker 字节绝不出现。
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut ring = String::new();
+        while Instant::now() < deadline {
+            ring = provider
+                .with_session(&issue_id, &mut |s| s.io.snapshot())
+                .unwrap();
+            if ring.contains("WE_TERM_INJECT_OK") && ring.contains("USER_QUEUED") {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
         assert!(
-            provider
-                .reattach("no-such-issue", Channel::new(|_| Ok(())))
-                .unwrap()
-                .is_none()
+            ring.contains("WE_TERM_INJECT_OK"),
+            "注入命令未执行，ring: {ring}"
+        );
+        assert!(
+            ring.contains("USER_QUEUED"),
+            "marker 前的用户输入未放行，ring: {ring}"
+        );
+        // 精确匹配完整 marker 字节序列（子串 "we-term-shell-ready" 会误中 cwd 路径
+        // ——测试目录名本身含该词）。
+        let marker_str =
+            String::from_utf8_lossy(crate::pty::shell_ready::WE_TERM_SHELL_READY_MARKER);
+        assert!(
+            !ring.contains(marker_str.as_ref()),
+            "marker 字节泄漏到前端，ring 含完整 OSC 777 序列"
         );
 
         provider.shutdown(&issue_id).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

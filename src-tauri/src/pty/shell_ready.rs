@@ -23,11 +23,9 @@ use std::path::{Path, PathBuf};
 /// shell 就绪 marker：OSC 777 ; we-term-shell-ready BEL。
 /// 与 orca 同协议（OSC 777）但换应用前缀；全 ASCII，无 UTF-8 跨块切分问题。
 /// 任务 2 接线：reader 线程扫描剥除 + barrier 放行（当前仅测试消费，暂 allow）。
-#[allow(dead_code)]
 pub const WE_TERM_SHELL_READY_MARKER: &[u8] = b"\x1b]777;we-term-shell-ready\x07";
 
 /// POSIX 单引号转义：路径烘焙进 shell 文件时的安全引用（'…' 内除单引号外全字面）。
-#[allow(dead_code)]
 fn quote_posix_single(value: &str) -> String {
     // 单引号以 '\'' 关闭-转义-重开表达
     format!("'{}'", value.replace('\'', "'\\''"))
@@ -36,7 +34,6 @@ fn quote_posix_single(value: &str) -> String {
 /// zsh 包装四件套内容（.zshenv/.zprofile/.zshrc/.zlogin）。
 /// zdotdir 参数 = wrapper 目录（spawn 侧 ZDOTDIR 指向此处）。
 /// 任务 2 接线：spawn_fresh 包装分支调用（当前仅测试消费，暂 allow）。
-#[allow(dead_code)]
 fn zsh_wrapper_files(zdotdir: &Path) -> [(&'static str, String); 4] {
     let dir = zdotdir.to_string_lossy().into_owned();
     let header = "# we-claude-terminal zsh shell-ready wrapper";
@@ -162,7 +159,6 @@ unset _we_term_home
 
 /// bash 包装 rcfile 内容。--rcfile 模式下 bash 跳过 /etc/profile 与 ~/.bash_profile
 /// 系，需自 source 模拟 login 语义；marker 前置进 PROMPT_COMMAND（保留用户已有）。
-#[allow(dead_code)]
 fn bash_rcfile() -> String {
     let marker_printf = format!(
         "printf '{}'",
@@ -199,7 +195,6 @@ fi
 
 /// 包装文件落盘结果：spawn 侧据此设 ZDOTDIR / --rcfile。
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct ShellReadyWrappers {
     /// zsh wrapper 目录（spawn 侧 env ZDOTDIR 指向此处）。
     pub zsh_zdotdir: PathBuf,
@@ -211,7 +206,6 @@ pub struct ShellReadyWrappers {
 /// startup_command 时按需生成；已存在不覆写——用户可自查/手改这些文件）。
 /// 单文件写失败仅跳过该文件（其余照常）：最坏情况该 shell 无 marker，任务 2 的
 /// 超时兜底会强制放行，PTY 仍可用（orca 同策略）。
-#[allow(dead_code)]
 pub fn ensure_shell_ready_wrappers(base: &Path) -> ShellReadyWrappers {
     let root = base.join("shell-ready");
     let zsh_dir = root.join("zsh");
@@ -229,7 +223,6 @@ pub fn ensure_shell_ready_wrappers(base: &Path) -> ShellReadyWrappers {
 }
 
 /// 已存在不覆写；写失败记日志不中断（见 ensure_shell_ready_wrappers 注释）。
-#[allow(dead_code)]
 fn write_once(path: &Path, content: &str) {
     if path.exists() {
         return;
@@ -255,7 +248,6 @@ fn write_once(path: &Path, content: &str) {
 /// 命中前：扫描剥除 marker（不推前端/ring）；持尾部缓冲防止 marker 恰被 8KB 读块
 /// 边界切断（保留可能的前缀字节，最多 marker.len()-1）。命中后直通（每会话至多
 /// 一次注入，之后的输出与 marker 无关）。
-#[allow(dead_code)]
 pub struct ShellReadyScanner {
     /// 尾部缓冲：最近 ≤ marker.len()-1 字节（可能构成 marker 前缀的部分）。
     tail: Vec<u8>,
@@ -264,7 +256,6 @@ pub struct ShellReadyScanner {
 }
 
 impl ShellReadyScanner {
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             tail: Vec::new(),
@@ -274,7 +265,6 @@ impl ShellReadyScanner {
 
     /// 扫描一块输出：返回 (剥除 marker 后的输出, 本块是否命中 marker)。
     /// 输出可能为空（整块都是 marker 或 marker 前缀挂起）。
-    #[allow(dead_code)]
     pub fn scan(&mut self, chunk: &[u8]) -> (Vec<u8>, bool) {
         if self.done {
             return (chunk.to_vec(), false);
@@ -301,7 +291,6 @@ impl ShellReadyScanner {
 
     /// buf 尾部有多少字节可能是 marker 的前缀（最长 marker.len()-1：整段等于
     /// marker 的话上面已命中；buf 比 marker 短时整段都可能是前缀，须全保留）。
-    #[allow(dead_code)]
     fn keep_len(&self, buf: &[u8]) -> usize {
         let m = WE_TERM_SHELL_READY_MARKER;
         for keep in (1..m.len().min(buf.len())).rev() {
@@ -324,7 +313,6 @@ impl Default for ShellReadyScanner {
 }
 
 /// 子序列查找（std 无 bytes::find 的借用版本替代：windows 匹配即可，数据量小）。
-#[allow(dead_code)]
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
@@ -334,11 +322,380 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|w| w == needle)
 }
 
+// ---------------------------------------------------------------------------
+// barrier（任务 2）：marker 前 stdin 排队 + marker 后 30ms flush + 超时兜底
+// ---------------------------------------------------------------------------
+
+/// marker 命中后等待提示符绘制的时延（orca PostReadyFlushGate POST_READY_FLUSH_DELAY_MS）。
+/// marker 从 zle-line-init/PROMPT_COMMAND 发出时提示符尚未绘制、PTY 尚未切 raw 模式，
+/// 立刻 flush 会被内核 ECHO 回显一次再被行编辑器重绘——claude 出现两次。
+const POST_READY_FLUSH_DELAY_MS: u64 = 30;
+/// marker 后无后续输出的兜底时延（orca POST_READY_FLUSH_FALLBACK_MS）：纯 marker 块
+/// 场景等不到「post-marker 字节」信号，用墙钟兜底。
+const POST_READY_FLUSH_FALLBACK_MS: u64 = 200;
+/// spawn 起未见 marker 的强制放行时延（文档 §5.4：本项目 5s，快失败快放行）。
+pub const SHELL_READY_TIMEOUT_MS: u64 = 5_000;
+
+/// barrier 状态机（inner 锁内唯一事实源）。
+///
+/// Gating → Flushing → Open 单向：
+///   Gating：marker 未到。一切 stdin 排队。
+///   Flushing：marker 已到，等提示符绘制（30/200ms）。stdin 仍排队（保持顺序：
+///     注入命令 → 用户输入，窗口内用户输入不得插队到注入命令前）。
+///   Open：pending 已 flush 到 PTY 或已丢弃。stdin 直通。
+/// 超时/退出从 Gating 直接跳 Open。
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BarrierState {
+    Gating,
+    Flushing,
+    Open,
+}
+
+/// 锁内全部可变状态（状态机 + 排队 + scanner 归属）。
+struct BarrierInner {
+    state: BarrierState,
+    /// 排队 stdin（队首 = 注入命令，spawn 侧 insert(0)；后续用户输入按序 append）。
+    queued: Vec<Vec<u8>>,
+    /// marker 扫描器（reader 线程串行 feed；归锁内避免与 flush 竞争）。
+    scanner: ShellReadyScanner,
+    /// flush 目标（PTY writer 的共享句柄；spawn 侧在 reader 启动前装入）。
+    sink: Option<std::sync::Arc<std::sync::Mutex<Box<dyn std::io::Write + Send>>>>,
+}
+
+/// shell-ready barrier（每会话至多一个，仅包装 spawn 且带 startup_command 时挂）。
+///
+/// 线程模型：flush/超时定时各起一个 detached std thread，经 Weak<Self> 自引用——
+/// 会话已释放（Arc 全丢）则定时器空转退出，无悬垂。writer 经 Arc<Mutex> 共享，
+/// flush 线程与 pty_write 命令路径同锁互斥，天然串行。
+pub struct ShellReadyBarrier {
+    inner: std::sync::Mutex<BarrierInner>,
+    /// 定时线程自引用（upgrade 失败 = 会话已释放）。构造后 set 一次，仅读。
+    self_ref: std::sync::OnceLock<std::sync::Weak<Self>>,
+}
+
+impl ShellReadyBarrier {
+    /// 建带超时的 barrier（timeout_ms 仅测试缩短用，生产恒 SHELL_READY_TIMEOUT_MS）。
+    pub fn new(timeout_ms: u64) -> std::sync::Arc<Self> {
+        let barrier = std::sync::Arc::new(Self {
+            inner: std::sync::Mutex::new(BarrierInner {
+                state: BarrierState::Gating,
+                queued: Vec::new(),
+                scanner: ShellReadyScanner::new(),
+                sink: None,
+            }),
+            self_ref: std::sync::OnceLock::new(),
+        });
+        // 自引用：此刻 Arc 仅此一处（未入 store、未克隆），set 无竞争。
+        let _ = barrier
+            .self_ref
+            .set(std::sync::Arc::downgrade(&barrier));
+        // 超时线程：spawn 即计时。Gating 中到点 → 直接 Open + 立即 flush。
+        let timer_weak = barrier
+            .self_ref
+            .get()
+            .expect("self_ref just set")
+            .clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(timeout_ms));
+            if let Some(b) = timer_weak.upgrade() {
+                b.on_timeout();
+            }
+        });
+        barrier
+    }
+
+    /// spawn 侧装 flush 目标（writer 的 Arc 共享句柄）。须在 reader 线程启动前调用。
+    pub fn install_writer(
+        &self,
+        writer: std::sync::Arc<std::sync::Mutex<Box<dyn std::io::Write + Send>>>,
+    ) {
+        let mut inner = self.inner.lock().expect("barrier mutex poisoned");
+        inner.sink = Some(writer);
+    }
+
+    /// 注入命令入队首（flush 时先于用户排队输入写出）。
+    pub fn enqueue_startup(&self, command: &str) {
+        let bytes = build_startup_submission(command);
+        let mut inner = self.inner.lock().expect("barrier mutex poisoned");
+        inner.queued.insert(0, bytes.into_bytes());
+    }
+
+    /// 写路径闸门：返回 true = 已入队（调用方不写 PTY）；false = Open 态直通。
+    /// Gating 与 Flushing 均入队（Flushing 窗口内的用户输入排到注入命令之后）。
+    pub fn gate_write(&self, data: &[u8]) -> bool {
+        let mut inner = self.inner.lock().expect("barrier mutex poisoned");
+        match inner.state {
+            BarrierState::Open => false,
+            _ => {
+                inner.queued.push(data.to_vec());
+                true
+            }
+        }
+    }
+
+    /// 读路径：扫描剥除 marker。返回 (剥除后输出, 是否命中)。
+    /// 命中：Gating → Flushing，锁外起 flush 定时（本块带 post-marker 字节走 30ms
+    /// 短路，纯 marker 块走 200ms 兜底）。Open 态直通。
+    pub fn feed_output(&self, chunk: &[u8]) -> (Vec<u8>, bool) {
+        // result = (剥除后输出, 命中时的 flush 延迟)。
+        let (out, flush_delay): (Vec<u8>, Option<u64>) = {
+            let mut inner = self.inner.lock().expect("barrier mutex poisoned");
+            if inner.state == BarrierState::Open {
+                return (chunk.to_vec(), false);
+            }
+            let (out, hit) = inner.scanner.scan(chunk);
+            if !hit {
+                return (out, false);
+            }
+            inner.state = BarrierState::Flushing;
+            let delay = if out.is_empty() {
+                POST_READY_FLUSH_FALLBACK_MS
+            } else {
+                POST_READY_FLUSH_DELAY_MS
+            };
+            (out, Some(delay))
+        };
+        match flush_delay {
+            Some(delay) => {
+                log::info!("[pty] shell-ready marker seen");
+                self.schedule_flush(delay);
+                (out, true)
+            }
+            None => (out, false),
+        }
+    }
+
+    /// 起 flush 定时（detached，Weak upgrade 失败即会话已释放）。
+    fn schedule_flush(&self, delay_ms: u64) {
+        let weak = self
+            .self_ref
+            .get()
+            .expect("self_ref set at construction")
+            .clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            if let Some(b) = weak.upgrade() {
+                b.flush_queued();
+            }
+        });
+    }
+
+    /// 超时：Gating → Open + 立即 flush（跳过 Flushing 等待；此后永久直通）。
+    fn on_timeout(&self) {
+        let should_flush = {
+            let mut inner = self.inner.lock().expect("barrier mutex poisoned");
+            if inner.state != BarrierState::Gating {
+                return;
+            }
+            inner.state = BarrierState::Open;
+            true
+        };
+        if should_flush {
+            log::warn!("[pty] shell-ready timeout force-flush");
+            self.flush_queued();
+        }
+    }
+
+    /// Flushing → Open：一次性把 queued 写到 writer（锁内取队列，锁外写 PTY——
+    /// 写可能阻塞，不占 barrier 锁）。sink 未装（异常时序）则丢弃并放行。
+    /// 超时路径复用：状态已置 Open，仅跳过 Flushing 前置检查直写。
+    fn flush_queued(&self) {
+        let (queued, sink) = {
+            let mut inner = self.inner.lock().expect("barrier mutex poisoned");
+            // 超时路径已置 Open（on_timeout 先行），此处 Flushing 检查放行两条路径。
+            if inner.state == BarrierState::Flushing {
+                inner.state = BarrierState::Open;
+            } else if inner.state != BarrierState::Open {
+                return;
+            }
+            let queued: Vec<u8> = inner.queued.drain(..).flatten().collect();
+            (queued, inner.sink.clone())
+        };
+        if queued.is_empty() {
+            return;
+        }
+        match sink {
+            Some(w) => {
+                if let Ok(mut writer) = w.lock() {
+                    if let Err(e) = writer.write_all(&queued) {
+                        log::warn!("[pty] shell-ready flush write failed: {e}");
+                    }
+                }
+            }
+            None => log::warn!("[pty] shell-ready flush without sink, dropping"),
+        }
+    }
+
+    /// shell 退出/会话关闭：丢弃排队（写入无意义），此后 gate_write 直通。
+    pub fn drop_pending(&self) {
+        let mut inner = self.inner.lock().expect("barrier mutex poisoned");
+        inner.state = BarrierState::Open;
+        inner.queued.clear();
+    }
+}
+
+/// 构造注入字节（orca startup-command-submission.ts 的 Rust 版）。
+/// 单行命令：`command + \r`；多行命令（未来 prompt 注入）：包 bracketed paste
+///（ESC[200~..ESC[201~）再补 submit——zsh zle/bash readline 把粘贴当单次字面插入，
+/// 裸 LF 会被逐行 accept-line 打碎成 PS2 续行。尾部已带 CR/LF 不重复补 submit。
+pub fn build_startup_submission(command: &str) -> String {
+    const PASTE_START: &str = "\x1b[200~";
+    const PASTE_END: &str = "\x1b[201~";
+    let stripped = command
+        .strip_suffix("\r\n")
+        .or_else(|| command.strip_suffix('\r'))
+        .or_else(|| command.strip_suffix('\n'));
+    let (body, had_submit) = match stripped {
+        Some(b) => (b, true),
+        None => (command, false),
+    };
+    if body.contains('\n') || body.contains('\r') {
+        // 多行：bracketed paste 包裹后恒补 \r submit（尾部原有的 submit 已随
+        // strip 进入 body 外，包裹体后须重新提交一次）。
+        format!("{PASTE_START}{body}{PASTE_END}\r")
+    } else if had_submit {
+        command.to_string()
+    } else {
+        format!("{command}\r")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Read;
+    use std::sync::Arc;
+    use std::sync::Mutex;
     use std::time::{Duration, Instant};
+
+    // ---------- barrier 单测 ----------
+
+    /// 共享 writer 句柄（与生产 install_writer 同型）。
+    type SharedWriter = Arc<Mutex<Box<dyn std::io::Write + Send>>>;
+
+    /// sink 收集器：flush 写到这里供断言。
+    fn sink_recorder() -> (Arc<Mutex<Vec<u8>>>, SharedWriter) {
+        let logged: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+        struct Recorder(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Recorder {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(buf);
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let writer: Box<dyn std::io::Write + Send> = Box::new(Recorder(Arc::clone(&logged)));
+        (Arc::clone(&logged), Arc::new(Mutex::new(writer)))
+    }
+
+    /// marker 前 gate_write 排队；marker 命中（带 post 字节）→ 30ms flush；顺序：
+    /// 注入命令（队首）→ 用户输入。flush 后 gate_write 直通。
+    #[test]
+    fn barrier_queues_then_flushes_in_order() {
+        let (logged, writer) = sink_recorder();
+        // 超时 5s 不会触发（本测试毫秒级完成）。
+        let b = ShellReadyBarrier::new(SHELL_READY_TIMEOUT_MS);
+        b.install_writer(writer);
+        b.enqueue_startup("echo HI");
+
+        // marker 前：用户输入被排队。
+        assert!(b.gate_write(b"USER1"));
+        assert!(b.gate_write(b"USER2"));
+
+        // marker 命中 + post-marker 字节（走 30ms 短路）。
+        let chunk = [WE_TERM_SHELL_READY_MARKER, b"post"].concat();
+        let (out, hit) = b.feed_output(&chunk);
+        assert!(hit);
+        assert_eq!(out, b"post");
+
+        // Flushing 窗口内写入仍排队（不插队到注入前）。
+        assert!(b.gate_write(b"USER3"));
+
+        // 等 flush（30ms + 余量）。
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if !logged.lock().unwrap().is_empty() || Instant::now() > deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            logged.lock().unwrap().as_slice(),
+            b"echo HI\rUSER1USER2USER3",
+            "flush 顺序：注入命令 → 按序用户输入"
+        );
+        // Open 后直通。
+        assert!(!b.gate_write(b"LATER"));
+    }
+
+    /// 超时强制放行：无 marker 时 timeout_ms 后 flush 排队内容，此后 gate 直通。
+    #[test]
+    fn barrier_timeout_forces_flush() {
+        let (logged, writer) = sink_recorder();
+        let b = ShellReadyBarrier::new(150);
+        b.install_writer(writer);
+        b.enqueue_startup("claude");
+        assert!(b.gate_write(b"K"));
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while logged.lock().unwrap().is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(logged.lock().unwrap().as_slice(), b"claude\rK");
+        assert!(!b.gate_write(b"AFTER"), "超时后永久直通");
+    }
+
+    /// drop_pending：排队丢弃，gate 直通，sink 无写入。
+    #[test]
+    fn barrier_drop_pending_discards() {
+        let (logged, writer) = sink_recorder();
+        let b = ShellReadyBarrier::new(SHELL_READY_TIMEOUT_MS);
+        b.install_writer(writer);
+        b.enqueue_startup("claude");
+        assert!(b.gate_write(b"X"));
+        b.drop_pending();
+        assert!(!b.gate_write(b"Y"));
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(logged.lock().unwrap().is_empty());
+    }
+
+    /// 纯 marker 块（无 post 字节）走 200ms 兜底而非 30ms：先验证 100ms 内未 flush。
+    #[test]
+    fn barrier_pure_marker_uses_fallback_delay() {
+        let (logged, writer) = sink_recorder();
+        let b = ShellReadyBarrier::new(SHELL_READY_TIMEOUT_MS);
+        b.install_writer(writer);
+        b.enqueue_startup("claude");
+        let (out, hit) = b.feed_output(WE_TERM_SHELL_READY_MARKER);
+        assert!(hit);
+        assert!(out.is_empty());
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            logged.lock().unwrap().is_empty(),
+            "纯 marker 应走 200ms 兜底，100ms 时未 flush"
+        );
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while logged.lock().unwrap().is_empty() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(logged.lock().unwrap().as_slice(), b"claude\r");
+    }
+
+    // ---------- 注入字节构造单测 ----------
+
+    /// 单行补 \r；尾部已带 submit 不重复；多行包 bracketed paste。
+    #[test]
+    fn startup_submission_bytes() {
+        assert_eq!(build_startup_submission("claude"), "claude\r");
+        assert_eq!(build_startup_submission("claude\r"), "claude\r");
+        assert_eq!(build_startup_submission("claude\n"), "claude\n");
+        assert_eq!(
+            build_startup_submission("echo a\necho b"),
+            "\x1b[200~echo a\necho b\x1b[201~\r"
+        );
+    }
 
     // ---------- scanner 单测 ----------
 
