@@ -1,9 +1,18 @@
-import { CloseOutlined as CloseOutlinedIcon } from '@mui/icons-material';
+import {
+  CloseOutlined as CloseOutlinedIcon,
+  ContentCopyOutlined as ContentCopyOutlinedIcon,
+  ContentPasteOutlined as ContentPasteOutlinedIcon,
+  LayersClearOutlined as LayersClearOutlinedIcon,
+  SearchOutlined as SearchOutlinedIcon,
+} from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
+import { useToast } from '@src/shared/useToast';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import TerminalSearch from './TerminalSearch';
 import '@xterm/xterm/css/xterm.css';
 
 export interface TerminalViewTheme {
@@ -46,6 +55,17 @@ interface TerminalViewProps {
 // （父层保证稳定引用），不做 ref 转发层。
 export default function TerminalView({ theme, toolbarLabel, onData, onResize, exited, onReopen, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon。
+  // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
+  // 下发命令对象——按钮与实例同组件，ref 直读是最近路径。
+  const terminalRef = useRef<Terminal | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
+  // 复制按钮禁用态：有无选区（xterm onSelectionChange，用户交互型 → state）
+  const [hasSelection, setHasSelection] = useState(false);
+  // 搜索条开关（terminal_03 §3.1；开关变量前缀约定）
+  const [searchOpen, setSearchOpen] = useState(false);
+  // 复制/粘贴失败 toast（成功静默）
+  const { show: showToast, snack: toastSnack } = useToast();
 
   useEffect(() => {
     const container = containerRef.current;
@@ -53,8 +73,13 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
       return;
     }
 
-    // 1. 建实例（theme 仅初值生效，见组件头注释）
+    // 1. 建实例（theme 仅初值生效，见组件头注释）。allowProposedApi：搜索装饰
+    //    （SearchAddon decorations 分支）依赖 registerDecoration 等 proposed API，
+    //    不开则带 decorations 的 findNext/findPrevious 直接抛错、搜索全面失效
+    //    （jsdom + 同版本依赖实证：You must set the allowProposedApi option to
+    //    true to use proposed API）。
     const terminal = new Terminal({
+      allowProposedApi: true,
       convertEol: false,
       cursorBlink: true,
       fontSize: 13,
@@ -77,6 +102,10 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
     } catch (e) {
       console.warn('[TerminalView] webgl unavailable, fallback to dom renderer:', e);
     }
+    // 搜索 addon（官方 @xterm/addon-search，terminal_03 任务 1 spike 通过）。
+    // 生命周期随 terminal.dispose() 连带（同 fit/webgl 范式，无显式 dispose）。
+    const searchAddon = new SearchAddon();
+    terminal.loadAddon(searchAddon);
 
     // 3. 事件接线（props 由父层保证稳定，直接引用）。
     //    onData 经 replayDepth 闸门：回放写入期间 xterm 对回放流里 DA1/CPR 查询
@@ -89,6 +118,10 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
       onData(data);
     });
     terminal.onResize(({ cols, rows }) => onResize(cols, rows));
+    // 选区变化 → 复制按钮禁用态（setSelection 安排在 React 批处理内，频率可控）
+    terminal.onSelectionChange(() => {
+      setHasSelection(terminal.hasSelection());
+    });
     // xterm 6 公开 API 无 focus 事件（旧 onFocusChange 已移除，内部 _onFocus 属
     // 私有）。订阅官方 DOM 结构 .xterm-helper-textarea 的 focus 事件（open 后存在；
     // blur 不报——焦点只会转移，新 pane 的 focus 自然接管活跃位）。
@@ -136,6 +169,10 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
       fitAddon.fit();
     }
 
+    // 7. 实例句柄上抛 ref 桥（工具条按钮 / 搜索条经此访问实例）。
+    terminalRef.current = terminal;
+    searchAddonRef.current = searchAddon;
+
     // cleanup 严格逆序：observer → 监听 → 桥置空 → dispose → 清残留 DOM。
     // xterm dispose 不保证移除容器内 DOM，StrictMode/HMR 重挂载后旧实例 DOM 层
     // 会叠在新实例上面，显式清空容器（实测教训）。
@@ -146,25 +183,100 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
         activeTextarea.removeEventListener('focus', onActive);
       }
       onWriteReady(null);
+      terminalRef.current = null;
+      searchAddonRef.current = null;
       terminal.dispose();
       container.replaceChildren();
     };
   }, []);
 
+  // 基础操作组（terminal_03 §3.1）。清屏仅写 \x0c（等价用户按 Ctrl+L，交互程序
+  // 自己处理重绘，双管 clear()+\x0c 会两次清屏闪烁——用户确认裁剪）；复制空选
+  // 禁用；粘贴走 terminal.paste（bracketed paste 由 xterm 内部处理，回环 onData
+  // 与键盘输入同路）；仅失败 toast（成功静默，选区消失即反馈）。
+  const handleClear = () => {
+    onData('\x0C');
+  };
+  const handleCopy = () => {
+    const terminal = terminalRef.current;
+    if (terminal == null) {
+      return;
+    }
+    const selection = terminal.getSelection();
+    if (selection === '') {
+      return;
+    }
+    navigator.clipboard
+      .writeText(selection)
+      .then(() => {
+        terminal.clearSelection();
+      })
+      .catch((e: unknown) => {
+        console.warn('[TerminalView] copy to clipboard failed:', e);
+        showToast('复制失败', 'error');
+      });
+  };
+  const handlePaste = () => {
+    const terminal = terminalRef.current;
+    if (terminal == null) {
+      return;
+    }
+    navigator.clipboard
+      .readText()
+      .then((text) => {
+        if (text.length > 0) {
+          terminal.paste(text);
+        }
+      })
+      .catch((e: unknown) => {
+        console.warn('[TerminalView] read clipboard failed:', e);
+        showToast('粘贴失败（无法读取剪贴板）', 'error');
+      });
+  };
+  const toggleSearch = () => {
+    setSearchOpen(open => !open);
+  };
+  // 关闭搜索条：清匹配装饰 + 焦点归还终端（xterm 6 open 后不自动 focus）
+  const closeSearch = () => {
+    searchAddonRef.current?.clearDecorations();
+    setSearchOpen(false);
+    terminalRef.current?.focus();
+  };
+
   return (
     <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 工具栏：左侧 pane 标识（main pane 专属）+ 右侧关闭终端（aria-label，不挂 Tooltip） */}
+      {/* 工具栏：左侧 pane 标识（main pane 专属）+ 基础操作组 + 右侧关闭终端
+          （aria-label，不挂 Tooltip）。exited 禁用策略：清屏/粘贴对死会话无意义；
+          复制/搜索保留——scrollback 检索与历史复制仍有价值。 */}
       <Box sx={{ height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.5 }}>
         {toolbarLabel != null && (
           <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', lineHeight: 1 }}>
             {toolbarLabel}
           </Typography>
         )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+          <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={{ color: 'text.secondary' }}>
+            <LayersClearOutlinedIcon fontSize="small" />
+          </IconButton>
+          <IconButton size="small" onClick={handleCopy} disabled={!hasSelection} aria-label="复制选区" sx={{ color: 'text.secondary' }}>
+            <ContentCopyOutlinedIcon fontSize="small" />
+          </IconButton>
+          <IconButton size="small" onClick={handlePaste} disabled={exited} aria-label="粘贴" sx={{ color: 'text.secondary' }}>
+            <ContentPasteOutlinedIcon fontSize="small" />
+          </IconButton>
+          <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={{ color: 'text.secondary' }}>
+            <SearchOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Box>
         <Box sx={{ flex: 1 }} />
         <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
           <CloseOutlinedIcon fontSize="small" />
         </IconButton>
       </Box>
+      {/* 搜索条 overlay：addon 实例就绪才渲染（ref 桥直读，mount 后即有值） */}
+      {searchOpen && searchAddonRef.current != null && (
+        <TerminalSearch searchAddon={searchAddonRef.current} background={theme.background} onClose={closeSearch} />
+      )}
       {exited && (
         <Box
           sx={{
@@ -196,6 +308,7 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
           pointerEvents: exited ? 'none' : 'auto',
         }}
       />
+      {toastSnack}
     </Box>
   );
 }

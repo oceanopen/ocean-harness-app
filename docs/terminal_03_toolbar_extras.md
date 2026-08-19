@@ -98,10 +98,17 @@
 - **验证**：`pnpm install` 成功 + web:build 通过；或确认 502 并记录降级决策。
 - **结果**：✅ 私有代理可拉取，已安装 `@xterm/addon-search@^0.16.0`；`pnpm install` + `web:build` 均通过。任务 2 走官方 addon 方案。
 
-### ⬜ 任务 2 — 基础操作组（清屏/复制/粘贴/搜索）
+### ✅ 任务 2 — 基础操作组（清屏/复制/粘贴/搜索）
 - **文件**：`TerminalView.tsx`（工具条按钮 + 命令接线）+ `TerminalSearch.tsx`（新增：搜索条 overlay，addon 或自研）
 - **目标**：§3.1。复制空选禁用；粘贴走 `terminal.paste`；搜索条 Enter/Shift+Enter 导航。
 - **验证**：tsc/eslint/web:build；真机——四按钮各自生效，搜索可跳转可关闭，Docker 式滚动输出中搜索不卡顿。
+- **已落地（实现细节与实测坑）**：
+  - 四按钮长在 TerminalView 工具条（exited 禁用清屏/粘贴，复制/搜索保留——scrollback 检索仍有价值）；terminal/searchAddon 实例经本地 ref 桥（`terminalRef`/`searchAddonRef`）供 JSX 回调直读，不走 props 命令对象。
+  - 清屏仅写 `\x0C`（等价 Ctrl+L，交互程序自处理重绘；双管 `clear()+\x0C` 会两次清屏闪烁——裁剪）；复制 `getSelection()` → `navigator.clipboard.writeText`（空选禁用，`onSelectionChange` → state）；粘贴 `readText()` → `terminal.paste`（bracketed paste 由 xterm 内部处理）；成功静默、仅失败 toast。
+  - 搜索条 overlay 右上角（absolute），官方 SearchAddon 方案：输入即 incremental findNext、Enter/Shift+Enter 导航、大小写 toggle（aria-pressed）、计数 n/m（超 highlightLimit 显 `>m`）、Escape 关闭。
+  - **坑 1（z-index 竞争）**：xterm 容器是静态定位不建堆叠上下文，其内部层（helpers z-5、accessibility z-10、webgl canvas z-0..2）直接参与外层 z-index 竞争；浮层 `zIndex:2` 被压/平局 DOM 顺序反压 → 点击落 canvas、xterm mousedown 无条件 preventDefault → 输入框无法聚焦、按钮全失效（症状酷似事件拦截）。修复：`theme.zIndex.mobileStepper`（1000）。
+  - **坑 2（计数与装饰绑定）**：addon 源码 `fireResultsChanged(!!options?.decorations)` 无 decorations 直接 return——`onDidChangeResults`（计数 n/m）永不触发。修复：搜索 options 统一带 `decorations`（matchBackground/activeMatchBackground 明暗配色；overview ruler 透明色占位满足必填）。
+  - **坑 3（装饰前置）**：decorations 分支依赖 `registerDecoration` 等 proposed API，Terminal 构造须 `allowProposedApi: true`，否则带装饰的 findNext/findPrevious 抛错、**搜索全面失效**（jsdom + 同版本依赖实证）。清空词条时 `clearDecorations()` + 计数 state 手动归零（装饰清后 addon 不再发事件）。
 
 ### ⬜ 任务 3 — claude 工作流组
 - **文件**：`TerminalPaneRoot.tsx`（「启动 claude」按钮）+ `EmbeddedTerminal.tsx` / `usePtySession.ts`（exited 覆盖条「重开并启动 claude」：reopen + 强制 startup_command）
