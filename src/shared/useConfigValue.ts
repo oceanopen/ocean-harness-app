@@ -43,7 +43,13 @@ export function useConfigValue<T>(
     return () => {
       unlisten
         .then(fn => fn())
-        .catch((err: unknown) => console.warn(`[useConfigValue:${key}] unlisten failed:`, err));
+        .catch((err: unknown) => {
+          // 页面重载（vite HMR 全页刷新 / Cmd+R）后 tauri 注入的 listeners 注册表
+          // 已清空，cleanup 仍持旧 eventId 注销 → "listeners[eventId].handlerId
+          // undefined"。事件已随页面死掉、Rust 侧 unlisten 亦到达，无泄漏——重载
+          // 竞态是该 API 已知形态，降 debug 不刷屏（warn 会盖住真问题）。
+          console.debug(`[useConfigValue:${key}] unlisten skipped (page reloaded?):`, err);
+        });
     };
   }, [key, decode]);
 

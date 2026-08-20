@@ -33,7 +33,6 @@ export function useClaudeRunning(sessionId: string, status: PtySessionStatus): b
     const probe = () => {
       void commands.ptyClaudeRunning(sessionId).then((running) => {
         if (!disposed) {
-          console.info('[useClaudeRunning] probe', sessionId, '→', running);
           setProbed(running);
         }
       }).catch((e: unknown) => {
@@ -50,7 +49,9 @@ export function useClaudeRunning(sessionId: string, status: PtySessionStatus): b
     return () => {
       disposed = true;
       window.clearInterval(timer);
-      unlisten.then(fn => fn()).catch(err => console.warn('[useClaudeRunning] unlisten failed:', err));
+      // 页面重载后 listeners 注册表已清空，旧 eventId 注销报 undefined——无泄漏，
+      // 重载竞态已知形态，降 debug（同 useConfigValue 处理，注释详见彼处）。
+      unlisten.then(fn => fn()).catch(err => console.debug('[useClaudeRunning] unlisten skipped (page reloaded?):', err));
     };
   }, [sessionId, active]);
 
