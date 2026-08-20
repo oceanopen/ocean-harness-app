@@ -120,6 +120,8 @@ export const commands = {
 	 *  本会话 shell 子进程树内是否跑着 claude（terminal_03 §3.2 按钮置灰驱动）。
 	 *  进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端；
 	 *  前端事件 + 轮询混合驱动（useClaudeRunning）。
+	 *  注意：查询必须走 provider() 自持的 store（spawn 写入侧）——不能用
+	 *  State<PtySessionStore>（app.manage 的另一实例，恒空，曾致 probe 恒 false）。
 	 */
 	ptyClaudeRunning: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_claude_running", { sessionId }),
 	/**
