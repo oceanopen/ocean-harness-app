@@ -1,6 +1,7 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { Iterm2SplitDirection, TerminalStartupCodeCli } from '@src/shared/appConfig';
+import type { Iterm2SplitDirection, TerminalFontSize, TerminalStartupCodeCli } from '@src/shared/appConfig';
 import CallSplitOutlinedIcon from '@mui/icons-material/CallSplitOutlined';
+import FormatSizeOutlinedIcon from '@mui/icons-material/FormatSizeOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
@@ -19,15 +20,19 @@ import {
 import {
   DEFAULT_ITERM2_SPLIT_DIRECTION,
   DEFAULT_POLL_INTERVAL_SECS,
+  DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_TERMINAL_POST_OPEN_COMMAND,
   DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   getAppConfig,
   ITERM2_SPLIT_DIRECTION_KEY,
   MAX_POLL_INTERVAL_SECS,
   MIN_POLL_INTERVAL_SECS,
+  parseTerminalFontSize,
   parseTerminalStartupCodeCli,
   POLL_INTERVAL_SECS_KEY,
   setAppConfig,
+  TERMINAL_FONT_SIZE_KEY,
+  TERMINAL_FONT_SIZE_OPTIONS,
   TERMINAL_POST_OPEN_COMMAND_KEY,
   TERMINAL_STARTUP_CODE_CLI_KEY,
 } from '@src/shared/appConfig';
@@ -37,7 +42,6 @@ import { useTranslation } from 'react-i18next';
 
 // 模块段卡片标题栏：灰底横条（action.hover）+ 图标 + 小节名，两个模块段各一张
 // 独立卡片，区隔「编程工具终端监听」与「应用嵌入终端」两组配置。
-// 字体大小等模块 3 再入「应用嵌入终端」卡片。
 function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <Box
@@ -71,7 +75,7 @@ function SectionCard({ header, children }: { header: React.ReactNode; children: 
 }
 
 // 终端配置（合并页）：编程工具终端监听（原 MonitorConfigPage 三行）+ 应用嵌入终端
-// （启动自动运行 CLI）。draft/saved/dirty 页级一套，四配置共管。
+// （启动自动运行 CLI / 字体大小）。draft/saved/dirty 页级一套，五配置共管。
 function TerminalConfigPage() {
   const { t } = useTranslation();
 
@@ -83,6 +87,8 @@ function TerminalConfigPage() {
   const [draftTerminalPostOpenCommand, setDraftTerminalPostOpenCommand] = useState<string>(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
   const [savedStartupCli, setSavedStartupCli] = useState<TerminalStartupCodeCli>(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
   const [draftStartupCli, setDraftStartupCli] = useState<TerminalStartupCodeCli>(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
+  const [savedFontSize, setSavedFontSize] = useState<TerminalFontSize>(DEFAULT_TERMINAL_FONT_SIZE);
+  const [draftFontSize, setDraftFontSize] = useState<TerminalFontSize>(DEFAULT_TERMINAL_FONT_SIZE);
 
   useEffect(() => {
     Promise.all([
@@ -90,7 +96,8 @@ function TerminalConfigPage() {
       getAppConfig(ITERM2_SPLIT_DIRECTION_KEY),
       getAppConfig(TERMINAL_POST_OPEN_COMMAND_KEY),
       getAppConfig(TERMINAL_STARTUP_CODE_CLI_KEY),
-    ]).then(([interval, splitDirection, terminalPostOpenCommand, startupCli]) => {
+      getAppConfig(TERMINAL_FONT_SIZE_KEY),
+    ]).then(([interval, splitDirection, terminalPostOpenCommand, startupCli, fontSize]) => {
       const parsed = interval != null ? Number.parseInt(interval, 10) : Number.NaN;
       if (Number.isFinite(parsed)) {
         // DB 可能存越界或非 step 倍数（直接改 DB / 旧脏数据），clamp 到合法范围。
@@ -109,25 +116,31 @@ function TerminalConfigPage() {
       const cli = parseTerminalStartupCodeCli(startupCli);
       setSavedStartupCli(cli);
       setDraftStartupCli(cli);
+      const size = parseTerminalFontSize(fontSize);
+      setSavedFontSize(size);
+      setDraftFontSize(size);
     });
   }, []);
 
   const dirty = draftInterval !== savedInterval
     || draftSplitDirection !== savedSplitDirection
     || draftTerminalPostOpenCommand !== savedTerminalPostOpenCommand
-    || draftStartupCli !== savedStartupCli;
+    || draftStartupCli !== savedStartupCli
+    || draftFontSize !== savedFontSize;
 
   const handleReset = () => {
     setDraftInterval(DEFAULT_POLL_INTERVAL_SECS);
     setDraftSplitDirection(DEFAULT_ITERM2_SPLIT_DIRECTION);
     setDraftTerminalPostOpenCommand(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
     setDraftStartupCli(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
+    setDraftFontSize(DEFAULT_TERMINAL_FONT_SIZE);
   };
   const handleCancel = () => {
     setDraftInterval(savedInterval);
     setDraftSplitDirection(savedSplitDirection);
     setDraftTerminalPostOpenCommand(savedTerminalPostOpenCommand);
     setDraftStartupCli(savedStartupCli);
+    setDraftFontSize(savedFontSize);
   };
   const handleSave = async () => {
     await Promise.all([
@@ -135,11 +148,13 @@ function TerminalConfigPage() {
       setAppConfig(ITERM2_SPLIT_DIRECTION_KEY, draftSplitDirection),
       setAppConfig(TERMINAL_POST_OPEN_COMMAND_KEY, draftTerminalPostOpenCommand),
       setAppConfig(TERMINAL_STARTUP_CODE_CLI_KEY, draftStartupCli),
+      setAppConfig(TERMINAL_FONT_SIZE_KEY, String(draftFontSize)),
     ]);
     setSavedInterval(draftInterval);
     setSavedSplitDirection(draftSplitDirection);
     setSavedTerminalPostOpenCommand(draftTerminalPostOpenCommand);
     setSavedStartupCli(draftStartupCli);
+    setSavedFontSize(draftFontSize);
   };
 
   const marks = [
@@ -274,6 +289,36 @@ function TerminalConfigPage() {
               </FormControl>
               <FormHelperText>{t('settings:terminal.help.startupCodeCli')}</FormHelperText>
             </Box>
+
+            <Divider sx={{ my: 1.5 }} />
+
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                px: 2,
+                py: 1.5,
+                gap: 2,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <FormatSizeOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                <Typography>{t('settings:terminal.row.fontSize')}</Typography>
+              </Box>
+              <FormControl size="small" sx={{ minWidth: 100 }}>
+                <Select
+                  value={draftFontSize}
+                  onChange={(e: SelectChangeEvent<TerminalFontSize>) =>
+                    setDraftFontSize(parseTerminalFontSize(String(e.target.value)))}
+                >
+                  {TERMINAL_FONT_SIZE_OPTIONS.map(size => (
+                    <MenuItem key={size} value={size}>{size}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+            <FormHelperText sx={{ px: 2, pb: 1.5 }}>{t('settings:terminal.help.fontSize')}</FormHelperText>
           </SectionCard>
         </Box>
       </Box>

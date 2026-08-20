@@ -26,6 +26,9 @@ export interface TerminalViewTheme {
 
 interface TerminalViewProps {
   theme: TerminalViewTheme;
+  // 终端字号（terminal_font_size 配置）：运行时生效（options.fontSize 赋值 +
+  // refit，不重建实例）——首个运行时可变的 option，见组件头注释。
+  fontSize: number;
   // 工具栏左侧标识（如 main pane 的 'main' 标签）。不传则不渲染。
   toolbarLabel?: string;
   // 键盘输入（xterm onData）。要求父层传稳定引用（useCallback），本组件不代理不缓存。
@@ -57,18 +60,21 @@ interface TerminalViewProps {
 }
 
 // TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——
-// panel 窗口主题切换通常伴随整页刷新，可接受）。
+// panel 窗口主题切换通常伴随整页刷新，可接受）。fontSize 例外：运行时赋值生效
+// （terminal_03 §3.3，首个运行时可变 option——字号改动须配 refit，theme 无此要求）。
 //
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon。
+  // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
-  // 下发命令对象——按钮与实例同组件，ref 直读是最近路径。
+  // 下发命令对象——按钮与实例同组件，ref 直读是最近路径。fitAddon 供字号 effect
+  // 运行时 refit（options.fontSize 赋值不重算 cols/rows，须手动 fit）。
   const terminalRef = useRef<Terminal | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
   // 复制按钮禁用态：有无选区（xterm onSelectionChange，用户交互型 → state）
   const [hasSelection, setHasSelection] = useState(false);
   // 搜索条开关（terminal_03 §3.1；开关变量前缀约定）
@@ -91,7 +97,7 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
       allowProposedApi: true,
       convertEol: false,
       cursorBlink: true,
-      fontSize: 13,
+      fontSize,
       fontFamily: 'menlo, monaco, courier-new, monospace',
       theme: {
         background: theme.background,
@@ -178,9 +184,10 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
       fitAddon.fit();
     }
 
-    // 7. 实例句柄上抛 ref 桥（工具条按钮 / 搜索条经此访问实例）。
+    // 7. 实例句柄上抛 ref 桥（工具条按钮 / 搜索条 / 字号 effect 经此访问实例）。
     terminalRef.current = terminal;
     searchAddonRef.current = searchAddon;
+    fitAddonRef.current = fitAddon;
 
     // cleanup 严格逆序：observer → 监听 → 桥置空 → dispose → 清残留 DOM。
     // xterm dispose 不保证移除容器内 DOM，StrictMode/HMR 重挂载后旧实例 DOM 层
@@ -194,10 +201,29 @@ export default function TerminalView({ theme, toolbarLabel, onData, onResize, ex
       onWriteReady(null);
       terminalRef.current = null;
       searchAddonRef.current = null;
+      fitAddonRef.current = null;
       terminal.dispose();
       container.replaceChildren();
     };
   }, []);
+
+  // 字号运行时生效（terminal_03 §3.3）：options.fontSize 赋值 + refit，不重建实例
+  // （webgl 渲染器监听 char size 变化自动重建字形 atlas，官方支持运行时改）。fit 后
+  // cols/rows 经 mount effect 接线的 terminal.onResize 自动同步后端 PTY。容器折叠
+  // 期间宽高为 0 时 fit 会 panic（同 ResizeObserver 守卫），跳过——展开时 observer
+  // 会再 fit，字号赋值不丢失（options 已生效）。
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    const fitAddon = fitAddonRef.current;
+    const container = containerRef.current;
+    if (terminal == null || fitAddon == null || container == null) {
+      return;
+    }
+    terminal.options.fontSize = fontSize;
+    if (container.clientWidth > 0 && container.clientHeight > 0) {
+      fitAddon.fit();
+    }
+  }, [fontSize]);
 
   // 基础操作组（terminal_03 §3.1）。清屏仅写 \x0c（等价用户按 Ctrl+L，交互程序
   // 自己处理重绘，双管 clear()+\x0c 会两次清屏闪烁——用户确认裁剪）；复制空选

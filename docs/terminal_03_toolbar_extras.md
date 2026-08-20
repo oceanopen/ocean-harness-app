@@ -121,10 +121,15 @@
   - exited 覆盖条第二按钮「重开并启动 claude」恒显示（忽略 autoRun 配置）：`reopen(true)` → `startupOverrideRef` 暂存一次性覆盖（ref 非 state——startupCodeCli 在 attachKey/effect deps，state 版会持久生效与配置变化耦合）→ attach 取用即清。
   - **缺口修复（attach fallthrough，首版保留）**：自然退出会话仍留 store，原 attach 的 `reattached.exited` 直接短路 return 'exited'，**「重开」永远走不到 ptySpawn**（现有有效路径全靠先 ptyShutdown）。改为回放 scrollback 后 fallthrough 到 ptySpawn，Rust 端「已退出移除重起」幂等语义承接——「重开」与「重开并启动 claude」同受益。
 
-### ⬜ 任务 4 — 字体大小设置
+### ✅ 任务 4 — 字体大小设置
 - **文件**：`appConfig.ts`（`terminal_font_size`）+ 设置终端分区 + `EmbeddedTerminal.tsx` + `TerminalView.tsx`（options.fontSize 运行时更新 + refit）
 - **目标**：§3.3。
 - **验证**：设置改字号即时生效于所有 pane；重开 app 保持；越界值回落 13。
+- **已落地**：
+  - `appConfig.ts`：`TERMINAL_FONT_SIZE_OPTIONS = [10..20]` 离散选项集 + `parseTerminalFontSize`（非数字/越界/不在选项集如 15 一律回落 13——枚举校验范式，非 poll_interval 的连续 clamp）；纯前端 key 无后端镜像。选项数组放 appConfig 而非 settingOption.ts：数字 label 无 i18n 需求，且 parse 依赖它做值域校验，同文件即值域 SSOT。
+  - `TerminalView`：本仓库首个 options 运行时赋值范式——props `fontSize` 构造取初值 + 独立 `useEffect([fontSize])` 做 `terminal.options.fontSize = n` + `fitAddon.fit()`（不重建实例，webgl 官方支持运行时改、字形 atlas 自动重建）；新增 `fitAddonRef` ref 桥（原 mount effect 局部变量）；容器折叠期宽高 0 跳过 fit（同 ResizeObserver 守卫，展开时 observer 再 fit，options 已生效不丢）。fit 后 cols/rows 经既有 onResize 链路自动同步后端 PTY。
+  - `EmbeddedTerminal`：`useConfigValue` 订阅下传 props；多 pane 各自订阅，保存事件天然全量 pane 生效。
+  - 设置页「应用嵌入终端」卡片加字号行（Select + FormatSizeOutlined icon），draft/saved/dirty 五配置共管；i18n 两语言 `row.fontSize`/`help.fontSize`。
 
 ### ⬜ 任务 5 — 链接点击
 - **文件**：`TerminalView.tsx`（registerLinkProvider）+ Rust `open_path` 命令（若文件路径要系统打开）+ `lib.rs` 注册

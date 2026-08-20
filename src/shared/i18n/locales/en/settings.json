@@ -36,7 +36,8 @@
       "pollInterval": "Fallback poll interval",
       "iterm2SplitDirection": "iTerm2 split direction",
       "terminalPostOpenCommand": "Run after opening terminal",
-      "startupCodeCli": "Auto-run on terminal start"
+      "startupCodeCli": "Auto-run on terminal start",
+      "fontSize": "Font size"
     },
     "option": {
       "splitHorizontal": "Horizontal (top-bottom)",
@@ -48,7 +49,8 @@
     "help": {
       "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events.",
       "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev.",
-      "startupCodeCli": "Automatically run the selected coding CLI (e.g. claude) when the shell is ready after opening the embedded terminal for a task. \"None\" opens a plain shell"
+      "startupCodeCli": "Automatically run the selected coding CLI (e.g. claude) when the shell is ready after opening the embedded terminal for a task. \"None\" opens a plain shell",
+      "fontSize": "Applies to all terminal panes immediately after saving, no restart needed"
     },
     "unit": {
       "seconds": "s"

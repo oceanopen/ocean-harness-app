@@ -75,6 +75,22 @@ export function parseTerminalStartupCodeCli(value: string | null): TerminalStart
   return value === 'claude' ? value : '';
 }
 
+// 嵌入式终端字号（terminal_03 §3.3）。离散选项语义：合法值 = 选项集内整数，
+// DB 脏值（非数字/越界/不在选项集如 15）一律回落默认 13（与 startup_code_cli
+// 枚举校验同范式，不用 poll_interval_secs 的连续 clamp）。
+// 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 startup_code_cli 先例）。
+export const TERMINAL_FONT_SIZE_KEY = 'terminal_font_size';
+export const TERMINAL_FONT_SIZE_OPTIONS = [10, 11, 12, 13, 14, 15, 16] as const;
+export type TerminalFontSize = (typeof TERMINAL_FONT_SIZE_OPTIONS)[number];
+export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
+
+export function parseTerminalFontSize(value: string | null): TerminalFontSize {
+  const parsed = value != null ? Number.parseInt(value, 10) : Number.NaN;
+  return (TERMINAL_FONT_SIZE_OPTIONS as readonly number[]).includes(parsed)
+    ? (parsed as TerminalFontSize)
+    : DEFAULT_TERMINAL_FONT_SIZE;
+}
+
 // HTTP 本地服务端口（Go sidecar）。留空=用模式默认（由后端解析）。
 // min/max 与后端 app_config.rs 镜像，且对齐 Go sidecar 的端口校验区间，改动任一处需同步另一处。
 export const HTTP_SERVER_PORT_KEY = 'http_server_port';

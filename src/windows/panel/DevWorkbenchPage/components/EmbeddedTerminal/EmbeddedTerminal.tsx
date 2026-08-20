@@ -1,9 +1,13 @@
+import type { TerminalFontSize } from '@src/shared/appConfig';
 import { SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography, useTheme } from '@mui/material';
 import {
+  DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   DEFAULT_WORKSPACE_BASE_DIR,
+  parseTerminalFontSize,
   parseTerminalStartupCodeCli,
+  TERMINAL_FONT_SIZE_KEY,
   TERMINAL_STARTUP_CODE_CLI_KEY,
   WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
@@ -23,6 +27,11 @@ function decodeWorkspaceBaseDir(raw: string | null): string {
 // 启动自动运行 CLI decode：非法/缺失回落空串（= 不自动运行）。模块级保证引用稳定。
 function decodeStartupCodeCli(raw: string | null): string {
   return parseTerminalStartupCodeCli(raw) ?? DEFAULT_TERMINAL_STARTUP_CODE_CLI;
+}
+
+// 终端字号 decode：非法/不在选项集回落 13（terminal_03 §3.3）。模块级保证引用稳定。
+function decodeTerminalFontSize(raw: string | null): TerminalFontSize {
+  return parseTerminalFontSize(raw);
 }
 
 // 初始尺寸占位：真实尺寸由 TerminalView fit 后经 onResize 校正
@@ -56,6 +65,12 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     TERMINAL_STARTUP_CODE_CLI_KEY,
     decodeStartupCodeCli,
     DEFAULT_TERMINAL_STARTUP_CODE_CLI,
+  );
+  // 字号（terminal_03 §3.3）：每 pane 各自订阅，设置保存事件驱动全量 pane 生效。
+  const fontSize = useConfigValue(
+    TERMINAL_FONT_SIZE_KEY,
+    decodeTerminalFontSize,
+    DEFAULT_TERMINAL_FONT_SIZE,
   );
   // main 关闭确认弹窗开关（附加 pane 关闭直处理，无确认）。
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
@@ -201,6 +216,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     <>
       <TerminalView
         theme={terminalTheme}
+        fontSize={fontSize}
         toolbarLabel={isMain ? 'main' : undefined}
         onData={session.write}
         onResize={session.resize}
