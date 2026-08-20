@@ -5,9 +5,9 @@ import { listen } from '@tauri-apps/api/event';
 import { useEffect, useState } from 'react';
 
 // claude 运行态探测轮询间隔：退出恢复的兜底时效（Dead 会话 json 保留、watch
-// 不触发，进程退出只能靠轮询感知）。交互近无感 + ps 开销可忽略（单次
-// IPC + 若干 ps 子进程）。
-const POLL_MS = 10000;
+// 不触发，进程退出只能靠轮询感知）。交互近无感 + ps 开销可忽略（单次 IPC + 若干 ps 子进程）。
+// 这里只是兜底，事件监听也会同步处理。
+const POLL_MS = 60_000;
 
 // useClaudeRunning：本 PTY 会话是否跑着 claude（terminal_03 §3.2 按钮置灰驱动）。
 //
