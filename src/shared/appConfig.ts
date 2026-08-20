@@ -97,6 +97,55 @@ export function parseTerminalFontSize(value: string | null): TerminalFontSize {
     : DEFAULT_TERMINAL_FONT_SIZE;
 }
 
+// 嵌入式终端回滚缓冲行数（terminal_04）。离散选项语义同字号：合法值 = 选项集内
+// 整数，DB 脏值回落默认 1000（= xterm 未显式配置时的默认值，保守起步）。
+// 纯前端偏好，后端不读取（Rust 侧 ring 容量独立，见 terminal_04 文档注意项）。
+export const TERMINAL_SCROLLBACK_ROWS_KEY = 'terminal_scrollback_rows';
+export const TERMINAL_SCROLLBACK_ROWS_OPTIONS = [1000, 2000, 3000, 5000] as const;
+export type TerminalScrollbackRows = (typeof TERMINAL_SCROLLBACK_ROWS_OPTIONS)[number];
+export const DEFAULT_TERMINAL_SCROLLBACK_ROWS: TerminalScrollbackRows = 1000;
+
+export function parseTerminalScrollbackRows(value: string | null): TerminalScrollbackRows {
+  const parsed = value != null ? Number.parseInt(value, 10) : Number.NaN;
+  return (TERMINAL_SCROLLBACK_ROWS_OPTIONS as readonly number[]).includes(parsed)
+    ? (parsed as TerminalScrollbackRows)
+    : DEFAULT_TERMINAL_SCROLLBACK_ROWS;
+}
+
+// 终端主题 id（terminal_05：用户自选暗色主题，不跟随 app 明暗）。
+// 合法值 = terminalTheme.ts 的 TERMINAL_THEME_IDS；纯前端偏好。parse 放彼处
+// （依赖目录常量，同文件即值域 SSOT）。
+export const TERMINAL_THEME_KEY = 'terminal_theme';
+
+// 终端光标样式（terminal_05）：'block' | 'bar' | 'underline'，默认 block。
+export type TerminalCursorStyle = 'block' | 'bar' | 'underline';
+export const TERMINAL_CURSOR_STYLE_KEY = 'terminal_cursor_style';
+export const DEFAULT_TERMINAL_CURSOR_STYLE: TerminalCursorStyle = 'block';
+export const TERMINAL_CURSOR_STYLE_OPTIONS = ['block', 'bar', 'underline'] as const;
+
+export function parseTerminalCursorStyle(value: string | null): TerminalCursorStyle {
+  return (TERMINAL_CURSOR_STYLE_OPTIONS as readonly string[]).includes(value ?? '')
+    ? (value as TerminalCursorStyle)
+    : DEFAULT_TERMINAL_CURSOR_STYLE;
+}
+
+// 终端光标闪烁开关（terminal_05）：YesNo，默认 YES（原 terminal_03 前写死 true）。
+export const TERMINAL_CURSOR_BLINK_KEY = 'terminal_cursor_blink';
+export const DEFAULT_TERMINAL_CURSOR_BLINK = YES_NO.YES;
+
+// 终端行高（terminal_05）：离散选项，默认 1（xterm 默认，紧凑）。
+export const TERMINAL_LINE_HEIGHT_KEY = 'terminal_line_height';
+export const TERMINAL_LINE_HEIGHT_OPTIONS = [1, 1.1, 1.2, 1.3, 1.4, 1.5] as const;
+export type TerminalLineHeight = (typeof TERMINAL_LINE_HEIGHT_OPTIONS)[number];
+export const DEFAULT_TERMINAL_LINE_HEIGHT: TerminalLineHeight = 1;
+
+export function parseTerminalLineHeight(value: string | null): TerminalLineHeight {
+  const parsed = value != null ? Number.parseFloat(value) : Number.NaN;
+  return (TERMINAL_LINE_HEIGHT_OPTIONS as readonly number[]).includes(parsed)
+    ? (parsed as TerminalLineHeight)
+    : DEFAULT_TERMINAL_LINE_HEIGHT;
+}
+
 // HTTP 本地服务端口（Go sidecar）。留空=用模式默认（由后端解析）。
 // key/min/max 与模式默认端口均 Rust 单源（见顶部 re-export：app_config.rs + http_server.rs）。
 // defaultHttpServerPort 与 Rust http_server.rs 的 default_port() 逻辑对应，

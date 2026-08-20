@@ -1,20 +1,35 @@
-import type { TerminalFontSize } from '@src/shared/appConfig';
+import type { TerminalFontSize, TerminalScrollbackRows } from '@src/shared/appConfig';
+import type { TerminalThemeId } from './terminalTheme';
 import { SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography, useTheme } from '@mui/material';
+import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
 import {
+  DEFAULT_TERMINAL_CURSOR_BLINK,
+  DEFAULT_TERMINAL_CURSOR_STYLE,
   DEFAULT_TERMINAL_FONT_SIZE,
+  DEFAULT_TERMINAL_LINE_HEIGHT,
+  DEFAULT_TERMINAL_SCROLLBACK_ROWS,
   DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   DEFAULT_WORKSPACE_BASE_DIR,
+  isYes,
+  parseTerminalCursorStyle,
   parseTerminalFontSize,
+  parseTerminalLineHeight,
+  parseTerminalScrollbackRows,
   parseTerminalStartupCodeCli,
+  TERMINAL_CURSOR_BLINK_KEY,
+  TERMINAL_CURSOR_STYLE_KEY,
   TERMINAL_FONT_SIZE_KEY,
+  TERMINAL_LINE_HEIGHT_KEY,
+  TERMINAL_SCROLLBACK_ROWS_KEY,
   TERMINAL_STARTUP_CODE_CLI_KEY,
+  TERMINAL_THEME_KEY,
   WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
 import { useCallback, useRef, useState } from 'react';
+import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } from './terminalTheme';
 import TerminalView from './TerminalView';
 import { useClaudeRunning } from './useClaudeRunning';
 import { usePtySession } from './usePtySession';
@@ -32,6 +47,31 @@ function decodeStartupCodeCli(raw: string | null): string {
 // 终端字号 decode：非法/不在选项集回落 13（terminal_03 §3.3）。模块级保证引用稳定。
 function decodeTerminalFontSize(raw: string | null): TerminalFontSize {
   return parseTerminalFontSize(raw);
+}
+
+// scrollback 行数 decode：非法/不在选项集回落 1000（terminal_04）。模块级保证引用稳定。
+function decodeTerminalScrollbackRows(raw: string | null): TerminalScrollbackRows {
+  return parseTerminalScrollbackRows(raw);
+}
+
+// 主题 id decode：非法回落 Dracula（terminal_05）。模块级保证引用稳定。
+function decodeTerminalThemeId(raw: string | null): TerminalThemeId {
+  return parseTerminalThemeId(raw);
+}
+
+// 光标样式 decode（terminal_05）。
+function decodeTerminalCursorStyle(raw: string | null): 'block' | 'bar' | 'underline' {
+  return parseTerminalCursorStyle(raw);
+}
+
+// 行高 decode（terminal_05）。
+function decodeTerminalLineHeight(raw: string | null): number {
+  return parseTerminalLineHeight(raw);
+}
+
+// 光标闪烁 decode（terminal_05）：YesNo → boolean，缺失/非法回落 true（默认闪）。
+function decodeYesNo(raw: string | null): boolean {
+  return raw == null ? true : isYes(raw);
 }
 
 // 初始尺寸占位：真实尺寸由 TerminalView fit 后经 onResize 校正
@@ -58,7 +98,6 @@ interface EmbeddedTerminalProps {
 // 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下
 // 实测出现「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
 export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedTerminalProps) {
-  const theme = useTheme();
   const isMain = paneId === 'main';
   const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const startupCodeCli = useConfigValue(
@@ -71,6 +110,33 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     TERMINAL_FONT_SIZE_KEY,
     decodeTerminalFontSize,
     DEFAULT_TERMINAL_FONT_SIZE,
+  );
+  // scrollback 行数（terminal_04）：同字号范式，各 pane 订阅热生效。
+  const scrollbackRows = useConfigValue(
+    TERMINAL_SCROLLBACK_ROWS_KEY,
+    decodeTerminalScrollbackRows,
+    DEFAULT_TERMINAL_SCROLLBACK_ROWS,
+  );
+  // 终端 UI 配置组（terminal_05）：主题用户自选（不跟随 app 明暗）+ 光标 + 行高。
+  const themeId = useConfigValue(
+    TERMINAL_THEME_KEY,
+    decodeTerminalThemeId,
+    DEFAULT_TERMINAL_THEME_ID,
+  );
+  const cursorStyle = useConfigValue(
+    TERMINAL_CURSOR_STYLE_KEY,
+    decodeTerminalCursorStyle,
+    DEFAULT_TERMINAL_CURSOR_STYLE,
+  );
+  const cursorBlink = useConfigValue(
+    TERMINAL_CURSOR_BLINK_KEY,
+    decodeYesNo,
+    DEFAULT_TERMINAL_CURSOR_BLINK === 'Y',
+  );
+  const lineHeight = useConfigValue(
+    TERMINAL_LINE_HEIGHT_KEY,
+    decodeTerminalLineHeight,
+    DEFAULT_TERMINAL_LINE_HEIGHT,
   );
   // main 关闭确认弹窗开关（附加 pane 关闭直处理，无确认）。
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
@@ -205,18 +271,19 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     );
   }
 
-  const terminalTheme = {
-    background: theme.palette.mode === 'dark' ? '#1e1e1e' : '#ffffff',
-    foreground: theme.palette.mode === 'dark' ? '#d4d4d4' : '#333333',
-    cursor: theme.palette.text.primary,
-    dimOpacity: 0.5,
-  };
+  // 完整终端主题（terminal_05）：按用户自选主题 id 构建（暗色目录，不跟随 app
+  // 明暗）。id 变化 → 新对象 → TerminalView 主题 effect 运行时赋值（热切换）。
+  const terminalTheme = buildTerminalTheme(themeId);
 
   return (
     <>
       <TerminalView
         theme={terminalTheme}
         fontSize={fontSize}
+        scrollbackRows={scrollbackRows}
+        cursorStyle={cursorStyle}
+        cursorBlink={cursorBlink}
+        lineHeight={lineHeight}
         toolbarLabel={isMain ? 'main' : undefined}
         onData={session.write}
         onResize={session.resize}

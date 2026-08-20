@@ -1,4 +1,5 @@
 import type { IBufferRange, ILink } from '@xterm/xterm';
+import type { TerminalViewTheme } from './terminalTheme';
 import {
   CloseOutlined as CloseOutlinedIcon,
   ContentCopyOutlined as ContentCopyOutlinedIcon,
@@ -77,13 +78,9 @@ function buildLinks(
   return links;
 }
 
-export interface TerminalViewTheme {
-  background: string;
-  foreground: string;
-  cursor: string;
-  // 会话已结束时终端置灰（视觉上与活动会话区分）
-  dimOpacity: number;
-}
+// 终端主题定义与构建在 ./terminalTheme.ts（独立文件：组件文件导出非组件会被
+// react-refresh/only-export-components 拦截）。
+export type { TerminalViewTheme } from './terminalTheme';
 
 interface TerminalViewProps {
   theme: TerminalViewTheme;
@@ -92,6 +89,15 @@ interface TerminalViewProps {
   fontSize: number;
   // 工具栏左侧标识（如 main pane 的 'main' 标签）。不传则不渲染。
   toolbarLabel?: string;
+  // 回滚缓冲行数（terminal_scrollback_rows 配置，terminal_04）：运行时纯
+  // options.scrollback 赋值（不 refit 不通知 PTY——缓冲容量与尺寸无关）。
+  scrollbackRows: number;
+  // 光标样式（terminal_05）：block/bar/underline，运行时 options 赋值。
+  cursorStyle: 'block' | 'bar' | 'underline';
+  // 光标闪烁开关（terminal_05）。
+  cursorBlink: boolean;
+  // 行高（terminal_05）：运行时赋值后须 refit（度量变化）。
+  lineHeight: number;
   // 键盘输入（xterm onData）。要求父层传稳定引用（useCallback），本组件不代理不缓存。
   onData: (data: string) => void;
   // 尺寸变化（addon-fit 实测后的 cols/rows）。同上要求稳定引用。
@@ -127,7 +133,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -175,8 +181,11 @@ export default function TerminalView({ theme, fontSize, toolbarLabel, onData, on
     const terminal = new Terminal({
       allowProposedApi: true,
       convertEol: false,
-      cursorBlink: true,
+      cursorBlink,
+      cursorStyle,
       fontSize,
+      lineHeight,
+      scrollback: scrollbackRows,
       fontFamily: 'menlo, monaco, courier-new, monospace',
       // OSC 8 终端超链接（claude/zsh 等现代 CLI 输出的 URL 走此转义序列，与自建
       // 正则 provider 是两条独立路径）兜底接管：不配 linkHandler 则点击走 xterm
@@ -195,6 +204,28 @@ export default function TerminalView({ theme, fontSize, toolbarLabel, onData, on
         background: theme.background,
         foreground: theme.foreground,
         cursor: theme.cursor,
+        cursorAccent: theme.cursorAccent,
+        selectionBackground: theme.selectionBackground,
+        ...(theme.black != null
+          ? {
+              black: theme.black,
+              red: theme.red,
+              green: theme.green,
+              yellow: theme.yellow,
+              blue: theme.blue,
+              magenta: theme.magenta,
+              cyan: theme.cyan,
+              white: theme.white,
+              brightBlack: theme.brightBlack,
+              brightRed: theme.brightRed,
+              brightGreen: theme.brightGreen,
+              brightYellow: theme.brightYellow,
+              brightBlue: theme.brightBlue,
+              brightMagenta: theme.brightMagenta,
+              brightCyan: theme.brightCyan,
+              brightWhite: theme.brightWhite,
+            }
+          : {}),
       },
     });
 
@@ -330,6 +361,55 @@ export default function TerminalView({ theme, fontSize, toolbarLabel, onData, on
       fitAddon.fit();
     }
   }, [fontSize]);
+
+  // scrollback 运行时生效（terminal_04）：纯 options 赋值——缓冲容量与 cols/rows
+  // 无关，不 refit 不通知 PTY（orca 实证同款约束）。调大即刻能多往回翻，调小立即
+  // 截尾（xterm 自身裁剪），无闪烁。
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (terminal != null) {
+      terminal.options.scrollback = scrollbackRows;
+    }
+  }, [scrollbackRows]);
+
+  // 光标样式/闪烁运行时生效（terminal_05）：纯 options 赋值，即时重绘。
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (terminal != null) {
+      terminal.options.cursorStyle = cursorStyle;
+      terminal.options.cursorBlink = cursorBlink;
+    }
+  }, [cursorStyle, cursorBlink]);
+
+  // 行高运行时生效（terminal_05）：行高改变字符度量 → 须 refit 重算 cols/rows
+  // （同字号范式，含折叠期守卫）。
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    const fitAddon = fitAddonRef.current;
+    const container = containerRef.current;
+    if (terminal == null || fitAddon == null || container == null) {
+      return;
+    }
+    terminal.options.lineHeight = lineHeight;
+    if (container.clientWidth > 0 && container.clientHeight > 0) {
+      fitAddon.fit();
+    }
+  }, [lineHeight]);
+
+  // 主题运行时生效（hello-halo 调研移植）：options.theme 赋值即时重绘，不重建实例
+  // ——推翻原「theme 仅初值生效、切换靠刷新」的取舍。dimOpacity 渲染期消费，
+  // 不在此赋值。theme 对象每次渲染新建，用 JSON 串比较避免重复赋值。
+  const lastThemeJsonRef = useRef<string>('');
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    const themeJson = JSON.stringify(theme);
+    if (terminal == null || themeJson === lastThemeJsonRef.current) {
+      return;
+    }
+    const { dimOpacity: _dim, ...xtermTheme } = theme;
+    lastThemeJsonRef.current = themeJson;
+    terminal.options.theme = xtermTheme;
+  }, [theme]);
 
   // 基础操作组（terminal_03 §3.1）。清屏仅写 \x0c（等价用户按 Ctrl+L，交互程序
   // 自己处理重绘，双管 clear()+\x0c 会两次清屏闪烁——用户确认裁剪）；复制空选

@@ -143,6 +143,7 @@
   - activate 失败 toast（URL「打开链接失败」/路径「打开文件失败」），成功静默；provider 注册在 mount effect 步骤 5.5（toast 回调依赖组件内 useToast），cleanup 逆序 dispose。
   - **坑 4（OSC 8 链接双报错）**：真机点击报 `dialog.confirm not allowed` + `Opening link blocked as opener could not be cleared`——点的链接是 **OSC 8 转义序列**（claude/zsh 等现代 CLI 输出的超链接格式），走 xterm 内置 OscLinkProvider，**与自建正则 provider 是两条独立路径**；未配 `options.linkHandler` 时其默认 activate 是 `confirm() + window.open()`，Tauri 下双失败（confirm 映射的 dialog.confirm IPC 未授权——dialog:default 不含它；window.open 被 webview 拦截返回 null 落 warn 分支）。修复：构造 options 配 `linkHandler.activate` 转发 `activateLink`（提升为组件体 useCallback，showToast 经 useToast 的 useCallback([]) 稳定引用），OSC 8 与正则两路同分流。
   - **交互定稿（修饰键 + Click）**：默认单击即开改误触多（终端链接混在输出流中，单击常是选区/聚焦意图）——两条路径（正则 provider + OSC 8 linkHandler）的 activate 统一加 `hasOpenModifier` 守卫：**macOS Cmd+Click、Windows/Linux Ctrl+Click**（macOS Ctrl+Click 是右键语义故取 metaKey）；普通点击静默，hover 下划线保留作为暗示。
+  - **主题增强（hello-halo 调研移植，收尾追加）**：视觉差距调研结论——halo 体验好大半是完整终端主题（我们原只 3 色硬编码）。移植：`terminalTheme.ts` 新文件（独立于组件文件：fast-refresh 限组件导出）——暗色背景 `#121212`/前景 `#eeeeec`（halo --card 7%/98% 亮度档）、ANSI 16 色 Tango 色板明暗两套（ls/git diff/claude 彩色输出鲜活的关键）、光标亮蓝 + cursorAccent（光标下字符反色）、选区着色；**主题热切换**：TerminalView 第二个运行时 option（options.theme 赋值即时重绘，JSON 串去重防重复赋值），推翻原「theme 仅初值生效、切换靠刷新」取舍。halo 调研另确认其流畅度优势核心是 ack 水位背压 + 独立 worker 进程（背压移植列后续模块候选）。
 
 ### ✅ 任务 6 — sessions 监听联动（enrich 识别本 app 宿主）
 - **文件**：`src-tauri/src/sessions/enrich.rs`（classify_terminal 增变体）+ 相关类型/展示
@@ -182,4 +183,4 @@
 ## 6. 后续模块（不在本文档范围）
 - hooks 状态集成 + agent 完成通知（依赖 claude hooks 配置体系）。
 - 右键菜单、Quick Commands。
-- 终端主题/scrollback 行数等进阶设置。
+- ~~终端主题/scrollback 行数等进阶设置~~ → 拆分落地：scrollback 行数 = `terminal_04_advanced_settings.md`（已落地）；主题选择/光标/行高/预览 = terminal_05（规划见 terminal_04 文档 §4）。

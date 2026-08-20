@@ -37,20 +37,41 @@
       "iterm2SplitDirection": "iTerm2 split direction",
       "terminalPostOpenCommand": "Run after opening terminal",
       "startupCodeCli": "Auto-run on terminal start",
-      "fontSize": "Font size"
+      "fontSize": "Font size",
+      "scrollbackRows": "Scrollback lines",
+      "theme": "Terminal theme",
+      "cursorStyle": "Cursor style",
+      "lineHeight": "Line height",
+      "preview": "Terminal preview"
     },
     "option": {
       "splitHorizontal": "Horizontal (top-bottom)",
       "splitVertical": "Vertical (left-right)",
       "splitNone": "No split",
       "startupCodeCliNone": "None",
-      "startupCodeCliClaude": "Claude"
+      "startupCodeCliClaude": "Claude",
+      "cursorBlinkOn": "Blinking",
+      "cursorBlinkOff": "Steady",
+      "cursorStyle": {
+        "block": "Block",
+        "bar": "Bar",
+        "underline": "Underline"
+      },
+      "theme": {
+        "we-dark": "We Dark (default)",
+        "dracula": "Dracula",
+        "one-dark": "One Dark",
+        "tokyo-night": "Tokyo Night",
+        "gruvbox-dark": "Gruvbox Dark",
+        "catppuccin-mocha": "Catppuccin Mocha",
+        "nord": "Nord"
+      }
     },
     "help": {
       "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events.",
       "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev.",
       "startupCodeCli": "Automatically run the selected coding CLI (e.g. claude) when the shell is ready after opening the embedded terminal for a task. \"None\" opens a plain shell",
-      "fontSize": "Applies to all terminal panes immediately after saving, no restart needed"
+      "scrollbackRows": "How many lines of history output you can scroll back through in the terminal. Applies immediately after saving. Larger values allow more history at higher memory cost"
     },
     "unit": {
       "seconds": "s"
