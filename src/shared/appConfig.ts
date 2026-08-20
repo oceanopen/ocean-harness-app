@@ -1,14 +1,37 @@
 import type { YesNo } from './bindings';
-import { commands } from './bindings';
+import { commands, HTTP_SERVER_PORT_RELEASE, HTTP_SERVER_PORT_TEST } from './bindings';
 import { unwrap } from './commands';
 
-// 本文件是所有配置项 key + 默认值的唯一可信源 (SSOT)。
-// 后端 src-tauri/src/shared/config.rs 中 LANGUAGE_KEY 有对应常量副本（用于托盘菜单语言判定），
-// 修改任一 *KEY / DEFAULT_* 时必须同步后端，否则首次启动会出现前后端兜底不一致。
+// —— Rust 单源常量 re-export（SSOT：src-tauri/src/shared/app_config.rs 等，经
+// .constant() 生成于 bindings.ts）。值类型为字面量类型（as const），消费方类型安全。 ——
+export {
+  DEFAULT_ITERM2_SPLIT_DIRECTION,
+  DEFAULT_POLL_INTERVAL_SECS,
+  DEFAULT_TERMINAL_POST_OPEN_COMMAND,
+  HTTP_SERVER_PORT_KEY,
+  HTTP_SERVER_PORT_RELEASE,
+  HTTP_SERVER_PORT_TEST,
+  ITERM2_SPLIT_DIRECTION_KEY,
+  LANGUAGE_KEY,
+  MAX_HTTP_SERVER_PORT,
+  MAX_POLL_INTERVAL_SECS,
+  MIN_HTTP_SERVER_PORT,
+  MIN_POLL_INTERVAL_SECS,
+  PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
+  POLL_INTERVAL_SECS_KEY,
+  TERMINAL_POST_OPEN_COMMAND_KEY,
+} from './bindings';
+
+// 本文件是前端配置项消费的统一出口。两类来源：
+// 1. 后端读取的 key（LANGUAGE_KEY / POLL_INTERVAL_SECS 族等）：SSOT 在
+//    src-tauri/src/shared/app_config.rs，经 tauri-specta .constant() 导出到
+//    bindings.ts，此处仅 re-export（Rust 单源，改值只动 Rust + gen:bindings）。
+// 2. 纯前端 key（appearance / terminal_font_size 等）：本文件定义即 SSOT，
+//    后端不读取，无镜像。
 
 // Y/N 布尔风格配置值。类型 YesNo 由后端 types.rs 的 enum 经 gen:bindings 自动生成，
-// 此处只保留值常量（specta 不导出 const），用 satisfies 关联后端类型确保取值合法：
-// 后端 #[serde(rename = "Y"/"N")] 改动后，此处值若不一致会编译报错。
+// 值常量仍本地定义（satisfies 关联后端类型）：后端 #[serde(rename)] 改动后，
+// 此处值若不一致会编译报错——与 .constant() 导出等价的编译期保障，维持不动。
 export const YES_NO = {
   YES: 'Y',
   NO: 'N',
@@ -35,32 +58,15 @@ export type Language = 'system' | 'zh-CN' | 'en';
 
 export type ResolvedLanguage = Exclude<Language, 'system'>;
 
-export const LANGUAGE_KEY = 'language';
 export const DEFAULT_LANGUAGE: Language = 'system';
 
 // 桌宠拖拽开关。值用 YesNo，缺失视为 NO（默认关闭：点击桌宠打开监控页）。
-// 与后端 config.rs 的 PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY 对齐，修改任一处需同步另一处。
-export const PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY = 'pet_claude_sessions_summary_draggable';
+// key 在 Rust 单源（见顶部 re-export）；默认值类型是 YesNo，走本地 satisfies 关联。
 export const DEFAULT_PET_DRAGGABLE = YES_NO.NO;
 
-// sessions 兜底轮询周期（秒）。即时性由 fs watcher 负责，此处仅驱动 Dead 老化与漏报兜底。
-// min/max/clamp 与后端 config.rs 镜像，改动任一处需同步另一处。
-export const POLL_INTERVAL_SECS_KEY = 'poll_interval_secs';
-export const DEFAULT_POLL_INTERVAL_SECS = 60;
-export const MIN_POLL_INTERVAL_SECS = 5;
-export const MAX_POLL_INTERVAL_SECS = 120;
-
 // iTerm2 分屏方向。horizontal = 上下分屏，vertical = 左右分屏，none = 不分屏。
-// 与后端 config.rs 镜像，改动任一处需同步另一处。
+// 类型与默认值均为字面量联合，默认值从 Rust 单源 re-export（as const 兼容）。
 export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
-
-export const ITERM2_SPLIT_DIRECTION_KEY = 'iterm2_split_direction';
-export const DEFAULT_ITERM2_SPLIT_DIRECTION: Iterm2SplitDirection = 'horizontal';
-
-// 打开终端 cd 后追加执行的命令（全局，iTerm2 与 Terminal.app 共用）。空串 = 仅 cd。
-// 与后端 app_config.rs 镜像，改动任一处需同步另一处。
-export const TERMINAL_POST_OPEN_COMMAND_KEY = 'terminal_post_open_command';
-export const DEFAULT_TERMINAL_POST_OPEN_COMMAND = '';
 
 // 嵌入式终端启动时自动运行的编程 CLI 工具（shell-ready 注入，docs/terminal_01_auto_claude.md）。
 // 值域：'' = 不自动运行（默认）；'claude' = 当前唯一支持项，未来扩 'codex' 等。
@@ -92,17 +98,11 @@ export function parseTerminalFontSize(value: string | null): TerminalFontSize {
 }
 
 // HTTP 本地服务端口（Go sidecar）。留空=用模式默认（由后端解析）。
-// min/max 与后端 app_config.rs 镜像，且对齐 Go sidecar 的端口校验区间，改动任一处需同步另一处。
-export const HTTP_SERVER_PORT_KEY = 'http_server_port';
-export const MIN_HTTP_SERVER_PORT = 3000;
-export const MAX_HTTP_SERVER_PORT = 10000;
-
-// 默认端口按运行模式（debug/release），与 Rust http_server.rs 的 default_port() 逻辑对应。
-// 前端用于设置页帮助文案展示当前运行时的具体默认端口（而非 dev/release 并列）。
-export const DEFAULT_HTTP_SERVER_PORT_TEST = 9000;
-export const DEFAULT_HTTP_SERVER_PORT_RELEASE = 9100;
+// key/min/max 与模式默认端口均 Rust 单源（见顶部 re-export：app_config.rs + http_server.rs）。
+// defaultHttpServerPort 与 Rust http_server.rs 的 default_port() 逻辑对应，
+// 用于设置页帮助文案展示当前运行时的具体默认端口（而非 dev/release 并列）。
 export function defaultHttpServerPort(mode: string): number {
-  return mode === 'release' ? DEFAULT_HTTP_SERVER_PORT_RELEASE : DEFAULT_HTTP_SERVER_PORT_TEST;
+  return mode === 'release' ? HTTP_SERVER_PORT_RELEASE : HTTP_SERVER_PORT_TEST;
 }
 
 // panel 窗口侧边栏折叠状态。值用 YesNo，缺失视为 NO（默认展开）。

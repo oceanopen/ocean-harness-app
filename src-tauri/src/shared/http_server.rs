@@ -51,8 +51,9 @@ use crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED;
 use crate::shared::types::{HttpServerRunState, HttpServerStatus};
 
 /// dev/build 编译各自的默认端口（用户未在「服务配置」设置 http_server_port 时回退于此）。
-const HTTP_SERVER_PORT_TEST: u16 = 9000;
-const HTTP_SERVER_PORT_RELEASE: u16 = 9100;
+/// pub + .constant() 导出到前端 bindings.ts（设置页帮助文案展示用），Rust 单源。
+pub const HTTP_SERVER_PORT_TEST: u16 = 9000;
+pub const HTTP_SERVER_PORT_RELEASE: u16 = 9100;
 
 /// settle 线程：启动裁定的硬上限，超过仍未监听端口即判定失败（防异常启动永久挂起 Starting）。
 const STARTUP_VERDICT_DEADLINE: Duration = Duration::from_secs(10);

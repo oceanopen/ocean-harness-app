@@ -138,6 +138,53 @@ export const commands = {
 } | null, string>(__TAURI_INVOKE("pty_reattach", { sessionId, onEvent })),
 };
 
+/* Constants */
+export const DEFAULT_ITERM2_SPLIT_DIRECTION = "horizontal" as const;
+
+export const DEFAULT_POLL_INTERVAL_SECS = 120 as const;
+
+export const DEFAULT_TERMINAL_POST_OPEN_COMMAND = "" as const;
+
+export const EVENT_APP_CONFIG_CHANGED = "app-config-changed" as const;
+
+export const EVENT_CLAUDE_SESSIONS_CHANGED = "claude-sessions:changed" as const;
+
+export const EVENT_CLAUDE_SESSION_NAV_FAILED = "claude-sessions:nav-failed" as const;
+
+export const EVENT_HTTP_SERVER_STATE_CHANGED = "http-server:state-changed" as const;
+
+export const EVENT_PANEL_NAVIGATE = "panel:navigate" as const;
+
+export const EVENT_PANEL_SHOWN = "panel:shown" as const;
+
+export const EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT = "pet-claude-sessions-task:refit" as const;
+
+export const EVENT_SETTINGS_NAVIGATE = "settings:navigate" as const;
+
+export const HTTP_SERVER_PORT_KEY = "http_server_port" as const;
+
+export const HTTP_SERVER_PORT_RELEASE = 9100 as const;
+
+export const HTTP_SERVER_PORT_TEST = 9000 as const;
+
+export const ITERM2_SPLIT_DIRECTION_KEY = "iterm2_split_direction" as const;
+
+export const LANGUAGE_KEY = "language" as const;
+
+export const MAX_HTTP_SERVER_PORT = 10000 as const;
+
+export const MAX_POLL_INTERVAL_SECS = 300 as const;
+
+export const MIN_HTTP_SERVER_PORT = 3000 as const;
+
+export const MIN_POLL_INTERVAL_SECS = 10 as const;
+
+export const PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY = "pet_claude_sessions_summary_draggable" as const;
+
+export const POLL_INTERVAL_SECS_KEY = "poll_interval_secs" as const;
+
+export const TERMINAL_POST_OPEN_COMMAND_KEY = "terminal_post_open_command" as const;
+
 /* Types */
 /**
  *  set_app_config 命令成功后通过 `app-config-changed` 事件广播给所有窗口的载荷。

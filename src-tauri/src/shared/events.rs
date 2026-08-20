@@ -1,4 +1,5 @@
-// 所有 Tauri 事件名的 SSOT。修改时必须同步 src/shared/events.ts（前端镜像）。
+// 所有 Tauri 事件名的 SSOT（Rust 单源）。全部经 build_specta_builder().constant()
+// 导出到前端 bindings.ts，前端 src/shared/events.ts 仅 re-export——不再双份维护。
 // 这些事件名散落在 emit/listen 调用中，typo 不会编译报错，集中常量化降低漂移风险。
 
 /// 配置项变更时广播（AppConfigChangedPayload）。订阅方（AppThemeProvider / AppI18nProvider）
