@@ -236,6 +236,20 @@ pub fn open_in_file_manager(dir: String) -> Result<(), String> {
     open_dir(&dir)
 }
 
+/// 用系统默认应用打开任意路径（文件或目录）：macOS 对文件走默认应用、目录走 Finder。
+/// 终端链接点击（terminal_03 §3.4）的后端出口——与 open_in_file_manager 分立，
+/// 语义各自明确（后者文档注释明确「目录」，跨平台行为也不一致：explorer 对文件
+/// 是定位而非默认打开）。path 必须为非空绝对路径。
+#[tauri::command]
+#[specta::specta]
+pub fn open_path(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if path.is_empty() || !p.is_absolute() {
+        return Err("invalid path".into());
+    }
+    open_dir(&path)
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> Result<(), String> {

@@ -131,10 +131,18 @@
   - `EmbeddedTerminal`：`useConfigValue` 订阅下传 props；多 pane 各自订阅，保存事件天然全量 pane 生效。
   - 设置页「应用嵌入终端」卡片加字号行（Select + FormatSizeOutlined icon），draft/saved/dirty 五配置共管；i18n 两语言 `row.fontSize`/`help.fontSize`。
 
-### ⬜ 任务 5 — 链接点击
+### ✅ 任务 5 — 链接点击
 - **文件**：`TerminalView.tsx`（registerLinkProvider）+ Rust `open_path` 命令（若文件路径要系统打开）+ `lib.rs` 注册
 - **目标**：§3.4。
 - **验证**：真机——终端里 `ls` 输出的文件路径、`git remote -v` 的 URL 可点击打开；hover 有下划线反馈。
+- **已落地**：
+  - 匹配（模块级正则 + `buildLinks`，不进 effect 闭包）：URL（`https?://\S+`，行尾标点裁剪）+ 绝对文件路径（扩展名白名单 rs/ts/go/py 等 + 可选 `:行号:列` 后缀——编译器/claude 输出形态）；**不匹配裸目录**（无扩展名误报率高，ls 输出到处是——对文档「ls 输出的文件路径」取文件子集）。无存在性探测/跨行重组（§5.4 裁剪）。
+  - `provideLinks` 行号 1-based 绝对值（取行 -1），`ILink.range` 列 0-based index 转 1-based、end 含末字符；hover 反馈走默认 decorations（underline + pointer cursor，零自绘）。
+  - **URL 打开改道 plugin-shell**（推翻文档原定 window.open）：Tauri webview 拦截 window.open——仓库已有实证（MarkdownEditor.tsx help 按钮注释）；`@tauri-apps/plugin-shell` 的 `open()` 走系统浏览器，依赖/权限（shell:allow-open 对全部 4 窗口）/先例齐备。
+  - 路径打开新增 Rust `open_path` 命令（而非复用 open_in_file_manager）：复用私有 `open_dir` 三平台实现，语义「系统默认应用打开任意路径」与「文件管理器打开目录」分立（explorer 对文件是定位非打开，跨平台行为不一致故不复用）。校验非空绝对路径，lib.rs 注册 + gen:bindings。
+  - activate 失败 toast（URL「打开链接失败」/路径「打开文件失败」），成功静默；provider 注册在 mount effect 步骤 5.5（toast 回调依赖组件内 useToast），cleanup 逆序 dispose。
+  - **坑 4（OSC 8 链接双报错）**：真机点击报 `dialog.confirm not allowed` + `Opening link blocked as opener could not be cleared`——点的链接是 **OSC 8 转义序列**（claude/zsh 等现代 CLI 输出的超链接格式），走 xterm 内置 OscLinkProvider，**与自建正则 provider 是两条独立路径**；未配 `options.linkHandler` 时其默认 activate 是 `confirm() + window.open()`，Tauri 下双失败（confirm 映射的 dialog.confirm IPC 未授权——dialog:default 不含它；window.open 被 webview 拦截返回 null 落 warn 分支）。修复：构造 options 配 `linkHandler.activate` 转发 `activateLink`（提升为组件体 useCallback，showToast 经 useToast 的 useCallback([]) 稳定引用），OSC 8 与正则两路同分流。
+  - **交互定稿（修饰键 + Click）**：默认单击即开改误触多（终端链接混在输出流中，单击常是选区/聚焦意图）——两条路径（正则 provider + OSC 8 linkHandler）的 activate 统一加 `hasOpenModifier` 守卫：**macOS Cmd+Click、Windows/Linux Ctrl+Click**（macOS Ctrl+Click 是右键语义故取 metaKey）；普通点击静默，hover 下划线保留作为暗示。
 
 ### ✅ 任务 6 — sessions 监听联动（enrich 识别本 app 宿主）
 - **文件**：`src-tauri/src/sessions/enrich.rs`（classify_terminal 增变体）+ 相关类型/展示

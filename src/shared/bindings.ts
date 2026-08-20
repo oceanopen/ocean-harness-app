@@ -49,6 +49,13 @@ export const commands = {
 	openInTerminal: (terminal: string, dir: string) => typedError<null, string>(__TAURI_INVOKE("open_in_terminal", { terminal, dir })),
 	/**  用系统文件管理器打开目录。dir 必须为存在的绝对路径。 */
 	openInFileManager: (dir: string) => typedError<null, string>(__TAURI_INVOKE("open_in_file_manager", { dir })),
+	/**
+	 *  用系统默认应用打开任意路径（文件或目录）：macOS 对文件走默认应用、目录走 Finder。
+	 *  终端链接点击（terminal_03 §3.4）的后端出口——与 open_in_file_manager 分立，
+	 *  语义各自明确（后者文档注释明确「目录」，跨平台行为也不一致：explorer 对文件
+	 *  是定位而非默认打开）。path 必须为非空绝对路径。
+	 */
+	openPath: (path: string) => typedError<null, string>(__TAURI_INVOKE("open_path", { path })),
 	showPetClaudeSessionsSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("show_pet_claude_sessions_summary_window")),
 	hidePetClaudeSessionsSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("hide_pet_claude_sessions_summary_window")),
 	togglePetClaudeSessionsSummaryWindow: () => typedError<boolean, string>(__TAURI_INVOKE("toggle_pet_claude_sessions_summary_window")),

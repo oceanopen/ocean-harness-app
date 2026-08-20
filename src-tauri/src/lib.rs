@@ -26,6 +26,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::panel::is_java_project,
             windows::panel::open_in_terminal,
             windows::panel::open_in_file_manager,
+            windows::panel::open_path,
             windows::pet_claude_sessions_summary::show_pet_claude_sessions_summary_window,
             windows::pet_claude_sessions_summary::hide_pet_claude_sessions_summary_window,
             windows::pet_claude_sessions_summary::toggle_pet_claude_sessions_summary_window,

@@ -1,3 +1,4 @@
+import type { IBufferRange, ILink } from '@xterm/xterm';
 import {
   CloseOutlined as CloseOutlinedIcon,
   ContentCopyOutlined as ContentCopyOutlinedIcon,
@@ -7,14 +8,74 @@ import {
   SmartToyOutlined as SmartToyOutlinedIcon,
 } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
+import { commands } from '@src/shared/bindings';
+import { unwrap } from '@src/shared/commands';
 import { useToast } from '@src/shared/useToast';
+import { open as openExternalUrl } from '@tauri-apps/plugin-shell';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import TerminalSearch from './TerminalSearch';
 import '@xterm/xterm/css/xterm.css';
+
+// —— 链接点击（terminal_03 §3.4）——
+// 单行正则匹配（URL + 绝对文件路径），无存在性探测/跨行重组（orca 裁剪对照 §5.4）。
+// hover 反馈走 ILink 默认 decorations（underline + pointer cursor）。
+// 打开交互：修饰键 + Click——macOS Cmd（Ctrl+Click 是右键语义）、Windows/Linux Ctrl。
+// 普通点击静默无动作（防误触——终端里链接混在输出流中，单击常是选区/聚焦意图），
+// hover 下划线保留作为「此处可 Cmd/Ctrl+Click」的暗示。
+
+// 打开修饰键判定：metaKey（macOS Cmd）|| ctrlKey（Windows/Linux）。
+function hasOpenModifier(event: MouseEvent): boolean {
+  return event.metaKey || event.ctrlKey;
+}
+
+// URL：http(s) 起到空白止。global 正则复用（lastIndex 状态跨调用维护，exec 循环驱动）。
+const URL_PATTERN = /https?:\/\/\S+/g;
+// 文件路径：/ 开头的绝对路径（不含空格段）+ 常见源码/文档扩展名，可选 :行号(:列) 后缀
+// （编译器/claude 输出的 file.rs:42:7 形态）。不匹配裸目录（无扩展名，误报率高——
+// ls 输出里到处是）。
+const FILE_PATH_PATTERN = /(\/[\w.@+-]+)*\/[\w.-]+\.(?:rs|ts|tsx|js|jsx|go|py|java|kt|c|h|cpp|hpp|json|toml|yaml|yml|md|txt|log|sh|sql|html|css)(?::\d+(?::\d+)?)?/g;
+
+// 匹配结果 → ILink[]（range 列 0-based index 转 1-based，end 含末字符）。
+function buildLinks(
+  bufferLineNumber: number,
+  lineText: string,
+  activate: (text: string) => void,
+): ILink[] {
+  const links: ILink[] = [];
+  for (const pattern of [URL_PATTERN, FILE_PATH_PATTERN]) {
+    pattern.lastIndex = 0;
+    let match = pattern.exec(lineText);
+    while (match != null) {
+      const text = match[0];
+      // 后缀裁剪：URL 不吞行尾标点（句号/右括号等常见于 git log 输出包裹）
+      const trimmedUrl = pattern === URL_PATTERN
+        ? text.replace(/[),.;'"\]}]+$/, '')
+        : text;
+      const finalText = trimmedUrl;
+      const start = match.index + (text.length - finalText.length);
+      links.push({
+        range: {
+          start: { x: start + 1, y: bufferLineNumber },
+          end: { x: start + finalText.length, y: bufferLineNumber },
+        } satisfies IBufferRange,
+        text: finalText,
+        // decorations 缺省 = underline + pointerCursor 全开（xterm 默认）
+        activate: (event: MouseEvent, _text: string) => {
+          if (!hasOpenModifier(event)) {
+            return;
+          }
+          activate(finalText);
+        },
+      });
+      match = pattern.exec(lineText);
+    }
+  }
+  return links;
+}
 
 export interface TerminalViewTheme {
   background: string;
@@ -82,6 +143,24 @@ export default function TerminalView({ theme, fontSize, toolbarLabel, onData, on
   // 复制/粘贴失败 toast（成功静默）
   const { show: showToast, snack: toastSnack } = useToast();
 
+  // 链接 activate 分流（terminal_03 §3.4）：URL 走 plugin-shell（window.open 被
+  // Tauri webview 拦截，MarkdownEditor 先例），路径走 Rust open_path（系统默认
+  // 应用）。useToast 的 show 是 useCallback([]) 稳定引用，本回调 deps 只挂它，
+  // 供构造 options.linkHandler（OSC 8 链接）与自建 provider（正则匹配）两路共用。
+  const activateLink = useCallback((text: string) => {
+    if (/^https?:\/\//.test(text)) {
+      openExternalUrl(text).catch((e: unknown) => {
+        console.warn('[TerminalView] open url failed:', e);
+        showToast('打开链接失败', 'error');
+      });
+    } else {
+      unwrap(commands.openPath(text)).catch((e: unknown) => {
+        console.warn('[TerminalView] open path failed:', e);
+        showToast('打开文件失败', 'error');
+      });
+    }
+  }, [showToast]);
+
   useEffect(() => {
     const container = containerRef.current;
     if (container == null) {
@@ -99,6 +178,19 @@ export default function TerminalView({ theme, fontSize, toolbarLabel, onData, on
       cursorBlink: true,
       fontSize,
       fontFamily: 'menlo, monaco, courier-new, monospace',
+      // OSC 8 终端超链接（claude/zsh 等现代 CLI 输出的 URL 走此转义序列，与自建
+      // 正则 provider 是两条独立路径）兜底接管：不配 linkHandler 则点击走 xterm
+      // 默认 confirm() + window.open()——Tauri 下双失败（confirm 映射的 dialog.confirm
+      // IPC 未授权 + window.open 被拦截）。activate 转发 activateLink 与正则路径
+      // 同分流，含修饰键守卫（Cmd/Ctrl+Click 才打开，见 hasOpenModifier）。
+      linkHandler: {
+        activate: (event: MouseEvent, text: string) => {
+          if (!hasOpenModifier(event)) {
+            return;
+          }
+          activateLink(text);
+        },
+      },
       theme: {
         background: theme.background,
         foreground: theme.foreground,
@@ -172,6 +264,19 @@ export default function TerminalView({ theme, fontSize, toolbarLabel, onData, on
     terminal.focus();
     container.addEventListener('mousedown', focusTerminal);
 
+    // 5.5 链接点击（terminal_03 §3.4）：provideLinks 按行回调（行号 1-based 绝对值，
+    // 取行 -1），命中构造 ILink；activate 走组件体 activateLink（URL 走 plugin-shell
+    // ——window.open 被 Tauri webview 拦截，MarkdownEditor 先例；路径走 Rust
+    // open_path 系统默认应用）。OSC 8 超链接不经此 provider，由构造 options 的
+    // linkHandler 同路分流（见上注释）。
+    const linkDisposable = terminal.registerLinkProvider({
+      provideLinks(bufferLineNumber: number, callback: (links: ILink[] | undefined) => void) {
+        const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
+        const lineText = line?.translateToString(true) ?? '';
+        callback(lineText.length > 0 ? buildLinks(bufferLineNumber, lineText, activateLink) : undefined);
+      },
+    });
+
     // 6. 容器尺寸变化 → fit（cols/rows 经 onResize 同步后端）；折叠动画期间宽高为 0
     //    时 fit 会 panic，守卫。
     const observer = new ResizeObserver(() => {
@@ -194,6 +299,7 @@ export default function TerminalView({ theme, fontSize, toolbarLabel, onData, on
     // 会叠在新实例上面，显式清空容器（实测教训）。
     return () => {
       observer.disconnect();
+      linkDisposable.dispose();
       container.removeEventListener('mousedown', focusTerminal);
       if (onActive != null && activeTextarea != null) {
         activeTextarea.removeEventListener('focus', onActive);
