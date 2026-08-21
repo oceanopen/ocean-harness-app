@@ -49,6 +49,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_exists,
             pty::pty_claude_running,
             pty::pty_reattach,
+            pty::create_directory,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。

@@ -1,6 +1,6 @@
 import type { TerminalFontSize, TerminalScrollbackRows } from '@src/shared/appConfig';
 import type { TerminalThemeId } from './terminalTheme';
-import { SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
+import { CreateNewFolderOutlined as CreateNewFolderOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
 import {
   DEFAULT_TERMINAL_CURSOR_BLINK,
@@ -27,6 +27,7 @@ import {
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { useConfigValue } from '@src/shared/useConfigValue';
+import { useToast } from '@src/shared/useToast';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
 import { useCallback, useRef, useState } from 'react';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } from './terminalTheme';
@@ -99,6 +100,7 @@ interface EmbeddedTerminalProps {
 // 实测出现「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
 export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedTerminalProps) {
   const isMain = paneId === 'main';
+  const { show: showToast, snack: toastSnack } = useToast();
   const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const startupCodeCli = useConfigValue(
     TERMINAL_STARTUP_CODE_CLI_KEY,
@@ -187,6 +189,20 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     });
   }, []);
 
+  // 一键创建工作目录（mkdir -p 语义），成功后自动重试终端初始化。
+  const handleCreateDirectory = useCallback(() => {
+    if (!cwd) {
+      return;
+    }
+    void commands.createDirectory(cwd).then((res) => {
+      if (res.status === 'ok') {
+        session.reopen();
+      } else {
+        showToast(`创建目录失败：${res.error}`, 'error');
+      }
+    });
+  }, [cwd, session, showToast]);
+
   // 关闭语义分流（terminal_02 §3.5 + 用户交互反馈）：附加 pane 直处理（ptyShutdown
   // 断会话 + store 树剪枝，pane 从树上消失）；main pane 先二次确认，确认后仅杀会话
   // （树保单 main leaf）+ 进 mainClosed 占位态（不卸载组件，保留重新打开出口）。
@@ -247,13 +263,14 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     );
   }
 
-  // 错误态二：spawn 失败（典型为任务目录不存在——本模块不创建目录，skills 集成职责）。
-  // 双出口：重试（目录已被外部建好的场景）/ 打开设置（根目录配置错了的场景）。
+  // 错误态二：spawn 失败（典型为任务目录不存在）。
+  // 三出口：创建目录（mkdir -p 后自动重试）/ 重试（目录已被外部建好）/ 打开设置（根目录配置错了）。
   if (session.status === 'error') {
     return (
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
         <Typography variant="body2" color="text.secondary">{session.errorMessage ?? `任务目录不存在：${cwd}`}</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button size="small" startIcon={<CreateNewFolderOutlinedIcon />} onClick={handleCreateDirectory}>创建目录</Button>
           <Button size="small" onClick={reopenPlain}>重试</Button>
           <Button size="small" startIcon={<SettingsOutlinedIcon />} onClick={openSettings}>打开设置</Button>
         </Box>
@@ -309,6 +326,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
           <Button size="small" variant="contained" color="primary" onClick={confirmCloseMain}>关闭</Button>
         </DialogActions>
       </Dialog>
+      {toastSnack}
     </>
   );
 }

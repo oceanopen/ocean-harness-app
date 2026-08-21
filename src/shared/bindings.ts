@@ -143,6 +143,11 @@ export const commands = {
 	/**  ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。 */
 	scrollback: string,
 } | null, string>(__TAURI_INVOKE("pty_reattach", { sessionId, onEvent })),
+	/**
+	 *  创建工作目录（mkdir -p 语义）。用于终端 spawn 前目录不存在时一键创建 + 重试。
+	 *  校验路径非空绝对路径后 std::fs::create_dir_all。
+	 */
+	createDirectory: (path: string) => typedError<null, string>(__TAURI_INVOKE("create_directory", { path })),
 };
 
 /* Constants */

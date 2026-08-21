@@ -129,6 +129,18 @@ pub fn pty_reattach(
     result
 }
 
+/// 创建工作目录（mkdir -p 语义）。用于终端 spawn 前目录不存在时一键创建 + 重试。
+/// 校验路径非空绝对路径后 std::fs::create_dir_all。
+#[tauri::command]
+#[specta::specta]
+pub fn create_directory(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if !p.is_absolute() || path.is_empty() {
+        return Err(format!("路径无效（须为绝对路径）：{}", path));
+    }
+    std::fs::create_dir_all(p).map_err(|e| format!("创建目录失败：{}", e))
+}
+
 /// 应用退出时（RunEvent::Exit）调用：遍历 store kill 全部 shell 并清空。
 /// reader 线程在 kill 后读到 EOF 自然退出，无需 join。
 pub fn shutdown_all(store: &PtySessionStore) {
