@@ -72,13 +72,14 @@ export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
 // 值域：'' = 不自动运行（默认）；'claude' = 当前唯一支持项，未来扩 'codex' 等。
 // 后端 Rust 侧 SpawnOpts.startup_command 为通用 Option<String>，前端把枚举值映射为命令名，
 // 后端不读取本 key，故无需在 config.rs 加常量副本（参照 workspace_base_dir 先例）。
-export type TerminalStartupCodeCli = '' | 'claude';
+export type TerminalStartupCodeCli = 'none' | 'claude';
 
 export const TERMINAL_STARTUP_CODE_CLI_KEY = 'terminal_startup_code_cli';
-export const DEFAULT_TERMINAL_STARTUP_CODE_CLI: TerminalStartupCodeCli = '';
+export const DEFAULT_TERMINAL_STARTUP_CODE_CLI: TerminalStartupCodeCli = 'none';
 
 export function parseTerminalStartupCodeCli(value: string | null): TerminalStartupCodeCli {
-  return value === 'claude' ? value : '';
+  // '' 是旧存储值，归一为 'none'（MUI Select 无法匹配空字符串为选中值）
+  return value === 'claude' ? value : 'none';
 }
 
 // 嵌入式终端字号（terminal_03 §3.3）。离散选项语义：合法值 = 选项集内整数，

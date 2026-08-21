@@ -174,7 +174,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     rows: INITIAL_ROWS,
     // 自动 CLI 仅 main pane 注入（terminal_02 §3.6：附加 pane 恒裸 shell——用户
     // 分屏通常是要手动跑命令，不自动进 claude）。
-    startupCodeCli: isMain ? startupCodeCli : '',
+    startupCodeCli: isMain ? startupCodeCli : 'none',
     onData: handleTerminalData,
   });
 

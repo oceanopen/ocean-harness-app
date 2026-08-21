@@ -19,7 +19,7 @@ export interface TerminalStartupCodeCliOption {
 // 嵌入式终端启动自动运行的编程 CLI 工具选项。扩 codex 等新工具时在此加项 +
 // appConfig.ts 的 TerminalStartupCodeCli 联合类型加值。
 export const terminalStartupCodeCliOptions: TerminalStartupCodeCliOption[] = [
-  { value: '', labelKey: 'settings:terminal.option.startupCodeCliNone' },
+  { value: 'none', labelKey: 'settings:terminal.option.startupCodeCliNone' },
   { value: 'claude', labelKey: 'settings:terminal.option.startupCodeCliClaude' },
 ];
 

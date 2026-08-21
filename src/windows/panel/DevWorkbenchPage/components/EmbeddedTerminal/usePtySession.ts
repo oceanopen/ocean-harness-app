@@ -82,7 +82,7 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
   const spawned = await unwrap(
-    commands.ptySpawn({ sessionId, cwd, cols, rows, startupCommand: args.startupCodeCli || undefined }, channel),
+    commands.ptySpawn({ sessionId, cwd, cols, rows, startupCommand: args.startupCodeCli === 'none' ? undefined : args.startupCodeCli }, channel),
   );
   if (!spawned.fresh && spawned.scrollback) {
     args.onData(spawned.scrollback, true);

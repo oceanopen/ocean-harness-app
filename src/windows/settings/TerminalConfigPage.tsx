@@ -388,7 +388,7 @@ function TerminalConfigPage() {
                       setDraftStartupCli(parseTerminalStartupCodeCli(e.target.value))}
                   >
                     {terminalStartupCodeCliOptions.map(opt => (
-                      <MenuItem key={opt.value || 'none'} value={opt.value}>
+                      <MenuItem key={opt.value} value={opt.value}>
                         {t(opt.labelKey)}
                       </MenuItem>
                     ))}
