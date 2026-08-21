@@ -82,6 +82,12 @@ export function parseTerminalStartupCodeCli(value: string | null): TerminalStart
   return value === 'claude' ? value : 'none';
 }
 
+// 嵌入式终端 Terminal/Chat 模式切换开关（terminal_chat_mode）：YesNo，默认 NO。
+// 仅当 startup_code_cli != 'none'（主终端自动运行 CLI）时可用；none 时前端强制 NO 且置灰。
+// 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 startup_code_cli 先例）。
+export const TERMINAL_CHAT_MODE_SWITCH_KEY = 'terminal_chat_mode_switch';
+export const DEFAULT_TERMINAL_CHAT_MODE_SWITCH = YES_NO.NO;
+
 // 嵌入式终端字号（terminal_03 §3.3）。离散选项语义：合法值 = 选项集内整数，
 // DB 脏值（非数字/越界/不在选项集如 15）一律回落默认 13（与 startup_code_cli
 // 枚举校验同范式，不用 poll_interval_secs 的连续 clamp）。

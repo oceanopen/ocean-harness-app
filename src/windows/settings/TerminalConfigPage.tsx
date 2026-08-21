@@ -19,12 +19,14 @@ import {
   MenuItem,
   Select,
   Slider,
+  Switch,
   TextField,
   Typography,
 } from '@mui/material';
 import {
   DEFAULT_ITERM2_SPLIT_DIRECTION,
   DEFAULT_POLL_INTERVAL_SECS,
+  DEFAULT_TERMINAL_CHAT_MODE_SWITCH,
   DEFAULT_TERMINAL_CURSOR_BLINK,
   DEFAULT_TERMINAL_CURSOR_STYLE,
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -44,6 +46,7 @@ import {
   parseYesNo,
   POLL_INTERVAL_SECS_KEY,
   setAppConfig,
+  TERMINAL_CHAT_MODE_SWITCH_KEY,
   TERMINAL_CURSOR_BLINK_KEY,
   TERMINAL_CURSOR_STYLE_KEY,
   TERMINAL_CURSOR_STYLE_OPTIONS,
@@ -116,6 +119,8 @@ function TerminalConfigPage() {
   const [draftTerminalPostOpenCommand, setDraftTerminalPostOpenCommand] = useState<string>(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
   const [savedStartupCli, setSavedStartupCli] = useState<TerminalStartupCodeCli>(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
   const [draftStartupCli, setDraftStartupCli] = useState<TerminalStartupCodeCli>(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
+  const [savedChatModeSwitch, setSavedChatModeSwitch] = useState<YesNo>(DEFAULT_TERMINAL_CHAT_MODE_SWITCH);
+  const [draftChatModeSwitch, setDraftChatModeSwitch] = useState<YesNo>(DEFAULT_TERMINAL_CHAT_MODE_SWITCH);
   const [savedFontSize, setSavedFontSize] = useState<TerminalFontSize>(DEFAULT_TERMINAL_FONT_SIZE);
   const [draftFontSize, setDraftFontSize] = useState<TerminalFontSize>(DEFAULT_TERMINAL_FONT_SIZE);
   const [savedScrollbackRows, setSavedScrollbackRows] = useState<TerminalScrollbackRows>(DEFAULT_TERMINAL_SCROLLBACK_ROWS);
@@ -135,13 +140,14 @@ function TerminalConfigPage() {
       getAppConfig(ITERM2_SPLIT_DIRECTION_KEY),
       getAppConfig(TERMINAL_POST_OPEN_COMMAND_KEY),
       getAppConfig(TERMINAL_STARTUP_CODE_CLI_KEY),
+      getAppConfig(TERMINAL_CHAT_MODE_SWITCH_KEY),
       getAppConfig(TERMINAL_FONT_SIZE_KEY),
       getAppConfig(TERMINAL_SCROLLBACK_ROWS_KEY),
       getAppConfig(TERMINAL_THEME_KEY),
       getAppConfig(TERMINAL_CURSOR_STYLE_KEY),
       getAppConfig(TERMINAL_CURSOR_BLINK_KEY),
       getAppConfig(TERMINAL_LINE_HEIGHT_KEY),
-    ]).then(([interval, splitDirection, terminalPostOpenCommand, startupCli, fontSize, scrollbackRows, themeId, cursorStyle, cursorBlink, lineHeight]) => {
+    ]).then(([interval, splitDirection, terminalPostOpenCommand, startupCli, chatModeSwitch, fontSize, scrollbackRows, themeId, cursorStyle, cursorBlink, lineHeight]) => {
       const parsed = interval != null ? Number.parseInt(interval, 10) : Number.NaN;
       if (Number.isFinite(parsed)) {
         // DB 可能存越界或非 step 倍数（直接改 DB / 旧脏数据），clamp 到合法范围。
@@ -160,6 +166,9 @@ function TerminalConfigPage() {
       const cli = parseTerminalStartupCodeCli(startupCli);
       setSavedStartupCli(cli);
       setDraftStartupCli(cli);
+      const chatModeSwitchVal = parseYesNo(chatModeSwitch, DEFAULT_TERMINAL_CHAT_MODE_SWITCH);
+      setSavedChatModeSwitch(chatModeSwitchVal);
+      setDraftChatModeSwitch(chatModeSwitchVal);
       const size = parseTerminalFontSize(fontSize);
       setSavedFontSize(size);
       setDraftFontSize(size);
@@ -185,6 +194,7 @@ function TerminalConfigPage() {
     || draftSplitDirection !== savedSplitDirection
     || draftTerminalPostOpenCommand !== savedTerminalPostOpenCommand
     || draftStartupCli !== savedStartupCli
+    || draftChatModeSwitch !== savedChatModeSwitch
     || draftFontSize !== savedFontSize
     || draftScrollbackRows !== savedScrollbackRows
     || draftThemeId !== savedThemeId
@@ -197,6 +207,7 @@ function TerminalConfigPage() {
     setDraftSplitDirection(DEFAULT_ITERM2_SPLIT_DIRECTION);
     setDraftTerminalPostOpenCommand(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
     setDraftStartupCli(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
+    setDraftChatModeSwitch(DEFAULT_TERMINAL_CHAT_MODE_SWITCH);
     setDraftFontSize(DEFAULT_TERMINAL_FONT_SIZE);
     setDraftScrollbackRows(DEFAULT_TERMINAL_SCROLLBACK_ROWS);
     setDraftThemeId(DEFAULT_TERMINAL_THEME_ID);
@@ -209,6 +220,7 @@ function TerminalConfigPage() {
     setDraftSplitDirection(savedSplitDirection);
     setDraftTerminalPostOpenCommand(savedTerminalPostOpenCommand);
     setDraftStartupCli(savedStartupCli);
+    setDraftChatModeSwitch(savedChatModeSwitch);
     setDraftFontSize(savedFontSize);
     setDraftScrollbackRows(savedScrollbackRows);
     setDraftThemeId(savedThemeId);
@@ -222,6 +234,7 @@ function TerminalConfigPage() {
       setAppConfig(ITERM2_SPLIT_DIRECTION_KEY, draftSplitDirection),
       setAppConfig(TERMINAL_POST_OPEN_COMMAND_KEY, draftTerminalPostOpenCommand),
       setAppConfig(TERMINAL_STARTUP_CODE_CLI_KEY, draftStartupCli),
+      setAppConfig(TERMINAL_CHAT_MODE_SWITCH_KEY, draftChatModeSwitch),
       setAppConfig(TERMINAL_FONT_SIZE_KEY, String(draftFontSize)),
       setAppConfig(TERMINAL_SCROLLBACK_ROWS_KEY, String(draftScrollbackRows)),
       setAppConfig(TERMINAL_THEME_KEY, draftThemeId),
@@ -233,6 +246,7 @@ function TerminalConfigPage() {
     setSavedSplitDirection(draftSplitDirection);
     setSavedTerminalPostOpenCommand(draftTerminalPostOpenCommand);
     setSavedStartupCli(draftStartupCli);
+    setSavedChatModeSwitch(draftChatModeSwitch);
     setSavedFontSize(draftFontSize);
     setSavedScrollbackRows(draftScrollbackRows);
     setSavedThemeId(draftThemeId);
@@ -359,12 +373,12 @@ function TerminalConfigPage() {
             header={(
               <SectionHeader
                 icon={<TerminalOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
-                label={t('settings:terminal.section.embeddedTerminal')}
+                label={t('settings:terminal.section.startupSettings')}
               />
             )}
           >
-            {/* 启动自动运行：标签左、下拉右（与其他下拉行同构）。卡片首行：下方有
-                Divider my 叠加，上方贴卡片头——pt 补齐同视觉节奏 */}
+            {/* 启动自动运行：标签左、下拉右（与其他下拉行同构）。选「不自动运行」时
+                重置 chatModeSwitch 为 NO（下方 Switch 置灰）。 */}
             <Box
               sx={{
                 display: 'flex',
@@ -384,8 +398,13 @@ function TerminalConfigPage() {
                 <FormControl size="small" sx={{ minWidth: 180 }}>
                   <Select
                     value={draftStartupCli}
-                    onChange={(e: SelectChangeEvent<TerminalStartupCodeCli>) =>
-                      setDraftStartupCli(parseTerminalStartupCodeCli(e.target.value))}
+                    onChange={(e: SelectChangeEvent<TerminalStartupCodeCli>) => {
+                      const cli = parseTerminalStartupCodeCli(e.target.value);
+                      setDraftStartupCli(cli);
+                      if (cli === 'none') {
+                        setDraftChatModeSwitch(YES_NO.NO);
+                      }
+                    }}
                   >
                     {terminalStartupCodeCliOptions.map(opt => (
                       <MenuItem key={opt.value} value={opt.value}>
@@ -397,8 +416,8 @@ function TerminalConfigPage() {
               </Box>
             </Box>
 
-            <Divider sx={{ my: 1.5 }} />
-
+            {/* Terminal/Chat 模式切换：Switch 布尔开关。startupCli == 'none' 时强制
+                NO 且置灰（不可点击）。 */}
             <Box
               sx={{
                 display: 'flex',
@@ -406,6 +425,40 @@ function TerminalConfigPage() {
                 justifyContent: 'space-between',
                 px: 2,
                 py: 1.5,
+                gap: 2,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <TerminalOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                <Typography>{t('settings:terminal.row.chatModeSwitch')}</Typography>
+              </Box>
+              <Switch
+                checked={draftChatModeSwitch === YES_NO.YES}
+                onChange={e =>
+                  setDraftChatModeSwitch(e.target.checked ? YES_NO.YES : YES_NO.NO)}
+                disabled={draftStartupCli === 'none'}
+              />
+            </Box>
+            <FormHelperText sx={{ px: 2, pb: 1.5 }}>{t('settings:terminal.help.chatModeSwitch')}</FormHelperText>
+
+          </SectionCard>
+
+          <SectionCard
+            header={(
+              <SectionHeader
+                icon={<PaletteOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
+                label={t('settings:terminal.section.styleSettings')}
+              />
+            )}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                px: 2,
+                pt: 3,
+                pb: 1.5,
                 gap: 2,
               }}
             >
