@@ -2,7 +2,7 @@
 //
 // 与 terminal/ 域的边界：terminal/ 负责跳转/打开外部终端（iTerm2/Terminal.app），
 // 本域负责应用内 PTY 会话（spawn/写/resize/关闭/reattach）——会话锚点（store key）
-// 为 issue uuid（main pane）或 `issueId::paneId`（split 附加 pane，terminal_02 §3.1），
+// 统一为 `issueId::<paneId>`（main → `issueId::main`，split → `issueId::<uuid>`），
 // cwd 为 `${workspace_base_dir}/${issueId}`（同一 issue 的全部 pane 同目录）。
 //
 // 子模块：
@@ -76,7 +76,7 @@ pub fn pty_shutdown(session_id: String) -> Result<(), String> {
     provider().shutdown(&session_id)
 }
 
-/// 关闭整个 issue 的全部 pane 会话（key == issueId 或 `issueId::` 前缀）。
+/// 关闭整个 issue 的全部 pane 会话（key 以 `issueId::` 为前缀）。
 /// issue 删除联动调用（模块 2 split 后一 issue 多 pane，防孤儿会话）。
 #[tauri::command]
 #[specta::specta]

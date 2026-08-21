@@ -81,8 +81,7 @@ const INITIAL_ROWS = 24;
 
 interface EmbeddedTerminalProps {
   issueId: string;
-  // pane id（split 分割窗口）：'main'（默认，锚点 = 裸 issueId）| 8 位 uuid
-  // （附加 pane，锚点 = `issueId::paneId`）。
+  // pane id：'main'（主 pane）| 8 位 uuid（附加 pane）。锚点统一 `issueId::<paneId>`。
   paneId?: string;
 }
 
@@ -162,10 +161,9 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   }, []);
 
   const cwd = baseDir ? `${baseDir}/${issueId}` : null;
-  // 会话锚点派生（terminal_02 §3.1）：main pane = 裸 issueId（现有会话原样兼容）；
-  // 附加 pane = `issueId::paneId`（后端 store 对 key 透明，仅 pty_shutdown_issue
-  // 前缀扫描感知 `::`）。
-  const sessionId = paneId === 'main' ? issueId : `${issueId}::${paneId}`;
+  // 会话锚点派生：统一 `issueId::<paneId>`（main → `issueId::main`，split → `issueId::<uuid>`）。
+  // 后端 store 对 key 透明，仅 pty_shutdown_issue 前缀扫描感知 `::`。
+  const sessionId = `${issueId}::${paneId}`;
 
   // hooks 顶层无条件调用（React 规则）；cwd=null 时 usePtySession 返回哑会话（不发 spawn，
   // status 恒 'connecting'），下方引导分支先于 spinner 渲染，不会闪错态。

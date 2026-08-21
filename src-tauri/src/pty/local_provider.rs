@@ -344,7 +344,7 @@ impl PtyProvider for LocalPtyProvider {
                 .lock()
                 .expect("PtySessionStore mutex poisoned");
             map.keys()
-                .filter(|k| k.as_str() == issue_id || k.starts_with(&prefix))
+                .filter(|k| k.starts_with(&prefix))
                 .cloned()
                 .collect()
         };
@@ -617,15 +617,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// shutdown_issue 前缀全关（任务 3）：store 放 `a`、`a::p1`、`a::p2`、`b`，
-    /// shutdown_issue("a") 后仅剩 `b`；不存在 key 幂等 Ok。
+    /// shutdown_issue 前缀全关（T0.1）：store 放 `a::main`、`a::p1`、`a::p2`、`b::main`，
+    /// shutdown_issue("a") 后仅剩 `b::main`；不存在 key 幂等 Ok。
     #[test]
     fn shutdown_issue_closes_all_panes() {
         let provider = LocalPtyProvider::new();
         let tmp = std::env::temp_dir().join("pty-shutdown-issue-test");
         std::fs::create_dir_all(&tmp).unwrap();
 
-        let keys = ["a", "a::p1", "a::p2", "b"];
+        let keys = ["a::main", "a::p1", "a::p2", "b::main"];
         for key in keys {
             provider
                 .spawn(
@@ -649,10 +649,10 @@ mod tests {
             .into_iter()
             .map(|s| s.session_id)
             .collect();
-        assert_eq!(remaining, vec!["b".to_string()]);
+        assert_eq!(remaining, vec!["b::main".to_string()]);
 
         // 不存在 key：幂等 Ok + 关闭 0。
         assert_eq!(provider.shutdown_issue("no-such").unwrap(), 0);
-        provider.shutdown("b").unwrap();
+        provider.shutdown("b::main").unwrap();
     }
 }

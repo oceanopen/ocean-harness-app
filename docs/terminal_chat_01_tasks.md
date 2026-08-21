@@ -10,7 +10,7 @@
 
 ### T0.0 嵌入式终端设置拆分 + 模式切换开关
 
-**状态**：⬜
+**状态**：✅
 
 > **第一项处理**：配置项改造，是 chat 功能的前置闸门，独立于后续所有任务。
 
@@ -18,7 +18,7 @@
 
 **技术方案**：
 - 改名：`settings:terminal.row.startupCodeCli` 文案「启动终端时自动运行」→「启动主终端时自动运行」。**行为不变**——`EmbeddedTerminal.tsx` 现有 `startupCodeCli: isMain ? startupCodeCli : 'none'` 本就只作用于主 pane，分屏恒裸 shell，改名仅澄清语义。
-- 新增配置项：`TERMINAL_CHAT_SWITCH_KEY = 'terminal_chat_switch'`，YesNo，默认 `NO`。纯前端偏好，走 `appConfig.ts` 现有 YesNo 范式（参照 `TERMINAL_CURSOR_BLINK_KEY`）。
+- 新增配置项：`TERMINAL_CHAT_MODE_SWITCH_KEY = 'terminal_chat_mode_switch'`，YesNo，默认 `NO`。纯前端偏好，走 `appConfig.ts` 现有 YesNo 范式（参照 `TERMINAL_CURSOR_BLINK_KEY`）。
 - 条件可用：`startupCodeCli === 'none'` 时 modeSwitch 强制 `NO` 且置灰不可点；非 `none` 时可切换。
 - 模块拆分：`TerminalConfigPage.tsx` 现有 embeddedTerminal SectionCard 拆两个：
   - 「启动设置」：启动主终端时自动运行 + 是否支持 Terminal/Chat 模式切换
@@ -26,7 +26,7 @@
 
 **行为矩阵**：
 
-| startupCodeCli | chatSwitch | 行为 |
+| startupCodeCli | chatModeSwitch | 行为 |
 |---|---|---|
 | none（默认） | N（强制） | 传统：主 pane 裸 shell，手动跑 claude，无切换 icon |
 | claude | N | 传统：主 pane 自动跑 claude TUI，无切换 icon（回退路径） |
@@ -40,7 +40,7 @@
 
 ### T0.1 会话锚点统一 `issueId::<paneId>`
 
-**状态**：⬜
+**状态**：✅
 
 > **独立任务**：与对话模式（chat）解耦，是既有会话锚点约定的重构，可单独提交、不阻塞后续任务。
 

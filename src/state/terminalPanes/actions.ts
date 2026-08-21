@@ -165,7 +165,7 @@ export function saveLayout(issueId: string, tree: PaneLayoutNode): void {
   }
 }
 
-/// main pane 判定（锚点派生用：main 锚点 = 裸 issueId，见 EmbeddedTerminal）。
+/// main pane 判定（锚点统一后：main 锚点 = `issueId::main`，见 EmbeddedTerminal）。
 export function isMainPane(paneId: string): boolean {
   return paneId === MAIN_PANE_ID;
 }

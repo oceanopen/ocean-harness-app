@@ -31,8 +31,8 @@ export interface UsePtySessionResult {
 }
 
 interface UsePtySessionArgs {
-  // PTY 会话锚点（store key），由调用方派生：main pane 传裸 issueId（现有语义），
-  // 附加 pane 传 `${issueId}::${paneId}`（split 分割窗口，见 terminal_02 §3.1）。
+  // PTY 会话锚点（store key），由调用方派生：统一 `${issueId}::${paneId}`
+  // （main → `issueId::main`，附加 pane → `issueId::<uuid>`）。
   sessionId: string;
   // 工作目录。null = 未就绪（工作空间根目录未设置）：不进编排（不发 spawn），返回哑会话；
   // 由 null 变有值时（设置页配置后 useConfigValue 事件回写触发重渲染）自动重新编排。

@@ -115,7 +115,7 @@ export const commands = {
 	/**  关闭单个会话（kill shell + 移出 store）。 */
 	ptyShutdown: (sessionId: string) => typedError<null, string>(__TAURI_INVOKE("pty_shutdown", { sessionId })),
 	/**
-	 *  关闭整个 issue 的全部 pane 会话（key == issueId 或 `issueId::` 前缀）。
+	 *  关闭整个 issue 的全部 pane 会话（key 以 `issueId::` 为前缀）。
 	 *  issue 删除联动调用（模块 2 split 后一 issue 多 pane，防孤儿会话）。
 	 */
 	ptyShutdownIssue: (issueId: string) => typedError<null, string>(__TAURI_INVOKE("pty_shutdown_issue", { issueId })),
