@@ -16,6 +16,7 @@ import {
   parseTerminalLineHeight,
   parseTerminalScrollbackRows,
   parseTerminalStartupCodeCli,
+  TERMINAL_CHAT_MODE_SWITCH_KEY,
   TERMINAL_CURSOR_BLINK_KEY,
   TERMINAL_CURSOR_STYLE_KEY,
   TERMINAL_FONT_SIZE_KEY,
@@ -75,6 +76,11 @@ function decodeYesNo(raw: string | null): boolean {
   return raw == null ? true : isYes(raw);
 }
 
+// Terminal/Chat 模式切换 decode（terminal_chat）：YesNo → boolean，缺失/非法回落 false（默认关）。
+function decodeChatModeSwitch(raw: string | null): boolean {
+  return raw == null ? false : isYes(raw);
+}
+
 // 初始尺寸占位：真实尺寸由 TerminalView fit 后经 onResize 校正
 const INITIAL_COLS = 80;
 const INITIAL_ROWS = 24;
@@ -106,6 +112,13 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     decodeStartupCodeCli,
     DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   );
+  const chatModeSwitch = useConfigValue(
+    TERMINAL_CHAT_MODE_SWITCH_KEY,
+    decodeChatModeSwitch,
+    false,
+  );
+  // chat 能力总闸：主 pane + 自动运行非 none + 模式切换开启。分屏恒 false（不自动运行 claude）。
+  const chatEnabled = isMain && startupCodeCli !== 'none' && chatModeSwitch;
   // 字号（terminal_03 §3.3）：每 pane 各自订阅，设置保存事件驱动全量 pane 生效。
   const fontSize = useConfigValue(
     TERMINAL_FONT_SIZE_KEY,
@@ -306,6 +319,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         onReopen={reopenPlain}
         onReopenClaude={reopenWithClaude}
         claudeRunning={claudeRunning}
+        chatEnabled={chatEnabled}
         onStartClaude={startClaude}
         onClose={handleClose}
         onWriteReady={handleWriteReady}

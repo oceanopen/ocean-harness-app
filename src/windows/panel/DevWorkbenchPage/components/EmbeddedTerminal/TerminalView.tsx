@@ -1,11 +1,13 @@
 import type { IBufferRange, ILink } from '@xterm/xterm';
 import type { TerminalViewTheme } from './terminalTheme';
 import {
+  ChatBubbleOutlined as ChatBubbleOutlineIcon,
   CloseOutlined as CloseOutlinedIcon,
   ContentCopyOutlined as ContentCopyOutlinedIcon,
   ContentPasteOutlined as ContentPasteOutlinedIcon,
   LayersClearOutlined as LayersClearOutlinedIcon,
   SearchOutlined as SearchOutlinedIcon,
+  Terminal as TerminalIcon,
 } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
 import { commands } from '@src/shared/bindings';
@@ -111,6 +113,9 @@ interface TerminalViewProps {
   // 本终端 claude 运行态（pid 父链匹配探测，useClaudeRunning）：跑着→按钮置灰；
   // 退出→恢复可用。驱动「启动 claude」按钮禁用态。
   claudeRunning: boolean;
+  // chat 能力闸门（EmbeddedTerminal 派生）：主 pane + 自动运行非 none + 模式切换开。
+  // false 时工具条不渲染 Terminal/Chat 切换 icon。
+  chatEnabled: boolean;
   // 启动 claude（工具条按钮）：对活跃 shell 注入 claude\r。
   onStartClaude: () => void;
   // 关闭终端（工具栏）
@@ -133,7 +138,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, chatEnabled, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -144,6 +149,8 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
   const fitAddonRef = useRef<FitAddon | null>(null);
   // 复制按钮禁用态：有无选区（xterm onSelectionChange，用户交互型 → state）
   const [hasSelection, setHasSelection] = useState(false);
+  // Terminal/Chat 视图模式：切换 icon 驱动（chatEnabled 才渲染 icon）。
+  const [viewMode, setViewMode] = useState<'terminal' | 'chat'>('terminal');
   // 搜索条开关（terminal_03 §3.1；开关变量前缀约定）
   const [searchOpen, setSearchOpen] = useState(false);
   // 复制/粘贴失败 toast（成功静默）
@@ -499,6 +506,19 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           >
             <ClaudeIcon fontSize="small" />
           </IconButton>
+          {/* Terminal/Chat 视图切换（terminal_chat T2.1）：chatEnabled 才渲染。图标
+              反映目标模式：terminal 态显示 chat 气泡（点击进 chat），chat 态显示
+              终端（点击回 terminal）。 */}
+          {chatEnabled && (
+            <IconButton
+              size="small"
+              onClick={() => setViewMode(viewMode === 'terminal' ? 'chat' : 'terminal')}
+              aria-label={viewMode === 'terminal' ? '切换到 Chat 视图' : '切换到 Terminal 视图'}
+              sx={{ color: 'text.secondary' }}
+            >
+              {viewMode === 'terminal' ? <ChatBubbleOutlineIcon fontSize="small" /> : <TerminalIcon fontSize="small" />}
+            </IconButton>
+          )}
         </Box>
         <Box sx={{ flex: 1 }} />
         <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
@@ -541,6 +561,27 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           pointerEvents: exited ? 'none' : 'auto',
         }}
       />
+      {/* Chat 视图 overlay（T2.1 占位）：viewMode === 'chat' 时盖住 xterm。zIndex
+          ≥1000 压过 xterm 内部 z-5/10（xterm 容器不建堆叠上下文）。T2.2 替换占位
+          文本为 NativeChatView。 */}
+      {viewMode === 'chat' && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 28,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 1000,
+            bgcolor: 'background',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">Chat 视图待实现</Typography>
+        </Box>
+      )}
       {toastSnack}
     </Box>
   );

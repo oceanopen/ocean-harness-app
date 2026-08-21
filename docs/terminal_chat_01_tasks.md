@@ -59,9 +59,9 @@
 
 ### T1.1 主 pane 自动运行 + chat 闸门派生
 
-**状态**：⬜
+**状态**：✅
 
-**功能**：主 pane 自动运行由 `terminal_startup_code_cli` 配置驱动（现有逻辑，非恒定注入）；`EmbeddedTerminal` 读 `terminal_chat_switch` 派生 `chatEnabled` gate，决定是否具备 Terminal/Chat 切换能力。
+**功能**：主 pane 自动运行由 `terminal_startup_code_cli` 配置驱动（现有逻辑，非恒定注入）；`EmbeddedTerminal` 读 `terminal_chat_mode_switch` 派生 `chatEnabled` gate，决定是否具备 Terminal/Chat 切换能力。
 
 **技术方案**：
 - 主 pane 自动运行：现有 `startupCodeCli: isMain ? startupCodeCli : 'none'` 已实现（配置驱动、仅主 pane），T0.0 改名后语义不变，本任务仅确认无需后端改动。
@@ -121,7 +121,7 @@
 
 ### T2.1 主 pane viewMode 状态 + 切换按钮 + overlay 骨架
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：主 pane 加 `viewMode: 'terminal' | 'chat'` 局部状态，工具条顶部加 Terminal/Chat 切换 icon（仅 `chatEnabled` 为 true 时渲染）；chat 模式在 xterm 同容器 overlay 聊天组件（xterm 不卸载）。
 
