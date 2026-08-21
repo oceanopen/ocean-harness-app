@@ -6,7 +6,6 @@ import {
   ContentPasteOutlined as ContentPasteOutlinedIcon,
   LayersClearOutlined as LayersClearOutlinedIcon,
   SearchOutlined as SearchOutlinedIcon,
-  SmartToyOutlined as SmartToyOutlinedIcon,
 } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
 import { commands } from '@src/shared/bindings';
@@ -18,6 +17,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import ClaudeIcon from './ClaudeIcon';
 import TerminalSearch from './TerminalSearch';
 import '@xterm/xterm/css/xterm.css';
 
@@ -497,7 +497,7 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
             aria-label="启动 claude"
             sx={{ color: 'text.secondary' }}
           >
-            <SmartToyOutlinedIcon fontSize="small" />
+            <ClaudeIcon fontSize="small" />
           </IconButton>
         </Box>
         <Box sx={{ flex: 1 }} />
