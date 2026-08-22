@@ -1,7 +1,8 @@
 // 全量读 transcript JSONL 文件 → 已解析消息列表（terminal_chat T1.3）。
 //
 // 逐行 raw::parse + decode，非法 JSON / 非 user/assistant / 注入 turn → skip 不 panic。
-// 文件不存在 / 读取失败 → Err（chat 视图显示错误态）；空文件 → Ok(vec![])。
+// 文件不存在（claude 刚启动尚未产生 transcript）→ Ok(vec![]) 空对话，非错误态；
+// 其他读取失败 → Err（chat 视图显示错误态）。
 
 use std::path::Path;
 
@@ -9,10 +10,21 @@ use crate::shared::types::TranscriptMessage;
 
 use super::{decode, raw};
 
-/// 全量读文件为消息列表。文件不存在 / IO 错误 → Err。
+/// 全量读文件为消息列表。文件不存在 → Ok(vec![])（claude 未对话/首个 turn 未落盘，
+/// 语义为空对话非错误）；其他 IO 错误 → Err。
 pub fn read_file(path: &Path) -> Result<Vec<TranscriptMessage>, String> {
-    let content =
-        std::fs::read_to_string(path).map_err(|e| format!("读取 transcript 失败：{}", e))?;
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        // transcript 文件尚未落盘（claude 刚启动未对话）→ 空对话，避免误报错误态。
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(format!(
+                "读取 transcript 失败（{}）：{}",
+                path.display(),
+                e
+            ));
+        }
+    };
     Ok(read_lines(&content))
 }
 
@@ -51,5 +63,12 @@ not valid json
     fn read_lines_empty_returns_empty() {
         assert!(read_lines("").is_empty());
         assert!(read_lines("\n\n  \n").is_empty());
+    }
+
+    #[test]
+    fn read_file_missing_returns_empty() {
+        // 文件不存在（claude 尚未产生 transcript）→ Ok(vec![]) 空对话，非错误态。
+        let path = std::path::Path::new("/nonexistent/definitely/missing.jsonl");
+        assert!(read_file(path).unwrap().is_empty());
     }
 }

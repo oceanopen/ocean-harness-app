@@ -320,6 +320,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         onReopenClaude={reopenWithClaude}
         claudeRunning={claudeRunning}
         chatEnabled={chatEnabled}
+        sessionId={sessionId}
         onStartClaude={startClaude}
         onClose={handleClose}
         onWriteReady={handleWriteReady}

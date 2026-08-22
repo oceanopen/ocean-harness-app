@@ -20,6 +20,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ClaudeIcon from './ClaudeIcon';
+import NativeChatView from './NativeChat/NativeChatView';
 import TerminalSearch from './TerminalSearch';
 import '@xterm/xterm/css/xterm.css';
 
@@ -116,6 +117,8 @@ interface TerminalViewProps {
   // chat 能力闸门（EmbeddedTerminal 派生）：主 pane + 自动运行非 none + 模式切换开。
   // false 时工具条不渲染 Terminal/Chat 切换 icon。
   chatEnabled: boolean;
+  // 会话锚点（`issueId::<paneId>`）：NativeChatView 据此定位 transcript（T2.2）。
+  sessionId: string;
   // 启动 claude（工具条按钮）：对活跃 shell 注入 claude\r。
   onStartClaude: () => void;
   // 关闭终端（工具栏）
@@ -138,7 +141,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, chatEnabled, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, chatEnabled, sessionId, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -561,9 +564,9 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           pointerEvents: exited ? 'none' : 'auto',
         }}
       />
-      {/* Chat 视图 overlay（T2.1 占位）：viewMode === 'chat' 时盖住 xterm。zIndex
-          ≥1000 压过 xterm 内部 z-5/10（xterm 容器不建堆叠上下文）。T2.2 替换占位
-          文本为 NativeChatView。 */}
+      {/* Chat 视图 overlay（T2.2）：viewMode === 'chat' 时盖住 xterm。zIndex
+          ≥1000 压过 xterm 内部 z-5/10（xterm 容器不建堆叠上下文）。xterm 全程存活，
+          切回 terminal 仅摘 overlay。 */}
       {viewMode === 'chat' && (
         <Box
           sx={{
@@ -573,13 +576,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
             right: 0,
             bottom: 0,
             zIndex: 1000,
-            bgcolor: 'background',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            bgcolor: 'background.default',
           }}
         >
-          <Typography variant="caption" color="text.secondary">Chat 视图待实现</Typography>
+          <NativeChatView sessionId={sessionId} onBackToTerminal={() => setViewMode('terminal')} />
         </Box>
       )}
       {toastSnack}

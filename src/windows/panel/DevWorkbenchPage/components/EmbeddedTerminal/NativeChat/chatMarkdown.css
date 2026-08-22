@@ -1,0 +1,110 @@
+/* chat 只读视图 markdown 样式 + 代码高亮（terminal_chat T2.2）。
+   rehype-highlight 产出 hljs-* class，此处手写 token 配色（GitHub dark 风格），
+   不引 highlight.js 主题包——pnpm 不提升传递依赖，引不到其 css。 */
+
+.chat-markdown > :first-child {
+  margin-top: 0;
+}
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+.chat-markdown p {
+  margin: 0.4em 0;
+}
+.chat-markdown pre {
+  margin: 0.6em 0;
+  padding: 0.75em;
+  border-radius: 6px;
+  overflow-x: auto;
+  background: #0d1117;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.chat-markdown code {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+}
+.chat-markdown :not(pre) > code {
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  background: rgba(128, 128, 128, 0.22);
+  font-size: 0.9em;
+}
+.chat-markdown table {
+  border-collapse: collapse;
+  margin: 0.6em 0;
+}
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  padding: 0.3em 0.6em;
+}
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  margin: 0.8em 0 0.4em;
+  font-weight: 600;
+}
+.chat-markdown blockquote {
+  margin: 0.4em 0;
+  padding-left: 0.8em;
+  border-left: 3px solid rgba(128, 128, 128, 0.4);
+  color: rgba(128, 128, 128, 0.9);
+}
+
+/* hljs token 配色（GitHub dark 风格） */
+.chat-markdown .hljs-comment,
+.chat-markdown .hljs-quote {
+  color: #8b949e;
+  font-style: italic;
+}
+.chat-markdown .hljs-keyword,
+.chat-markdown .hljs-selector-tag,
+.chat-markdown .hljs-type,
+.chat-markdown .hljs-doctag {
+  color: #ff7b72;
+}
+.chat-markdown .hljs-string,
+.chat-markdown .hljs-regexp,
+.chat-markdown .hljs-addition {
+  color: #a5d6ff;
+}
+.chat-markdown .hljs-number,
+.chat-markdown .hljs-literal {
+  color: #79c0ff;
+}
+.chat-markdown .hljs-title,
+.chat-markdown .hljs-title.function_,
+.chat-markdown .hljs-function .hljs-title {
+  color: #d2a8ff;
+}
+.chat-markdown .hljs-attr,
+.chat-markdown .hljs-variable,
+.chat-markdown .hljs-template-variable,
+.chat-markdown .hljs-selector-attr,
+.chat-markdown .hljs-selector-class {
+  color: #79c0ff;
+}
+.chat-markdown .hljs-built_in,
+.chat-markdown .hljs-symbol,
+.chat-markdown .hljs-bullet {
+  color: #ffa657;
+}
+.chat-markdown .hljs-meta,
+.chat-markdown .hljs-params {
+  color: #8b949e;
+}
+.chat-markdown .hljs-emphasis {
+  font-style: italic;
+}
+.chat-markdown .hljs-strong {
+  font-weight: bold;
+}
+.chat-markdown .hljs-deletion {
+  color: #ff7b72;
+}
