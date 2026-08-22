@@ -172,6 +172,14 @@ export const commands = {
 	 *  文件不存在 / 读取失败 → Err。
 	 */
 	transcriptRead: (transcriptPath: string) => typedError<TranscriptMessage[], string>(__TAURI_INVOKE("transcript_read", { transcriptPath })),
+	/**
+	 *  订阅 transcript 增量（terminal_chat T3.2）：全量读初始快照 + 记 offset 开始 watch。
+	 *  返回初始已解析消息列表；后续新增行经 `transcript:changed` 事件增量推送。
+	 *  文件暂缺（claude 尚未落盘）→ Ok(vec![]) 空快照，offset=0，watch 就绪等落盘。
+	 */
+	transcriptSubscribe: (transcriptPath: string) => typedError<TranscriptMessage[], string>(__TAURI_INVOKE("transcript_subscribe", { transcriptPath })),
+	/**  取消订阅：移除 watch 路径（chat 视图卸载 / 切换 issue 时调用）。 */
+	transcriptUnsubscribe: (transcriptPath: string) => __TAURI_INVOKE<void>("transcript_unsubscribe", { transcriptPath }),
 };
 
 /* Constants */
@@ -196,6 +204,8 @@ export const EVENT_PANEL_SHOWN = "panel:shown" as const;
 export const EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT = "pet-claude-sessions-task:refit" as const;
 
 export const EVENT_SETTINGS_NAVIGATE = "settings:navigate" as const;
+
+export const EVENT_TRANSCRIPT_CHANGED = "transcript:changed" as const;
 
 export const HTTP_SERVER_PORT_KEY = "http_server_port" as const;
 
@@ -451,6 +461,17 @@ export type TranscriptBlock =
 { type: "toolResult"; output: string; isError: boolean } | 
 /**  图片引用（image，url/path 至少其一；均为空时 decode 丢弃）。 */
 { type: "image"; url: string | null; path: string | null; alt: string | null };
+
+/**
+ *  transcript 增量 follow 的事件载荷（`transcript:changed`，terminal_chat T3.2）。
+ *  tail 后台线程检测到订阅的 transcript 文件新增行后 emit；前端按 path 过滤后增量追加。
+ */
+export type TranscriptChangedPayload = {
+	/**  变化的 transcript 文件绝对路径（多 pane 各自订阅不同路径，据此过滤）。 */
+	path: string,
+	/**  自上次 emit 以来新增的已解析消息（增量，非全量）。 */
+	messages: TranscriptMessage[],
+};
 
 /**  转录消息（transcript JSONL 单行 → 结构化）。chat 只读视图渲染的基本单元。 */
 export type TranscriptMessage = {

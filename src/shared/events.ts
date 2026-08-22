@@ -7,6 +7,8 @@ export { EVENT_APP_CONFIG_CHANGED } from './bindings';
 
 export { EVENT_CLAUDE_SESSIONS_CHANGED } from './bindings';
 
+export { EVENT_TRANSCRIPT_CHANGED } from './bindings';
+
 export { EVENT_CLAUDE_SESSION_NAV_FAILED } from './bindings';
 
 export { EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT } from './bindings';

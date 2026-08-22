@@ -10,9 +10,11 @@ import ChatMarkdown from './ChatMarkdown';
 
 interface NativeChatMessageListProps {
   messages: TranscriptMessage[];
+  // claude busy 中（进行中 turn）：列表末尾渲染「正在生成」占位气泡。
+  streaming: boolean;
 }
 
-export default function NativeChatMessageList({ messages }: NativeChatMessageListProps) {
+export default function NativeChatMessageList({ messages, streaming }: NativeChatMessageListProps) {
   return (
     <Box
       sx={{
@@ -29,6 +31,7 @@ export default function NativeChatMessageList({ messages }: NativeChatMessageLis
       {messages.map(message => (
         <MessageRow key={message.id} message={message} />
       ))}
+      {streaming && <StreamingRow />}
     </Box>
   );
 }
@@ -57,6 +60,29 @@ function MessageRow({ message }: { message: TranscriptMessage }) {
           // eslint-disable-next-line react/no-array-index-key
           <BlockRenderer key={`${block.type}-${index}`} block={block} />
         ))}
+      </Box>
+    </Box>
+  );
+}
+
+// 打字中占位气泡（terminal_chat T3.2）：claude busy 时显示，step 落地后仍保留
+// （直到 turn 结束 busy 解除）。无 token 级文本——transcript 只落完整 step。
+function StreamingRow() {
+  return (
+    <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+      <Box
+        sx={{
+          maxWidth: '88%',
+          px: 1.25,
+          py: 0.75,
+          borderRadius: 1.5,
+          bgcolor: 'action.hover',
+          color: 'text.secondary',
+          fontStyle: 'italic',
+          fontSize: '12px',
+        }}
+      >
+        正在生成…
       </Box>
     </Box>
   );

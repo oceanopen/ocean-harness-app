@@ -183,6 +183,17 @@ pub struct TranscriptMessage {
     pub timestamp: Option<i64>,
 }
 
+/// transcript 增量 follow 的事件载荷（`transcript:changed`，terminal_chat T3.2）。
+/// tail 后台线程检测到订阅的 transcript 文件新增行后 emit；前端按 path 过滤后增量追加。
+#[derive(Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptChangedPayload {
+    /// 变化的 transcript 文件绝对路径（多 pane 各自订阅不同路径，据此过滤）。
+    pub path: String,
+    /// 自上次 emit 以来新增的已解析消息（增量，非全量）。
+    pub messages: Vec<TranscriptMessage>,
+}
+
 // ============================================================
 // HTTP 本地服务（go-server sidecar）运行态：panel 窗口「服务状态」菜单
 // ============================================================

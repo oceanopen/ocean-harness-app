@@ -66,7 +66,7 @@ export default function NativeChatView({ sessionId, onBackToTerminal, onSend, on
                   <Button size="small" onClick={onBackToTerminal}>切回终端启动 claude</Button>
                 </Box>
               )}
-              <NativeChatMessageList messages={state.messages} />
+              <NativeChatMessageList messages={state.messages} streaming={isBusy} />
             </>
           )
         : (

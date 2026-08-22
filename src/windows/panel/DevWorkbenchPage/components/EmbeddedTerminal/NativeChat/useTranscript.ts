@@ -1,23 +1,27 @@
-// chat 只读视图数据源（terminal_chat T2.2 + T2.3）：给定 session_id，定位 transcript
-// 路径并全量读取消息列表。触发式刷新（无 transcript:changed 事件——T1.3 最小范围
-// 只有全量读）：
-//   1. 挂载（进入 chat 模式）即读
-//   2. 手动 refresh()
-//   3. EVENT_CLAUDE_SESSIONS_CHANGED（claude 状态变化 ~1s 去抖）自动重读
-// 流式 follow（tail）留 T3.2，届时本 hook 换事件订阅。
+// chat 视图数据源（terminal_chat T2.2/T2.3/T3.2）：定位 transcript 路径 → 订阅增量读。
 //
-// T2.3 边界：claude 退出后进程不再可定位（discover 过滤 dead），但 transcript 文件
-// 仍在。本 hook 用 localStorage 记忆最近一次 transcript 路径，退出时读记忆路径展示
-// 历史对话，状态机增「claude-exited」态（区分「已退出」与「从未启动」）。
+// 两段编排（解耦「定位」与「读取」，让 transcript 增量 follow 不再随 claude 状态事件全量重读）：
+//   1. 定位（locate effect）：ptyClaudeSession 拿路径 + 存活态 + status；claude 退出后
+//      用 localStorage 记忆路径兜底。EVENT_CLAUDE_SESSIONS_CHANGED 触发重定位（status
+//      新鲜度）。此段只定位，不读 transcript。
+//   2. 订阅（subscribe effect）：路径确定后 transcriptSubscribe 拿初始快照 + 后端记
+//      offset 开始 watch；EVENT_TRANSCRIPT_CHANGED（按 path 过滤）增量追加。卸载/切路径
+//      时 transcriptUnsubscribe。
+//
+// 对外状态机由 locate + read 两段派生（deriveState）。
 
-import type { ClaudeSessionStatus, TranscriptMessage } from '@src/shared/bindings';
+import type {
+  ClaudeSessionStatus,
+  TranscriptChangedPayload,
+  TranscriptMessage,
+} from '@src/shared/bindings';
 import { commands } from '@src/shared/bindings';
 import { unwrap } from '@src/shared/commands';
-import { EVENT_CLAUDE_SESSIONS_CHANGED } from '@src/shared/events';
+import { EVENT_CLAUDE_SESSIONS_CHANGED, EVENT_TRANSCRIPT_CHANGED } from '@src/shared/events';
 import { listen } from '@tauri-apps/api/event';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-// 状态机：读中 / 无 claude / 空对话 / 错误 / 就绪 / claude 已退出（有历史）。
+// 对外状态机：读中 / 无 claude / 空对话 / 错误 / 就绪 / claude 已退出（有历史）。
 export type TranscriptState
   = | { status: 'loading' }
     | { status: 'no-claude' }
@@ -43,8 +47,6 @@ function readTranscriptMemory(sessionId: string): string | null {
   try {
     return localStorage.getItem(transcriptMemoryKey(sessionId));
   } catch (e) {
-    // 与 saveTranscriptMemory 对称：localStorage 不可用时读失败视为无记忆，
-    // 静默降级到 no-claude，不中断 load() 编排。
     console.warn('[useTranscript] read transcript path memory failed:', e);
     return null;
   }
@@ -54,8 +56,62 @@ function saveTranscriptMemory(sessionId: string, transcriptPath: string): void {
   try {
     localStorage.setItem(transcriptMemoryKey(sessionId), transcriptPath);
   } catch (e) {
-    // localStorage 不可用/满时静默降级：退出态退化为 no-claude，不影响主链路。
     console.warn('[useTranscript] save transcript path memory failed:', e);
+  }
+}
+
+// 按 id 去重合并（offset 重置重读时会重发已见过的行）。
+function mergeMessages(
+  existing: TranscriptMessage[],
+  incoming: TranscriptMessage[],
+): TranscriptMessage[] {
+  if (incoming.length === 0) {
+    return existing;
+  }
+  const seen = new Set(existing.map(m => m.id));
+  const fresh = incoming.filter(m => !seen.has(m.id));
+  if (fresh.length === 0) {
+    return existing;
+  }
+  return [...existing, ...fresh];
+}
+
+// 定位结果（claude 会话 → transcript 路径 + 存活态）。
+type Locate
+  = | { status: 'locating' }
+    | { status: 'no-claude' }
+    | { status: 'error'; message: string }
+    | { status: 'located'; path: string; alive: boolean };
+
+// transcript 读取结果（订阅后）。
+type Read
+  = | { status: 'idle' }
+    | { status: 'reading' }
+    | { status: 'error'; message: string }
+    | { status: 'ready'; messages: TranscriptMessage[] };
+
+// 由两段状态派生对外状态机。
+function deriveState(locate: Locate, read: Read): TranscriptState {
+  switch (locate.status) {
+    case 'locating':
+      return { status: 'loading' };
+    case 'no-claude':
+      return { status: 'no-claude' };
+    case 'error':
+      return { status: 'error', message: locate.message };
+    case 'located':
+      if (read.status === 'error') {
+        return { status: 'error', message: read.message };
+      }
+      if (read.status !== 'ready') {
+        return { status: 'loading' }; // idle/reading → 读中
+      }
+      if (locate.alive) {
+        return read.messages.length === 0
+          ? { status: 'empty' }
+          : { status: 'ready', messages: read.messages };
+      }
+      return { status: 'claude-exited', messages: read.messages };
   }
 }
 
@@ -67,29 +123,26 @@ export interface UseTranscriptResult {
 }
 
 export function useTranscript(sessionId: string): UseTranscriptResult {
-  const [state, setState] = useState<TranscriptState>({ status: 'loading' });
-  // claude 状态（composer 发送/停止门槛）：alive 时存 sessionRef.status，无 claude 置 null。
+  const [locate, setLocate] = useState<Locate>({ status: 'locating' });
+  const [read, setRead] = useState<Read>({ status: 'idle' });
+  // claude 状态（composer 发送/停止门槛 + 打字中指示）：alive 时存 sessionRef.status。
   const [claudeStatus, setClaudeStatus] = useState<ClaudeSessionStatus | null>(null);
-  // 刷新驱动：自增触发 effect 重跑编排（同 usePtySession attempt 范式）。
+  // 刷新驱动：自增触发定位 effect 重跑（同 usePtySession attempt 范式）。
   const [reloadKey, setReloadKey] = useState(0);
 
+  // —— 定位 effect：只定位路径 + 存活态 + status，不读 transcript ——
   useEffect(() => {
     let disposed = false;
 
-    // 显式顺序编排：定位路径 → 全量读 → 状态落地。每次 load 先置 loading（后续
-    // 事件/手动刷新触发时短暂 loading 属预期反馈）。竞态：disposed 守卫防卸载后
-    // setState；未卸载时多次 load 交错完成，晚到者覆盖早到者，最终态为最近一次。
-    const load = async () => {
-      setState({ status: 'loading' });
-      // 重置状态：加载期间（含失败/无 claude）不可发送，composer 门槛为 false。
+    const locateOnce = async () => {
+      setLocate({ status: 'locating' });
       setClaudeStatus(null);
-      // 1. 定位 claude 会话（Ok(None)=shell 下无活 claude；Err=cwd 异常）。
       let sessionRef;
       try {
         sessionRef = await unwrap(commands.ptyClaudeSession(sessionId));
       } catch (e) {
         if (!disposed) {
-          setState({
+          setLocate({
             status: 'error',
             message: e instanceof Error ? e.message : String(e),
           });
@@ -99,56 +152,31 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
       if (disposed) {
         return;
       }
-      // 2. 决定 transcript 路径：活 claude 用定位结果并记忆；退出用记忆路径。
-      let alive: boolean;
-      let transcriptPath: string | null;
       if (sessionRef != null) {
-        alive = true;
-        transcriptPath = sessionRef.transcriptPath;
-        saveTranscriptMemory(sessionId, transcriptPath);
+        saveTranscriptMemory(sessionId, sessionRef.transcriptPath);
         setClaudeStatus(sessionRef.status);
+        setLocate({
+          status: 'located',
+          path: sessionRef.transcriptPath,
+          alive: true,
+        });
       } else {
-        alive = false;
-        transcriptPath = readTranscriptMemory(sessionId);
-      }
-      if (transcriptPath == null) {
-        setState({ status: 'no-claude' });
-        return;
-      }
-      // 3. 全量读 transcript（活读定位路径；退出读记忆路径）。
-      let messages: TranscriptMessage[];
-      try {
-        messages = await unwrap(commands.transcriptRead(transcriptPath));
-      } catch (e) {
-        if (!disposed) {
-          setState({
-            status: 'error',
-            message: e instanceof Error ? e.message : String(e),
-          });
+        const memory = readTranscriptMemory(sessionId);
+        if (memory == null) {
+          setLocate({ status: 'no-claude' });
+        } else {
+          setLocate({ status: 'located', path: memory, alive: false });
         }
-        return;
-      }
-      if (disposed) {
-        return;
-      }
-      // 4. 状态落地：活 claude → ready/empty；已退出 → claude-exited（历史可看）。
-      if (alive) {
-        setState(
-          messages.length === 0 ? { status: 'empty' } : { status: 'ready', messages },
-        );
-      } else {
-        setState({ status: 'claude-exited', messages });
       }
     };
 
-    void load();
+    void locateOnce();
     const unlisten = listen(EVENT_CLAUDE_SESSIONS_CHANGED, () => {
-      void load();
+      void locateOnce();
     });
     return () => {
       disposed = true;
-      // 页面重载后 listeners 注册表已清空，旧 eventId 注销报 undefined——无泄漏，
-      // 重载竞态已知形态，降 debug（同 useClaudeRunning 处理）。
+      // 页面重载后 listeners 注册表已清空，旧 eventId 注销报 undefined——无泄漏。
       unlisten
         .then(fn => fn())
         .catch(err =>
@@ -157,6 +185,80 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
     };
   }, [sessionId, reloadKey]);
 
+  // —— 订阅 effect：路径确定后 transcriptSubscribe 拿快照 + 增量追加 ——
+  const locatedPath = locate.status === 'located' ? locate.path : null;
+  // 权威消息累加器：快照落地前作缓冲，落地后作增量追加的唯一真源。用 ref 而非
+  // setState updater 内写副作用——React 延迟执行 updater 会让「快照落地前到达的
+  // 事件」被孤儿化（丢失）。
+  const messagesRef = useRef<TranscriptMessage[]>([]);
+  const readyRef = useRef(false);
+  // 渲染期重置：locatedPath 变化时重置 read 状态（避免 effect 内同步 setState——
+  // react/set-state-in-effect，同 usePtySession attachKey 渲染期调整范式）。
+  const lastPathRef = useRef<string | null>(null);
+  if (lastPathRef.current !== locatedPath) {
+    lastPathRef.current = locatedPath;
+    setRead(locatedPath == null ? { status: 'idle' } : { status: 'reading' });
+  }
+
+  useEffect(() => {
+    if (locatedPath == null) {
+      return;
+    }
+    const path = locatedPath;
+    let disposed = false;
+    messagesRef.current = [];
+    readyRef.current = false;
+
+    // 增量监听先注册，再拿快照：尾部增量在快照落地前到达时先缓冲，落地后合并。
+    const unlisten = listen<TranscriptChangedPayload>(EVENT_TRANSCRIPT_CHANGED, (event) => {
+      if (disposed) {
+        return;
+      }
+      if (event.payload.path !== path) {
+        return;
+      }
+      const incoming = event.payload.messages;
+      // 同步并入累加器（不写进 setState updater——updater 延迟执行会错过缓冲时机）。
+      messagesRef.current = mergeMessages(messagesRef.current, incoming);
+      if (readyRef.current) {
+        setRead({ status: 'ready', messages: messagesRef.current });
+      }
+    });
+
+    // 首读：拿初始快照 + 后端记 offset 开始 watch。
+    void (async () => {
+      try {
+        const messages = await unwrap(commands.transcriptSubscribe(path));
+        if (disposed) {
+          return;
+        }
+        messagesRef.current = mergeMessages(messages, messagesRef.current);
+        readyRef.current = true;
+        setRead({ status: 'ready', messages: messagesRef.current });
+      } catch (e) {
+        if (!disposed) {
+          setRead({
+            status: 'error',
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      void commands.transcriptUnsubscribe(path).catch((e: unknown) => {
+        console.debug('[useTranscript] unsubscribe skipped:', e);
+      });
+      unlisten
+        .then(fn => fn())
+        .catch(err =>
+          console.debug('[useTranscript] unlisten skipped (page reloaded?):', err),
+        );
+    };
+  }, [locatedPath]);
+
+  const state = useMemo(() => deriveState(locate, read), [locate, read]);
   const refresh = useCallback(() => setReloadKey(k => k + 1), []);
   return { state, claudeStatus, refresh };
 }

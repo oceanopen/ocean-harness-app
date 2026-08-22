@@ -10,6 +10,10 @@ pub const EVENT_APP_CONFIG_CHANGED: &str = "app-config-changed";
 /// rescan（fs watcher / 兜底轮询）末尾触发；ClaudeSessionsPage 据此 setSessions 增量刷新。
 pub const EVENT_CLAUDE_SESSIONS_CHANGED: &str = "claude-sessions:changed";
 
+/// transcript 文件增量变化时广播（payload = `TranscriptChangedPayload`）。
+/// tail 轮询检测到订阅的 transcript 文件新增行后 emit；NativeChatView 据此增量追加消息。
+pub const EVENT_TRANSCRIPT_CHANGED: &str = "transcript:changed";
+
 /// 终端跳转失败时广播（payload = `SessionNavFailed`）。
 /// navigate_to_claude_session 命令失败时 emit；ClaudeSessionsPage / PetClaudeSessionsTaskApp 据此弹 toast。
 pub const EVENT_CLAUDE_SESSION_NAV_FAILED: &str = "claude-sessions:nav-failed";

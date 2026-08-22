@@ -15,7 +15,8 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
     use crate::pty::session::PtyEvent;
     use crate::shared::types::{
         AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionRef, ClaudeSessionStatus,
-        TerminalApp, TranscriptBlock, TranscriptMessage, TranscriptRole, YesNo,
+        TerminalApp, TranscriptBlock, TranscriptChangedPayload, TranscriptMessage, TranscriptRole,
+        YesNo,
     };
     use crate::terminal::NavErr;
     Builder::<tauri::Wry>::new()
@@ -54,6 +55,8 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_reattach,
             pty::create_directory,
             transcript::transcript_read,
+            transcript::transcript_subscribe,
+            transcript::transcript_unsubscribe,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。
@@ -66,6 +69,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         .typ::<TranscriptMessage>()
         .typ::<TranscriptRole>()
         .typ::<TranscriptBlock>()
+        .typ::<TranscriptChangedPayload>()
         .typ::<NavErr>()
         // PtyEvent 是 Channel<PtyEvent> 的泛型载荷（Channel 本身在参数签名中可见，
         // 但泛型参数类型需显式注册才能导出 union 定义）。
@@ -164,6 +168,10 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             "EVENT_HTTP_SERVER_STATE_CHANGED",
             crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED,
         )
+        .constant(
+            "EVENT_TRANSCRIPT_CHANGED",
+            crate::shared::events::EVENT_TRANSCRIPT_CHANGED,
+        )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -211,6 +219,7 @@ pub fn run() {
 
             shared::app_config::init(app)?;
             shared::state::claude_sessions::init(app)?;
+            shared::state::transcript::init(app)?;
             pty::state::init(app)?;
             // shell-ready 包装文件根（app_data_dir/shell-ready）：注入失败仅 warn，
             // startup_command 降级为裸 spawn，终端照常可用。
@@ -237,6 +246,7 @@ pub fn run() {
 
             sessions::watch::start(app.handle().clone());
             sessions::poll::start(app.handle().clone());
+            transcript::tail::start(app.handle().clone());
 
             // 桌宠显隐读 pet_claude_sessions_summary_visible 偏好：用户上次隐藏则保持隐藏，否则启动显示。
             // pet 显示后由前端基于 count 调 show_pet_claude_sessions_task_window 联动面板显隐。
