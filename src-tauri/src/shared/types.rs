@@ -111,6 +111,24 @@ pub struct ClaudeSessionInfo {
     pub tty: String,
 }
 
+/// PTY 会话内 claude 的定位引用（`pty_claude_session` 返回）。
+/// 给定主 pane 的 session_id，定位「跑在该 PTY shell 下的 claude」的 sessionId + transcript 路径，
+/// chat 视图据此订阅 transcript JSONL。仅出参（后端→前端），故不 derive Deserialize。
+#[derive(Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaudeSessionRef {
+    /// claude 进程 pid（也是 `~/.claude/sessions/<pid>.json` 的文件名）。
+    pub claude_pid: u32,
+    /// claude 会话 ID（uuid）。从 json 的 `sessionId` 字段读取。
+    pub session_id: String,
+    /// 会话工作目录绝对路径。
+    pub cwd: String,
+    /// transcript JSONL 绝对路径（`~/.claude/projects/<cwd 的 `/`→`-`>/<sessionId>.jsonl`）。
+    pub transcript_path: String,
+    /// 会话状态（Busy/Waiting/Idle，经 `enrich::map_status` 归一化）。
+    pub status: ClaudeSessionStatus,
+}
+
 // ============================================================
 // HTTP 本地服务（go-server sidecar）运行态：panel 窗口「服务状态」菜单
 // ============================================================

@@ -132,6 +132,23 @@ export const commands = {
 	 */
 	ptyClaudeRunning: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_claude_running", { sessionId }),
 	/**
+	 *  定位本会话 shell 下 claude 的会话引用（sessionId + transcript 路径），chat 视图据此订阅。
+	 *  三态：Ok(None)=无 claude；Ok(Some)=定位成功（transcript_path 可信）；Err=cwd 异常
+	 *  （transcript 路径不可信）。查询走 provider() 自持 store（同 pty_claude_running，防恒空双实例）。
+	 */
+	ptyClaudeSession: (sessionId: string) => typedError<{
+	/**  claude 进程 pid（也是 `~/.claude/sessions/<pid>.json` 的文件名）。 */
+	claudePid: number,
+	/**  claude 会话 ID（uuid）。从 json 的 `sessionId` 字段读取。 */
+	sessionId: string,
+	/**  会话工作目录绝对路径。 */
+	cwd: string,
+	/**  transcript JSONL 绝对路径（`~/.claude/projects/<cwd 的 `/`→`-`>/<sessionId>.jsonl`）。 */
+	transcriptPath: string,
+	/**  会话状态（Busy/Waiting/Idle，经 `enrich::map_status` 归一化）。 */
+	status: ClaudeSessionStatus,
+} | null, string>(__TAURI_INVOKE("pty_claude_session", { sessionId })),
+	/**
 	 *  重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
 	 *  已退出会话照常返回（exited=true）；不存在返回 None（前端转 pty_spawn）。
 	 */
@@ -237,6 +254,24 @@ export type ClaudeSessionInfo = {
 	 *  无法识别时为空字符串。
 	 */
 	tty: string,
+};
+
+/**
+ *  PTY 会话内 claude 的定位引用（`pty_claude_session` 返回）。
+ *  给定主 pane 的 session_id，定位「跑在该 PTY shell 下的 claude」的 sessionId + transcript 路径，
+ *  chat 视图据此订阅 transcript JSONL。仅出参（后端→前端），故不 derive Deserialize。
+ */
+export type ClaudeSessionRef = {
+	/**  claude 进程 pid（也是 `~/.claude/sessions/<pid>.json` 的文件名）。 */
+	claudePid: number,
+	/**  claude 会话 ID（uuid）。从 json 的 `sessionId` 字段读取。 */
+	sessionId: string,
+	/**  会话工作目录绝对路径。 */
+	cwd: string,
+	/**  transcript JSONL 绝对路径（`~/.claude/projects/<cwd 的 `/`→`-`>/<sessionId>.jsonl`）。 */
+	transcriptPath: string,
+	/**  会话状态（Busy/Waiting/Idle，经 `enrich::map_status` 归一化）。 */
+	status: ClaudeSessionStatus,
 };
 
 /**

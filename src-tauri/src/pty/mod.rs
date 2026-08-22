@@ -22,6 +22,7 @@ pub mod session;
 pub mod shell_ready;
 pub mod state;
 
+use crate::shared::types::ClaudeSessionRef;
 use local_provider::LocalPtyProvider;
 use provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, SpawnOpts};
 use session::PtyEvent;
@@ -107,6 +108,17 @@ pub fn pty_exists(session_id: String) -> bool {
 #[specta::specta]
 pub fn pty_claude_running(session_id: String) -> bool {
     claude_state::claude_running(provider().store(), &session_id)
+}
+
+/// 定位本会话 shell 下 claude 的会话引用（sessionId + transcript 路径），chat 视图据此订阅。
+/// 三态：Ok(None)=无 claude；Ok(Some)=定位成功（transcript_path 可信）；Err=cwd 异常
+/// （transcript 路径不可信）。查询走 provider() 自持 store（同 pty_claude_running，防恒空双实例）。
+#[tauri::command]
+#[specta::specta]
+pub fn pty_claude_session(
+    session_id: String,
+) -> Result<Option<ClaudeSessionRef>, String> {
+    claude_state::claude_session_ref(provider().store(), &session_id)
 }
 
 /// 重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。

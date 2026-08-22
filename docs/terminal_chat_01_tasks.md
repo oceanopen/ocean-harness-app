@@ -77,7 +77,7 @@
 
 ### T1.2 PTY ↔ claude sessionId 关联
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：给定主 pane 的 session_id，定位「跑在该 PTY shell 下的 claude」的 sessionId + transcript 路径。
 
@@ -85,7 +85,7 @@
 - 从 `claude_state.rs` 抽出「沿 claude pid 父链匹配本会话 shell pid」逻辑，返回 `Option<u32>`（claude pid），而非 bool。
 - 用 claude pid 读 `~/.claude/sessions/<pid>.json`（复用 `sessions::raw::RawSessionFile` 的 `session_id` + `cwd` 字段）。
 - 推导 transcript 路径：`~/.claude/projects/<cwd.replace('/', '-')>/<session_id>.jsonl`。
-- 新增 Tauri command `pty_claude_session(session_id) → Option<ClaudeSessionRef>`，返回 `{ claude_pid, session_id, cwd, transcript_path, status }`。
+- 新增 Tauri command `pty_claude_session(session_id) → Result<Option<ClaudeSessionRef>, String>`，返回 `{ claude_pid, session_id, cwd, transcript_path, status }`。
 - cwd 空/异常 → 返回错误态（transcript 路径不可信）。
 
 **依赖**：无（可独立开发；运行时需 claude 在跑才能返回 Some）

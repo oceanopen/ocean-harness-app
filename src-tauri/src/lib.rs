@@ -13,7 +13,8 @@ use tauri_specta::{Builder, collect_commands};
 pub fn build_specta_builder() -> Builder<tauri::Wry> {
     use crate::pty::session::PtyEvent;
     use crate::shared::types::{
-        AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionStatus, TerminalApp, YesNo,
+        AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionRef, ClaudeSessionStatus,
+        TerminalApp, YesNo,
     };
     use crate::terminal::NavErr;
     Builder::<tauri::Wry>::new()
@@ -48,6 +49,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_list_sessions,
             pty::pty_exists,
             pty::pty_claude_running,
+            pty::pty_claude_session,
             pty::pty_reattach,
             pty::create_directory,
         ])
@@ -58,6 +60,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         .typ::<TerminalApp>()
         .typ::<YesNo>()
         .typ::<ClaudeSessionInfo>()
+        .typ::<ClaudeSessionRef>()
         .typ::<NavErr>()
         // PtyEvent 是 Channel<PtyEvent> 的泛型载荷（Channel 本身在参数签名中可见，
         // 但泛型参数类型需显式注册才能导出 union 定义）。
