@@ -165,6 +165,13 @@ export const commands = {
 	 *  校验路径非空绝对路径后 std::fs::create_dir_all。
 	 */
 	createDirectory: (path: string) => typedError<null, string>(__TAURI_INVOKE("create_directory", { path })),
+	/**
+	 *  全量读 transcript 文件为消息列表（chat 只读视图数据源）。
+	 *  前端链路：pty_claude_session 拿 transcript_path → 调本命令 → 渲染。
+	 *  非法 JSON 行 / 非 user/assistant / 注入 turn → skip 不 panic；
+	 *  文件不存在 / 读取失败 → Err。
+	 */
+	transcriptRead: (transcriptPath: string) => typedError<TranscriptMessage[], string>(__TAURI_INVOKE("transcript_read", { transcriptPath })),
 };
 
 /* Constants */
@@ -428,6 +435,40 @@ export type TerminalApp = "ITerm2" | "Terminal" | "IntelliJ" |
 "WeTerm" | 
 /**  未识别的宿主终端（如 VSCode 内嵌、Wezterm、Alacritty 等）。跳转按钮将禁用。 */
 "Unknown";
+
+/**
+ *  转录消息内容块。serde tag=`type`，TS 侧导出为按 `type` 判别的联合类型。
+ *  映射自 Claude Code content block：text / thinking / tool_use / tool_result / image。
+ */
+export type TranscriptBlock = 
+/**  正文文本（user 与 assistant 都可能有）。 */
+{ type: "text"; text: string } | 
+/**  思考过程（assistant 的 reasoning，前端折叠）。 */
+{ type: "thinking"; text: string } | 
+/**  工具调用（assistant 的 tool_use）。input 为工具参数 JSON 序列化后的字符串。 */
+{ type: "toolCall"; name: string; input: string | null } | 
+/**  工具结果（tool_result）。output 为结果内容归一化后的字符串。 */
+{ type: "toolResult"; output: string; isError: boolean } | 
+/**  图片引用（image，url/path 至少其一；均为空时 decode 丢弃）。 */
+{ type: "image"; url: string | null; path: string | null; alt: string | null };
+
+/**  转录消息（transcript JSONL 单行 → 结构化）。chat 只读视图渲染的基本单元。 */
+export type TranscriptMessage = {
+	/**  记录 uuid（行的 `uuid` 字段）。 */
+	id: string,
+	/**  消息角色（User/Assistant/Tool/System）。 */
+	role: TranscriptRole,
+	/**  内容块列表（正文/思考/工具调用/工具结果/图片）。 */
+	blocks: TranscriptBlock[],
+	/**  时间戳（ISO8601 解析后的毫秒）；缺失/非法为 None。 */
+	timestamp: number | null,
+};
+
+/**
+ *  转录消息角色。直接映射 transcript JSONL 行的 `type`（user/assistant），外加
+ *  两个本地派生：Tool（user 行仅含 tool_result block）、System（预留，本期不产出）。
+ */
+export type TranscriptRole = "User" | "Assistant" | "Tool" | "System";
 
 /**  Y/N 布尔风格配置值。serde rename 到单字母，序列化与 specta 导出均为 "Y"/"N"。 */
 export type YesNo = "Y" | "N";

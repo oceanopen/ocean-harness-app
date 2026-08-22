@@ -115,9 +115,7 @@ pub fn pty_claude_running(session_id: String) -> bool {
 /// （transcript 路径不可信）。查询走 provider() 自持 store（同 pty_claude_running，防恒空双实例）。
 #[tauri::command]
 #[specta::specta]
-pub fn pty_claude_session(
-    session_id: String,
-) -> Result<Option<ClaudeSessionRef>, String> {
+pub fn pty_claude_session(session_id: String) -> Result<Option<ClaudeSessionRef>, String> {
     claude_state::claude_session_ref(provider().store(), &session_id)
 }
 

@@ -68,10 +68,7 @@ fn ancestry_depth(claude_pid: u32, shell: u32) -> Option<usize> {
 /// 找到本会话 shell 子进程树内父链最近的 claude，返回其 RawSessionFile。
 /// 多 claude 同壳罕见（正常一个 shell 只跑一个 claude 交互会话）；若多个，取父链
 /// 最近者（ancestry_depth 最小）。shell pid 未知（会话不在/已退出）返回 None。
-fn find_claude_under_shell(
-    store: &PtySessionStore,
-    session_id: &str,
-) -> Option<RawSessionFile> {
+fn find_claude_under_shell(store: &PtySessionStore, session_id: &str) -> Option<RawSessionFile> {
     let shell = shell_pid(store, session_id)?;
     crate::sessions::discover::list_active()
         .into_iter()
@@ -85,7 +82,10 @@ fn find_claude_under_shell(
 pub fn claude_running(store: &PtySessionStore, session_id: &str) -> bool {
     let Some(shell) = shell_pid(store, session_id) else {
         // debug 级：会话不在 store 属非预期（调用方通常先 spawn），静默降级不刷屏。
-        log::debug!("[claude-state] session not in store: {}", session_id);
+        log::debug!(
+            "[claude-state] session not in store: {}",
+            session_id
+        );
         return false;
     };
     let claudes = crate::sessions::discover::list_active();
@@ -124,7 +124,10 @@ pub fn claude_session_ref(
     session_id: &str,
 ) -> Result<Option<ClaudeSessionRef>, String> {
     let Some(raw) = find_claude_under_shell(store, session_id) else {
-        log::debug!("[claude-state] no claude under session={}", session_id);
+        log::debug!(
+            "[claude-state] no claude under session={}",
+            session_id
+        );
         return Ok(None);
     };
     if !cwd_usable(&raw.cwd) {

@@ -39,19 +39,15 @@ pub fn show_settings_window(
                 Some(section) => format!("settings.html#/{section}").into(),
                 None => "settings.html".into(),
             };
-            let win = WebviewWindowBuilder::new(
-                &app,
-                "settings",
-                WebviewUrl::App(url),
-            )
-            .title(format!("{product} - 系统设置"))
-            .inner_size(width, height)
-            // 默认在主屏居中；下方 set_position 修正到 tray 所在屏，探测失败保持主屏。
-            .center()
-            // 窗口不进任务栏与 Alt+Tab（Windows/Linux），macOS 上为 no-op（Dock 由 ActivationPolicy 控制）。
-            .skip_taskbar(true)
-            .build()
-            .map_err(|e| e.to_string())?;
+            let win = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App(url))
+                .title(format!("{product} - 系统设置"))
+                .inner_size(width, height)
+                // 默认在主屏居中；下方 set_position 修正到 tray 所在屏，探测失败保持主屏。
+                .center()
+                // 窗口不进任务栏与 Alt+Tab（Windows/Linux），macOS 上为 no-op（Dock 由 ActivationPolicy 控制）。
+                .skip_taskbar(true)
+                .build()
+                .map_err(|e| e.to_string())?;
 
             let w = win.clone();
             win.on_window_event(move |event| {

@@ -2,6 +2,7 @@ mod pty;
 mod sessions;
 mod shared;
 mod terminal;
+mod transcript;
 mod windows;
 
 use tauri::{Listener, Manager};
@@ -14,7 +15,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
     use crate::pty::session::PtyEvent;
     use crate::shared::types::{
         AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionRef, ClaudeSessionStatus,
-        TerminalApp, YesNo,
+        TerminalApp, TranscriptBlock, TranscriptMessage, TranscriptRole, YesNo,
     };
     use crate::terminal::NavErr;
     Builder::<tauri::Wry>::new()
@@ -52,6 +53,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_claude_session,
             pty::pty_reattach,
             pty::create_directory,
+            transcript::transcript_read,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。
@@ -61,6 +63,9 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         .typ::<YesNo>()
         .typ::<ClaudeSessionInfo>()
         .typ::<ClaudeSessionRef>()
+        .typ::<TranscriptMessage>()
+        .typ::<TranscriptRole>()
+        .typ::<TranscriptBlock>()
         .typ::<NavErr>()
         // PtyEvent 是 Channel<PtyEvent> 的泛型载荷（Channel 本身在参数签名中可见，
         // 但泛型参数类型需显式注册才能导出 union 定义）。
@@ -69,30 +74,96 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         // config key 族（app_config.rs）：后端读取的 key 在此定义，前端仅消费生成物，
         // 根治此前 appConfig.ts 手工镜像的双份维护漂移（POLL 三值曾实际漂移）。
         .constant("LANGUAGE_KEY", shared::app_config::LANGUAGE_KEY)
-        .constant("PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY", shared::app_config::PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY)
-        .constant("POLL_INTERVAL_SECS_KEY", shared::app_config::POLL_INTERVAL_SECS_KEY)
-        .constant("DEFAULT_POLL_INTERVAL_SECS", shared::app_config::DEFAULT_POLL_INTERVAL_SECS)
-        .constant("MIN_POLL_INTERVAL_SECS", shared::app_config::MIN_POLL_INTERVAL_SECS)
-        .constant("MAX_POLL_INTERVAL_SECS", shared::app_config::MAX_POLL_INTERVAL_SECS)
-        .constant("ITERM2_SPLIT_DIRECTION_KEY", shared::app_config::ITERM2_SPLIT_DIRECTION_KEY)
-        .constant("DEFAULT_ITERM2_SPLIT_DIRECTION", shared::app_config::DEFAULT_ITERM2_SPLIT_DIRECTION)
-        .constant("TERMINAL_POST_OPEN_COMMAND_KEY", shared::app_config::TERMINAL_POST_OPEN_COMMAND_KEY)
-        .constant("DEFAULT_TERMINAL_POST_OPEN_COMMAND", shared::app_config::DEFAULT_TERMINAL_POST_OPEN_COMMAND)
-        .constant("HTTP_SERVER_PORT_KEY", shared::app_config::HTTP_SERVER_PORT_KEY)
-        .constant("MIN_HTTP_SERVER_PORT", shared::app_config::MIN_HTTP_SERVER_PORT)
-        .constant("MAX_HTTP_SERVER_PORT", shared::app_config::MAX_HTTP_SERVER_PORT)
+        .constant(
+            "PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY",
+            shared::app_config::PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
+        )
+        .constant(
+            "POLL_INTERVAL_SECS_KEY",
+            shared::app_config::POLL_INTERVAL_SECS_KEY,
+        )
+        .constant(
+            "DEFAULT_POLL_INTERVAL_SECS",
+            shared::app_config::DEFAULT_POLL_INTERVAL_SECS,
+        )
+        .constant(
+            "MIN_POLL_INTERVAL_SECS",
+            shared::app_config::MIN_POLL_INTERVAL_SECS,
+        )
+        .constant(
+            "MAX_POLL_INTERVAL_SECS",
+            shared::app_config::MAX_POLL_INTERVAL_SECS,
+        )
+        .constant(
+            "ITERM2_SPLIT_DIRECTION_KEY",
+            shared::app_config::ITERM2_SPLIT_DIRECTION_KEY,
+        )
+        .constant(
+            "DEFAULT_ITERM2_SPLIT_DIRECTION",
+            shared::app_config::DEFAULT_ITERM2_SPLIT_DIRECTION,
+        )
+        .constant(
+            "TERMINAL_POST_OPEN_COMMAND_KEY",
+            shared::app_config::TERMINAL_POST_OPEN_COMMAND_KEY,
+        )
+        .constant(
+            "DEFAULT_TERMINAL_POST_OPEN_COMMAND",
+            shared::app_config::DEFAULT_TERMINAL_POST_OPEN_COMMAND,
+        )
+        .constant(
+            "HTTP_SERVER_PORT_KEY",
+            shared::app_config::HTTP_SERVER_PORT_KEY,
+        )
+        .constant(
+            "MIN_HTTP_SERVER_PORT",
+            shared::app_config::MIN_HTTP_SERVER_PORT,
+        )
+        .constant(
+            "MAX_HTTP_SERVER_PORT",
+            shared::app_config::MAX_HTTP_SERVER_PORT,
+        )
         // HTTP 端口默认值（http_server.rs）：设置页帮助文案按运行模式展示默认端口。
-        .constant("HTTP_SERVER_PORT_TEST", shared::http_server::HTTP_SERVER_PORT_TEST)
-        .constant("HTTP_SERVER_PORT_RELEASE", shared::http_server::HTTP_SERVER_PORT_RELEASE)
+        .constant(
+            "HTTP_SERVER_PORT_TEST",
+            shared::http_server::HTTP_SERVER_PORT_TEST,
+        )
+        .constant(
+            "HTTP_SERVER_PORT_RELEASE",
+            shared::http_server::HTTP_SERVER_PORT_RELEASE,
+        )
         // 事件名（events.rs）：emit/listen 字符串 typo 不编译报错，单源导出消双份。
-        .constant("EVENT_APP_CONFIG_CHANGED", crate::shared::events::EVENT_APP_CONFIG_CHANGED)
-        .constant("EVENT_CLAUDE_SESSIONS_CHANGED", crate::shared::events::EVENT_CLAUDE_SESSIONS_CHANGED)
-        .constant("EVENT_CLAUDE_SESSION_NAV_FAILED", crate::shared::events::EVENT_CLAUDE_SESSION_NAV_FAILED)
-        .constant("EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT", crate::shared::events::EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT)
-        .constant("EVENT_PANEL_NAVIGATE", crate::shared::events::EVENT_PANEL_NAVIGATE)
-        .constant("EVENT_PANEL_SHOWN", crate::shared::events::EVENT_PANEL_SHOWN)
-        .constant("EVENT_SETTINGS_NAVIGATE", crate::shared::events::EVENT_SETTINGS_NAVIGATE)
-        .constant("EVENT_HTTP_SERVER_STATE_CHANGED", crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED)
+        .constant(
+            "EVENT_APP_CONFIG_CHANGED",
+            crate::shared::events::EVENT_APP_CONFIG_CHANGED,
+        )
+        .constant(
+            "EVENT_CLAUDE_SESSIONS_CHANGED",
+            crate::shared::events::EVENT_CLAUDE_SESSIONS_CHANGED,
+        )
+        .constant(
+            "EVENT_CLAUDE_SESSION_NAV_FAILED",
+            crate::shared::events::EVENT_CLAUDE_SESSION_NAV_FAILED,
+        )
+        .constant(
+            "EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT",
+            crate::shared::events::EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT,
+        )
+        .constant(
+            "EVENT_PANEL_NAVIGATE",
+            crate::shared::events::EVENT_PANEL_NAVIGATE,
+        )
+        .constant(
+            "EVENT_PANEL_SHOWN",
+            crate::shared::events::EVENT_PANEL_SHOWN,
+        )
+        .constant(
+            "EVENT_SETTINGS_NAVIGATE",
+            crate::shared::events::EVENT_SETTINGS_NAVIGATE,
+        )
+        .constant(
+            "EVENT_HTTP_SERVER_STATE_CHANGED",
+            crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED,
+        )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

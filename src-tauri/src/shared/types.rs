@@ -130,6 +130,60 @@ pub struct ClaudeSessionRef {
 }
 
 // ============================================================
+// transcript 解析：chat 只读视图的消息模型（terminal_chat T1.3）
+// ============================================================
+
+/// 转录消息角色。直接映射 transcript JSONL 行的 `type`（user/assistant），外加
+/// 两个本地派生：Tool（user 行仅含 tool_result block）、System（预留，本期不产出）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Type)]
+pub enum TranscriptRole {
+    User,
+    Assistant,
+    Tool,
+    System,
+}
+
+/// 转录消息内容块。serde tag=`type`，TS 侧导出为按 `type` 判别的联合类型。
+/// 映射自 Claude Code content block：text / thinking / tool_use / tool_result / image。
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum TranscriptBlock {
+    /// 正文文本（user 与 assistant 都可能有）。
+    Text { text: String },
+    /// 思考过程（assistant 的 reasoning，前端折叠）。
+    Thinking { text: String },
+    /// 工具调用（assistant 的 tool_use）。input 为工具参数 JSON 序列化后的字符串。
+    ToolCall { name: String, input: Option<String> },
+    /// 工具结果（tool_result）。output 为结果内容归一化后的字符串。
+    ToolResult {
+        output: String,
+        #[serde(rename = "isError")]
+        is_error: bool,
+    },
+    /// 图片引用（image，url/path 至少其一；均为空时 decode 丢弃）。
+    Image {
+        url: Option<String>,
+        path: Option<String>,
+        alt: Option<String>,
+    },
+}
+
+/// 转录消息（transcript JSONL 单行 → 结构化）。chat 只读视图渲染的基本单元。
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptMessage {
+    /// 记录 uuid（行的 `uuid` 字段）。
+    pub id: String,
+    /// 消息角色（User/Assistant/Tool/System）。
+    pub role: TranscriptRole,
+    /// 内容块列表（正文/思考/工具调用/工具结果/图片）。
+    pub blocks: Vec<TranscriptBlock>,
+    /// 时间戳（ISO8601 解析后的毫秒）；缺失/非法为 None。
+    #[specta(type = Option<Number>)]
+    pub timestamp: Option<i64>,
+}
+
+// ============================================================
 // HTTP 本地服务（go-server sidecar）运行态：panel 窗口「服务状态」菜单
 // ============================================================
 

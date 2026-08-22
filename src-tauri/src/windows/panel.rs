@@ -5,8 +5,7 @@
 // 本文件仅负责：窗口创建、命令包装（get_claude_sessions / navigate_to_claude_session）。
 
 use tauri::{
-    AppHandle, Emitter, LogicalPosition, Manager, State, WebviewUrl,
-    WebviewWindowBuilder,
+    AppHandle, Emitter, LogicalPosition, Manager, State, WebviewUrl, WebviewWindowBuilder,
 };
 
 use crate::shared::events::EVENT_CLAUDE_SESSION_NAV_FAILED;
