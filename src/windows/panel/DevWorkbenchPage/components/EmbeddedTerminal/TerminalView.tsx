@@ -158,6 +158,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
   const [searchOpen, setSearchOpen] = useState(false);
   // 复制/粘贴失败 toast（成功静默）
   const { show: showToast, snack: toastSnack } = useToast();
+  // 强制回落（terminal_chat T2.3）：chatEnabled=false（设置关闭开关）或 exited（会话
+  // 结束）时，chat overlay 必须摘除回 terminal——chatEnabled 只 gate 按钮不 gate
+  // overlay 会困住用户；exited 条 zIndex 低于 overlay 会被遮。viewMode 内部状态
+  // 残留无害（开关恢复即自然回到 chat）。纯派生，不用 effect（函数式范式）。
+  const effectiveViewMode = chatEnabled && !exited ? viewMode : 'terminal';
 
   // 链接 activate 分流（terminal_03 §3.4）：URL 走 plugin-shell（window.open 被
   // Tauri webview 拦截，MarkdownEditor 先例），路径走 Rust open_path（系统默认
@@ -512,14 +517,14 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           {/* Terminal/Chat 视图切换（terminal_chat T2.1）：chatEnabled 才渲染。图标
               反映目标模式：terminal 态显示 chat 气泡（点击进 chat），chat 态显示
               终端（点击回 terminal）。 */}
-          {chatEnabled && (
+          {chatEnabled && !exited && (
             <IconButton
               size="small"
               onClick={() => setViewMode(viewMode === 'terminal' ? 'chat' : 'terminal')}
-              aria-label={viewMode === 'terminal' ? '切换到 Chat 视图' : '切换到 Terminal 视图'}
+              aria-label={effectiveViewMode === 'terminal' ? '切换到 Chat 视图' : '切换到 Terminal 视图'}
               sx={{ color: 'text.secondary' }}
             >
-              {viewMode === 'terminal' ? <ChatBubbleOutlineIcon fontSize="small" /> : <TerminalIcon fontSize="small" />}
+              {effectiveViewMode === 'terminal' ? <ChatBubbleOutlineIcon fontSize="small" /> : <TerminalIcon fontSize="small" />}
             </IconButton>
           )}
         </Box>
@@ -564,10 +569,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           pointerEvents: exited ? 'none' : 'auto',
         }}
       />
-      {/* Chat 视图 overlay（T2.2）：viewMode === 'chat' 时盖住 xterm。zIndex
-          ≥1000 压过 xterm 内部 z-5/10（xterm 容器不建堆叠上下文）。xterm 全程存活，
-          切回 terminal 仅摘 overlay。 */}
-      {viewMode === 'chat' && (
+      {/* Chat 视图 overlay（T2.2/T2.3）：effectiveViewMode === 'chat'（chatEnabled
+          且未 exited）时盖住 xterm。zIndex ≥1000 压过 xterm 内部 z-5/10（xterm 容器
+          不建堆叠上下文）。xterm 全程存活，切回 terminal 仅摘 overlay。 */}
+      {effectiveViewMode === 'chat' && (
         <Box
           sx={{
             position: 'absolute',

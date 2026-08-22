@@ -7,7 +7,8 @@ import { ChatBubbleOutlineOutlined as ChatBubbleOutlineIcon } from '@mui/icons-m
 import { Box, Button, CircularProgress, Typography } from '@mui/material';
 
 interface NativeChatEmptyStateProps {
-  state: Exclude<TranscriptState, { status: 'ready' }>;
+  // ready / claude-exited 都由 NativeChatView 渲染消息列表，不走空态。
+  state: Exclude<TranscriptState, { status: 'ready' } | { status: 'claude-exited' }>;
   // no-claude 态引导「切回终端启动 claude」的动作（切回 terminal 视图）。
   onBackToTerminal?: () => void;
 }

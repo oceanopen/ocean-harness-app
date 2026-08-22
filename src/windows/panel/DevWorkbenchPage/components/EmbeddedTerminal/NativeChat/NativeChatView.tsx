@@ -4,7 +4,7 @@
 // 发消息留 P2。
 
 import { RefreshOutlined as RefreshIcon } from '@mui/icons-material';
-import { Box, IconButton, Typography } from '@mui/material';
+import { Box, Button, IconButton, Typography } from '@mui/material';
 import NativeChatEmptyState from './NativeChatEmptyState';
 import NativeChatMessageList from './NativeChatMessageList';
 import { useTranscript } from './useTranscript';
@@ -36,10 +36,30 @@ export default function NativeChatView({ sessionId, onBackToTerminal }: NativeCh
         </IconButton>
       </Box>
 
-      {/* 主体：状态分派 */}
-      {state.status === 'ready'
+      {/* 主体：状态分派。ready / claude-exited 都有消息列表；claude-exited 额外
+          顶部 banner 提示「claude 已退出」+ 切回终端引导（历史仍可看）。 */}
+      {state.status === 'ready' || state.status === 'claude-exited'
         ? (
-            <NativeChatMessageList messages={state.messages} />
+            <>
+              {state.status === 'claude-exited' && (
+                <Box
+                  sx={{
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 1,
+                    px: 1.5,
+                    py: 0.5,
+                    bgcolor: 'action.hover',
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary">claude 已退出</Typography>
+                  <Button size="small" onClick={onBackToTerminal}>切回终端启动 claude</Button>
+                </Box>
+              )}
+              <NativeChatMessageList messages={state.messages} />
+            </>
           )
         : (
             <NativeChatEmptyState state={state} onBackToTerminal={onBackToTerminal} />

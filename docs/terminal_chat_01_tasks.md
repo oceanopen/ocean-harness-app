@@ -96,7 +96,7 @@
 
 ### T1.3 transcript JSONL 解析层（Rust 新域）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：新增 `src-tauri/src/transcript/` 域，解析 `~/.claude/projects/**/*.jsonl`，产出结构化消息列表，支持全量读 + 增量 follow。
 
@@ -140,7 +140,7 @@
 
 ### T2.2 chat 只读视图（渲染历史对话）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：chat 视图读 transcript 事件流，渲染 `TranscriptMessage` 气泡列表，含 loading/empty/ready/error 状态。
 
@@ -158,7 +158,7 @@
 
 ### T2.3 边界：分屏/关闭/刷新重连/切换 issue
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：主 pane 的 chat 在分屏、关闭、webview 刷新、切换 issue 时行为正确。
 
