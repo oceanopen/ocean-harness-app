@@ -20,6 +20,9 @@ pub struct RawSessionFile {
     pub started_at: i64,
     /// 状态字符串，原始值如 "busy" / "waiting" / "idle"。
     pub status: String,
+    /// waiting 态附带的上下文（如 "approve Bash" / "input needed"）；busy/idle 时缺省。
+    #[serde(default, rename = "waitingFor")]
+    pub waiting_for: Option<String>,
     /// 最后状态更新时间（毫秒时间戳）。
     #[serde(rename = "updatedAt")]
     pub updated_at: i64,

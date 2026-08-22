@@ -147,6 +147,8 @@ export const commands = {
 	transcriptPath: string,
 	/**  会话状态（Busy/Waiting/Idle，经 `enrich::map_status` 归一化）。 */
 	status: ClaudeSessionStatus,
+	/**  waiting 态附带的上下文（如 "approve Bash" / "input needed"）；非 waiting 时为 None。 */
+	waitingFor: string | null,
 } | null, string>(__TAURI_INVOKE("pty_claude_session", { sessionId })),
 	/**
 	 *  重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
@@ -289,6 +291,8 @@ export type ClaudeSessionRef = {
 	transcriptPath: string,
 	/**  会话状态（Busy/Waiting/Idle，经 `enrich::map_status` 归一化）。 */
 	status: ClaudeSessionStatus,
+	/**  waiting 态附带的上下文（如 "approve Bash" / "input needed"）；非 waiting 时为 None。 */
+	waitingFor: string | null,
 };
 
 /**

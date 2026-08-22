@@ -1,6 +1,6 @@
-// chat 视图容器（terminal_chat T2.2 + T3.1）：接 useTranscript 状态机分派（非 ready
+// chat 视图容器（terminal_chat T2.2/T3.1/T3.3）：接 useTranscript 状态机分派（非 ready
 // → 空态，ready → 消息列表）；底部 composer 可发送/停止（回写 PTY）；顶部手动刷新。
-// 挂载即读 + 监听 claude-sessions:changed 自动重读（useTranscript 内部）。
+// waiting 态显示交互 prompt 引导（T3.3）。数据由 useTranscript 订阅驱动。
 
 import { RefreshOutlined as RefreshIcon } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
@@ -20,11 +20,12 @@ interface NativeChatViewProps {
 }
 
 export default function NativeChatView({ sessionId, onBackToTerminal, onSend, onStop }: NativeChatViewProps) {
-  const { state, claudeStatus, refresh } = useTranscript(sessionId);
-  // composer 门槛：非 Busy（Idle/Waiting）才可发送（响应中禁止写），Busy 才可停止。
-  // Waiting = claude 已完成回复、等用户输入，正是发下一条消息的时刻。
-  const canSend = claudeStatus === 'Idle' || claudeStatus === 'Waiting';
+  const { state, claudeStatus, waitingFor, refresh } = useTranscript(sessionId);
+  // composer 门槛：Idle 才可发送（Waiting=交互 prompt 阻塞、Busy=响应中，均禁发）；Busy 才可停止。
+  const canSend = claudeStatus === 'Idle';
   const isBusy = claudeStatus === 'Busy';
+  // waiting = 交互 prompt（权限确认/提问），引导切回终端回答。
+  const isWaiting = claudeStatus === 'Waiting';
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -43,6 +44,28 @@ export default function NativeChatView({ sessionId, onBackToTerminal, onSend, on
           <RefreshIcon fontSize="small" />
         </IconButton>
       </Box>
+
+      {/* waiting banner（terminal_chat T3.3）：claude 交互 prompt 阻塞（权限/提问），
+          引导切回终端回答。waitingFor 为 session json 附带的上下文（如 "approve Bash"）。 */}
+      {isWaiting && (
+        <Box
+          sx={{
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1,
+            px: 1.5,
+            py: 0.5,
+            bgcolor: 'action.hover',
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            claude 等待输入{waitingFor != null && waitingFor !== '' ? `（${waitingFor}）` : ''}
+          </Typography>
+          <Button size="small" onClick={onBackToTerminal}>切回终端回答</Button>
+        </Box>
+      )}
 
       {/* 主体：状态分派。ready / claude-exited 都有消息列表；claude-exited 额外
           顶部 banner 提示「claude 已退出」+ 切回终端引导（历史仍可看）。 */}

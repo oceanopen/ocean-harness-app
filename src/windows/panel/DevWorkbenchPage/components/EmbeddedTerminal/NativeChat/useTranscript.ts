@@ -119,6 +119,8 @@ export interface UseTranscriptResult {
   state: TranscriptState;
   // 当前 claude 状态（Busy/Waiting/Idle）；无 claude（未启动/已退出）或未定位时为 null。
   claudeStatus: ClaudeSessionStatus | null;
+  // waiting 态上下文（如 "approve Bash"）；非 waiting 为 null。
+  waitingFor: string | null;
   refresh: () => void;
 }
 
@@ -127,6 +129,8 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
   const [read, setRead] = useState<Read>({ status: 'idle' });
   // claude 状态（composer 发送/停止门槛 + 打字中指示）：alive 时存 sessionRef.status。
   const [claudeStatus, setClaudeStatus] = useState<ClaudeSessionStatus | null>(null);
+  // waiting 态上下文（如 "approve Bash"）；非 waiting 为 null。等待 banner 展示用。
+  const [waitingFor, setWaitingFor] = useState<string | null>(null);
   // 刷新驱动：自增触发定位 effect 重跑（同 usePtySession attempt 范式）。
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -137,6 +141,7 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
     const locateOnce = async () => {
       setLocate({ status: 'locating' });
       setClaudeStatus(null);
+      setWaitingFor(null);
       let sessionRef;
       try {
         sessionRef = await unwrap(commands.ptyClaudeSession(sessionId));
@@ -155,6 +160,7 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
       if (sessionRef != null) {
         saveTranscriptMemory(sessionId, sessionRef.transcriptPath);
         setClaudeStatus(sessionRef.status);
+        setWaitingFor(sessionRef.waitingFor);
         setLocate({
           status: 'located',
           path: sessionRef.transcriptPath,
@@ -260,5 +266,5 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
 
   const state = useMemo(() => deriveState(locate, read), [locate, read]);
   const refresh = useCallback(() => setReloadKey(k => k + 1), []);
-  return { state, claudeStatus, refresh };
+  return { state, claudeStatus, waitingFor, refresh };
 }

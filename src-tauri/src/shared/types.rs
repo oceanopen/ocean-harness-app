@@ -127,6 +127,8 @@ pub struct ClaudeSessionRef {
     pub transcript_path: String,
     /// 会话状态（Busy/Waiting/Idle，经 `enrich::map_status` 归一化）。
     pub status: ClaudeSessionStatus,
+    /// waiting 态附带的上下文（如 "approve Bash" / "input needed"）；非 waiting 时为 None。
+    pub waiting_for: Option<String>,
 }
 
 // ============================================================

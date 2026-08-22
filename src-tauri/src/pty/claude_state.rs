@@ -159,6 +159,7 @@ pub fn claude_session_ref(
         cwd: raw.cwd.clone(),
         transcript_path,
         status,
+        waiting_for: raw.waiting_for.clone(),
     }))
 }
 
