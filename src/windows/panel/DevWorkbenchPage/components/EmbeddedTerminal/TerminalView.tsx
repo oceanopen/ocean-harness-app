@@ -132,6 +132,10 @@ interface TerminalViewProps {
   // 的 onFocus 自然接管活跃位）。父层据此写 terminalPanes store 的 activePanes
   // （分割/关闭作用对象跟随焦点，terminal_02 §3.4）。要求稳定引用。
   onActive?: () => void;
+  // 发送 chat 消息（回写 PTY）：由 EmbeddedTerminal 定义（session.write 字节编排）。
+  onChatSend: (text: string) => void;
+  // 停止 chat 生成（ESC 中断）。
+  onChatStop: () => void;
 }
 
 // TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——
@@ -141,7 +145,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, chatEnabled, sessionId, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, chatEnabled, sessionId, onStartClaude, onClose, onWriteReady, onActive, onChatSend, onChatStop }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -584,7 +588,7 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
             bgcolor: 'background.default',
           }}
         >
-          <NativeChatView sessionId={sessionId} onBackToTerminal={() => setViewMode('terminal')} />
+          <NativeChatView sessionId={sessionId} onBackToTerminal={() => setViewMode('terminal')} onSend={onChatSend} onStop={onChatStop} />
         </Box>
       )}
       {toastSnack}

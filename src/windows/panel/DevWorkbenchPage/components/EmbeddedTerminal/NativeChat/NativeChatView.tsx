@@ -1,10 +1,10 @@
-// chat 只读视图容器（terminal_chat T2.2）：接 useTranscript 状态机分派（非 ready → 空态，
-// ready → 消息列表）；底部 composer 置灰 + 「切回终端发送」提示；顶部手动刷新。
-// 挂载即读 + 监听 claude-sessions:changed 自动重读（useTranscript 内部），P1 只读、
-// 发消息留 P2。
+// chat 视图容器（terminal_chat T2.2 + T3.1）：接 useTranscript 状态机分派（非 ready
+// → 空态，ready → 消息列表）；底部 composer 可发送/停止（回写 PTY）；顶部手动刷新。
+// 挂载即读 + 监听 claude-sessions:changed 自动重读（useTranscript 内部）。
 
 import { RefreshOutlined as RefreshIcon } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
+import NativeChatComposer from './NativeChatComposer';
 import NativeChatEmptyState from './NativeChatEmptyState';
 import NativeChatMessageList from './NativeChatMessageList';
 import { useTranscript } from './useTranscript';
@@ -13,10 +13,18 @@ interface NativeChatViewProps {
   sessionId: string;
   // 切回 terminal 视图（no-claude 空态的引导动作）。
   onBackToTerminal: () => void;
+  // 发送正文（回写 PTY）。
+  onSend: (text: string) => void;
+  // 停止（ESC 中断）。
+  onStop: () => void;
 }
 
-export default function NativeChatView({ sessionId, onBackToTerminal }: NativeChatViewProps) {
-  const { state, refresh } = useTranscript(sessionId);
+export default function NativeChatView({ sessionId, onBackToTerminal, onSend, onStop }: NativeChatViewProps) {
+  const { state, claudeStatus, refresh } = useTranscript(sessionId);
+  // composer 门槛：非 Busy（Idle/Waiting）才可发送（响应中禁止写），Busy 才可停止。
+  // Waiting = claude 已完成回复、等用户输入，正是发下一条消息的时刻。
+  const canSend = claudeStatus === 'Idle' || claudeStatus === 'Waiting';
+  const isBusy = claudeStatus === 'Busy';
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -65,22 +73,8 @@ export default function NativeChatView({ sessionId, onBackToTerminal }: NativeCh
             <NativeChatEmptyState state={state} onBackToTerminal={onBackToTerminal} />
           )}
 
-      {/* 底部 composer：P1 置灰只读，提示切回终端发送（P2 接入真正输入框） */}
-      <Box
-        sx={{
-          flexShrink: 0,
-          px: 1.5,
-          py: 1,
-          borderTop: 1,
-          borderColor: 'divider',
-          opacity: 0.55,
-          pointerEvents: 'none',
-        }}
-      >
-        <Typography variant="caption" color="text.secondary">
-          切回终端发送消息
-        </Typography>
-      </Box>
+      {/* 底部 composer：发送/停止（T3.1），门槛见上 canSend/isBusy 派生 */}
+      <NativeChatComposer onSend={onSend} onStop={onStop} canSend={canSend} isBusy={isBusy} />
     </Box>
   );
 }

@@ -30,7 +30,8 @@ import { commands } from '@src/shared/bindings';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { buildChatPasteBytes, CHAT_CLEAR_INPUT, CHAT_SUBMIT, CHAT_SUBMIT_DELAY_MS } from './NativeChat/chatSend';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } from './terminalTheme';
 import TerminalView from './TerminalView';
 import { useClaudeRunning } from './useClaudeRunning';
@@ -160,6 +161,8 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   const [mainClosed, setMainClosed] = useState(false);
 
   const writeDataRef = useRef<((text: string, replay?: boolean) => void) | null>(null);
+  // 延迟回车的 timer id：500ms 内二次发送先清上一次，避免旧回车提交到新正文。
+  const chatSubmitTimerRef = useRef<number | null>(null);
   // 稳定引用（deps=[]）：直接交给 usePtySession / TerminalView 接线，不走 ref 转发层。
   const handleTerminalData = useCallback((text: string, replay?: boolean) => {
     const write = writeDataRef.current;
@@ -234,6 +237,34 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   const startClaude = useCallback(() => {
     session.write('claude\r');
   }, [session]);
+  // 「发送 chat 消息」（terminal_chat T3.1）：清行 → 正文（bracketed paste）→ 延迟
+  // 回车（orca clearThenWrite 序列）。发送/停止复用 session.write（PTY 回写桥，稳定引用）。
+  const sendChatMessage = useCallback((text: string) => {
+    // 清理上一次未触发的回车（500ms 内二次发送交错会吞掉上一次正文）。
+    if (chatSubmitTimerRef.current != null) {
+      window.clearTimeout(chatSubmitTimerRef.current);
+      chatSubmitTimerRef.current = null;
+    }
+    session.write(CHAT_CLEAR_INPUT);
+    session.write(buildChatPasteBytes(text));
+    chatSubmitTimerRef.current = window.setTimeout(() => {
+      chatSubmitTimerRef.current = null;
+      session.write(CHAT_SUBMIT);
+    }, CHAT_SUBMIT_DELAY_MS);
+  }, [session]);
+  // 「停止」（terminal_chat T3.1）：ESC = claude TUI 中断键，中止正在生成的回复。
+  const stopChat = useCallback(() => {
+    session.write('\x1B');
+  }, [session]);
+  // 卸载时清理延迟回车 timer（防误写已 shutdown 的会话）。
+  useEffect(() => {
+    return () => {
+      if (chatSubmitTimerRef.current != null) {
+        window.clearTimeout(chatSubmitTimerRef.current);
+        chatSubmitTimerRef.current = null;
+      }
+    };
+  }, []);
   // 「重开」（裸 shell）须包一层防 MouseEvent 误传 reopen 的 claude 形参。
   const reopenPlain = useCallback(() => {
     session.reopen();
@@ -325,6 +356,8 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         onClose={handleClose}
         onWriteReady={handleWriteReady}
         onActive={handleActive}
+        onChatSend={sendChatMessage}
+        onChatStop={stopChat}
       />
       {/* main 关闭二次确认（附加 pane 无此弹窗） */}
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)} maxWidth="xs" fullWidth>

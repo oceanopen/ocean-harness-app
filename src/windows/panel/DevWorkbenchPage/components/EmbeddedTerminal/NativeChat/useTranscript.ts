@@ -10,7 +10,7 @@
 // 仍在。本 hook 用 localStorage 记忆最近一次 transcript 路径，退出时读记忆路径展示
 // 历史对话，状态机增「claude-exited」态（区分「已退出」与「从未启动」）。
 
-import type { TranscriptMessage } from '@src/shared/bindings';
+import type { ClaudeSessionStatus, TranscriptMessage } from '@src/shared/bindings';
 import { commands } from '@src/shared/bindings';
 import { unwrap } from '@src/shared/commands';
 import { EVENT_CLAUDE_SESSIONS_CHANGED } from '@src/shared/events';
@@ -61,11 +61,15 @@ function saveTranscriptMemory(sessionId: string, transcriptPath: string): void {
 
 export interface UseTranscriptResult {
   state: TranscriptState;
+  // 当前 claude 状态（Busy/Waiting/Idle）；无 claude（未启动/已退出）或未定位时为 null。
+  claudeStatus: ClaudeSessionStatus | null;
   refresh: () => void;
 }
 
 export function useTranscript(sessionId: string): UseTranscriptResult {
   const [state, setState] = useState<TranscriptState>({ status: 'loading' });
+  // claude 状态（composer 发送/停止门槛）：alive 时存 sessionRef.status，无 claude 置 null。
+  const [claudeStatus, setClaudeStatus] = useState<ClaudeSessionStatus | null>(null);
   // 刷新驱动：自增触发 effect 重跑编排（同 usePtySession attempt 范式）。
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -77,6 +81,8 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
     // setState；未卸载时多次 load 交错完成，晚到者覆盖早到者，最终态为最近一次。
     const load = async () => {
       setState({ status: 'loading' });
+      // 重置状态：加载期间（含失败/无 claude）不可发送，composer 门槛为 false。
+      setClaudeStatus(null);
       // 1. 定位 claude 会话（Ok(None)=shell 下无活 claude；Err=cwd 异常）。
       let sessionRef;
       try {
@@ -100,6 +106,7 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
         alive = true;
         transcriptPath = sessionRef.transcriptPath;
         saveTranscriptMemory(sessionId, transcriptPath);
+        setClaudeStatus(sessionRef.status);
       } else {
         alive = false;
         transcriptPath = readTranscriptMemory(sessionId);
@@ -151,5 +158,5 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
   }, [sessionId, reloadKey]);
 
   const refresh = useCallback(() => setReloadKey(k => k + 1), []);
-  return { state, refresh };
+  return { state, claudeStatus, refresh };
 }
