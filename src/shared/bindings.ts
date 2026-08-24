@@ -193,6 +193,8 @@ export const DEFAULT_TERMINAL_POST_OPEN_COMMAND = "" as const;
 
 export const EVENT_APP_CONFIG_CHANGED = "app-config-changed" as const;
 
+export const EVENT_CLAUDE_RUNTIME_CHANGED = "claude-runtime:changed" as const;
+
 export const EVENT_CLAUDE_SESSIONS_CHANGED = "claude-sessions:changed" as const;
 
 export const EVENT_CLAUDE_SESSION_NAV_FAILED = "claude-sessions:nav-failed" as const;
@@ -244,6 +246,49 @@ export type AppConfigChangedPayload = {
 	/**  新值（配置统一以字符串形式存储，订阅方按 key 自行 decode）。 */
 	value: string,
 };
+
+/**
+ *  Notification 载荷的结构化形态（审批/提问卡片数据源，T4.1 渲染）。
+ *  message 为通知/提问原文；审批类携带 tool_name/tool_input（权限确认上下文），
+ *  自由提问类 tool_name 为空（选项列表在 message 内解析）。
+ */
+export type ClaudeNotification = {
+	/**  通知/提问原文。 */
+	message: string,
+	/**  待审批工具名（如 "Bash"）；自由提问为 None。 */
+	toolName?: string | null,
+	/**  待审批工具入参（JSON 序列化字符串）；自由提问为 None。 */
+	toolInput?: string | null,
+};
+
+/**
+ *  runtime 状态变更事件载荷（`claude-runtime:changed`）。ingest 归一化后 emit，
+ *  前端 useClaudeRuntime 按 pane 过滤订阅。
+ */
+export type ClaudeRuntimeChangedPayload = {
+	/**  pane 锚点（issueId::paneId，store key）。 */
+	pane: string,
+	/**  运行时状态（idle/working/waiting）。 */
+	status: ClaudeRuntimeStatus,
+	/**  生成中的预览文本（assistant 实时增量）。 */
+	previewText: string | null,
+	/**  审批/提问通知（waiting 态）。 */
+	notification: ClaudeNotification | null,
+	/**  transcript JSONL 绝对路径（SessionStart 绑定，chat 视图定位用）。 */
+	transcriptPath: string | null,
+	/**  claude 会话 ID（resume 用）。 */
+	claudeSessionId: string | null,
+	/**  最后更新时间（毫秒时间戳）。 */
+	lastUpdatedAt: number,
+};
+
+/**
+ *  运行时状态机：hook 事件驱动（区别于 ClaudeSessionStatus 的会话轮询态）。
+ *  - Idle：会话空闲（Stop / SessionStart 初始）
+ *  - Working：正在生成（User 已提交 / Assistant 生成中）
+ *  - Waiting：等待用户输入（Notification 审批/提问）
+ */
+export type ClaudeRuntimeStatus = "idle" | "working" | "waiting";
 
 /**
  *  终端会话快照。ClaudeSessionsPage 渲染 ClaudeSessionCard 列表的数据源；

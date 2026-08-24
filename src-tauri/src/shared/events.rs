@@ -14,6 +14,10 @@ pub const EVENT_CLAUDE_SESSIONS_CHANGED: &str = "claude-sessions:changed";
 /// tail 轮询检测到订阅的 transcript 文件新增行后 emit；NativeChatView 据此增量追加消息。
 pub const EVENT_TRANSCRIPT_CHANGED: &str = "transcript:changed";
 
+/// claude runtime 状态变更时广播（payload = `ClaudeRuntimeChangedPayload`）。
+/// ingest 归一化 spool 行后 emit；前端 useClaudeRuntime 据此驱动 composer 门槛/流式气泡/交互卡片。
+pub const EVENT_CLAUDE_RUNTIME_CHANGED: &str = "claude-runtime:changed";
+
 /// 终端跳转失败时广播（payload = `SessionNavFailed`）。
 /// navigate_to_claude_session 命令失败时 emit；ClaudeSessionsPage / PetClaudeSessionsTaskApp 据此弹 toast。
 pub const EVENT_CLAUDE_SESSION_NAV_FAILED: &str = "claude-sessions:nav-failed";

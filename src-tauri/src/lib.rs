@@ -1,3 +1,4 @@
+mod claude_runtime;
 mod pty;
 mod sessions;
 mod shared;
@@ -12,6 +13,9 @@ use tauri_specta::{Builder, collect_commands};
 // run()（注册 invoke handler）与 bin/export_bindings.rs（生成 TS 绑定）共用此函数，
 // 保证命令清单单一来源，避免两份注册表漂移。
 pub fn build_specta_builder() -> Builder<tauri::Wry> {
+    use crate::claude_runtime::types::{
+        ClaudeNotification, ClaudeRuntimeChangedPayload, ClaudeRuntimeStatus,
+    };
     use crate::pty::session::PtyEvent;
     use crate::shared::types::{
         AppConfigChangedPayload, ClaudeSessionInfo, ClaudeSessionRef, ClaudeSessionStatus,
@@ -70,6 +74,9 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         .typ::<TranscriptRole>()
         .typ::<TranscriptBlock>()
         .typ::<TranscriptChangedPayload>()
+        .typ::<ClaudeRuntimeChangedPayload>()
+        .typ::<ClaudeRuntimeStatus>()
+        .typ::<ClaudeNotification>()
         .typ::<NavErr>()
         // PtyEvent 是 Channel<PtyEvent> 的泛型载荷（Channel 本身在参数签名中可见，
         // 但泛型参数类型需显式注册才能导出 union 定义）。
@@ -172,6 +179,10 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             "EVENT_TRANSCRIPT_CHANGED",
             crate::shared::events::EVENT_TRANSCRIPT_CHANGED,
         )
+        .constant(
+            "EVENT_CLAUDE_RUNTIME_CHANGED",
+            crate::shared::events::EVENT_CLAUDE_RUNTIME_CHANGED,
+        )
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -220,6 +231,7 @@ pub fn run() {
             shared::app_config::init(app)?;
             shared::state::claude_sessions::init(app)?;
             shared::state::transcript::init(app)?;
+            claude_runtime::init(app)?;
             pty::state::init(app)?;
             // shell-ready 包装文件根（app_data_dir/shell-ready）：注入失败仅 warn，
             // startup_command 降级为裸 spawn，终端照常可用。
