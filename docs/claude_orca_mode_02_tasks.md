@@ -20,7 +20,7 @@
 **技术方案**：
 - 新增 `src-tauri/src/claude_runtime/` 域（mod.rs 声明子模块，lib.rs 注册）
 - `types.rs`：
-  - hook 载荷反序列化（Claude hooks stdin JSON：`hook_event_name` / `session_id` / `transcript_path` / `cwd` / tool 信息 / message 等，serde 容忍未知字段）
+  - hook 载荷反序列化（Claude hooks stdin JSON：`hook_event_name` / `session_id` / `transcript_path` / `cwd` / tool 信息（tool_name/tool_input）/ message / `prompt` / `delta`+`index`+`final`（MessageDisplay 流式增量，T1.3 接入）/ `permission_suggestions`（PermissionRequest，T4.1 接入）等，serde 容忍未知字段；T1.3 需按需扩字段）
   - 前端事件 payload `ClaudeRuntimeChangedPayload`（pane / status / previewText / notification / transcriptPath / claudeSessionId / lastUpdatedAt），specta 导出
 - `store.rs`：
   - `ClaudeRuntimeStore`（`Mutex<HashMap<pane, ClaudeRuntimeState>>`，tauri State 管理；state 含 launch_token / claude_session_id / transcript_path / status / preview_text / notification / updated_at）
@@ -35,7 +35,7 @@
 
 ### T1.2 hook 脚本生成 + 工作区 settings.json 安装器
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：生成 claude hook 脚本（append spool），并提供工作区级 hooks 配置安装器（幂等合并）
 
@@ -43,18 +43,25 @@
 - `script.rs`——生成 hook 脚本（`app_data_dir/claude-hooks/hook.sh`），模板顺序（对齐 orca 契约）：
   1. **env guard**（在读 stdin 之前，防 orca #11549 挂起）：`[ -z "$WE_TERM_SPOOL_DIR" ] && exit 0`
   2. **stdin 读取**（#8110 drain 契约）：`payload=$({ command -p cat 2>/dev/null || cat; })`，空则 `exit 0`
-  3. **append**：`printf '%s\n' "$payload" >> "$WE_TERM_SPOOL_DIR/$WE_TERM_PANE.jsonl"`（pane 文件名 sanitize：`::` → `__`）
+  3. **append**：`printf '%s\n' "$payload" >> "$WE_TERM_SPOOL_DIR/${WE_TERM_PANE//::/__}.jsonl"`（pane 文件名 sanitize：`::` → `__`）
   4. 全部失败路径静默（claude 无感，不因 hook 报错阻塞工具链）
 - `installer.rs`——`ensure_workspace_hooks(workspace_dir)`：
-  - 读写 `<workspace>/.claude/settings.json`（不存在则新建；已存在则保留用户内容）
-  - hooks 事件注册：SessionStart / User / Assistant / Stop / Notification（PreToolUse/PostToolUse 本期不需要）
-  - **只识别自有条目**（command 含本仓脚本路径）做替换升级，用户已有 hooks 条目不动
-  - orca `writeHooksJson` 范式：temp+rename 原子写、滚动 `.bak` 单备份、内容相同跳过（防反复 install 滚掉备份）
-- Tauri 命令 `ensure_workspace_hooks(cwd)`（前端 spawn 前调用，幂等）
+  - 读写 `<workspace>/.claude/settings.json`（不存在则新建；已存在则保留用户内容；损坏从空起步 + `.bak` 兜底）
+  - hooks 事件注册（7 事件，**实施时经 orca 最新 hook-settings.ts + claude 2.1.231 官方文档核查修正**——原稿 `User`/`Assistant` 事件不存在，会被 claude 静默忽略）：SessionStart / UserPromptSubmit / MessageDisplay / Stop / StopFailure / Notification（无 matcher）+ PermissionRequest（matcher `*`）
+    - `UserPromptSubmit`（原稿 User）：用户提交 prompt → working
+    - `MessageDisplay`（原稿 Assistant）：流式文本增量（delta/index/final），T3.1 流式气泡数据源
+    - `StopFailure`（新增）：API 错误时 Stop 不触发（orca 踩坑，防 working 永久卡死）
+    - `PermissionRequest`（新增）：审批瞬时信号（Notification.permission_prompt 要等 ~6s 且新版 claude 把 AskUserQuestion 也报成 PermissionRequest，orca waiting 态实际驱动源）
+  - **只识别自有条目**（command 含 needle `claude-hooks/hook.sh`，文件名级——dev/release 双实例互扫陈旧条目）做替换升级，用户已有 hooks 条目与其他顶层键（permissions 等）不动
+  - orca `writeHooksJson` 范式：temp+rename 原子写、滚动 `.bak` 单备份（拒符号链接）、内容相同跳过（防反复 install 滚掉备份）、脚本先于 settings 落盘
+  - hook command 用守卫包裹（orca wrapPosixHookCommand）：`if [ -f -r -x '<script>' ]; then /bin/sh '<script>'; else <drain stdin>; fi`——脚本缺失静默 no-op，claude transcript 不报 hook error
+- Tauri 命令 `ensure_workspace_hooks(cwd)`（前端 spawn 前调用，幂等；bindings 已导出 `ensureWorkspaceHooks`）
 
 **依赖**：T1.1
 
-**单测**：合并不覆盖用户条目、备份滚动、内容相同跳过、脚本模板 env guard 顺序（guard 在 stdin 读取之前）
+**单测**：✅ 全绿（17 个）——合并不覆盖用户条目、陈旧自有条目替换、同 definition 内用户/自有 handler 共存只剥自有、备份滚动、内容相同跳过（.bak 不滚）、损坏 settings 恢复、脚本先落且 755、模板 env guard 顺序（guard 在 stdin 读取之前）、守卫路径单引号转义
+
+**实测**（2026-08-24，claude 2.1.231 真会话）：受控工作区装 hooks + env 标跑 `claude -p` → spool 收到 SessionStart / UserPromptSubmit / MessageDisplay（含 delta/index/final）/ Stop 四事件全链载荷，`::`→`__` sanitize 生效；env 缺席时脚本不读 stdin 即退（无挂起）；守卫缺失脚本路径时 drain stdin exit 0
 
 ---
 
@@ -72,13 +79,15 @@
 - `ingest.rs`——`ingest(app, pane, line)`：
   - 反序列化 hook 载荷（损坏行 skip + warn，不 panic）
   - **launch_token 围栏**：store 内该 pane 的 token 与载荷不符 → 丢弃（防同 pane 重启 claude 后旧会话迟到事件覆盖新状态，orca #1146 教训）
-  - 按 `hook_event_name` 归一化状态机：
+  - 按 `hook_event_name` 归一化状态机（事件名以 T1.2 实测核查为准）：
     - `SessionStart` → 绑定 session_id / transcript_path + **截断该 pane 的 spool 文件**（新会话新起点）+ status=idle + 记录 launch_token
-    - `User` / `Assistant` → status=working，Assistant 时更新 preview_text
-    - `Stop` → status=idle + 清 preview / notification
-    - `Notification` → status=waiting + notification 载荷（审批/提问原文）
+    - `UserPromptSubmit` / `MessageDisplay` → status=working，MessageDisplay 时以 delta 增量拼 preview_text（同一消息按 index 追加）
+    - `Stop` / `StopFailure` → status=idle + 清 preview / notification
+    - `PermissionRequest` → status=waiting + notification 载荷（tool_name/tool_input/permission_suggestions；AskUserQuestion 提问卡也走此事件）
+    - `Notification` → waiting 补充信号 + message 原文（permission_prompt 有 ~6s 延迟，仅兜底展示）
   - 更新 store + 落快照 + `app.emit("claude-runtime:changed", payload)`
 - 目录治理：启动时按 mtime 淘汰超限 spool 文件（如保留最近 50 个）
+- **hydrate 陈旧态重置**：启动 hydrate 时对每条恢复的 state 重置 `status=idle` + 清空 `launch_token` / `preview_text` / `notification`（app 重启后 claude 实际状态未知，等新 SessionStart 重新绑定 token；避免快照陈旧 working 态误导前端门槛与 T6.1 fallback 判定；`claude_session_id` / `transcript_path` 保留供 resume 与定位）
 - `lib.rs`：spool 目录创建 + watcher 线程启动
 
 **依赖**：T1.1（store）
@@ -227,6 +236,9 @@
 **功能**：hook 链路任何一环失联时全链回落现有逻辑；模式切换热生效；全链 e2e 验证
 
 **技术方案**：
+- **installer 加固（T1.2 审查遗留 A/B，集中此处处理）**：
+  - A：hooks 子树反序列化失败时用户条目整文件丢弃（read_settings 空模型起步太激进）——重构为 serde_json::Value 层手动遍历识别，任意形态都保得住用户内容
+  - B：BTreeMap 字母序丢失用户键序，claude 自身改写 settings（插入序）后「内容相同跳过」失效、`.bak` 反复滚动——Value 层重构顺带解决（保留原键序）
 - **hook 链路失联回退**：`useClaudeRuntime` 无数据（spool 目录空 / 事件从未到达）时，前端全链回落现有轮询（`useTranscript` 的 ptyClaudeSession 路径 + `useClaudeRunning` ps 探测）——现有代码保留为 fallback，不删
 - `useClaudeRunning` 按钮置灰：优先 runtime 状态（pane 有 runtime 条目即以它为准），无条目 fallback 探测
 - **模式热切换**：`chat_mode_switch` 开启 → 前端下次 spawn 前调 `ensure_workspace_hooks`；运行中会话不生效（claude 启动时读配置，UI 提示「重启会话后生效」）；关闭后残留脚本因 env guard 是 no-op（不卸载，orca 同策略）

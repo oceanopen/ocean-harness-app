@@ -182,6 +182,11 @@ export const commands = {
 	transcriptSubscribe: (transcriptPath: string) => typedError<TranscriptMessage[], string>(__TAURI_INVOKE("transcript_subscribe", { transcriptPath })),
 	/**  取消订阅：移除 watch 路径（chat 视图卸载 / 切换 issue 时调用）。 */
 	transcriptUnsubscribe: (transcriptPath: string) => __TAURI_INVOKE<void>("transcript_unsubscribe", { transcriptPath }),
+	/**
+	 *  Tauri 命令：前端 spawn 前调用（幂等）。cwd = 工作区目录
+	 *  （`${workspace_base_dir}/${issueId}`，usePtySession 派生先例）。
+	 */
+	ensureWorkspaceHooks: (cwd: string) => typedError<null, string>(__TAURI_INVOKE("ensure_workspace_hooks", { cwd })),
 };
 
 /* Constants */

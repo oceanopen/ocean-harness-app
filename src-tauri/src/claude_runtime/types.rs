@@ -17,6 +17,7 @@ use specta_typescript::Number;
 /// `hook_event_name` 存原串（SessionStart/User/Assistant/Stop/Notification 等，
 /// 具体事件名归一化在 ingest 层按需匹配），不做严格枚举以免未来事件名漂移。
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct HookPayload {
     /// hook 事件名（如 "SessionStart" / "Stop" / "Notification"）。
     #[serde(default)]
