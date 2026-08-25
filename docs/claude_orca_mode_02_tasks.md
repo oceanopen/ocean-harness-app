@@ -67,7 +67,7 @@
 
 ### T1.3 spool watcher + ingest 归一化 + 事件 emit
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：监听 spool 目录，消费新增行，归一化为状态机更新并事件推送前端
 
@@ -92,7 +92,22 @@
 
 **依赖**：T1.1（store）
 
-**单测**：状态机迁移、token 围栏、半行容忍
+**单测**：✅ 全绿（22 个新增）——状态机迁移、token 围栏（含僵尸时序与 SessionStart 重绑例外）、子代理 SessionStart 丢弃、Notification 忽略、兜底绑定、permission_suggestions 提取、半行容忍、offset 对齐、淘汰选择
+
+**实现要点**（基于 orca v1.4.178 复核 + claude 2.1.228 二进制核实，2026-08-25）：
+- **launch_token 注入**：T1.2 脚本模板升级——stdin 读取后、append 前把 `WE_TERM_LAUNCH_TOKEN` 前插为载荷首字段（`{"launch_token":"…",` 拼接）；空对象/非 JSON 原样透传；内容恒定，既有工作区经 installer 内容差异自动升级（settings.json 不动）。shell 实测注入产物为合法 JSON。
+- **围栏语义**（对齐 orca server.ts:1146 + 1129）：store token 在场且载荷 token 不符 → Drop；**tokened SessionStart 例外放行并重绑**（同 pane 重启新 claude 的首事件，挡住则永远无法换代）；载荷无 token（T1.4 前窗口）放行。
+- **Notification 不入状态机**（orca v1.4.178 已移除：claude idle 时也发 "waiting for your input"，误置 waiting）；T1.2 的注册保留作观察渠道。MessageDisplay 只推 working 态——**流式 preview 拼接已砍**（对齐 orca：流式文本由 transcript 增量驱动，T3.1 接手；本仓 transcript/tail.rs 即等价物）。
+- **子代理防御**：带 agent_id 的 SessionStart 忽略（Task 子进程不得翻转 pane 状态）。
+- **兜底绑定**（orca providerSession 思路）：任意带 session_id/transcript_path 的事件可补绑（SessionStart 丢失时不至于全盲）。
+- **冷启动跳到 EOF**：启动时既有 spool 文件 offset 对齐末尾完整行，历史行不重放（状态由快照 hydrate 恢复，重放反而污染）。
+- **批后截断消竞态**：SessionStart 的 spool 截断请求经 ingest 返回值传回，drain 批处理结束后统一截断 + offset 归零——若批中截断，批末 offset 写回会覆盖 0 起点（旧坐标重读、事件双份）。
+- **persist 仅 SessionStart 触发**：hydrate 重置其余全部字段，快照唯一有效信息是 session 绑定；避免流式期写盘风暴。
+- **hydrate 陈旧态重置**：恢复的 state 重置 status=idle + 清 launch_token/preview_text/notification，保留 claude_session_id/transcript_path。
+- **目录治理**：启动按 mtime 淘汰，保留最近 50 个 spool 文件。
+- claude 版本注意：本机现为 brew cask 2.1.228（T1.2 实测时为 2.1.231，安装源不同）；2.1.228 二进制 strings 确认 7 注册事件 + delta/index/final + permission_suggestions + last_assistant_message 均在场。
+
+**冒烟实测**（2026-08-25，dev app 手写 spool 载荷行）：watcher 启动消费 → SessionStart 绑定 + 快照落盘；UserPromptSubmit/PermissionRequest 正常消费（围栏内）；旧 token 僵尸 Stop 被围栏丢弃；半行留待下轮补齐后消费；新代际 SessionStart（token 换代）消费后 spool 文件截断清空 + 快照更新。真 claude 会话端到端待 T1.4 env 注入后验证。
 
 ---
 

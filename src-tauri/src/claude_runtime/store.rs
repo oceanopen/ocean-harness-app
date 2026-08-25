@@ -17,7 +17,7 @@ use tauri::{App, Manager};
 use super::types::{ClaudeNotification, ClaudeRuntimeChangedPayload, ClaudeRuntimeStatus};
 
 /// 单 pane 的运行时状态（store value，内部类型，不 specta 导出）。
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaudeRuntimeState {
     /// 本次 spawn 的代际标（env WE_TERM_LAUNCH_TOKEN，T1.4 注入）；SessionStart 绑定，
@@ -84,6 +84,12 @@ pub fn persist(store: &ClaudeRuntimeStore) {
 }
 
 /// 读快照填充 store（启动 hydrate）。文件缺失/损坏静默跳过（不 panic，空态启动）。
+///
+/// 陈旧态重置：app 重启后 claude 实际状态未知，每条恢复的 state 重置
+/// status=idle + 清空 launch_token/preview_text/notification——避免快照
+/// 陈旧 working/waiting 态误导前端门槛与 T6.1 fallback 判定；
+/// claude_session_id/transcript_path 保留（resume 与定位用），等新
+/// SessionStart 重新绑定 token。
 fn hydrate_from(store: &ClaudeRuntimeStore, path: &Path) {
     let Ok(content) = std::fs::read_to_string(path) else {
         return;
@@ -102,7 +108,16 @@ fn hydrate_from(store: &ClaudeRuntimeStore, path: &Path) {
         .0
         .lock()
         .expect("ClaudeRuntimeStore mutex poisoned");
-    *guard = map;
+    *guard = map
+        .into_iter()
+        .map(|(pane, mut s)| {
+            s.status = ClaudeRuntimeStatus::Idle;
+            s.launch_token = None;
+            s.preview_text = None;
+            s.notification = None;
+            (pane, s)
+        })
+        .collect();
 }
 
 /// 序列化全量 map → temp+rename 原子写。序列化失败仅 warn（不阻塞主流程）。
@@ -149,11 +164,14 @@ mod tests {
                 message: "approve Bash".into(),
                 tool_name: Some("Bash".into()),
                 tool_input: None,
+                permission_suggestions: None,
             }),
             updated_at: 123_456,
         }
     }
 
+    /// 落盘→读回链路：快照保留全部字段（roundtrip 完整性），hydrate 的陈旧态
+    /// 重置语义另测（hydrate_resets_stale_runtime_fields）。
     #[test]
     fn snapshot_roundtrip() {
         let dir = std::env::temp_dir().join("claude-runtime-snapshot-test");
@@ -169,22 +187,55 @@ mod tests {
             .insert("issue1::main".to_string(), sample_state());
         persist_to(&store, &path);
 
+        // 快照文件本体保留全部字段（含 launch_token/status）。
+        let raw: HashMap<String, ClaudeRuntimeState> =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let saved = &raw["issue1::main"];
+        assert_eq!(saved.launch_token.as_deref(), Some("tok1"));
+        assert_eq!(saved.status, ClaudeRuntimeStatus::Working);
+        assert_eq!(saved.preview_text.as_deref(), Some("thinking..."));
+
+        // hydrate 后走重置语义：绑定字段保留，运行时字段清空。
         let store2 = ClaudeRuntimeStore::default();
         hydrate_from(&store2, &path);
         let map = store2.0.lock().unwrap();
         assert_eq!(map.len(), 1);
         let s = &map["issue1::main"];
-        assert_eq!(s.launch_token.as_deref(), Some("tok1"));
-        assert_eq!(s.status, ClaudeRuntimeStatus::Working);
-        assert_eq!(s.preview_text.as_deref(), Some("thinking..."));
-        assert_eq!(
-            s.notification
-                .as_ref()
-                .unwrap()
-                .tool_name
-                .as_deref(),
-            Some("Bash")
-        );
+        assert_eq!(s.claude_session_id.as_deref(), Some("sess1"));
+        assert_eq!(s.transcript_path.as_deref(), Some("/tmp/t.jsonl"));
+        assert_eq!(s.status, ClaudeRuntimeStatus::Idle);
+        assert_eq!(s.launch_token, None);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// hydrate 陈旧态重置：working/waiting 恢复为 idle，token/preview/notification
+    /// 清空，session_id/transcript_path 保留。
+    #[test]
+    fn hydrate_resets_stale_runtime_fields() {
+        let dir = std::env::temp_dir().join("claude-runtime-hydrate-reset-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("snapshot.json");
+
+        let store = ClaudeRuntimeStore::default();
+        store
+            .0
+            .lock()
+            .unwrap()
+            .insert("issue1::main".to_string(), sample_state());
+        persist_to(&store, &path);
+
+        let store2 = ClaudeRuntimeStore::default();
+        hydrate_from(&store2, &path);
+        let s = &store2.0.lock().unwrap()["issue1::main"];
+        assert_eq!(s.status, ClaudeRuntimeStatus::Idle);
+        assert_eq!(s.launch_token, None);
+        assert_eq!(s.preview_text, None);
+        assert_eq!(s.notification, None);
+        // 会话绑定保留（resume 与 transcript 定位用）。
+        assert_eq!(s.claude_session_id.as_deref(), Some("sess1"));
+        assert_eq!(s.transcript_path.as_deref(), Some("/tmp/t.jsonl"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

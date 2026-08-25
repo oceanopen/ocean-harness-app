@@ -233,6 +233,7 @@ pub fn run() {
             shared::state::claude_sessions::init(app)?;
             shared::state::transcript::init(app)?;
             claude_runtime::init(app)?;
+            app.manage(claude_runtime::watch::SpoolOffsets::default());
             pty::state::init(app)?;
             // shell-ready 包装文件根（app_data_dir/shell-ready）：注入失败仅 warn，
             // startup_command 降级为裸 spawn，终端照常可用。
@@ -260,6 +261,7 @@ pub fn run() {
             sessions::watch::start(app.handle().clone());
             sessions::poll::start(app.handle().clone());
             transcript::tail::start(app.handle().clone());
+            claude_runtime::watch::start(app.handle().clone());
 
             // 桌宠显隐读 pet_claude_sessions_summary_visible 偏好：用户上次隐藏则保持隐藏，否则启动显示。
             // pet 显示后由前端基于 count 调 show_pet_claude_sessions_task_window 联动面板显隐。

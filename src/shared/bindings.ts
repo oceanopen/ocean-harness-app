@@ -264,6 +264,11 @@ export type ClaudeNotification = {
 	toolName?: string | null,
 	/**  待审批工具入参（JSON 序列化字符串）；自由提问为 None。 */
 	toolInput?: string | null,
+	/**
+	 *  审批建议选项（claude PermissionRequest 载荷自带；orca 不解析但
+	 *  2.1.228 二进制确认存在，宽容接收，T4.1 按钮渲染用）。
+	 */
+	permissionSuggestions?: string[] | null,
 };
 
 /**
