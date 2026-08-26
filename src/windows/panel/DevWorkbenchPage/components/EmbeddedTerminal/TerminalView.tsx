@@ -1,4 +1,5 @@
 import type { IBufferRange, ILink } from '@xterm/xterm';
+import type { AskAnswerSelection, AskPrompt } from './NativeChat/chatAsk';
 import type { TerminalViewTheme } from './terminalTheme';
 import {
   ChatBubbleOutlined as ChatBubbleOutlineIcon,
@@ -136,6 +137,12 @@ interface TerminalViewProps {
   onChatSend: (text: string) => void;
   // 停止 chat 生成（ESC 中断）。
   onChatStop: () => void;
+  // 提问卡提交（T4.1）：构造按键组并步进写回 PTY（EmbeddedTerminal 定义）。
+  onChatAskAnswer: (prompt: AskPrompt, selections: AskAnswerSelection[]) => void;
+  // 写原始按键串（T4.1 审批选项数字 / 取消 ESC）。
+  onChatKeys: (raw: string) => void;
+  // 中止在途应答链（T4.1）。
+  onChatInteractiveCancel: () => void;
 }
 
 // TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——
@@ -145,7 +152,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, chatEnabled, sessionId, onStartClaude, onClose, onWriteReady, onActive, onChatSend, onChatStop }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, chatEnabled, sessionId, onStartClaude, onClose, onWriteReady, onActive, onChatSend, onChatStop, onChatAskAnswer, onChatKeys, onChatInteractiveCancel }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -588,7 +595,15 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
             bgcolor: 'background.default',
           }}
         >
-          <NativeChatView sessionId={sessionId} onBackToTerminal={() => setViewMode('terminal')} onSend={onChatSend} onStop={onChatStop} />
+          <NativeChatView
+            sessionId={sessionId}
+            onBackToTerminal={() => setViewMode('terminal')}
+            onSend={onChatSend}
+            onStop={onChatStop}
+            onAskAnswer={onChatAskAnswer}
+            onChatKeys={onChatKeys}
+            onInteractiveCancel={onChatInteractiveCancel}
+          />
         </Box>
       )}
       {toastSnack}

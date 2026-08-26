@@ -15,6 +15,7 @@
 // 渲染期合成（见 hook 尾部）。
 
 import type {
+  ClaudeNotification,
   ClaudeRuntimeStatus,
   ClaudeSessionStatus,
   TranscriptChangedPayload,
@@ -150,9 +151,10 @@ export interface UseTranscriptResult {
   // 驱动映射（即时），否则回落 session ref（locate 时写入）；无 claude（未启动/已
   // 退出）或未定位时为 null（runtime 条目残留不越过存活判定）。
   claudeStatus: ClaudeSessionStatus | null;
-  // waiting 态上下文（如 "approve Bash"）；非 waiting 为 null（session ref 来源，
-  // T4.1 交互卡片接手 runtime notification 后移除）。
-  waitingFor: string | null;
+  // waiting 态交互载荷（T4.1 审批卡/提问卡数据源）：PermissionRequest /
+  // PreToolUse(AskUserQuestion) 置入，claude 下一个事件清空；存活门槛同
+  // claudeStatus（退出后 runtime 残留条目不越权）。
+  notification: ClaudeNotification | null;
   // 乐观 echo 登记（T3.1）：发送时先调（真实回写经 onSend prop 走队列）。
   sendEcho: (text: string) => void;
   refresh: () => void;
@@ -173,8 +175,6 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
   // claude 状态（composer 发送/停止门槛 + 打字中指示）：locate 时存 sessionRef.status
   // （fallback 数据源；对外返回值已被 runtime 优先合成覆盖，见 hook 尾部）。
   const [claudeStatus, setClaudeStatus] = useState<ClaudeSessionStatus | null>(null);
-  // waiting 态上下文（如 "approve Bash"）；非 waiting 为 null。等待 banner 展示用。
-  const [waitingFor, setWaitingFor] = useState<string | null>(null);
   // 刷新驱动：自增触发定位 effect 重跑（同 usePtySession attempt 范式）。
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -185,7 +185,6 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
     const locateOnce = async () => {
       setLocate({ status: 'locating' });
       setClaudeStatus(null);
-      setWaitingFor(null);
       let sessionRef;
       try {
         sessionRef = await unwrap(commands.ptyClaudeSession(sessionId));
@@ -207,7 +206,6 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
         const path = runtimePath ?? sessionRef.transcriptPath;
         saveTranscriptMemory(sessionId, path);
         setClaudeStatus(sessionRef.status);
-        setWaitingFor(sessionRef.waitingFor);
         setLocate({
           status: 'located',
           path,
@@ -339,6 +337,9 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
   const effectiveClaudeStatus = alive
     ? (runtime != null ? mapRuntimeStatus(runtime.status) : claudeStatus)
     : null;
+  // notification 切源（T4.1）：runtime 直给（事件驱动即时），存活门槛同上——
+  // claude 退出后 runtime 条目残留的 notification 不再渲染交互卡。
+  const notification = alive ? (runtime?.notification ?? null) : null;
   // 对外消息合成（T3.1）：真实消息 + 乐观 echo + 流式气泡（working 且 preview
   // 领先于最后 assistant 文本时；真实 turn 落地自然替换——预览被包含即隐藏）。
   // 合成顺序 echo 在流式气泡之前（orca 相反）：「prompt → 回复」顺序语义更
@@ -357,5 +358,12 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
     return streamingText != null ? [...composed, streamingMessage(streamingText)] : composed;
   }, [state, pending, runtime, effectiveClaudeStatus]);
   const refresh = useCallback(() => setReloadKey(k => k + 1), []);
-  return { state, messages, claudeStatus: effectiveClaudeStatus, waitingFor, sendEcho, refresh };
+  return {
+    state,
+    messages,
+    claudeStatus: effectiveClaudeStatus,
+    notification,
+    sendEcho,
+    refresh,
+  };
 }

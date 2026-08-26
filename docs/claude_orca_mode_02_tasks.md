@@ -219,7 +219,7 @@
 
 ### T4.1 审批卡 / 提问卡替代「切回终端」
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：claude 权限确认与自由提问在 chat 内以原生卡片直接回答，消除最大隔离感来源
 
@@ -236,6 +236,44 @@
 **依赖**：T2.1（notification 载荷）、T3.1（经队列发送）
 
 **验证**：触发 Bash 权限请求 → chat 内审批卡 → 允许 → 任务继续
+
+**实施记录（2026-08-26）**：
+- 数据源升级为 **PreToolUse 新 hook**（架构澄清确认）：installer 注册集 7→8 事件
+  （无 matcher）；ingest 仅 AskUserQuestion 进状态机（tool_name 剥非字母数字判型，
+  容拼写变体）置 Waiting + notification，普通工具调用高频 Drop（working 态已由
+  MessageDisplay 推进）。Notification 事件维持不入状态机。
+- 按键语义（orca STA-1860 实测修正任务书表述）：AskUserQuestion 是方向键选择器，
+  **按标签文本作答会静默答成首选项**——一律用 1 起始序号作答（数字即选中+提交）；
+  多选勾完右方向键（`\x1b[C`）进 Submit 页签；自由文本走「Type something」行号
+  （选项数+1）+ sanitize 文本 + 回车；多问含未答之问用右方向键跳过。
+- 发送链**独立于 T3.1 chatSendQueue**（有意不共用）：选择器应答无清行/回车序列、
+  提问卡在场时 composer 已替换无竞争写入；`chatInteractiveSend.ts` 自管 1s/组
+  步进 timer（组 0 同步写），per-session 键控 + cancel 幂等 + 新链顶旧链。
+- 审批卡动态按钮（「动态建议+回落」确认）：permission_suggestions 在场 → 序号
+  按钮组；缺省回落「允许 '1' / 总是允许 '2' / 拒绝 ESC」。提问解析失败（载荷
+  漂移）回落审批卡形态（'1'/'2' 即选首/次行，功能语义仍成立）。
+- 提问卡全量多问题支持（用户确认取全量而非单问简化）：页签步进 + 单/多选 +
+  常驻自由输入行 + 末问统一提交；作答后按内容键本地消隐（notification 要等
+  claude 下一事件才清，去重键防卡复活；清空即复位）。
+- 换新提问时中止旧应答链余组（防旧链导航键/回车写进新选择器——回车会提交
+  新问首选项）；stopChat / 卸载同样 cancel。
+- useTranscript 切源：`notification` 直通（runtime 优先 + locate 存活门槛收口），
+  `waitingFor`（session ref 来源）移除；「切回终端回答」banner 退役。
+- 单测：chatAsk（18）+ chatInteractiveSend（7）+ ingest PreToolUse（3）+ installer
+  合并测试更新；全量 cargo test 114 过 / vitest 46 过 / tsc / eslint 清洁。
+- 审查修复（缺陷/简洁性/架构三路 review，8 项全修）：已答记忆由内容键改为按
+  **notification 实例**为界（HIGH——本仓无 PostToolUse 注册，同工具连续审批
+  之间无事件清 notification，内容键（含 toolInput）会把第二次误判已答致卡片
+  消隐 + composer 锁死；Rust 每次 Apply 都 emit 新对象，identity 变化即复位）；
+  hook 未生效兜底链路恢复「切回终端」降级横幅（Waiting 且无 notification 时）；
+  步进链改单 timer 链式推进（单组链不占状态、`cancelled` 死标志消除）；末问
+  空答按钮文案与取消动作一致（「跳过」）；ingest 两 waiting 臂抽
+  `into_waiting`；已答判定单源 `isAskAnswered`（删 hasAskAnswer 死导出）；
+  ESC 常量单源 `APPROVAL_DENY`；`setQuestionActive` 直传。
+- 已知边界（排期参考）：`ensure_workspace_hooks` 尚无前端调用点，T6.1 接线前
+  已装工作区的 settings.json 不自动补 PreToolUse 注册——存量环境提问卡不生效。
+- dev app 实测待办（与 T3.1/T2.1 遗留实测合并）：Bash 权限 → 审批卡允许 → 任务
+  继续；AskUserQuestion → 多问题卡作答；作答后卡片消隐、状态回 Working。
 
 ---
 

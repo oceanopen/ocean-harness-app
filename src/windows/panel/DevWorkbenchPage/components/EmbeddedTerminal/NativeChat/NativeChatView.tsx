@@ -1,27 +1,37 @@
-// chat 视图容器（terminal_chat T2.2/T3.1/T3.3）：接 useTranscript 状态机分派（非 ready
-// → 空态，ready → 消息列表）；底部 composer 可发送/停止（回写 PTY）；顶部手动刷新。
-// waiting 态显示交互 prompt 引导（T3.3）。数据由 useTranscript 订阅驱动。
+// chat 视图容器（terminal_chat T2.2/T3.1 + claude_orca T4.1 交互卡）：接
+// useTranscript 状态机分派（非 ready → 空态，ready → 消息列表）；底部
+// composer 可发送/停止（回写 PTY）；顶部手动刷新。waiting 态渲染交互卡
+// （T4.1：提问卡替换 composer、审批卡悬于 composer 上方，「切回终端回答」
+// banner 退役）。数据由 useTranscript 订阅驱动。
 
+import type { AskAnswerSelection, AskPrompt } from './chatAsk';
 import { RefreshOutlined as RefreshIcon } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { CHAT_STREAMING_ID } from './chatStreaming';
 import NativeChatComposer from './NativeChatComposer';
 import NativeChatEmptyState from './NativeChatEmptyState';
+import NativeChatInteractiveCard from './NativeChatInteractiveCard';
 import NativeChatMessageList from './NativeChatMessageList';
 import { useTranscript } from './useTranscript';
 
 interface NativeChatViewProps {
   sessionId: string;
-  // 切回 terminal 视图（no-claude 空态的引导动作）。
+  // 切回 terminal 视图（no-claude 空态 / claude-exited banner 的引导动作）。
   onBackToTerminal: () => void;
   // 发送正文（回写 PTY）。
   onSend: (text: string) => void;
   // 停止（ESC 中断）。
   onStop: () => void;
+  // 提问卡提交（T4.1）：父层构造按键组并步进写回 PTY。
+  onAskAnswer: (prompt: AskPrompt, selections: AskAnswerSelection[]) => void;
+  // 写原始按键串（T4.1 审批选项数字 / 取消 ESC）。
+  onChatKeys: (raw: string) => void;
+  // 中止在途应答链（T4.1 交互卡换新提问时防旧组串场）。
+  onInteractiveCancel: () => void;
 }
 
-// 顶部窄横幅（waiting / claude-exited 共用形态）：说明文案 + 引导动作按钮。
+// 顶部窄横幅（claude-exited）：说明文案 + 引导动作按钮。
 function ChatBanner({ text, action, onAction }: { text: string; action: string; onAction: () => void }) {
   return (
     <Box
@@ -42,13 +52,25 @@ function ChatBanner({ text, action, onAction }: { text: string; action: string; 
   );
 }
 
-export default function NativeChatView({ sessionId, onBackToTerminal, onSend, onStop }: NativeChatViewProps) {
-  const { state, messages, claudeStatus, waitingFor, sendEcho, refresh } = useTranscript(sessionId);
-  // composer 门槛：Idle 才可发送（Waiting=交互 prompt 阻塞、Busy=响应中，均禁发）；Busy 才可停止。
+export default function NativeChatView({
+  sessionId,
+  onBackToTerminal,
+  onSend,
+  onStop,
+  onAskAnswer,
+  onChatKeys,
+  onInteractiveCancel,
+}: NativeChatViewProps) {
+  const { state, messages, claudeStatus, notification, sendEcho, refresh } = useTranscript(sessionId);
+  // composer 门槛：Idle 才可发送（Waiting=交互卡在场、Busy=响应中，均禁发）；Busy 才可停止。
   const canSend = claudeStatus === 'Idle';
   const isBusy = claudeStatus === 'Busy';
-  // waiting = 交互 prompt（权限确认/提问），引导切回终端回答。
+  // waiting = 交互阻塞（审批/提问），T4.1 起由交互卡在场作答。
   const isWaiting = claudeStatus === 'Waiting';
+  // 提问卡在场（InteractiveCard 通告）：替换 composer——卡内自由输入行是唯一
+  // 输入面（写给 composer 的字节会落到选择器上）。卡离场/视图卸载自动复位。
+  // setState 引用稳定，直传（Dispatch 可赋给 (active: boolean) => void）。
+  const [questionActive, setQuestionActive] = useState(false);
   // 发送编排（T3.1）：先乐观 echo（立即上屏），真实回写经 onSend 走发送队列
   // （串行防粘行，EmbeddedTerminal chatSendQueue）。
   const handleSend = useCallback((text: string) => {
@@ -74,14 +96,12 @@ export default function NativeChatView({ sessionId, onBackToTerminal, onSend, on
         </IconButton>
       </Box>
 
-      {/* waiting banner（terminal_chat T3.3）：claude 交互 prompt 阻塞（权限/提问），
-          引导切回终端回答。waitingFor 为 session json 附带的上下文（如 "approve Bash"）。 */}
-      {isWaiting && (
-        <ChatBanner
-          text={`claude 等待输入${waitingFor != null && waitingFor !== '' ? `（${waitingFor}）` : ''}`}
-          action="切回终端回答"
-          onAction={onBackToTerminal}
-        />
+      {/* 兜底链路降级横幅（T4.1）：hook 链路未生效时（useTranscript 回落
+          ptyClaudeSession）Waiting 态无 notification → 无交互卡可渲染，恢复
+          「切回终端」指引。hook 模式下 Waiting ⇒ notification 非空不变量成立
+          （所有置 Waiting 的分支都同时置 notification），此横幅不出现。 */}
+      {isWaiting && notification == null && (
+        <ChatBanner text="claude 等待输入" action="切回终端回答" onAction={onBackToTerminal} />
       )}
 
       {/* 主体：状态分派。ready / claude-exited 都有消息列表；claude-exited 额外
@@ -103,8 +123,24 @@ export default function NativeChatView({ sessionId, onBackToTerminal, onSend, on
             <NativeChatEmptyState state={state} onBackToTerminal={onBackToTerminal} />
           )}
 
-      {/* 底部 composer：发送/停止（T3.1），门槛见上 canSend/isBusy 派生 */}
-      <NativeChatComposer onSend={handleSend} onStop={onStop} canSend={canSend} isBusy={isBusy} />
+      {/* 交互卡（T4.1）：waiting 态渲染于 composer 槽位上缘——提问卡即输入面
+          （下方 composer 同时摘除），审批卡悬于 composer 上方。作答后本地消隐，
+          claude 下一个事件清 waiting。 */}
+      {isWaiting && (
+        <NativeChatInteractiveCard
+          notification={notification}
+          onAnswer={onAskAnswer}
+          onRawKeys={onChatKeys}
+          onCancelPendingKeys={onInteractiveCancel}
+          onQuestionActiveChange={setQuestionActive}
+        />
+      )}
+
+      {/* 底部 composer：发送/停止（T3.1），门槛见上 canSend/isBusy 派生。
+          提问卡在场时整块摘除（卡内输入行接管，见 questionActive 注释）。 */}
+      {!questionActive && (
+        <NativeChatComposer onSend={handleSend} onStop={onStop} canSend={canSend} isBusy={isBusy} />
+      )}
     </Box>
   );
 }

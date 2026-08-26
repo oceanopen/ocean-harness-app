@@ -9,6 +9,9 @@
 //   - 子代理防御：带 agent_id 的 SessionStart 忽略（Task 子进程不得翻转 pane 状态）。
 //   - Notification 不入状态机（orca 已移除：claude idle 时也发 Notification，
 //     误置 waiting）；注册保留（T1.2），仅作观察渠道。
+//   - PreToolUse（T4.1）：仅 AskUserQuestion 进状态机置 waiting（提问卡数据
+//     源，tool_input.questions 结构化选项，对齐 orca interactive-tool）；普通
+//     工具调用高频 Drop（working 态已由 MessageDisplay 推进，不重复扰动）。
 //   - MessageDisplay 推 working 态 + delta/index 拼接 preview_text（T3.1 流式
 //     气泡数据源，T1.3 砍掉的拼接在此复活）。带 agent_id 的 MessageDisplay
 //     丢弃（子代理防御，同 SessionStart）。
@@ -42,14 +45,21 @@ pub enum Decision {
 }
 
 /// 单行归一化决策（纯函数）。current 为 None 表示 pane 首个事件（从默认态起步）。
-pub fn decide(current: Option<&ClaudeRuntimeState>, payload: &HookPayload, now_ms: i64) -> Decision {
+pub fn decide(
+    current: Option<&ClaudeRuntimeState>,
+    payload: &HookPayload,
+    now_ms: i64,
+) -> Decision {
     let base = current.cloned().unwrap_or_default();
 
     // launch_token 围栏：store 已绑定代际标且载荷携带不同 token → 僵尸事件丢弃。
     // 例外（对齐 orca server.ts:1129）：tokened SessionStart 直接放行并重绑——
     // 同 pane 重启新 claude 的首个事件就是它，若也被围栏挡住则永远无法换代。
     // 载荷无 token（T1.4 前窗口 / 脚本未升级）放行。
-    if let (Some(bound), Some(incoming)) = (base.launch_token.as_deref(), payload.launch_token.as_deref()) {
+    if let (Some(bound), Some(incoming)) = (
+        base.launch_token.as_deref(),
+        payload.launch_token.as_deref(),
+    ) {
         let is_session_start = payload.hook_event_name == "SessionStart";
         if bound != incoming && !is_session_start {
             return Decision::Drop;
@@ -133,18 +143,25 @@ pub fn decide(current: Option<&ClaudeRuntimeState>, payload: &HookPayload, now_m
                 persist: false,
             }
         }
-        "PermissionRequest" => {
-            state.status = ClaudeRuntimeStatus::Waiting;
-            state.notification = Some(notification_from(payload));
-            Decision::Apply {
-                state,
-                truncate_spool: false,
-                persist: false,
-            }
-        }
+        // PreToolUse(AskUserQuestion)（T4.1）：提问卡数据源。PermissionRequest
+        // 之外的第二个 waiting 源——结构化提问阻塞等待选项键入。
+        "PreToolUse" if is_ask_user_question(payload) => into_waiting(state, payload),
+        "PermissionRequest" => into_waiting(state, payload),
         // Notification 不入状态机（orca v1.4.178 已移除：claude idle 时也发
         // "waiting for your input"，误置 waiting）。未知事件静默忽略。
         _ => Decision::Drop,
+    }
+}
+
+/// 置 Waiting + 挂 notification：两个交互阻塞源（PermissionRequest /
+/// PreToolUse(AskUserQuestion)）共用的状态迁移。
+fn into_waiting(mut state: ClaudeRuntimeState, payload: &HookPayload) -> Decision {
+    state.status = ClaudeRuntimeStatus::Waiting;
+    state.notification = Some(notification_from(payload));
+    Decision::Apply {
+        state,
+        truncate_spool: false,
+        persist: false,
     }
 }
 
@@ -194,22 +211,26 @@ fn append_preview_text(state: &mut ClaudeRuntimeState, delta: &str) {
     }
 }
 
-/// PermissionRequest 载荷 → ClaudeNotification。message 取 payload.message
-/// （缺省用 tool_name 合成）；tool_input 序列化为字符串（前端卡片渲染用）；
+/// PermissionRequest / PreToolUse(AskUserQuestion) 载荷 → ClaudeNotification。
+/// message 取 payload.message（缺省用 tool_name 合成）；tool_input 序列化为
+/// 字符串（前端卡片渲染用：提问卡解析 questions、审批卡展示摘要）；
 /// permission_suggestions best-effort 提取（字符串数组形态，其他形态丢弃）。
+/// AskUserQuestion 的 message 前端不消费（按 tool_name 路由到提问卡）。
 fn notification_from(payload: &HookPayload) -> ClaudeNotification {
     let message = payload
         .message
         .clone()
-        .or_else(|| payload.tool_name.clone().map(|t| format!("approve {t}")))
+        .or_else(|| {
+            payload
+                .tool_name
+                .clone()
+                .map(|t| format!("approve {t}"))
+        })
         .unwrap_or_default();
     ClaudeNotification {
         message,
         tool_name: payload.tool_name.clone(),
-        tool_input: payload
-            .tool_input
-            .as_ref()
-            .map(|v| v.to_string()),
+        tool_input: payload.tool_input.as_ref().map(|v| v.to_string()),
         permission_suggestions: permission_suggestions(payload),
     }
 }
@@ -217,7 +238,11 @@ fn notification_from(payload: &HookPayload) -> ClaudeNotification {
 /// permission_suggestions 宽容提取：claude 载荷为字符串数组；任何其他形态
 /// （对象/嵌套）返回 None（T4.1 渲染时按 None 处理，不 panic）。
 fn permission_suggestions(payload: &HookPayload) -> Option<Vec<String>> {
-    let Value::Array(items) = payload.tool_input.as_ref()?.get("permission_suggestions")? else {
+    let Value::Array(items) = payload
+        .tool_input
+        .as_ref()?
+        .get("permission_suggestions")?
+    else {
         return None;
     };
     let list = items
@@ -227,13 +252,29 @@ fn permission_suggestions(payload: &HookPayload) -> Option<Vec<String>> {
     (!list.is_empty()).then_some(list)
 }
 
+/// AskUserQuestion 判型：tool_name 剥非字母数字并小写后等于 askuserquestion
+/// （宽容 AskUserQuestion / ask_user_question / askUserQuestion 拼写变体）。
+fn is_ask_user_question(payload: &HookPayload) -> bool {
+    let Some(name) = payload.tool_name.as_deref() else {
+        return false;
+    };
+    let mut normalized = String::with_capacity(name.len());
+    for c in name.chars().filter(|c| c.is_ascii_alphanumeric()) {
+        normalized.push(c.to_ascii_lowercase());
+    }
+    normalized == "askuserquestion"
+}
+
 /// 效果层：单行 ingest——反序列化 → decide → store 更新 → persist（按需）→ emit。
 /// 损坏行 skip + warn（不 panic）；返回是否要求截断 spool（watch 层批后执行）。
 pub fn ingest(app: &AppHandle, pane: &str, line: &str) -> bool {
     let payload: HookPayload = match serde_json::from_str(line) {
         Ok(p) => p,
         Err(e) => {
-            log::warn!("[claude_runtime] spool line parse failed, skipping: {}", e);
+            log::warn!(
+                "[claude_runtime] spool line parse failed, skipping: {}",
+                e
+            );
             return false;
         }
     };
@@ -269,8 +310,14 @@ pub fn ingest(app: &AppHandle, pane: &str, line: &str) -> bool {
         let store = app.state::<ClaudeRuntimeStore>();
         store::persist(&store);
     }
-    if let Err(e) = app.emit(EVENT_CLAUDE_RUNTIME_CHANGED, &state.to_payload(pane)) {
-        log::warn!("[claude_runtime] emit claude-runtime:changed failed: {}", e);
+    if let Err(e) = app.emit(
+        EVENT_CLAUDE_RUNTIME_CHANGED,
+        &state.to_payload(pane),
+    ) {
+        log::warn!(
+            "[claude_runtime] emit claude-runtime:changed failed: {}",
+            e
+        );
     }
     truncate_spool
 }
@@ -319,10 +366,16 @@ mod tests {
         else {
             panic!("expected Apply");
         };
-        assert!(truncate_spool, "SessionStart must request spool truncation");
+        assert!(
+            truncate_spool,
+            "SessionStart must request spool truncation"
+        );
         assert!(persist);
         assert_eq!(state.claude_session_id.as_deref(), Some("s2"));
-        assert_eq!(state.transcript_path.as_deref(), Some("/tmp/t2.jsonl"));
+        assert_eq!(
+            state.transcript_path.as_deref(),
+            Some("/tmp/t2.jsonl")
+        );
         assert_eq!(state.launch_token.as_deref(), Some("tokB"));
         assert_eq!(state.status, ClaudeRuntimeStatus::Idle);
     }
@@ -342,7 +395,10 @@ mod tests {
         let current = state_with_token("tokB");
         let mut stale = payload("Stop");
         stale.launch_token = Some("tokA".into());
-        assert_eq!(decide(Some(&current), &stale, 100), Decision::Drop);
+        assert_eq!(
+            decide(Some(&current), &stale, 100),
+            Decision::Drop
+        );
 
         let mut fresh = payload("UserPromptSubmit");
         fresh.launch_token = Some("tokB".into());
@@ -365,7 +421,10 @@ mod tests {
         let mut p = payload("SessionStart");
         p.agent_id = Some(Value::String("agent-1".into()));
         p.launch_token = Some("tokB".into());
-        assert_eq!(decide(Some(&state_with_token("tokB")), &p, 100), Decision::Drop);
+        assert_eq!(
+            decide(Some(&state_with_token("tokB")), &p, 100),
+            Decision::Drop
+        );
     }
 
     #[test]
@@ -375,8 +434,7 @@ mod tests {
         working.status = ClaudeRuntimeStatus::Working;
         working.preview_text = Some("thinking".into());
         for event in ["Stop", "StopFailure"] {
-            let Decision::Apply { state, .. } = decide(Some(&working), &payload(event), 100)
-            else {
+            let Decision::Apply { state, .. } = decide(Some(&working), &payload(event), 100) else {
                 panic!("{event} must apply");
             };
             assert_eq!(state.status, ClaudeRuntimeStatus::Idle);
@@ -394,8 +452,7 @@ mod tests {
             permission_suggestions: None,
         });
         for event in ["UserPromptSubmit", "MessageDisplay"] {
-            let Decision::Apply { state, .. } = decide(Some(&waiting), &payload(event), 100)
-            else {
+            let Decision::Apply { state, .. } = decide(Some(&waiting), &payload(event), 100) else {
                 panic!("{event} must apply");
             };
             assert_eq!(state.status, ClaudeRuntimeStatus::Working);
@@ -408,14 +465,20 @@ mod tests {
     fn notification_is_ignored() {
         let mut p = payload("Notification");
         p.message = Some("Claude is waiting for your input".into());
-        assert_eq!(decide(Some(&state_with_token("tokB")), &p, 100), Decision::Drop);
+        assert_eq!(
+            decide(Some(&state_with_token("tokB")), &p, 100),
+            Decision::Drop
+        );
         assert_eq!(decide(None, &p, 100), Decision::Drop);
     }
 
     /// 未知事件静默忽略（未来事件名漂移不炸状态机）。
     #[test]
     fn unknown_event_dropped() {
-        assert_eq!(decide(None, &payload("SomeFutureEvent"), 100), Decision::Drop);
+        assert_eq!(
+            decide(None, &payload("SomeFutureEvent"), 100),
+            Decision::Drop
+        );
     }
 
     /// 任意带 session_id 的事件可兜底绑定（SessionStart 丢失场景）。
@@ -428,7 +491,10 @@ mod tests {
             panic!("expected Apply");
         };
         assert_eq!(state.claude_session_id.as_deref(), Some("s9"));
-        assert_eq!(state.transcript_path.as_deref(), Some("/tmp/t9.jsonl"));
+        assert_eq!(
+            state.transcript_path.as_deref(),
+            Some("/tmp/t9.jsonl")
+        );
     }
 
     #[test]
@@ -436,10 +502,12 @@ mod tests {
         let mut p = payload("PermissionRequest");
         p.message = Some("Claude needs approval".into());
         p.tool_name = Some("Bash".into());
-        p.tool_input = Some(serde_json::from_str(
-            r#"{"command":"ls","permission_suggestions":["Allow once","Always allow"]}"#,
-        )
-        .unwrap());
+        p.tool_input = Some(
+            serde_json::from_str(
+                r#"{"command":"ls","permission_suggestions":["Allow once","Always allow"]}"#,
+            )
+            .unwrap(),
+        );
         let Decision::Apply { state, .. } = decide(None, &p, 100) else {
             panic!("expected Apply");
         };
@@ -463,7 +531,10 @@ mod tests {
         let Decision::Apply { state, .. } = decide(None, &p, 100) else {
             panic!("expected Apply");
         };
-        assert_eq!(state.notification.unwrap().permission_suggestions, None);
+        assert_eq!(
+            state.notification.unwrap().permission_suggestions,
+            None
+        );
     }
 
     /// message 缺省时用 tool_name 合成通知文案。
@@ -474,7 +545,75 @@ mod tests {
         let Decision::Apply { state, .. } = decide(None, &p, 100) else {
             panic!("expected Apply");
         };
-        assert_eq!(state.notification.unwrap().message, "approve Bash");
+        assert_eq!(
+            state.notification.unwrap().message,
+            "approve Bash"
+        );
+    }
+
+    // ===== PreToolUse（T4.1 提问卡数据源）=====
+
+    /// AskUserQuestion 进状态机：Waiting + notification（tool_input 带 questions，
+    /// 前端提问卡解析用）。拼写变体（下划线/大小写）同判。
+    #[test]
+    fn pretooluse_askuserquestion_enters_state_machine() {
+        let mut working = state_with_token("tokB");
+        working.status = ClaudeRuntimeStatus::Working;
+        for variant in [
+            "AskUserQuestion",
+            "ask_user_question",
+            "askUserQuestion",
+        ] {
+            let mut p = payload("PreToolUse");
+            p.tool_name = Some(variant.into());
+            p.tool_input = Some(
+                serde_json::from_str(
+                    r#"{"questions":[{"question":"用哪个库？","options":["React","Vue"]}]}"#,
+                )
+                .unwrap(),
+            );
+            let Decision::Apply { state, .. } = decide(Some(&working), &p, 100) else {
+                panic!("{variant} must apply");
+            };
+            assert_eq!(state.status, ClaudeRuntimeStatus::Waiting);
+            let n = state.notification.unwrap();
+            assert_eq!(n.tool_name.as_deref(), Some(variant));
+            assert!(
+                n.tool_input
+                    .as_deref()
+                    .unwrap()
+                    .contains("questions")
+            );
+        }
+    }
+
+    /// 普通工具调用 PreToolUse 高频 Drop：working 态已由 MessageDisplay 推进，
+    /// 不重复扰动状态机。
+    #[test]
+    fn pretooluse_ordinary_tool_dropped() {
+        for tool in ["Bash", "Read", "TodoWrite"] {
+            let mut p = payload("PreToolUse");
+            p.tool_name = Some(tool.into());
+            p.tool_input = Some(serde_json::from_str(r#"{"command":"ls"}"#).unwrap());
+            assert_eq!(
+                decide(Some(&state_with_token("tokB")), &p, 100),
+                Decision::Drop,
+                "{tool} must drop"
+            );
+        }
+    }
+
+    /// PreToolUse 无 tool_name（防御：畸形载荷）→ Drop。
+    #[test]
+    fn pretooluse_without_tool_name_dropped() {
+        assert_eq!(
+            decide(
+                Some(&state_with_token("tokB")),
+                &payload("PreToolUse"),
+                100
+            ),
+            Decision::Drop
+        );
     }
 
     // ===== MessageDisplay delta 拼接（T3.1 流式气泡数据源）=====
@@ -493,20 +632,28 @@ mod tests {
     #[test]
     fn message_display_appends_preview_in_order() {
         let current = state_with_token("tokB");
-        let Decision::Apply { state: s1, .. } =
-            decide(Some(&current), &message_display("Hel", 0, false), 100)
-        else {
+        let Decision::Apply { state: s1, .. } = decide(
+            Some(&current),
+            &message_display("Hel", 0, false),
+            100,
+        ) else {
             panic!("expected Apply");
         };
         assert_eq!(s1.preview_text.as_deref(), Some("Hel"));
         assert_eq!(s1.status, ClaudeRuntimeStatus::Working);
 
-        let Decision::Apply { state: s2, .. } =
-            decide(Some(&s1), &message_display("lo 世界", 1, true), 101)
-        else {
+        let Decision::Apply { state: s2, .. } = decide(
+            Some(&s1),
+            &message_display("lo 世界", 1, true),
+            101,
+        ) else {
             panic!("expected Apply");
         };
-        assert_eq!(s2.preview_text.as_deref(), Some("Hello 世界"), "final 保持定稿文本");
+        assert_eq!(
+            s2.preview_text.as_deref(),
+            Some("Hello 世界"),
+            "final 保持定稿文本"
+        );
     }
 
     /// index 0 重置：新消息起点，旧 preview 作废。
@@ -515,9 +662,11 @@ mod tests {
         let mut current = state_with_token("tokB");
         current.preview_text = Some("旧消息".into());
         current.preview_index = Some(5);
-        let Decision::Apply { state, .. } =
-            decide(Some(&current), &message_display("New", 0, false), 100)
-        else {
+        let Decision::Apply { state, .. } = decide(
+            Some(&current),
+            &message_display("New", 0, false),
+            100,
+        ) else {
             panic!("expected Apply");
         };
         assert_eq!(state.preview_text.as_deref(), Some("New"));
@@ -529,12 +678,18 @@ mod tests {
         let mut current = state_with_token("tokB");
         current.preview_text = Some("Hello".into());
         current.preview_index = Some(1);
-        let Decision::Apply { state, .. } =
-            decide(Some(&current), &message_display("Hello", 1, false), 100)
-        else {
+        let Decision::Apply { state, .. } = decide(
+            Some(&current),
+            &message_display("Hello", 1, false),
+            100,
+        ) else {
             panic!("expected Apply");
         };
-        assert_eq!(state.preview_text.as_deref(), Some("Hello"), "重复 index 不追加");
+        assert_eq!(
+            state.preview_text.as_deref(),
+            Some("Hello"),
+            "重复 index 不追加"
+        );
     }
 
     /// 子代理 MessageDisplay 丢弃（防御口径同 SessionStart）。
@@ -542,7 +697,10 @@ mod tests {
     fn subagent_message_display_dropped() {
         let mut p = message_display("sub text", 0, false);
         p.agent_id = Some(Value::String("agent-1".into()));
-        assert_eq!(decide(Some(&state_with_token("tokB")), &p, 100), Decision::Drop);
+        assert_eq!(
+            decide(Some(&state_with_token("tokB")), &p, 100),
+            Decision::Drop
+        );
     }
 
     /// UserPromptSubmit 清残留 preview：新回合起步旧流式文本作废。
@@ -552,7 +710,8 @@ mod tests {
         current.status = ClaudeRuntimeStatus::Idle;
         current.preview_text = Some("上回合残文".into());
         current.preview_index = Some(2);
-        let Decision::Apply { state, .. } = decide(Some(&current), &payload("UserPromptSubmit"), 100)
+        let Decision::Apply { state, .. } =
+            decide(Some(&current), &payload("UserPromptSubmit"), 100)
         else {
             panic!("expected Apply");
         };

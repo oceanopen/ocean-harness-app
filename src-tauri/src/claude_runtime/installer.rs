@@ -10,10 +10,12 @@
 //     损坏无关 dotfile）。
 //   - 脚本先于 settings 落盘（settings 指向的脚本不能缺席）。
 //
-// 事件注册集（7 事件，依据 orca 最新 hook-settings.ts + claude 2.1.231 官方
-// hooks 文档核查，见 docs/claude_orca_mode_02_tasks.md T1.2）：
-//   SessionStart / UserPromptSubmit / MessageDisplay / Stop / StopFailure /
-//   Notification（无 matcher）+ PermissionRequest（matcher "*"）。
+// 事件注册集（8 事件，依据 orca 最新 hook-settings.ts + claude 2.1.231 官方
+// hooks 文档核查，见 docs/claude_orca_mode_02_tasks.md T1.2 / T4.1）：
+//   SessionStart / UserPromptSubmit / MessageDisplay / PreToolUse / Stop /
+//   StopFailure / Notification（无 matcher）+ PermissionRequest（matcher "*"）。
+//   PreToolUse（T4.1）无 matcher：ingest 侧只让 AskUserQuestion 进状态机
+//   （提问卡数据源），普通工具调用高频全量 Drop。
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,6 +31,7 @@ const HOOK_EVENTS: &[(&str, Option<&str>)] = &[
     ("SessionStart", None),
     ("UserPromptSubmit", None),
     ("MessageDisplay", None),
+    ("PreToolUse", None),
     ("Stop", None),
     ("StopFailure", None),
     ("PermissionRequest", Some("*")),
@@ -353,14 +356,21 @@ mod tests {
                 .contains("claude-hooks/hook.sh")
         );
 
-        // PreToolUse：未注册事件，用户条目原样保留。
-        assert_eq!(hooks["PreToolUse"].len(), 1);
+        // PreToolUse（T4.1 已注册）：用户 matcher 条目 + 自有条目共存。
+        assert_eq!(hooks["PreToolUse"].len(), 2);
         assert_eq!(
             hooks["PreToolUse"][0].matcher,
             Some(Value::String("Bash".into()))
         );
+        assert!(
+            hooks["PreToolUse"][1].hooks.as_ref().unwrap()[0]
+                .command
+                .as_deref()
+                .unwrap()
+                .contains("claude-hooks/hook.sh")
+        );
 
-        // 7 注册事件全部在场；PermissionRequest 带 matcher "*"。
+        // 8 注册事件全部在场；PermissionRequest 带 matcher "*"。
         assert_eq!(
             hooks["PermissionRequest"][0].matcher,
             Some(Value::String("*".into()))
@@ -370,6 +380,7 @@ mod tests {
             "SessionStart",
             "UserPromptSubmit",
             "MessageDisplay",
+            "PreToolUse",
             "Stop",
             "StopFailure",
             "PermissionRequest",

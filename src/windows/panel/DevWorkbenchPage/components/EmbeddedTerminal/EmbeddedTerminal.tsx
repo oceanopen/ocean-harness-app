@@ -1,4 +1,5 @@
 import type { TerminalFontSize, TerminalScrollbackRows } from '@src/shared/appConfig';
+import type { AskAnswerSelection, AskPrompt } from './NativeChat/chatAsk';
 import type { TerminalThemeId } from './terminalTheme';
 import { CreateNewFolderOutlined as CreateNewFolderOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
@@ -31,8 +32,10 @@ import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { cancelInteractiveSends, sendInteractiveKeys } from './chatInteractiveSend';
 import { buildChatPasteBytes, CHAT_CLEAR_INPUT, CHAT_SUBMIT, CHAT_SUBMIT_DELAY_MS } from './chatSend';
 import { cancelChatSends, enqueueChatSend } from './chatSendQueue';
+import { buildAskAnswerKeys } from './NativeChat/chatAsk';
 import { clearLastPendingSendByText } from './NativeChat/chatPending';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } from './terminalTheme';
 import TerminalView from './TerminalView';
@@ -265,15 +268,31 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     );
   }, [session, sessionId]);
   // 「停止」（terminal_chat T3.1）：ESC = claude TUI 中断键，中止正在生成的回复。
-  // 先取消在途发送序列——延迟回车不得落在中断后的新上下文（如下一条 prompt）上。
+  // 先取消在途发送序列——延迟回车不得落在中断后的新上下文（如下一条 prompt）上；
+  // 在途交互应答链一并中止（T4.1，余组不得写进中断后的新上下文）。
   const stopChat = useCallback(() => {
     cancelChatSends(sessionId);
+    cancelInteractiveSends(sessionId);
     session.write('\x1B');
   }, [session, sessionId]);
-  // 卸载时中止在途发送序列（延迟回车不得误写已 shutdown 的会话）。
+  // 「提问卡提交」（T4.1）：选项/自由文本 → 按键组（chatAsk）→ 步进写回
+  // （chatInteractiveSend，1s/组——导航键与回车同批会被选择器提前提交）。
+  const sendChatAskAnswer = useCallback((prompt: AskPrompt, selections: AskAnswerSelection[]) => {
+    sendInteractiveKeys(sessionId, buildAskAnswerKeys(prompt, selections), session.write);
+  }, [session, sessionId]);
+  // 「交互卡原始按键」（T4.1）：审批选项数字（即选即交）/ 取消 ESC，单发无序列。
+  const sendChatKeys = useCallback((raw: string) => {
+    session.write(raw);
+  }, [session]);
+  // 「中止在途应答链」（T4.1）：交互卡换新提问时防旧链余组写进新选择器。
+  const cancelChatInteractive = useCallback(() => {
+    cancelInteractiveSends(sessionId);
+  }, [sessionId]);
+  // 卸载时中止在途发送序列与应答链（延迟回车/余组不得误写已 shutdown 的会话）。
   useEffect(() => {
     return () => {
       cancelChatSends(sessionId);
+      cancelInteractiveSends(sessionId);
     };
   }, [sessionId]);
   // 「重开」（裸 shell）须包一层防 MouseEvent 误传 reopen 的 claude 形参。
@@ -369,6 +388,9 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         onActive={handleActive}
         onChatSend={sendChatMessage}
         onChatStop={stopChat}
+        onChatAskAnswer={sendChatAskAnswer}
+        onChatKeys={sendChatKeys}
+        onChatInteractiveCancel={cancelChatInteractive}
       />
       {/* main 关闭二次确认（附加 pane 无此弹窗） */}
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)} maxWidth="xs" fullWidth>
