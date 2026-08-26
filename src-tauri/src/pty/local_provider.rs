@@ -135,6 +135,15 @@ impl LocalPtyProvider {
             }
         }
 
+        // claude 归因链 env 打标（T1.4）：pane 锚点 / spool 通道 / spawn 代际标。
+        // 无条件注入（与 chat 模式开关无关）——未装 hook 脚本时 env 无人消费，无害；
+        // 模式热开启后已运行会话的下一个 hook 事件即可被归因。
+        // 注入点必须在包装分支之后：zsh/bash 分支重建 CommandBuilder，之前的
+        // env 会被剥掉；在此处注入则 4 条 spawn 路径（裸/包装/fast）一处全覆盖。
+        for (k, v) in claude_attribution_envs(&opts.session_id) {
+            cmd.env(k, v);
+        }
+
         let child = pair
             .slave
             .spawn_command(cmd)
@@ -251,6 +260,30 @@ fn user_zdotdir_for_passthrough() -> Option<String> {
         return None;
     }
     Some(v)
+}
+
+/// claude 归因链 env 三标（T1.4），打通「pane → claude → hook 脚本」：
+///   - WE_TERM_PANE：`issueId::paneId` 锚点（hook 脚本据此命名 spool 文件）
+///   - WE_TERM_LAUNCH_TOKEN：每次 spawn 新 uuid——代际标，ingest 围栏据此丢弃
+///     同 pane 上一代 claude 的迟到事件（issueId 跨 spawn 不变，无法担此职）
+///   - WE_TERM_SPOOL_DIR：spool 通道目标（app_data_dir/claude-spool）；仅当
+///     app_data_dir 已注入时给出（生产 setup 恒在场；缺席时 hook 脚本 env
+///     guard 直接 exit 0，天然 no-op）
+fn claude_attribution_envs(session_id: &str) -> Vec<(&'static str, String)> {
+    use crate::claude_runtime::script::{ENV_LAUNCH_TOKEN, ENV_PANE, ENV_SPOOL_DIR};
+    let mut envs = vec![
+        (ENV_PANE, session_id.to_string()),
+        (ENV_LAUNCH_TOKEN, uuid::Uuid::new_v4().to_string()),
+    ];
+    if let Some(base) = app_data_dir() {
+        envs.push((
+            ENV_SPOOL_DIR,
+            base.join(crate::claude_runtime::script::SPOOL_DIR_NAME)
+                .to_string_lossy()
+                .into_owned(),
+        ));
+    }
+    envs
 }
 
 impl PtyProvider for LocalPtyProvider {
@@ -654,5 +687,194 @@ mod tests {
         // 不存在 key：幂等 Ok + 关闭 0。
         assert_eq!(provider.shutdown_issue("no-such").unwrap(), 0);
         provider.shutdown("b::main").unwrap();
+    }
+
+    // ---------- claude 归因链 env 打标（T1.4）----------
+
+    fn attr_env_get(envs: &[(&'static str, String)], k: &str) -> String {
+        envs.iter()
+            .find(|(key, _)| *key == k)
+            .unwrap_or_else(|| panic!("missing env {k}"))
+            .1
+            .clone()
+    }
+
+    /// env 构造：PANE 恒为 pane 锚点；token 每次调用新 uuid（36 位连字符形态，
+    /// 无 JSON 转义字符——hook 脚本直接拼进载荷首字段）；SPOOL_DIR 目录名与
+    /// claude_runtime 常量同源。OnceLock 全局一次，SPOOL_DIR 断言不绑定具体
+    /// base（并行测试可能已抢先 set_app_data_dir）。
+    #[test]
+    fn claude_attribution_envs_token_unique_per_spawn() {
+        set_app_data_dir(std::env::temp_dir().join("we-term-attr-env-test"));
+
+        let (a, b) = (
+            claude_attribution_envs("iss1::main"),
+            claude_attribution_envs("iss1::main"),
+        );
+        // PANE：pane 锚点，跨 spawn 恒定
+        assert_eq!(attr_env_get(&a, "WE_TERM_PANE"), "iss1::main");
+        assert_eq!(
+            attr_env_get(&a, "WE_TERM_PANE"),
+            attr_env_get(&b, "WE_TERM_PANE")
+        );
+        // TOKEN：per-spawn 唯一（代际围栏语义），uuid 连字符形态
+        let (ta, tb) = (
+            attr_env_get(&a, "WE_TERM_LAUNCH_TOKEN"),
+            attr_env_get(&b, "WE_TERM_LAUNCH_TOKEN"),
+        );
+        assert_ne!(ta, tb, "token 必须 per-spawn 唯一");
+        for t in [&ta, &tb] {
+            assert_eq!(t.len(), 36, "uuid 形态：{t}");
+            assert_eq!(t.matches('-').count(), 4, "uuid 形态：{t}");
+            assert!(t.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+        }
+        // SPOOL_DIR：app_data_dir 在场即给出，目录名与常量同源
+        assert!(attr_env_get(&a, "WE_TERM_SPOOL_DIR")
+            .ends_with(crate::claude_runtime::script::SPOOL_DIR_NAME));
+    }
+
+    /// PTY 透传：带 startup_command spawn（zsh/bash 走包装分支——该分支重建
+    /// CommandBuilder，注入点若在重建之前 env 会被剥）后 echo 三标，ring 断言
+    /// pane 锚点、uuid 形态 token、claude-spool 路径全部透传在场。
+    #[test]
+    fn spawn_injects_claude_attribution_envs_through_wrapper() {
+        let provider = LocalPtyProvider::new();
+        let base = std::env::temp_dir().join("we-term-attr-pty-test");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        set_app_data_dir(base.clone());
+
+        let session_id = "attr-pty-issue::main".to_string();
+        let opts = SpawnOpts {
+            session_id: session_id.clone(),
+            cwd: base.to_string_lossy().into_owned(),
+            cols: 80,
+            rows: 24,
+            startup_command: Some(
+                "echo WE_ATTR_BEGIN $WE_TERM_PANE $WE_TERM_LAUNCH_TOKEN \
+                 $WE_TERM_SPOOL_DIR WE_ATTR_END"
+                    .to_string(),
+            ),
+        };
+        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+
+        // anchor 提前定义：break 守卫与断言共用（展开值锚点；回显行是字面
+        // $WE_TERM_PANE 不含 session_id 值，不会误匹配）。
+        let anchor = format!("WE_ATTR_BEGIN {session_id} ");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut ring = String::new();
+        while Instant::now() < deadline {
+            ring = provider
+                .with_session(&session_id, &mut |s| s.io.snapshot())
+                .unwrap();
+            // 完整落行守卫：anchor 在场且其后 ≥36 字节（token 定长）才 break——
+            // 防执行输出被 reader 分块切断时提前退出导致 anchor 误报或越界 panic。
+            if let Some(pos) = ring.find(&anchor) {
+                if ring.len() >= pos + anchor.len() + 36 {
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        // pane 锚点为展开值。anchor 落地由循环守卫保证，此处重定位（循环内
+        // pos 不出作用域）；循环若超时退出，此 panic 即失败报错出口。
+        let pos = ring
+            .find(&anchor)
+            .unwrap_or_else(|| panic!("WE_TERM_PANE 未透传，ring: {ring}"));
+        // token：anchor 后紧跟 36 位 uuid（echo 单行输出，中间无 \r 插入）
+        let token = &ring[pos + anchor.len()..pos + anchor.len() + 36];
+        assert_eq!(token.matches('-').count(), 4, "token 非 uuid 形态: {token}");
+        assert!(token.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+        // spool 路径 + 完整落行（防截断误判）
+        let tail = &ring[pos..];
+        assert!(
+            tail.contains(crate::claude_runtime::script::SPOOL_DIR_NAME),
+            "WE_TERM_SPOOL_DIR 未透传: {tail}"
+        );
+        assert!(tail.contains("WE_ATTR_END"), "输出截断: {tail}");
+
+        provider.shutdown(&session_id).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 真 claude 端到端（T1.4，兼 T1.3 冒烟遗留验证）：手动
+    /// `cargo test claude_e2e -- --ignored --nocapture`。受控工作区装 hooks →
+    /// spawn PTY（env 三标随 spawn 注入）→ 注入 `claude -p` → 读 spool 断言：
+    /// SessionStart→Stop 事件链在场、全部载荷行携带同一非空 launch_token
+    /// （即 env → claude hook → spool 全链归因打通）。依赖真 claude CLI 与
+    /// API 配额；勿与 dev app 同时跑（其 watcher 消费 + SessionStart 截断
+    /// spool 文件会干扰断言）；勿 `--include-ignored` 并行——APP_DATA_DIR
+    /// OnceLock 先到先得，被抢注则 spawn 的 spool 目录与本测试读取目录分家。
+    #[test]
+    #[ignore = "依赖真 claude CLI + API 配额，手动跑"]
+    fn claude_e2e_spool_carries_launch_token() {
+        use crate::claude_runtime::script::{SPOOL_DIR_NAME, spool_file_name};
+        use crate::claude_runtime::types::HookPayload;
+
+        let base = std::env::temp_dir().join("we-term-claude-e2e");
+        let _ = std::fs::remove_dir_all(&base);
+        let ws = base.join("ws");
+        std::fs::create_dir_all(&ws).unwrap();
+        set_app_data_dir(base.clone());
+        std::fs::create_dir_all(base.join(SPOOL_DIR_NAME)).unwrap();
+
+        // 装 hooks：脚本落 base/claude-hooks/，settings 写 ws/.claude/。
+        crate::claude_runtime::installer::install(&ws, &base).unwrap();
+
+        let provider = LocalPtyProvider::new();
+        let session_id = "claude-e2e-issue::main".to_string();
+        let opts = SpawnOpts {
+            session_id: session_id.clone(),
+            cwd: ws.to_string_lossy().into_owned(),
+            cols: 80,
+            rows: 24,
+            startup_command: Some("claude -p 'reply with just: ok'".to_string()),
+        };
+        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+
+        // 轮询 spool：SessionStart 与 Stop 都到场（claude -p 跑完自动退出）。
+        let spool_file = base
+            .join(SPOOL_DIR_NAME)
+            .join(spool_file_name(&session_id));
+        let deadline = Instant::now() + Duration::from_secs(180);
+        let mut payloads: Vec<HookPayload> = Vec::new();
+        while Instant::now() < deadline {
+            if let Ok(content) = std::fs::read_to_string(&spool_file) {
+                payloads = content
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .filter_map(|l| serde_json::from_str(l).ok())
+                    .collect();
+                let has = |n: &str| payloads.iter().any(|p| p.hook_event_name == n);
+                if has("SessionStart") && has("Stop") {
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        provider.shutdown(&session_id).unwrap();
+
+        let names: Vec<&str> = payloads.iter().map(|p| p.hook_event_name.as_str()).collect();
+        assert!(
+            names.contains(&"SessionStart"),
+            "事件链缺 SessionStart，实收: {names:?}（spool: {}）",
+            spool_file.display()
+        );
+        assert!(names.contains(&"Stop"), "事件链缺 Stop，实收: {names:?}");
+        // 全部行携带同一非空 launch_token——空值即 env 注入断链，不同值即跨代污染。
+        let tokens: Vec<&str> = payloads
+            .iter()
+            .map(|p| p.launch_token.as_deref().unwrap_or(""))
+            .collect();
+        assert!(
+            tokens.iter().all(|t| !t.is_empty()),
+            "存在无 launch_token 的载荷行（env 断链）"
+        );
+        assert!(
+            tokens.windows(2).all(|w| w[0] == w[1]),
+            "载荷 token 不同代: {tokens:?}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

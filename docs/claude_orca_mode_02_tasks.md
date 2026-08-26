@@ -113,7 +113,7 @@
 
 ### T1.4 PTY spawn env 打标
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：PTY spawn 时注入归因/通道/代际三个 env 标，打通「pane → claude → hook 脚本」的归因链
 
@@ -126,6 +126,18 @@
 - 验证 zsh 包装分支（ZDOTDIR 换装）env 透传不被剥
 
 **依赖**：T1.1（spool 目录常量）
+
+**单测**：✅ 全绿（新增 3 个）——env 构造（PANE 恒定 / token per-spawn 唯一且 uuid 形态 / SPOOL_DIR 与常量同源）、PTY 透传（zsh 包装分支 spawn 后 echo 三标回显断言）、`#[ignore]` 真 claude 端到端（手动跑）
+
+**实现要点**（2026-08-26）：
+- **注入点在包装 if 块之后、`spawn_command` 之前**：zsh/bash 包装分支会重建 `CommandBuilder`（ZDOTDIR 换装 / --rcfile），注入在重建前会被剥；置于其后则裸 spawn / zsh 包装 / bash 包装 / fast 回退 4 条路径一处全覆盖。wrapper 文件本身只 unset ZDOTDIR 与 `_we_term_*` 临时变量，`WE_TERM_*` 进程继承透传无忧。
+- **token 生成用 uuid crate v4**：uuid v1 已在依赖树（tauri 传递依赖），Cargo.toml 声明直接依赖零新增外部 crate。token 为 36 位连字符 uuid，无 JSON 转义字符（script.rs 拼接前提）。**不可复用 issueId**：issueId 跨 spawn 恒定，恰无法区分同 pane 重启换代——围栏失效即 orca #1146 僵尸事件坑。
+- **SPOOL_DIR 依赖 `APP_DATA_DIR`（OnceLock）**：生产 setup 恒注入；缺席（个别单测）时跳过该项，hook 脚本 env guard 自然 no-op。PANE/TOKEN 无条件注入。
+- `installer::install` 放开为 `pub(crate)`：无 AppHandle 核心逻辑，命令入口与 e2e 集成测试共用。
+
+**实测**（2026-08-26）：单测 6+3 全绿（105 passed 全量回归无破坏）；真 claude 端到端（`cargo test claude_e2e -- --ignored`，25.76s）：受控工作区装 hooks → PTY spawn（env 随进程注入）→ `claude -p` 全链 → spool 收到 SessionStart→Stop 完整事件链、全部载荷行携带同一非空 launch_token——**T1.3 冒烟遗留的「真 claude 会话端到端」至此闭环**。
+
+**审查修复**（2026-08-26，缺陷+架构双审）：生产代码零缺陷；3 项低severity 已修——透传测试 break 加「anchor 后 ≥36 字节」守卫（防分块切断 flaky panic）、e2e 注释补「勿 --include-ignored 并行」（OnceLock 抢注）、`WE_TERM_*` 三 env 名提为 `claude_runtime::script` pub const（注入侧单源，脚本模板保持字面量零插值）。
 
 ---
 

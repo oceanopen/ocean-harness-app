@@ -217,7 +217,8 @@ fn write_rolling_backup(source: &Path) -> Result<(), String> {
 }
 
 /// 安装入口：脚本落盘 + settings 合并写入。幂等（内容相同零写）。
-fn install(workspace_dir: &Path, base_dir: &Path) -> Result<(), String> {
+/// pub(crate)：无 AppHandle 的核心逻辑，命令入口与集成测试（T1.4 真 claude e2e）共用。
+pub(crate) fn install(workspace_dir: &Path, base_dir: &Path) -> Result<(), String> {
     // 1. 脚本先于 settings（settings 指向的脚本不能缺席）。
     let script_path = ensure_hook_script(base_dir)?;
     let command = hook_command(&script_path);

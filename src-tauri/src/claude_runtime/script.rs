@@ -22,6 +22,12 @@ pub const HOOK_SCRIPT_DIR_NAME: &str = "claude-hooks";
 /// spool 目录名（app_data_dir 下）。watch（T1.3）监听目标、env 注入（T1.4）常量。
 pub const SPOOL_DIR_NAME: &str = "claude-spool";
 
+/// 归因链 env 名（T1.4 pty spawn 注入侧单源；下方脚本模板内的同名硬编码刻意
+/// 保留——模板零插值是内容恒定/幂等的前提，双端名字一致性由单测钉死）。
+pub const ENV_PANE: &str = "WE_TERM_PANE";
+pub const ENV_SPOOL_DIR: &str = "WE_TERM_SPOOL_DIR";
+pub const ENV_LAUNCH_TOKEN: &str = "WE_TERM_LAUNCH_TOKEN";
+
 /// pane 锚点（issueId::paneId）→ spool 文件名。与脚本内 `${WE_TERM_PANE//::/__}`
 /// 同一 sanitize 契约（`::` → `__`，防路径段歧义）。
 pub fn spool_file_name(pane: &str) -> String {
