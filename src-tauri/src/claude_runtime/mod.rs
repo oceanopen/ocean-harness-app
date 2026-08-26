@@ -15,6 +15,19 @@ pub mod store;
 pub mod types;
 pub mod watch;
 
-// 域入口 re-export：lib.rs 走 claude_runtime::init / claude_runtime::watch::start。
-#[allow(unused_imports)]
-pub use store::{init, persist};
+// 域入口 re-export：lib.rs 走 claude_runtime::init / claude_runtime::watch::start
+// （persist 由 ingest 走 store::persist 路径调用）。
+pub use store::init;
+
+/// 查询单 pane 运行时状态快照（T2.1）：useClaudeRuntime 挂载初值，避免事件
+/// 订阅前的空窗。key 即 PTY session_id（issueId::paneId）；Ok(None) = 该 pane
+/// 无 runtime 条目（hook 链路未生效），前端回落现有轮询链路。
+#[tauri::command]
+#[specta::specta]
+pub fn claude_runtime_state(
+    state: tauri::State<'_, store::ClaudeRuntimeStore>,
+    session_id: String,
+) -> Result<Option<types::ClaudeRuntimeChangedPayload>, String> {
+    let map = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(map.get(&session_id).map(|s| s.to_payload(&session_id)))
+}

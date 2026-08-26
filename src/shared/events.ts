@@ -22,3 +22,7 @@ export { EVENT_PANEL_SHOWN } from './bindings';
 export { EVENT_SETTINGS_NAVIGATE } from './bindings';
 
 export { EVENT_HTTP_SERVER_STATE_CHANGED } from './bindings';
+
+// claude runtime 状态变更（T2.1）：hook 事件经 Rust 归一化后 emit，
+// useClaudeRuntime 按 payload.pane 过滤订阅。
+export { EVENT_CLAUDE_RUNTIME_CHANGED } from './bindings';

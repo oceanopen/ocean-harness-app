@@ -62,6 +62,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             transcript::transcript_subscribe,
             transcript::transcript_unsubscribe,
             claude_runtime::installer::ensure_workspace_hooks,
+            claude_runtime::claude_runtime_state,
         ])
         // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
         // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。

@@ -147,7 +147,7 @@
 
 ### T2.1 useClaudeRuntime hook + 定位/门槛切源
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：前端订阅 claude-runtime 状态；transcript 定位与 composer 门槛优先走 runtime，回落现有逻辑
 
@@ -166,6 +166,24 @@
 **依赖**：T1.3、T1.4
 
 **验证**：装 hook 后开 chat 模式会话，发消息观察状态即时切换（无秒级轮询滞后）
+
+**实现要点**（2026-08-26）：
+- Rust 命令 `claude_runtime_state`（claude_runtime/mod.rs，`State<ClaudeRuntimeStore>` 注入 + 复用 `to_payload`）已进 collect_commands；events.ts 补 re-export，常量链路（events.rs→bindings→events.ts）闭合。
+- `useClaudeRuntime`（EmbeddedTerminal/ 下，与 usePtySession 同级）：**先 listen 后查快照**（useTranscript 订阅段同款约束）；快照晚到按 `lastUpdatedAt < 已见事件` 拒绝回退覆盖；unlisten 竞态降 debug（useConfigValue 范式）。
+- **path 与 alive 解耦**：transcriptPath 用 runtime（hook 载荷直给，修 uuid ≠ session_id 的 cwd 推导不可靠）；alive/status 判定仍走 `ptyClaudeSession` 进程树（pid 级匹配可靠，查询保留）。进程树无 claude 但 runtime 有 path 时也能定位（claude 退出后历史可读，locate alive=false）。
+- locate effect deps 只取 `runtime?.transcriptPath`（原始值）——流式事件（previewText 高频变）不触发重定位，仅新 SessionStart 换路径重订阅。
+- **claudeStatus 渲染期合成**：`runtime != null ? map(runtime.status) : claudeStatus`（idle/working/waiting → Idle/Busy/Waiting），无 setState 时序问题；NativeChatView 门槛派生（判 PascalCase）零改动自动切源。`waitingFor` 保持 session ref 来源（T4.1 卡片接手 notification）。
+- 手动工具测试 `install_hooks_for_dev_e2e`（installer tests，env 驱动 WE_E2E_BASE/WE_E2E_WS；T6.1 前端接自动安装后可删）。
+
+**验证记录**（2026-08-26）：tsc / web:lint / cargo test（105 passed）全绿；dev app 实测（装 hook 会话状态即时切换 + uuid 定位修复 + 未装 hook fallback）按用户决定**延至 T3.1 完成后合并验证**（届时发送队列 + echo 就绪，验证面更完整）。
+
+**审查修复**（2026-08-26，双 code-reviewer 全维度审查后 5 项全修，静态验证复跑全绿）：
+- **[高] claudeStatus 合成补存活门槛**：runtime 条目永不清理（ingest 无删除路径 + hydrate 每次重启恢复），claude 退出后 `runtime != null` 恒成立 → claude-exited 视图下 canSend=true，聊天正文会被写进 shell 当命令执行。修复：合成叠加 locate 存活判定（`located && alive` 才输出状态，否则 null），同时兑现接口契约注释。**等待被 kill 场景（runtime 卡 waiting）的 waiting banner 也由该门槛一并收口**；runtime 条目的 Rust 侧清理/降级留 T6.1。
+- **[中] listen-before-snapshot 真正落实**：原先只保证两 invoke 派发顺序，`listen()` 未 await——注册窗口内事件丢失后旧快照长驱直入。修复：快照查询链在 `await unlisten` 之后。
+- **[低] sessionId 变化重置**：文档宣称的重置未实现；补渲染期 ref 对比重置（lastSessionRef，同 lastPathRef 范式）+ 快照 null 时清残留（闭死「旧 listener 清理间隙」微窗口漏值）。
+- **[低] store.rs persist/persist_to 的 `#[allow(dead_code)]` 已失效**（ingest.rs 生产调用 + persist 内部调用）——删除。
+- **[低] mod.rs re-export 收缩**为 `init`（persist 无该路径调用方，ingest 走 `store::persist`）。
+- 范围外记录：useTranscript 订阅段（transcriptSubscribe 前）同款未-await listen 为 T2.2 既有形态，未动；claude 被 kill 无 Stop → runtime 卡 working 属 T6.1 fallback 范畴。
 
 ---
 

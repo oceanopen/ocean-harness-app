@@ -1,16 +1,21 @@
-// chat 视图数据源（terminal_chat T2.2/T2.3/T3.2）：定位 transcript 路径 → 订阅增量读。
+// chat 视图数据源（terminal_chat T2.2/T2.3/T3.2 + claude_orca T2.1 切源）：
+// 定位 transcript 路径 → 订阅增量读。
 //
 // 两段编排（解耦「定位」与「读取」，让 transcript 增量 follow 不再随 claude 状态事件全量重读）：
-//   1. 定位（locate effect）：ptyClaudeSession 拿路径 + 存活态 + status；claude 退出后
-//      用 localStorage 记忆路径兜底。EVENT_CLAUDE_SESSIONS_CHANGED 触发重定位（status
-//      新鲜度）。此段只定位，不读 transcript。
+//   1. 定位（locate effect）：claude runtime 的 transcriptPath 优先（hook 载荷直给，
+//      T2.1——不受新版 claude transcript 文件名 uuid ≠ session_id 的 cwd 推导不可靠
+//      影响；SessionStart 事件即时换路径）；fallback ptyClaudeSession 进程树推导
+//      （hook 缺席兜底，兼供 alive 判定）。claude 退出后用 localStorage 记忆路径兜底。
+//      EVENT_CLAUDE_SESSIONS_CHANGED 触发重定位。此段只定位，不读 transcript。
 //   2. 订阅（subscribe effect）：路径确定后 transcriptSubscribe 拿初始快照 + 后端记
 //      offset 开始 watch；EVENT_TRANSCRIPT_CHANGED（按 path 过滤）增量追加。卸载/切路径
 //      时 transcriptUnsubscribe。
 //
-// 对外状态机由 locate + read 两段派生（deriveState）。
+// 对外状态机由 locate + read 两段派生（deriveState）；claudeStatus 由 runtime 优先
+// 渲染期合成（见 hook 尾部）。
 
 import type {
+  ClaudeRuntimeStatus,
   ClaudeSessionStatus,
   TranscriptChangedPayload,
   TranscriptMessage,
@@ -20,6 +25,7 @@ import { unwrap } from '@src/shared/commands';
 import { EVENT_CLAUDE_SESSIONS_CHANGED, EVENT_TRANSCRIPT_CHANGED } from '@src/shared/events';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useClaudeRuntime } from '../useClaudeRuntime';
 
 // 对外状态机：读中 / 无 claude / 空对话 / 错误 / 就绪 / claude 已退出（有历史）。
 export type TranscriptState
@@ -83,6 +89,17 @@ type Locate
     | { status: 'error'; message: string }
     | { status: 'located'; path: string; alive: boolean };
 
+// runtime 三态 → 现有 PascalCase 会话状态（T2.1 切源）：composer 门槛/waiting
+// banner 的判等字面量统一，NativeChatView 派生零改动；GitPending/Dead 是 session
+// 轮询的本地派生态，hook 链路下不出现，不映射。
+function mapRuntimeStatus(status: ClaudeRuntimeStatus): ClaudeSessionStatus {
+  switch (status) {
+    case 'idle': return 'Idle';
+    case 'working': return 'Busy';
+    case 'waiting': return 'Waiting';
+  }
+}
+
 // transcript 读取结果（订阅后）。
 type Read
   = | { status: 'idle' }
@@ -117,17 +134,30 @@ function deriveState(locate: Locate, read: Read): TranscriptState {
 
 export interface UseTranscriptResult {
   state: TranscriptState;
-  // 当前 claude 状态（Busy/Waiting/Idle）；无 claude（未启动/已退出）或未定位时为 null。
+  // 当前 claude 状态（Busy/Waiting/Idle）：locate 确认存活时，runtime 在场走事件
+  // 驱动映射（即时），否则回落 session ref（locate 时写入）；无 claude（未启动/已
+  // 退出）或未定位时为 null（runtime 条目残留不越过存活判定）。
   claudeStatus: ClaudeSessionStatus | null;
-  // waiting 态上下文（如 "approve Bash"）；非 waiting 为 null。
+  // waiting 态上下文（如 "approve Bash"）；非 waiting 为 null（session ref 来源，
+  // T4.1 交互卡片接手 runtime notification 后移除）。
   waitingFor: string | null;
   refresh: () => void;
 }
 
 export function useTranscript(sessionId: string): UseTranscriptResult {
+  // runtime 状态源（T2.1）：locate 切源 + claudeStatus 切源的优先数据。
+  const runtime = useClaudeRuntime(sessionId);
+  // runtime 定位判据（任务书 T2.1）：transcriptPath 有值且 claudeSessionId 非空。
+  // 派生原始值作 locate effect deps——流式事件（previewText 高频变）不触发重定位，
+  // 仅新 SessionStart 绑定新路径时换路径重订阅。
+  const runtimePath = runtime?.claudeSessionId != null && runtime.transcriptPath != null
+    ? runtime.transcriptPath
+    : null;
+
   const [locate, setLocate] = useState<Locate>({ status: 'locating' });
   const [read, setRead] = useState<Read>({ status: 'idle' });
-  // claude 状态（composer 发送/停止门槛 + 打字中指示）：alive 时存 sessionRef.status。
+  // claude 状态（composer 发送/停止门槛 + 打字中指示）：locate 时存 sessionRef.status
+  // （fallback 数据源；对外返回值已被 runtime 优先合成覆盖，见 hook 尾部）。
   const [claudeStatus, setClaudeStatus] = useState<ClaudeSessionStatus | null>(null);
   // waiting 态上下文（如 "approve Bash"）；非 waiting 为 null。等待 banner 展示用。
   const [waitingFor, setWaitingFor] = useState<string | null>(null);
@@ -158,16 +188,21 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
         return;
       }
       if (sessionRef != null) {
-        saveTranscriptMemory(sessionId, sessionRef.transcriptPath);
+        // 路径切源（T2.1）：runtime 的 transcriptPath 优先（hook 载荷直给），进程树
+        // cwd 推导路径降为 fallback；alive/status 仍以进程树为准（pid 级匹配可靠）。
+        const path = runtimePath ?? sessionRef.transcriptPath;
+        saveTranscriptMemory(sessionId, path);
         setClaudeStatus(sessionRef.status);
         setWaitingFor(sessionRef.waitingFor);
         setLocate({
           status: 'located',
-          path: sessionRef.transcriptPath,
+          path,
           alive: true,
         });
       } else {
-        const memory = readTranscriptMemory(sessionId);
+        // 进程树无 claude：runtime 绑定过的路径仍可定位（claude 已退出，历史可读），
+        // 否则回落 localStorage 记忆（claude 存活期间曾打开过 chat 的场景）。
+        const memory = runtimePath ?? readTranscriptMemory(sessionId);
         if (memory == null) {
           setLocate({ status: 'no-claude' });
         } else {
@@ -189,7 +224,7 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
           console.debug('[useTranscript] unlisten skipped (page reloaded?):', err),
         );
     };
-  }, [sessionId, reloadKey]);
+  }, [sessionId, reloadKey, runtimePath]);
 
   // —— 订阅 effect：路径确定后 transcriptSubscribe 拿快照 + 增量追加 ——
   const locatedPath = locate.status === 'located' ? locate.path : null;
@@ -265,6 +300,17 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
   }, [locatedPath]);
 
   const state = useMemo(() => deriveState(locate, read), [locate, read]);
+  // claudeStatus 切源（T2.1）：runtime 在场即时切（事件驱动，无 locate 轮询滞后），
+  // 渲染期合成（无 setState 时序问题）；无 runtime 条目回落 locate 的 session ref
+  // 状态（hook 缺席兜底）。映射到 PascalCase，消费方（NativeChatView 门槛派生）零改动。
+  // 存活门槛（审查修复）：runtime 条目永不清理（hydrate 每次重启恢复 + 无删除路径），
+  // claude 退出后仍非 null——必须以 locate 的进程树存活判定收口：未定位 / 无 claude /
+  // 已退出一律 null，恢复禁发语义（claude-exited banner 下 composer 锁定，正文不致
+  // 被写进 shell 当命令执行）。
+  const alive = locate.status === 'located' && locate.alive;
+  const effectiveClaudeStatus = alive
+    ? (runtime != null ? mapRuntimeStatus(runtime.status) : claudeStatus)
+    : null;
   const refresh = useCallback(() => setReloadKey(k => k + 1), []);
-  return { state, claudeStatus, waitingFor, refresh };
+  return { state, claudeStatus: effectiveClaudeStatus, waitingFor, refresh };
 }

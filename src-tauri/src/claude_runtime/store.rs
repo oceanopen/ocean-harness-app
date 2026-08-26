@@ -39,7 +39,6 @@ pub struct ClaudeRuntimeState {
 
 impl ClaudeRuntimeState {
     /// 映射为前端事件 payload（加 pane，去内部 launch_token）。T1.3 emit / T2.1 命令复用。
-    #[allow(dead_code)]
     pub fn to_payload(&self, pane: &str) -> ClaudeRuntimeChangedPayload {
         ClaudeRuntimeChangedPayload {
             pane: pane.to_string(),
@@ -75,7 +74,6 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
 
 /// store 变更后落盘（T1.3 ingest 更新后调用）。序列化在锁内、IO 在锁外，
 /// 避免写盘阻塞其它读写方。
-#[allow(dead_code)]
 pub fn persist(store: &ClaudeRuntimeStore) {
     let Some(path) = SNAPSHOT_PATH.get() else {
         return;
@@ -121,7 +119,6 @@ fn hydrate_from(store: &ClaudeRuntimeStore, path: &Path) {
 }
 
 /// 序列化全量 map → temp+rename 原子写。序列化失败仅 warn（不阻塞主流程）。
-#[allow(dead_code)]
 fn persist_to(store: &ClaudeRuntimeStore, path: &Path) {
     let json = {
         let map = store

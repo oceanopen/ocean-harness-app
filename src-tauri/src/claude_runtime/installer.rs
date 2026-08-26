@@ -297,6 +297,18 @@ mod tests {
         dir
     }
 
+    /// 手动工具（T2.1 dev 实测用；T6.1 前端接入 spawn 前自动安装后可删）：
+    /// 给 dev app 真实 app_data_dir + 指定工作区装 hooks（脚本 + settings 合并）。
+    /// env 驱动：`WE_E2E_BASE=<app_data_dir> WE_E2E_WS=<工作区> \
+    /// cargo test install_hooks_for_dev_e2e -- --ignored --manifest-path src-tauri/Cargo.toml`
+    #[test]
+    #[ignore = "手动工具：需 WE_E2E_BASE/WE_E2E_WS 环境变量"]
+    fn install_hooks_for_dev_e2e() {
+        let base = std::env::var("WE_E2E_BASE").expect("WE_E2E_BASE not set");
+        let ws = std::env::var("WE_E2E_WS").expect("WE_E2E_WS not set");
+        install(Path::new(&ws), Path::new(&base)).expect("install failed");
+    }
+
     #[test]
     fn merge_keeps_user_entries_and_appends_managed() {
         // 用户已有 Stop hook 与 PreToolUse hook：合并后共存，自有条目追加。

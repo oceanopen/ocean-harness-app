@@ -187,6 +187,27 @@ export const commands = {
 	 *  （`${workspace_base_dir}/${issueId}`，usePtySession 派生先例）。
 	 */
 	ensureWorkspaceHooks: (cwd: string) => typedError<null, string>(__TAURI_INVOKE("ensure_workspace_hooks", { cwd })),
+	/**
+	 *  查询单 pane 运行时状态快照（T2.1）：useClaudeRuntime 挂载初值，避免事件
+	 *  订阅前的空窗。key 即 PTY session_id（issueId::paneId）；Ok(None) = 该 pane
+	 *  无 runtime 条目（hook 链路未生效），前端回落现有轮询链路。
+	 */
+	claudeRuntimeState: (sessionId: string) => typedError<{
+	/**  pane 锚点（issueId::paneId，store key）。 */
+	pane: string,
+	/**  运行时状态（idle/working/waiting）。 */
+	status: ClaudeRuntimeStatus,
+	/**  生成中的预览文本（assistant 实时增量）。 */
+	previewText: string | null,
+	/**  审批/提问通知（waiting 态）。 */
+	notification: ClaudeNotification | null,
+	/**  transcript JSONL 绝对路径（SessionStart 绑定，chat 视图定位用）。 */
+	transcriptPath: string | null,
+	/**  claude 会话 ID（resume 用）。 */
+	claudeSessionId: string | null,
+	/**  最后更新时间（毫秒时间戳）。 */
+	lastUpdatedAt: number,
+} | null, string>(__TAURI_INVOKE("claude_runtime_state", { sessionId })),
 };
 
 /* Constants */
