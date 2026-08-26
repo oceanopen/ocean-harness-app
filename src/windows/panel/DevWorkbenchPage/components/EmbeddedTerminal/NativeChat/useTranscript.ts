@@ -20,12 +20,20 @@ import type {
   TranscriptChangedPayload,
   TranscriptMessage,
 } from '@src/shared/bindings';
+import type { PendingSend } from './chatPending';
 import { commands } from '@src/shared/bindings';
 import { unwrap } from '@src/shared/commands';
 import { EVENT_CLAUDE_SESSIONS_CHANGED, EVENT_TRANSCRIPT_CHANGED } from '@src/shared/events';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useClaudeRuntime } from '../useClaudeRuntime';
+import {
+  appendPendingSend,
+  pendingSendsAsMessages,
+  prunePendingSends,
+  readPendingSends,
+} from './chatPending';
+import { deriveStreamingText, streamingMessage } from './chatStreaming';
 
 // 对外状态机：读中 / 无 claude / 空对话 / 错误 / 就绪 / claude 已退出（有历史）。
 export type TranscriptState
@@ -107,8 +115,9 @@ type Read
     | { status: 'error'; message: string }
     | { status: 'ready'; messages: TranscriptMessage[] };
 
-// 由两段状态派生对外状态机。
-function deriveState(locate: Locate, read: Read): TranscriptState {
+// 由两段状态派生对外状态机。hasPending：乐观 echo 在场时空会话不判 empty
+// （首条消息的 echo 要有 ready 列表可渲染，T3.1）。
+function deriveState(locate: Locate, read: Read, hasPending: boolean): TranscriptState {
   switch (locate.status) {
     case 'locating':
       return { status: 'loading' };
@@ -124,7 +133,7 @@ function deriveState(locate: Locate, read: Read): TranscriptState {
         return { status: 'loading' }; // idle/reading → 读中
       }
       if (locate.alive) {
-        return read.messages.length === 0
+        return read.messages.length === 0 && !hasPending
           ? { status: 'empty' }
           : { status: 'ready', messages: read.messages };
       }
@@ -134,6 +143,9 @@ function deriveState(locate: Locate, read: Read): TranscriptState {
 
 export interface UseTranscriptResult {
   state: TranscriptState;
+  // 对外消息（T3.1 合成）：真实 transcript 消息 + 乐观 echo（pending:*）+
+  // 流式气泡（streaming，working 且 preview 领先时）。MessageList 直接渲染。
+  messages: TranscriptMessage[];
   // 当前 claude 状态（Busy/Waiting/Idle）：locate 确认存活时，runtime 在场走事件
   // 驱动映射（即时），否则回落 session ref（locate 时写入）；无 claude（未启动/已
   // 退出）或未定位时为 null（runtime 条目残留不越过存活判定）。
@@ -141,6 +153,8 @@ export interface UseTranscriptResult {
   // waiting 态上下文（如 "approve Bash"）；非 waiting 为 null（session ref 来源，
   // T4.1 交互卡片接手 runtime notification 后移除）。
   waitingFor: string | null;
+  // 乐观 echo 登记（T3.1）：发送时先调（真实回写经 onSend prop 走队列）。
+  sendEcho: (text: string) => void;
   refresh: () => void;
 }
 
@@ -299,7 +313,21 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
     };
   }, [locatedPath]);
 
-  const state = useMemo(() => deriveState(locate, read), [locate, read]);
+  // —— 乐观 echo（T3.1）：模块缓存 keyed by sessionId，chat overlay 开关重挂载
+  // 也不丢在途 echo；transcript 每次更新（增量/快照）后 prune。 ——
+  const [pending, setPending] = useState<PendingSend[]>(() => readPendingSends(sessionId));
+  useEffect(() => {
+    const next = prunePendingSends(sessionId, messagesRef.current);
+    setPending(prev => (next === prev ? prev : next));
+  }, [sessionId, read]);
+  const sendEcho = useCallback((text: string) => {
+    // 边界 = 发送时最后一条真实消息 id：匹配只认其后消息，防重复文本绑旧 turn。
+    const boundary = messagesRef.current.at(-1)?.id ?? null;
+    appendPendingSend(sessionId, text, Date.now(), boundary);
+    setPending(readPendingSends(sessionId));
+  }, [sessionId]);
+
+  const state = useMemo(() => deriveState(locate, read, pending.length > 0), [locate, read, pending]);
   // claudeStatus 切源（T2.1）：runtime 在场即时切（事件驱动，无 locate 轮询滞后），
   // 渲染期合成（无 setState 时序问题）；无 runtime 条目回落 locate 的 session ref
   // 状态（hook 缺席兜底）。映射到 PascalCase，消费方（NativeChatView 门槛派生）零改动。
@@ -311,6 +339,23 @@ export function useTranscript(sessionId: string): UseTranscriptResult {
   const effectiveClaudeStatus = alive
     ? (runtime != null ? mapRuntimeStatus(runtime.status) : claudeStatus)
     : null;
+  // 对外消息合成（T3.1）：真实消息 + 乐观 echo + 流式气泡（working 且 preview
+  // 领先于最后 assistant 文本时；真实 turn 落地自然替换——预览被包含即隐藏）。
+  // 合成顺序 echo 在流式气泡之前（orca 相反）：「prompt → 回复」顺序语义更
+  // 自然，且本仓 Idle 才可发送、两者共存窗口极短。echo 的渲染层 matching
+  // 隐藏见 pendingSendsAsMessages（真实 user 行落地即不显示）。
+  const messages = useMemo(() => {
+    const real = state.status === 'ready' || state.status === 'claude-exited'
+      ? state.messages
+      : [];
+    const composed = [...real, ...pendingSendsAsMessages(pending, real)];
+    const streamingText = deriveStreamingText({
+      messages: composed,
+      previewText: runtime?.previewText,
+      working: effectiveClaudeStatus === 'Busy',
+    });
+    return streamingText != null ? [...composed, streamingMessage(streamingText)] : composed;
+  }, [state, pending, runtime, effectiveClaudeStatus]);
   const refresh = useCallback(() => setReloadKey(k => k + 1), []);
-  return { state, claudeStatus: effectiveClaudeStatus, waitingFor, refresh };
+  return { state, messages, claudeStatus: effectiveClaudeStatus, waitingFor, sendEcho, refresh };
 }

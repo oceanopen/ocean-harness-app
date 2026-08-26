@@ -10,6 +10,7 @@
     "web:build": "tsc -b && vite build",
     "web:lint": "eslint .",
     "web:lint:fix": "eslint . --fix",
+    "web:test": "vitest run",
     "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri:build": "tauri",
     "tauri:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml",
@@ -72,6 +73,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "prettier": "^3.6.2",
     "typescript": "~6.0.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.1.11"
   }
 }

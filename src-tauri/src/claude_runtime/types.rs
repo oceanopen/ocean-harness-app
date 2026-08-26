@@ -47,6 +47,17 @@ pub struct HookPayload {
     /// 用户提交的 prompt 原文（UserPromptSubmit）。
     #[serde(default)]
     pub prompt: Option<String>,
+    /// 流式文本增量（MessageDisplay，T1.2 实测确认在场；T3.1 preview 拼接）。
+    #[serde(default)]
+    pub delta: Option<String>,
+    /// 流式增量序号（MessageDisplay；0 起每消息递增）。Value 宽容接收
+    /// （与 agent_id/source 同款：非数值形态不得导致整行反序列化失败）。
+    #[serde(default)]
+    pub index: Option<serde_json::Value>,
+    /// 消息定稿标记（MessageDisplay；true = 本消息流结束，preview 保持至
+    /// Stop 清空）。Value 宽容接收，暂不参与状态机。
+    #[serde(default)]
+    pub r#final: Option<serde_json::Value>,
     /// 子代理标（Task 子进程事件非空）。带 agent_id 的 SessionStart 忽略
     /// （防子代理翻转 pane 状态，对齐 orca normalizeClaudeEvent）。
     #[serde(default)]
@@ -176,6 +187,26 @@ mod tests {
         .unwrap();
         assert!(p.agent_id.is_some());
         assert!(p.source.is_some());
+    }
+
+    /// MessageDisplay 流式字段（T1.2 实测形态）：delta 字符串 + index 数值 +
+    /// final 布尔；index/final 用 Value 宽容，非数值形态不得炸整行。
+    #[test]
+    fn hook_payload_parses_message_display_stream_fields() {
+        let p: HookPayload = serde_json::from_str(
+            r#"{"hook_event_name":"MessageDisplay","delta":"Hel","index":0,"final":false}"#,
+        )
+        .unwrap();
+        assert_eq!(p.delta.as_deref(), Some("Hel"));
+        assert_eq!(p.index.as_ref().unwrap().as_i64(), Some(0));
+        assert_eq!(p.r#final.as_ref().unwrap().as_bool(), Some(false));
+
+        let odd: HookPayload = serde_json::from_str(
+            r#"{"hook_event_name":"MessageDisplay","delta":"x","index":"zero","final":{"k":1}}"#,
+        )
+        .unwrap();
+        assert!(odd.index.is_some());
+        assert!(odd.r#final.is_some());
     }
 
     #[test]

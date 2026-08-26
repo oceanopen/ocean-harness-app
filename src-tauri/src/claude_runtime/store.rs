@@ -31,6 +31,11 @@ pub struct ClaudeRuntimeState {
     pub status: ClaudeRuntimeStatus,
     /// 生成中的预览文本。
     pub preview_text: Option<String>,
+    /// preview 拼接游标（最近一次 MessageDisplay 的 index；T3.1）。瞬态字段：
+    /// persist 仅 SessionStart 触发（彼时已清空），快照实质不携带；hydrate
+    /// 重置。serde default 兼容旧快照缺字段。
+    #[serde(default)]
+    pub preview_index: Option<i64>,
     /// 审批/提问通知（waiting 态）。
     pub notification: Option<ClaudeNotification>,
     /// 最后更新时间（毫秒时间戳）。
@@ -84,8 +89,8 @@ pub fn persist(store: &ClaudeRuntimeStore) {
 /// 读快照填充 store（启动 hydrate）。文件缺失/损坏静默跳过（不 panic，空态启动）。
 ///
 /// 陈旧态重置：app 重启后 claude 实际状态未知，每条恢复的 state 重置
-/// status=idle + 清空 launch_token/preview_text/notification——避免快照
-/// 陈旧 working/waiting 态误导前端门槛与 T6.1 fallback 判定；
+/// status=idle + 清空 launch_token/preview_text/preview_index/notification——
+/// 避免快照陈旧 working/waiting 态误导前端门槛与 T6.1 fallback 判定；
 /// claude_session_id/transcript_path 保留（resume 与定位用），等新
 /// SessionStart 重新绑定 token。
 fn hydrate_from(store: &ClaudeRuntimeStore, path: &Path) {
@@ -112,6 +117,7 @@ fn hydrate_from(store: &ClaudeRuntimeStore, path: &Path) {
             s.status = ClaudeRuntimeStatus::Idle;
             s.launch_token = None;
             s.preview_text = None;
+            s.preview_index = None;
             s.notification = None;
             (pane, s)
         })
@@ -157,6 +163,7 @@ mod tests {
             transcript_path: Some("/tmp/t.jsonl".into()),
             status: ClaudeRuntimeStatus::Working,
             preview_text: Some("thinking...".into()),
+            preview_index: Some(3),
             notification: Some(ClaudeNotification {
                 message: "approve Bash".into(),
                 tool_name: Some("Bash".into()),

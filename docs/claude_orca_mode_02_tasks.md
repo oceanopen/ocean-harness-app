@@ -191,24 +191,27 @@
 
 ### T3.1 发送队列 + 乐观 echo + 流式气泡
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：chat 发送丝滑化——串行防交错、立即回显、生成中实时预览
 
 **技术方案**：
-- `chatSendQueue.ts`（新，NativeChat 同级）：
-  - per-session 发送串行队列（对齐 orca `native-chat-pty-send-queue.ts`）：队列空闲时 start 同步执行；二次入队先取消上一次延迟 Enter（防正文粘行）；cancel 语义联动乐观 echo 清除
-  - `EmbeddedTerminal.sendChatMessage` 改走队列
-- 乐观 echo：
-  - 发送时立即在消息列表尾部插入合成 user 消息（pending id）
-  - transcript 真实 user turn 落地后 prune（按 id 剪除，对齐 orca `prunePendingSends`）
-- 流式气泡：
-  - runtime previewText → 合成 assistant 气泡（id `streaming`）
-  - deriveStreamingText 规则对齐 orca `native-chat-streaming.ts`：working 且预览文本 > 最后一条 assistant 文本（不被包含）才显示；transcript 追上自然消失；非 working 恒不显示
+- `chatSendQueue.ts`（新，EmbeddedTerminal 同级）：
+  - per-session 发送串行队列（对齐 orca `native-chat-pty-send-queue.ts`，**据源码修正**：二次入队**等待**前序窗口（freeAt）而非取消其延迟 Enter——取消写法会静默丢首条消息；cancel 为显式中止 = 清 timer + onCancelUnsubmitted 清残留正文 + 退还自身窗口）；空闲时 start 同步执行；空闲后删 Map 条目
+  - `EmbeddedTerminal.sendChatMessage` 改走队列；stopChat / 卸载 cancelChatSends
+- 乐观 echo（`chatPending.ts`）：
+  - 发送时立即在消息列表尾部插入合成 user 气泡（`pending:<id>`）；模块级缓存跨 overlay 重挂载存续
+  - prune **按内容匹配而非 id**（真实 turn id 是 claude uuid 不可预知）：归一化文本 + 边界（只认发送点之后的消息，防绑旧 turn）+ occurrence（同文本连发各绑各的）+ assistant 前进兜底清除（替代 orca cancel↔echo 事件耦合）；串行队列下无需 glue 匹配
+- 流式气泡（`chatStreaming.ts` + Rust ingest 拼接）：
+  - 复活 T1.3 砍掉的 MessageDisplay delta/index 拼接：ingest `apply_preview_delta`（index 0 重置 / 顺序追加 / 重复丢弃 / 跳档重开）写 runtime preview_text，UserPromptSubmit 清残留；agent_id 事件丢弃（subagent 防混）
+  - deriveStreamingText 规则对齐 orca `native-chat-streaming.ts`：working 且预览领先于最后 assistant 文本才显示；transcript 追上自然消失；非 working 恒不显示
+- 消息合成：useTranscript 返回 `messages` = 真实 + echo + 流式气泡；MessageList 吸附滚动（在底部自动跟随，上滚脱附，滚回恢复）
 
 **依赖**：T2.1
 
-**单测**：队列交错（二次发送取消延迟 Enter）、echo prune、streaming derive 规则
+**单测**：vitest 19 例（chatSendQueue 6：等待不取消/cancel/幂等/多 session；chatPending 6：登记/匹配 prune/边界/occurrence/兜底；chatStreaming 7：门槛/包含隐藏/领先显示）；cargo ingest preview 拼接 5 例
+
+**验证记录**（2026-08-26）：tsc / web:lint / vitest / cargo test 111 passed 全绿。审查修复（同日）：流式基准改回 orca「只看末条」语义（回扫上一回合会把短回复的流式整回合抑制）；echo 剪除改双层语义（渲染层 matching 即时隐藏防双份、缓存层 advanced 延迟剪除防 claude TUI 排队窗口误清，被吞 echo 由队列 cancel 显式清除——clearLastPendingSendByText 耦合）；边界缺失时间戳回落防历史重复文本误剪；ChatBanner/messageText/messagesAfterBoundary 收敛；chatSend.ts 上移 EmbeddedTerminal/（PTY 写入域）。dev app 实测（echo 即时上屏 / 流式气泡出现与替换 / 连发不丢 / 滚动脱附 / T2.1 延期项状态即时切换）待人工执行。
 
 ---
 

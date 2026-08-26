@@ -1,12 +1,17 @@
-// chat 消息列表（terminal_chat T2.2）：TranscriptMessage[] → 气泡列表。
+// chat 消息列表（terminal_chat T2.2 + T3.1 吸附滚动）：TranscriptMessage[] → 气泡列表。
 // role 分流（user 右 / assistant 左 / tool·system 弱化旁注）；block 分段渲染：
 // text→markdown、thinking/tool-call/tool-result→折叠区（默认收起）。
+// 底部吸附（T3.1）：用户在底部时新消息/流式 tick 自动跟随到底；向上滚动查看
+// 历史即脱附（不被流式滚动劫持），手动滚回底部恢复吸附。
 
 import type { TranscriptBlock, TranscriptMessage } from '@src/shared/bindings';
 import type { ReactNode } from 'react';
 import { Box, Collapse, Typography } from '@mui/material';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ChatMarkdown from './ChatMarkdown';
+
+// 距底不足此值（px）视为「在底部」（亚像素舍入/滚动惯性余量）。
+const BOTTOM_STICK_THRESHOLD = 24;
 
 interface NativeChatMessageListProps {
   messages: TranscriptMessage[];
@@ -15,8 +20,28 @@ interface NativeChatMessageListProps {
 }
 
 export default function NativeChatMessageList({ messages, streaming }: NativeChatMessageListProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  // 吸附态：ref 而非 state——滚动事件高频，入 state 会整列表抖动重渲染。
+  const stickToBottomRef = useRef(true);
+
+  // 新消息 / 流式 tick / 占位气泡出现时：吸附态才跟随到底（瞬时跳转——
+  // smooth 在高频 tick 下动画堆积反而滞后）。messages 为 memo 合成数组，
+  // 真实落地、echo 上屏、preview 前进均换引用，恰为需要跟随的时机。
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el != null && stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages, streaming]);
+
   return (
     <Box
+      ref={containerRef}
+      onScroll={(e) => {
+        const el = e.currentTarget;
+        stickToBottomRef.current
+          = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_STICK_THRESHOLD;
+      }}
       sx={{
         flex: 1,
         minHeight: 0,

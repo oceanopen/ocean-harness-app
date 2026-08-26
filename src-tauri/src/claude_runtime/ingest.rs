@@ -9,7 +9,9 @@
 //   - 子代理防御：带 agent_id 的 SessionStart 忽略（Task 子进程不得翻转 pane 状态）。
 //   - Notification 不入状态机（orca 已移除：claude idle 时也发 Notification，
 //     误置 waiting）；注册保留（T1.2），仅作观察渠道。
-//   - MessageDisplay 只推 working 态（流式文本由 transcript 增量驱动，T3.1）。
+//   - MessageDisplay 推 working 态 + delta/index 拼接 preview_text（T3.1 流式
+//     气泡数据源，T1.3 砍掉的拼接在此复活）。带 agent_id 的 MessageDisplay
+//     丢弃（子代理防御，同 SessionStart）。
 //   - 任意带 session_id 的事件可兜底绑定（对齐 orca providerSession——不单靠
 //     SessionStart，其丢失时不至于全盲）。
 //
@@ -87,6 +89,7 @@ pub fn decide(current: Option<&ClaudeRuntimeState>, payload: &HookPayload, now_m
             }
             state.status = ClaudeRuntimeStatus::Idle;
             state.preview_text = None;
+            state.preview_index = None;
             state.notification = None;
             Decision::Apply {
                 state,
@@ -94,8 +97,25 @@ pub fn decide(current: Option<&ClaudeRuntimeState>, payload: &HookPayload, now_m
                 persist: true,
             }
         }
-        "UserPromptSubmit" | "MessageDisplay" => {
+        "UserPromptSubmit" => {
             state.status = ClaudeRuntimeStatus::Working;
+            // 新回合起步：上一回合残留 preview 作废（否则 working 态下
+            // deriveStreamingText 会拿旧文本当流式预览显示）。
+            state.preview_text = None;
+            state.preview_index = None;
+            state.notification = None;
+            Decision::Apply {
+                state,
+                truncate_spool: false,
+                persist: false,
+            }
+        }
+        // 子代理的 MessageDisplay 丢弃——Task 子进程的流式文本不得混入
+        // 主 pane 预览（防御口径同 SessionStart）。
+        "MessageDisplay" if payload.agent_id.is_some() => Decision::Drop,
+        "MessageDisplay" => {
+            state.status = ClaudeRuntimeStatus::Working;
+            apply_preview_delta(&mut state, payload);
             state.notification = None;
             Decision::Apply {
                 state,
@@ -125,6 +145,52 @@ pub fn decide(current: Option<&ClaudeRuntimeState>, payload: &HookPayload, now_m
         // Notification 不入状态机（orca v1.4.178 已移除：claude idle 时也发
         // "waiting for your input"，误置 waiting）。未知事件静默忽略。
         _ => Decision::Drop,
+    }
+}
+
+/// MessageDisplay delta/index → preview 拼接（T3.1 流式气泡数据源）。
+///
+/// 游标规则（T1.3 原稿设计「同一消息按 index 追加」）：
+///   - index=0：新消息起点，preview 重置为该 delta；
+///   - index=游标+1：顺序追加；
+///   - index<=游标：重复/迟到事件，delta 丢弃（防 spool 重读双份文本）；
+///   - 跳号：当新流重置（宁重置不粘错位文本）；
+///   - 无 index：宽容追加（旧形态/防御性）。
+/// final 标记不参与：定稿文本保持展示，Stop 清空。
+fn apply_preview_delta(state: &mut ClaudeRuntimeState, payload: &HookPayload) {
+    let Some(delta) = payload.delta.as_deref() else {
+        return; // 无 delta 的 MessageDisplay：仅状态推进
+    };
+    let index = payload.index.as_ref().and_then(Value::as_i64);
+    match index {
+        Some(0) => {
+            state.preview_text = Some(delta.to_string());
+            state.preview_index = Some(0);
+        }
+        Some(i) => {
+            let cursor = state.preview_index;
+            if cursor.is_some_and(|last| last >= i) {
+                return; // 重复/迟到
+            }
+            if cursor.is_some_and(|last| last + 1 == i) {
+                append_preview_text(state, delta);
+                state.preview_index = Some(i);
+            } else {
+                // 跳号（或首见非 0 序号）：当新流重置。
+                state.preview_text = Some(delta.to_string());
+                state.preview_index = Some(i);
+            }
+        }
+        None => append_preview_text(state, delta),
+    }
+}
+
+/// preview 追加 delta（原地 push，无整串 clone）。
+fn append_preview_text(state: &mut ClaudeRuntimeState, delta: &str) {
+    if let Some(text) = state.preview_text.as_mut() {
+        text.push_str(delta);
+    } else {
+        state.preview_text = Some(delta.to_string());
     }
 }
 
@@ -232,6 +298,7 @@ mod tests {
             transcript_path: Some("/tmp/t.jsonl".into()),
             status: ClaudeRuntimeStatus::Idle,
             preview_text: None,
+            preview_index: None,
             notification: None,
             updated_at: 1,
         }
@@ -408,5 +475,89 @@ mod tests {
             panic!("expected Apply");
         };
         assert_eq!(state.notification.unwrap().message, "approve Bash");
+    }
+
+    // ===== MessageDisplay delta 拼接（T3.1 流式气泡数据源）=====
+
+    fn message_display(delta: &str, index: i64, final_flag: bool) -> HookPayload {
+        serde_json::from_value(serde_json::json!({
+            "hook_event_name": "MessageDisplay",
+            "delta": delta,
+            "index": index,
+            "final": final_flag,
+        }))
+        .unwrap()
+    }
+
+    /// 顺序追加：index 0 起步 + index 1 追加 + final 保持定稿文本。
+    #[test]
+    fn message_display_appends_preview_in_order() {
+        let current = state_with_token("tokB");
+        let Decision::Apply { state: s1, .. } =
+            decide(Some(&current), &message_display("Hel", 0, false), 100)
+        else {
+            panic!("expected Apply");
+        };
+        assert_eq!(s1.preview_text.as_deref(), Some("Hel"));
+        assert_eq!(s1.status, ClaudeRuntimeStatus::Working);
+
+        let Decision::Apply { state: s2, .. } =
+            decide(Some(&s1), &message_display("lo 世界", 1, true), 101)
+        else {
+            panic!("expected Apply");
+        };
+        assert_eq!(s2.preview_text.as_deref(), Some("Hello 世界"), "final 保持定稿文本");
+    }
+
+    /// index 0 重置：新消息起点，旧 preview 作废。
+    #[test]
+    fn message_display_index_zero_resets_preview() {
+        let mut current = state_with_token("tokB");
+        current.preview_text = Some("旧消息".into());
+        current.preview_index = Some(5);
+        let Decision::Apply { state, .. } =
+            decide(Some(&current), &message_display("New", 0, false), 100)
+        else {
+            panic!("expected Apply");
+        };
+        assert_eq!(state.preview_text.as_deref(), Some("New"));
+    }
+
+    /// 重复/迟到 index：delta 丢弃（spool 重读/事件重发不双份文本）。
+    #[test]
+    fn message_display_duplicate_index_dropped() {
+        let mut current = state_with_token("tokB");
+        current.preview_text = Some("Hello".into());
+        current.preview_index = Some(1);
+        let Decision::Apply { state, .. } =
+            decide(Some(&current), &message_display("Hello", 1, false), 100)
+        else {
+            panic!("expected Apply");
+        };
+        assert_eq!(state.preview_text.as_deref(), Some("Hello"), "重复 index 不追加");
+    }
+
+    /// 子代理 MessageDisplay 丢弃（防御口径同 SessionStart）。
+    #[test]
+    fn subagent_message_display_dropped() {
+        let mut p = message_display("sub text", 0, false);
+        p.agent_id = Some(Value::String("agent-1".into()));
+        assert_eq!(decide(Some(&state_with_token("tokB")), &p, 100), Decision::Drop);
+    }
+
+    /// UserPromptSubmit 清残留 preview：新回合起步旧流式文本作废。
+    #[test]
+    fn user_prompt_clears_stale_preview() {
+        let mut current = state_with_token("tokB");
+        current.status = ClaudeRuntimeStatus::Idle;
+        current.preview_text = Some("上回合残文".into());
+        current.preview_index = Some(2);
+        let Decision::Apply { state, .. } = decide(Some(&current), &payload("UserPromptSubmit"), 100)
+        else {
+            panic!("expected Apply");
+        };
+        assert_eq!(state.status, ClaudeRuntimeStatus::Working);
+        assert_eq!(state.preview_text, None);
+        assert_eq!(state.preview_index, None);
     }
 }

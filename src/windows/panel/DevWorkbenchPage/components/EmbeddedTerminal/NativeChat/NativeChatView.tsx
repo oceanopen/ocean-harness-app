@@ -4,6 +4,8 @@
 
 import { RefreshOutlined as RefreshIcon } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
+import { useCallback } from 'react';
+import { CHAT_STREAMING_ID } from './chatStreaming';
 import NativeChatComposer from './NativeChatComposer';
 import NativeChatEmptyState from './NativeChatEmptyState';
 import NativeChatMessageList from './NativeChatMessageList';
@@ -19,13 +21,40 @@ interface NativeChatViewProps {
   onStop: () => void;
 }
 
+// 顶部窄横幅（waiting / claude-exited 共用形态）：说明文案 + 引导动作按钮。
+function ChatBanner({ text, action, onAction }: { text: string; action: string; onAction: () => void }) {
+  return (
+    <Box
+      sx={{
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 1,
+        px: 1.5,
+        py: 0.5,
+        bgcolor: 'action.hover',
+      }}
+    >
+      <Typography variant="caption" color="text.secondary">{text}</Typography>
+      <Button size="small" onClick={onAction}>{action}</Button>
+    </Box>
+  );
+}
+
 export default function NativeChatView({ sessionId, onBackToTerminal, onSend, onStop }: NativeChatViewProps) {
-  const { state, claudeStatus, waitingFor, refresh } = useTranscript(sessionId);
+  const { state, messages, claudeStatus, waitingFor, sendEcho, refresh } = useTranscript(sessionId);
   // composer 门槛：Idle 才可发送（Waiting=交互 prompt 阻塞、Busy=响应中，均禁发）；Busy 才可停止。
   const canSend = claudeStatus === 'Idle';
   const isBusy = claudeStatus === 'Busy';
   // waiting = 交互 prompt（权限确认/提问），引导切回终端回答。
   const isWaiting = claudeStatus === 'Waiting';
+  // 发送编排（T3.1）：先乐观 echo（立即上屏），真实回写经 onSend 走发送队列
+  // （串行防粘行，EmbeddedTerminal chatSendQueue）。
+  const handleSend = useCallback((text: string) => {
+    sendEcho(text);
+    onSend(text);
+  }, [sendEcho, onSend]);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -48,23 +77,11 @@ export default function NativeChatView({ sessionId, onBackToTerminal, onSend, on
       {/* waiting banner（terminal_chat T3.3）：claude 交互 prompt 阻塞（权限/提问），
           引导切回终端回答。waitingFor 为 session json 附带的上下文（如 "approve Bash"）。 */}
       {isWaiting && (
-        <Box
-          sx={{
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 1,
-            px: 1.5,
-            py: 0.5,
-            bgcolor: 'action.hover',
-          }}
-        >
-          <Typography variant="caption" color="text.secondary">
-            claude 等待输入{waitingFor != null && waitingFor !== '' ? `（${waitingFor}）` : ''}
-          </Typography>
-          <Button size="small" onClick={onBackToTerminal}>切回终端回答</Button>
-        </Box>
+        <ChatBanner
+          text={`claude 等待输入${waitingFor != null && waitingFor !== '' ? `（${waitingFor}）` : ''}`}
+          action="切回终端回答"
+          onAction={onBackToTerminal}
+        />
       )}
 
       {/* 主体：状态分派。ready / claude-exited 都有消息列表；claude-exited 额外
@@ -73,23 +90,13 @@ export default function NativeChatView({ sessionId, onBackToTerminal, onSend, on
         ? (
             <>
               {state.status === 'claude-exited' && (
-                <Box
-                  sx={{
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 1,
-                    px: 1.5,
-                    py: 0.5,
-                    bgcolor: 'action.hover',
-                  }}
-                >
-                  <Typography variant="caption" color="text.secondary">claude 已退出</Typography>
-                  <Button size="small" onClick={onBackToTerminal}>切回终端启动 claude</Button>
-                </Box>
+                <ChatBanner text="claude 已退出" action="切回终端启动 claude" onAction={onBackToTerminal} />
               )}
-              <NativeChatMessageList messages={state.messages} streaming={isBusy} />
+              <NativeChatMessageList
+                messages={messages}
+                // 「正在生成」占位在有真实流式气泡时让位（合成气泡已表达进行中）。
+                streaming={isBusy && !messages.some(m => m.id === CHAT_STREAMING_ID)}
+              />
             </>
           )
         : (
@@ -97,7 +104,7 @@ export default function NativeChatView({ sessionId, onBackToTerminal, onSend, on
           )}
 
       {/* 底部 composer：发送/停止（T3.1），门槛见上 canSend/isBusy 派生 */}
-      <NativeChatComposer onSend={onSend} onStop={onStop} canSend={canSend} isBusy={isBusy} />
+      <NativeChatComposer onSend={handleSend} onStop={onStop} canSend={canSend} isBusy={isBusy} />
     </Box>
   );
 }
