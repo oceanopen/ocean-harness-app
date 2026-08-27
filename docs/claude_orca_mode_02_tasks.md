@@ -281,7 +281,7 @@
 
 ### T5.1 PTY 直接 spawn claude
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：chat 模式下打开终端直接进入 claude 会话（去除 shell 中转），归因钉死在 spawn 时刻
 
@@ -293,6 +293,49 @@
 - 语义变化（已确认接受）：claude 退出即 pane 退出（无 shell 回落）→ 走 exited UI；跑普通命令用附加 pane（现有设计附加 pane 恒裸 shell）
 
 **依赖**：T1.4（env 打标在直接 spawn 路径同样生效）
+
+**实施记录（2026-08-27）**：
+- 探测泛化为**按首 token 通用解析**（用户确认方案 A）：新 `pty/cli_bin.rs`
+  `resolve_cli_bin(token)`——`$SHELL -l -i -c 'command -v <token>; /usr/bin/env'`
+  一次探测同时拿 CLI 绝对路径（首个 `/` 开头行；builtin/alias 返回名字本身
+  非路径，天然判失败回落）+ login PATH（`PATH=` 行解析，`/usr/bin/env` 外部
+  二进制输出跨 shell 一致——`printf "$PATH"` 在 fish 下按列表空格连接会破坏
+  PATH）。缓存**只存成功**（用户确认）：`LazyLock<Mutex<HashMap>>` per token，
+  失败下次 spawn 重探（装上 CLI 免重启 app；OnceLock set 不可覆盖会钉死失败）。
+  token 合法字符白名单（字母/数字/`_-.`）拒引号防 `-c` 拼串注入面，绝对路径
+  形态也拒（生产只传 CLI 名）。
+- **PATH harvest 注入 direct 子进程**（用户确认）：GUI app env 缺 nvm/volta 目录，
+  npm/nvm 安装的 node-shebang CLI 直接 spawn 会因找不到 node 起不来；注入
+  login PATH 后与用户终端行为一致（brew 自包含二进制不依赖，注入无害）。
+- `spawn_fresh` direct 分支：整体替换 `CommandBuilder`（与 zsh/bash 包装分支
+  同款重建形态），无 barrier；T1.4 env 注入点在全部重建之后，第 5 条 spawn
+  路径一处覆盖。**失败回落**：整串顶替 `startup_effective` 走注入分支（包装/
+  fast 降级链全继承）；direct 优先级高于 startup_command，成功时不再注入。
+  附加参数原样透传（`claude --resume <id>` T5.2 同形零改动）。
+- 前端：`usePtySession` args 增 `directCommand: string | null`（attachKey +
+  effect deps，热切换重编排不打扰活会话——同 startupCodeCli 语义）；direct
+  在场时不发 startupCommand。`EmbeddedTerminal` 传
+  `directCommand: chatEnabled ? startupCodeCli : null`（chatEnabled 已含
+  isMain + cli≠none + 开关，附加 pane 天然排除）。`reopen(true)` 一次性覆盖
+  仅作用 startupCodeCli：非 chat 模式「重开并启动 claude」保持注入语义。
+- 单测：cli_bin 5 例（真实 shell 解析外部命令/builtin None/不存在 None/非法
+  token 拒绝/纯解析规则）+ local_provider 2 例（`env` 直启冒烟——ring 见
+  WE_TERM_PANE 归因标 + 会话自然退出置位 exited；`echo` builtin 回落注入）；
+  `#[ignore]` 真 claude e2e 1 例。
+- 验证（2026-08-27）：cargo test 121 passed（3 ignored 为手动 e2e）/ vitest
+  46 / tsc / eslint 全绿；`claude_e2e_direct_spawn_spool`（16.4s）——direct
+  直启 `claude -p` → spool 收 SessionStart+Stop 全链且载荷同一 launch_token。
+- 审查修复（2026-08-27，缺陷+简洁性/规范+架构双审，3 项全修）：**[高] 探测
+  解析加哨兵隔离**——裸取「首个 `/` 开头行」会把 rc 文件噪声（绝对路径报错
+  行）误判为 CLI 路径，且误判被「只缓存成功」钉死 → chat 模式全部 main pane
+  spawn 永败直至重启；改为 `echo` 哨兵夹住 `command -v` 输出（rc 在 -c 脚本
+  前跑完，时间上不可能插入），哨兵缺失亦判失败回落；解析单测扩 5 场景。
+  **[minor] pty/mod.rs 子模块清单补全**（claude_state/shell_ready 前任务遗留，
+  按声明序重排 7 项）。**[注释] fish 边界说明**——`command -v` builtin 判定
+  仅 POSIX shell 成立（fish 直搜 PATH 返回真路径更优），头注与测试注释双补。
+  修后 cargo test 121 复跑全绿。
+- dev app 实测待办（与 T5.2/T6.1 合并）：chat 模式开 issue 直进 claude（无
+  shell 提示符）、退出走 exited UI、附加 pane 仍裸 shell。
 
 ---
 

@@ -6,9 +6,12 @@
 // cwd 为 `${workspace_base_dir}/${issueId}`（同一 issue 的全部 pane 同目录）。
 //
 // 子模块：
-//   provider        —— PtyProvider trait（远程 SSH 扩展预留）+ SpawnOpts/PtySpawned/PtySessionInfo
+//   claude_state    —— claude 运行态探测 + 会话引用定位（进程树父链匹配）
+//   cli_bin         —— CLI 直启路径探测（login shell which + PATH harvest，T5.1）
 //   local_provider  —— LocalPtyProvider（portable-pty 本机实现，spawn 即起 reader 线程）
+//   provider        —— PtyProvider trait（远程 SSH 扩展预留）+ SpawnOpts/PtySpawned/PtySessionInfo
 //   session         —— PtySession + SessionIo（输出共享内核：listener Channel + exited）
+//   shell_ready     —— 提示符就绪 marker（OSC 777）包装 + ShellReadyBarrier（注入精确锚定）
 //   state           —— PtySessionStore（Mutex<HashMap>，抗 webview 刷新常驻）
 //
 // 输出通道：pty_spawn 传 Channel<PtyEvent>（Data/Exit 单通道双分支，tauri-specta rc.25
@@ -16,6 +19,7 @@
 // reattach 命令（exists/reattach + ring replay）在任务 3 接入。
 
 pub mod claude_state;
+pub mod cli_bin;
 pub mod local_provider;
 pub mod provider;
 pub mod session;

@@ -194,6 +194,10 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     // 自动 CLI 仅 main pane 注入（terminal_02 §3.6：附加 pane 恒裸 shell——用户
     // 分屏通常是要手动跑命令，不自动进 claude）。
     startupCodeCli: isMain ? startupCodeCli : 'none',
+    // chat 模式 CLI 直启（claude_orca T5.1）：chatEnabled 已含 isMain + CLI
+    // 非 none + 模式开关，附加 pane 天然排除（null）。直启失败（CLI 未安装
+    // 等）由 Rust 侧回落 startupCodeCli 注入路径，前端无感。
+    directCommand: chatEnabled ? startupCodeCli : null,
     onData: handleTerminalData,
   });
 

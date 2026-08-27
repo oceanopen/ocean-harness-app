@@ -510,6 +510,15 @@ export type SpawnOpts = {
 	 *  fast 注入降级。None = 现状裸 spawn。reattach/复用分支不重注入。
 	 */
 	startupCommand?: string | null,
+	/**
+	 *  直接 spawn 命令（claude_orca T5.1，chat 模式 CLI 直启）：整串命令，首
+	 *  token 为 CLI 名（如 "claude"，T5.2 的 "claude --resume <id>" 同形）。
+	 *  优先级高于 startup_command：在场时无 shell 中转、无 shell-ready barrier
+	 *  ——PTY 直接 exec CLI（T1.4 归因 env 打标照常注入），CLI 退出即 pane
+	 *  退出（无 shell 回落，走 exited UI；跑普通命令用附加 pane）。CLI 路径
+	 *  经 login shell 探测解析，失败回落 startup_command 注入路径（warn log）。
+	 */
+	directCommand?: string | null,
 };
 
 /**

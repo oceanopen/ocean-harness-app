@@ -4,6 +4,8 @@
 //   - shell 显式取 $SHELL 回退 /bin/zsh，加 -i（交互式）。不能用
 //     CommandBuilder::new_default_prog()——它在无 tty 的环境（测试/某些启动上下文）
 //     会永久挂起。
+//   - direct_command（claude_orca T5.1，chat 模式 CLI 直启）：无 shell 中转、
+//     无 shell-ready barrier，PTY 直接 exec CLI；解析失败回落 shell 注入路径。
 //   - cwd 不存在时 spawn_command 直接报错，由前端捕获展示「任务目录不存在」。
 //
 // spawn 即启动 reader 线程（session::spawn_reader_thread）：输出经 UTF-8 边界切分后
@@ -18,6 +20,7 @@ use std::sync::atomic::Ordering;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use tauri::ipc::Channel;
 
+use super::cli_bin;
 use super::provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, SpawnOpts};
 use super::session::{PtyEvent, PtySession, SessionIo, spawn_reader_thread};
 use super::shell_ready::{SHELL_READY_TIMEOUT_MS, ShellReadyBarrier, ensure_shell_ready_wrappers};
@@ -78,12 +81,51 @@ impl LocalPtyProvider {
         }
         cmd.cwd(&opts.cwd);
 
+        // direct_command 分支（T5.1）：CLI 直启——整体替换 cmd（与下方 zsh/bash
+        // 包装分支同款「重建 CommandBuilder」形态），无 shell 中转、无 barrier。
+        // 解析失败（CLI 不在场/builtin/alias/token 非法）回落：整串顶替
+        // startup_effective 走下方注入分支（包装/fast 降级链全继承）。
+        // direct 优先级高于 startup_command：direct 成功时不再注入。
+        let mut startup_effective = opts.startup_command.clone();
+        if let Some(direct) = &opts.direct_command {
+            let token = direct.split_whitespace().next().unwrap_or("");
+            match cli_bin::resolve_cli_bin(token) {
+                Some((bin, login_path)) => {
+                    // 首 token（CLI 名）由绝对路径顶替；余参原样透传
+                    //（T5.2 的 --resume <id> 同形）。
+                    cmd = CommandBuilder::new(&bin);
+                    for arg in direct.split_whitespace().skip(1) {
+                        cmd.arg(arg);
+                    }
+                    // GUI app env 缺 nvm/volta 目录（claude 常装在那里）：注入
+                    // login PATH，node shebang CLI 才能找到 node；brew 自包含
+                    // 二进制不依赖，注入无害。
+                    cmd.env("PATH", &login_path);
+                    cmd.cwd(&opts.cwd);
+                    startup_effective = None;
+                    log::info!(
+                        "[pty] direct spawn session_id={} bin={}",
+                        opts.session_id,
+                        bin
+                    );
+                }
+                None => {
+                    log::warn!(
+                        "[pty] direct spawn '{token}' unresolvable, \
+                         fallback to shell injection session_id={}",
+                        opts.session_id
+                    );
+                    startup_effective = Some(direct.clone());
+                }
+            }
+        }
+
         // startup_command 分支（任务 2/5）：shell 为 zsh/bash 且 app_data_dir 已注入
         // → 包装 spawn（marker 精确锚定 + barrier）；其余情形（fish/其他 shell、
         // 或包装文件根不可用）统一降级 fast 注入——首个非空输出块 + 30ms 放行，
         // 排队/超时/退出语义复用 barrier（文档 §3.2「行为降级不阻塞」）。
         let mut barrier: Option<Arc<ShellReadyBarrier>> = None;
-        if let Some(startup) = &opts.startup_command {
+        if let Some(startup) = &startup_effective {
             let shell_name = shell_basename(&prog);
             let base = app_data_dir();
             let wrapped = matches!(shell_name.as_str(), "zsh" | "bash") && base.is_some();
@@ -138,8 +180,9 @@ impl LocalPtyProvider {
         // claude 归因链 env 打标（T1.4）：pane 锚点 / spool 通道 / spawn 代际标。
         // 无条件注入（与 chat 模式开关无关）——未装 hook 脚本时 env 无人消费，无害；
         // 模式热开启后已运行会话的下一个 hook 事件即可被归因。
-        // 注入点必须在包装分支之后：zsh/bash 分支重建 CommandBuilder，之前的
-        // env 会被剥掉；在此处注入则 4 条 spawn 路径（裸/包装/fast）一处全覆盖。
+        // 注入点必须在包装分支之后：zsh/bash 分支与 direct 分支都会重建
+        // CommandBuilder，之前的 env 会被剥掉；在此处注入则 5 条 spawn 路径
+        //（裸/包装-zsh/包装-bash/fast/direct）一处全覆盖。
         for (k, v) in claude_attribution_envs(&opts.session_id) {
             cmd.env(k, v);
         }
@@ -482,6 +525,7 @@ mod tests {
             cols: 80,
             rows: 24,
             startup_command: None,
+            direct_command: None,
         };
 
         // 无 webview 环境 Channel 以裸 id 构造（send 会失败，但换装/复用逻辑可验证）。
@@ -542,6 +586,7 @@ mod tests {
                     cols: 80,
                     rows: 24,
                     startup_command: None,
+                    direct_command: None,
                 },
                 Channel::new(|_| Ok(())),
             )
@@ -606,6 +651,7 @@ mod tests {
             cols: 80,
             rows: 24,
             startup_command: Some("echo WE_TERM_INJECT_OK".to_string()),
+            direct_command: None,
         };
         let spawned = provider
             .spawn(opts, Channel::new(|_| Ok(())))
@@ -668,6 +714,7 @@ mod tests {
                         cols: 80,
                         rows: 24,
                         startup_command: None,
+                        direct_command: None,
                     },
                     Channel::new(|_| Ok(())),
                 )
@@ -755,6 +802,7 @@ mod tests {
                  $WE_TERM_SPOOL_DIR WE_ATTR_END"
                     .to_string(),
             ),
+            direct_command: None,
         };
         provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
 
@@ -798,6 +846,106 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    // ---------- direct_command 直启分支（T5.1）----------
+
+    /// direct 冒烟：`env` 直启（外部二进制，打印 env 即退）——ring 出现
+    /// WE_TERM_PANE 归因标（direct 路径 T1.4 env 打标在场），随后会话自然退出
+    /// （CLI 退出即 pane 退出语义，无 shell 回落）。
+    #[test]
+    fn direct_spawn_runs_and_exits() {
+        let provider = LocalPtyProvider::new();
+        let tmp = std::env::temp_dir().join("pty-direct-spawn-test");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let session_id = "direct-spawn-issue::main".to_string();
+        let opts = SpawnOpts {
+            session_id: session_id.clone(),
+            cwd: tmp.to_string_lossy().into_owned(),
+            cols: 80,
+            rows: 24,
+            startup_command: None,
+            direct_command: Some("env".to_string()),
+        };
+        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+
+        // ring：env 输出含归因标（WE_TERM_PANE=<session_id>）。
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut ring = String::new();
+        while Instant::now() < deadline {
+            ring = provider
+                .with_session(&session_id, &mut |s| s.io.snapshot())
+                .unwrap();
+            if ring.contains(&format!("WE_TERM_PANE={session_id}")) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            ring.contains(&format!("WE_TERM_PANE={session_id}")),
+            "direct spawn 归因标未透传，ring: {ring}"
+        );
+
+        // env 打印完即退：reader EOF → exited 置位（list 快照可见；会话留 store）。
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut exited = false;
+        while Instant::now() < deadline {
+            exited = provider
+                .list()
+                .into_iter()
+                .find(|s| s.session_id == session_id)
+                .map(|s| s.exited)
+                .unwrap_or(false);
+            if exited {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(exited, "direct spawn 的 CLI 退出应置位会话 exited");
+
+        provider.shutdown(&session_id).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// direct 回落：token 为 builtin（echo——`command -v` 返回名字而非路径，
+    /// 不可直启）→ 回落 shell 注入路径，整串作为注入命令执行。
+    #[test]
+    fn direct_spawn_fallback_to_injection() {
+        let provider = LocalPtyProvider::new();
+        let tmp = std::env::temp_dir().join("pty-direct-fallback-test");
+        std::fs::create_dir_all(&tmp).unwrap();
+        set_app_data_dir(std::env::temp_dir().join("we-term-direct-fallback"));
+
+        let session_id = "direct-fallback-issue::main".to_string();
+        let opts = SpawnOpts {
+            session_id: session_id.clone(),
+            cwd: tmp.to_string_lossy().into_owned(),
+            cols: 80,
+            rows: 24,
+            startup_command: None,
+            direct_command: Some("echo WE_DIRECT_FALLBACK_OK".to_string()),
+        };
+        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut ring = String::new();
+        while Instant::now() < deadline {
+            ring = provider
+                .with_session(&session_id, &mut |s| s.io.snapshot())
+                .unwrap();
+            if ring.contains("WE_DIRECT_FALLBACK_OK") {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            ring.contains("WE_DIRECT_FALLBACK_OK"),
+            "direct 回落注入未执行，ring: {ring}"
+        );
+
+        provider.shutdown(&session_id).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     /// 真 claude 端到端（T1.4，兼 T1.3 冒烟遗留验证）：手动
     /// `cargo test claude_e2e -- --ignored --nocapture`。受控工作区装 hooks →
     /// spawn PTY（env 三标随 spawn 注入）→ 注入 `claude -p` → 读 spool 断言：
@@ -830,6 +978,7 @@ mod tests {
             cols: 80,
             rows: 24,
             startup_command: Some("claude -p 'reply with just: ok'".to_string()),
+            direct_command: None,
         };
         provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
 
@@ -863,6 +1012,83 @@ mod tests {
         );
         assert!(names.contains(&"Stop"), "事件链缺 Stop，实收: {names:?}");
         // 全部行携带同一非空 launch_token——空值即 env 注入断链，不同值即跨代污染。
+        let tokens: Vec<&str> = payloads
+            .iter()
+            .map(|p| p.launch_token.as_deref().unwrap_or(""))
+            .collect();
+        assert!(
+            tokens.iter().all(|t| !t.is_empty()),
+            "存在无 launch_token 的载荷行（env 断链）"
+        );
+        assert!(
+            tokens.windows(2).all(|w| w[0] == w[1]),
+            "载荷 token 不同代: {tokens:?}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 真 claude 端到端（T5.1 direct spawn）：手动
+    /// `cargo test claude_e2e -- --ignored --nocapture`。direct_command 直启
+    /// claude（无 shell 中转）→ 读 spool 断言 SessionStart/Stop 事件链 + 同一
+    /// launch_token（direct 路径 env 打标 → hook → spool 全链）+ 会话随 claude
+    /// 退出置位 exited（CLI 退出即 pane 退出语义）。注意事项同上（勿与 dev app
+    /// 同跑 / 勿 --include-ignored 并行——APP_DATA_DIR OnceLock 先到先得）。
+    #[test]
+    #[ignore = "依赖真 claude CLI + API 配额，手动跑"]
+    fn claude_e2e_direct_spawn_spool() {
+        use crate::claude_runtime::script::{SPOOL_DIR_NAME, spool_file_name};
+        use crate::claude_runtime::types::HookPayload;
+
+        let base = std::env::temp_dir().join("we-term-claude-e2e-direct");
+        let _ = std::fs::remove_dir_all(&base);
+        let ws = base.join("ws");
+        std::fs::create_dir_all(&ws).unwrap();
+        set_app_data_dir(base.clone());
+        std::fs::create_dir_all(base.join(SPOOL_DIR_NAME)).unwrap();
+
+        crate::claude_runtime::installer::install(&ws, &base).unwrap();
+
+        let provider = LocalPtyProvider::new();
+        let session_id = "claude-e2e-direct-issue::main".to_string();
+        let opts = SpawnOpts {
+            session_id: session_id.clone(),
+            cwd: ws.to_string_lossy().into_owned(),
+            cols: 80,
+            rows: 24,
+            startup_command: None,
+            direct_command: Some("claude -p 'reply with just: ok'".to_string()),
+        };
+        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+
+        // 轮询 spool：SessionStart 与 Stop 都到场（claude -p 跑完自动退出）。
+        let spool_file = base
+            .join(SPOOL_DIR_NAME)
+            .join(spool_file_name(&session_id));
+        let deadline = Instant::now() + Duration::from_secs(180);
+        let mut payloads: Vec<HookPayload> = Vec::new();
+        while Instant::now() < deadline {
+            if let Ok(content) = std::fs::read_to_string(&spool_file) {
+                payloads = content
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .filter_map(|l| serde_json::from_str(l).ok())
+                    .collect();
+                let has = |n: &str| payloads.iter().any(|p| p.hook_event_name == n);
+                if has("SessionStart") && has("Stop") {
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        provider.shutdown(&session_id).unwrap();
+
+        let names: Vec<&str> = payloads.iter().map(|p| p.hook_event_name.as_str()).collect();
+        assert!(
+            names.contains(&"SessionStart"),
+            "事件链缺 SessionStart，实收: {names:?}（spool: {}）",
+            spool_file.display()
+        );
+        assert!(names.contains(&"Stop"), "事件链缺 Stop，实收: {names:?}");
         let tokens: Vec<&str> = payloads
             .iter()
             .map(|p| p.launch_token.as_deref().unwrap_or(""))
