@@ -238,8 +238,8 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   // 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 注入 claude\r
   // （barrier 已 Open 直通，字节语义同 Rust build_startup_submission 单行分支）。
   // 运行态探测（按钮置灰）走 useClaudeRunning——进程真相（pid 父链匹配），
-  // 非输出流启发式。exited 覆盖条的「重开并启动 claude」保留（reopen(true)
-  // 一次性覆盖 startup_command）。
+  // 非输出流启发式。exited 覆盖条的「重开并启动 claude」保留（reopenWithClaude
+  // 拼串，覆盖路由在 usePtySession）。
   const claudeRunning = useClaudeRunning(sessionId, session.status);
   const startClaude = useCallback(() => {
     session.write('claude\r');
@@ -303,9 +303,26 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   const reopenPlain = useCallback(() => {
     session.reopen();
   }, [session]);
+  // 「重开并启动 claude」（T5.2 resume）：查 runtime 快照取该 pane 最后
+  // claudeSessionId（快照 hydrate 跨 app 重启保留绑定），有则
+  // `claude --resume <id>`（direct/注入按模式在 usePtySession 路由），无记录
+  // 或查询失败裸 'claude'。id 失效时 claude 启动即退，自然回落 exited UI，
+  // 用户可点「重开」开新会话。
   const reopenWithClaude = useCallback(() => {
-    session.reopen(true);
-  }, [session]);
+    void commands.claudeRuntimeState(sessionId)
+      .then((res) => {
+        if (res.status === 'error') {
+          // 查询失败回落裸 claude（同无记录分支），warn 留排查线索。
+          console.warn('[EmbeddedTerminal] claude runtime state query failed:', res.error);
+        }
+        const id = res.status === 'ok' ? (res.data?.claudeSessionId ?? null) : null;
+        session.reopen(id != null ? `claude --resume ${id}` : 'claude');
+      })
+      .catch((e: unknown) => {
+        console.warn('[EmbeddedTerminal] claude runtime state query failed:', e);
+        session.reopen('claude');
+      });
+  }, [session, sessionId]);
   const handleClose = useCallback(() => {
     if (isMain) {
       setConfirmCloseOpen(true);

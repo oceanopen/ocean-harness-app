@@ -109,8 +109,10 @@ interface TerminalViewProps {
   // 会话已退出：终端交互禁用 + 顶部「会话已结束」条 + 重开按钮
   exited: boolean;
   onReopen: () => void;
-  // 重开并启动 claude（terminal_03 §3.2）：reopen 后 spawn 强制带 startup_command，
-  // 一次性覆盖 autoRun 配置。恒显示（用户 exit claude 后一键回到 claude）。
+  // 重开并启动 claude（terminal_03 §3.2 → claude_orca T5.2）：reopen 一次性
+  // 覆盖启动命令——runtime 快照有会话记录则 `claude --resume <id>` 恢复上下文
+  // （direct 模式直启 / 非 direct 注入，路由在 usePtySession），无记录裸 claude。
+  // 恒显示（用户 exit claude 后一键回到 claude）。
   onReopenClaude: () => void;
   // 本终端 claude 运行态（pid 父链匹配探测，useClaudeRunning）：跑着→按钮置灰；
   // 退出→恢复可用。驱动「启动 claude」按钮禁用态。

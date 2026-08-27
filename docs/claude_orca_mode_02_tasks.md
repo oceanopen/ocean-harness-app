@@ -341,7 +341,7 @@
 
 ### T5.2 退出重开 + `--resume` 恢复
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：claude 退出后「重开并启动 claude」支持恢复上次会话上下文
 
@@ -353,6 +353,35 @@
 **依赖**：T5.1、T1.1（快照）
 
 **验证**：chat 模式打开 issue 直接进会话；exit 后重开 resume 恢复上下文
+
+**实施记录（2026-08-27）**：
+- **前端 only，Rust 零改动**（direct_command 整串 + `claude_runtime_state` 快照
+  查询 + hydrate 跨重启保留 claudeSessionId 均已就绪）。
+- 澄清确认三项：①chat 模式「重开」= 全新会话（同时是 resume 失效的逃生口），
+  仅「重开并启动 claude」resume；②两模式统一——非 chat 模式有 runtime 记录
+  同样 resume（注入路径），实现比按模式分支更简；③exited 条按钮文案不动
+  （语义区分靠行为，文案优化留 T6.1 打磨）。
+- `usePtySession.reopen` 泛化：`(claude?: boolean)` → `(claudeCommand?: string)`
+  （'claude' 或 'claude --resume <id>'）；`startupOverrideRef` 更名
+  `claudeOverrideRef`，**路由在 hook 内**——direct 模式（配置 directCommand
+  在场）顶替 direct 串走 T5.1 直启，否则顶替 startupCodeCli 走注入（一处
+  分流，调用方只给命令串）。
+- `EmbeddedTerminal.reopenWithClaude`：点击时 `claudeRuntimeState(sessionId)`
+  取 claudeSessionId，有值拼 `claude --resume ${id}`，无记录/查询失败裸
+  'claude'（沿用本组件 res.status 消费范式）；id 失效时 claude 启动即退
+  自然回落 exited UI。
+- 验证（2026-08-27）：tsc / eslint / vitest 46 / cargo 121 回归全绿（Rust
+  未动仅回归）。
+- 审查修复（2026-08-27，缺陷+简洁性/规范+架构双审）：缺陷审查零发现（resume
+  串拼接边界/路由四组合/一次性覆盖时序/异步链闭包/Rust 消费链含 T1.4 围栏
+  resume 换代兼容均核验通过）；规范审查 3 项 minor 全修——usePtySession
+  startupCodeCli 参数注释残留死标识符 startupOverrideRef 改为 claudeOverrideRef
+  + 新路由口径；EmbeddedTerminal startClaude 注释引用已失效的 reopen(true)
+  改指 reopenWithClaude；reopenWithClaude 两条失败路径补 console.warn（对齐
+  组件 openSettings 惯例，实测失败可区分「无记录」与「查询报错」）。修后
+  tsc / eslint 复跑清洁。
+- dev app 实测待办（与 T5.1/T6.1 合并）：chat 模式 exit 后「重开并启动 claude」
+  恢复上下文、「重开」开新会话、app 重启后 exited 条仍能 resume。
 
 ---
 

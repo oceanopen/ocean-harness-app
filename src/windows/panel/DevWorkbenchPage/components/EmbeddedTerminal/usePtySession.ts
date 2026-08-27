@@ -23,9 +23,11 @@ export interface UsePtySessionResult {
   // 尺寸变化 → ptyResize（TerminalView onResize 接入；稳定引用）
   resize: (cols: number, rows: number) => void;
   // 重开：对已退出会话重新走 spawn 编排（后端移除旧会话重起）。
-  // claude=true：本次 spawn 强制带 startup_command（一次性覆盖 startupCodeCli
-  // 配置——「重开并启动 claude」语义，terminal_03 §3.2）。
-  reopen: (claude?: boolean) => void;
+  // claudeCommand：本次 spawn 的 claude 命令串（'claude'，或 T5.2 的
+  // 'claude --resume <id>'），一次性覆盖配置值——direct 模式（配置
+  // directCommand 在场）顶替 direct 串直启，否则顶替注入命令（「重开并启动
+  // claude」语义，terminal_03 §3.2 → claude_orca T5.2）。
+  reopen: (claudeCommand?: string) => void;
   // 关闭终端：ptyShutdown 杀 shell + 移出 store（组件随后进 exited 语义，可重开）
   close: () => void;
 }
@@ -42,8 +44,9 @@ interface UsePtySessionArgs {
   rows: number;
   // 启动自动运行的编程 CLI（'' = 不注入，普通 shell）。仅 fresh spawn 生效；
   // 已活会话（reattach/复用）不重注入——切换配置即时重编排但活会话保持原状。
-  // 「重开并启动 claude」的一次性覆盖在 hook 内部（startupOverrideRef）合成，
-  // 对调用方透明——attach 实参的 startupCodeCli 即合成结果。
+  // 「重开并启动 claude」的一次性覆盖在 hook 内部（claudeOverrideRef）合成，
+  // 对调用方透明——direct 模式顶替 attach 实参 directCommand、否则顶替
+  // startupCodeCli（路由见 effect 内 effectiveDirect/effectiveCli）。
   startupCodeCli: string;
   // CLI 直启命令（claude_orca T5.1，chat 模式）：非 null 时 PTY 直接 spawn
   // CLI，无 shell 中转、无 shell-ready barrier；CLI 退出即 pane 退出。
@@ -105,11 +108,12 @@ export function usePtySession({ sessionId, cwd, cols, rows, startupCodeCli, dire
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 重开/重试驱动：attempt 自增触发 effect 重跑编排
   const [attempt, setAttempt] = useState(0);
-  // 一次性 startup_command 覆盖（reopen(true) 置位，attach 取用即清）：
-  // 「重开并启动 claude」语义。不走 state——startupCodeCli 在 attachKey 与 effect
-  // deps 里，覆盖值持久生效会与后续配置变化耦合，违反一次性语义（函数式范式：
-  // 外部触发的瞬时意图 → ref 桥，勿渲染消费）。
-  const startupOverrideRef = useRef<'claude' | null>(null);
+  // 一次性 claude 命令覆盖（reopen(claudeCommand) 置位，attach 取用即清）：
+  // 「重开并启动 claude」语义（T5.2：可能带 --resume）。不走 state——
+  // startupCodeCli/directCommand 在 attachKey 与 effect deps 里，覆盖值持久
+  // 生效会与后续配置变化耦合，违反一次性语义（函数式范式：外部触发的瞬时
+  // 意图 → ref 桥，勿渲染消费）。
+  const claudeOverrideRef = useRef<string | null>(null);
   // attach 期间 fit 已经上报的最新尺寸：attach 完成前 ptyResize 会因会话不存在
   // 被后端拒（日志实证），就绪后按积压值补发一次，保证 PTY winsize 与前端一致。
   const pendingSizeRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -146,10 +150,14 @@ export function usePtySession({ sessionId, cwd, cols, rows, startupCodeCli, dire
       }
     };
 
-    // 一次性覆盖取用即清（本编排生效后续轮次回落配置值）。
-    const override = startupOverrideRef.current;
-    startupOverrideRef.current = null;
-    attach({ sessionId, cwd, cols, rows, startupCodeCli: override ?? startupCodeCli, directCommand, onData }, onEvent)
+    // 一次性覆盖取用即清（本编排生效后续轮次回落配置值）。路由：direct 模式
+    // （配置 directCommand 在场）顶替 direct 串（T5.2 resume 整串直启），否则
+    // 顶替注入命令。
+    const override = claudeOverrideRef.current;
+    claudeOverrideRef.current = null;
+    const effectiveDirect = override != null && directCommand != null ? override : directCommand;
+    const effectiveCli = override != null && directCommand == null ? override : startupCodeCli;
+    attach({ sessionId, cwd, cols, rows, startupCodeCli: effectiveCli, directCommand: effectiveDirect, onData }, onEvent)
       .then((next) => {
         if (cancelled) {
           return;
@@ -190,9 +198,9 @@ export function usePtySession({ sessionId, cwd, cols, rows, startupCodeCli, dire
     });
   }, [sessionId]);
 
-  const reopen = useCallback((claude?: boolean) => {
-    if (claude === true) {
-      startupOverrideRef.current = 'claude';
+  const reopen = useCallback((claudeCommand?: string) => {
+    if (claudeCommand != null) {
+      claudeOverrideRef.current = claudeCommand;
     }
     setAttempt(n => n + 1);
   }, []);
