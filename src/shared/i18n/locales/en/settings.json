@@ -38,7 +38,6 @@
       "iterm2SplitDirection": "iTerm2 split direction",
       "terminalPostOpenCommand": "Run after opening terminal",
       "startupCodeCli": "Auto-run on main terminal start",
-      "chatModeSwitch": "Enable Terminal/Chat mode switching",
       "fontSize": "Font size",
       "scrollbackRows": "Scrollback lines",
       "theme": "Terminal theme",
@@ -72,9 +71,8 @@
     "help": {
       "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events.",
       "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev.",
-      "startupCodeCli": "Automatically run the selected coding CLI (e.g. claude) when the shell is ready after opening the embedded terminal for a task. \"None\" opens a plain shell",
-      "scrollbackRows": "How many lines of history output you can scroll back through in the terminal. Applies immediately after saving. Larger values allow more history at higher memory cost",
-      "chatModeSwitch": "Only available when \"Auto-run on main terminal start\" is not set to \"None\". After enabling, already-running terminal sessions need to be reopened to enter the Claude session directly and pick up status streaming."
+      "startupCodeCli": "Directly launch the selected coding CLI (e.g. claude) in the embedded terminal when opening a task, with no shell in between. \"None\" opens a plain shell",
+      "scrollbackRows": "How many lines of history output you can scroll back through in the terminal. Applies immediately after saving. Larger values allow more history at higher memory cost"
     },
     "unit": {
       "seconds": "s"

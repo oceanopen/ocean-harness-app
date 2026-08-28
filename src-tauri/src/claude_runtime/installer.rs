@@ -23,12 +23,9 @@
 //     注：serde_json 未启用 preserve_order，Value 写盘仍按 Map 字母序——
 //     键序保留放弃（仅重写时的 diff 美观代价，语义比较已根治跳过失效）。
 //
-// 事件注册集（8 事件，依据 orca 最新 hook-settings.ts + claude 2.1.231 官方
-// hooks 文档核查，见 docs/claude_orca_mode_02_tasks.md T1.2 / T4.1）：
-//   SessionStart / UserPromptSubmit / MessageDisplay / PreToolUse / Stop /
-//   StopFailure / Notification（无 matcher）+ PermissionRequest（matcher "*"）。
-//   PreToolUse（T4.1）无 matcher：ingest 侧只让 AskUserQuestion 进状态机
-//   （提问卡数据源），普通工具调用高频全量 Drop。
+// 事件注册集（chat 模式退役裁剪，2026-08）：仅注册 SessionStart（会话绑定链
+// 唯一所需——ingest 只消费它）；其余 7 个历史事件转入 RETIRED_EVENTS 升级清理
+// （曾驱动 chat 状态机/预览/通知，前端消费方已随 chat 删除）。
 
 use std::path::{Path, PathBuf};
 
@@ -36,17 +33,21 @@ use serde_json::{Map, Value};
 
 use super::script::{ensure_hook_script, hook_command};
 
-/// 注册的 hook 事件（有序，输出 JSON 稳定）：(事件名, matcher)。
-/// matcher 为 None 的 events 写 matcher 会被 claude 静默忽略，索性不写。
-const HOOK_EVENTS: &[(&str, Option<&str>)] = &[
-    ("SessionStart", None),
-    ("UserPromptSubmit", None),
-    ("MessageDisplay", None),
-    ("PreToolUse", None),
-    ("Stop", None),
-    ("StopFailure", None),
-    ("PermissionRequest", Some("*")),
-    ("Notification", None),
+/// 注册的 hook 事件（SessionStart 唯一，无 matcher——写 matcher 会被 claude
+/// 静默忽略，索性不写）。
+const HOOK_EVENTS: &[&str] = &["SessionStart"];
+
+/// 退休事件（曾注册、现已无消费方）：升级安装时对这些键只剥自有条目不插入
+/// （剥空则移除键）——已装工作区的旧条目若不清理，hook 脚本仍会为它们持续
+/// 写 spool 噪声（ingest Drop 但文件无谓增长）。
+const RETIRED_EVENTS: &[&str] = &[
+    "UserPromptSubmit",
+    "MessageDisplay",
+    "PreToolUse",
+    "Stop",
+    "StopFailure",
+    "PermissionRequest",
+    "Notification",
 ];
 
 /// 自有条目识别 needle：脚本相对路径段（文件名级，非完整路径）。
@@ -122,7 +123,7 @@ fn strip_managed_definitions(definitions: &[Value]) -> Vec<Value> {
 
 /// 构建自有 definition（每事件一条）。写盘键序由 serde_json Map 字母序决定
 /// （未启用 preserve_order，见文件头注 B——插入序不影响输出）。
-fn managed_definition(command: &str, matcher: Option<&str>) -> Value {
+fn managed_definition(command: &str) -> Value {
     let mut handler = Map::new();
     handler.insert(
         "type".to_string(),
@@ -137,12 +138,6 @@ fn managed_definition(command: &str, matcher: Option<&str>) -> Value {
         Value::from(MANAGED_HOOK_TIMEOUT_SECS),
     );
     let mut def = Map::new();
-    if let Some(m) = matcher {
-        def.insert(
-            "matcher".to_string(),
-            Value::String(m.to_string()),
-        );
-    }
     def.insert(
         "hooks".to_string(),
         Value::Array(vec![Value::Object(handler)]),
@@ -150,10 +145,11 @@ fn managed_definition(command: &str, matcher: Option<&str>) -> Value {
     Value::Object(def)
 }
 
-/// hooks 子树合并（保守保留）：object 逐事件剥自有尾插新条目；未注册事件键
-/// 整体不动；事件值非数组 → 原样保留 + warn + 跳过该事件；hooks 非 object 且
-/// 非 null → 整树不动 + warn（合并零变化，调用方语义比较自然零写）。
-/// root 须为对象（调用方保证；非对象时静默不动，warn 由调用方记）。
+/// hooks 子树合并（保守保留）：object 逐注册事件剥自有尾插新条目；退休事件
+/// 只剥自有不插入（剥空移除键）；未注册事件键整体不动；事件值非数组 → 原样
+/// 保留 + warn + 跳过该事件；hooks 非 object 且非 null → 整树不动 + warn
+/// （合并零变化，调用方语义比较自然零写）。root 须为对象（调用方保证；非对象
+/// 时静默不动，warn 由调用方记）。
 fn merge_managed_hooks(root: &mut Value, command: &str) {
     let Some(obj) = root.as_object_mut() else {
         return;
@@ -171,7 +167,7 @@ fn merge_managed_hooks(root: &mut Value, command: &str) {
             }
         },
     };
-    for (event, matcher) in HOOK_EVENTS {
+    for event in HOOK_EVENTS {
         let mut merged = match hooks.get(*event) {
             Some(Value::Array(definitions)) => strip_managed_definitions(definitions),
             None => Vec::new(),
@@ -183,8 +179,20 @@ fn merge_managed_hooks(root: &mut Value, command: &str) {
                 continue;
             }
         };
-        merged.push(managed_definition(command, *matcher));
+        merged.push(managed_definition(command));
         hooks.insert(event.to_string(), Value::Array(merged));
+    }
+    // 退休事件清理：只剥自有条目不插入；剥空移除键（含用户条目的保留键）。
+    for event in RETIRED_EVENTS {
+        let stripped = match hooks.get(*event) {
+            Some(Value::Array(definitions)) => strip_managed_definitions(definitions),
+            _ => continue,
+        };
+        if stripped.is_empty() {
+            hooks.remove(*event);
+        } else {
+            hooks.insert(event.to_string(), Value::Array(stripped));
+        }
     }
     obj.insert("hooks".to_string(), Value::Object(hooks));
 }
@@ -353,8 +361,9 @@ mod tests {
 
     #[test]
     fn merge_keeps_user_entries_and_appends_managed() {
-        // 用户已有 Stop/PreToolUse hook 与未注册事件键：合并后共存，自有条目
-        // 追加，未注册键与顶层 permissions 整体不动。
+        // 用户已有 Stop/PreToolUse hook 与未注册事件键：注册事件（SessionStart）
+        // 尾插自有条目；退休事件（Stop/PreToolUse）用户条目保留、不再追加自有；
+        // 未注册键与顶层 permissions 整体不动。
         let mut root = json!({
             "permissions": {"allow": ["Bash"]},
             "hooks": {
@@ -369,53 +378,24 @@ mod tests {
             &managed_cmd("/app/claude-hooks/hook.sh"),
         );
 
-        // Stop：用户 1 条在前 + 自有尾插。
+        // SessionStart（唯一注册事件）：自有条目安装，无 matcher。
+        let session_start = root["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(session_start.len(), 1);
+        assert!(session_start[0].get("matcher").is_none());
+        assert!(
+            session_start[0]["hooks"][0]["command"]
+                .as_str()
+                .unwrap()
+                .contains("claude-hooks/hook.sh")
+        );
+
+        // 退休事件：用户条目原样保留（不追加自有、不移除键）。
         let stop = root["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 2);
+        assert_eq!(stop.len(), 1);
         assert_eq!(stop[0]["hooks"][0]["command"], "echo user-stop");
-        assert!(
-            stop[1]["hooks"][0]["command"]
-                .as_str()
-                .unwrap()
-                .contains("claude-hooks/hook.sh")
-        );
-
-        // PreToolUse（T4.1 已注册）：用户 matcher 条目 + 自有条目共存。
         let pre = root["hooks"]["PreToolUse"].as_array().unwrap();
-        assert_eq!(pre.len(), 2);
+        assert_eq!(pre.len(), 1);
         assert_eq!(pre[0]["matcher"], "Bash");
-        assert!(
-            pre[1]["hooks"][0]["command"]
-                .as_str()
-                .unwrap()
-                .contains("claude-hooks/hook.sh")
-        );
-
-        // 8 注册事件全部在场；PermissionRequest 带 matcher "*"，SessionStart 无。
-        assert_eq!(
-            root["hooks"]["PermissionRequest"][0]["matcher"],
-            "*"
-        );
-        assert!(
-            root["hooks"]["SessionStart"][0]
-                .get("matcher")
-                .is_none()
-        );
-        for event in [
-            "SessionStart",
-            "UserPromptSubmit",
-            "MessageDisplay",
-            "PreToolUse",
-            "Stop",
-            "StopFailure",
-            "PermissionRequest",
-            "Notification",
-        ] {
-            assert!(
-                root["hooks"].get(event).is_some(),
-                "missing {event}"
-            );
-        }
 
         // 未注册事件键与顶层用户键保留。
         assert_eq!(
@@ -425,13 +405,24 @@ mod tests {
         assert_eq!(root["permissions"], json!({"allow": ["Bash"]}));
     }
 
+    /// 退休事件的自有条目被剥除（升级清理）：旧 8 事件形态的 settings 升级后，
+    /// 仅 SessionStart 保有自有条目，退休 7 事件剥空即移除键；同 definition 内
+    /// 用户 handler 兄弟保留则键保留。
     #[test]
-    fn merge_replaces_stale_managed_not_duplicates() {
-        // 旧实例路径的自有条目（dev → release 切换）被 needle 扫掉并替换为新 command。
+    fn merge_strips_retired_managed_entries() {
         let mut root = json!({
             "hooks": {
+                "SessionStart": [{
+                    "hooks": [{"type": "command", "command": managed_cmd("/old-dev-dir/claude-hooks/hook.sh")}]
+                }],
                 "Stop": [{
                     "hooks": [{"type": "command", "command": managed_cmd("/old-dev-dir/claude-hooks/hook.sh")}]
+                }],
+                "Notification": [{
+                    "hooks": [
+                        {"type": "command", "command": "echo user-keep"},
+                        {"type": "command", "command": managed_cmd("/old-dev-dir/claude-hooks/hook.sh")}
+                    ]
                 }]
             }
         });
@@ -441,13 +432,28 @@ mod tests {
             &managed_cmd("/new-release-dir/claude-hooks/hook.sh"),
         );
 
-        let stop = root["hooks"]["Stop"].as_array().unwrap();
-        assert_eq!(stop.len(), 1);
+        // SessionStart：旧实例自有条目被 needle 扫掉，新 command 替换（不重复）。
+        let session_start = root["hooks"]["SessionStart"].as_array().unwrap();
+        assert_eq!(session_start.len(), 1);
         assert!(
-            stop[0]["hooks"][0]["command"]
+            session_start[0]["hooks"][0]["command"]
                 .as_str()
                 .unwrap()
                 .contains("/new-release-dir/")
+        );
+
+        // Stop：自有剥空 → 键移除（退休事件不插入）。
+        assert!(
+            root["hooks"].get("Stop").is_none(),
+            "retired key removed"
+        );
+
+        // Notification：用户 handler 兄弟保留 → 键保留但只剩用户条目。
+        let notification = root["hooks"]["Notification"].as_array().unwrap();
+        assert_eq!(notification.len(), 1);
+        assert_eq!(
+            notification[0]["hooks"][0]["command"],
+            "echo user-keep"
         );
     }
 
@@ -478,8 +484,7 @@ mod tests {
         assert!(settings.exists());
         assert!(!settings.with_extension("json.bak").exists());
         let first = std::fs::read_to_string(&settings).unwrap();
-        assert!(first.contains("UserPromptSubmit"));
-        assert!(first.contains("PermissionRequest"));
+        assert!(first.contains("SessionStart"));
 
         // 外部改写（用户/claude 编辑）：内容真变化（加 permissions + 用户 hook）
         // 且格式全变（4 空格缩进 + 无尾换行）→ 语义比较判不等 → 写盘 + .bak 滚动。
@@ -594,14 +599,8 @@ mod tests {
         let pre = doc["hooks"]["PreToolUse"].as_array().unwrap();
         assert_eq!(pre[0], json!("not-an-object"));
         assert_eq!(pre[1]["hooks"][0]["command"], "echo user-pre");
-        // 自有条目尾插在可识别事件（用户元素在前）；Stop（非数组）未获得。
-        assert_eq!(pre.len(), 3);
-        assert!(
-            pre[2]["hooks"][0]["command"]
-                .as_str()
-                .unwrap()
-                .contains("claude-hooks/hook.sh")
-        );
+        // PreToolUse 已退休：不追加自有条目（用户元素原样保留，len 不变）。
+        assert_eq!(pre.len(), 2);
         // 其余事件正常安装。
         assert!(doc["hooks"]["SessionStart"].is_array());
 

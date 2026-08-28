@@ -6,27 +6,25 @@
 // cwd 为 `${workspace_base_dir}/${issueId}`（同一 issue 的全部 pane 同目录）。
 //
 // 子模块：
-//   claude_state    —— claude 运行态探测 + 会话引用定位（进程树父链匹配）
+//   claude_state    —— claude 运行态探测（进程树父链匹配，按钮置灰驱动）
 //   cli_bin         —— CLI 直启路径探测（login shell which + PATH harvest，T5.1）
 //   local_provider  —— LocalPtyProvider（portable-pty 本机实现，spawn 即起 reader 线程）
 //   provider        —— PtyProvider trait（远程 SSH 扩展预留）+ SpawnOpts/PtySpawned/PtySessionInfo
 //   session         —— PtySession + SessionIo（输出共享内核：listener Channel + exited）
-//   shell_ready     —— 提示符就绪 marker（OSC 777）包装 + ShellReadyBarrier（注入精确锚定）
 //   state           —— PtySessionStore（Mutex<HashMap>，抗 webview 刷新常驻）
 //
 // 输出通道：pty_spawn 传 Channel<PtyEvent>（Data/Exit 单通道双分支，tauri-specta rc.25
 // 原生支持，已 spike 验证）。emit 备选（EVENT_PTY_*）未采用。
 // reattach 命令（exists/reattach + ring replay）在任务 3 接入。
+// （chat 模式退役：shell_ready 注入中间层已删，spawn 只剩裸 shell 与 direct 两条路径）
 
 pub mod claude_state;
 pub mod cli_bin;
 pub mod local_provider;
 pub mod provider;
 pub mod session;
-pub mod shell_ready;
 pub mod state;
 
-use crate::shared::types::ClaudeSessionRef;
 use local_provider::LocalPtyProvider;
 use provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, SpawnOpts};
 use session::PtyEvent;
@@ -106,21 +104,12 @@ pub fn pty_exists(session_id: String) -> bool {
 /// 本会话 shell 子进程树内是否跑着 claude（terminal_03 §3.2 按钮置灰驱动）。
 /// 进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端；
 /// 前端事件 + 轮询混合驱动（useClaudeRunning）。
-/// 注意：查询必须走 provider() 自持的 store（spawn 写入侧）——不能用
-/// State<PtySessionStore>（app.manage 的另一实例，恒空，曾致 probe 恒 false）。
+/// 注意：查询必须走 provider() 自持的 store（spawn 写入侧同一实例）——曾因
+/// app.manage 出另一恒空实例致 probe 恒 false（幽灵 manage 已删，见 state.rs）。
 #[tauri::command]
 #[specta::specta]
 pub fn pty_claude_running(session_id: String) -> bool {
     claude_state::claude_running(provider().store(), &session_id)
-}
-
-/// 定位本会话 shell 下 claude 的会话引用（sessionId + transcript 路径），chat 视图据此订阅。
-/// 三态：Ok(None)=无 claude；Ok(Some)=定位成功（transcript_path 可信）；Err=cwd 异常
-/// （transcript 路径不可信）。查询走 provider() 自持 store（同 pty_claude_running，防恒空双实例）。
-#[tauri::command]
-#[specta::specta]
-pub fn pty_claude_session(session_id: String) -> Result<Option<ClaudeSessionRef>, String> {
-    claude_state::claude_session_ref(provider().store(), &session_id)
 }
 
 /// 重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
@@ -155,7 +144,14 @@ pub fn create_directory(path: String) -> Result<(), String> {
     std::fs::create_dir_all(p).map_err(|e| format!("创建目录失败：{}", e))
 }
 
-/// 应用退出时（RunEvent::Exit）调用：遍历 store kill 全部 shell 并清空。
+/// 应用退出时（RunEvent::Exit）入口：走 provider 自持的真源 store（spawn
+/// 写入侧同一实例）回收全部会话。不能经 State<PtySessionStore>——那是另一
+/// 实例恒空（历史 probe 恒 false bug 成因，幽灵 manage 已删，见 state.rs）。
+pub fn shutdown_all_provider() {
+    shutdown_all(provider().store());
+}
+
+/// 遍历 store kill 全部 shell 并清空。
 /// reader 线程在 kill 后读到 EOF 自然退出，无需 join。
 pub fn shutdown_all(store: &PtySessionStore) {
     let mut map = store

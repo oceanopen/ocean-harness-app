@@ -493,3 +493,77 @@ T1.1 骨架+store ──┬── T1.2 脚本+安装器
 ## 与后续自动化扩展的关系
 
 本清单 P1–P6 产物（hook 事件流 / env 归因 / transcript 权威路径 / 直接 spawn / resume）即自动化执行（`claude -p` headless 后台任务）的全部地基；自动化作为独立后续扩展（ClaudeRunner 进程管理 + stdout 流解析 + 任务队列），不在本清单范围。
+
+---
+
+## 后记：chat 模式退役（2026-08-28）
+
+> P1–P6 完成次日执行的功能重整。chat 模式（T2.1–T6.1 的展示层）当初即
+> direct spawn 方案的**验证载体**——方案验证完毕，chat 体验本身有欠缺且
+> 不可能穷举所有展示场景，整体退役；同时把 shell 注入中间层一并删除，
+> direct spawn 成为唯一自动执行路径。上文 T1–T6 任务记录保留作为设计
+> 演进的存档，其中 chat 专属实现（状态机/预览/通知/交互卡/发送队列/
+> 乐观 echo/流式气泡/transcript 订阅）已按下表删除。
+
+**三项变更**：
+1. 「启动主终端时自动运行」选项确认不变：`none`（默认，开普通 shell）/
+   `claude`（直启）——需求原文「node-默认」系 none 笔误，语义不变零改动。
+2. **chat 模式全退役**：`terminal_chat_mode_switch` 配置项（DB 残值惰性无
+   影响）、Terminal/Chat 切换按钮、chat overlay 与 NativeChat 全部组件/
+   工具链/测试删除。
+3. **claude 启动收敛两方式**：手动（配置 none → 裸 shell，用户经工具栏按钮
+   或自敲命令启动）+ 自动（配置 claude → direct spawn 直启，不经中间层）；
+   CLI 解析失败回落裸 shell（warn log）。T5.2 resume 的 override 路由随注入
+   删除简化为**恒走 direct**（`effectiveDirect = override ?? directCommand`，
+   含配置 none 的「重开并启动 claude」），usePtySession 整体去掉
+   startupCodeCli 参数。
+
+**删除清单**：
+- 前端：`NativeChat/` 整目录（12 源 + 3 测试）、`useClaudeRuntime.ts`、
+  `chatSend.ts`、`chatSendQueue.ts`、`chatInteractiveSend.ts`（+2 测试）、
+  TerminalView/EmbeddedTerminal 的 chat 片段、chatModeSwitch 配置链
+  （appConfig/设置页/i18n×2）。
+- Rust 注入中间层：`pty/shell_ready.rs` 整文件（975 行——zsh 包装分支仅服务
+  注入，普通 shell spawn 从不触碰，无行为回归）、local_provider 注入分支/
+  barrier 接线/shell_basename/user_zdotdir_for_passthrough、
+  `SpawnOpts.startup_command`、session.rs 的 barrier 参数/字段/写入门。
+- Rust claude_runtime 裁剪：ingest 状态机收到「fence → SessionStart 绑定 →
+  其余 Drop」；HookPayload 删 cwd/tool_name/tool_input/message/prompt/
+  delta/index/final 字段；`ClaudeRuntimeStatus`/`ClaudeNotification` 类型删；
+  state/payload 收缩为 launch_token/claude_session_id/transcript_path/
+  updated_at（旧快照 serde 容忍多余键，零迁移，补兼容单测钉死）。
+- **transcript 域整删**（chat 专用死代码，监控页走 claude_sessions 域零共享）：
+  `transcript/` 5 文件、`shared/state/transcript.rs`、
+  transcript_read/subscribe/unsubscribe 命令、Transcript* 类型、
+  `EVENT_TRANSCRIPT_CHANGED`、`pty_claude_session` 命令 +
+  claude_state 的 claude_session_ref/find_claude_under_shell/cwd_usable +
+  `ClaudeSessionRef` 类型。
+
+**保留地基**（后续自动化的支撑）：hook 脚本 + spool 通道 + watcher、env 三标
+归因、installer 自动安装（**注册集 8→1 事件仅 SessionStart**，另加
+RETIRED_EVENTS 退休清理——已装工作区升级时剥除旧 7 事件自有条目，防 hook
+持续写 spool 噪声）、SessionStart 绑定 + 快照 hydrate + `claude_runtime_state`
+查询（resume）、useClaudeRunning 的 runtime latch（按钮置灰加速）、「启动
+claude」/「重开」/「重开并启动 claude」UI。
+
+**验证（2026-08-28）**：cargo test 77 passed（1 ignored 为 direct 真 claude
+e2e，断言已适配单事件形态）/ cargo fmt / tsc / eslint 全绿；前端测试文件
+清零（原 46 个全属 chat），vitest 配 `passWithNoTests`。dev app 手动验证：
+配置 claude 开 issue 直进会话、退出「重开并启动 claude」resume、配置 none
+裸 shell + 按钮手动启动、已装工作区升级后 settings.json 仅剩 SessionStart
+自有条目。
+
+**三轮审查**（正确性 + 简洁性 + 规范/架构，全部修复）：
+- 正确性零缺陷（悬空引用/行为回归/边界/兼容性逐一核验通过）。
+- 简洁性 14 项全修：bindings 重生成收敛（`verify:bindings` 门禁）、注释漂移
+  簇（barrier/注入路由/transcript 死指针/锚点旧形态/字号 13→12）、结构收敛
+  （Decision 双标志恒 true 收敛为 `Apply { state }`、ingest 双重 match、
+  HookPayload.source 死字段、store 重复测试、HOOK_EVENTS matcher 死泛化、
+  uuid 断言提 helper、watch 同义反复测试抽 `effective_offset` 纯函数）、
+  i18n startupCodeCli 文案改直启语义并恢复渲染。
+- 规范/架构零关键发现；3 项全修：decodeStartupCodeCli 不可达 `??`、
+  state.rs 锚点注释漂移、**幽灵 store 修复**（Exit 清理原走 app.manage 的
+  恒空实例实际回收零会话——改为 `pty::shutdown_all_provider()` 走 provider
+  真源，删除幽灵 manage，退出时真正回收全部 PTY 子进程）。
+- 范围外记录：配置 none 手动启动路径不装 hooks（T6.1 既有设计，resume 回落
+  裸 claude 兜底）。

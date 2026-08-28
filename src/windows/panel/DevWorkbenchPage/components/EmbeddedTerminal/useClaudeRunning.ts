@@ -26,7 +26,7 @@ const POLL_MS = 60_000;
 //     即发）足够覆盖 reattach 场景。
 //
 // 探测驱动时机三路：
-//   1. 会话 active 即探测一次（自动注入场景 claude 可能已起；reattach 场景同理）
+//   1. 会话 active 即探测一次（配置直启场景 claude 可能已起；reattach 场景同理）
 //   2. EVENT_CLAUDE_SESSIONS_CHANGED（sessions 目录 watch 秒级——claude 启动写
 //      json 落盘即触发）重查
 //   3. 60s 轮询兜底退出恢复（claude 死后父链无命中 → false）

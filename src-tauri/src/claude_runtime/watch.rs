@@ -1,6 +1,6 @@
 // spool watcher（T1.3）：notify-debouncer-mini 监听 app_data_dir/claude-spool/，
-// 消费新增行 → ingest 归一化。线程模型对齐 sessions/watch.rs，追行范式对齐
-// transcript/tail.rs（per-file offset + read_range + 半行容忍）。
+// 消费新增行 → ingest 归一化。线程模型对齐 sessions/watch.rs；追行范式：
+// per-file offset + read_range + 半行容忍。
 //
 // 关键语义：
 //   - 冷启动跳到 EOF：既有文件 offset 对齐末尾完整行，只消费启动后的新增——
@@ -23,18 +23,18 @@ use tauri::{AppHandle, Manager};
 use super::ingest;
 use super::script::{SPOOL_DIR_NAME, pane_from_spool_file};
 
-/// 去抖窗口：单回合 hook burst（MessageDisplay 高频）合并为一次 drain。
+/// 去抖窗口：hook 事件 burst（含旧工作区残留注册的高频事件）合并为一次 drain。
 const WATCH_DEBOUNCE_MS: u64 = 200;
 
 /// spool 文件保留上限（按 mtime 淘汰最旧）。
 const SPOOL_KEEP_MAX: usize = 50;
 
-/// per-pane spool 读偏移（key 为 pane 锚点）。范式对齐 TranscriptWatchStore。
+/// per-pane spool 读偏移（key 为 pane 锚点）。
 #[derive(Default)]
 pub struct SpoolOffsets(pub Mutex<HashMap<String, u64>>);
 
 /// 启动 spool watcher 后台线程。线程生命周期与进程一致；任一环节失败
-/// warn 后退出（hook 链路失联时前端回落现有轮询，T6.1 fallback）。
+/// warn 后退出（hook 链路失联时 resume 回落裸 claude、置灰走 ps 探测，可降级）。
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -173,8 +173,8 @@ fn align_existing_to_eof(app: &AppHandle, dir: &Path) {
     }
 }
 
-/// 读文件尾部，返回最后一个 `\n` 之后的位置（对齐 transcript subscribe 的
-/// offset 初始化语义：半行不计入 offset 留待下轮补齐）。读失败返回 None。
+/// 读文件尾部，返回最后一个 `\n` 之后的位置（offset 初始化语义：半行不计入
+/// offset，留待下轮补齐）。读失败返回 None。
 fn last_complete_line_end(path: &Path, size: u64) -> Option<u64> {
     const TAIL_CAP: u64 = 64 * 1024;
     let start = size.saturating_sub(TAIL_CAP);
@@ -202,12 +202,7 @@ fn drain_pane(app: &AppHandle, dir: &Path, pane: &str) {
             .expect("SpoolOffsets mutex poisoned");
         map.get(pane).copied().unwrap_or(0)
     };
-    // 文件缩小（外部截断等）→ 重置 0 重读兜底。
-    let effective_offset = if size < offset {
-        0
-    } else {
-        offset
-    };
+    let effective_offset = effective_offset(size, offset);
     if size == effective_offset {
         return;
     }
@@ -256,7 +251,16 @@ fn drain_pane(app: &AppHandle, dir: &Path, pane: &str) {
     map.insert(pane.to_string(), new_offset);
 }
 
-/// 读文件 [start, end) 字节范围（同 transcript/tail.rs read_range 范式）。
+/// 起读偏移推导：文件缩小（外部截断等）→ 重置 0 重读兜底（纯函数，单测钉死）。
+fn effective_offset(size: u64, offset: u64) -> u64 {
+    if size < offset {
+        0
+    } else {
+        offset
+    }
+}
+
+/// 读文件 [start, end) 字节范围。
 fn read_range(path: &Path, start: u64, end: u64) -> Result<String, std::io::Error> {
     let mut f = std::fs::File::open(path)?;
     f.seek(SeekFrom::Start(start))?;
@@ -291,23 +295,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// offset 超过文件当前大小（外部截断场景）→ drain 语义按 0 重读
-    /// （effective_offset 推导逻辑的单测等价：此处验证比较分支本身）。
+    /// offset 超过文件当前大小（外部截断场景）→ 按 0 重读兜底。
     #[test]
     fn shrink_resets_effective_offset() {
-        let dir = temp_dir_for("shrink");
-        let path = dir.join(spool_file_name("iss1::p1"));
-        std::fs::write(&path, "{\"a\":1}\n").unwrap();
-        let size = std::fs::metadata(&path).unwrap().len();
-        // 模拟 offset 大于 size：effective_offset 应取 0。
-        let offset = size + 100;
-        let effective = if size < offset {
-            0
-        } else {
-            offset
-        };
-        assert_eq!(effective, 0);
-        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(effective_offset(10, 110), 0);
+        assert_eq!(effective_offset(10, 10), 10);
+        assert_eq!(effective_offset(10, 4), 4);
     }
 
     #[test]

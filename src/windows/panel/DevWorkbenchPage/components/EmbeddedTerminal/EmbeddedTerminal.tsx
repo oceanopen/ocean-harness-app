@@ -1,5 +1,4 @@
 import type { TerminalFontSize, TerminalScrollbackRows } from '@src/shared/appConfig';
-import type { AskAnswerSelection, AskPrompt } from './NativeChat/chatAsk';
 import type { TerminalThemeId } from './terminalTheme';
 import { CreateNewFolderOutlined as CreateNewFolderOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
@@ -17,7 +16,6 @@ import {
   parseTerminalLineHeight,
   parseTerminalScrollbackRows,
   parseTerminalStartupCodeCli,
-  TERMINAL_CHAT_MODE_SWITCH_KEY,
   TERMINAL_CURSOR_BLINK_KEY,
   TERMINAL_CURSOR_STYLE_KEY,
   TERMINAL_FONT_SIZE_KEY,
@@ -31,12 +29,7 @@ import { commands } from '@src/shared/bindings';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { cancelInteractiveSends, sendInteractiveKeys } from './chatInteractiveSend';
-import { buildChatPasteBytes, CHAT_CLEAR_INPUT, CHAT_SUBMIT, CHAT_SUBMIT_DELAY_MS } from './chatSend';
-import { cancelChatSends, enqueueChatSend } from './chatSendQueue';
-import { buildAskAnswerKeys } from './NativeChat/chatAsk';
-import { clearLastPendingSendByText } from './NativeChat/chatPending';
+import { useCallback, useRef, useState } from 'react';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } from './terminalTheme';
 import TerminalView from './TerminalView';
 import { useClaudeRunning } from './useClaudeRunning';
@@ -47,12 +40,13 @@ function decodeWorkspaceBaseDir(raw: string | null): string {
   return raw ?? DEFAULT_WORKSPACE_BASE_DIR;
 }
 
-// 启动自动运行 CLI decode：非法/缺失回落空串（= 不自动运行）。模块级保证引用稳定。
+// 启动自动运行 CLI decode：parse 内含回落（非法/缺失 → none），直接转发。
+// 模块级保证引用稳定（useConfigValue 要求）。
 function decodeStartupCodeCli(raw: string | null): string {
-  return parseTerminalStartupCodeCli(raw) ?? DEFAULT_TERMINAL_STARTUP_CODE_CLI;
+  return parseTerminalStartupCodeCli(raw);
 }
 
-// 终端字号 decode：非法/不在选项集回落 13（terminal_03 §3.3）。模块级保证引用稳定。
+// 终端字号 decode：非法/不在选项集回落 12（terminal_03 §3.3）。模块级保证引用稳定。
 function decodeTerminalFontSize(raw: string | null): TerminalFontSize {
   return parseTerminalFontSize(raw);
 }
@@ -80,11 +74,6 @@ function decodeTerminalLineHeight(raw: string | null): number {
 // 光标闪烁 decode（terminal_05）：YesNo → boolean，缺失/非法回落 true（默认闪）。
 function decodeYesNo(raw: string | null): boolean {
   return raw == null ? true : isYes(raw);
-}
-
-// Terminal/Chat 模式切换 decode（terminal_chat）：YesNo → boolean，缺失/非法回落 false（默认关）。
-function decodeChatModeSwitch(raw: string | null): boolean {
-  return raw == null ? false : isYes(raw);
 }
 
 // 初始尺寸占位：真实尺寸由 TerminalView fit 后经 onResize 校正
@@ -118,13 +107,6 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     decodeStartupCodeCli,
     DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   );
-  const chatModeSwitch = useConfigValue(
-    TERMINAL_CHAT_MODE_SWITCH_KEY,
-    decodeChatModeSwitch,
-    false,
-  );
-  // chat 能力总闸：主 pane + 自动运行非 none + 模式切换开启。分屏恒 false（不自动运行 claude）。
-  const chatEnabled = isMain && startupCodeCli !== 'none' && chatModeSwitch;
   // 字号（terminal_03 §3.3）：每 pane 各自订阅，设置保存事件驱动全量 pane 生效。
   const fontSize = useConfigValue(
     TERMINAL_FONT_SIZE_KEY,
@@ -162,7 +144,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   // main 已关闭态：true = 不渲染 TerminalView，整块换占位视图（无蒙层）。
   // 「重新打开终端」清标志 + session.reopen()（ptyShutdown 已移除会话 →
-  // exists=false → 全新 spawn，main 会重新注入 startup_command）。
+  // exists=false → 全新 spawn，配置直启时重新 direct spawn）。
   const [mainClosed, setMainClosed] = useState(false);
 
   const writeDataRef = useRef<((text: string, replay?: boolean) => void) | null>(null);
@@ -191,13 +173,11 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     cwd,
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS,
-    // 自动 CLI 仅 main pane 注入（terminal_02 §3.6：附加 pane 恒裸 shell——用户
-    // 分屏通常是要手动跑命令，不自动进 claude）。
-    startupCodeCli: isMain ? startupCodeCli : 'none',
-    // chat 模式 CLI 直启（claude_orca T5.1）：chatEnabled 已含 isMain + CLI
-    // 非 none + 模式开关，附加 pane 天然排除（null）。直启失败（CLI 未安装
-    // 等）由 Rust 侧回落 startupCodeCli 注入路径，前端无感。
-    directCommand: chatEnabled ? startupCodeCli : null,
+    // CLI 直启（claude_orca T5.1，唯一自动执行路径）：主 pane + 配置非 none
+    // （当前取值集 none/claude）→ PTY 直接 spawn CLI，无 shell 中转；附加 pane
+    // 恒 null（裸 shell——用户分屏通常是要手动跑命令）。直启失败（CLI 未安装
+    // 等）由 Rust 侧回落普通 shell（warn log），用户可手动启动。
+    directCommand: isMain && startupCodeCli !== 'none' ? startupCodeCli : null,
     onData: handleTerminalData,
   });
 
@@ -235,8 +215,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     setActivePane(issueId, paneId);
   }, [setActivePane, issueId, paneId]);
 
-  // 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 注入 claude\r
-  // （barrier 已 Open 直通，字节语义同 Rust build_startup_submission 单行分支）。
+  // 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 写入 claude\r。
   // 运行态探测（按钮置灰）走 useClaudeRunning——进程真相（pid 父链匹配），
   // 非输出流启发式。exited 覆盖条的「重开并启动 claude」保留（reopenWithClaude
   // 拼串，覆盖路由在 usePtySession）。
@@ -244,68 +223,13 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   const startClaude = useCallback(() => {
     session.write('claude\r');
   }, [session]);
-  // 「发送 chat 消息」（terminal_chat T3.1 → claude_orca T3.1 队列化）：清行 →
-  // 正文（bracketed paste）→ 延迟回车（orca clearThenWrite 序列），整段经
-  // chatSendQueue per-session 串行——二次发送等待前序回车窗口（不取消首条，
-  // 旧 clearTimeout 写法会静默吞掉首条正文），timer 生命周期归队列所有。
-  const sendChatMessage = useCallback((text: string) => {
-    enqueueChatSend(
-      sessionId,
-      CHAT_SUBMIT_DELAY_MS,
-      ({ delay, markSubmitted }) => {
-        session.write(CHAT_CLEAR_INPUT);
-        session.write(buildChatPasteBytes(text));
-        delay(CHAT_SUBMIT_DELAY_MS, () => {
-          session.write(CHAT_SUBMIT);
-          markSubmitted();
-        });
-      },
-      {
-        onCancelUnsubmitted: () => {
-          // 中止已写入未提交的序列：清行字节扫掉 TUI 残留正文；该序列的
-          // 乐观 echo 同步剪除（真实 turn 不会落地，替代 orca cancel↔echo
-          // 事件耦合，见 chatPending 头注）。
-          session.write(CHAT_CLEAR_INPUT);
-          clearLastPendingSendByText(sessionId, text);
-        },
-      },
-    );
-  }, [session, sessionId]);
-  // 「停止」（terminal_chat T3.1）：ESC = claude TUI 中断键，中止正在生成的回复。
-  // 先取消在途发送序列——延迟回车不得落在中断后的新上下文（如下一条 prompt）上；
-  // 在途交互应答链一并中止（T4.1，余组不得写进中断后的新上下文）。
-  const stopChat = useCallback(() => {
-    cancelChatSends(sessionId);
-    cancelInteractiveSends(sessionId);
-    session.write('\x1B');
-  }, [session, sessionId]);
-  // 「提问卡提交」（T4.1）：选项/自由文本 → 按键组（chatAsk）→ 步进写回
-  // （chatInteractiveSend，1s/组——导航键与回车同批会被选择器提前提交）。
-  const sendChatAskAnswer = useCallback((prompt: AskPrompt, selections: AskAnswerSelection[]) => {
-    sendInteractiveKeys(sessionId, buildAskAnswerKeys(prompt, selections), session.write);
-  }, [session, sessionId]);
-  // 「交互卡原始按键」（T4.1）：审批选项数字（即选即交）/ 取消 ESC，单发无序列。
-  const sendChatKeys = useCallback((raw: string) => {
-    session.write(raw);
-  }, [session]);
-  // 「中止在途应答链」（T4.1）：交互卡换新提问时防旧链余组写进新选择器。
-  const cancelChatInteractive = useCallback(() => {
-    cancelInteractiveSends(sessionId);
-  }, [sessionId]);
-  // 卸载时中止在途发送序列与应答链（延迟回车/余组不得误写已 shutdown 的会话）。
-  useEffect(() => {
-    return () => {
-      cancelChatSends(sessionId);
-      cancelInteractiveSends(sessionId);
-    };
-  }, [sessionId]);
   // 「重开」（裸 shell）须包一层防 MouseEvent 误传 reopen 的 claude 形参。
   const reopenPlain = useCallback(() => {
     session.reopen();
   }, [session]);
   // 「重开并启动 claude」（T5.2 resume）：查 runtime 快照取该 pane 最后
   // claudeSessionId（快照 hydrate 跨 app 重启保留绑定），有则
-  // `claude --resume <id>`（direct/注入按模式在 usePtySession 路由），无记录
+  // `claude --resume <id>`（direct 直启，路由在 usePtySession），无记录
   // 或查询失败裸 'claude'。id 失效时 claude 启动即退，自然回落 exited UI，
   // 用户可点「重开」开新会话。
   const reopenWithClaude = useCallback(() => {
@@ -340,7 +264,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   }, [session]);
 
   // 重新打开 main 终端：清占位态 + reopen（attempt 自增 → 重新编排 → exists=false
-  // 走全新 spawn，startup_command 重新注入）。
+  // 走全新 spawn，配置直启时重新 direct spawn）。
   const reopenMain = useCallback(() => {
     setMainClosed(false);
     session.reopen();
@@ -401,17 +325,10 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         onReopen={reopenPlain}
         onReopenClaude={reopenWithClaude}
         claudeRunning={claudeRunning}
-        chatEnabled={chatEnabled}
-        sessionId={sessionId}
         onStartClaude={startClaude}
         onClose={handleClose}
         onWriteReady={handleWriteReady}
         onActive={handleActive}
-        onChatSend={sendChatMessage}
-        onChatStop={stopChat}
-        onChatAskAnswer={sendChatAskAnswer}
-        onChatKeys={sendChatKeys}
-        onChatInteractiveCancel={cancelChatInteractive}
       />
       {/* main 关闭二次确认（附加 pane 无此弹窗） */}
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)} maxWidth="xs" fullWidth>

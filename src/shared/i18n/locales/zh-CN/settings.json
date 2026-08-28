@@ -38,7 +38,6 @@
       "iterm2SplitDirection": "iTerm2 分屏方向",
       "terminalPostOpenCommand": "打开终端后追加命令",
       "startupCodeCli": "启动主终端时自动运行",
-      "chatModeSwitch": "支持 Terminal/Chat 模式切换",
       "fontSize": "字体大小",
       "scrollbackRows": "回滚缓冲行数",
       "theme": "终端主题",
@@ -72,9 +71,8 @@
     "help": {
       "pollInterval": "即时性由文件监听负责，此处仅驱动失效会话清理与文件监听漏报兜底。",
       "terminalPostOpenCommand": "cd 进入仓库目录后会自动执行此命令，留空则只 cd。例如 add_proxy 或 ./bootstrap.sh；多个命令可用 && 拼接，如 add_proxy && npm run dev。",
-      "startupCodeCli": "选中任务打开嵌入式终端后，shell 就绪时自动运行选定的编程 CLI 工具（如 claude）。选「不自动运行」则打开普通 shell",
-      "scrollbackRows": "终端里可往上翻阅的历史输出行数，保存后即时生效。行数越大可回看越多，内存占用越高",
-      "chatModeSwitch": "仅在「启动主终端时自动运行」选择非「不自动运行」时可开启。开启后，已运行的终端会话需重开会话才会直接进入 Claude 并接入状态推送。"
+      "startupCodeCli": "选中任务打开嵌入式终端后，直接启动选定的编程 CLI（如 claude），无 shell 中转。选「不自动运行」则打开普通 shell",
+      "scrollbackRows": "终端里可往上翻阅的历史输出行数，保存后即时生效。行数越大可回看越多，内存占用越高"
     },
     "unit": {
       "seconds": "秒"

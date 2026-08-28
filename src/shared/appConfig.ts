@@ -68,10 +68,11 @@ export const DEFAULT_PET_DRAGGABLE = YES_NO.NO;
 // 类型与默认值均为字面量联合，默认值从 Rust 单源 re-export（as const 兼容）。
 export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
 
-// 嵌入式终端启动时自动运行的编程 CLI 工具（shell-ready 注入，docs/terminal_01_auto_claude.md）。
-// 值域：'' = 不自动运行（默认）；'claude' = 当前唯一支持项，未来扩 'codex' 等。
-// 后端 Rust 侧 SpawnOpts.startup_command 为通用 Option<String>，前端把枚举值映射为命令名，
-// 后端不读取本 key，故无需在 config.rs 加常量副本（参照 workspace_base_dir 先例）。
+// 嵌入式终端启动时自动运行的编程 CLI（PTY 直接 spawn，无 shell 中转）。
+// 值域：'none' = 不自动运行，开普通 shell（默认）；'claude' = 当前唯一支持项，
+// 未来扩 'codex' 等。后端 Rust 侧 SpawnOpts.direct_command 为通用 Option<String>，
+// 前端把枚举值映射为命令名，后端不读取本 key，故无需在 config.rs 加常量副本
+// （参照 workspace_base_dir 先例）。
 export type TerminalStartupCodeCli = 'none' | 'claude';
 
 export const TERMINAL_STARTUP_CODE_CLI_KEY = 'terminal_startup_code_cli';
@@ -82,14 +83,8 @@ export function parseTerminalStartupCodeCli(value: string | null): TerminalStart
   return value === 'claude' ? value : 'none';
 }
 
-// 嵌入式终端 Terminal/Chat 模式切换开关（terminal_chat_mode）：YesNo，默认 NO。
-// 仅当 startup_code_cli != 'none'（主终端自动运行 CLI）时可用；none 时前端强制 NO 且置灰。
-// 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 startup_code_cli 先例）。
-export const TERMINAL_CHAT_MODE_SWITCH_KEY = 'terminal_chat_mode_switch';
-export const DEFAULT_TERMINAL_CHAT_MODE_SWITCH = YES_NO.NO;
-
 // 嵌入式终端字号（terminal_03 §3.3）。离散选项语义：合法值 = 选项集内整数，
-// DB 脏值（非数字/越界/不在选项集如 15）一律回落默认 13（与 startup_code_cli
+// DB 脏值（非数字/越界/不在选项集如 15）一律回落默认 12（与 startup_code_cli
 // 枚举校验同范式，不用 poll_interval_secs 的连续 clamp）。
 // 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 startup_code_cli 先例）。
 export const TERMINAL_FONT_SIZE_KEY = 'terminal_font_size';

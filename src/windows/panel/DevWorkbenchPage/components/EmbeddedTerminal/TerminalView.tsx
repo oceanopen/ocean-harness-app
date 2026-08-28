@@ -1,14 +1,11 @@
 import type { IBufferRange, ILink } from '@xterm/xterm';
-import type { AskAnswerSelection, AskPrompt } from './NativeChat/chatAsk';
 import type { TerminalViewTheme } from './terminalTheme';
 import {
-  ChatBubbleOutlined as ChatBubbleOutlineIcon,
   CloseOutlined as CloseOutlinedIcon,
   ContentCopyOutlined as ContentCopyOutlinedIcon,
   ContentPasteOutlined as ContentPasteOutlinedIcon,
   LayersClearOutlined as LayersClearOutlinedIcon,
   SearchOutlined as SearchOutlinedIcon,
-  Terminal as TerminalIcon,
 } from '@mui/icons-material';
 import { Box, Button, IconButton, Typography } from '@mui/material';
 import { commands } from '@src/shared/bindings';
@@ -21,7 +18,6 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ClaudeIcon from './ClaudeIcon';
-import NativeChatView from './NativeChat/NativeChatView';
 import TerminalSearch from './TerminalSearch';
 import '@xterm/xterm/css/xterm.css';
 
@@ -111,17 +107,12 @@ interface TerminalViewProps {
   onReopen: () => void;
   // 重开并启动 claude（terminal_03 §3.2 → claude_orca T5.2）：reopen 一次性
   // 覆盖启动命令——runtime 快照有会话记录则 `claude --resume <id>` 恢复上下文
-  // （direct 模式直启 / 非 direct 注入，路由在 usePtySession），无记录裸 claude。
-  // 恒显示（用户 exit claude 后一键回到 claude）。
+  // （direct 直启，路由在 usePtySession），无记录裸 claude。恒显示（用户 exit
+  // claude 后一键回到 claude）。
   onReopenClaude: () => void;
   // 本终端 claude 运行态（pid 父链匹配探测，useClaudeRunning）：跑着→按钮置灰；
   // 退出→恢复可用。驱动「启动 claude」按钮禁用态。
   claudeRunning: boolean;
-  // chat 能力闸门（EmbeddedTerminal 派生）：主 pane + 自动运行非 none + 模式切换开。
-  // false 时工具条不渲染 Terminal/Chat 切换 icon。
-  chatEnabled: boolean;
-  // 会话锚点（`issueId::<paneId>`）：NativeChatView 据此定位 transcript（T2.2）。
-  sessionId: string;
   // 启动 claude（工具条按钮）：对活跃 shell 注入 claude\r。
   onStartClaude: () => void;
   // 关闭终端（工具栏）
@@ -135,16 +126,6 @@ interface TerminalViewProps {
   // 的 onFocus 自然接管活跃位）。父层据此写 terminalPanes store 的 activePanes
   // （分割/关闭作用对象跟随焦点，terminal_02 §3.4）。要求稳定引用。
   onActive?: () => void;
-  // 发送 chat 消息（回写 PTY）：由 EmbeddedTerminal 定义（session.write 字节编排）。
-  onChatSend: (text: string) => void;
-  // 停止 chat 生成（ESC 中断）。
-  onChatStop: () => void;
-  // 提问卡提交（T4.1）：构造按键组并步进写回 PTY（EmbeddedTerminal 定义）。
-  onChatAskAnswer: (prompt: AskPrompt, selections: AskAnswerSelection[]) => void;
-  // 写原始按键串（T4.1 审批选项数字 / 取消 ESC）。
-  onChatKeys: (raw: string) => void;
-  // 中止在途应答链（T4.1）。
-  onChatInteractiveCancel: () => void;
 }
 
 // TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——
@@ -154,7 +135,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, chatEnabled, sessionId, onStartClaude, onClose, onWriteReady, onActive, onChatSend, onChatStop, onChatAskAnswer, onChatKeys, onChatInteractiveCancel }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -165,17 +146,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
   const fitAddonRef = useRef<FitAddon | null>(null);
   // 复制按钮禁用态：有无选区（xterm onSelectionChange，用户交互型 → state）
   const [hasSelection, setHasSelection] = useState(false);
-  // Terminal/Chat 视图模式：切换 icon 驱动（chatEnabled 才渲染 icon）。
-  const [viewMode, setViewMode] = useState<'terminal' | 'chat'>('terminal');
   // 搜索条开关（terminal_03 §3.1；开关变量前缀约定）
   const [searchOpen, setSearchOpen] = useState(false);
   // 复制/粘贴失败 toast（成功静默）
   const { show: showToast, snack: toastSnack } = useToast();
-  // 强制回落（terminal_chat T2.3）：chatEnabled=false（设置关闭开关）或 exited（会话
-  // 结束）时，chat overlay 必须摘除回 terminal——chatEnabled 只 gate 按钮不 gate
-  // overlay 会困住用户；exited 条 zIndex 低于 overlay 会被遮。viewMode 内部状态
-  // 残留无害（开关恢复即自然回到 chat）。纯派生，不用 effect（函数式范式）。
-  const effectiveViewMode = chatEnabled && !exited ? viewMode : 'terminal';
 
   // 链接 activate 分流（terminal_03 §3.4）：URL 走 plugin-shell（window.open 被
   // Tauri webview 拦截，MarkdownEditor 先例），路径走 Rust open_path（系统默认
@@ -527,19 +501,6 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           >
             <ClaudeIcon fontSize="small" />
           </IconButton>
-          {/* Terminal/Chat 视图切换（terminal_chat T2.1）：chatEnabled 才渲染。图标
-              反映目标模式：terminal 态显示 chat 气泡（点击进 chat），chat 态显示
-              终端（点击回 terminal）。 */}
-          {chatEnabled && !exited && (
-            <IconButton
-              size="small"
-              onClick={() => setViewMode(viewMode === 'terminal' ? 'chat' : 'terminal')}
-              aria-label={effectiveViewMode === 'terminal' ? '切换到 Chat 视图' : '切换到 Terminal 视图'}
-              sx={{ color: 'text.secondary' }}
-            >
-              {effectiveViewMode === 'terminal' ? <ChatBubbleOutlineIcon fontSize="small" /> : <TerminalIcon fontSize="small" />}
-            </IconButton>
-          )}
         </Box>
         <Box sx={{ flex: 1 }} />
         <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
@@ -582,32 +543,6 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           pointerEvents: exited ? 'none' : 'auto',
         }}
       />
-      {/* Chat 视图 overlay（T2.2/T2.3）：effectiveViewMode === 'chat'（chatEnabled
-          且未 exited）时盖住 xterm。zIndex ≥1000 压过 xterm 内部 z-5/10（xterm 容器
-          不建堆叠上下文）。xterm 全程存活，切回 terminal 仅摘 overlay。 */}
-      {effectiveViewMode === 'chat' && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 28,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 1000,
-            bgcolor: 'background.default',
-          }}
-        >
-          <NativeChatView
-            sessionId={sessionId}
-            onBackToTerminal={() => setViewMode('terminal')}
-            onSend={onChatSend}
-            onStop={onChatStop}
-            onAskAnswer={onChatAskAnswer}
-            onChatKeys={onChatKeys}
-            onInteractiveCancel={onChatInteractiveCancel}
-          />
-        </Box>
-      )}
       {toastSnack}
     </Box>
   );

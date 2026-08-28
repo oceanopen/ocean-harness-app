@@ -17,8 +17,8 @@ use super::session::{PtyEvent, PtySession};
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnOpts {
-    /// 会话锚点（store key）：main pane = issue uuid，附加 pane = `issueId::paneId`
-    ///（split 分割窗口，terminal_02 §3.1）。
+    /// 会话锚点（store key）：main → `issueId::main`，附加 pane →
+    /// `issueId::<uuid>`（split 分割窗口，terminal_02 §3.1）。
     pub session_id: String,
     /// 工作目录绝对路径。
     pub cwd: String,
@@ -26,17 +26,12 @@ pub struct SpawnOpts {
     pub cols: u16,
     /// 初始行数。
     pub rows: u16,
-    /// 启动注入命令（如 "claude"）：fresh spawn 且 shell 为 zsh/bash 时走包装
-    /// spawn（shell-ready barrier 精确锚定提示符就绪后注入）；其余 shell 走
-    /// fast 注入降级。None = 现状裸 spawn。reattach/复用分支不重注入。
-    #[serde(default)]
-    pub startup_command: Option<String>,
-    /// 直接 spawn 命令（claude_orca T5.1，chat 模式 CLI 直启）：整串命令，首
+    /// 直接 spawn 命令（claude_orca T5.1，唯一自动执行路径）：整串命令，首
     /// token 为 CLI 名（如 "claude"，T5.2 的 "claude --resume <id>" 同形）。
-    /// 优先级高于 startup_command：在场时无 shell 中转、无 shell-ready barrier
-    /// ——PTY 直接 exec CLI（T1.4 归因 env 打标照常注入），CLI 退出即 pane
-    /// 退出（无 shell 回落，走 exited UI；跑普通命令用附加 pane）。CLI 路径
-    /// 经 login shell 探测解析，失败回落 startup_command 注入路径（warn log）。
+    /// 在场时无 shell 中转——PTY 直接 exec CLI（T1.4 归因 env 打标照常注入），
+    /// CLI 退出即 pane 退出（无 shell 回落，走 exited UI；跑普通命令用附加
+    /// pane）。CLI 路径经 login shell 探测解析，失败回落普通裸 shell（warn
+    /// log，用户可手动启动）。reattach/复用分支不重直启。
     #[serde(default)]
     pub direct_command: Option<String>,
 }

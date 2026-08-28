@@ -67,7 +67,7 @@ static CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, (String, Stri
 
 /// 探测 CLI 绝对路径 + login shell PATH。
 /// None = 不可直启（token 非法 / CLI 不在场 / 是 builtin 或 alias / shell
-/// 探测失败），调用方回落 startup_command 注入路径。
+/// 探测失败），调用方回落普通裸 shell。
 fn probe(token: &str) -> Option<(String, String)> {
     // shell 同 resolve_shell 取向：$SHELL 优先回退 /bin/zsh。
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());

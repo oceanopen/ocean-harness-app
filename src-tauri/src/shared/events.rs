@@ -10,12 +10,9 @@ pub const EVENT_APP_CONFIG_CHANGED: &str = "app-config-changed";
 /// rescan（fs watcher / 兜底轮询）末尾触发；ClaudeSessionsPage 据此 setSessions 增量刷新。
 pub const EVENT_CLAUDE_SESSIONS_CHANGED: &str = "claude-sessions:changed";
 
-/// transcript 文件增量变化时广播（payload = `TranscriptChangedPayload`）。
-/// tail 轮询检测到订阅的 transcript 文件新增行后 emit；NativeChatView 据此增量追加消息。
-pub const EVENT_TRANSCRIPT_CHANGED: &str = "transcript:changed";
-
-/// claude runtime 状态变更时广播（payload = `ClaudeRuntimeChangedPayload`）。
-/// ingest 归一化 spool 行后 emit；前端 useClaudeRuntime 据此驱动 composer 门槛/流式气泡/交互卡片。
+/// claude runtime 会话绑定变更时广播（payload = `ClaudeRuntimeChangedPayload`）。
+/// ingest 归一化 spool 行（chat 退役后仅 SessionStart 绑定）后 emit；前端
+/// useClaudeRunning latch 据此驱动「启动 claude」按钮即时置灰。
 pub const EVENT_CLAUDE_RUNTIME_CHANGED: &str = "claude-runtime:changed";
 
 /// 终端跳转失败时广播（payload = `SessionNavFailed`）。

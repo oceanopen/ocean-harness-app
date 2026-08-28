@@ -18,8 +18,6 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::ipc::Channel;
 
-use super::shell_ready::ShellReadyBarrier;
-
 /// PTY → 前端 的事件（单 Channel 双分支，数据与退出同序到达）。
 /// 不出现在命令签名（仅作 Channel<PtyEvent> 泛型载荷），需在 lib.rs 用 .typ::<PtyEvent>() 注册。
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -201,18 +199,10 @@ impl Utf8Tail {
     }
 }
 
-/// reader 线程：阻塞读 PTY 输出 → UTF-8 切分 →（barrier 在场时剥 marker）→ 入 ring +
-/// 推 listener；EOF/Err → 置 exited + Exit 事件。spawn 时启动，持 Arc<SessionIo> 与
+/// reader 线程：阻塞读 PTY 输出 → UTF-8 切分 → 入 ring + 推 listener；
+/// EOF/Err → 置 exited + Exit 事件。spawn 时启动，持 Arc<SessionIo> 与
 /// cloned reader，不碰 store（会话移除后仍会读到 EOF 自然退出）。
-/// barrier：UTF-8 切分在 marker 扫描之前（marker 全 ASCII 无跨块问题），feed_output
-/// 在 &str 生成前对原始字节做——顺序：read → barrier.feed_output（剥 marker）→
-/// Utf8Tail（切 UTF-8）→ push_and_emit。EOF 时 barrier.drop_pending（shell 已死，
-/// 排队输入丢弃，迟到的 gate_write 直通）。
-pub fn spawn_reader_thread(
-    mut reader: Box<dyn Read + Send>,
-    io: Arc<SessionIo>,
-    barrier: Option<Arc<ShellReadyBarrier>>,
-) {
+pub fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, io: Arc<SessionIo>) {
     std::thread::spawn(move || {
         let mut tail = Utf8Tail::new();
         let mut buf = [0u8; 8192];
@@ -220,13 +210,7 @@ pub fn spawn_reader_thread(
             match reader.read(&mut buf) {
                 Ok(0) => break, // EOF：shell 退出
                 Ok(n) => {
-                    let text = match &barrier {
-                        Some(b) => {
-                            let (out, _hit) = b.feed_output(&buf[..n]);
-                            tail.take_complete(&out)
-                        }
-                        None => tail.take_complete(&buf[..n]),
-                    };
+                    let text = tail.take_complete(&buf[..n]);
                     if !text.is_empty() {
                         io.push_and_emit(text);
                     }
@@ -234,15 +218,13 @@ pub fn spawn_reader_thread(
                 Err(_) => break, // PTY 关闭（kill 后）
             }
         }
-        if let Some(b) = &barrier {
-            b.drop_pending();
-        }
         io.exited.store(true, Ordering::SeqCst);
         io.emit_exit();
     });
 }
 
-/// 单个 PTY 会话。key 为会话锚点（issueId 或 issueId::paneId），存于 PtySessionStore。
+/// 单个 PTY 会话。key 为会话锚点（`issueId::<paneId>`，main → `issueId::main`），
+/// 存于 PtySessionStore。
 pub struct PtySession {
     /// 会话锚点（store key，见 SpawnOpts.session_id）。
     pub session_id: String,
@@ -250,16 +232,13 @@ pub struct PtySession {
     pub cwd: String,
     /// PTY master 端：resize。
     pub master: Box<dyn MasterPty>,
-    /// PTY 写入端（take_writer 仅一次，Mutex 共享给 pty_write 命令线程与 barrier
-    /// flush 线程——Arc 同一把锁，写方向天然串行）。
+    /// PTY 写入端（take_writer 仅一次，Mutex 共享给 pty_write 命令线程——
+    /// Arc 同一把锁，写方向天然串行）。
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
     /// shell 子进程（kill）。
     pub child: Mutex<Box<dyn Child + Send>>,
     /// 输出侧共享内核（reader 线程同持一份 Arc）。
     pub io: Arc<SessionIo>,
-    /// shell-ready barrier（仅包装 spawn 且带 startup_command 时 Some；marker 前
-    /// stdin 排队、marker 后 30ms flush、5s 超时兜底——见 shell_ready.rs）。
-    pub barrier: Option<Arc<ShellReadyBarrier>>,
     /// spawn 时间（毫秒时间戳）。
     pub started_at: i64,
 }
@@ -281,7 +260,6 @@ impl PtySession {
             writer: Arc::new(Mutex::new(writer)),
             child: Mutex::new(child),
             io,
-            barrier: None,
             started_at,
         }
     }
@@ -291,14 +269,8 @@ impl PtySession {
         self.io.exited.load(Ordering::SeqCst)
     }
 
-    /// 写入键盘输入。barrier 在场且未 Open 时入队（返回 Ok，不写 PTY——marker 后
-    /// 由 flush 统一放行）。锁 poison 视为会话已坏，返回 Err 让前端感知。
+    /// 写入键盘输入。锁 poison 视为会话已坏，返回 Err 让前端感知。
     pub fn write_input(&self, data: &[u8]) -> Result<(), String> {
-        if let Some(barrier) = &self.barrier {
-            if barrier.gate_write(data) {
-                return Ok(());
-            }
-        }
         let mut writer = self.writer.lock().map_err(|_| {
             format!(
                 "pty session {} writer lock poisoned",

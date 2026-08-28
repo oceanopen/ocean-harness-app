@@ -19,9 +19,10 @@ pub mod watch;
 // （persist 由 ingest 走 store::persist 路径调用）。
 pub use store::init;
 
-/// 查询单 pane 运行时状态快照（T2.1）：useClaudeRuntime 挂载初值，避免事件
-/// 订阅前的空窗。key 即 PTY session_id（issueId::paneId）；Ok(None) = 该 pane
-/// 无 runtime 条目（hook 链路未生效），前端回落现有轮询链路。
+/// 查询单 pane 运行时快照（T5.2 resume 查询唯一入口）：EmbeddedTerminal
+/// 「重开并启动 claude」据此取 claudeSessionId 拼 `claude --resume <id>`。
+/// key 即 PTY session_id（issueId::paneId）；Ok(None) = 该 pane 无绑定
+/// （hook 链路未生效或从未跑过 claude），前端回落裸 claude。
 #[tauri::command]
 #[specta::specta]
 pub fn claude_runtime_state(

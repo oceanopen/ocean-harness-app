@@ -9,7 +9,7 @@
 //      （ingest 围栏用——claude 自产的 stdin JSON 不含我们的 env 标）；
 //   4. append 失败静默（claude 无感，不因 hook 报错阻塞工具链）。
 // 脚本本体落 app_data_dir/claude-hooks/hook.sh，由 ensure_workspace_hooks
-// 命令按需落盘（未启用 chat 模式则零文件产生）。
+// 命令按需落盘（spawn 含 CLI 意图才装，否则零文件产生）。
 
 use std::path::{Path, PathBuf};
 
@@ -81,7 +81,6 @@ pub fn hook_command(script_path: &Path) -> String {
 }
 
 /// POSIX 单引号转义：'…' 内除单引号外全字面（' → '\'' 关闭-转义-重开）。
-/// 同款实现在 pty/shell_ready.rs（私有）；此处独立副本避免跨域 pub 化。
 fn quote_posix_single(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }

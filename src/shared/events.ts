@@ -7,8 +7,6 @@ export { EVENT_APP_CONFIG_CHANGED } from './bindings';
 
 export { EVENT_CLAUDE_SESSIONS_CHANGED } from './bindings';
 
-export { EVENT_TRANSCRIPT_CHANGED } from './bindings';
-
 export { EVENT_CLAUDE_SESSION_NAV_FAILED } from './bindings';
 
 export { EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT } from './bindings';
@@ -23,6 +21,7 @@ export { EVENT_SETTINGS_NAVIGATE } from './bindings';
 
 export { EVENT_HTTP_SERVER_STATE_CHANGED } from './bindings';
 
-// claude runtime 状态变更（T2.1）：hook 事件经 Rust 归一化后 emit，
-// useClaudeRuntime 按 payload.pane 过滤订阅。
+// claude runtime 会话绑定变更（T1.3，chat 退役裁剪后仅 SessionStart 绑定链）：
+// hook 事件经 Rust 归一化后 emit，useClaudeRunning latch 按 payload.pane 过滤
+// 订阅（「启动 claude」按钮置灰加速）。
 export { EVENT_CLAUDE_RUNTIME_CHANGED } from './bindings';

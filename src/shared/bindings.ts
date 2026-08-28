@@ -127,29 +127,10 @@ export const commands = {
 	 *  本会话 shell 子进程树内是否跑着 claude（terminal_03 §3.2 按钮置灰驱动）。
 	 *  进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端；
 	 *  前端事件 + 轮询混合驱动（useClaudeRunning）。
-	 *  注意：查询必须走 provider() 自持的 store（spawn 写入侧）——不能用
-	 *  State<PtySessionStore>（app.manage 的另一实例，恒空，曾致 probe 恒 false）。
+	 *  注意：查询必须走 provider() 自持的 store（spawn 写入侧同一实例）——曾因
+	 *  app.manage 出另一恒空实例致 probe 恒 false（幽灵 manage 已删，见 state.rs）。
 	 */
 	ptyClaudeRunning: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_claude_running", { sessionId }),
-	/**
-	 *  定位本会话 shell 下 claude 的会话引用（sessionId + transcript 路径），chat 视图据此订阅。
-	 *  三态：Ok(None)=无 claude；Ok(Some)=定位成功（transcript_path 可信）；Err=cwd 异常
-	 *  （transcript 路径不可信）。查询走 provider() 自持 store（同 pty_claude_running，防恒空双实例）。
-	 */
-	ptyClaudeSession: (sessionId: string) => typedError<{
-	/**  claude 进程 pid（也是 `~/.claude/sessions/<pid>.json` 的文件名）。 */
-	claudePid: number,
-	/**  claude 会话 ID（uuid）。从 json 的 `sessionId` 字段读取。 */
-	sessionId: string,
-	/**  会话工作目录绝对路径。 */
-	cwd: string,
-	/**  transcript JSONL 绝对路径（`~/.claude/projects/<cwd 的 `/`→`-`>/<sessionId>.jsonl`）。 */
-	transcriptPath: string,
-	/**  会话状态（Busy/Waiting/Idle，经 `enrich::map_status` 归一化）。 */
-	status: ClaudeSessionStatus,
-	/**  waiting 态附带的上下文（如 "approve Bash" / "input needed"）；非 waiting 时为 None。 */
-	waitingFor: string | null,
-} | null, string>(__TAURI_INVOKE("pty_claude_session", { sessionId })),
 	/**
 	 *  重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
 	 *  已退出会话照常返回（exited=true）；不存在返回 None（前端转 pty_spawn）。
@@ -168,40 +149,20 @@ export const commands = {
 	 */
 	createDirectory: (path: string) => typedError<null, string>(__TAURI_INVOKE("create_directory", { path })),
 	/**
-	 *  全量读 transcript 文件为消息列表（chat 只读视图数据源）。
-	 *  前端链路：pty_claude_session 拿 transcript_path → 调本命令 → 渲染。
-	 *  非法 JSON 行 / 非 user/assistant / 注入 turn → skip 不 panic；
-	 *  文件不存在 / 读取失败 → Err。
-	 */
-	transcriptRead: (transcriptPath: string) => typedError<TranscriptMessage[], string>(__TAURI_INVOKE("transcript_read", { transcriptPath })),
-	/**
-	 *  订阅 transcript 增量（terminal_chat T3.2）：全量读初始快照 + 记 offset 开始 watch。
-	 *  返回初始已解析消息列表；后续新增行经 `transcript:changed` 事件增量推送。
-	 *  文件暂缺（claude 尚未落盘）→ Ok(vec![]) 空快照，offset=0，watch 就绪等落盘。
-	 */
-	transcriptSubscribe: (transcriptPath: string) => typedError<TranscriptMessage[], string>(__TAURI_INVOKE("transcript_subscribe", { transcriptPath })),
-	/**  取消订阅：移除 watch 路径（chat 视图卸载 / 切换 issue 时调用）。 */
-	transcriptUnsubscribe: (transcriptPath: string) => __TAURI_INVOKE<void>("transcript_unsubscribe", { transcriptPath }),
-	/**
 	 *  Tauri 命令：前端 spawn 前调用（幂等）。cwd = 工作区目录
 	 *  （`${workspace_base_dir}/${issueId}`，usePtySession 派生先例）。
 	 */
 	ensureWorkspaceHooks: (cwd: string) => typedError<null, string>(__TAURI_INVOKE("ensure_workspace_hooks", { cwd })),
 	/**
-	 *  查询单 pane 运行时状态快照（T2.1）：useClaudeRuntime 挂载初值，避免事件
-	 *  订阅前的空窗。key 即 PTY session_id（issueId::paneId）；Ok(None) = 该 pane
-	 *  无 runtime 条目（hook 链路未生效），前端回落现有轮询链路。
+	 *  查询单 pane 运行时快照（T5.2 resume 查询唯一入口）：EmbeddedTerminal
+	 *  「重开并启动 claude」据此取 claudeSessionId 拼 `claude --resume <id>`。
+	 *  key 即 PTY session_id（issueId::paneId）；Ok(None) = 该 pane 无绑定
+	 *  （hook 链路未生效或从未跑过 claude），前端回落裸 claude。
 	 */
 	claudeRuntimeState: (sessionId: string) => typedError<{
 	/**  pane 锚点（issueId::paneId，store key）。 */
 	pane: string,
-	/**  运行时状态（idle/working/waiting）。 */
-	status: ClaudeRuntimeStatus,
-	/**  生成中的预览文本（assistant 实时增量）。 */
-	previewText: string | null,
-	/**  审批/提问通知（waiting 态）。 */
-	notification: ClaudeNotification | null,
-	/**  transcript JSONL 绝对路径（SessionStart 绑定，chat 视图定位用）。 */
+	/**  transcript JSONL 绝对路径（SessionStart 绑定）。 */
 	transcriptPath: string | null,
 	/**  claude 会话 ID（resume 用）。 */
 	claudeSessionId: string | null,
@@ -234,8 +195,6 @@ export const EVENT_PANEL_SHOWN = "panel:shown" as const;
 export const EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT = "pet-claude-sessions-task:refit" as const;
 
 export const EVENT_SETTINGS_NAVIGATE = "settings:navigate" as const;
-
-export const EVENT_TRANSCRIPT_CHANGED = "transcript:changed" as const;
 
 export const HTTP_SERVER_PORT_KEY = "http_server_port" as const;
 
@@ -274,52 +233,19 @@ export type AppConfigChangedPayload = {
 };
 
 /**
- *  Notification 载荷的结构化形态（审批/提问卡片数据源，T4.1 渲染）。
- *  message 为通知/提问原文；审批类携带 tool_name/tool_input（权限确认上下文），
- *  自由提问类 tool_name 为空（选项列表在 message 内解析）。
- */
-export type ClaudeNotification = {
-	/**  通知/提问原文。 */
-	message: string,
-	/**  待审批工具名（如 "Bash"）；自由提问为 None。 */
-	toolName?: string | null,
-	/**  待审批工具入参（JSON 序列化字符串）；自由提问为 None。 */
-	toolInput?: string | null,
-	/**
-	 *  审批建议选项（claude PermissionRequest 载荷自带；orca 不解析但
-	 *  2.1.228 二进制确认存在，宽容接收，T4.1 按钮渲染用）。
-	 */
-	permissionSuggestions?: string[] | null,
-};
-
-/**
  *  runtime 状态变更事件载荷（`claude-runtime:changed`）。ingest 归一化后 emit，
- *  前端 useClaudeRuntime 按 pane 过滤订阅。
+ *  前端 useClaudeRunning latch 按 pane 过滤订阅（「启动 claude」按钮置灰加速）。
  */
 export type ClaudeRuntimeChangedPayload = {
 	/**  pane 锚点（issueId::paneId，store key）。 */
 	pane: string,
-	/**  运行时状态（idle/working/waiting）。 */
-	status: ClaudeRuntimeStatus,
-	/**  生成中的预览文本（assistant 实时增量）。 */
-	previewText: string | null,
-	/**  审批/提问通知（waiting 态）。 */
-	notification: ClaudeNotification | null,
-	/**  transcript JSONL 绝对路径（SessionStart 绑定，chat 视图定位用）。 */
+	/**  transcript JSONL 绝对路径（SessionStart 绑定）。 */
 	transcriptPath: string | null,
 	/**  claude 会话 ID（resume 用）。 */
 	claudeSessionId: string | null,
 	/**  最后更新时间（毫秒时间戳）。 */
 	lastUpdatedAt: number,
 };
-
-/**
- *  运行时状态机：hook 事件驱动（区别于 ClaudeSessionStatus 的会话轮询态）。
- *  - Idle：会话空闲（Stop / SessionStart 初始）
- *  - Working：正在生成（User 已提交 / Assistant 生成中）
- *  - Waiting：等待用户输入（Notification 审批/提问）
- */
-export type ClaudeRuntimeStatus = "idle" | "working" | "waiting";
 
 /**
  *  终端会话快照。ClaudeSessionsPage 渲染 ClaudeSessionCard 列表的数据源；
@@ -349,26 +275,6 @@ export type ClaudeSessionInfo = {
 	 *  无法识别时为空字符串。
 	 */
 	tty: string,
-};
-
-/**
- *  PTY 会话内 claude 的定位引用（`pty_claude_session` 返回）。
- *  给定主 pane 的 session_id，定位「跑在该 PTY shell 下的 claude」的 sessionId + transcript 路径，
- *  chat 视图据此订阅 transcript JSONL。仅出参（后端→前端），故不 derive Deserialize。
- */
-export type ClaudeSessionRef = {
-	/**  claude 进程 pid（也是 `~/.claude/sessions/<pid>.json` 的文件名）。 */
-	claudePid: number,
-	/**  claude 会话 ID（uuid）。从 json 的 `sessionId` 字段读取。 */
-	sessionId: string,
-	/**  会话工作目录绝对路径。 */
-	cwd: string,
-	/**  transcript JSONL 绝对路径（`~/.claude/projects/<cwd 的 `/`→`-`>/<sessionId>.jsonl`）。 */
-	transcriptPath: string,
-	/**  会话状态（Busy/Waiting/Idle，经 `enrich::map_status` 归一化）。 */
-	status: ClaudeSessionStatus,
-	/**  waiting 态附带的上下文（如 "approve Bash" / "input needed"）；非 waiting 时为 None。 */
-	waitingFor: string | null,
 };
 
 /**
@@ -494,8 +400,8 @@ export type PtySpawned = {
  */
 export type SpawnOpts = {
 	/**
-	 *  会话锚点（store key）：main pane = issue uuid，附加 pane = `issueId::paneId`
-	 * （split 分割窗口，terminal_02 §3.1）。
+	 *  会话锚点（store key）：main → `issueId::main`，附加 pane →
+	 *  `issueId::<uuid>`（split 分割窗口，terminal_02 §3.1）。
 	 */
 	sessionId: string,
 	/**  工作目录绝对路径。 */
@@ -505,18 +411,12 @@ export type SpawnOpts = {
 	/**  初始行数。 */
 	rows: number,
 	/**
-	 *  启动注入命令（如 "claude"）：fresh spawn 且 shell 为 zsh/bash 时走包装
-	 *  spawn（shell-ready barrier 精确锚定提示符就绪后注入）；其余 shell 走
-	 *  fast 注入降级。None = 现状裸 spawn。reattach/复用分支不重注入。
-	 */
-	startupCommand?: string | null,
-	/**
-	 *  直接 spawn 命令（claude_orca T5.1，chat 模式 CLI 直启）：整串命令，首
+	 *  直接 spawn 命令（claude_orca T5.1，唯一自动执行路径）：整串命令，首
 	 *  token 为 CLI 名（如 "claude"，T5.2 的 "claude --resume <id>" 同形）。
-	 *  优先级高于 startup_command：在场时无 shell 中转、无 shell-ready barrier
-	 *  ——PTY 直接 exec CLI（T1.4 归因 env 打标照常注入），CLI 退出即 pane
-	 *  退出（无 shell 回落，走 exited UI；跑普通命令用附加 pane）。CLI 路径
-	 *  经 login shell 探测解析，失败回落 startup_command 注入路径（warn log）。
+	 *  在场时无 shell 中转——PTY 直接 exec CLI（T1.4 归因 env 打标照常注入），
+	 *  CLI 退出即 pane 退出（无 shell 回落，走 exited UI；跑普通命令用附加
+	 *  pane）。CLI 路径经 login shell 探测解析，失败回落普通裸 shell（warn
+	 *  log，用户可手动启动）。reattach/复用分支不重直启。
 	 */
 	directCommand?: string | null,
 };
@@ -534,51 +434,6 @@ export type TerminalApp = "ITerm2" | "Terminal" | "IntelliJ" |
 "WeTerm" | 
 /**  未识别的宿主终端（如 VSCode 内嵌、Wezterm、Alacritty 等）。跳转按钮将禁用。 */
 "Unknown";
-
-/**
- *  转录消息内容块。serde tag=`type`，TS 侧导出为按 `type` 判别的联合类型。
- *  映射自 Claude Code content block：text / thinking / tool_use / tool_result / image。
- */
-export type TranscriptBlock = 
-/**  正文文本（user 与 assistant 都可能有）。 */
-{ type: "text"; text: string } | 
-/**  思考过程（assistant 的 reasoning，前端折叠）。 */
-{ type: "thinking"; text: string } | 
-/**  工具调用（assistant 的 tool_use）。input 为工具参数 JSON 序列化后的字符串。 */
-{ type: "toolCall"; name: string; input: string | null } | 
-/**  工具结果（tool_result）。output 为结果内容归一化后的字符串。 */
-{ type: "toolResult"; output: string; isError: boolean } | 
-/**  图片引用（image，url/path 至少其一；均为空时 decode 丢弃）。 */
-{ type: "image"; url: string | null; path: string | null; alt: string | null };
-
-/**
- *  transcript 增量 follow 的事件载荷（`transcript:changed`，terminal_chat T3.2）。
- *  tail 后台线程检测到订阅的 transcript 文件新增行后 emit；前端按 path 过滤后增量追加。
- */
-export type TranscriptChangedPayload = {
-	/**  变化的 transcript 文件绝对路径（多 pane 各自订阅不同路径，据此过滤）。 */
-	path: string,
-	/**  自上次 emit 以来新增的已解析消息（增量，非全量）。 */
-	messages: TranscriptMessage[],
-};
-
-/**  转录消息（transcript JSONL 单行 → 结构化）。chat 只读视图渲染的基本单元。 */
-export type TranscriptMessage = {
-	/**  记录 uuid（行的 `uuid` 字段）。 */
-	id: string,
-	/**  消息角色（User/Assistant/Tool/System）。 */
-	role: TranscriptRole,
-	/**  内容块列表（正文/思考/工具调用/工具结果/图片）。 */
-	blocks: TranscriptBlock[],
-	/**  时间戳（ISO8601 解析后的毫秒）；缺失/非法为 None。 */
-	timestamp: number | null,
-};
-
-/**
- *  转录消息角色。直接映射 transcript JSONL 行的 `type`（user/assistant），外加
- *  两个本地派生：Tool（user 行仅含 tool_result block）、System（预留，本期不产出）。
- */
-export type TranscriptRole = "User" | "Assistant" | "Tool" | "System";
 
 /**  Y/N 布尔风格配置值。serde rename 到单字母，序列化与 specta 导出均为 "Y"/"N"。 */
 export type YesNo = "Y" | "N";

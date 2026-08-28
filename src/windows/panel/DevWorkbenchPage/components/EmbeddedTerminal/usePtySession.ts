@@ -7,11 +7,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export type PtySessionStatus
   // 编排中（exists→reattach→spawn 途中）
   = | 'connecting'
-  // shell 存活（reattach 复用或 spawn 新起），实时流已接
+    // shell 存活（reattach 复用或 spawn 新起），实时流已接
     | 'active'
-  // shell 已退出（exit 事件或 reattach.exited），可重开
+    // shell 已退出（exit 事件或 reattach.exited），可重开
     | 'exited'
-  // spawn 失败（如目录不存在），可重试
+    // spawn 失败（如目录不存在），可重试
     | 'error';
 
 export interface UsePtySessionResult {
@@ -24,9 +24,8 @@ export interface UsePtySessionResult {
   resize: (cols: number, rows: number) => void;
   // 重开：对已退出会话重新走 spawn 编排（后端移除旧会话重起）。
   // claudeCommand：本次 spawn 的 claude 命令串（'claude'，或 T5.2 的
-  // 'claude --resume <id>'），一次性覆盖配置值——direct 模式（配置
-  // directCommand 在场）顶替 direct 串直启，否则顶替注入命令（「重开并启动
-  // claude」语义，terminal_03 §3.2 → claude_orca T5.2）。
+  // 'claude --resume <id>'），一次性顶替 directCommand 直启（chat 退役后
+  // 注入路径已删，claude 启动恒走 direct spawn——含配置 none 的手动重开场景）。
   reopen: (claudeCommand?: string) => void;
   // 关闭终端：ptyShutdown 杀 shell + 移出 store（组件随后进 exited 语义，可重开）
   close: () => void;
@@ -42,16 +41,10 @@ interface UsePtySessionArgs {
   // 初始尺寸（挂载后 TerminalView fit 实测会再 resize 校正）
   cols: number;
   rows: number;
-  // 启动自动运行的编程 CLI（'none' = 不注入，普通 shell）。仅 fresh spawn 生效；
-  // 已活会话（reattach/复用）不重注入——切换配置即时重编排但活会话保持原状。
-  // 「重开并启动 claude」的一次性覆盖在 hook 内部（claudeOverrideRef）合成，
-  // 对调用方透明——direct 模式顶替 attach 实参 directCommand、否则顶替
-  // startupCodeCli（路由见 effect 内 effectiveDirect/effectiveCli）。
-  startupCodeCli: string;
-  // CLI 直启命令（claude_orca T5.1，chat 模式）：非 null 时 PTY 直接 spawn
-  // CLI，无 shell 中转、无 shell-ready barrier；CLI 退出即 pane 退出。
-  // 生命周期同 startupCodeCli：仅 fresh spawn 生效，活会话不重直启；Rust 侧
-  // 解析失败（CLI 不在场等）自动回落 startupCodeCli 注入路径，前端无感。
+  // CLI 直启命令（claude_orca T5.1，唯一自动执行路径）：非 null 时 PTY 直接
+  // spawn CLI，无 shell 中转；CLI 退出即 pane 退出。仅 fresh spawn 生效，
+  // 活会话（reattach/复用）不重直启。Rust 侧解析失败（CLI 不在场等）回落
+  // 普通裸 shell（warn log），前端无感。
   directCommand: string | null;
   // 输出回调（TerminalView 的 write 桥）；reattach/spawn 复用的 scrollback 也经此一次
   // 送达（replay=true 标记历史回放——TerminalView 在回放窗口抑制查询应答，防乱码）。
@@ -89,26 +82,20 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   }
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
-  // CLI 集成即装工作区 hooks（claude_orca T6.1）：本次 spawn 含 CLI 意图（直启
-  // 或注入，含一次性 claude 覆盖——attach 收到的已是路由后的 effective 值）
+  // CLI 集成即装工作区 hooks（claude_orca T6.1）：本次 spawn 含 CLI 意图
+  // （配置直启或一次性 claude 覆盖——attach 收到的已是路由后的 effective 值）
   // → spawn 前幂等安装（claude 启动时读 settings，装完即生效；内容相同零写）。
   // 失败（typedError 与 invoke reject 两类，commands.ts 双 failure 模型）都只
-  // warn 不阻塞 spawn——hook 链路缺席由前端全链回落现有轮询兜底。活会话
-  // reattach 命中即返回，走不到此处：运行中会话不重装（重启会话后生效）。
-  const cliSpawn = args.directCommand != null || args.startupCodeCli !== 'none';
-  // direct 在场时不再带 startupCommand（direct 优先，避免双注入语义歧义；
-  // Rust 侧解析失败回落注入用的是 direct 串本身，无需前端预传 startup）。
-  const startupCommand = args.directCommand == null && cliSpawn
-    ? args.startupCodeCli
-    : undefined;
-  if (cliSpawn) {
+  // warn 不阻塞 spawn——hook 链路缺席时 resume 无记录回落裸 claude，无功能阻塞。
+  // 活会话 reattach 命中即返回，走不到此处：运行中会话不重装（重启会话后生效）。
+  if (args.directCommand != null) {
     await safeAwait(
       logOnError(commands.ensureWorkspaceHooks(cwd), `pty:${sessionId}`),
       `pty:${sessionId}`,
     );
   }
   const spawned = await unwrap(
-    commands.ptySpawn({ sessionId, cwd, cols, rows, startupCommand, directCommand: args.directCommand ?? undefined }, channel),
+    commands.ptySpawn({ sessionId, cwd, cols, rows, directCommand: args.directCommand ?? undefined }, channel),
   );
   if (!spawned.fresh && spawned.scrollback) {
     args.onData(spawned.scrollback, true);
@@ -116,16 +103,16 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   return 'active';
 }
 
-export function usePtySession({ sessionId, cwd, cols, rows, startupCodeCli, directCommand, onData }: UsePtySessionArgs): UsePtySessionResult {
+export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onData }: UsePtySessionArgs): UsePtySessionResult {
   const [status, setStatus] = useState<PtySessionStatus>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 重开/重试驱动：attempt 自增触发 effect 重跑编排
   const [attempt, setAttempt] = useState(0);
   // 一次性 claude 命令覆盖（reopen(claudeCommand) 置位，attach 取用即清）：
   // 「重开并启动 claude」语义（T5.2：可能带 --resume）。不走 state——
-  // startupCodeCli/directCommand 在 attachKey 与 effect deps 里，覆盖值持久
-  // 生效会与后续配置变化耦合，违反一次性语义（函数式范式：外部触发的瞬时
-  // 意图 → ref 桥，勿渲染消费）。
+  // directCommand 在 attachKey 与 effect deps 里，覆盖值持久生效会与后续配置
+  // 变化耦合，违反一次性语义（函数式范式：外部触发的瞬时意图 → ref 桥，
+  // 勿渲染消费）。
   const claudeOverrideRef = useRef<string | null>(null);
   // attach 期间 fit 已经上报的最新尺寸：attach 完成前 ptyResize 会因会话不存在
   // 被后端拒（日志实证），就绪后按积压值补发一次，保证 PTY winsize 与前端一致。
@@ -133,7 +120,7 @@ export function usePtySession({ sessionId, cwd, cols, rows, startupCodeCli, dire
   // 编排标识（sessionId/cwd/attempt 串联）：依赖变化 → 新一轮编排应从 'connecting' 起步。
   // 用「上轮 key 不一致则渲染期重置」替代 effect 内同步 setState（react/set-state-in-effect，
   // 同 PanelApp mounted 标志的渲染期调整模式）——仅重置一次，不触发额外提交。
-  const attachKey = `${sessionId}\n${cwd ?? ''}\n${startupCodeCli}\n${directCommand ?? ''}\n${attempt}`;
+  const attachKey = `${sessionId}\n${cwd ?? ''}\n${directCommand ?? ''}\n${attempt}`;
   const lastAttachKeyRef = useRef<string | null>(null);
   if (lastAttachKeyRef.current !== attachKey) {
     lastAttachKeyRef.current = attachKey;
@@ -163,14 +150,13 @@ export function usePtySession({ sessionId, cwd, cols, rows, startupCodeCli, dire
       }
     };
 
-    // 一次性覆盖取用即清（本编排生效后续轮次回落配置值）。路由：direct 模式
-    // （配置 directCommand 在场）顶替 direct 串（T5.2 resume 整串直启），否则
-    // 顶替注入命令。
+    // 一次性覆盖取用即清（本编排生效后续轮次回落配置值）。chat 退役后注入路径
+    // 已删：覆盖恒顶替 direct 串直启（配置在场则替换、缺席则顶上——含配置
+    // none 的「重开并启动 claude」场景）。
     const override = claudeOverrideRef.current;
     claudeOverrideRef.current = null;
-    const effectiveDirect = override != null && directCommand != null ? override : directCommand;
-    const effectiveCli = override != null && directCommand == null ? override : startupCodeCli;
-    attach({ sessionId, cwd, cols, rows, startupCodeCli: effectiveCli, directCommand: effectiveDirect, onData }, onEvent)
+    const effectiveDirect = override ?? directCommand;
+    attach({ sessionId, cwd, cols, rows, directCommand: effectiveDirect, onData }, onEvent)
       .then((next) => {
         if (cancelled) {
           return;
@@ -194,7 +180,7 @@ export function usePtySession({ sessionId, cwd, cols, rows, startupCodeCli, dire
     return () => {
       cancelled = true;
     };
-  }, [sessionId, cwd, cols, rows, startupCodeCli, directCommand, attempt, onData]);
+  }, [sessionId, cwd, cols, rows, directCommand, attempt, onData]);
 
   // 以下操作函数均为稳定引用（deps 仅 sessionId），直接交给 TerminalView 接线。
   const write = useCallback((data: string) => {
