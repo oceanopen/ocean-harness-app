@@ -71,9 +71,8 @@ static CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<String, (String, Stri
 fn probe(token: &str) -> Option<(String, String)> {
     // shell 同 resolve_shell 取向：$SHELL 优先回退 /bin/zsh。
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    let script = format!(
-        "echo {SENTINEL_OPEN}; command -v {token}; echo {SENTINEL_CLOSE}; /usr/bin/env"
-    );
+    let script =
+        format!("echo {SENTINEL_OPEN}; command -v {token}; echo {SENTINEL_CLOSE}; /usr/bin/env");
     // stdin 关死：rc 脚本若读 stdin 会挂起探测进程。
     let out = std::process::Command::new(shell)
         .arg("-l")
@@ -97,7 +96,9 @@ pub(crate) fn resolve_cli_bin(token: &str) -> Option<(String, String)> {
         return None;
     }
     {
-        let cache = CACHE.lock().expect("cli_bin cache mutex poisoned");
+        let cache = CACHE
+            .lock()
+            .expect("cli_bin cache mutex poisoned");
         if let Some(hit) = cache.get(token) {
             return Some(hit.clone());
         }
@@ -163,28 +164,36 @@ mod tests {
         );
         assert_eq!(
             ok,
-            Some(("/opt/homebrew/bin/claude".into(), "/x:/usr/bin".into()))
+            Some((
+                "/opt/homebrew/bin/claude".into(),
+                "/x:/usr/bin".into()
+            ))
         );
         // builtin 形态：块内输出为名字（非 `/` 开头）→ None。
-        assert!(parse_probe_output(
-            "WE_TERM_CLI_PROBE_OPEN\necho\nWE_TERM_CLI_PROBE_CLOSE\nPATH=/usr/bin\n"
-        )
-        .is_none());
+        assert!(
+            parse_probe_output(
+                "WE_TERM_CLI_PROBE_OPEN\necho\nWE_TERM_CLI_PROBE_CLOSE\nPATH=/usr/bin\n"
+            )
+            .is_none()
+        );
         // 哨兵缺失（异常 shell 吞 echo）：路径行不裸取 → None（防噪声误判钉死缓存）。
         assert!(parse_probe_output("/opt/homebrew/bin/claude\nPATH=/usr/bin\n").is_none());
         // 块内无路径行（CLI 未安装）/ 无 PATH= 行 → None。
-        assert!(parse_probe_output(
-            "WE_TERM_CLI_PROBE_OPEN\nWE_TERM_CLI_PROBE_CLOSE\nPATH=/usr/bin\n"
-        )
-        .is_none());
-        assert!(parse_probe_output(
-            "WE_TERM_CLI_PROBE_OPEN\n/bin/cat\nWE_TERM_CLI_PROBE_CLOSE\n"
-        )
-        .is_none());
+        assert!(
+            parse_probe_output("WE_TERM_CLI_PROBE_OPEN\nWE_TERM_CLI_PROBE_CLOSE\nPATH=/usr/bin\n")
+                .is_none()
+        );
+        assert!(
+            parse_probe_output("WE_TERM_CLI_PROBE_OPEN\n/bin/cat\nWE_TERM_CLI_PROBE_CLOSE\n")
+                .is_none()
+        );
         // env 输出行（VAR=value）不参与路径判定。
         let env_line = parse_probe_output(
             "WE_TERM_CLI_PROBE_OPEN\n/bin/cat\nWE_TERM_CLI_PROBE_CLOSE\nHOME=/Users/x\nPATH=/usr/bin\n",
         );
-        assert_eq!(env_line, Some(("/bin/cat".into(), "/usr/bin".into())));
+        assert_eq!(
+            env_line,
+            Some(("/bin/cat".into(), "/usr/bin".into()))
+        );
     }
 }

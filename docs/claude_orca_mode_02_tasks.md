@@ -389,7 +389,7 @@
 
 ### T6.1 回退路径 + 模式热切换 + 全链验证
 
-**状态**：⬜
+**状态**：✅（dev app 手动 e2e 清单已交付待执行，见下方实施记录末尾）
 
 **功能**：hook 链路任何一环失联时全链回落现有逻辑；模式切换热生效；全链 e2e 验证
 
@@ -412,6 +412,69 @@
 - `cargo test` + `pnpm tsc --noEmit` + lint 全绿
 
 **依赖**：T3.1、T4.1、T5.2
+
+**实施记录（2026-08-28）**：
+
+- **澄清确认四项**：① installer 加固取「保守保留 + 仅语义比较」——探索发现
+  serde_json 未启用 preserve_order 时 `serde_json::Map` 底座同样是 BTreeMap，
+  天真的 Value 层重构并不解决键序；启用 feature（indexmap 虽已在树，零新增
+  crate）是全局行为换局部 diff 美观，性价比不足，放弃。② 安装触发范围取
+  「CLI 集成即装」（startup_code_cli≠none 即装，含非 chat 注入模式）——注入
+  模式同样获得 runtime 状态推送 / T5.2 resume / uuid 定位修复，与 T5.2「两
+  模式统一」决策一致。③ 按钮切源公式弃 spec 字面「有条目即 runtime 为准」
+  （runtime 条目永不删除 + claude 退出无 hook 事件 → 注入模式退出后按钮永久
+  卡灰；条目删除又与 T5.2 resume 依赖残留 claudeSessionId 冲突），改为「探测
+  真值 + runtime 加速 latch」。④ 热切换提示取「仅设置页文案」。
+- **installer 加固**：三层 BTreeMap struct 模型（SettingsModel/HookDefinition/
+  HookHandler）删除，改 Value 层手动遍历——只动认识的部分（8 注册事件的自有
+  条目剥除/尾插），hooks 非对象 → 整树透传 + warn + 跳过安装（零写零备份）；
+  事件值非数组 → 原样保留 + 跳过该事件；definition 非对象透传；语法损坏仍
+  空起步 + .bak 兜底（T1.2 语义）。跳过判据改**语义比较**（磁盘 parse 成
+  Value ≡ 合并产物，键序/格式/空白无关）——claude 自身改写 settings 后不再
+  误写、.bak 不再反复滚动。单测 10 个：7 个语义等价迁移 + 3 新增对抗用例
+  （语义损坏保内容 / 仅格式变化零写 / 非对象透传）+ needle 与脚本常量契约
+  钉死（规范审查补）。`install_hooks_for_dev_e2e` 手动工具删除（前端接线后
+  冗余）；T4.1 已知边界「存量工作区不自动补 PreToolUse 注册」随自动安装消解。
+- **hook 自动安装接线**：`usePtySession.attach` 的 spawn 段（reattach 活会话
+  命中即返回之后、ptySpawn 之前），`cliSpawn = directCommand != null ||
+  startupCodeCli !== 'none'`（attach 收到的已是 override 路由后 effective 值
+  ——非 CLI 用户点「重开并启动 claude」同样覆盖）→ `await` 幂等安装，失败
+  （typedError 与 invoke reject 两类）仅 warn 不阻塞 spawn。挂点被 override
+  路由位置决定：组件层复现条件会漏「chat 关 + cli=none + 重开并启动 claude」
+  路径（架构审查确认）。活会话天然不重装（重启会话后生效）；StrictMode 双跑
+  幂等无害。
+- **useClaudeRunning 切源**：`running = active && (probed || latched)`——
+  probed 进程树探测（存活真值，退出方向唯一可靠源）；latch 订阅
+  claude-runtime:changed（按 pane 过滤，claudeSessionId 非空事件置位——SessionStart
+  即时置灰零滞后），探测 false 清除（纠偏条目残留）；仅实时事件不查快照
+  （挂载时陈旧快照会闪错误置灰）。active 转 false 渲染期 lastActiveRef 重置
+  （防跨会话残留首帧误报）。
+- **设置页文案**：help.chatModeSwitch（zh-CN/en）补「开启后已运行的终端会话
+  需重开会话才会直接进入 Claude 并接入状态推送」。
+- **回退链路确认**（T2.1 已建成，本任务核验）：runtime 缺席时 transcriptPath
+  回落进程树路径、claudeStatus 回落 session ref、Waiting 无 notification 时
+  「切回终端」降级横幅——全链 fallback 已内联成立，无需新写。
+- **审查修复**（正确性 2 + 简洁性 6 + 规范/架构 3，全部修复）：[中] ensureWorkspaceHooks
+  未捕获 invoke rejection（命令未注册/dev 旧二进制）会让 attach 整体 reject
+  致 spawn 不发出——`safeAwait(logOnError(...))` 组合兜住两类失败模型；
+  [低] probed/latched 跨 active 转换不重置致重开后首帧误报（lastActiveRef
+  渲染期重置）；strip 函数 needle 判定一份三写收敛 retain 原地过滤（26→15
+  行）；merge 两臂收敛 + install 非对象分支早退消死 clone；cliSpawn 命名
+  消 'none' 魔法串两写；managed_definition 注释漂移（字母序非插入序）；
+  workspace_fixture 注释失实；usePtySession 接口注释 '' 哨兵漂移订正。
+  架构审查零发现（域边界/hook 职责/latch 数据流/域内聚/同类抽查全过）。
+- **验证（2026-08-28）**：cargo test 126 passed（2 ignored 为真 claude e2e）/
+  cargo fmt / tsc / eslint / vitest 46 全绿。
+- **dev app 手动 e2e 清单**（合并 T2.1/T3.1/T4.1/T5.1/T5.2 遗留实测，待人工
+  执行）：①chat 模式开 issue 直进 claude 会话（无 shell 提示符）；②chat 发
+  消息 → echo 即时上屏 → 流式气泡 → transcript 落地替换；③触发 Bash 权限 →
+  chat 内审批卡按钮允许 → 任务继续；AskUserQuestion → 多问题卡作答；④停止 →
+  状态即时 idle（无秒级滞后）；⑤claude 退出 → 「重开并启动 claude」resume
+  恢复上下文 /「重开」开新会话 / app 重启后仍能 resume；⑥关 chat 开关 → 行为
+  完全回现状（overlay 摘除、注入模式轮询兜底）；⑦附加 pane 仍裸 shell；
+  ⑧热切换：开开关 → 活会话不生效（文案提示）→ 重开会话生效；⑨隔离：iTerm2
+  同目录跑 claude → 不写 spool、监控页不受扰；⑩无感：杀 app 后 claude 继续跑
+  hook 不报错。
 
 ---
 

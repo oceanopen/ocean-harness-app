@@ -1,6 +1,6 @@
 import type { PtyEvent } from '@src/shared/bindings';
 import { commands } from '@src/shared/bindings';
-import { unwrap } from '@src/shared/commands';
+import { logOnError, safeAwait, unwrap } from '@src/shared/commands';
 import { Channel } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -42,7 +42,7 @@ interface UsePtySessionArgs {
   // 初始尺寸（挂载后 TerminalView fit 实测会再 resize 校正）
   cols: number;
   rows: number;
-  // 启动自动运行的编程 CLI（'' = 不注入，普通 shell）。仅 fresh spawn 生效；
+  // 启动自动运行的编程 CLI（'none' = 不注入，普通 shell）。仅 fresh spawn 生效；
   // 已活会话（reattach/复用）不重注入——切换配置即时重编排但活会话保持原状。
   // 「重开并启动 claude」的一次性覆盖在 hook 内部（claudeOverrideRef）合成，
   // 对调用方透明——direct 模式顶替 attach 实参 directCommand、否则顶替
@@ -89,11 +89,24 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   }
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
+  // CLI 集成即装工作区 hooks（claude_orca T6.1）：本次 spawn 含 CLI 意图（直启
+  // 或注入，含一次性 claude 覆盖——attach 收到的已是路由后的 effective 值）
+  // → spawn 前幂等安装（claude 启动时读 settings，装完即生效；内容相同零写）。
+  // 失败（typedError 与 invoke reject 两类，commands.ts 双 failure 模型）都只
+  // warn 不阻塞 spawn——hook 链路缺席由前端全链回落现有轮询兜底。活会话
+  // reattach 命中即返回，走不到此处：运行中会话不重装（重启会话后生效）。
+  const cliSpawn = args.directCommand != null || args.startupCodeCli !== 'none';
   // direct 在场时不再带 startupCommand（direct 优先，避免双注入语义歧义；
   // Rust 侧解析失败回落注入用的是 direct 串本身，无需前端预传 startup）。
-  const startupCommand = args.directCommand == null && args.startupCodeCli !== 'none'
+  const startupCommand = args.directCommand == null && cliSpawn
     ? args.startupCodeCli
     : undefined;
+  if (cliSpawn) {
+    await safeAwait(
+      logOnError(commands.ensureWorkspaceHooks(cwd), `pty:${sessionId}`),
+      `pty:${sessionId}`,
+    );
+  }
   const spawned = await unwrap(
     commands.ptySpawn({ sessionId, cwd, cols, rows, startupCommand, directCommand: args.directCommand ?? undefined }, channel),
   );

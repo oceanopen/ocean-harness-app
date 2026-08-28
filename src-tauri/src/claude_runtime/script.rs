@@ -188,13 +188,22 @@ mod tests {
             .iter()
             .position(|l| l.contains(">>"))
             .expect("append line present");
-        assert!(stdin_read < injection, "injection must follow stdin read");
-        assert!(injection < append, "injection must precede append");
+        assert!(
+            stdin_read < injection,
+            "injection must follow stdin read"
+        );
+        assert!(
+            injection < append,
+            "injection must precede append"
+        );
     }
 
     #[test]
     fn spool_file_name_roundtrip() {
-        assert_eq!(spool_file_name("issue1::main"), "issue1__main.jsonl");
+        assert_eq!(
+            spool_file_name("issue1::main"),
+            "issue1__main.jsonl"
+        );
         assert_eq!(
             pane_from_spool_file("issue1__main.jsonl").as_deref(),
             Some("issue1::main")

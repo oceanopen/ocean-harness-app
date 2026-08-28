@@ -21,7 +21,7 @@ use notify::RecursiveMode;
 use tauri::{AppHandle, Manager};
 
 use super::ingest;
-use super::script::{pane_from_spool_file, SPOOL_DIR_NAME};
+use super::script::{SPOOL_DIR_NAME, pane_from_spool_file};
 
 /// 去抖窗口：单回合 hook burst（MessageDisplay 高频）合并为一次 drain。
 const WATCH_DEBOUNCE_MS: u64 = 200;
@@ -38,15 +38,19 @@ pub struct SpoolOffsets(pub Mutex<HashMap<String, u64>>);
 pub fn start(app: AppHandle) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
-        let mut debouncer =
-            match notify_debouncer_mini::new_debouncer(Duration::from_millis(WATCH_DEBOUNCE_MS), tx)
-            {
-                Ok(d) => d,
-                Err(e) => {
-                    log::warn!("[claude_runtime] spool watcher init failed: {}", e);
-                    return;
-                }
-            };
+        let mut debouncer = match notify_debouncer_mini::new_debouncer(
+            Duration::from_millis(WATCH_DEBOUNCE_MS),
+            tx,
+        ) {
+            Ok(d) => d,
+            Err(e) => {
+                log::warn!(
+                    "[claude_runtime] spool watcher init failed: {}",
+                    e
+                );
+                return;
+            }
+        };
 
         let Some(dir) = spool_dir(&app) else {
             log::warn!("[claude_runtime] spool watcher: app_data_dir not available");
@@ -77,7 +81,10 @@ pub fn start(app: AppHandle) {
             );
             return;
         }
-        log::info!("[claude_runtime] spool watcher started on {}", dir.display());
+        log::info!(
+            "[claude_runtime] spool watcher started on {}",
+            dir.display()
+        );
 
         while let Ok(events) = rx.recv() {
             let panes: Vec<String> = events
@@ -98,7 +105,10 @@ pub fn start(app: AppHandle) {
 
 /// spool 目录绝对路径（app_data_dir/claude-spool）。
 fn spool_dir(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_data_dir().ok().map(|d| d.join(SPOOL_DIR_NAME))
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join(SPOOL_DIR_NAME))
 }
 
 /// 启动淘汰：超出保留上限的 spool 文件按 mtime 最旧删除。单项失败静默 skip。
@@ -130,7 +140,11 @@ fn evict_stale_spool_files(dir: &Path) {
 fn select_evictables<T>(mut files: Vec<(T, std::time::SystemTime)>) -> Vec<T> {
     files.sort_by_key(|(_, mtime)| *mtime);
     let excess = files.len().saturating_sub(SPOOL_KEEP_MAX);
-    files.into_iter().take(excess).map(|(name, _)| name).collect()
+    files
+        .into_iter()
+        .take(excess)
+        .map(|(name, _)| name)
+        .collect()
 }
 
 /// 冷启动 offset 对齐：每个既有 spool 文件的 offset 记到末尾完整行——
@@ -140,7 +154,10 @@ fn align_existing_to_eof(app: &AppHandle, dir: &Path) {
         return;
     };
     let store = app.state::<SpoolOffsets>();
-    let mut offsets = store.0.lock().expect("SpoolOffsets mutex poisoned");
+    let mut offsets = store
+        .0
+        .lock()
+        .expect("SpoolOffsets mutex poisoned");
     for entry in entries.flatten() {
         let Some(name) = entry.file_name().to_str().map(String::from) else {
             continue;
@@ -179,11 +196,18 @@ fn drain_pane(app: &AppHandle, dir: &Path, pane: &str) {
 
     let offset = {
         let store = app.state::<SpoolOffsets>();
-        let map = store.0.lock().expect("SpoolOffsets mutex poisoned");
+        let map = store
+            .0
+            .lock()
+            .expect("SpoolOffsets mutex poisoned");
         map.get(pane).copied().unwrap_or(0)
     };
     // 文件缩小（外部截断等）→ 重置 0 重读兜底。
-    let effective_offset = if size < offset { 0 } else { offset };
+    let effective_offset = if size < offset {
+        0
+    } else {
+        offset
+    };
     if size == effective_offset {
         return;
     }
@@ -225,7 +249,10 @@ fn drain_pane(app: &AppHandle, dir: &Path, pane: &str) {
     };
 
     let store = app.state::<SpoolOffsets>();
-    let mut map = store.0.lock().expect("SpoolOffsets mutex poisoned");
+    let mut map = store
+        .0
+        .lock()
+        .expect("SpoolOffsets mutex poisoned");
     map.insert(pane.to_string(), new_offset);
 }
 
@@ -240,8 +267,8 @@ fn read_range(path: &Path, start: u64, end: u64) -> Result<String, std::io::Erro
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::script::spool_file_name;
+    use super::*;
 
     /// 并行测试隔离目录（installer.rs workspace_fixture 同款范式）。
     fn temp_dir_for(test: &str) -> PathBuf {
@@ -274,7 +301,11 @@ mod tests {
         let size = std::fs::metadata(&path).unwrap().len();
         // 模拟 offset 大于 size：effective_offset 应取 0。
         let offset = size + 100;
-        let effective = if size < offset { 0 } else { offset };
+        let effective = if size < offset {
+            0
+        } else {
+            offset
+        };
         assert_eq!(effective, 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -294,9 +325,15 @@ mod tests {
     fn evict_selects_oldest_beyond_limit() {
         let base = std::time::UNIX_EPOCH;
         let files = vec![
-            ("a.jsonl".to_string(), base),                      // 最旧 → 淘汰
-            ("b.jsonl".to_string(), base + std::time::Duration::from_secs(1)),
-            ("c.jsonl".to_string(), base + std::time::Duration::from_secs(2)),
+            ("a.jsonl".to_string(), base), // 最旧 → 淘汰
+            (
+                "b.jsonl".to_string(),
+                base + std::time::Duration::from_secs(1),
+            ),
+            (
+                "c.jsonl".to_string(),
+                base + std::time::Duration::from_secs(2),
+            ),
         ];
         // 上限 50，3 个文件不淘汰；构造超限场景直接验证排序取尾逻辑。
         assert!(select_evictables(files.clone()).is_empty());

@@ -29,5 +29,7 @@ pub fn claude_runtime_state(
     session_id: String,
 ) -> Result<Option<types::ClaudeRuntimeChangedPayload>, String> {
     let map = state.0.lock().map_err(|e| e.to_string())?;
-    Ok(map.get(&session_id).map(|s| s.to_payload(&session_id)))
+    Ok(map
+        .get(&session_id)
+        .map(|s| s.to_payload(&session_id)))
 }

@@ -773,11 +773,16 @@ mod tests {
         for t in [&ta, &tb] {
             assert_eq!(t.len(), 36, "uuid 形态：{t}");
             assert_eq!(t.matches('-').count(), 4, "uuid 形态：{t}");
-            assert!(t.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+            assert!(
+                t.chars()
+                    .all(|c| c == '-' || c.is_ascii_hexdigit())
+            );
         }
         // SPOOL_DIR：app_data_dir 在场即给出，目录名与常量同源
-        assert!(attr_env_get(&a, "WE_TERM_SPOOL_DIR")
-            .ends_with(crate::claude_runtime::script::SPOOL_DIR_NAME));
+        assert!(
+            attr_env_get(&a, "WE_TERM_SPOOL_DIR")
+                .ends_with(crate::claude_runtime::script::SPOOL_DIR_NAME)
+        );
     }
 
     /// PTY 透传：带 startup_command spawn（zsh/bash 走包装分支——该分支重建
@@ -804,7 +809,9 @@ mod tests {
             ),
             direct_command: None,
         };
-        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+        provider
+            .spawn(opts, Channel::new(|_| Ok(())))
+            .unwrap();
 
         // anchor 提前定义：break 守卫与断言共用（展开值锚点；回显行是字面
         // $WE_TERM_PANE 不含 session_id 值，不会误匹配）。
@@ -832,8 +839,16 @@ mod tests {
             .unwrap_or_else(|| panic!("WE_TERM_PANE 未透传，ring: {ring}"));
         // token：anchor 后紧跟 36 位 uuid（echo 单行输出，中间无 \r 插入）
         let token = &ring[pos + anchor.len()..pos + anchor.len() + 36];
-        assert_eq!(token.matches('-').count(), 4, "token 非 uuid 形态: {token}");
-        assert!(token.chars().all(|c| c == '-' || c.is_ascii_hexdigit()));
+        assert_eq!(
+            token.matches('-').count(),
+            4,
+            "token 非 uuid 形态: {token}"
+        );
+        assert!(
+            token
+                .chars()
+                .all(|c| c == '-' || c.is_ascii_hexdigit())
+        );
         // spool 路径 + 完整落行（防截断误判）
         let tail = &ring[pos..];
         assert!(
@@ -866,7 +881,9 @@ mod tests {
             startup_command: None,
             direct_command: Some("env".to_string()),
         };
-        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+        provider
+            .spawn(opts, Channel::new(|_| Ok(())))
+            .unwrap();
 
         // ring：env 输出含归因标（WE_TERM_PANE=<session_id>）。
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -900,7 +917,10 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        assert!(exited, "direct spawn 的 CLI 退出应置位会话 exited");
+        assert!(
+            exited,
+            "direct spawn 的 CLI 退出应置位会话 exited"
+        );
 
         provider.shutdown(&session_id).unwrap();
         let _ = std::fs::remove_dir_all(&tmp);
@@ -924,7 +944,9 @@ mod tests {
             startup_command: None,
             direct_command: Some("echo WE_DIRECT_FALLBACK_OK".to_string()),
         };
-        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+        provider
+            .spawn(opts, Channel::new(|_| Ok(())))
+            .unwrap();
 
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut ring = String::new();
@@ -980,7 +1002,9 @@ mod tests {
             startup_command: Some("claude -p 'reply with just: ok'".to_string()),
             direct_command: None,
         };
-        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+        provider
+            .spawn(opts, Channel::new(|_| Ok(())))
+            .unwrap();
 
         // 轮询 spool：SessionStart 与 Stop 都到场（claude -p 跑完自动退出）。
         let spool_file = base
@@ -1004,13 +1028,19 @@ mod tests {
         }
         provider.shutdown(&session_id).unwrap();
 
-        let names: Vec<&str> = payloads.iter().map(|p| p.hook_event_name.as_str()).collect();
+        let names: Vec<&str> = payloads
+            .iter()
+            .map(|p| p.hook_event_name.as_str())
+            .collect();
         assert!(
             names.contains(&"SessionStart"),
             "事件链缺 SessionStart，实收: {names:?}（spool: {}）",
             spool_file.display()
         );
-        assert!(names.contains(&"Stop"), "事件链缺 Stop，实收: {names:?}");
+        assert!(
+            names.contains(&"Stop"),
+            "事件链缺 Stop，实收: {names:?}"
+        );
         // 全部行携带同一非空 launch_token——空值即 env 注入断链，不同值即跨代污染。
         let tokens: Vec<&str> = payloads
             .iter()
@@ -1058,7 +1088,9 @@ mod tests {
             startup_command: None,
             direct_command: Some("claude -p 'reply with just: ok'".to_string()),
         };
-        provider.spawn(opts, Channel::new(|_| Ok(()))).unwrap();
+        provider
+            .spawn(opts, Channel::new(|_| Ok(())))
+            .unwrap();
 
         // 轮询 spool：SessionStart 与 Stop 都到场（claude -p 跑完自动退出）。
         let spool_file = base
@@ -1082,13 +1114,19 @@ mod tests {
         }
         provider.shutdown(&session_id).unwrap();
 
-        let names: Vec<&str> = payloads.iter().map(|p| p.hook_event_name.as_str()).collect();
+        let names: Vec<&str> = payloads
+            .iter()
+            .map(|p| p.hook_event_name.as_str())
+            .collect();
         assert!(
             names.contains(&"SessionStart"),
             "事件链缺 SessionStart，实收: {names:?}（spool: {}）",
             spool_file.display()
         );
-        assert!(names.contains(&"Stop"), "事件链缺 Stop，实收: {names:?}");
+        assert!(
+            names.contains(&"Stop"),
+            "事件链缺 Stop，实收: {names:?}"
+        );
         let tokens: Vec<&str> = payloads
             .iter()
             .map(|p| p.launch_token.as_deref().unwrap_or(""))

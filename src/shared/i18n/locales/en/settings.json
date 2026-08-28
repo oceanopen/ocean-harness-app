@@ -74,7 +74,7 @@
       "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev.",
       "startupCodeCli": "Automatically run the selected coding CLI (e.g. claude) when the shell is ready after opening the embedded terminal for a task. \"None\" opens a plain shell",
       "scrollbackRows": "How many lines of history output you can scroll back through in the terminal. Applies immediately after saving. Larger values allow more history at higher memory cost",
-      "chatModeSwitch": "Only available when \"Auto-run on main terminal start\" is not set to \"None\"."
+      "chatModeSwitch": "Only available when \"Auto-run on main terminal start\" is not set to \"None\". After enabling, already-running terminal sessions need to be reopened to enter the Claude session directly and pick up status streaming."
     },
     "unit": {
       "seconds": "s"
