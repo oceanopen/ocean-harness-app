@@ -13,7 +13,8 @@ import (
 
 // SetupRouter 构造 gin engine：注册中间件与路由。
 //
-// 当前暴露 /api/baseInfo（系统信息）与 /api/tracker/*（tracker 业务域：workspace 等），均无需登录/鉴权。
+// 当前暴露 /api/baseInfo（系统信息）、/api/localRepository/*（本地仓库）、/api/issueWorkspace/*
+// （issue 运行工作空间初始化）与 /api/tracker/*（tracker 业务域：workspace 等），均无需登录/鉴权。
 // gin.SetMode 已在 config.MustLoad 中按环境变量完成。
 func SetupRouter() *gin.Engine {
 	r := gin.New()
@@ -30,7 +31,8 @@ func SetupRouter() *gin.Engine {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// 路由按命名空间分组：/api/baseInfo（系统信息）；/api/tracker/<module>/<action>（工作区/项目/issue 等管理域）。
+	// 路由按命名空间分组：/api/baseInfo（系统信息）；/api/localRepository、/api/issueWorkspace（独立顶层域）；
+	// /api/tracker/<module>/<action>（工作区/项目/issue 等管理域）。
 	apiGroup := r.Group("/api")
 	{
 		baseInfoGroup := apiGroup.Group("/baseInfo")
@@ -51,6 +53,15 @@ func SetupRouter() *gin.Engine {
 			localRepositoryGroup.POST("/refreshAll", controller.LocalRepository{}.RefreshAll)
 			localRepositoryGroup.POST("/getLocalBranches", controller.LocalRepository{}.GetLocalBranches)
 		}
+
+		// issueWorkspace 模块：issue 运行工作空间初始化（init 异步受理 + status 轮询读状态文件）。
+		// 与 /api/tracker/workspace（任务管理容器）是两个概念，故独立顶层分组。
+		issueWorkspaceGroup := apiGroup.Group("/issueWorkspace")
+		{
+			issueWorkspaceGroup.POST("/init", controller.IssueWorkspace{}.Init)
+			issueWorkspaceGroup.POST("/status", controller.IssueWorkspace{}.Status)
+		}
+
 		trackerGroup := apiGroup.Group("/tracker")
 		{
 			// workspace 模块：一律 POST（action 风格 getList/getInfo/create/update/delete）。
