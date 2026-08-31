@@ -1,6 +1,6 @@
 import type { PtyEvent } from '@src/shared/bindings';
 import { commands } from '@src/shared/bindings';
-import { logOnError, safeAwait, unwrap } from '@src/shared/commands';
+import { unwrap } from '@src/shared/commands';
 import { Channel } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -22,11 +22,9 @@ export interface UsePtySessionResult {
   write: (data: string) => void;
   // 尺寸变化 → ptyResize（TerminalView onResize 接入；稳定引用）
   resize: (cols: number, rows: number) => void;
-  // 重开：对已退出会话重新走 spawn 编排（后端移除旧会话重起）。
-  // claudeCommand：本次 spawn 的 claude 命令串（'claude'，或 T5.2 的
-  // 'claude --resume <id>'），一次性顶替 directCommand 直启（chat 退役后
-  // 注入路径已删，claude 启动恒走 direct spawn——含配置 none 的手动重开场景）。
-  reopen: (claudeCommand?: string) => void;
+  // 重开：对已退出会话重新走 spawn 编排（后端移除旧会话重起），
+  // 按配置 directCommand 直启（配置 none 裸 shell / 配置 claude 起新会话）。
+  reopen: () => void;
   // 关闭终端：ptyShutdown 杀 shell + 移出 store（组件随后进 exited 语义，可重开）
   close: () => void;
 }
@@ -82,18 +80,6 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   }
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
-  // CLI 集成即装工作区 hooks（claude_orca T6.1）：本次 spawn 含 CLI 意图
-  // （配置直启或一次性 claude 覆盖——attach 收到的已是路由后的 effective 值）
-  // → spawn 前幂等安装（claude 启动时读 settings，装完即生效；内容相同零写）。
-  // 失败（typedError 与 invoke reject 两类，commands.ts 双 failure 模型）都只
-  // warn 不阻塞 spawn——hook 链路缺席时 resume 无记录回落裸 claude，无功能阻塞。
-  // 活会话 reattach 命中即返回，走不到此处：运行中会话不重装（重启会话后生效）。
-  if (args.directCommand != null) {
-    await safeAwait(
-      logOnError(commands.ensureWorkspaceHooks(cwd), `pty:${sessionId}`),
-      `pty:${sessionId}`,
-    );
-  }
   const spawned = await unwrap(
     commands.ptySpawn({ sessionId, cwd, cols, rows, directCommand: args.directCommand ?? undefined }, channel),
   );
@@ -108,12 +94,6 @@ export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onDat
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 重开/重试驱动：attempt 自增触发 effect 重跑编排
   const [attempt, setAttempt] = useState(0);
-  // 一次性 claude 命令覆盖（reopen(claudeCommand) 置位，attach 取用即清）：
-  // 「重开并启动 claude」语义（T5.2：可能带 --resume）。不走 state——
-  // directCommand 在 attachKey 与 effect deps 里，覆盖值持久生效会与后续配置
-  // 变化耦合，违反一次性语义（函数式范式：外部触发的瞬时意图 → ref 桥，
-  // 勿渲染消费）。
-  const claudeOverrideRef = useRef<string | null>(null);
   // attach 期间 fit 已经上报的最新尺寸：attach 完成前 ptyResize 会因会话不存在
   // 被后端拒（日志实证），就绪后按积压值补发一次，保证 PTY winsize 与前端一致。
   const pendingSizeRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -150,13 +130,7 @@ export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onDat
       }
     };
 
-    // 一次性覆盖取用即清（本编排生效后续轮次回落配置值）。chat 退役后注入路径
-    // 已删：覆盖恒顶替 direct 串直启（配置在场则替换、缺席则顶上——含配置
-    // none 的「重开并启动 claude」场景）。
-    const override = claudeOverrideRef.current;
-    claudeOverrideRef.current = null;
-    const effectiveDirect = override ?? directCommand;
-    attach({ sessionId, cwd, cols, rows, directCommand: effectiveDirect, onData }, onEvent)
+    attach({ sessionId, cwd, cols, rows, directCommand, onData }, onEvent)
       .then((next) => {
         if (cancelled) {
           return;
@@ -197,10 +171,7 @@ export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onDat
     });
   }, [sessionId]);
 
-  const reopen = useCallback((claudeCommand?: string) => {
-    if (claudeCommand != null) {
-      claudeOverrideRef.current = claudeCommand;
-    }
+  const reopen = useCallback(() => {
     setAttempt(n => n + 1);
   }, []);
 

@@ -148,27 +148,6 @@ export const commands = {
 	 *  校验路径非空绝对路径后 std::fs::create_dir_all。
 	 */
 	createDirectory: (path: string) => typedError<null, string>(__TAURI_INVOKE("create_directory", { path })),
-	/**
-	 *  Tauri 命令：前端 spawn 前调用（幂等）。cwd = 工作区目录
-	 *  （`${workspace_base_dir}/${issueId}`，usePtySession 派生先例）。
-	 */
-	ensureWorkspaceHooks: (cwd: string) => typedError<null, string>(__TAURI_INVOKE("ensure_workspace_hooks", { cwd })),
-	/**
-	 *  查询单 pane 运行时快照（T5.2 resume 查询唯一入口）：EmbeddedTerminal
-	 *  「重开并启动 claude」据此取 claudeSessionId 拼 `claude --resume <id>`。
-	 *  key 即 PTY session_id（issueId::paneId）；Ok(None) = 该 pane 无绑定
-	 *  （hook 链路未生效或从未跑过 claude），前端回落裸 claude。
-	 */
-	claudeRuntimeState: (sessionId: string) => typedError<{
-	/**  pane 锚点（issueId::paneId，store key）。 */
-	pane: string,
-	/**  transcript JSONL 绝对路径（SessionStart 绑定）。 */
-	transcriptPath: string | null,
-	/**  claude 会话 ID（resume 用）。 */
-	claudeSessionId: string | null,
-	/**  最后更新时间（毫秒时间戳）。 */
-	lastUpdatedAt: number,
-} | null, string>(__TAURI_INVOKE("claude_runtime_state", { sessionId })),
 };
 
 /* Constants */
@@ -179,8 +158,6 @@ export const DEFAULT_POLL_INTERVAL_SECS = 120 as const;
 export const DEFAULT_TERMINAL_POST_OPEN_COMMAND = "" as const;
 
 export const EVENT_APP_CONFIG_CHANGED = "app-config-changed" as const;
-
-export const EVENT_CLAUDE_RUNTIME_CHANGED = "claude-runtime:changed" as const;
 
 export const EVENT_CLAUDE_SESSIONS_CHANGED = "claude-sessions:changed" as const;
 
@@ -230,21 +207,6 @@ export type AppConfigChangedPayload = {
 	key: string,
 	/**  新值（配置统一以字符串形式存储，订阅方按 key 自行 decode）。 */
 	value: string,
-};
-
-/**
- *  runtime 状态变更事件载荷（`claude-runtime:changed`）。ingest 归一化后 emit，
- *  前端 useClaudeRunning latch 按 pane 过滤订阅（「启动 claude」按钮置灰加速）。
- */
-export type ClaudeRuntimeChangedPayload = {
-	/**  pane 锚点（issueId::paneId，store key）。 */
-	pane: string,
-	/**  transcript JSONL 绝对路径（SessionStart 绑定）。 */
-	transcriptPath: string | null,
-	/**  claude 会话 ID（resume 用）。 */
-	claudeSessionId: string | null,
-	/**  最后更新时间（毫秒时间戳）。 */
-	lastUpdatedAt: number,
 };
 
 /**
@@ -412,11 +374,11 @@ export type SpawnOpts = {
 	rows: number,
 	/**
 	 *  直接 spawn 命令（claude_orca T5.1，唯一自动执行路径）：整串命令，首
-	 *  token 为 CLI 名（如 "claude"，T5.2 的 "claude --resume <id>" 同形）。
-	 *  在场时无 shell 中转——PTY 直接 exec CLI（T1.4 归因 env 打标照常注入），
-	 *  CLI 退出即 pane 退出（无 shell 回落，走 exited UI；跑普通命令用附加
-	 *  pane）。CLI 路径经 login shell 探测解析，失败回落普通裸 shell（warn
-	 *  log，用户可手动启动）。reattach/复用分支不重直启。
+	 *  token 为 CLI 名（如 "claude --model xxx" 的 "claude"）。
+	 *  在场时无 shell 中转——PTY 直接 exec CLI（注入 login PATH：GUI app env
+	 *  缺 nvm/volta 目录），CLI 退出即 pane 退出（无 shell 回落，走 exited
+	 *  UI；跑普通命令用附加 pane）。CLI 路径经 login shell 探测解析，失败
+	 *  回落普通裸 shell（warn log，用户可手动启动）。reattach/复用分支不重直启。
 	 */
 	directCommand?: string | null,
 };

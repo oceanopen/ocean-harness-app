@@ -106,14 +106,9 @@ interface TerminalViewProps {
   onData: (data: string) => void;
   // 尺寸变化（addon-fit 实测后的 cols/rows）。同上要求稳定引用。
   onResize: (cols: number, rows: number) => void;
-  // 会话已退出：终端交互禁用 + 整块居中「会话已结束」覆盖层 + 重开按钮组
+  // 会话已退出：终端交互禁用 + 整块居中「会话已结束」覆盖层 + 新开终端按钮
   exited: boolean;
   onReopen: () => void;
-  // 恢复上次会话（terminal_03 §3.2 → claude_orca T5.2，原称「重开并启动 claude」）：
-  // reopen 一次性覆盖启动命令——runtime 快照有会话记录则 `claude --resume <id>`
-  // 恢复上下文（direct 直启，路由在 usePtySession），无记录裸 claude。恒显示
-  // （用户 exit claude 后一键回到上次会话）。
-  onReopenClaude: () => void;
   // 本终端 claude 运行态（pid 父链匹配探测，useClaudeRunning）：跑着→按钮置灰；
   // 退出→恢复可用。驱动「启动 claude」按钮禁用态。
   claudeRunning: boolean;
@@ -139,7 +134,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, onReopenClaude, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -538,7 +533,6 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
         >
           <Typography variant="body2" color="text.secondary">会话已结束</Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button size="small" onClick={onReopenClaude}>恢复上次会话</Button>
             <Button size="small" onClick={onReopen}>新开终端</Button>
           </Box>
         </Box>

@@ -68,9 +68,6 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 # 嵌入式终端 PTY（dev workbench 一 issue 一终端）。纯阻塞 API，reader 线程配 std::thread，
 # 不引入 tokio；依赖树仅 libc/nix/serial2 等原生库。0.8 已过时，0.9 API 一致（已 spike 验证）。
 portable-pty = "0.9"
-# PTY spawn 代际标（claude_runtime T1.4，WE_TERM_LAUNCH_TOKEN）：每次 spawn 新 v4。
-# v1 已在依赖树（tauri 传递），此处仅声明直接引用，无新增外部 crate。
-uuid = { version = "1", features = ["v4"] }
 
 # macOS 原生窗口操作（shared/window_show 的 orderFront: 不激活呈现）。
 # 0.6 已在依赖树（tauri/tao 传递），此处仅声明直接引用，无新增外部 crate。

@@ -1,7 +1,7 @@
 // tauri-specta commands.xxx() 的返回类型分两类：
 //   - 命令返回 Result<T, E>：包装为 CommandResult 联合类型（status: 'ok' | 'error'）
 //   - 命令返回裸 T（无 Result）：直接 Promise<T>，错误时 invoke 抛 reject
-// unwrap / logOnError 处理前者；safeAwait 处理后者。所有 commands 调用应统一使用其一。
+// unwrap / logOnError 处理前者；后者直接 .catch 处理。
 
 export type CommandResult<T, E = string>
   = | { status: 'ok'; data: T }
@@ -24,15 +24,5 @@ export async function logOnError<T, E>(
   const r = await p;
   if (r.status === 'error') {
     console.warn(`[${tag}]`, r.error);
-  }
-}
-
-// 适合无 Result 包装的命令（错误时 invoke reject 而非返回 typedError）：
-// 错误时仅打 warn，不抛出。
-export async function safeAwait<T>(p: Promise<T>, tag: string): Promise<void> {
-  try {
-    await p;
-  } catch (e) {
-    console.warn(`[${tag}]`, e);
   }
 }

@@ -10,11 +10,6 @@ pub const EVENT_APP_CONFIG_CHANGED: &str = "app-config-changed";
 /// rescan（fs watcher / 兜底轮询）末尾触发；ClaudeSessionsPage 据此 setSessions 增量刷新。
 pub const EVENT_CLAUDE_SESSIONS_CHANGED: &str = "claude-sessions:changed";
 
-/// claude runtime 会话绑定变更时广播（payload = `ClaudeRuntimeChangedPayload`）。
-/// ingest 归一化 spool 行（chat 退役后仅 SessionStart 绑定）后 emit；前端
-/// useClaudeRunning latch 据此驱动「启动 claude」按钮即时置灰。
-pub const EVENT_CLAUDE_RUNTIME_CHANGED: &str = "claude-runtime:changed";
-
 /// 终端跳转失败时广播（payload = `SessionNavFailed`）。
 /// navigate_to_claude_session 命令失败时 emit；ClaudeSessionsPage / PetClaudeSessionsTaskApp 据此弹 toast。
 pub const EVENT_CLAUDE_SESSION_NAV_FAILED: &str = "claude-sessions:nav-failed";

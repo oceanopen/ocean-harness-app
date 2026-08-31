@@ -20,8 +20,3 @@ export { EVENT_PANEL_SHOWN } from './bindings';
 export { EVENT_SETTINGS_NAVIGATE } from './bindings';
 
 export { EVENT_HTTP_SERVER_STATE_CHANGED } from './bindings';
-
-// claude runtime 会话绑定变更（T1.3，chat 退役裁剪后仅 SessionStart 绑定链）：
-// hook 事件经 Rust 归一化后 emit，useClaudeRunning latch 按 payload.pane 过滤
-// 订阅（「启动 claude」按钮置灰加速）。
-export { EVENT_CLAUDE_RUNTIME_CHANGED } from './bindings';

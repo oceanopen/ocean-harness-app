@@ -27,11 +27,11 @@ pub struct SpawnOpts {
     /// 初始行数。
     pub rows: u16,
     /// 直接 spawn 命令（claude_orca T5.1，唯一自动执行路径）：整串命令，首
-    /// token 为 CLI 名（如 "claude"，T5.2 的 "claude --resume <id>" 同形）。
-    /// 在场时无 shell 中转——PTY 直接 exec CLI（T1.4 归因 env 打标照常注入），
-    /// CLI 退出即 pane 退出（无 shell 回落，走 exited UI；跑普通命令用附加
-    /// pane）。CLI 路径经 login shell 探测解析，失败回落普通裸 shell（warn
-    /// log，用户可手动启动）。reattach/复用分支不重直启。
+    /// token 为 CLI 名（如 "claude --model xxx" 的 "claude"）。
+    /// 在场时无 shell 中转——PTY 直接 exec CLI（注入 login PATH：GUI app env
+    /// 缺 nvm/volta 目录），CLI 退出即 pane 退出（无 shell 回落，走 exited
+    /// UI；跑普通命令用附加 pane）。CLI 路径经 login shell 探测解析，失败
+    /// 回落普通裸 shell（warn log，用户可手动启动）。reattach/复用分支不重直启。
     #[serde(default)]
     pub direct_command: Option<String>,
 }
