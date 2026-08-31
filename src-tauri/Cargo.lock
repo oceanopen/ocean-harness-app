@@ -5172,6 +5172,7 @@ dependencies = [
  "log",
  "notify",
  "notify-debouncer-mini",
+ "objc2",
  "portable-pty",
  "rusqlite",
  "serde",

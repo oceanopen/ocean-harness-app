@@ -40,6 +40,10 @@ const URL_PATTERN = /https?:\/\/\S+/g;
 // ls 输出里到处是）。
 const FILE_PATH_PATTERN = /(\/[\w.@+-]+)*\/[\w.-]+\.(?:rs|ts|tsx|js|jsx|go|py|java|kt|c|h|cpp|hpp|json|toml|yaml|yml|md|txt|log|sh|sql|html|css)(?::\d+(?::\d+)?)?/g;
 
+// 工具栏高度（px）：工具栏自身高度与 exited 覆盖层的 top 偏移共用——后者须精确
+// 避开工具栏（保持关闭按钮可达），双写 magic number 会漏改。
+const TOOLBAR_HEIGHT = 28;
+
 // 匹配结果 → ILink[]（range 列 0-based index 转 1-based，end 含末字符）。
 function buildLinks(
   bufferLineNumber: number,
@@ -102,13 +106,13 @@ interface TerminalViewProps {
   onData: (data: string) => void;
   // 尺寸变化（addon-fit 实测后的 cols/rows）。同上要求稳定引用。
   onResize: (cols: number, rows: number) => void;
-  // 会话已退出：终端交互禁用 + 顶部「会话已结束」条 + 重开按钮
+  // 会话已退出：终端交互禁用 + 整块居中「会话已结束」覆盖层 + 重开按钮组
   exited: boolean;
   onReopen: () => void;
-  // 重开并启动 claude（terminal_03 §3.2 → claude_orca T5.2）：reopen 一次性
-  // 覆盖启动命令——runtime 快照有会话记录则 `claude --resume <id>` 恢复上下文
-  // （direct 直启，路由在 usePtySession），无记录裸 claude。恒显示（用户 exit
-  // claude 后一键回到 claude）。
+  // 恢复上次会话（terminal_03 §3.2 → claude_orca T5.2，原称「重开并启动 claude」）：
+  // reopen 一次性覆盖启动命令——runtime 快照有会话记录则 `claude --resume <id>`
+  // 恢复上下文（direct 直启，路由在 usePtySession），无记录裸 claude。恒显示
+  // （用户 exit claude 后一键回到上次会话）。
   onReopenClaude: () => void;
   // 本终端 claude 运行态（pid 父链匹配探测，useClaudeRunning）：跑着→按钮置灰；
   // 退出→恢复可用。驱动「启动 claude」按钮禁用态。
@@ -471,7 +475,7 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       {/* 工具栏：左侧 pane 标识（main pane 专属）+ 基础操作组 + 右侧关闭终端
           （aria-label，不挂 Tooltip）。exited 禁用策略：清屏/粘贴对死会话无意义；
           复制/搜索保留——scrollback 检索与历史复制仍有价值。 */}
-      <Box sx={{ height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.5 }}>
+      <Box sx={{ height: TOOLBAR_HEIGHT, flexShrink: 0, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.5 }}>
         {toolbarLabel != null && (
           <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', lineHeight: 1 }}>
             {toolbarLabel}
@@ -511,25 +515,32 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       {searchOpen && searchAddonRef.current != null && (
         <TerminalSearch searchAddon={searchAddonRef.current} background={theme.background} onClose={closeSearch} />
       )}
+      {/* 会话已结束覆盖层（体验优化）：整块实色覆盖（background.paper）+ 垂直居中，
+          对齐 mainClosed「重新打开终端」占位视图形态；工具栏保留（关闭按钮仍可达），
+          底部 canvas 被完全遮盖（其 dim/pointerEvents 逻辑维持不变，无副作用）。 */}
       {exited && (
         <Box
           sx={{
             position: 'absolute',
-            top: 28,
+            top: TOOLBAR_HEIGHT,
             left: 0,
             right: 0,
+            bottom: 0,
             zIndex: 1,
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 1,
-            py: 0.5,
-            bgcolor: 'action.hover',
+            gap: 1.5,
+            p: 2,
+            bgcolor: 'background.paper',
           }}
         >
-          <Typography variant="caption" color="text.secondary">会话已结束</Typography>
-          <Button size="small" onClick={onReopen} aria-label="重开终端">重开</Button>
-          <Button size="small" onClick={onReopenClaude} aria-label="重开并启动 claude">重开并启动 claude</Button>
+          <Typography variant="body2" color="text.secondary">会话已结束</Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button size="small" onClick={onReopenClaude}>恢复上次会话</Button>
+            <Button size="small" onClick={onReopen}>新开终端</Button>
+          </Box>
         </Box>
       )}
       <Box

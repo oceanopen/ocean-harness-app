@@ -10,6 +10,9 @@
 // pet 隐藏时由 hide_pet_claude_sessions_summary_window 命令直接调 hide_pet_claude_sessions_task_window，避免孤立悬浮列表。
 //
 // 位置每次 show 时重算，跟随 pet 当前位置；左屏边缘自动翻转到 pet 右侧，Y 夹紧 work_area。
+// show 走 orderFront 不激活呈现（shared/window_show）：悬浮面板不夺 key window——
+// 常规 show 会从 panel 终端抢走键盘焦点（回车后光标消失的根因）。已可见时短路，
+// 避免每次 count 变化重复定位 + show。
 
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
@@ -157,6 +160,11 @@ pub fn show_pet_claude_sessions_task_window(app: AppHandle) -> Result<(), String
     let Some(task_win) = app.get_webview_window(PET_CLAUDE_SESSIONS_TASK_LABEL) else {
         return Ok(());
     };
+    // 已可见短路：pet 前端每次 count 变化（>0）都会调本命令，重复定位 + show 无意义
+    // （可见期间 pet 移动的重对齐走 pet Moved → REFIT → fit 链路，不经本命令）。
+    if task_win.is_visible().unwrap_or(false) {
+        return Ok(());
+    }
     if let Some(pet) = app.get_webview_window("pet-claude-sessions-summary") {
         // 用窗口当前实际高度定位：re-show 时即上次 fit 保留的高度，避免默认高度导致的跳动；
         // 首次 show 前端尚未测量，当前高度即默认高度，后续 ResizeObserver 首回调会用实际高度覆盖。
@@ -174,7 +182,8 @@ pub fn show_pet_claude_sessions_task_window(app: AppHandle) -> Result<(), String
             let _ = task_win.set_position(LogicalPosition::new(x, y));
         }
     }
-    let _ = task_win.show();
+    // 不激活呈现（防抢 panel 终端焦点），机制详见 shared/window_show。
+    crate::shared::window_show::show_no_activate(&task_win);
     // show 后通知前端重新测量内容高度并回调 fit 刷新位置（统一可复用的重定位入口）。
     let _ = app.emit_to(
         PET_CLAUDE_SESSIONS_TASK_LABEL,

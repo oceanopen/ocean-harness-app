@@ -81,10 +81,10 @@ fn pet_visible_pref(app: &AppHandle) -> bool {
     }
 }
 
-/// 创建或显示桌宠窗口。已存在则直接 show。
+/// 创建或显示桌宠窗口。已存在则直接 show（不激活呈现，不夺 key window）。
 pub fn ensure_pet_claude_sessions_summary_window(app: &AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window("pet-claude-sessions-summary") {
-        let _ = w.show();
+        crate::shared::window_show::show_no_activate(&w);
         return Ok(());
     }
 
@@ -156,7 +156,8 @@ pub fn ensure_pet_claude_sessions_summary_window(app: &AppHandle) -> tauri::Resu
         }
     });
 
-    let _ = win.show();
+    // 首次 show 同样不激活（启动自启 / 设置开启场景不抢当前窗口焦点）。
+    crate::shared::window_show::show_no_activate(&win);
     Ok(())
 }
 
@@ -188,7 +189,8 @@ pub fn toggle_pet_claude_sessions_summary_window(app: AppHandle) -> Result<bool,
             let _ = w.hide();
             false
         } else {
-            let _ = w.show();
+            // 托盘/设置开启桌宠：不激活呈现，不抢当前窗口焦点。
+            crate::shared::window_show::show_no_activate(&w);
             true
         }
     } else {

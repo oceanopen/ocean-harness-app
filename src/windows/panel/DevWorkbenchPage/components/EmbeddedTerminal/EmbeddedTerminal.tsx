@@ -217,21 +217,22 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
 
   // 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 写入 claude\r。
   // 运行态探测（按钮置灰）走 useClaudeRunning——进程真相（pid 父链匹配），
-  // 非输出流启发式。exited 覆盖条的「重开并启动 claude」保留（reopenWithClaude
+  // 非输出流启发式。exited 覆盖层的「恢复上次会话」保留（reopenWithClaude
   // 拼串，覆盖路由在 usePtySession）。
   const claudeRunning = useClaudeRunning(sessionId, session.status);
   const startClaude = useCallback(() => {
     session.write('claude\r');
   }, [session]);
-  // 「重开」（裸 shell）须包一层防 MouseEvent 误传 reopen 的 claude 形参。
+  // 「新开终端」须包一层防 MouseEvent 误传 reopen 的 claude 形参。按配置直启：
+  // 配置 none 裸 shell / 配置 claude 起新 claude 会话。
   const reopenPlain = useCallback(() => {
     session.reopen();
   }, [session]);
-  // 「重开并启动 claude」（T5.2 resume）：查 runtime 快照取该 pane 最后
+  // 「恢复上次会话」（T5.2 resume）：查 runtime 快照取该 pane 最后
   // claudeSessionId（快照 hydrate 跨 app 重启保留绑定），有则
   // `claude --resume <id>`（direct 直启，路由在 usePtySession），无记录
   // 或查询失败裸 'claude'。id 失效时 claude 启动即退，自然回落 exited UI，
-  // 用户可点「重开」开新会话。
+  // 用户可点「新开终端」开新会话。
   const reopenWithClaude = useCallback(() => {
     void commands.claudeRuntimeState(sessionId)
       .then((res) => {
