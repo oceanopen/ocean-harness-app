@@ -12,8 +12,8 @@ import (
 
 // issueWorkspace 后台执行编排：init 受理方把合并后的状态（PENDING）连同进程级 logger 交给
 // issueWorkspaceRunSteps，由其串行执行步骤、逐步落盘（纯状态文件驱动，不碰 DB 与请求 ctx）。
-// 未注册实现的步骤置 SKIPPED 占位——T1.2（sshConfig）/T1.3（mcpConfig）/T1.4（cloneRepos）落地时
-// 在各自 step 文件内按 issueWorkspaceStepRunner 签名补注册实现，编排逻辑不再改。
+// 未注册实现的步骤置 SKIPPED 占位——新增步骤时在各自 step 文件内按 issueWorkspaceStepRunner
+// 签名注册实现，编排逻辑不再改。
 
 // issueWorkspaceStepRunner 单个初始化步骤的执行函数签名（T1.2/T1.3/T1.4 的实现按同签名注册）。
 // 协议：返回 nil 即步骤正常收尾（编排置 SUCCESS）；步骤无事可做（降级跳过）时 runner 自行置
@@ -33,7 +33,6 @@ var issueWorkspaceStepTitles = []struct {
 }{
 	{types.IW_STEP_KEY_CREATE_DIRS, "创建目录结构"},
 	{types.IW_STEP_KEY_SSH_CONFIG, "生成 SSH Config"},
-	{types.IW_STEP_KEY_MCP_CONFIG, "生成 MCP Config"},
 	{types.IW_STEP_KEY_CLONE_REPOS, "Clone 仓库与分支"},
 }
 
@@ -71,7 +70,7 @@ func issueWorkspaceRunSteps(state *types.IssueWorkspaceState, logger *zap.Logger
 		}
 		runner, ok := issueWorkspaceStepRunners[step.Key]
 		if !ok {
-			// 本期占位步骤（sshConfig/mcpConfig/cloneRepos）：置 SKIPPED，待 T1.2/T1.3/T1.4 注册实现。
+			// 未注册实现的占位步骤：置 SKIPPED，待后续任务注册实现。
 			step.Status = types.IW_STATUS_SKIPPED
 			for _, repo := range step.Repos {
 				repo.Status = types.IW_STATUS_SKIPPED

@@ -86,7 +86,7 @@ interface WorkspaceInitGateProps {
  * WorkspaceInitGate：工作空间初始化闸门（T1.5）——选中 issue 后先走三段式初始化引导，
  * SUCCESS 才渲染终端。占位整个右侧内容区（期间仅顶部 issue 标题栏与本面板）：
  *  ① 初始化工作空间目录（后端 createDirs，无则创建有则秒过）
- *  ② 工作空间初始化（sshConfig / mcpConfig / cloneRepos 工程化步骤，cloneRepos 展开仓库级进度）
+ *  ② 工作空间初始化（sshConfig / cloneRepos 工程化步骤，cloneRepos 展开仓库级进度）
  *  ③ 启动 Claude 终端 / 启动终端（文案按 startupCodeCli 配置区分）
  * 右上角「初始化」按钮（DevWorkbenchPage）与面板按钮共用 useInitIssueWorkspace——同一 query key
  * 订阅，任一触发面板自动切换状态。

@@ -45,10 +45,13 @@ impl LocalPtyProvider {
     }
 
     /// 起一个新 shell 会话并入库（不检查已存在——调用方 spawn 决定复用/重起）。
+    /// envs 为业务环境变量，统一在 spawn 前注入（plain shell 与 CLI 直启两分支都生效，
+    /// shell 内手动跑 claude 同样受益）。
     fn spawn_fresh(
         &self,
         opts: &SpawnOpts,
         listener: Channel<PtyEvent>,
+        envs: &[(String, String)],
     ) -> Result<PtySpawned, String> {
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -100,6 +103,13 @@ impl LocalPtyProvider {
                     );
                 }
             }
+        }
+
+        // 业务 env 注入（如 WE_TERMINAL_PORT）：统一在此点注入，两条构造分支（裸 shell /
+        // CLI 直启重建的 cmd）都覆盖。 portable-pty CommandBuilder 默认继承父进程 env，
+        // env() 在其上追加/覆盖。
+        for (k, v) in envs {
+            cmd.env(k, v);
         }
 
         let child = pair
@@ -197,7 +207,12 @@ fn resolve_shell() -> (String, Vec<String>) {
 
 impl PtyProvider for LocalPtyProvider {
     /// 启动会话（幂等）：未退出复用 + 换装 listener；已退出移除重起（重开语义）。
-    fn spawn(&self, opts: SpawnOpts, listener: Channel<PtyEvent>) -> Result<PtySpawned, String> {
+    fn spawn(
+        &self,
+        opts: SpawnOpts,
+        listener: Channel<PtyEvent>,
+        envs: &[(String, String)],
+    ) -> Result<PtySpawned, String> {
         // 目录预检：portable-pty 对不存在的 cwd 不报错而是静默回退到父进程 cwd
         // （实测 shell 会起在家目录），违背「spawn 失败自然暴露」的设计预期。
         // 显式校验让前端走「任务目录不存在」错误态。
@@ -230,7 +245,7 @@ impl PtyProvider for LocalPtyProvider {
                     return Ok(spawned);
                 }
                 // 惊人罕见：刚才还在、此刻没了（并发 shutdown）——走全新 spawn。
-                self.spawn_fresh(&opts, listener)
+                self.spawn_fresh(&opts, listener, envs)
             }
             // 已退出：移除旧会话（kill 兜底）后重起。
             Some(false) => {
@@ -244,10 +259,10 @@ impl PtyProvider for LocalPtyProvider {
                         let _ = session.shutdown();
                     }
                 }
-                self.spawn_fresh(&opts, listener)
+                self.spawn_fresh(&opts, listener, envs)
             }
             // 不存在：全新 spawn。
-            None => self.spawn_fresh(&opts, listener),
+            None => self.spawn_fresh(&opts, listener, envs),
         }
     }
 
@@ -395,13 +410,13 @@ mod tests {
 
         // 无 webview 环境 Channel 以裸 id 构造（send 会失败，但换装/复用逻辑可验证）。
         let spawned = provider
-            .spawn(opts.clone(), Channel::new(|_| Ok(())))
+            .spawn(opts.clone(), Channel::new(|_| Ok(())), &[])
             .unwrap();
         assert!(spawned.fresh, "首次 spawn 应是新会话");
 
         // 幂等：未退出会话重复 spawn → 复用（fresh=false）。
         let again = provider
-            .spawn(opts.clone(), Channel::new(|_| Ok(())))
+            .spawn(opts.clone(), Channel::new(|_| Ok(())), &[])
             .unwrap();
         assert!(!again.fresh, "重复 spawn 应复用现有会话");
         assert_eq!(again.session_id, session_id);
@@ -453,6 +468,7 @@ mod tests {
                     direct_command: None,
                 },
                 Channel::new(|_| Ok(())),
+                &[],
             )
             .unwrap();
 
@@ -517,6 +533,7 @@ mod tests {
                         direct_command: None,
                     },
                     Channel::new(|_| Ok(())),
+                    &[],
                 )
                 .unwrap();
         }
@@ -556,7 +573,7 @@ mod tests {
             direct_command: Some("env".to_string()),
         };
         provider
-            .spawn(opts, Channel::new(|_| Ok(())))
+            .spawn(opts, Channel::new(|_| Ok(())), &[])
             .unwrap();
 
         // ring：env 打印出基础变量（PATH 恒在场，即直启命令已被执行）。
@@ -618,7 +635,7 @@ mod tests {
             direct_command: Some("echo WE_DIRECT_FALLBACK_OK".to_string()),
         };
         provider
-            .spawn(opts, Channel::new(|_| Ok(())))
+            .spawn(opts, Channel::new(|_| Ok(())), &[])
             .unwrap();
 
         // shell 起动留时间（若命令被注入执行会在 ring 出现标记——回落语义下永无）。

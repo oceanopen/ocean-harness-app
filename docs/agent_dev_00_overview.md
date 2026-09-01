@@ -43,7 +43,9 @@
 
 ### 2.1 Ocean Claude Plugins（`~/MyFiles/Project/ocean-claude-plugins`）
 
-**定位**：自建 Claude Plugin 项目，包含 ocean-code-plugin。
+**定位**：自建 Claude Plugin 项目（marketplace：ocean-claude-plugins），包含 ocean-code-plugin
+（通用研发技能）与 ocean-harness-plugin（issue 流程专用：refine-issue/agent-dev 等 skill +
+we-terminal MCP 捆绑）。
 
 **现有 Skill**：
 
@@ -59,7 +61,7 @@
 **关键启发**：
 - feature-dev 已有成熟的9阶段流程，F3 需要的是**将 issue 上下文注入**而非重新开发
 - git-commit/git-auto-commit-push 可直接复用
-- **需要新增**：`/ocean-code:create-pr`（生成 PR）、`/ocean-code:refine-issue`（AI 需求润色/子任务拆分）
+- **需要新增**：`/ocean-harness:create-pr`（生成 PR）、`/ocean-harness:refine-issue`（AI 需求润色/子任务拆分）
 
 ---
 
@@ -145,7 +147,7 @@ workspace_base_dir/{issueId}/
 └── CLAUDE.md               # [AI 生成] 动态上下文（issue 详情、子任务列表、当前进度）
 ```
 
-> **AGENT.md / CLAUDE.md 由 AI 生成，不由工程化初始化生成**。原因：这两个文件需要 AI 理解代码库结构和需求内容后才能写出有价值的内容，工程化只能生成空壳。它们在 AI 需求润色阶段（F2）由 `/ocean-code:refine-issue` Skill 首次生成，后续随任务进展动态更新。
+> **AGENT.md / CLAUDE.md 由 AI 生成，不由工程化初始化生成**。原因：这两个文件需要 AI 理解代码库结构和需求内容后才能写出有价值的内容，工程化只能生成空壳。它们在 AI 需求润色阶段（F2）由 `/ocean-harness:refine-issue` Skill 首次生成，后续随任务进展动态更新。
 
 > **SSH 策略**：按需生成 workspace 级 `.ssh/config`。遍历 issue 关联仓库的 SSH URL，提取 hostname，从全局 `~/.ssh/config` 匹配对应 Host 段，只将匹配的段写入 workspace `.ssh/config`。**不复制私钥**——`IdentityFile` 指向全局密钥原路径（如 `~/.ssh/id_rsa_weoa`）。git clone 时通过 `GIT_SSH_COMMAND="ssh -F <workspace>/.ssh/config"` 指定 config，实现按 issue 隔离且不失灵活性。
 
@@ -238,7 +240,7 @@ workspace_base_dir/{issueId}/
 - 当前进度（正在执行第 N 个子任务）
 - 注意事项/约束
 
-生成时机：`/ocean-code:refine-issue` Skill 执行时首次生成。
+生成时机：`/ocean-harness:refine-issue` Skill 执行时首次生成。
 更新时机：子任务状态变更时（agent-dev 通过 MCP 更新）、AI 润色完成时。
 
 #### 3.2.7 Git Clone 策略（留 worktree 口子）
@@ -275,7 +277,7 @@ Issue 详情页 → 点击「AI 润色」按钮
   │
   ├─ 检查工作空间是否已初始化 → 否则先触发 F1
   │
-  └─ 在终端中执行 /ocean-code:refine-issue
+  └─ 在终端中执行 /ocean-harness:refine-issue
       │
       ├─ Skill 读取仓库源码上下文（理解代码库结构）
       ├─ AI 分析需求：澄清歧义、补充边界条件
@@ -287,7 +289,7 @@ Issue 详情页 → 点击「AI 润色」按钮
       └─ 润色后的 issue 描述通过 MCP 更新 issue
 ```
 
-#### 3.3.2 新增 Skill：`/ocean-code:refine-issue`
+#### 3.3.2 新增 Skill：`/ocean-harness:refine-issue`
 
 ```markdown
 ---
@@ -298,7 +300,7 @@ description: AI 需求润色与子任务拆分，基于源码上下文澄清需�
 
 你是一位资深产品经理兼技术专家，正在帮助开发者梳理和澄清任务需求。
 
-# /ocean-code:refine-issue
+# /ocean-harness:refine-issue
 
 ## 流程
 
@@ -358,7 +360,7 @@ description: AI 需求润色与子任务拆分，基于源码上下文澄清需�
 #### 3.4.1 执行流程
 
 ```
-终端中执行 /ocean-code:agent-dev {issueId}
+终端中执行 /ocean-harness:agent-dev {issueId}
   │
   ├─ Skill 通过 MCP 工具获取 issue 信息（标题、描述、子任务列表）
   │
@@ -376,7 +378,7 @@ description: AI 需求润色与子任务拆分，基于源码上下文澄清需�
   └─ 全部完成 → 通过 MCP 更新 issue 状态
 ```
 
-#### 3.4.2 新增 Skill：`/ocean-code:agent-dev`
+#### 3.4.2 新增 Skill：`/ocean-harness:agent-dev`
 
 **设计决策**：新建独立 Skill，不改造 feature-dev。理由：
 - feature-dev 是"从零开始"的9阶段交互式流程，没有"根据任务 ID 拿任务描述"的概念
@@ -392,7 +394,7 @@ description: Agent 自动执行开发任务，按任务ID读取子任务并逐�
 
 你是一位自动化开发代理，负责根据已澄清的 issue 需求执行开发任务。
 
-# /ocean-code:agent-dev
+# /ocean-harness:agent-dev
 
 ## 流程
 
@@ -509,7 +511,7 @@ agent-dev 是**独立 Skill**，不复用 feature-dev 的调用链。但内部�
 
 #### 3.7.2 PR 生成（新增 Skill）
 
-新增 `/ocean-code:create-pr`：
+新增 `/ocean-harness:create-pr`：
 
 ```markdown
 ---
@@ -697,24 +699,33 @@ func (mt McpWeTerminalTool) IssueGetInfo(
 }
 ```
 
-#### 3.9.3 MCP 配置
+#### 3.9.3 MCP 配置（方案变更 2026-09-01：插件捆绑承载）
 
-在工作空间初始化时，自动生成 `.mcp.json`：
+MCP 以 plugin 方式驱动，不在工作空间初始化时生成 `.mcp.json`；配置放 ocean-claude-plugins
+的 `plugins/ocean-harness-plugin/`（issue 流程专用插件，后续 refine-issue/agent-dev 等
+skill 亦落此插件）根目录（插件安装即注册，免逐项审批；工具名带
+`mcp__plugin_ocean-harness_we-terminal__*` 前缀）：
 
 ```json
 {
   "mcpServers": {
     "we-terminal": {
-      "type": "streamableHttp",
-      "url": "http://localhost:13173/mcp/streamableHttp/weTerminal"
+      "type": "http",
+      "url": "http://127.0.0.1:${WE_TERMINAL_PORT:-9100}/mcp/streamableHttp/weTerminal"
     }
   }
 }
 ```
 
-Claude CLI 启动时会自动发现工作空间根目录下的 `.mcp.json`，连接 Go 后端的 MCP 端点。
+- `type` 取 Claude CLI 合法值 `http`（即 Streamable HTTP；`streamable-http` 为 kebab-case
+  别名，驼峰 `streamableHttp` 不是合法值）。插件 `.mcp.json` 支持 `${VAR:-default}` 展开
+  （与手工配置的 server 同一套环境变量语义）。
+- 端口注入：Rust `pty_spawn` spawn PTY 时注入 `WE_TERMINAL_PORT`（HttpServerState 的端口：
+  默认 dev=9000 / build=9100 / 用户配置覆盖）；外部终端无此 env 时回落默认 9100。
+- 插件更新生效：bump plugin.json 版本 → `claude plugin update` → `/reload-plugins`。
+- 工作空间初始化的 mcpConfig 步骤保留 SKIPPED 占位，未来需要 workspace 级单独支持时恢复。
 
-> **注**：pros-admin-server 使用 StreamableHTTP（`mcp.NewStreamableHTTPHandler`），Claude Code 原生支持 `streamableHttp` 类型的 MCP 配置。本期不需要 stdio transport。
+> **注**：pros-admin-server 使用 StreamableHTTP（`mcp.NewStreamableHTTPHandler`），Claude Code 原生支持 streamable HTTP 类型的 MCP 配置。本期不需要 stdio transport。
 
 ---
 
@@ -743,9 +754,9 @@ Claude CLI 启动时会自动发现工作空间根目录下的 `.mcp.json`，连
 | 序号 | 任务 | 依赖 | 涉及端 |
 |------|------|------|--------|
 | 2.1 | MCP Server（Go 版，嵌入 Go 后端，项目管理工具集；子任务复用 issue 父子关系） | 无 | Go（参考 pros-admin-server） |
-| 2.2 | 新增 `/ocean-code:refine-issue` Skill | 1.2, 2.1 | Skill |
+| 2.2 | 新增 `/ocean-harness:refine-issue` Skill | 1.2, 2.1 | Skill |
 | 2.3 | AGENT.md/CLAUDE.md 生成与动态更新（refine-issue 首次生成 + 子任务状态同步更新） | 2.1, 2.2 | Skill |
-| 2.4 | 新增 `/ocean-code:agent-dev` Skill | 2.2, 2.3 | Skill |
+| 2.4 | 新增 `/ocean-harness:agent-dev` Skill | 2.2, 2.3 | Skill |
 
 ### 阶段 3：UI 增强（P1，预计 2-3 天）
 
@@ -759,7 +770,7 @@ Claude CLI 启动时会自动发现工作空间根目录下的 `.mcp.json`，连
 
 | 序号 | 任务 | 依赖 | 涉及端 |
 |------|------|------|--------|
-| 4.1 | 新增 `/ocean-code:create-pr` Skill + GitHub MCP 工具 | 2.1 | Go MCP+Skill |
+| 4.1 | 新增 `/ocean-harness:create-pr` Skill + GitHub MCP 工具 | 2.1 | Go MCP+Skill |
 | 4.2 | agent-dev 完成后自动调用 git-auto-commit-push | 2.4 | Skill |
 | 4.3 | 完整流程端到端验证 | 全部 | 全端 |
 

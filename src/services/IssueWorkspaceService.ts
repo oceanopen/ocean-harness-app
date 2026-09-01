@@ -13,11 +13,13 @@ export type IssueWorkspaceStatus
     | 'INTERRUPTED' // 进程中断遗留（可重试）
     | 'SKIPPED'; // 步骤/仓库级：本期占位未实现
 
-/** 初始化步骤 key（固定顺序执行：createDirs → sshConfig → mcpConfig → cloneRepos）。 */
+/**
+ * 初始化步骤 key（固定顺序执行：createDirs → sshConfig → cloneRepos）。
+ *  注：mcpConfig 步骤已取消——MCP 配置由 ocean-code 插件捆绑提供（T1.3 方案变更）。
+ */
 export const ISSUE_WORKSPACE_STEP_KEY = {
   CREATE_DIRS: 'createDirs',
   SSH_CONFIG: 'sshConfig',
-  MCP_CONFIG: 'mcpConfig',
   CLONE_REPOS: 'cloneRepos',
 } as const;
 

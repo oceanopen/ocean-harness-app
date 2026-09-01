@@ -61,7 +61,7 @@ func init() {
 
 	mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
 		Name: "issue_workspace_status",
-		Description: "查询某 issue 运行工作空间的初始化状态（顶层结论 + createDirs/sshConfig/mcpConfig/" +
+		Description: "查询某 issue 运行工作空间的初始化状态（顶层结论 + createDirs/sshConfig/" +
 			"cloneRepos 各步骤与仓库级进度）。workspace 基目录取应用设置，无需传入。",
 	}, mcptool.McpWeTerminalTool{}.WorkspaceStatus)
 }

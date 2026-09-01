@@ -25,12 +25,13 @@ const (
 	IW_STATUS_SKIPPED         IssueWorkspaceStatus = "SKIPPED"         // 步骤/仓库级：本期占位未实现（后续任务接入）
 )
 
-// 初始化步骤 key（固定顺序执行：createDirs → sshConfig → mcpConfig → cloneRepos）。
+// 初始化步骤 key（固定顺序执行：createDirs → sshConfig → cloneRepos）。
+// 注：曾规划的 mcpConfig 步骤已取消——MCP 配置由 ocean-code 插件捆绑提供（T1.3 方案变更，
+// 见 docs/agent_dev_01_tasks.md），未来需要 workspace 级单独支持时再加回骨架。
 const (
 	IW_STEP_KEY_CREATE_DIRS = "createDirs" // 创建 {issueId}/.ssh、{issueId}/repo 目录结构
-	IW_STEP_KEY_SSH_CONFIG  = "sshConfig"  // 生成 .ssh/config（T1.2，本期占位）
-	IW_STEP_KEY_MCP_CONFIG  = "mcpConfig"  // 生成 .mcp.json（T1.3，本期占位）
-	IW_STEP_KEY_CLONE_REPOS = "cloneRepos" // clone 各仓库 + agent_{issueId} 分支（T1.4，本期占位）
+	IW_STEP_KEY_SSH_CONFIG  = "sshConfig"  // 生成 .ssh/config（T1.2）
+	IW_STEP_KEY_CLONE_REPOS = "cloneRepos" // clone 各仓库 + agent_{issueId} 分支（T1.4）
 )
 
 // IssueWorkspaceInitRequest 是 POST /api/issueWorkspace/init 的入参。

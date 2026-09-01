@@ -95,7 +95,7 @@ type WorkspaceStateContent struct {
 	IssueID   string                  `json:"issueId" jsonschema:"issue 主键"`
 	BaseDir   string                  `json:"baseDir" jsonschema:"工作空间根目录（绝对路径；各仓库在 {baseDir}/{issueId}/repo/{仓库名}）"`
 	Status    string                  `json:"status" jsonschema:"顶层状态（含义同 serverStatus，另含 SKIPPED）"`
-	Steps     []*WorkspaceStepContent `json:"steps" jsonschema:"各初始化步骤进度（固定顺序：createDirs→sshConfig→mcpConfig→cloneRepos）"`
+	Steps     []*WorkspaceStepContent `json:"steps" jsonschema:"各初始化步骤进度（固定顺序：createDirs→sshConfig→cloneRepos）"`
 	Manifest  []*WorkspaceRepoRefContent `json:"manifest" jsonschema:"已受理的仓库+基准分支清单（幂等键）"`
 	Error     string                  `json:"error,omitempty" jsonschema:"顶层失败原因"`
 	CreatedAt string                  `json:"createdAt" jsonschema:"受理时间（RFC3339）"`
@@ -104,7 +104,7 @@ type WorkspaceStateContent struct {
 
 // WorkspaceStepContent 是单个初始化步骤的进度镜像。
 type WorkspaceStepContent struct {
-	Key     string                     `json:"key" jsonschema:"步骤 key：createDirs/sshConfig/mcpConfig/cloneRepos"`
+	Key     string                     `json:"key" jsonschema:"步骤 key：createDirs/sshConfig/cloneRepos"`
 	Title   string                     `json:"title" jsonschema:"步骤中文名"`
 	Status  string                     `json:"status" jsonschema:"步骤状态：PENDING/RUNNING/SUCCESS/FAILED/SKIPPED(本期未实现占位)"`
 	Repos   []*WorkspaceRepoStateContent `json:"repos,omitempty" jsonschema:"仓库级子状态（仅 cloneRepos 步骤）"`
