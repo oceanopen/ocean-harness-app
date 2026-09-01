@@ -69,12 +69,13 @@ type IssueWorkspaceState struct {
 }
 
 // IssueWorkspaceStep 是单个全局步骤的进度。repos 仅 cloneRepos 步骤使用（仓库级子状态，
-// clone 进度载体；本期占位步骤整体置 SKIPPED）。
+// clone 进度载体）；message 为步骤级说明（如 SKIPPED 的降级原因）。
 type IssueWorkspaceStep struct {
-	Key    string                     `json:"key"`
-	Title  string                     `json:"title"`
-	Status IssueWorkspaceStatus       `json:"status"`
-	Repos  []*IssueWorkspaceRepoState `json:"repos,omitempty"`
+	Key     string                     `json:"key"`
+	Title   string                     `json:"title"`
+	Status  IssueWorkspaceStatus       `json:"status"`
+	Repos   []*IssueWorkspaceRepoState `json:"repos,omitempty"`
+	Message string                     `json:"message,omitempty"`
 }
 
 // IssueWorkspaceRepoState 是仓库级子状态（cloneRepos 步骤内逐仓库进度）。

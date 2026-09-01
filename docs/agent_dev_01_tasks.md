@@ -38,7 +38,7 @@
 
 ### T1.2 工作空间 SSH Config 按需生成
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：根据 issue 关联仓库的 SSH URL，从全局 `~/.ssh/config` 提取匹配 Host 段，生成 workspace 级 `.ssh/config`
 

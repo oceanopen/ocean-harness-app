@@ -16,6 +16,9 @@ import (
 // 在各自 step 文件内按 issueWorkspaceStepRunner 签名补注册实现，编排逻辑不再改。
 
 // issueWorkspaceStepRunner 单个初始化步骤的执行函数签名（T1.2/T1.3/T1.4 的实现按同签名注册）。
+// 协议：返回 nil 即步骤正常收尾（编排置 SUCCESS）；步骤无事可做（降级跳过）时 runner 自行置
+// step.Status = SKIPPED（可在 step.Message 附原因）并返回 nil，编排尊重该终态不再覆盖；
+// 返回 error 则编排置 FAILED 并终止后续步骤。
 type issueWorkspaceStepRunner func(state *types.IssueWorkspaceState, step *types.IssueWorkspaceStep, logger *zap.Logger) error
 
 // issueWorkspaceStepRunners 步骤实现注册表：key → 执行函数。未注册的步骤置 SKIPPED。
@@ -86,7 +89,10 @@ func issueWorkspaceRunSteps(state *types.IssueWorkspaceState, logger *zap.Logger
 			persist()
 			return
 		}
-		step.Status = types.IW_STATUS_SUCCESS
+		// runner 正常返回默认置 SUCCESS；runner 显式置 SKIPPED（降级跳过）则尊重之。
+		if step.Status != types.IW_STATUS_SKIPPED {
+			step.Status = types.IW_STATUS_SUCCESS
+		}
 		persist()
 	}
 	state.Status = types.IW_STATUS_SUCCESS
