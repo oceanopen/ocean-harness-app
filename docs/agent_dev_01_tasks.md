@@ -150,13 +150,13 @@
 
 ### T2.2 新增 Skill：`/ocean-harness:refine-issue`
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：AI 需求润色与子任务拆分，基于源码上下文澄清需求，首次生成 AGENT.md/CLAUDE.md
 
 **技术方案**：
 - 在 ocean-claude-plugins 项目新增 `plugins/ocean-harness-plugin/commands/refine-issue.md`（issue 流程 skill 统一落 ocean-harness 插件）
-- allowed-tools：Agent, AskUserQuestion, Read, Glob, Grep, Bash, MCP
+- allowed-tools：Agent, AskUserQuestion, Read, Glob, Grep, Bash, Write, Edit, mcp__plugin_ocean-harness_we-terminal
 - 流程：
   1. 通过 MCP 工具获取 issue 原始描述
   2. 读取仓库源码理解代码库结构
@@ -165,6 +165,21 @@
   5. 按需拆分子任务
   6. 首次生成 AGENT.md / CLAUDE.md
   7. 通过 MCP 回写子任务到 DB、更新 issue 描述
+
+**实施补充（2026-09-01 定稿）**：
+- 落地为 command + skill 契约分离：`commands/refine-issue.md`（四阶段流程编排）+
+  `skills/issue-context/SKILL.md`（AGENT.md/CLAUDE.md 模板契约、子任务拆分规范、进度段
+  更新规范）——模板单一真相源，T2.4 agent-dev 经 `skills: issue-context` 引用同一契约
+- 四阶段：定位与采集（cwd basename 推导 issueId + MCP 取上下文 + 增量检测 + Agent 探索
+  源码）→ 分析与澄清 → 成稿与确认（循环确认「确认回写」）→ 回写落盘
+- 回写顺序：AGENT.md → 子任务（create 记录返回 DB ID）→ CLAUDE.md（子任务表含 DB ID，
+  agent-dev 凭此更新状态）→ issue_update（description=结构化润色稿；仅当前为 BACKLOG
+  时流转 stateCode=TODO，父状态变化级联子任务）
+- 重复执行为增量模式：已有子任务默认保留，成稿时标注 [新增]/[保留]/[建议作废] 差异，
+  用户确认后回写；润色稿为结构化重写（背景/目标/需求明细/边界/验收标准），原始描述在
+  CLAUDE.md 原文存档
+- AGENT.md 首次生成为深入分析（Agent 并行探索代码库），已存在时仅增量补充不重写
+- 随附 plugin.json bump 1.1.0、插件 README 更新
 
 **依赖**：T2.1（MCP 工具）、T1.4（仓库已 clone 才能读源码）
 
