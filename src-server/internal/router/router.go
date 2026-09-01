@@ -8,13 +8,15 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"we-claude-terminal/go-server/internal/controller"
+	"we-claude-terminal/go-server/internal/mcpservers"
 	"we-claude-terminal/go-server/internal/middleware"
 )
 
 // SetupRouter 构造 gin engine：注册中间件与路由。
 //
 // 当前暴露 /api/baseInfo（系统信息）、/api/localRepository/*（本地仓库）、/api/issueWorkspace/*
-// （issue 运行工作空间初始化）与 /api/tracker/*（tracker 业务域：workspace 等），均无需登录/鉴权。
+// （issue 运行工作空间初始化）、/api/tracker/*（tracker 业务域：workspace 等）与
+// /mcp/streamableHttp/*（MCP 端点，供工作空间内 AI agent 调用），均无需登录/鉴权。
 // gin.SetMode 已在 config.MustLoad 中按环境变量完成。
 func SetupRouter() *gin.Engine {
 	r := gin.New()
@@ -107,6 +109,14 @@ func SetupRouter() *gin.Engine {
 			}
 		}
 	}
+
+	// MCP 端点（docs/agent_dev_01_tasks.md T2.1）：Streamable HTTP 三方法——POST（JSON-RPC
+	// 工具调用）、GET（服务端 SSE 流）、DELETE（会话终止），SDK StreamableHTTPHandler 内部
+	// 按 method 分支。路径按 server 扩展（/mcp/streamableHttp/<serverName>，后续 github 等
+	// 第三方 server 按同构追加）；T1.3 的 .mcp.json 将写入 http://127.0.0.1:<port> + 本路径，
+	// 变更须两端同步。无鉴权（本机单用户，与 /api 同口径），工具清单见 internal/mcpservers。
+	mcpHandler := gin.WrapH(mcpservers.McpWeTerminalStreamableHTTPHandler())
+	r.Match([]string{"GET", "POST", "DELETE"}, "/mcp/streamableHttp/weTerminal", mcpHandler)
 
 	return r
 }

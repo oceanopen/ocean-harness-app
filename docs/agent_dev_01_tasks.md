@@ -108,7 +108,7 @@
 
 ### T2.1 MCP Server（Go 版，项目管理工具集）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：Go 后端嵌入 MCP Server，提供 issue/子任务/工作空间查询与操作工具，供 Claude CLI 通过 MCP 协议调用
 

@@ -29,6 +29,7 @@ const (
 	EnvPort      = "GO_SERVER_PORT"       // HTTP 监听端口
 	EnvLogDir    = "GO_SERVER_LOG_DIR"    // 日志目录（绝对路径）
 	EnvSqliteDir = "GO_SERVER_SQLITE_DIR" // sqlite 数据目录（绝对路径）
+	EnvAppDb     = "GO_SERVER_APP_DB"     // Rust 侧 app.db 路径（app_config KV 表，Go 只读；可选）
 )
 
 // settingsFile 是 yaml 配置文件的结构（字段名采用 camelCase 对齐配置文件）。
@@ -38,6 +39,7 @@ type settingsFile struct {
 	Port      int    `yaml:"port"`      // HTTP 监听端口
 	LogDir    string `yaml:"logDir"`    // 日志目录（相对 src-server，运行时转绝对路径）
 	SqliteDir string `yaml:"sqliteDir"` // sqlite 数据目录（相对 src-server，运行时转绝对路径）
+	AppDb     string `yaml:"appDb"`     // Rust 侧 app.db 路径（可选；本地 air 自测模拟注入用）
 }
 
 // Config 是合并后的服务运行配置。
@@ -46,6 +48,7 @@ type Config struct {
 	Port      int    // HTTP 监听端口
 	LogDir    string // 日志目录（绝对路径）
 	SqliteDir string // sqlite 数据目录（绝对路径）
+	AppDbPath string // Rust 侧 app.db 路径（可选：空 = MCP workspace_status 工具调用期报未配置，不影响启动）
 }
 
 // MustLoadConfig 读取并校验配置。优先级：环境变量 > 配置文件（-config 指定，可选）。
@@ -75,6 +78,9 @@ func MustLoadConfig() *Config {
 	portStr := os.Getenv(EnvPort)
 	logDir := firstNonEmpty(os.Getenv(EnvLogDir), sf.LogDir)
 	sqliteDir := firstNonEmpty(os.Getenv(EnvSqliteDir), sf.SqliteDir)
+	// appDb 为可选字段（Rust spawn 注入；本地 air 自测可经 yaml 模拟）：缺失不报错，
+	// 仅 MCP workspace_status 工具调用期报「未配置」。文件归 Rust 所有，Go 只读、不 MkdirAll。
+	appDb := firstNonEmpty(os.Getenv(EnvAppDb), sf.AppDb)
 
 	// 3) 必填校验：mode / 两个目录均不可为空（env 与文件都未提供即缺失）。
 	if mode == "" {
@@ -134,6 +140,7 @@ func MustLoadConfig() *Config {
 		Port:      port,
 		LogDir:    logDirAbs,
 		SqliteDir: sqliteDirAbs,
+		AppDbPath: appDb,
 	}
 }
 

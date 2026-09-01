@@ -10,7 +10,9 @@
 // 配置全部走环境变量注入 Go 进程（不读配置文件）：
 //   GO_SERVER_MODE（dev 编译→test、build 编译→release）、
 //   GO_SERVER_PORT（默认 dev=9000/build=9100，可由系统设置「服务配置」覆盖）、
-//   GO_SERVER_LOG_DIR、GO_SERVER_SQLITE_DIR（均由 app_data_dir 派生，dev/build 自动隔离）。
+//   GO_SERVER_LOG_DIR、GO_SERVER_SQLITE_DIR（均由 app_data_dir 派生，dev/build 自动隔离）、
+//   GO_SERVER_APP_DB（可选：Rust 自身 app_config 库路径，Go MCP workspace_status 只读
+//   workspace_base_dir 用；解析失败缺省注入，Go 侧按「未配置」降级）。
 //
 // IPC：前端「服务状态」页通过 http_server_status 查询运行态与地址，通过 set_http_server_enabled
 //   开关服务（调 start_server/stop_server）。setup 时默认自动启动（开关默认 ON）。
@@ -562,16 +564,29 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     let port = resolve_server_port(app);
     state.set_port(port);
 
+    // 解析 Rust 自身 app_config 库路径（app_data_dir/app.db，与 resolve_dirs/app_config::init 同口径）：
+    // Go MCP workspace_status 工具只读共享该库取 workspace_base_dir。解析失败不阻断启动
+    // （缺省注入时 Go 侧按「未配置」降级，HTTP 服务是旁路的原则同样适用于此处）。
+    let app_db_path: Option<String> = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("app.db").to_string_lossy().into_owned());
+
     // sidecar 名复用当前 identifier（dev/build 各自的 conf 决定），自动区分环境。
     let sidecar_name = format!("{}-go_server_bin", app.config().identifier);
-    let (mut rx, child) = app
+    let mut sidecar_cmd = app
         .shell()
         .sidecar(&sidecar_name)
         .map_err(|e| format!("resolve {sidecar_name} sidecar failed: {e}"))?
         .env("GO_SERVER_MODE", state.mode)
         .env("GO_SERVER_PORT", port.to_string())
         .env("GO_SERVER_LOG_DIR", &state.log_dir)
-        .env("GO_SERVER_SQLITE_DIR", &state.sqlite_dir)
+        .env("GO_SERVER_SQLITE_DIR", &state.sqlite_dir);
+    if let Some(db_path) = &app_db_path {
+        sidecar_cmd = sidecar_cmd.env("GO_SERVER_APP_DB", db_path);
+    }
+    let (mut rx, child) = sidecar_cmd
         .spawn()
         .map_err(|e| format!("failed to spawn http-server sidecar: {e}"))?;
 

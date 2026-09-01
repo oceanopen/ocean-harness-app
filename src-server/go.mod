@@ -9,6 +9,8 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/uuid v1.6.0
+	github.com/kevinburke/ssh_config v1.6.0
+	github.com/modelcontextprotocol/go-sdk v0.2.0
 	github.com/pressly/goose/v3 v3.27.3
 	go.uber.org/zap v1.28.0
 	golang.org/x/text v0.40.0
@@ -39,7 +41,6 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.23 // indirect
@@ -55,6 +56,7 @@ require (
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.23.0 // indirect
