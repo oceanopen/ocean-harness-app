@@ -1,19 +1,24 @@
 import type { ProjectIssueResponseData } from '@src/services';
 import {
+  RestartAlt as RestartAltIcon,
   ViewSidebar as ViewSidebarIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
 } from '@mui/icons-material';
-import { Box, Chip, CircularProgress, IconButton, Typography, useTheme } from '@mui/material';
+import { Box, Chip, CircularProgress, IconButton, Tooltip, Typography, useTheme } from '@mui/material';
 import {
+  decodeWorkspaceBaseDir,
   DEFAULT_PANEL_DEV_TREE_COLLAPSED,
+  DEFAULT_WORKSPACE_BASE_DIR,
   isYes,
   PANEL_DEV_TREE_COLLAPSED_KEY,
   parseYesNo,
   setAppConfig,
   toYesNo,
+  WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
+import { useInitIssueWorkspace } from '@src/state/issueWorkspace';
 import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
 import { useEffect } from 'react';
@@ -22,6 +27,7 @@ import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
 import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
 import TerminalSplitButtons from './components/TerminalPanes/TerminalSplitButtons';
+import WorkspaceInitGate from './components/WorkspaceInitGate/WorkspaceInitGate';
 
 // 左栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
@@ -50,6 +56,10 @@ export default function DevWorkbenchPage() {
   const toggleIssueTreeCollapsed = () => {
     void setAppConfig(PANEL_DEV_TREE_COLLAPSED_KEY, toYesNo(!issueTreeCollapsed));
   };
+
+  // 工作空间根目录（issueWorkspace 初始化闸门与右上角重新初始化按钮共用；空串 = 未设置）。
+  const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
+  const initWorkspace = useInitIssueWorkspace();
 
   // 加载用 pid：URL 优先（reload/恢复），否则 store（URL 无 dev 参数的兜底）；null 时不发请求。
   const loadPid = urlPid ?? selectedProjectId;
@@ -140,6 +150,23 @@ export default function DevWorkbenchPage() {
             </Typography>
           )}
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+            {/* 重新初始化工作空间（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
+                与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。 */}
+            {hasSelection && issue && (
+              <Tooltip title="重新初始化工作空间">
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="重新初始化工作空间"
+                    disabled={initWorkspace.isPending || baseDir === ''}
+                    onClick={() => initWorkspace.mutate({ issueId: issue.id, baseDir })}
+                    sx={{ color: 'text.secondary' }}
+                  >
+                    <RestartAltIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
             {/* 终端分割按钮组（作用于活跃 pane；原终端区工具条上移至此） */}
             {hasSelection && issue && <TerminalSplitButtons issueId={issue.id} />}
           </Box>
@@ -156,9 +183,13 @@ export default function DevWorkbenchPage() {
               )
             : issue
               ? (
-                  <TerminalErrorBoundary key={issue.id}>
-                    <TerminalPaneRoot issueId={issue.id} />
-                  </TerminalErrorBoundary>
+                  // 初始化闸门（T1.5）：三段式引导面板占位内容区，工作空间 SUCCESS 才渲染终端；
+                  // key 随 issue 切换重挂载（过渡态/轮询随 key 重建，互不串扰）。
+                  <WorkspaceInitGate key={issue.id} issueId={issue.id} baseDir={baseDir}>
+                    <TerminalErrorBoundary key={issue.id}>
+                      <TerminalPaneRoot issueId={issue.id} />
+                    </TerminalErrorBoundary>
+                  </WorkspaceInitGate>
                 )
               : issuesLoading
                 ? (

@@ -1,6 +1,18 @@
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 
+export { ISSUE_WORKSPACE_STEP_KEY, IssueWorkspaceService } from './IssueWorkspaceService';
+export type {
+  IssueWorkspaceInitRequest,
+  IssueWorkspaceRepoRef,
+  IssueWorkspaceRepoState,
+  IssueWorkspaceState,
+  IssueWorkspaceStatus,
+  IssueWorkspaceStatusRequest,
+  IssueWorkspaceStatusResponseData,
+  IssueWorkspaceStep,
+} from './IssueWorkspaceService';
+
 export { LocalRepositoryService } from './LocalRepositoryService';
 export type {
   LocalRepositoryCreateRequest,

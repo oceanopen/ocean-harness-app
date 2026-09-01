@@ -171,6 +171,12 @@ export const DEFAULT_PANEL_DEV_TREE_COLLAPSED = YES_NO.NO;
 export const WORKSPACE_BASE_DIR_KEY = 'workspace_base_dir';
 export const DEFAULT_WORKSPACE_BASE_DIR = '';
 
+// 工作空间根目录 decode：缺失回落空串（= 未设置）。模块级导出保证引用稳定
+// （useConfigValue 依赖项要求），EmbeddedTerminal 与 DevWorkbenchPage（issueWorkspace 初始化）共用。
+export function decodeWorkspaceBaseDir(raw: string | null): string {
+  return raw ?? DEFAULT_WORKSPACE_BASE_DIR;
+}
+
 // commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，
 // 保持 getAppConfig/setAppConfig 的对外 API 不变（错误时 throw）。
 export async function getAppConfig(key: string): Promise<string | null> {

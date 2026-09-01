@@ -3,6 +3,7 @@ import type { TerminalThemeId } from './terminalTheme';
 import { CreateNewFolderOutlined as CreateNewFolderOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
 import {
+  decodeWorkspaceBaseDir,
   DEFAULT_TERMINAL_CURSOR_BLINK,
   DEFAULT_TERMINAL_CURSOR_STYLE,
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -34,11 +35,6 @@ import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } f
 import TerminalView from './TerminalView';
 import { useClaudeRunning } from './useClaudeRunning';
 import { usePtySession } from './usePtySession';
-
-// 工作空间根目录 decode：缺失回落空串（= 未设置）。模块级保证引用稳定（useConfigValue 要求）。
-function decodeWorkspaceBaseDir(raw: string | null): string {
-  return raw ?? DEFAULT_WORKSPACE_BASE_DIR;
-}
 
 // 启动自动运行 CLI decode：parse 内含回落（非法/缺失 → none），直接转发。
 // 模块级保证引用稳定（useConfigValue 要求）。
