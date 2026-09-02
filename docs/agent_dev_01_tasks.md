@@ -138,7 +138,7 @@
 | `issue_child_list` | 获取子任务列表（查 parent_id = issueId 的子 issue） |
 | `issue_child_create` | 创建子任务（创建 parent_id 指向父 issue 的子 issue） |
 | `issue_child_update` | 更新子任务状态（更新子 issue 的 state_code） |
-| `workspace_status` | 获取工作空间状态 |
+| `issue_workspace_status` | 获取工作空间状态 |
 
 > **注**：子任务复用现有 issue 父子关系（`parent_id` 字段），MCP 工具内部调现有 `projectIssue` service，无需新表。
 
@@ -181,6 +181,11 @@
 - AGENT.md 首次生成为深入分析（Agent 并行探索代码库），已存在时仅增量补充不重写
 - 随附 plugin.json bump 1.1.0、插件 README 更新
 
+> **注（2026-09-02 随 T2.3 方案变更修订）**：本段为 2026-09-01 定稿时的实施记录，其中
+> 「进度段更新规范」「CLAUDE.md 子任务表含 DB ID，agent-dev 凭此更新状态」「仅 BACKLOG 时
+> 流转 TODO（后改为双条件：BACKLOG 且无 IN_PROGRESS/DONE 子任务）」已被 T2.3 的 CLAUDE.md
+> 去状态化变更推翻——以 T2.3/T2.4 段与 issue-context 技能现行契约为准。
+
 **依赖**：T2.1（MCP 工具）、T1.4（仓库已 clone 才能读源码）
 
 **参考**：ocean-claude-plugins 的 `commands/feature-dev.md`（AskUserQuestion 交互模式）
@@ -189,41 +194,56 @@
 
 ### T2.3 AGENT.md / CLAUDE.md 生成与动态更新
 
-**状态**：⬜
+**状态**：✅（方案变更：CLAUDE.md 去状态化，随 T2.4 收口）
 
-**功能**：refine-issue 首次生成 AGENT.md/CLAUDE.md；agent-dev 执行时通过 MCP 更新 CLAUDE.md 进度
+**功能**：refine-issue 首次生成 AGENT.md/CLAUDE.md
 
-**技术方案**：
-- AGENT.md（AI 生成，首次）：项目上下文、编码规范、架构概览
-- CLAUDE.md（AI 生成，首次+持续更新）：润色后的需求描述、子任务列表、当前进度
-- 更新机制：
-  - refine-issue Skill 写入首次内容
-  - agent-dev Skill 每完成一个子任务，通过 MCP `issue_child_update` 更新状态后，同步更新 CLAUDE.md 进度段落
-  - 更新方式：Skill 直接 Edit/Write 文件（Claude 天然具备文件操作能力）
+**技术方案（2026-09-02 变更后）**：
+- AGENT.md（AI 生成，首次）：项目上下文、编码规范、架构概览（不变）
+- CLAUDE.md（AI 生成，首次）：原始需求存档 + 润色后需求快照 + 注意事项——纯需求上下文，
+  不记录任何状态
+- 更新机制：refine-issue 写入首次内容，增量重跑按 issue-context「增量重跑规则」修订
+- **变更原因**：原设计的「CLAUDE.md 记录子任务列表/状态/进度 + agent-dev 每完成一个
+  子任务同步更新进度段」与 DB 形成同一数据两份副本，双写漂移且无必要——agent-dev 本就
+  经 MCP 读写 DB。子任务状态唯一真相源为数据库（MCP `issue_child_list` / 看板），
+  agent-dev 执行期不修改上下文文件，「进度段更新规范」整体取消
 
-**依赖**：T2.2（refine-issue 生成）、T2.4（agent-dev 更新）
+**依赖**：T2.2（refine-issue 生成）
 
 ---
 
 ### T2.4 新增 Skill：`/ocean-harness:agent-dev`
 
-**状态**：⬜
+**状态**：✅
 
-**功能**：Agent 自动执行开发任务，按 issueId 读取子任务并逐项完成
+**功能**：Agent 自动执行开发任务，按子任务清单逐项完成并经 MCP 回写状态
 
 **技术方案**：
 - 在 ocean-claude-plugins 项目新增 `plugins/ocean-harness-plugin/commands/agent-dev.md`
-- allowed-tools：Agent, AskUserQuestion, Read, Glob, Grep, Edit, Write, Bash, MCP
-- 入参：issueId（必传）
+- allowed-tools：Agent, AskUserQuestion, Read, Glob, Grep, Skill, Bash, Write, Edit,
+  TaskCreate, TaskUpdate, mcp__plugin_ocean-harness_we-terminal
 - 流程：
-  1. MCP `issue_get_info` + `issue_child_list` 获取任务上下文
-  2. 读 CLAUDE.md 获取已澄清的需求和进度
-  3. 无子任务 → 执行整个 issue；有子任务 → 逐项执行
-  4. 执行子任务：探索代码 → 实施 → MCP `issue_child_update` 更新状态 → 更新 CLAUDE.md
-  5. 全部完成 → MCP `issue_update` 更新 issue 状态
+  1. MCP `issue_get_info` + `issue_child_list` 获取任务上下文（description 即澄清后需求）
+  2. 读 AGENT.md/CLAUDE.md 作只读上下文（issue-context 契约）
+  3. 无子任务 → issue_update IN_PROGRESS → 整体执行 → DONE；有子任务 → 逐项执行
+  4. 执行子任务：置 IN_PROGRESS → 探索 → 实施 → 对照完成标准自检 → `issue_child_update` 置 DONE
+  5. 全部完成 → 后端联动父 issue 自动 DONE（不显式流转）
 - 与 feature-dev 关系：独立 Skill，内部逻辑参考 feature-dev 的探索→实施→审查模式，但跳过澄清/确认阶段
 
-**依赖**：T2.1（MCP 工具）、T2.2（CLAUDE.md 已存在）
+**实施定稿（2026-09-02）**：
+- issueId 改为 cwd basename 推导（uuid 校验），不显式传参，与 refine-issue 一致
+- 不依赖 CLAUDE.md 存在：issue 描述即澄清后需求（refine-issue 回写），未经润色、描述
+  足够清晰的 issue 可直接执行
+- 状态安全规则：有子任务时绝不流转父 issue 状态（父→子级联会把 DONE 打回、CANCELLED
+  复活）；逐个流转子任务，父由「全部子任务 DONE」后端联动自动完成；CANCELLED 子任务
+  会阻断父自动完成，此时不强制流转，提示用户在 tracker 手工处理
+- 续跑语义：IN_PROGRESS 子任务视为上次中断，重新执行；DONE/CANCELLED 跳过；实施受阻
+  AskUserQuestion（重试/跳过/终止），跳过不置 DONE
+- 执行前分支检查：各仓库须在 agent_{issueId} 分支，不符时 AskUserQuestion 切回/终止
+- 随附 issue-context 契约修订（CLAUDE.md 去状态化，见 T2.3）、plugin.json bump 1.2.0、
+  插件 README 更新
+
+**依赖**：T2.1（MCP 工具）、T2.2（需求上下文软依赖——未润色 issue 可直接执行）
 
 ---
 

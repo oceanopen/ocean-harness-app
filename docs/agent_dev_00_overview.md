@@ -144,10 +144,10 @@ workspace_base_dir/{issueId}/
 │   │   └── .git/
 │   └── ...
 ├── AGENT.md                # [AI 生成] 静态上下文（项目信息、编码规范、架构概览）
-└── CLAUDE.md               # [AI 生成] 动态上下文（issue 详情、子任务列表、当前进度）
+└── CLAUDE.md               # [AI 生成] 需求上下文快照（原始需求存档、润色后需求、注意事项）
 ```
 
-> **AGENT.md / CLAUDE.md 由 AI 生成，不由工程化初始化生成**。原因：这两个文件需要 AI 理解代码库结构和需求内容后才能写出有价值的内容，工程化只能生成空壳。它们在 AI 需求润色阶段（F2）由 `/ocean-harness:refine-issue` Skill 首次生成，后续随任务进展动态更新。
+> **AGENT.md / CLAUDE.md 由 AI 生成，不由工程化初始化生成**。原因：这两个文件需要 AI 理解代码库结构和需求内容后才能写出有价值的内容，工程化只能生成空壳。它们在 AI 需求润色阶段（F2）由 `/ocean-harness:refine-issue` Skill 首次生成，增量重跑时按契约修订（CLAUDE.md 不随任务进展更新——状态以 DB 为唯一真相源，见 §3.2.6 方案变更）。
 
 > **SSH 策略**：按需生成 workspace 级 `.ssh/config`。遍历 issue 关联仓库的 SSH URL，提取 hostname，从全局 `~/.ssh/config` 匹配对应 Host 段，只将匹配的段写入 workspace `.ssh/config`。**不复制私钥**——`IdentityFile` 指向全局密钥原路径（如 `~/.ssh/id_rsa_weoa`）。git clone 时通过 `GIT_SSH_COMMAND="ssh -F <workspace>/.ssh/config"` 指定 config，实现按 issue 隔离且不失灵活性。
 
@@ -234,14 +234,20 @@ workspace_base_dir/{issueId}/
 - 编码规范（AI 从代码库推断）
 - 架构概览（AI 从代码库分析）
 
-**CLAUDE.md**（动态上下文，AI 润色时首次生成，随任务进展持续更新）：
-- Issue 标题 + 完整描述（含 AI 润色后的版本）
-- 子任务列表及各自状态
-- 当前进度（正在执行第 N 个子任务）
+**CLAUDE.md**（需求上下文快照，AI 润色时首次生成，增量重跑时修订）：
+- Issue 标题 + 原始需求存档（润色会覆盖 issue 描述，原文唯一留档于此）
+- 润色后需求快照（issue 描述为权威版本）
 - 注意事项/约束
+- **不记录子任务清单、状态、进度**（见下方方案变更）
 
 生成时机：`/ocean-harness:refine-issue` Skill 执行时首次生成。
-更新时机：子任务状态变更时（agent-dev 通过 MCP 更新）、AI 润色完成时。
+更新时机：仅 refine-issue 增量重跑（「原始需求（存档）」段永不修改）；agent-dev 只读消费，执行期不修改。
+
+> **方案变更（2026-09-02）：CLAUDE.md 去状态化**。原设计 CLAUDE.md 含子任务列表（DB ID +
+> 状态列）与当前进度段，agent-dev 每完成一个子任务同步更新进度段——这与 DB 形成同一数据
+> 两份副本，双写漂移且无必要（agent-dev 本就经 MCP 读写 DB）。变更为：子任务清单、状态、
+> 进度以数据库为唯一真相源（MCP `issue_child_list` / tracker 看板），agent-dev 凭 MCP 返回
+> 的子任务 id 回写状态，不经 CLAUDE.md。
 
 #### 3.2.7 Git Clone 策略（留 worktree 口子）
 
@@ -360,22 +366,24 @@ description: AI 需求润色与子任务拆分，基于源码上下文澄清需�
 #### 3.4.1 执行流程
 
 ```
-终端中执行 /ocean-harness:agent-dev {issueId}
+终端中执行 /ocean-harness:agent-dev（issueId 从 cwd 目录名推导，不传参）
   │
-  ├─ Skill 通过 MCP 工具获取 issue 信息（标题、描述、子任务列表）
+  ├─ Skill 通过 MCP 工具获取 issue 信息（标题、description=需求上下文）
   │
-  ├─ Skill 读取 CLAUDE.md（含润色后的需求 + 子任务列表 + 进度）
+  ├─ Skill 通过 MCP issue_child_list 获取子任务权威清单（按看板顺序）
+  │
+  ├─ 读取 AGENT.md / CLAUDE.md 作只读上下文（编码规范、原始需求存档等）
   │
   ├─ 检查子任务列表
-  │   ├─ 无子任务 → 直接执行 issue 级任务
+  │   ├─ 无子任务 → issue_update 置 IN_PROGRESS → 直接执行 issue 级任务 → 置 DONE
   │   └─ 有子任务 → 按顺序逐项执行
-  │       ├─ 找到第一个 PENDING/IN_PROGRESS 的子任务
-  │       ├─ 独立执行该子任务（内部走 feature-dev 精简流程）
+  │       ├─ 取下一个 BACKLOG/TODO/IN_PROGRESS 的子任务（DONE/CANCELLED 跳过）
+  │       ├─ 置 IN_PROGRESS → 独立执行（内部走 feature-dev 精简流程）→ 对照完成标准自检
   │       ├─ 执行完成后通过 MCP 更新子任务状态为 DONE
-  │       ├─ 更新 CLAUDE.md 进度
   │       └─ 继续下一个子任务
   │
-  └─ 全部完成 → 通过 MCP 更新 issue 状态
+  └─ 全部完成 → 父 issue 由后端「全部子任务 DONE」联动自动完成
+      （有子任务时绝不显式流转父状态：父状态变化会无差别级联全部子任务）
 ```
 
 #### 3.4.2 新增 Skill：`/ocean-harness:agent-dev`
@@ -387,9 +395,10 @@ description: AI 需求润色与子任务拆分，基于源码上下文澄清需�
 
 ```markdown
 ---
-allowed-tools: Agent, AskUserQuestion, Read, Glob, Grep, Edit, Write, Bash, MCP
-argument-hint: issueId（必传，任务ID）
-description: Agent 自动执行开发任务，按任务ID读取子任务并逐项完成
+allowed-tools: Agent, AskUserQuestion, Read, Glob, Grep, Skill, Bash, Write, Edit, TaskCreate, TaskUpdate, mcp__plugin_ocean-harness_we-terminal
+argument-hint: 可选的执行范围或重点说明
+description: 按 issue 子任务清单逐项自动执行开发，状态经 MCP 回写数据库
+skills: issue-context
 ---
 
 你是一位自动化开发代理，负责根据已澄清的 issue 需求执行开发任务。
@@ -399,31 +408,33 @@ description: Agent 自动执行开发任务，按任务ID读取子任务并逐�
 ## 流程
 
 1. **获取任务上下文**：
-   - 通过 MCP 工具 `issue_get_info` 获取 issue 详情
-   - 通过 MCP 工具 `issue_child_list` 获取子任务列表
-   - 读取 CLAUDE.md 获取润色后的需求和当前进度
+   - 取当前工作目录 basename 作为 issueId（uuid 格式，非 uuid 终止）
+   - 通过 MCP 工具 `issue_get_info` 获取 issue 详情（description 即需求上下文）
+   - 通过 MCP 工具 `issue_child_list` 获取子任务权威清单（含 id/状态/完成标准）
+   - 读取 AGENT.md / CLAUDE.md 作只读上下文（不依赖 CLAUDE.md 存在）
 
 2. **判断任务类型**：
-   - 无子任务 → 执行整个 issue（从 CLAUDE.md 读取需求，直接进入实施）
-   - 有子任务 → 按顺序逐项执行
+   - 无子任务 → `issue_update` 置 IN_PROGRESS，执行整个 issue，完成后置 DONE
+   - 有子任务 → 按看板顺序逐项执行
 
 3. **执行子任务**：
-   - 找到第一个 PENDING/IN_PROGRESS 的子任务
-   - 理解子任务的标题、描述和验证标准
+   - 取下一个 BACKLOG/TODO/IN_PROGRESS 的子任务（DONE/CANCELLED 跳过）
+   - 置 IN_PROGRESS，理解子任务的标题、描述和完成标准
    - 按需探索代码库（理解相关代码）
-   - 实施代码修改
-   - 执行完成后，通过 MCP 工具 `issue_child_update` 更新子任务状态
-   - 更新 CLAUDE.md 进度
+   - 实施代码修改，对照完成标准自检
+   - 完成后，通过 MCP 工具 `issue_child_update` 置 DONE（issueId 传子任务自身 id）
    - 继续下一个
 
-4. **全部完成**：通过 MCP 工具 `issue_update` 更新 issue 状态
+4. **全部完成**：输出执行摘要；父 issue 由后端「全部子任务 DONE」联动自动完成，
+   不显式流转父状态（父状态级联会把 DONE 打回、CANCELLED 复活）
 
 ## 核心原则
 
+- 数据库是唯一状态源：子任务清单、状态、顺序以 MCP `issue_child_list` 为准，
+  CLAUDE.md / AGENT.md 仅为只读上下文，执行期不修改
 - 每个子任务独立执行，前一个完成才进入下一个
-- 子任务失败时暂停，等待人工介入
-- 子任务状态实时同步到 DB（通过 MCP）
-- 优先从 CLAUDE.md 读取已澄清的需求，避免重复澄清
+- 子任务失败时 AskUserQuestion（重试/跳过/终止），跳过不置 DONE
+- 子任务状态实时同步到 DB（通过 MCP），不经任何本地状态文件
 ```
 
 #### 3.4.3 与现有 feature-dev 的关系
@@ -755,7 +766,7 @@ skill 亦落此插件）根目录（插件安装即注册，免逐项审批；�
 |------|------|------|--------|
 | 2.1 | MCP Server（Go 版，嵌入 Go 后端，项目管理工具集；子任务复用 issue 父子关系） | 无 | Go（参考 pros-admin-server） |
 | 2.2 | 新增 `/ocean-harness:refine-issue` Skill | 1.2, 2.1 | Skill |
-| 2.3 | AGENT.md/CLAUDE.md 生成与动态更新（refine-issue 首次生成 + 子任务状态同步更新） | 2.1, 2.2 | Skill |
+| 2.3 | AGENT.md/CLAUDE.md 生成（refine-issue 首次生成；2026-09-02 变更：CLAUDE.md 去状态化，状态唯一真相源为 DB） | 2.1, 2.2 | Skill |
 | 2.4 | 新增 `/ocean-harness:agent-dev` Skill | 2.2, 2.3 | Skill |
 
 ### 阶段 3：UI 增强（P1，预计 2-3 天）
