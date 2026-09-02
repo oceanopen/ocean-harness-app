@@ -1,8 +1,8 @@
 package types
 
 import (
-	"we-claude-terminal/go-server/internal/dal/enums"
-	"we-claude-terminal/go-server/internal/dal/model"
+	"ocean-harness/src-server/internal/dal/enums"
+	"ocean-harness/src-server/internal/dal/model"
 )
 
 // 每 action 一个独立 Request 类型。issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，

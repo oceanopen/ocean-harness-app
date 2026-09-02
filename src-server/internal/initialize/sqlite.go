@@ -9,8 +9,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"we-claude-terminal/go-server/internal/config"
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/config"
+	"ocean-harness/src-server/internal/global"
 )
 
 // sqlite 库文件名（落在 cfg.SqliteDir 目录下）。

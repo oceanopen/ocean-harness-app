@@ -16,9 +16,9 @@ import (
 
 	"gorm.io/gen"
 
-	"we-claude-terminal/go-server/internal/config"
-	"we-claude-terminal/go-server/internal/global"
-	"we-claude-terminal/go-server/internal/initialize"
+	"ocean-harness/src-server/internal/config"
+	"ocean-harness/src-server/internal/global"
+	"ocean-harness/src-server/internal/initialize"
 )
 
 // G 是全局生成器：InitGen 装配、GenModel* 注册模型、main 末尾 Execute 落盘。

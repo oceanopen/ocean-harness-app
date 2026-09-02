@@ -4,7 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/global"
 )
 
 // zapWriter 实现 io.Writer，把 gin 默认输出以 Info 级别写入 zap（文件 + 控制台）。

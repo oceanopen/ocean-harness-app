@@ -8,8 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/dal/types"
-	"we-claude-terminal/go-server/internal/gitutil"
+	"ocean-harness/src-server/internal/dal/types"
+	"ocean-harness/src-server/internal/gitutil"
 )
 
 // issueWorkspace cloneRepos step（T1.4）：按状态文件中 cloneRepos 步骤的仓库清单（init 受理时

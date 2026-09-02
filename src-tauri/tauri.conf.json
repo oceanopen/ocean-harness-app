@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "We Claude Terminal",
+  "productName": "Ocean Harness",
   "version": "0.1.13",
-  "identifier": "com.we.claude.terminal",
+  "identifier": "com.ocean.harness",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:7102",
@@ -23,7 +23,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/oceanopen/we-claude-terminal-app/releases/latest/download/latest.json"
+        "https://github.com/oceanopen/ocean-harness-app/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMyRDMyOUU0NzBFMzVBOUIKUldTYld1Tnc1Q25Ud2wwamFMOThFSEc5NnBDenRnd25vbk9FU1V3cDJmNlJLOUYwL3RRMjFmdHEK",
       "windows": {
@@ -38,9 +38,9 @@
     "publisher": "oceangao",
     "copyright": "Copyright (C) 2026 oceangao",
     "category": "Utility",
-    "shortDescription": "We Claude Terminal Desktop App",
-    "longDescription": "We Claude Terminal Desktop App",
-    "externalBin": ["binaries/com.we.claude.terminal-go_server_bin"],
+    "shortDescription": "Ocean Harness Desktop App",
+    "longDescription": "Ocean Harness Desktop App",
+    "externalBin": ["binaries/com.ocean.harness-go_server_bin"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // issueWorkspace 状态文件读写：文件（.workspace-init-state.json）是工作空间初始化的唯一持久真相，

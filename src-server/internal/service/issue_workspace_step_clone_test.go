@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // newCloneBareRemote 构造 cloneRepos 测试源（与 gitutil 包测试同构，test helper 不跨包复用）：

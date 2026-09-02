@@ -7,7 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/global"
 )
 
 // McpOK 把业务出参包装为工具成功结果：TextContent（JSON 文本，LLM 消费主轨）+

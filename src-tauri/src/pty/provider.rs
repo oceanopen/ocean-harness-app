@@ -89,7 +89,7 @@ pub struct PtyReattached {
 pub trait PtyProvider: Send + Sync {
     /// 启动会话（幂等）：未退出会话复用并换装 listener；已退出会话移除重起（重开语义）。
     /// envs 为业务环境变量（仅在真正 spawn 新进程时注入，复用/reattach 分支无进程创建，
-    /// 不适用）——如 WE_TERMINAL_PORT（ocean-code 插件 .mcp.json 的 MCP 端点 url 据此展开）。
+    /// 不适用）——如 OCEAN_HARNESS_PORT（ocean-harness 插件 .mcp.json 的 MCP 端点 url 据此展开）。
     /// 返回会话元信息。
     fn spawn(
         &self,

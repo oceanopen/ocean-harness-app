@@ -32,7 +32,7 @@ pub fn show_settings_window(
                 .config()
                 .product_name
                 .as_deref()
-                .unwrap_or("We Claude Terminal");
+                .unwrap_or("Ocean Harness");
             // 首开深链走初始 URL（settings.html#/<section>，HashRouter 直接消费）而非事件：
             // build() 返回时 webview 尚未加载、前端 listen 未注册，此时 emit_to 必然丢失。
             let url = match &navigate_to {

@@ -66,9 +66,9 @@
 - MCP 以 plugin 方式驱动，workspace 级单独配置收益不大；`.mcp.json` 放 ocean-claude-plugins
   的 `plugins/ocean-harness-plugin/` 根目录（issue 流程专用插件，插件自动发现、随插件安装注册，
   免逐项审批；后续 T2.2/T2.4 的 issue 相关 skill 亦落此插件）
-- 生成内容：`{"mcpServers": {"we-terminal": {"type": "http", "url": "http://127.0.0.1:${WE_TERMINAL_PORT:-9100}/mcp/streamableHttp/weTerminal"}}}`
+- 生成内容：`{"mcpServers": {"ocean-harness": {"type": "http", "url": "http://127.0.0.1:${OCEAN_HARNESS_PORT:-9100}/mcp/streamableHttp/oceanHarness"}}}`
   （type 用 Claude CLI 合法值 `http` 即 Streamable HTTP；插件 .mcp.json 支持 `${VAR:-default}` 展开）
-- 端口注入：Rust `pty_spawn` spawn PTY 时注入 `WE_TERMINAL_PORT=<HttpServerState 端口>`
+- 端口注入：Rust `pty_spawn` spawn PTY 时注入 `OCEAN_HARNESS_PORT=<HttpServerState 端口>`
   （默认 dev=9000/build=9100，用户可配）；外部终端无此 env 时回落默认 9100
 - 工作空间初始化的 mcpConfig 步骤已随方案变更整体移除（步骤骨架与前端常量一并清理，
   初始化仅剩 createDirs → sshConfig → cloneRepos），未来需要 workspace 级单独支持时再加回骨架
@@ -122,11 +122,11 @@
 **技术方案**：
 - SDK：`github.com/modelcontextprotocol/go-sdk` v0.2.0
 - Transport：StreamableHTTP（`mcp.NewStreamableHTTPHandler`）
-- 路由：Gin 注册 `POST /mcp/streamableHttp/weTerminal`
+- 路由：Gin 注册 `POST /mcp/streamableHttp/oceanHarness`
 - 架构：三层分离（参考 pros-admin-server）
-  - Server 定义 + Tool 注册：`mcp_servers/mcp_we_terminal.go`
-  - Tool Handler 实现：`mcp_servers/mcp_we_terminal_tools.go`
-  - DTO 类型定义：`mcp_servers/mcp_dto/we_terminal_tools.go`
+  - Server 定义 + Tool 注册：`mcp_servers/mcp_ocean_harness.go`
+  - Tool Handler 实现：`mcp_servers/mcp_ocean_harness_tools.go`
+  - DTO 类型定义：`mcp_servers/mcp_dto/ocean_harness_tools.go`
 - 复用现有 `apis.McpTool` 基类（MakeContext/MakeOrm/Validate/MakeService）
 
 **首期工具清单**：
@@ -156,7 +156,7 @@
 
 **技术方案**：
 - 在 ocean-claude-plugins 项目新增 `plugins/ocean-harness-plugin/commands/refine-issue.md`（issue 流程 skill 统一落 ocean-harness 插件）
-- allowed-tools：Agent, AskUserQuestion, Read, Glob, Grep, Bash, Write, Edit, mcp__plugin_ocean-harness_we-terminal
+- allowed-tools：Agent, AskUserQuestion, Read, Glob, Grep, Bash, Write, Edit, mcp__plugin_ocean-harness_ocean-harness
 - 流程：
   1. 通过 MCP 工具获取 issue 原始描述
   2. 读取仓库源码理解代码库结构
@@ -221,7 +221,7 @@
 **技术方案**：
 - 在 ocean-claude-plugins 项目新增 `plugins/ocean-harness-plugin/commands/agent-dev.md`
 - allowed-tools：Agent, AskUserQuestion, Read, Glob, Grep, Skill, Bash, Write, Edit,
-  TaskCreate, TaskUpdate, mcp__plugin_ocean-harness_we-terminal
+  TaskCreate, TaskUpdate, mcp__plugin_ocean-harness_ocean-harness
 - 流程：
   1. MCP `issue_get_info` + `issue_child_list` 获取任务上下文（description 即澄清后需求）
   2. 读 AGENT.md/CLAUDE.md 作只读上下文（issue-context 契约）

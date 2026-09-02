@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // globalSSHConfigFixture 模拟全局 ~/.ssh/config：文件头裸配置（隐式 Host *）+ 精确/通配符
@@ -27,7 +27,7 @@ Host other.com
 
 func TestIssueWorkspaceSSHHost(t *testing.T) {
 	cases := []struct{ url, want string }{
-		{"git@github.com:oceanopen/we-claude-terminal-app.git", "github.com"}, // 实际场景唯一格式
+		{"git@github.com:oceanopen/ocean-harness-app.git", "github.com"}, // 实际场景唯一格式
 		{"git@git.weoa.com:group/repo.git", "git.weoa.com"},
 		{"git@github.com:oceanopen/repo", "github.com"}, // 无 .git 后缀
 		{"https://github.com/oceanopen/repo.git", ""},   // https 不参与
@@ -135,7 +135,7 @@ func TestIssueWorkspaceRunSSHConfig(t *testing.T) {
 	}
 
 	// 路径 1：匹配 → 生成文件（0o600），步骤不置 SKIPPED（编排随后置 SUCCESS）。
-	state, step := newStep("git@github.com:oceanopen/we-claude-terminal-app.git")
+	state, step := newStep("git@github.com:oceanopen/ocean-harness-app.git")
 	if err := issueWorkspaceRunSSHConfig(state, step, zap.NewNop()); err != nil {
 		t.Fatalf("runner 出错: %v", err)
 	}

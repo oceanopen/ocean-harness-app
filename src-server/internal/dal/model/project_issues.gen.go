@@ -6,7 +6,7 @@ package model
 
 import (
 	"time"
-	"we-claude-terminal/go-server/internal/dal/enums"
+	"ocean-harness/src-server/internal/dal/enums"
 )
 
 const TableNameProjectIssue = "t_project_issues"

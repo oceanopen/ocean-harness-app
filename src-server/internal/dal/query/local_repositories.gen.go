@@ -17,7 +17,7 @@ import (
 
 	"gorm.io/plugin/dbresolver"
 
-	"we-claude-terminal/go-server/internal/dal/model"
+	"ocean-harness/src-server/internal/dal/model"
 )
 
 func newLocalRepository(db *gorm.DB, opts ...gen.DOOption) localRepository {

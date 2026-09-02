@@ -1,7 +1,7 @@
 [package]
-name = "we-claude-terminal"
+name = "ocean-harness"
 version = "0.1.13"
-description = "We Claude Terminal Desktop App"
+description = "Ocean Harness Desktop App"
 authors = ["oceangao"]
 license = ""
 repository = ""
@@ -12,7 +12,7 @@ rust-version = "1.85.0"
 # 否则 cargo run（tauri dev 底层调用，不带 --bin）会因目标歧义报错：
 #   error: `cargo run` could not determine which binary to run
 # gen:bindings 脚本显式 --bin export_bindings 不受此设置影响。
-default-run = "we-claude-terminal"
+default-run = "ocean-harness"
 
 # gen-bindings：export_bindings 的门控 feature。
 # tauri build 不启用此 feature → bundler 阶段 1 按 required-features 过滤掉 export_bindings
@@ -24,7 +24,7 @@ gen-bindings = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "we_claude_terminal_lib"
+name = "ocean_harness_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 # export_bindings：tauri-specta 绑定生成器。

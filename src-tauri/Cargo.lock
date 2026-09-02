@@ -2589,6 +2589,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "ocean-harness"
+version = "0.1.13"
+dependencies = [
+ "chrono",
+ "dirs 5.0.1",
+ "log",
+ "notify",
+ "notify-debouncer-mini",
+ "objc2",
+ "portable-pty",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "specta",
+ "specta-typescript",
+ "sys-locale",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-process",
+ "tauri-plugin-shell",
+ "tauri-plugin-updater",
+ "tauri-specta",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5161,33 +5188,6 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap 2.14.0",
  "semver",
-]
-
-[[package]]
-name = "we-claude-terminal"
-version = "0.1.13"
-dependencies = [
- "chrono",
- "dirs 5.0.1",
- "log",
- "notify",
- "notify-debouncer-mini",
- "objc2",
- "portable-pty",
- "rusqlite",
- "serde",
- "serde_json",
- "specta",
- "specta-typescript",
- "sys-locale",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-process",
- "tauri-plugin-shell",
- "tauri-plugin-updater",
- "tauri-specta",
 ]
 
 [[package]]

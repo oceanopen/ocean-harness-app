@@ -6,8 +6,8 @@ import { useTranslation } from 'react-i18next';
 // status → i18n key 映射 SSOT（claudeSessionStatus.ts，复用 claudeSessions:status.* 文案），与 ClaudeSessionCard 共用。
 
 // 暂不支持跳转的宿主终端（与 ClaudeSessionCard 保持一致，禁用点击）。
-// WeTerm：本 app 嵌入终端，聚焦联动在后续模块接线（当前禁用跳转但不过滤展示）。
-const UNSUPPORTED_HOST: TerminalApp[] = ['IntelliJ', 'WeTerm', 'Unknown'];
+// OceanHarness：本 app 嵌入终端，聚焦联动在后续模块接线（当前禁用跳转但不过滤展示）。
+const UNSUPPORTED_HOST: TerminalApp[] = ['IntelliJ', 'OceanHarness', 'Unknown'];
 
 interface ClaudeSessionItemProps {
   session: ClaudeSessionInfo;

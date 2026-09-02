@@ -1,6 +1,6 @@
 # HTTP 本地服务
 
-we-claude-terminal 的 HTTP 本地服务（Go + gin 实现，位于 `src-server/`）。
+ocean-harness 的 HTTP 本地服务（Go + gin 实现，位于 `src-server/`）。
 Rust 侧进程管理位于 `src-tauri/src/shared/http_server.rs`。
 
 采用分层结构（config / initialize / router / controller / service），**配置优先级：环境变量 > yaml 配置文件**（本地调试用 `config/settings.dev.yaml`）、**数据库用 sqlite**（纯 Go 驱动，无 CGO）。
@@ -200,9 +200,9 @@ GOPROXY=https://goproxy.cn,direct go -C src-server mod tidy
 
 ```go
 import (
-    "we-claude-terminal/go-server/internal/global"
-    "we-claude-terminal/go-server/internal/dal/query"
-    "we-claude-terminal/go-server/internal/dal/model"
+    "ocean-harness/src-server/internal/global"
+    "ocean-harness/src-server/internal/dal/query"
+    "ocean-harness/src-server/internal/dal/model"
 )
 
 q := query.Use(global.SqliteDB)

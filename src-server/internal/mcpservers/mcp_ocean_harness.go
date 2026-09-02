@@ -15,61 +15,61 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"we-claude-terminal/go-server/internal/mcpservers/mcp_tool"
+	"ocean-harness/src-server/internal/mcpservers/mcp_tool"
 )
 
-// mcpServerWeTerminal 是 we_terminal server 的进程级单例（多会话共享；会话管理由
+// mcpServerOceanHarness 是 ocean_harness server 的进程级单例（多会话共享；会话管理由
 // StreamableHTTPHandler 负责）。init() 完成全部工具注册：InputSchema/OutputSchema 均由
 // handler 泛型 Args/Content 反射推导（字段描述 = DTO 的 jsonschema tag），不手写 schema。
-var mcpServerWeTerminal *mcp.Server
+var mcpServerOceanHarness *mcp.Server
 
 func init() {
-	mcpServerWeTerminal = mcp.NewServer(&mcp.Implementation{
-		Name:    "we_terminal",
+	mcpServerOceanHarness = mcp.NewServer(&mcp.Implementation{
+		Name:    "ocean_harness",
 		Version: "v1.0.0",
-		Title:   "we-claude-terminal 项目管理工具（issue / 子任务 / 工作空间）",
+		Title:   "ocean-harness 项目管理工具（issue / 子任务 / 工作空间）",
 	}, nil)
 
-	mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name:        "issue_get_info",
 		Description: "获取 issue 详情（标题、描述、状态、优先级、标签、关联仓库与基准分支、父子关系）。",
-	}, mcptool.McpWeTerminalTool{}.IssueGetInfo)
+	}, mcptool.McpOceanHarnessTool{}.IssueGetInfo)
 
-	mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "issue_update",
 		Description: "部分更新 issue：stateCode/name/description 仅更新传入的非空字段，其余字段（含标签、" +
 			"关联仓库分支、日期）保留原值。stateCode 变化触发完成时间流转与父子状态联动" +
 			"（父任务状态变化级联子任务；全部子任务完成后父任务自动完成）。",
-	}, mcptool.McpWeTerminalTool{}.IssueUpdate)
+	}, mcptool.McpOceanHarnessTool{}.IssueUpdate)
 
-	mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name:        "issue_child_list",
 		Description: "列出某 issue 的全部一级子任务（按看板顺序）。目标不能自身是子任务（仅支持一层）。",
-	}, mcptool.McpWeTerminalTool{}.IssueChildList)
+	}, mcptool.McpOceanHarnessTool{}.IssueChildList)
 
-	mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "issue_child_create",
 		Description: "为指定 issue 创建一级子任务（项目/工作空间归属自动继承父任务）。" +
 			"name 必填；stateCode 留空默认 BACKLOG。",
-	}, mcptool.McpWeTerminalTool{}.IssueChildCreate)
+	}, mcptool.McpOceanHarnessTool{}.IssueChildCreate)
 
-	mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "issue_child_update",
 		Description: "部分更新子任务：stateCode/name/description 仅更新传入的非空字段，其余字段保留原值。" +
 			"目标必须是子任务（parentId 非空），否则请改用 issue_update。",
-	}, mcptool.McpWeTerminalTool{}.IssueChildUpdate)
+	}, mcptool.McpOceanHarnessTool{}.IssueChildUpdate)
 
-	mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "issue_workspace_status",
 		Description: "查询某 issue 运行工作空间的初始化状态（顶层结论 + createDirs/sshConfig/" +
 			"cloneRepos 各步骤与仓库级进度）。workspace 基目录取应用设置，无需传入。",
-	}, mcptool.McpWeTerminalTool{}.WorkspaceStatus)
+	}, mcptool.McpOceanHarnessTool{}.WorkspaceStatus)
 }
 
-// McpWeTerminalStreamableHTTPHandler 构造 we_terminal server 的 Streamable HTTP handler
+// McpOceanHarnessStreamableHTTPHandler 构造 ocean_harness server 的 Streamable HTTP handler
 // （由 router 调用一次；v0.2.0 的 options 为空占位结构，nil 即默认：有状态会话 + SSE 流式响应）。
-func McpWeTerminalStreamableHTTPHandler() http.Handler {
+func McpOceanHarnessStreamableHTTPHandler() http.Handler {
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return mcpServerWeTerminal
+		return mcpServerOceanHarness
 	}, nil)
 }

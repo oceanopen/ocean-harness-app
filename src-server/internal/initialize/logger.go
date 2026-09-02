@@ -9,8 +9,8 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"we-claude-terminal/go-server/internal/config"
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/config"
+	"ocean-harness/src-server/internal/global"
 )
 
 // LoggerTimeFormat 日志时间格式（毫秒精度）。

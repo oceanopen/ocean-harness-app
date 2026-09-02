@@ -107,11 +107,11 @@ export const commands = {
 	 *  启动/复用会话（幂等）：未退出复用 + 换装 listener；已退出重起（重开语义）。
 	 *  前端挂载即调本命令；输出/退出事件经 on_event Channel 流式回传。
 	 * 
-	 *  业务 env 注入（仅真正 spawn 新进程时）：WE_TERMINAL_PORT 指向本应用 Go sidecar 的
+	 *  业务 env 注入（仅真正 spawn 新进程时）：OCEAN_HARNESS_PORT 指向本应用 Go sidecar 的
 	 *  HTTP 端口（HttpServerState 持有，默认 dev=9000/build=9100，可被用户设置覆盖——
 	 *  服务未启动时也是有效回退值）。ocean-harness 插件捆绑的 .mcp.json 以
-	 *  ${WE_TERMINAL_PORT:-9100} 展开其 MCP 端点 url，嵌入式终端内的 claude 会话据此连上
-	 *  本进程的 /mcp/streamableHttp/weTerminal。
+	 *  ${OCEAN_HARNESS_PORT:-9100} 展开其 MCP 端点 url，嵌入式终端内的 claude 会话据此连上
+	 *  本进程的 /mcp/streamableHttp/oceanHarness。
 	 */
 	ptySpawn: (opts: SpawnOpts, onEvent: Channel<PtyEvent>) => typedError<PtySpawned, string>(__TAURI_INVOKE("pty_spawn", { opts, onEvent })),
 	/**  键盘输入写入会话。 */
@@ -395,11 +395,11 @@ export type SpawnOpts = {
  */
 export type TerminalApp = "ITerm2" | "Terminal" | "IntelliJ" | 
 /**
- *  本 app（we-claude-terminal）的嵌入式 PTY 终端。跳转 = 前端聚焦对应
+ *  本 app（ocean-harness）的嵌入式 PTY 终端。跳转 = 前端聚焦对应
  *  issue 终端（terminal_03 任务 6；当前跳转暂走 UnsupportedHostApp，
  *  聚焦联动在后续模块接线——但监控列表不再过滤，会话可见）。
  */
-"WeTerm" | 
+"OceanHarness" | 
 /**  未识别的宿主终端（如 VSCode 内嵌、Wezterm、Alacritty 等）。跳转按钮将禁用。 */
 "Unknown";
 

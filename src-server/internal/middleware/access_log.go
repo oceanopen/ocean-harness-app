@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/global"
 )
 
 // AccessLog 记录每个请求的访问日志，按 HTTP 状态码分级：

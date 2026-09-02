@@ -8,8 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/apis"
+	"ocean-harness/src-server/internal/global"
 )
 
 // Recovery 捕获 panic，用 zap 记录堆栈，并以统一响应结构返回 500。

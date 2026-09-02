@@ -6,9 +6,9 @@ import (
 	"os"
 	"runtime"
 
-	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/dal/types"
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/apis"
+	"ocean-harness/src-server/internal/dal/types"
+	"ocean-harness/src-server/internal/global"
 )
 
 // BaseInfo 对应 /api/baseInfo 命名空间下的业务逻辑（系统信息采集，无 DB 读写，svc.Orm 不用）。

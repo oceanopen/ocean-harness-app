@@ -8,7 +8,7 @@ import (
 	"gorm.io/gen"
 	"gorm.io/gorm"
 
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/global"
 )
 
 // InitGen 装配 gorm/gen 生成器（适配 sqlite + 本仓库命名约定）。

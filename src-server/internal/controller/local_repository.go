@@ -3,9 +3,9 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
-	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/dal/types"
-	"we-claude-terminal/go-server/internal/service"
+	"ocean-harness/src-server/internal/apis"
+	"ocean-harness/src-server/internal/dal/types"
+	"ocean-harness/src-server/internal/service"
 )
 
 // LocalRepository 对应 /api/localRepository 命名空间下的接口（本地仓库 CRUD + git 刷新）。

@@ -8,10 +8,10 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/dal/model"
-	"we-claude-terminal/go-server/internal/dal/query"
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/apis"
+	"ocean-harness/src-server/internal/dal/model"
+	"ocean-harness/src-server/internal/dal/query"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // IssueWorkspace 对应 /api/issueWorkspace 命名空间：issue 运行工作空间初始化编排

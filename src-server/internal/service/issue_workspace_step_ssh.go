@@ -10,7 +10,7 @@ import (
 	ssh_config "github.com/kevinburke/ssh_config"
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // issueWorkspace sshConfig step（T1.2）：根据 issue 关联仓库的 SSH URL（manifest.remoteUrl），

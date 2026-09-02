@@ -6,10 +6,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/dal/model"
-	"we-claude-terminal/go-server/internal/dal/query"
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/apis"
+	"ocean-harness/src-server/internal/dal/model"
+	"ocean-harness/src-server/internal/dal/query"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // Project 对应 /api/tracker/project 命名空间下的业务逻辑。

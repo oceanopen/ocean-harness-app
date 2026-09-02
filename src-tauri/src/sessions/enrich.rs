@@ -35,7 +35,7 @@ fn ps_field(pid: u32, field: &str) -> Option<String> {
 /// 把 ps 取到的 comm 字符串归一化为 TerminalApp。
 /// iTerm 3.x 进程名是 "iTerm2" 或 "iTerm"；macOS 自带 Terminal 进程名是 "Terminal"；
 /// IntelliJ 内嵌终端进程名是 "idea"；本 app 嵌入式 PTY 的宿主进程名
-/// "we-claude-terminal"（dev 二进制同名，tauri.dev.conf.json 只改 identifier/productName
+/// "ocean-harness"（dev 二进制同名，tauri.dev.conf.json 只改 identifier/productName
 /// 不改二进制名——dev 与 release 同名识别）。
 fn classify_terminal(comm: &str) -> Option<TerminalApp> {
     // basename：ps -o comm= 给的可能是完整路径或裸名，统一取最后一段。
@@ -47,7 +47,7 @@ fn classify_terminal(comm: &str) -> Option<TerminalApp> {
         "iTerm" | "iTerm2" => Some(TerminalApp::ITerm2),
         "Terminal" => Some(TerminalApp::Terminal),
         "idea" => Some(TerminalApp::IntelliJ),
-        "we-claude-terminal" => Some(TerminalApp::WeTerm),
+        "ocean-harness" => Some(TerminalApp::OceanHarness),
         _ => None,
     }
 }

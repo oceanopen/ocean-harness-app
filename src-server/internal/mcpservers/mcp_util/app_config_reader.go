@@ -11,7 +11,7 @@ import (
 	// 不新增依赖）。仅本文件以原生 database/sql 短连接方式使用（读一行即关，无需 gorm 装配）。
 	_ "github.com/glebarez/sqlite"
 
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/global"
 )
 
 // appConfigWorkspaceBaseDirKey 对齐 Rust 侧 app_config KV 表的 key（前端设置页写入

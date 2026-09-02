@@ -22,10 +22,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/config"
-	"we-claude-terminal/go-server/internal/global"
-	"we-claude-terminal/go-server/internal/initialize"
-	"we-claude-terminal/go-server/internal/router"
+	"ocean-harness/src-server/internal/config"
+	"ocean-harness/src-server/internal/global"
+	"ocean-harness/src-server/internal/initialize"
+	"ocean-harness/src-server/internal/router"
 )
 
 func main() {

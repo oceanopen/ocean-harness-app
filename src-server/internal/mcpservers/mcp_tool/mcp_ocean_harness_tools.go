@@ -1,5 +1,5 @@
 // Package mcptool 存放各 MCP server 的工具 handler 实现（文件按 server 命名，如
-// mcp_we_terminal_tools.go；后续 github server 落 mcp_github_tools.go 同构扩展）。
+// mcp_ocean_harness_tools.go；后续 github server 落 mcp_github_tools.go 同构扩展）。
 // handler 嵌入 mcputil.McpTool 获得链式装配（MakeContext → Validate → MakeService，
 // 链尾读 .Errors），内部复用既有 service 层（与 HTTP controller 完全共享业务逻辑，
 // 含事务与状态联动）；结果包装统一走 mcputil.McpOK / mcputil.McpFail。
@@ -12,19 +12,19 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"we-claude-terminal/go-server/internal/dal/types"
-	mcpdto "we-claude-terminal/go-server/internal/mcpservers/mcp_dto"
-	"we-claude-terminal/go-server/internal/mcpservers/mcp_util"
-	"we-claude-terminal/go-server/internal/service"
+	"ocean-harness/src-server/internal/dal/types"
+	mcpdto "ocean-harness/src-server/internal/mcpservers/mcp_dto"
+	"ocean-harness/src-server/internal/mcpservers/mcp_util"
+	"ocean-harness/src-server/internal/service"
 )
 
-// McpWeTerminalTool 是 we_terminal server 的工具集合。
-type McpWeTerminalTool struct {
+// McpOceanHarnessTool 是 ocean_harness server 的工具集合。
+type McpOceanHarnessTool struct {
 	mcputil.McpTool
 }
 
 // IssueGetInfo 获取 issue 详情（GetInfo 直通，含标签与关联仓库分支）。
-func (mt McpWeTerminalTool) IssueGetInfo(ctx context.Context, _ *mcp.ServerSession,
+func (mt McpOceanHarnessTool) IssueGetInfo(ctx context.Context, _ *mcp.ServerSession,
 	params *mcp.CallToolParamsFor[mcpdto.IssueIDArgs]) (*mcp.CallToolResultFor[mcpdto.IssueContent], error) {
 
 	args := params.Arguments
@@ -41,7 +41,7 @@ func (mt McpWeTerminalTool) IssueGetInfo(ctx context.Context, _ *mcp.ServerSessi
 
 // IssueUpdate 部分更新 issue：先 GetInfo 取现值，非空入参覆盖、空值保留，再走既有全量
 // Update（stateCode 流转/父子联动/事务语义与 HTTP 端完全一致）。
-func (mt McpWeTerminalTool) IssueUpdate(ctx context.Context, _ *mcp.ServerSession,
+func (mt McpOceanHarnessTool) IssueUpdate(ctx context.Context, _ *mcp.ServerSession,
 	params *mcp.CallToolParamsFor[mcpdto.IssueUpdateArgs]) (*mcp.CallToolResultFor[mcpdto.IssueContent], error) {
 
 	args := params.Arguments
@@ -58,7 +58,7 @@ func (mt McpWeTerminalTool) IssueUpdate(ctx context.Context, _ *mcp.ServerSessio
 
 // IssueChildList 列出某 issue 的全部一级子任务：GetInfo（父校验）→ GetList（项目扁平
 // 列表，单用户本地量级）→ 按 parentId 过滤。刻意不改 service/DTO，MCP 层纯组合。
-func (mt McpWeTerminalTool) IssueChildList(ctx context.Context, _ *mcp.ServerSession,
+func (mt McpOceanHarnessTool) IssueChildList(ctx context.Context, _ *mcp.ServerSession,
 	params *mcp.CallToolParamsFor[mcpdto.IssueChildListArgs]) (*mcp.CallToolResultFor[mcpdto.IssueChildListContent], error) {
 
 	args := params.Arguments
@@ -88,7 +88,7 @@ func (mt McpWeTerminalTool) IssueChildList(ctx context.Context, _ *mcp.ServerSes
 
 // IssueChildCreate 为父 issue 创建一级子任务（ProjectID/WorkspaceID 继承父任务）。
 // service.Create 会再次校验父存在/同项目/仅一层；此处前置守卫仅为更早给出定向中文提示。
-func (mt McpWeTerminalTool) IssueChildCreate(ctx context.Context, _ *mcp.ServerSession,
+func (mt McpOceanHarnessTool) IssueChildCreate(ctx context.Context, _ *mcp.ServerSession,
 	params *mcp.CallToolParamsFor[mcpdto.IssueChildCreateArgs]) (*mcp.CallToolResultFor[mcpdto.IssueContent], error) {
 
 	args := params.Arguments
@@ -122,7 +122,7 @@ func (mt McpWeTerminalTool) IssueChildCreate(ctx context.Context, _ *mcp.ServerS
 
 // IssueChildUpdate 部分更新子任务（与 IssueUpdate 同构），差异仅：目标必须是子任务
 // （AI 用错工具时给出定向纠正提示）。
-func (mt McpWeTerminalTool) IssueChildUpdate(ctx context.Context, _ *mcp.ServerSession,
+func (mt McpOceanHarnessTool) IssueChildUpdate(ctx context.Context, _ *mcp.ServerSession,
 	params *mcp.CallToolParamsFor[mcpdto.IssueUpdateArgs]) (*mcp.CallToolResultFor[mcpdto.IssueContent], error) {
 
 	args := params.Arguments
@@ -146,7 +146,7 @@ func (mt McpWeTerminalTool) IssueChildUpdate(ctx context.Context, _ *mcp.ServerS
 
 // WorkspaceStatus 查询 issue 工作空间初始化状态：baseDir 不入参，从 Rust 共享 app.db
 // 只读解析（应用设置页唯一真相），复用既有 IssueWorkspace.Status（读状态文件派生，不查库）。
-func (mt McpWeTerminalTool) WorkspaceStatus(ctx context.Context, _ *mcp.ServerSession,
+func (mt McpOceanHarnessTool) WorkspaceStatus(ctx context.Context, _ *mcp.ServerSession,
 	params *mcp.CallToolParamsFor[mcpdto.WorkspaceStatusArgs]) (*mcp.CallToolResultFor[mcpdto.WorkspaceStatusContent], error) {
 
 	args := params.Arguments
@@ -167,7 +167,7 @@ func (mt McpWeTerminalTool) WorkspaceStatus(ctx context.Context, _ *mcp.ServerSe
 }
 
 // partialUpdate 是 issue_update 的合并入口（GetInfo → buildIssueUpdateRequest → Update）。
-func (mt McpWeTerminalTool) partialUpdate(issueSvc *service.ProjectIssue, args *mcpdto.IssueUpdateArgs) (*types.ProjectIssueResponseData, error) {
+func (mt McpOceanHarnessTool) partialUpdate(issueSvc *service.ProjectIssue, args *mcpdto.IssueUpdateArgs) (*types.ProjectIssueResponseData, error) {
 	cur, err := issueSvc.GetInfo(&types.ProjectIssueGetInfoRequest{ID: args.IssueID})
 	if err != nil {
 		return nil, err

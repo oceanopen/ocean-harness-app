@@ -3,9 +3,9 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
-	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/dal/types"
-	"we-claude-terminal/go-server/internal/service"
+	"ocean-harness/src-server/internal/apis"
+	"ocean-harness/src-server/internal/dal/types"
+	"ocean-harness/src-server/internal/service"
 )
 
 // IssueWorkspace 对应 /api/issueWorkspace 命名空间下的接口（issue 运行工作空间初始化）。

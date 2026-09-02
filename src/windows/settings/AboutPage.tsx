@@ -244,7 +244,7 @@ function AboutPage() {
         }}
         onClick={() => {
           import('@tauri-apps/plugin-shell').then(({ open }) => {
-            open('https://github.com/oceanopen/we-claude-terminal-app');
+            open('https://github.com/oceanopen/ocean-harness-app');
           });
         }}
       >

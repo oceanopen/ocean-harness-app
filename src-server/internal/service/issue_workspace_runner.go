@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // issueWorkspace 后台执行编排：init 受理方把合并后的状态（PENDING）连同进程级 logger 交给

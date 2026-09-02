@@ -5,7 +5,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"we-claude-terminal/go-server/internal/config"
+	"ocean-harness/src-server/internal/config"
 )
 
 var (

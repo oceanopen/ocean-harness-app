@@ -105,7 +105,7 @@ impl LocalPtyProvider {
             }
         }
 
-        // 业务 env 注入（如 WE_TERMINAL_PORT）：统一在此点注入，两条构造分支（裸 shell /
+        // 业务 env 注入（如 OCEAN_HARNESS_PORT）：统一在此点注入，两条构造分支（裸 shell /
         // CLI 直启重建的 cmd）都覆盖。 portable-pty CommandBuilder 默认继承父进程 env，
         // env() 在其上追加/覆盖。
         for (k, v) in envs {

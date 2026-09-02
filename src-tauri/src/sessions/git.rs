@@ -29,7 +29,7 @@ pub fn is_dirty(cwd: &str) -> bool {
     let out = match Command::new("git")
         .args(["-C", cwd, "status", "--porcelain"])
         // 非 git 目录 git 会向 stderr 输出 `fatal: not a repository`，
-        // 重定向 null 避免污染父进程（we-claude-terminal 的终端）日志。
+        // 重定向 null 避免污染父进程（ocean-harness 的终端）日志。
         .stderr(std::process::Stdio::null())
         .output()
     {

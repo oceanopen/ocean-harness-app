@@ -16,7 +16,7 @@ import (
 
 	vd "github.com/bytedance/go-tagexpr/v2/validator"
 
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/global"
 )
 
 // Api 是所有 controller 的基类：缓存单次请求的 ctx / Orm / Logger 与链式累积错误。

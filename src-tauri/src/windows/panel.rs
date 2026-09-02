@@ -97,7 +97,7 @@ pub fn navigate_to_claude_session(pid: u32, app: AppHandle) -> Result<(), String
 #[specta::specta]
 pub fn open_in_editor(editor: String, cwd: String) -> Result<(), String> {
     // GUI 编辑器（尤其 IDEA）会把 Kotlin/Maven/Gradle 日志写到继承的 stdout/stderr，
-    // 污染 we-claude-terminal 终端，stdio null 让子进程静默（所有平台共用）。
+    // 污染 ocean-harness 终端，stdio null 让子进程静默（所有平台共用）。
     #[cfg(target_os = "macos")]
     {
         let apps: &[&str] = match editor.as_str() {
@@ -266,7 +266,7 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
                 .config()
                 .product_name
                 .as_deref()
-                .unwrap_or("We Claude Terminal");
+                .unwrap_or("Ocean Harness");
             let win = WebviewWindowBuilder::new(
                 &app,
                 "panel",

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // issueWorkspace 状态派生/合并/幂等辅助：由 DB 查询输入（issueWorkspaceRepoInput）与旧状态文件

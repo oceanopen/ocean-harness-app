@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"we-claude-terminal/go-server/internal/dal/model"
+	"ocean-harness/src-server/internal/dal/model"
 )
 
 // RepoSubDir 是仓库下的项目子目录（monorepo 多 package 场景）。字段对齐前端 RepoSubDir。

@@ -5,7 +5,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/dal/types"
+	"ocean-harness/src-server/internal/dal/types"
 )
 
 // TestIssueWorkspaceRunStepsPanicRecovery 验证步骤 runner 的 panic 被 issueWorkspaceRunSteps

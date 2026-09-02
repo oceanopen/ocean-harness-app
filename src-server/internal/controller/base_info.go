@@ -4,9 +4,9 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
-	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/dal/types"
-	"we-claude-terminal/go-server/internal/service"
+	"ocean-harness/src-server/internal/apis"
+	"ocean-harness/src-server/internal/dal/types"
+	"ocean-harness/src-server/internal/service"
 )
 
 // BaseInfo 对应 /api/baseInfo 命名空间下的接口（系统信息查询，非 tracker 业务域，保留 GET）。

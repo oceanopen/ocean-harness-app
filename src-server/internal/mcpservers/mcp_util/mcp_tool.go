@@ -1,6 +1,6 @@
 // Package mcputil 提供 MCP server 域的共用基础设施：McpTool 基类（依赖装配与校验）、
 // MCP/McpFail 结果包装、Rust app_config 只读读取。各 MCP server（mcpservers 根目录下
-// mcp_<server>.go 定义的 we_terminal、后续 github 等）的工具 handler 均基于本包构建。
+// mcp_<server>.go 定义的 ocean_harness、后续 github 等）的工具 handler 均基于本包构建。
 package mcputil
 
 import (
@@ -11,14 +11,14 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"we-claude-terminal/go-server/internal/apis"
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/apis"
+	"ocean-harness/src-server/internal/global"
 )
 
 // McpTool 是所有 MCP 工具 handler 的基类（与 apis.Api 对 controller 的地位相同，适配 MCP
 // 协议侧的调用链），业务工具以「嵌入」方式获得依赖装配与校验能力：
 //
-//	type McpWeTerminalTool struct { mcputil.McpTool }
+//	type McpOceanHarnessTool struct { mcputil.McpTool }
 //
 // 与 pros-admin-server 版的差异（本仓库无登录态，Orm/Logger 启动即就绪）：
 //   - Context 用值类型 context.Context（pros 的 *context.Context 指针是历史包袱）；

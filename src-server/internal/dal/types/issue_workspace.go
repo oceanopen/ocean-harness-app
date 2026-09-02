@@ -26,7 +26,7 @@ const (
 )
 
 // 初始化步骤 key（固定顺序执行：createDirs → sshConfig → cloneRepos）。
-// 注：曾规划的 mcpConfig 步骤已取消——MCP 配置由 ocean-code 插件捆绑提供（T1.3 方案变更，
+// 注：曾规划的 mcpConfig 步骤已取消——MCP 配置由 ocean-harness 插件捆绑提供（T1.3 方案变更，
 // 见 docs/agent_dev_01_tasks.md），未来需要 workspace 级单独支持时再加回骨架。
 const (
 	IW_STEP_KEY_CREATE_DIRS = "createDirs" // 创建 {issueId}/.ssh、{issueId}/repo 目录结构

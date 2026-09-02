@@ -7,8 +7,8 @@ import (
 
 	_ "github.com/glebarez/sqlite"
 
-	"we-claude-terminal/go-server/internal/config"
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/config"
+	"ocean-harness/src-server/internal/global"
 )
 
 // createTestAppDb 在临时目录按 Rust 侧 schema（app_config KV 表）造一个 app.db 并写入给定

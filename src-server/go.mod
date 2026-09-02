@@ -1,4 +1,4 @@
-module we-claude-terminal/go-server
+module ocean-harness/src-server
 
 go 1.25.7
 

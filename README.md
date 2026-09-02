@@ -1,13 +1,13 @@
-# We Claude Terminal
+# Ocean Harness
 
 监听 本地 Claude Code 终端运行状态的桌面应用。
 
 ## macOS 安装提示
 
-从 Release 下载安装后，若打开时提示 **“We Claude Terminal” 已损坏，无法打开，你应该将它移到废纸篓**，这是因为应用未经 Apple 代码签名（macOS Gatekeeper 拦截）。在终端执行以下命令移除隔离属性后即可正常打开：
+从 Release 下载安装后，若打开时提示 **“Ocean Harness” 已损坏，无法打开，你应该将它移到废纸篓**，这是因为应用未经 Apple 代码签名（macOS Gatekeeper 拦截）。在终端执行以下命令移除隔离属性后即可正常打开：
 
 ```bash
-xattr -cr "/Applications/We Claude Terminal.app"
+xattr -cr "/Applications/Ocean Harness.app"
 ```
 
 > 若未安装到默认路径，请将路径替换为实际的 `.app` 路径。
@@ -18,12 +18,12 @@ xattr -cr "/Applications/We Claude Terminal.app"
 
 | 平台    | 环境    | 路径                                                              |
 | ------- | ------- | ----------------------------------------------------------------- |
-| macOS   | Release | `~/Library/Application Support/com.we.claude.terminal/app.db`     |
-| macOS   | Dev     | `~/Library/Application Support/com.we.claude.terminal.dev/app.db` |
-| Windows | Release | `%APPDATA%\com.we.claude.terminal\app.db`                         |
-| Windows | Dev     | `%APPDATA%\com.we.claude.terminal.dev\app.db`                     |
-| Linux   | Release | `~/.local/share/com.we.claude.terminal/app.db`                    |
-| Linux   | Dev     | `~/.local/share/com.we.claude.terminal.dev/app.db`                |
+| macOS   | Release | `~/Library/Application Support/com.ocean.harness/app.db`     |
+| macOS   | Dev     | `~/Library/Application Support/com.ocean.harness.dev/app.db` |
+| Windows | Release | `%APPDATA%\com.ocean.harness\app.db`                         |
+| Windows | Dev     | `%APPDATA%\com.ocean.harness.dev\app.db`                     |
+| Linux   | Release | `~/.local/share/com.ocean.harness/app.db`                    |
+| Linux   | Dev     | `~/.local/share/com.ocean.harness.dev/app.db`                |
 
 > Dev 与 Release 使用不同 identifier，数据自动隔离。`~` 为用户主目录；Windows `%APPDATA%` 对应 `C:\Users\<用户名>\AppData\Roaming`；Linux 遵循 XDG 规范，若设置了 `XDG_DATA_HOME` 则以其替代 `~/.local/share`。
 
@@ -33,12 +33,12 @@ xattr -cr "/Applications/We Claude Terminal.app"
 
 | 平台    | 环境    | 路径                                                                               |
 | ------- | ------- | ---------------------------------------------------------------------------------- |
-| macOS   | Release | `~/Library/Application Support/com.we.claude.terminal/app-server/db/server.db`     |
-| macOS   | Dev     | `~/Library/Application Support/com.we.claude.terminal.dev/app-server/db/server.db` |
-| Windows | Release | `%APPDATA%\com.we.claude.terminal\app-server\db\server.db`                         |
-| Windows | Dev     | `%APPDATA%\com.we.claude.terminal.dev\app-server\db\server.db`                     |
-| Linux   | Release | `~/.local/share/com.we.claude.terminal/app-server/db/server.db`                    |
-| Linux   | Dev     | `~/.local/share/com.we.claude.terminal.dev/app-server/db/server.db`                |
+| macOS   | Release | `~/Library/Application Support/com.ocean.harness/app-server/db/server.db`     |
+| macOS   | Dev     | `~/Library/Application Support/com.ocean.harness.dev/app-server/db/server.db` |
+| Windows | Release | `%APPDATA%\com.ocean.harness\app-server\db\server.db`                         |
+| Windows | Dev     | `%APPDATA%\com.ocean.harness.dev\app-server\db\server.db`                     |
+| Linux   | Release | `~/.local/share/com.ocean.harness/app-server/db/server.db`                    |
+| Linux   | Dev     | `~/.local/share/com.ocean.harness.dev/app-server/db/server.db`                |
 
 ## 设计
 

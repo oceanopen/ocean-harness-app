@@ -6,7 +6,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"we-claude-terminal/go-server/internal/global"
+	"ocean-harness/src-server/internal/global"
 )
 
 // Service 是所有 service 的基类：承载由 controller 经 MakeService 灌入的 ctx/Orm/Logger。

@@ -1,7 +1,7 @@
 package types
 
 import (
-	"we-claude-terminal/go-server/internal/dal/model"
+	"ocean-harness/src-server/internal/dal/model"
 )
 
 // 每 action 一个独立 Request 类型（不复用，便于各自演进与校验）。常规字段用 gin binding tag 校验。

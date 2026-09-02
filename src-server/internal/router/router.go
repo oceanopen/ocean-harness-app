@@ -7,9 +7,9 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
-	"we-claude-terminal/go-server/internal/controller"
-	"we-claude-terminal/go-server/internal/mcpservers"
-	"we-claude-terminal/go-server/internal/middleware"
+	"ocean-harness/src-server/internal/controller"
+	"ocean-harness/src-server/internal/mcpservers"
+	"ocean-harness/src-server/internal/middleware"
 )
 
 // SetupRouter 构造 gin engine：注册中间件与路由。
@@ -115,8 +115,8 @@ func SetupRouter() *gin.Engine {
 	// 按 method 分支。路径按 server 扩展（/mcp/streamableHttp/<serverName>，后续 github 等
 	// 第三方 server 按同构追加）；T1.3 的 .mcp.json 将写入 http://127.0.0.1:<port> + 本路径，
 	// 变更须两端同步。无鉴权（本机单用户，与 /api 同口径），工具清单见 internal/mcpservers。
-	mcpHandler := gin.WrapH(mcpservers.McpWeTerminalStreamableHTTPHandler())
-	r.Match([]string{"GET", "POST", "DELETE"}, "/mcp/streamableHttp/weTerminal", mcpHandler)
+	mcpHandler := gin.WrapH(mcpservers.McpOceanHarnessStreamableHTTPHandler())
+	r.Match([]string{"GET", "POST", "DELETE"}, "/mcp/streamableHttp/oceanHarness", mcpHandler)
 
 	return r
 }

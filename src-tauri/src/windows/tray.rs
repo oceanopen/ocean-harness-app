@@ -127,7 +127,7 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .config()
         .product_name
         .as_deref()
-        .unwrap_or("We Claude Terminal");
+        .unwrap_or("Ocean Harness");
 
     let lang = current_language(app.handle());
 

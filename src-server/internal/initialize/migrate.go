@@ -8,8 +8,8 @@ import (
 	"github.com/pressly/goose/v3"
 	"go.uber.org/zap"
 
-	"we-claude-terminal/go-server/internal/global"
-	"we-claude-terminal/go-server/internal/migrations"
+	"ocean-harness/src-server/internal/global"
+	"ocean-harness/src-server/internal/migrations"
 )
 
 // migrationsDir 是 embed.FS 内迁移文件所在子目录（与 embed.go 的 //go:embed 路径对应）。

@@ -1,6 +1,6 @@
 # Agent 驱动开发流程——技术方案与实施规划
 
-> **本模块定位**：在现有 we-claude-terminal-app（Tauri + React + Go 后端）的 issue/terminal/workspace 基础上，构建完整的 Agent 驱动开发闭环：工作空间初始化 → AI 需求润色/子任务拆分 → Skill 自动执行 → 代码提交/PR → 任务归档。
+> **本模块定位**：在现有 ocean-harness-app（Tauri + React + Go 后端）的 issue/terminal/workspace 基础上，构建完整的 Agent 驱动开发闭环：工作空间初始化 → AI 需求润色/子任务拆分 → Skill 自动执行 → 代码提交/PR → 任务归档。
 >
 > **核心原则**：工程化确定性操作 + AI 理解性操作。git clone、分支创建、.ssh/config 生成、文件生成等确定性操作走工程化代码（Rust/Go）；需求澄清、子任务拆分、代码生成等理解性操作走 AI + Skill。
 
@@ -45,7 +45,7 @@
 
 **定位**：自建 Claude Plugin 项目（marketplace：ocean-claude-plugins），包含 ocean-code-plugin
 （通用研发技能）与 ocean-harness-plugin（issue 流程专用：refine-issue/agent-dev 等 skill +
-we-terminal MCP 捆绑）。
+ocean-harness MCP 捆绑）。
 
 **现有 Skill**：
 
@@ -71,7 +71,7 @@ we-terminal MCP 捆绑）。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    we-claude-terminal-app                │
+│                    ocean-harness-app                │
 │                                                         │
 │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐   │
 │  │ TrackerPage  │  │ DevWorkbench│  │  Settings    │   │
@@ -395,7 +395,7 @@ description: AI 需求润色与子任务拆分，基于源码上下文澄清需�
 
 ```markdown
 ---
-allowed-tools: Agent, AskUserQuestion, Read, Glob, Grep, Skill, Bash, Write, Edit, TaskCreate, TaskUpdate, mcp__plugin_ocean-harness_we-terminal
+allowed-tools: Agent, AskUserQuestion, Read, Glob, Grep, Skill, Bash, Write, Edit, TaskCreate, TaskUpdate, mcp__plugin_ocean-harness_ocean-harness
 argument-hint: 可选的执行范围或重点说明
 description: 按 issue 子任务清单逐项自动执行开发，状态经 MCP 回写数据库
 skills: issue-context
@@ -615,7 +615,7 @@ Claude CLI ←── MCP Protocol ──→ Go MCP Server（嵌入 Go 后端进�
 |------|------|
 | SDK | `github.com/modelcontextprotocol/go-sdk` v0.2.0 |
 | Transport | StreamableHTTP（主力）+ SSE（备用），参考 pros-admin-server |
-| 路由 | 在 Gin Router 中注册 `/mcp/streamableHttp/weTerminal` 路径 |
+| 路由 | 在 Gin Router 中注册 `/mcp/streamableHttp/oceanHarness` 路径 |
 | 认证 | 本期无认证（单机场景，MCP 与 Go 后端同进程） |
 | 数据层 | 直接复用现有 service 层（issue_service、workspace_service 等），无需额外 HTTP 跳转 |
 | 参考 | pros-admin-server 的 `mcp_servers/` 目录结构 + `apis.McpTool` 基类 |
@@ -630,60 +630,60 @@ Claude CLI ←── MCP Protocol ──→ Go MCP Server（嵌入 Go 后端进�
 ```
 src-server/internal/
 ├── mcp_servers/
-│   ├── mcp_we_terminal.go           # Server 定义 + Tool 注册
-│   ├── mcp_we_terminal_tools.go     # Tool Handler 实现
+│   ├── mcp_ocean_harness.go           # Server 定义 + Tool 注册
+│   ├── mcp_ocean_harness_tools.go     # Tool Handler 实现
 │   ├── mcp_github.go                # GitHub 外部服务 Server
 │   ├── mcp_github_tools.go          # GitHub Tool Handler
 │   └── mcp_dto/                     # DTO 类型定义
-│       ├── we_terminal_tools.go
+│       ├── ocean_harness_tools.go
 │       └── github_tools.go
 ```
 
 **代码范式**（参考 pros-admin-server）：
 
 ```go
-// mcp_we_terminal.go
-var mcpServerWeTerminal *mcp.Server
+// mcp_ocean_harness.go
+var mcpServerOceanHarness *mcp.Server
 
 func init() {
-    mcpServerWeTerminal = mcp.NewServer(&mcp.Implementation{
-        Name:    "we_terminal",
+    mcpServerOceanHarness = mcp.NewServer(&mcp.Implementation{
+        Name:    "ocean_harness",
         Version: "v1.0.0",
-        Title:   "we-claude-terminal 项目管理工具，操作 issue、子任务、工作空间等",
+        Title:   "ocean-harness 项目管理工具，操作 issue、子任务、工作空间等",
     }, nil)
 
-    mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+    mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
         Name:        "issue_get_info",
         Description: "获取 issue 详情（标题、描述、状态、关联仓库等）",
-    }, McpWeTerminalTool{}.IssueGetInfo)
+    }, McpOceanHarnessTool{}.IssueGetInfo)
 
-    mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+    mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
         Name:        "issue_child_list",
         Description: "获取 issue 的子任务列表",
-    }, McpWeTerminalTool{}.SubtaskList)
+    }, McpOceanHarnessTool{}.SubtaskList)
 
-    mcp.AddTool(mcpServerWeTerminal, &mcp.Tool{
+    mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
         Name:        "issue_child_update",
         Description: "更新子任务状态",
-    }, McpWeTerminalTool{}.SubtaskUpdate)
+    }, McpOceanHarnessTool{}.SubtaskUpdate)
 
     // ... 更多工具
 }
 
-func McpWeTerminalStreamableHTTPHandler() *mcp.StreamableHTTPHandler {
+func McpOceanHarnessStreamableHTTPHandler() *mcp.StreamableHTTPHandler {
     return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-        return mcpServerWeTerminal
+        return mcpServerOceanHarness
     }, nil)
 }
 ```
 
 ```go
-// mcp_we_terminal_tools.go
-type McpWeTerminalTool struct {
+// mcp_ocean_harness_tools.go
+type McpOceanHarnessTool struct {
     apis.McpTool  // 复用现有基类（MakeContext/MakeOrm/Validate/MakeService）
 }
 
-func (mt McpWeTerminalTool) IssueGetInfo(
+func (mt McpOceanHarnessTool) IssueGetInfo(
     ctx context.Context,
     cc *mcp.ServerSession,
     params *mcp.CallToolParamsFor[mcpdto.IssueGetInfoArgs],
@@ -715,14 +715,14 @@ func (mt McpWeTerminalTool) IssueGetInfo(
 MCP 以 plugin 方式驱动，不在工作空间初始化时生成 `.mcp.json`；配置放 ocean-claude-plugins
 的 `plugins/ocean-harness-plugin/`（issue 流程专用插件，后续 refine-issue/agent-dev 等
 skill 亦落此插件）根目录（插件安装即注册，免逐项审批；工具名带
-`mcp__plugin_ocean-harness_we-terminal__*` 前缀）：
+`mcp__plugin_ocean-harness_ocean-harness__*` 前缀）：
 
 ```json
 {
   "mcpServers": {
-    "we-terminal": {
+    "ocean-harness": {
       "type": "http",
-      "url": "http://127.0.0.1:${WE_TERMINAL_PORT:-9100}/mcp/streamableHttp/weTerminal"
+      "url": "http://127.0.0.1:${OCEAN_HARNESS_PORT:-9100}/mcp/streamableHttp/oceanHarness"
     }
   }
 }
@@ -731,7 +731,7 @@ skill 亦落此插件）根目录（插件安装即注册，免逐项审批；�
 - `type` 取 Claude CLI 合法值 `http`（即 Streamable HTTP；`streamable-http` 为 kebab-case
   别名，驼峰 `streamableHttp` 不是合法值）。插件 `.mcp.json` 支持 `${VAR:-default}` 展开
   （与手工配置的 server 同一套环境变量语义）。
-- 端口注入：Rust `pty_spawn` spawn PTY 时注入 `WE_TERMINAL_PORT`（HttpServerState 的端口：
+- 端口注入：Rust `pty_spawn` spawn PTY 时注入 `OCEAN_HARNESS_PORT`（HttpServerState 的端口：
   默认 dev=9000 / build=9100 / 用户配置覆盖）；外部终端无此 env 时回落默认 9100。
 - 插件更新生效：bump plugin.json 版本 → `claude plugin update` → `/reload-plugins`。
 - 工作空间初始化的 mcpConfig 步骤保留 SKIPPED 占位，未来需要 workspace 级单独支持时恢复。
