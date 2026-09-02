@@ -27,6 +27,7 @@ import {
   WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
+import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
@@ -72,9 +73,21 @@ function decodeYesNo(raw: string | null): boolean {
   return raw == null ? true : isYes(raw);
 }
 
-// 初始尺寸占位：真实尺寸由 TerminalView fit 后经 onResize 校正
+// 初始尺寸占位：仅作 usePtySession spawn 的兜底（容器不可见等边缘场景 fit 无
+// 实测值时）。正常时序下 attach 直接用 TerminalView fit 实测尺寸。
 const INITIAL_COLS = 80;
 const INITIAL_ROWS = 24;
+
+// 终端挂载前置配置集：这三个 key 决定字符度量（fontSize/lineHeight → fit 结果
+// 与 spawn 尺寸）与编排行为（startup CLI → directCommand / attachKey）。就绪前
+// 挂载会走「默认值 → 异步到达纠正」路径——二次 refit 与 attachKey 变化重复编
+// 排，每次纠正都是一次打在已绘制提示符上的 SIGWINCH 重绘伪影（% 残迹根因）。
+// 模块级常量保证引用稳定（useConfigReady 依赖项要求）。
+const TERMINAL_MOUNT_CONFIG_KEYS: readonly string[] = [
+  TERMINAL_STARTUP_CODE_CLI_KEY,
+  TERMINAL_FONT_SIZE_KEY,
+  TERMINAL_LINE_HEIGHT_KEY,
+];
 
 interface EmbeddedTerminalProps {
   issueId: string;
@@ -136,6 +149,10 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     decodeTerminalLineHeight,
     DEFAULT_TERMINAL_LINE_HEIGHT,
   );
+  // 度量/编排相关配置就绪闸门（见 TERMINAL_MOUNT_CONFIG_KEYS 注释）：就绪后才
+  // 挂载 TerminalView 并放行 usePtySession 编排，首帧即真实字号、spawn 即实测
+  // 尺寸，一步到位无纠正步骤。
+  const configReady = useConfigReady(TERMINAL_MOUNT_CONFIG_KEYS);
   // main 关闭确认弹窗开关（附加 pane 关闭直处理，无确认）。
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   // main 已关闭态：true = 不渲染 TerminalView，整块换占位视图（无蒙层）。
@@ -167,6 +184,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   const session = usePtySession({
     sessionId,
     cwd,
+    enabled: configReady,
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS,
     // CLI 直启（claude_orca T5.1，唯一自动执行路径）：主 pane + 配置非 none
@@ -253,6 +271,13 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         <Button size="small" startIcon={<SettingsOutlinedIcon />} onClick={openSettings}>打开设置</Button>
       </Box>
     );
+  }
+
+  // 度量/编排配置未就绪：哑会话（不发 spawn）+ 空占位。一次性等待（本地 IPC，
+  // ~ms 级），就绪后 TerminalView 以真实字号首帧 fit、spawn 用实测尺寸——避免
+  // 「默认值挂载 → 配置到达 refit」的二次 resize（SIGWINCH 伪影）。
+  if (!configReady) {
+    return <Box sx={{ height: '100%' }} />;
   }
 
   // 错误态二：spawn 失败（典型为任务目录不存在）。

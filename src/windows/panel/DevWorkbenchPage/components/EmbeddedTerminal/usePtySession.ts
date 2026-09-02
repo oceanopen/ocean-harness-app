@@ -36,7 +36,15 @@ interface UsePtySessionArgs {
   // 工作目录。null = 未就绪（工作空间根目录未设置）：不进编排（不发 spawn），返回哑会话；
   // 由 null 变有值时（设置页配置后 useConfigValue 事件回写触发重渲染）自动重新编排。
   cwd: string | null;
-  // 初始尺寸（挂载后 TerminalView fit 实测会再 resize 校正）
+  // 编排前置（配置就绪闸门）：false = 哑会话（不发 exists/spawn），与 cwd==null 同
+  // 语义。调用方等度量/编排相关配置（字号/行高/启动 CLI）读取完成后置 true——
+  // 首帧即真实字号 fit、directCommand 首次编排即稳定（attachKey 不因异步配置
+  // 变化而重复编排、scrollback 二次回放）。
+  enabled: boolean;
+  // spawn 尺寸兜底占位（容器不可见等边缘场景 fit 无实测值时使用）。正常时序下
+  // attach 直接用 TerminalView fit 实测尺寸（pendingSizeRef），不走「占位 spawn →
+  // 事后补发纠正」的滞后 resize 路径（每次纠正都是一次打在已绘制提示符上的
+  // SIGWINCH 重绘伪影）。
   cols: number;
   rows: number;
   // CLI 直启命令（claude_orca T5.1，唯一自动执行路径）：非 null 时 PTY 直接
@@ -59,8 +67,13 @@ interface UsePtySessionArgs {
 // ——StrictMode 双挂载下早期输出随第一遍已死的 listener 丢失，须靠 scrollback 补齐）。
 // 后端 pty_spawn 幂等，React 19 StrictMode 双挂载安全；unmount 不调 ptyShutdown
 // ——会话与 ring 常驻（切 issue/切菜单仅断订阅，回切 reattach 重载）。
-async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): Promise<'active' | 'exited'> {
-  const { sessionId, cwd, cols, rows } = args;
+async function attach(
+  args: UsePtySessionArgs,
+  onEvent: (e: PtyEvent) => void,
+  // 本次 spawn 使用的初始尺寸（TerminalView fit 实测优先，入参常量占位兜底）。
+  spawnSize: { cols: number; rows: number },
+): Promise<{ next: 'active' | 'exited'; spawned: boolean }> {
+  const { sessionId, cwd } = args;
   if (cwd == null) {
     throw new Error('unreachable: attach called with null cwd (guarded by effect)');
   }
@@ -73,7 +86,7 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
         args.onData(reattached.scrollback, true);
       }
       if (!reattached.exited) {
-        return 'active';
+        return { next: 'active', spawned: false };
       }
       // 自然退出：fallthrough 到 ptySpawn（后端移除旧会话重起，「重开」有效路径）。
     }
@@ -81,15 +94,15 @@ async function attach(args: UsePtySessionArgs, onEvent: (e: PtyEvent) => void): 
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
   const spawned = await unwrap(
-    commands.ptySpawn({ sessionId, cwd, cols, rows, directCommand: args.directCommand ?? undefined }, channel),
+    commands.ptySpawn({ sessionId, cwd, cols: spawnSize.cols, rows: spawnSize.rows, directCommand: args.directCommand ?? undefined }, channel),
   );
   if (!spawned.fresh && spawned.scrollback) {
     args.onData(spawned.scrollback, true);
   }
-  return 'active';
+  return { next: 'active', spawned: true };
 }
 
-export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onData }: UsePtySessionArgs): UsePtySessionResult {
+export function usePtySession({ sessionId, cwd, enabled, cols, rows, directCommand, onData }: UsePtySessionArgs): UsePtySessionResult {
   const [status, setStatus] = useState<PtySessionStatus>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 重开/重试驱动：attempt 自增触发 effect 重跑编排
@@ -97,6 +110,14 @@ export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onDat
   // attach 期间 fit 已经上报的最新尺寸：attach 完成前 ptyResize 会因会话不存在
   // 被后端拒（日志实证），就绪后按积压值补发一次，保证 PTY winsize 与前端一致。
   const pendingSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  // status 的 ref 镜像：resize 等稳定引用回调内读当前态（deps 挂 state 会使引用
+  // 不稳定，TerminalView onResize 接线要求稳定引用）。
+  const statusRef = useRef<PtySessionStatus>('connecting');
+  statusRef.current = status;
+  // 最近一次已请求后端的尺寸（spawn 请求值 / 已发出的 ptyResize 值）：同值不重
+  // 发（内核同尺寸 resize 不触发 SIGWINCH，重发徒增 IPC）。null = 本编排轮尚未
+  // 请求过（reattach 场景后端现值未知，attach 完成后须校正一次）。
+  const lastRequestedRef = useRef<{ cols: number; rows: number } | null>(null);
   // 编排标识（sessionId/cwd/attempt 串联）：依赖变化 → 新一轮编排应从 'connecting' 起步。
   // 用「上轮 key 不一致则渲染期重置」替代 effect 内同步 setState（react/set-state-in-effect，
   // 同 PanelApp mounted 标志的渲染期调整模式）——仅重置一次，不触发额外提交。
@@ -109,10 +130,11 @@ export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onDat
   }
 
   useEffect(() => {
-    // 就绪守卫：根目录未设置（cwd=null）不进编排——不发 exists/spawn，杜绝启动期对
-    // 不存在目录的无效 spawn（后端 WARN「任务目录不存在」刷屏的源头）。
-    // 守卫期间 status 停留 'connecting'（哑会话语义）；父层对 cwd==null 有独立引导分支先渲染。
-    if (cwd == null) {
+    // 就绪守卫：配置未就绪（enabled=false）或根目录未设置（cwd=null）不进编排
+    // ——不发 exists/spawn，杜绝启动期对不存在目录的无效 spawn（后端 WARN
+    // 「任务目录不存在」刷屏的源头）。守卫期间 status 停留 'connecting'
+    // （哑会话语义）；父层对 cwd==null / 配置未就绪均有独立分支先渲染。
+    if (!enabled || cwd == null) {
       return;
     }
     let cancelled = false;
@@ -130,14 +152,26 @@ export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onDat
       }
     };
 
-    attach({ sessionId, cwd, cols, rows, directCommand, onData }, onEvent)
-      .then((next) => {
+    // spawn 初始尺寸：fit 实测优先——TerminalView mount fit 先于本 effect 执行
+    // （子组件 effect 先跑），pendingSizeRef 已持实测值；占位常量仅兜底容器不可
+    // 见（宽高 0 跳过 fit）的边缘场景。先测量后生胎，无「spawn 后纠正」步骤。
+    const spawnSize = pendingSizeRef.current ?? { cols, rows };
+    attach({ sessionId, cwd, enabled, cols, rows, directCommand, onData }, onEvent, spawnSize)
+      .then((result) => {
         if (cancelled) {
           return;
         }
-        setStatus(next);
+        setStatus(result.next);
+        if (result.spawned) {
+          lastRequestedRef.current = spawnSize;
+        }
+        // 尺寸校正（固定时序的收尾步骤）：spawn 已用实测值时通常无事可做；
+        // reattach 到几何已变化的活会话（如分屏后重挂载）时对齐一次——首帧
+        // fit 与后端现值不一致即发，一致则跳过。
         const pending = pendingSizeRef.current;
-        if (pending != null && (pending.cols !== cols || pending.rows !== rows)) {
+        const last = lastRequestedRef.current;
+        if (pending != null && (last == null || pending.cols !== last.cols || pending.rows !== last.rows)) {
+          lastRequestedRef.current = pending;
           void unwrap(commands.ptyResize(sessionId, pending.cols, pending.rows)).catch((e: unknown) => {
             console.warn('[pty] pending resize failed:', e);
           });
@@ -154,7 +188,7 @@ export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onDat
     return () => {
       cancelled = true;
     };
-  }, [sessionId, cwd, cols, rows, directCommand, attempt, onData]);
+  }, [enabled, sessionId, cwd, cols, rows, directCommand, attempt, onData]);
 
   // 以下操作函数均为稳定引用（deps 仅 sessionId），直接交给 TerminalView 接线。
   const write = useCallback((data: string) => {
@@ -164,9 +198,20 @@ export function usePtySession({ sessionId, cwd, cols, rows, directCommand, onDat
   }, [sessionId]);
 
   const resize = useCallback((c: number, r: number) => {
+    // 尺寸台账先行：spawn 与 attach 后校正读的都是这里记录的实测值。
     pendingSizeRef.current = { cols: c, rows: r };
+    // 未就绪只记录不发送：会话不存在时 IPC 必然被后端拒，attach 完成后按积压值
+    // 统一校正（固定时序：测量 → 生胎 → 收尾校正，无中间态请求）。
+    if (statusRef.current !== 'active') {
+      return;
+    }
+    // 与最近一次已请求值一致：无需重发（内核同尺寸 resize 不触发信号）。
+    const last = lastRequestedRef.current;
+    if (last != null && last.cols === c && last.rows === r) {
+      return;
+    }
+    lastRequestedRef.current = { cols: c, rows: r };
     void unwrap(commands.ptyResize(sessionId, c, r)).catch((e: unknown) => {
-      // attach 进行中会话尚未就绪 → not found 属预期（就绪后 attach.then 补发），降级为 debug。
       console.debug('[pty] resize skipped (session not ready):', e);
     });
   }, [sessionId]);

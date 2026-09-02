@@ -20,6 +20,7 @@ import {
   toYesNo,
   WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
+import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useInitIssueWorkspace } from '@src/state/issueWorkspace';
@@ -44,6 +45,15 @@ function decodeDevTreeCollapsed(raw: string | null): boolean {
 function decodeDevSubtaskCollapsed(raw: string | null): boolean {
   return isYes(parseYesNo(raw, DEFAULT_PANEL_DEV_SUBTASK_COLLAPSED));
 }
+
+// 三栏布局挂载前置配置集：两个折叠态 key 决定左右栏首帧宽度。就绪前渲染会按
+// 默认展开态布局、配置到达后动画收起——每次挂载都「先展开再收起」翻转一遍，
+// 中栏终端区逐帧 resize 产生 SIGWINCH 重绘伪影。就绪后首帧即终值（过渡动画
+// 本身保留，仅手动开合时触发）。模块级常量保证引用稳定（useConfigReady 要求）。
+const PANEL_LAYOUT_CONFIG_KEYS: readonly string[] = [
+  PANEL_DEV_TREE_COLLAPSED_KEY,
+  PANEL_DEV_SUBTASK_COLLAPSED_KEY,
+];
 
 // DevWorkbenchPage：控制台「开发工作台」骨架页。
 // 原固定开发步骤流程（init→developing→pull_request→cleanup，基于 started 组子状态）已移除，
@@ -91,6 +101,10 @@ export default function DevWorkbenchPage() {
   // 子任务面板可见性：选中 issue 且用户未折叠（未选中时整体收 0，不占位）。
   const subtaskPanelOpen = hasSelection && issue != null && !subtaskPanelCollapsed;
 
+  // 三栏折叠态配置就绪闸门（见 PANEL_LAYOUT_CONFIG_KEYS 注释）：就绪后才渲染
+  // 布局，首帧即终值。一次性等待（本地 IPC，~ms 级）。
+  const panelConfigReady = useConfigReady(PANEL_LAYOUT_CONFIG_KEYS);
+
   // URL → store 单向同步：有 iid 回写 issue（含其 projectId）；无 iid 清空。
   useEffect(() => {
     if (urlIid == null) {
@@ -104,6 +118,11 @@ export default function DevWorkbenchPage() {
       }
     }
   }, [urlIid, issues, selectedIssueId, selectIssue]);
+
+  // 折叠态配置未就绪：空占位，避免首帧默认展开 → 动画收起的宽度翻转。
+  if (!panelConfigReady) {
+    return <Box sx={{ height: '100%' }} />;
+  }
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
