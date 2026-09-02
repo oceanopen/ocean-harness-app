@@ -1,6 +1,7 @@
-import type { IssueWorkspaceStatusResponseData } from '@src/services';
+import type { IssueWorkspaceArchiveAction, IssueWorkspaceStatusResponseData } from '@src/services';
 import { IssueWorkspaceService } from '@src/services';
 import { commands } from '@src/shared/bindings';
+import { trackerKeys } from '@src/state/tracker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { issueWorkspaceKeys } from './keys';
 
@@ -39,6 +40,56 @@ export function useInitIssueWorkspace() {
     },
     onSuccess: (data, req) => {
       qc.setQueryData<IssueWorkspaceStatusResponseData>(issueWorkspaceKeys.status(req.issueId), data);
+    },
+  });
+}
+
+/** useArchiveIssueWorkspace 的入参（projectId 用于成功后失效 issue 列表缓存；force 仅用于警告二次确认后的执行段）。 */
+export interface ArchiveIssueWorkspaceArgs {
+  projectId: number;
+  issueId: string;
+  baseDir: string;
+  action: IssueWorkspaceArchiveAction;
+  force?: boolean;
+}
+
+/** 归档/取消结果：warnings = 检查发现未提交/未推送，待二次确认；done = 已执行（目录已删、状态已流转）。 */
+export type ArchiveIssueWorkspaceResult
+  = | { status: 'warnings'; warnings: string[] }
+    | { status: 'done' };
+
+/**
+ * 归档/取消工作空间（T3.2）。force 缺省走两段式：先调检查（force=false），干净则内部
+ * 续发执行段、有警告返回 {status:'warnings'} 由 UI 弹警告态，二次确认后携带 force 重发
+ * （此时只走执行段）。执行段固定时序：ptyShutdownIssue（删目录前必杀该 issue 全部终端
+ * 会话，失败仅告警不阻断——会话可能本就不存在）→ archive(force=true)（删目录 + 后端
+ * 流转状态）。成功后失效双缓存：issue 列表（左树/顶栏/子任务面板）与工作空间状态
+ * （回 NOT_INITIALIZED）。
+ */
+export function useArchiveIssueWorkspace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: ArchiveIssueWorkspaceArgs): Promise<ArchiveIssueWorkspaceResult> => {
+      const { projectId: _projectId, ...req } = args;
+      if (!args.force) {
+        const check = await IssueWorkspaceService.archive({ ...req, force: false });
+        if (check.warnings.length > 0) {
+          return { status: 'warnings', warnings: check.warnings };
+        }
+      }
+      const shutdown = await commands.ptyShutdownIssue(args.issueId);
+      if (shutdown.status === 'error') {
+        console.warn('[issueWorkspace] ptyShutdownIssue failed (ignore, session may not exist):', shutdown.error);
+      }
+      await IssueWorkspaceService.archive({ ...req, force: true });
+      return { status: 'done' };
+    },
+    onSuccess: (result, args) => {
+      if (result.status !== 'done') {
+        return;
+      }
+      qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(args.projectId) });
+      qc.invalidateQueries({ queryKey: issueWorkspaceKeys.status(args.issueId) });
     },
   });
 }

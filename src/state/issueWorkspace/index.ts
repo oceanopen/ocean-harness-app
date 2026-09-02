@@ -1,3 +1,4 @@
 // issueWorkspace 域对外 API（唯一入口）。
 export { issueWorkspaceKeys } from './keys';
-export { useInitIssueWorkspace, useIssueWorkspaceStatus } from './queries';
+export { useArchiveIssueWorkspace, useInitIssueWorkspace, useIssueWorkspaceStatus } from './queries';
+export type { ArchiveIssueWorkspaceArgs, ArchiveIssueWorkspaceResult } from './queries';

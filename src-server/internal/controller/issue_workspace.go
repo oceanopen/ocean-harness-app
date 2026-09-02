@@ -46,3 +46,20 @@ func (api IssueWorkspace) Status(ctx *gin.Context) {
 	}
 	api.JsonOK(data)
 }
+
+// Archive POST /api/issueWorkspace/archive：归档/取消工作空间（T3.2，两段式——force=false
+// 仅安全检查返回警告不执行；force=true 删 {issueId}/ 目录 + 流转 issue 状态）。
+func (api IssueWorkspace) Archive(ctx *gin.Context) {
+	req := &types.IssueWorkspaceArchiveRequest{}
+	svc := service.IssueWorkspace{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.Archive(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}

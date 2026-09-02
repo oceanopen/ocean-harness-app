@@ -56,12 +56,14 @@ func SetupRouter() *gin.Engine {
 			localRepositoryGroup.POST("/getLocalBranches", controller.LocalRepository{}.GetLocalBranches)
 		}
 
-		// issueWorkspace 模块：issue 运行工作空间初始化（init 异步受理 + status 轮询读状态文件）。
+		// issueWorkspace 模块：issue 运行工作空间初始化（init 异步受理 + status 轮询读状态文件）
+		// 与归档/取消（archive 删目录 + 流转 issue 状态，T3.2）。
 		// 与 /api/tracker/workspace（任务管理容器）是两个概念，故独立顶层分组。
 		issueWorkspaceGroup := apiGroup.Group("/issueWorkspace")
 		{
 			issueWorkspaceGroup.POST("/init", controller.IssueWorkspace{}.Init)
 			issueWorkspaceGroup.POST("/status", controller.IssueWorkspace{}.Status)
+			issueWorkspaceGroup.POST("/archive", controller.IssueWorkspace{}.Archive)
 		}
 
 		trackerGroup := apiGroup.Group("/tracker")

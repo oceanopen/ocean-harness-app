@@ -47,6 +47,31 @@ type IssueWorkspaceStatusRequest struct {
 	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
 }
 
+// 归档/取消动作（T3.2）：archive → issue 置 DONE；cancel → issue 置 CANCELLED。
+// 两者同为工程化确定性操作：删 {baseDir}/{issueId}/ 目录 + 流转 issue 状态（父子解耦，不级联子任务）。
+const (
+	IW_ARCHIVE_ACTION_ARCHIVE = "archive"
+	IW_ARCHIVE_ACTION_CANCEL  = "cancel"
+)
+
+// IssueWorkspaceArchiveRequest 是 POST /api/issueWorkspace/archive 的入参。两段式契约：
+// force=false 仅做安全检查（未提交变更 + 未推送提交）返回警告不执行；force=true 跳过检查
+// 直接执行（前端二次确认后携带——「删目录前先关终端会话」由前端执行段前置 ptyShutdownIssue
+// 保证，Go 侧不触碰 PTY）。
+type IssueWorkspaceArchiveRequest struct {
+	IssueID string `json:"issueId" binding:"required"`
+	BaseDir string `json:"baseDir" binding:"required"`                     // 须为绝对路径（service 层校验）
+	Action  string `json:"action" binding:"required,oneof=archive cancel"` // 归档 / 取消
+	Force   bool   `json:"force"`                                          // true = 跳过检查直接执行
+}
+
+// IssueWorkspaceArchiveResponseData 是 archive 的响应：force=false 时 executed 恒 false，
+// warnings 为空表示检查干净（前端可直接续发执行段）；force=true 执行成功 executed=true。
+type IssueWorkspaceArchiveResponseData struct {
+	Executed bool     `json:"executed"`
+	Warnings []string `json:"warnings"` // 安全检查警告（每仓库一条；空 = 干净）
+}
+
 // IssueWorkspaceStatusResponseData 是 init/status 共用的响应：serverStatus 为顶层结论，
 // state 为状态文件全文（未初始化时为 null）。
 type IssueWorkspaceStatusResponseData struct {

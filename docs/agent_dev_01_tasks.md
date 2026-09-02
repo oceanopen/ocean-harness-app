@@ -291,7 +291,7 @@
 
 ### T3.2 任务归档/取消按钮与流程
 
-**状态**：⬜
+**状态**：✅（方案变更：父子状态级联解耦 + 两段式契约 + ⋯ 菜单形态，见实施定稿）
 
 **功能**：DevWorkbenchPage 右上角增加归档/取消 icon，点击后删除工作空间目录并更新 issue 状态
 
@@ -305,6 +305,31 @@
   3. 删除 `workspace_base_dir/{issueId}/` 目录
   4. 更新 issue 状态（归档 → DONE，取消 → CANCELLED）
 - 归档和取消都是工程化操作，不依赖 AI
+
+**实施定稿（2026-09-02）**：
+- API 落地 `POST /api/issueWorkspace/archive`（对齐现有命名空间，非原文的 /api/workspace/）
+- **两段式契约**：force=false 仅安全检查不执行（干净返回空 warnings，前端内部续发执行段）；
+  force=true 跳过检查直接执行。检查永不删目录——「删目录前必杀该 issue 全部终端会话」
+  （ptyShutdownIssue）固定在前端执行段前置，用户在警告态取消零副作用
+- **安全检查**：仓库清单读状态文件 steps[].repos（.workspace-ready marker 从未实现，状态
+  文件即唯一真相）；未推送对照本地 origin/agent_{issueId} ref（不联网 fetch，ref 不存在 =
+  从未推送警告）；检查失败的仓库记警告不中止（宁可多警告不可漏警告）
+- **父子状态级联解耦（用户定稿，影响全链路）**：删除 project_issue.go 的
+  maybeSyncChildrenState 及 Update/Move 两处调用——父状态流转不再级联子任务（含看板
+  拖拽父卡）；保留唯一单向联动「全部子任务完成 → 父自动 DONE」（maybeAutoCompleteParent）；
+  新建子任务默认 BACKLOG（STATE_CODE_DEFAULT 原有行为）。顺手移除 applyStateTransition
+  从未使用的 orm 参数
+- 防护：issueWorkspaceActive 拒绝（init 进行中）；issueWorkspaceValidIssueID 路径穿越校验；
+  os.RemoveAll 幂等（未初始化/重复归档安全）；事务流转照 Move 范式（completed_at 口径 +
+  父自动完成联动）
+- UI（用户定稿）：单个 ⋯（MoreHoriz）icon + Menu 两项「归档任务…/取消任务…」（非两个
+  独立 icon）；确认 Dialog 首确认 → 警告态（Alert 列表 + error 色强确认按钮）→ force 执行；
+  成功 toast + selectIssue(null) + 清 URL ?pid&iid 双清（防 URL→store 同步恢复选中）+ 失效
+  projectIssues/issueWorkspace.status 双缓存（左树自动移出、状态回 NOT_INITIALIZED）
+- 文件：gitutil/status.go（新增）、issue_workspace_archive.go（新增）、types/issue_workspace.go、
+  controller/issue_workspace.go、router.go、project_issue.go（Go 侧）；
+  IssueWorkspaceService.ts、services/index.ts、state/issueWorkspace/queries.ts+index.ts、
+  DevWorkbenchPage.tsx（前端）
 
 **依赖**：T1.1
 

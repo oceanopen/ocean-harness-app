@@ -81,6 +81,27 @@ export interface IssueWorkspaceStatusRequest {
   baseDir: string;
 }
 
+/** 归档/取消动作（T3.2）：archive → issue 置 DONE；cancel → issue 置 CANCELLED。 */
+export type IssueWorkspaceArchiveAction = 'archive' | 'cancel';
+
+/**
+ * POST /api/issueWorkspace/archive 的入参。两段式：force=false 仅安全检查（未提交变更 +
+ * 未推送提交）返回警告不执行；force=true 跳过检查直接执行（删目录 + 后端流转状态，
+ * 前端二次确认后携带——执行段前须 ptyShutdownIssue 关闭该 issue 全部终端会话）。
+ */
+export interface IssueWorkspaceArchiveRequest {
+  issueId: string;
+  baseDir: string;
+  action: IssueWorkspaceArchiveAction;
+  force: boolean;
+}
+
+/** archive 响应：force=false 时 executed 恒 false，warnings 为空 = 检查干净。 */
+export interface IssueWorkspaceArchiveResponseData {
+  executed: boolean;
+  warnings: string[];
+}
+
 export class IssueWorkspaceService {
   // init：受理工作空间初始化（异步执行；幂等可重入——执行中重复触发返回当前进度，
   // 已成功且关联未变直接 SUCCESS，失败重试只补失败仓库）。返回受理后的状态快照。
@@ -91,5 +112,10 @@ export class IssueWorkspaceService {
   // status：查询初始化进度（读状态文件派生，不查库），供前端轮询。
   static status(req: IssueWorkspaceStatusRequest): Promise<IssueWorkspaceStatusResponseData> {
     return request<IssueWorkspaceStatusResponseData>('POST', '/api/issueWorkspace/status', req);
+  }
+
+  // archive：归档/取消工作空间（T3.2，两段式契约见请求类型注释）。
+  static archive(req: IssueWorkspaceArchiveRequest): Promise<IssueWorkspaceArchiveResponseData> {
+    return request<IssueWorkspaceArchiveResponseData>('POST', '/api/issueWorkspace/archive', req);
   }
 }

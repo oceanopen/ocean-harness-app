@@ -18,6 +18,11 @@ import (
 // issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，Create 时生成 uuid v7（时间有序），
 // 后续作为工作空间运行任务目录标识）；state_code 为固定 5 值枚举（无 state_id/项目级状态行）；
 // completed_at 为 *time.Time（未完成=nil/完成=&time）。
+//
+// 状态联动口径（2026-09-02 解耦定稿，T3.2 归档/取消随同收口）：父子状态独立变更——
+// 父状态流转不级联子任务（原 maybeSyncChildrenState 已删，含看板拖拽/Update 全链路），
+// 新建子任务默认 BACKLOG（STATE_CODE_DEFAULT）；唯一保留的单向联动是「全部子任务
+// 完成 → 父自动 DONE」（maybeAutoCompleteParent）。
 type ProjectIssue struct {
 	apis.Service
 }
@@ -220,17 +225,12 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 			return ve
 		}
 
-		// stateCode 变化 → completed_at 流转。
-		oldStateCode := issue.StateCode
+		// stateCode 变化 → completed_at 流转（父子解耦：不级联子任务，见文件头注释）。
 		wasCompleted := issue.CompletedAt != nil
-		if e := svc.applyStateTransition(tx, issue, req.StateCode); e != nil {
+		if e := svc.applyStateTransition(issue, req.StateCode); e != nil {
 			return e
 		}
 		if e := iq.Save(issue); e != nil {
-			return e
-		}
-		// 父→子状态联动：父状态变更时子继承父新 stateCode。
-		if e := svc.maybeSyncChildrenState(tx, issue, oldStateCode); e != nil {
 			return e
 		}
 		// 仅当本任务本次"变为完成"时触发父联动（须在自身完成态落库后，否则兄弟查询读到旧值导致永不联动）。
@@ -255,8 +255,8 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 }
 
 // applyStateTransition 处理 stateCode 变化时的 completed_at 流转：新 stateCode=DONE→写 now，否则清 nil。
-// newStateCode 为空或等于当前值为 no-op；非法值返回错误。orm 参数支持事务内复用（传 tx）或独立调用（传 svc.Orm）。
-func (svc ProjectIssue) applyStateTransition(orm *gorm.DB, issue *model.ProjectIssue, newStateCode enums.StateCode) error {
+// 只改内存结构体，不落库（Save 由调用方在事务内执行）。newStateCode 为空或等于当前值为 no-op；非法值返回错误。
+func (svc ProjectIssue) applyStateTransition(issue *model.ProjectIssue, newStateCode enums.StateCode) error {
 	if newStateCode == "" || newStateCode == issue.StateCode {
 		return nil
 	}
@@ -301,36 +301,10 @@ func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.Proje
 	if parent.CompletedAt != nil {
 		return nil // 父已完成
 	}
-	if e := svc.applyStateTransition(orm, parent, enums.STATE_CODE_DONE); e != nil {
+	if e := svc.applyStateTransition(parent, enums.STATE_CODE_DONE); e != nil {
 		return e
 	}
 	return q.ProjectIssue.WithContext(svc.Context).Save(parent)
-}
-
-// maybeSyncChildrenState 父→子状态联动：若 issue 是父（ParentID 为空串）且本次 stateCode 发生变化，
-// 把其全部子任务的 stateCode 同步为父的新 stateCode（复用 applyStateTransition 口径写 completedAt）。
-// orm 传 tx 以复用事务。
-func (svc ProjectIssue) maybeSyncChildrenState(orm *gorm.DB, parent *model.ProjectIssue, oldStateCode enums.StateCode) error {
-	if parent.ParentID != "" || oldStateCode == parent.StateCode {
-		return nil // 不是父，或状态未变（不同步）
-	}
-	q := query.Use(orm)
-	children, e := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ParentID.Eq(parent.ID)).Find()
-	if e != nil {
-		return e
-	}
-	for _, c := range children {
-		if c.StateCode == parent.StateCode {
-			continue // 已同状态
-		}
-		if e := svc.applyStateTransition(orm, c, parent.StateCode); e != nil {
-			return e
-		}
-		if e := q.ProjectIssue.WithContext(svc.Context).Save(c); e != nil {
-			return e
-		}
-	}
-	return nil
 }
 
 // syncIssueLabels 全量同步某 issue 的 label 关联为 labelIDs（事务内调用，orm 传 tx）。
@@ -390,16 +364,11 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 		issue = found
 
 		issue.SortOrder = req.SortOrder
-		oldStateCode := issue.StateCode
 		wasCompleted := issue.CompletedAt != nil
-		if e := svc.applyStateTransition(tx, issue, req.StateCode); e != nil {
+		if e := svc.applyStateTransition(issue, req.StateCode); e != nil {
 			return e
 		}
 		if e := iq.Save(issue); e != nil {
-			return e
-		}
-		// 父→子状态联动：父状态变更时子继承父新 stateCode。
-		if e := svc.maybeSyncChildrenState(tx, issue, oldStateCode); e != nil {
 			return e
 		}
 		// 看板拖入 DONE 列：子任务全完成 → 父自动完成（须在自身完成态落库后）。

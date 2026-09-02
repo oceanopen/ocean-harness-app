@@ -3,6 +3,9 @@ export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysIn
 
 export { ISSUE_WORKSPACE_STEP_KEY, IssueWorkspaceService } from './IssueWorkspaceService';
 export type {
+  IssueWorkspaceArchiveAction,
+  IssueWorkspaceArchiveRequest,
+  IssueWorkspaceArchiveResponseData,
   IssueWorkspaceInitRequest,
   IssueWorkspaceRepoRef,
   IssueWorkspaceRepoState,

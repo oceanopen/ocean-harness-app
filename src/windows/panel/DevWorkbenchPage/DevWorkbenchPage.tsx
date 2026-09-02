@@ -1,12 +1,29 @@
-import type { ProjectIssueResponseData } from '@src/services';
+import type { IssueWorkspaceArchiveAction, ProjectIssueResponseData } from '@src/services';
 import {
   KeyboardDoubleArrowLeft as KeyboardDoubleArrowLeftIcon,
   KeyboardDoubleArrowRight as KeyboardDoubleArrowRightIcon,
+  MoreHoriz as MoreHorizIcon,
   RestartAlt as RestartAltIcon,
   ViewSidebar as ViewSidebarIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
 } from '@mui/icons-material';
-import { Box, Chip, CircularProgress, IconButton, Tooltip, Typography, useTheme } from '@mui/material';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Menu,
+  MenuItem,
+  Tooltip,
+  Typography,
+  useTheme,
+} from '@mui/material';
 import {
   decodeWorkspaceBaseDir,
   DEFAULT_PANEL_DEV_SUBTASK_COLLAPSED,
@@ -22,11 +39,12 @@ import {
 } from '@src/shared/appConfig';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
+import { useToast } from '@src/shared/useToast';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
-import { useInitIssueWorkspace } from '@src/state/issueWorkspace';
+import { useArchiveIssueWorkspace, useInitIssueWorkspace } from '@src/state/issueWorkspace';
 import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
@@ -65,7 +83,7 @@ const PANEL_LAYOUT_CONFIG_KEYS: readonly string[] = [
 // 本页单向同步 URL→store。store 全局，页面卸载/重挂载（声明式路由切走即卸载）不丢选中。
 export default function DevWorkbenchPage() {
   const theme = useTheme();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const urlPid = numParam(searchParams.get(DEV_PID_PARAM));
   const urlIid = strParam(searchParams.get(DEV_IID_PARAM)); // issue id 为 uuid 字符串
 
@@ -88,6 +106,13 @@ export default function DevWorkbenchPage() {
   const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const initWorkspace = useInitIssueWorkspace();
 
+  // 归档/取消（T3.2）：⋯ 菜单入口 + 两段式确认（首确认 → 后端安全检查 → 警告态强确认）。
+  const { show: showToast, snack: toastSnack } = useToast();
+  const archiveWorkspace = useArchiveIssueWorkspace();
+  const [actionsMenuAnchor, setActionsMenuAnchor] = useState<HTMLElement | null>(null);
+  // 确认弹窗态：null = 关闭；warnings = null 首确认态，非空 = 安全检查警告态（二次确认）。
+  const [archiveConfirm, setArchiveConfirm] = useState<{ kind: IssueWorkspaceArchiveAction; warnings: string[] | null } | null>(null);
+
   // 加载用 pid：URL 优先（reload/恢复），否则 store（URL 无 dev 参数的兜底）；null 时不发请求。
   const loadPid = urlPid ?? selectedProjectId;
   const { data: issues = [], isLoading: issuesLoading } = useProjectIssues(loadPid);
@@ -97,6 +122,34 @@ export default function DevWorkbenchPage() {
   const hasSelection = effIssueId != null && loadPid != null;
   const issue = issues.find(i => i.id === effIssueId);
   const stateMeta = issue ? STATE_MAP.get(issue.stateCode) : undefined;
+
+  // 提交归档/取消：首确认（warnings=null → force=false，后端干净则内部续发执行段）/
+  // 警告态强确认（warnings 非空 → force=true 只走执行段）。成功后清选中 + 清 URL
+  // （URL→store 同步 effect 会从 iid 恢复选中，双清才彻底，参照 DevIssueRow 取消选中）。
+  const submitArchive = () => {
+    if (archiveConfirm == null || issue == null || loadPid == null) {
+      return;
+    }
+    const { kind, warnings } = archiveConfirm;
+    archiveWorkspace.mutate(
+      { projectId: loadPid, issueId: issue.id, baseDir, action: kind, force: warnings != null },
+      {
+        onSuccess: (result) => {
+          if (result.status === 'warnings') {
+            setArchiveConfirm({ kind, warnings: result.warnings });
+            return;
+          }
+          setArchiveConfirm(null);
+          showToast(kind === 'archive' ? '已归档：工作空间目录已删除' : '已取消：工作空间目录已删除', 'success');
+          selectIssue(null);
+          setSearchParams({}, { replace: true });
+        },
+        onError: (e) => {
+          showToast(e instanceof Error ? e.message : String(e), 'error');
+        },
+      },
+    );
+  };
 
   // 子任务面板可见性：选中 issue 且用户未折叠（未选中时整体收 0，不占位）。
   const subtaskPanelOpen = hasSelection && issue != null && !subtaskPanelCollapsed;
@@ -219,6 +272,37 @@ export default function DevWorkbenchPage() {
             )}
             {/* 终端分割按钮组（作用于活跃 pane；原终端区工具条上移至此） */}
             {hasSelection && issue && <TerminalSplitButtons issueId={issue.id} />}
+            {/* 任务操作菜单（T3.2）：⋯ 入口，归档/取消（删工作空间目录 + 流转 issue 状态，两段式确认） */}
+            {hasSelection && issue && loadPid != null && (
+              <>
+                <IconButton
+                  size="small"
+                  aria-label="更多任务操作"
+                  onClick={e => setActionsMenuAnchor(e.currentTarget)}
+                  sx={{ color: 'text.secondary' }}
+                >
+                  <MoreHorizIcon />
+                </IconButton>
+                <Menu anchorEl={actionsMenuAnchor} open={actionsMenuAnchor != null} onClose={() => setActionsMenuAnchor(null)}>
+                  <MenuItem
+                    onClick={() => {
+                      setActionsMenuAnchor(null);
+                      setArchiveConfirm({ kind: 'archive', warnings: null });
+                    }}
+                  >
+                    归档任务…
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setActionsMenuAnchor(null);
+                      setArchiveConfirm({ kind: 'cancel', warnings: null });
+                    }}
+                  >
+                    取消任务…
+                  </MenuItem>
+                </Menu>
+              </>
+            )}
           </Box>
         </Box>
 
@@ -276,6 +360,48 @@ export default function DevWorkbenchPage() {
           {issue && loadPid != null && <IssueSubTaskPanel projectId={loadPid} issueId={issue.id} />}
         </Box>
       </Box>
+
+      {/* 归档/取消确认（T3.2）：首确认（后果说明）→ 后端安全检查 → 警告态强确认（force 执行） */}
+      <Dialog
+        open={archiveConfirm != null}
+        onClose={archiveWorkspace.isPending ? undefined : () => setArchiveConfirm(null)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>{archiveConfirm?.kind === 'cancel' ? '取消任务' : '归档任务'}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            {archiveConfirm?.kind === 'cancel'
+              ? '取消将删除该任务的工作空间目录（含全部仓库的本地修改与未推送提交）、关闭其终端会话，issue 置为「已取消」。'
+              : '归档将删除该任务的工作空间目录（含全部仓库的本地修改与未推送提交）、关闭其终端会话，issue 置为「已完成」。'}
+          </Typography>
+          {archiveConfirm?.warnings != null && (
+            <Alert severity="warning" sx={{ mt: 1.5 }}>
+              安全检查发现以下问题，执行后这些内容将丢失：
+              <Box component="ul" sx={{ my: 0.5, pl: 2 }}>
+                {archiveConfirm.warnings.map(w => <li key={w}>{w}</li>)}
+              </Box>
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button size="small" onClick={() => setArchiveConfirm(null)} disabled={archiveWorkspace.isPending}>返回</Button>
+          <Button
+            size="small"
+            variant="contained"
+            color={archiveConfirm?.warnings != null ? 'error' : 'primary'}
+            onClick={submitArchive}
+            disabled={archiveWorkspace.isPending}
+          >
+            {archiveWorkspace.isPending
+              ? '执行中…'
+              : archiveConfirm?.warnings != null
+                ? '确认删除工作空间'
+                : archiveConfirm?.kind === 'cancel' ? '取消任务' : '归档'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {toastSnack}
     </Box>
   );
 }
