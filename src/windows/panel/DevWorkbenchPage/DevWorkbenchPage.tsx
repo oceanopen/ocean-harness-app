@@ -1,5 +1,7 @@
 import type { ProjectIssueResponseData } from '@src/services';
 import {
+  KeyboardDoubleArrowLeft as KeyboardDoubleArrowLeftIcon,
+  KeyboardDoubleArrowRight as KeyboardDoubleArrowRightIcon,
   RestartAlt as RestartAltIcon,
   ViewSidebar as ViewSidebarIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
@@ -7,9 +9,11 @@ import {
 import { Box, Chip, CircularProgress, IconButton, Tooltip, Typography, useTheme } from '@mui/material';
 import {
   decodeWorkspaceBaseDir,
+  DEFAULT_PANEL_DEV_SUBTASK_COLLAPSED,
   DEFAULT_PANEL_DEV_TREE_COLLAPSED,
   DEFAULT_WORKSPACE_BASE_DIR,
   isYes,
+  PANEL_DEV_SUBTASK_COLLAPSED_KEY,
   PANEL_DEV_TREE_COLLAPSED_KEY,
   parseYesNo,
   setAppConfig,
@@ -25,6 +29,7 @@ import { useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
+import IssueSubTaskPanel from './components/IssueSubTaskPanel/IssueSubTaskPanel';
 import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
 import TerminalSplitButtons from './components/TerminalPanes/TerminalSplitButtons';
 import WorkspaceInitGate from './components/WorkspaceInitGate/WorkspaceInitGate';
@@ -35,9 +40,15 @@ function decodeDevTreeCollapsed(raw: string | null): boolean {
   return isYes(parseYesNo(raw, DEFAULT_PANEL_DEV_TREE_COLLAPSED));
 }
 
+// 右侧子任务面板折叠状态 decode：同左栏范式。
+function decodeDevSubtaskCollapsed(raw: string | null): boolean {
+  return isYes(parseYesNo(raw, DEFAULT_PANEL_DEV_SUBTASK_COLLAPSED));
+}
+
 // DevWorkbenchPage：控制台「开发工作台」骨架页。
 // 原固定开发步骤流程（init→developing→pull_request→cleanup，基于 started 组子状态）已移除，
-// 后续将接入 AI 驱动开发流程。当前保留：左栏任务树（IN_PROGRESS 的 issue）+ 右栏顶部信息栏与空态提示。
+// 后续将接入 AI 驱动开发流程。当前保留：左栏任务树（IN_PROGRESS 的 issue）+ 中栏顶部信息栏与
+// 终端区 + 右侧子任务面板（T3.1，选中 issue 展示子任务清单与状态）。
 //
 // 路由接入（全 query 风格）：issue 选中由 URL 驱动——
 //   ?pid=<projectId>&iid=<issueId>   选中 issue（项目→issue，issue 靠 project 加载，故 pid 同在 URL）
@@ -57,6 +68,12 @@ export default function DevWorkbenchPage() {
     void setAppConfig(PANEL_DEV_TREE_COLLAPSED_KEY, toYesNo(!issueTreeCollapsed));
   };
 
+  // 右栏子任务面板（T3.1）折叠态：同左栏范式，config 持久化（跨重启、多窗口同步）。
+  const subtaskPanelCollapsed = useConfigValue(PANEL_DEV_SUBTASK_COLLAPSED_KEY, decodeDevSubtaskCollapsed, false);
+  const toggleSubtaskPanelCollapsed = () => {
+    void setAppConfig(PANEL_DEV_SUBTASK_COLLAPSED_KEY, toYesNo(!subtaskPanelCollapsed));
+  };
+
   // 工作空间根目录（issueWorkspace 初始化闸门与右上角重新初始化按钮共用；空串 = 未设置）。
   const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const initWorkspace = useInitIssueWorkspace();
@@ -70,6 +87,9 @@ export default function DevWorkbenchPage() {
   const hasSelection = effIssueId != null && loadPid != null;
   const issue = issues.find(i => i.id === effIssueId);
   const stateMeta = issue ? STATE_MAP.get(issue.stateCode) : undefined;
+
+  // 子任务面板可见性：选中 issue 且用户未折叠（未选中时整体收 0，不占位）。
+  const subtaskPanelOpen = hasSelection && issue != null && !subtaskPanelCollapsed;
 
   // URL → store 单向同步：有 iid 回写 issue（含其 projectId）；无 iid 清空。
   useEffect(() => {
@@ -150,6 +170,17 @@ export default function DevWorkbenchPage() {
             </Typography>
           )}
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+            {/* 右侧子任务面板折叠开关（双箭头指向收合方向，与左栏 ViewSidebar 区分） */}
+            {hasSelection && issue && (
+              <IconButton
+                size="small"
+                onClick={toggleSubtaskPanelCollapsed}
+                aria-label={subtaskPanelCollapsed ? '显示子任务面板' : '隐藏子任务面板'}
+                sx={{ color: 'text.secondary' }}
+              >
+                {subtaskPanelCollapsed ? <KeyboardDoubleArrowLeftIcon /> : <KeyboardDoubleArrowRightIcon />}
+              </IconButton>
+            )}
             {/* 重新初始化工作空间（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
                 与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。 */}
             {hasSelection && issue && (
@@ -202,6 +233,28 @@ export default function DevWorkbenchPage() {
                       <Typography variant="body2" color="text.secondary">任务不存在或已移出开发流程</Typography>
                     </Box>
                   )}
+        </Box>
+      </Box>
+
+      {/* 右侧第三栏：子任务面板（T3.1）。选中 issue 且未折叠时展开 280px，否则收 0（未选中不占位）；
+          折叠范式同左栏（外层 width 过渡动画 + 内层固定宽防内容重排）。 */}
+      <Box
+        sx={{
+          width: subtaskPanelOpen ? 280 : 0,
+          flexShrink: 0,
+          borderLeft: subtaskPanelOpen ? 1 : 0,
+          borderColor: 'divider',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          transition: theme.transitions.create(['width'], {
+            duration: theme.transitions.duration.standard,
+            easing: theme.transitions.easing.sharp,
+          }),
+        }}
+      >
+        <Box sx={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+          {issue && loadPid != null && <IssueSubTaskPanel projectId={loadPid} issueId={issue.id} />}
         </Box>
       </Box>
     </Box>

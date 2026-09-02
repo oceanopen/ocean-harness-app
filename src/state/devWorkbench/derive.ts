@@ -15,3 +15,13 @@ export function isDevIssue(issue: ProjectIssueResponseData): boolean {
 export function filterDevIssues(issues: ProjectIssueResponseData[]): ProjectIssueResponseData[] {
   return issues.filter(i => isDevIssue(i));
 }
+
+/** 过滤出指定 issue 的子任务（parentId 指向该 issue），按 sortOrder 升序（右侧子任务面板用）。 */
+export function filterIssueSubTasks(
+  issues: ProjectIssueResponseData[],
+  issueId: string,
+): ProjectIssueResponseData[] {
+  return issues
+    .filter(i => i.parentId === issueId)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}

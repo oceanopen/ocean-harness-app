@@ -3,6 +3,10 @@
 > 基于 [技术方案总览](agent_dev_00_overview.md) 拆解的模块级任务清单。任务粒度为模块+功能+技术方案，不涉及具体代码文件。
 >
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
+>
+> **状态回写规则（内置，无需人工提醒）**：任务实现完成后，执行方（开发 Agent）在总结阶段
+> 直接把对应任务状态改为 ✅ 并补方案变更记录（实施定稿段落，标注日期），同步提交——
+> 不等待用户单独指示。
 
 ---
 
@@ -251,7 +255,7 @@
 
 ### T3.1 子任务列表面板（右侧工具条）
 
-**状态**：⬜
+**状态**：✅（方案变更：手动刷新替代自动刷新、纯展示替代会话切换）
 
 **功能**：DevWorkbenchPage 右侧可折叠面板，展示 issue 的子任务列表及各自状态
 
@@ -262,6 +266,24 @@
 - 展示：序号 + 标题 + 状态图标（☐ PENDING / ▶ IN_PROGRESS / ☑ DONE / ⊘ SKIPPED）
 - 交互：点击子任务 → 终端切换到对应 Claude 会话
 - 实时同步：MCP 更新 DB → React Query 自动刷新
+
+**实施定稿（2026-09-02）**：
+- 数据零新增：`issueSubTask/getList` API 不存在也无需新建——面板订阅现有 `useProjectIssues`
+  （同 query key 与左树/顶栏共享缓存，零新增请求），子任务由 `filterIssueSubTasks`
+  （devWorkbench 域 derive.ts）按 parentId 过滤 + sortOrder 升序前端派生
+- 状态枚举按实际映射：PENDING→TODO（BACKLOG 同灰圈）、SKIPPED→CANCELLED（灰杠+删除线）；
+  IN_PROGRESS 转圈、DONE 绿勾（对齐 WorkspaceInitGate StepStatusIcon 风格）
+- 交互变更：子任务与终端会话无映射（agent-dev 在单会话内逐项执行），「点击切换对应
+  Claude 会话」不可行，本期纯展示（行不可点）
+- 实时同步变更：后端 MCP 写库无事件推送，自动刷新整体后移——本期面板头部手动刷新按钮
+  （invalidate `trackerKeys.projectIssues`，左树/顶栏状态徽章同步受益），自动刷新待单独
+  方案（`tracker:changed` Tauri 事件方向，state/README.md 已预留）
+- 布局：DevWorkbenchPage 根 flex 行新增第三栏 280px，折叠范式照抄左栏（外层 width 过渡 +
+  内层固定宽防重排），折叠态走 appConfig 新 key `panel_dev_subtask_collapsed`（跨重启/
+  多窗口同步）；未选中 issue 时收 0 不占位，选中但无子任务显示空态引导（提示运行
+  /ocean-harness:refine-issue）
+- 文件：`components/IssueSubTaskPanel/IssueSubTaskPanel.tsx` 单文件（状态图标用内部函数
+  不导出，未拆 subtaskMeta.ts，规避图标组件引用类型体操）
 
 **依赖**：无（复用现有 projectIssue API，按 parentId 过滤）
 

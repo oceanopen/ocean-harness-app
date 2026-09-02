@@ -166,6 +166,11 @@ export const DEFAULT_PANEL_SIDEBAR_COLLAPSED = YES_NO.NO;
 export const PANEL_DEV_TREE_COLLAPSED_KEY = 'panel_dev_tree_collapsed';
 export const DEFAULT_PANEL_DEV_TREE_COLLAPSED = YES_NO.NO;
 
+// 开发工作台右侧子任务面板折叠状态。值用 YesNo，缺失视为 NO（默认展开）。
+// 同为纯前端偏好（参照 panel_dev_tree_collapsed 先例）。
+export const PANEL_DEV_SUBTASK_COLLAPSED_KEY = 'panel_dev_subtask_collapsed';
+export const DEFAULT_PANEL_DEV_SUBTASK_COLLAPSED = YES_NO.NO;
+
 // 工作空间默认根目录（新建/导入项目类流程的目录选择起点）。空串 = 未设置，消费方自行兜底。
 // 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 panel_sidebar_collapsed 先例）。
 export const WORKSPACE_BASE_DIR_KEY = 'workspace_base_dir';
