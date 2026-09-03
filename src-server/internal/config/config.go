@@ -48,7 +48,7 @@ type Config struct {
 	Port      int    // HTTP 监听端口
 	LogDir    string // 日志目录（绝对路径）
 	SqliteDir string // sqlite 数据目录（绝对路径）
-	AppDbPath string // Rust 侧 app.db 路径（可选：空 = MCP workspace_status 工具调用期报未配置，不影响启动）
+	AppDbPath string // Rust 侧 app.db 路径（可选：空 = 依赖它的 MCP 工具〔workspace_status / github〕调用期报未配置，不影响启动）
 }
 
 // MustLoadConfig 读取并校验配置。优先级：环境变量 > 配置文件（-config 指定，可选）。

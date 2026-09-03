@@ -2,7 +2,7 @@
 // MenuKey 同时是后端 EVENT_SETTINGS_NAVIGATE payload 集合（Rust 侧 Option<String> 不校验，由 isMenuKey 守卫）。
 
 // settings 分区标识（原 SettingsApp 局部 type 迁入此处，供路由/侧栏/深链共用）。
-export type MenuKey = 'appConfig' | 'terminalConfig' | 'projectConfig' | 'serviceConfig' | 'about';
+export type MenuKey = 'appConfig' | 'terminalConfig' | 'projectConfig' | 'serviceConfig' | 'userProfile' | 'about';
 
 // 默认分区（'/' 重定向目标；pathToMenu 未知路径回落；深链 payload 非法回落）。
 export const DEFAULT_MENU: MenuKey = 'appConfig';
@@ -13,6 +13,7 @@ export const MENU_PATHS: Record<MenuKey, string> = {
   terminalConfig: '/terminalConfig',
   projectConfig: '/projectConfig',
   serviceConfig: '/serviceConfig',
+  userProfile: '/userProfile',
   about: '/about',
 };
 

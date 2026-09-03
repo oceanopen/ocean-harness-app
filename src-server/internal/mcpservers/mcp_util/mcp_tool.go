@@ -1,6 +1,6 @@
 // Package mcputil 提供 MCP server 域的共用基础设施：McpTool 基类（依赖装配与校验）、
-// MCP/McpFail 结果包装、Rust app_config 只读读取。各 MCP server（mcpservers 根目录下
-// mcp_<server>.go 定义的 ocean_harness、后续 github 等）的工具 handler 均基于本包构建。
+// MCP/McpFail 结果包装、Rust app_config 只读读取。ocean_harness server 的各业务域工具
+// （issue/workspace/github 等，handler 见 mcp_tool/）均基于本包构建。
 package mcputil
 
 import (

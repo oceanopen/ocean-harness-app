@@ -5,6 +5,7 @@
     "terminalConfig": "Terminal Config",
     "projectConfig": "Project Config",
     "serviceConfig": "Service Config",
+    "userProfile": "User Profile",
     "about": "About"
   },
   "common": {
@@ -95,6 +96,26 @@
     },
     "help": {
       "httpServerPort": "Leave empty to use the default port ({{port}}). Range 3000–10000. Manually restart the service on the status page to apply."
+    }
+  },
+  "userProfile": {
+    "github": {
+      "row": {
+        "pat": "GitHub Personal Access Token"
+      },
+      "status": {
+        "configured": "Configured",
+        "notConfigured": "Not configured"
+      },
+      "placeholder": {
+        "pat": "Enter a new token to replace; leave empty to keep"
+      },
+      "help": {
+        "pat": "Used by the github MCP tools inside AI terminals to call the GitHub API (create PR, query CI status). Create one at github.com/settings/tokens (repo and workflow scopes recommended). The token is stored only in the local app database."
+      },
+      "button": {
+        "clear": "Clear"
+      }
     }
   }
 }

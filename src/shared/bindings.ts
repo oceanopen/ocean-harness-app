@@ -179,6 +179,8 @@ export const EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT = "pet-claude-sessions-task:re
 
 export const EVENT_SETTINGS_NAVIGATE = "settings:navigate" as const;
 
+export const GITHUB_PAT_KEY = "github_pat" as const;
+
 export const HTTP_SERVER_PORT_KEY = "http_server_port" as const;
 
 export const HTTP_SERVER_PORT_RELEASE = 9100 as const;

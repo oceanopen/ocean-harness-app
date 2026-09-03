@@ -5,8 +5,8 @@
 package model
 
 import (
-	"time"
 	"ocean-harness/src-server/internal/dal/enums"
+	"time"
 )
 
 const TableNameProjectIssue = "t_project_issues"

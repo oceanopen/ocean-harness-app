@@ -114,6 +114,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             "MAX_HTTP_SERVER_PORT",
             shared::app_config::MAX_HTTP_SERVER_PORT,
         )
+        .constant("GITHUB_PAT_KEY", shared::app_config::GITHUB_PAT_KEY)
         // HTTP 端口默认值（http_server.rs）：设置页帮助文案按运行模式展示默认端口。
         .constant(
             "HTTP_SERVER_PORT_TEST",

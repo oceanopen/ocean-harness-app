@@ -1,5 +1,6 @@
-// Package mcptool 存放各 MCP server 的工具 handler 实现（文件按 server 命名，如
-// mcp_ocean_harness_tools.go；后续 github server 落 mcp_github_tools.go 同构扩展）。
+// Package mcptool 存放 MCP 工具 handler 实现（单 server 归口：全部工具注册在
+// mcpservers/mcp_ocean_harness.go，文件按业务域命名——issue/workspace 工具在
+// mcp_ocean_harness_tools.go、github 工具在 mcp_github_tools.go，后续业务域同理）。
 // handler 嵌入 mcputil.McpTool 获得链式装配（MakeContext → Validate → MakeService，
 // 链尾读 .Errors），内部复用既有 service 层（与 HTTP controller 完全共享业务逻辑，
 // 含事务与状态联动）；结果包装统一走 mcputil.McpOK / mcputil.McpFail。

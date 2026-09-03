@@ -112,11 +112,11 @@ func SetupRouter() *gin.Engine {
 		}
 	}
 
-	// MCP 端点（docs/agent_dev_01_tasks.md T2.1）：Streamable HTTP 三方法——POST（JSON-RPC
+	// MCP 端点（docs/agent_dev_01_tasks.md T2.1 + T4.1 合并定稿：单 server 归口，全部工具
+	// 含 github_* 注册在 ocean_harness server）：Streamable HTTP 三方法——POST（JSON-RPC
 	// 工具调用）、GET（服务端 SSE 流）、DELETE（会话终止），SDK StreamableHTTPHandler 内部
-	// 按 method 分支。路径按 server 扩展（/mcp/streamableHttp/<serverName>，后续 github 等
-	// 第三方 server 按同构追加）；T1.3 的 .mcp.json 将写入 http://127.0.0.1:<port> + 本路径，
-	// 变更须两端同步。无鉴权（本机单用户，与 /api 同口径），工具清单见 internal/mcpservers。
+	// 按 method 分支。T1.3 的 .mcp.json 写入 http://127.0.0.1:<port> + 本路径，变更须两端
+	// 同步。无鉴权（本机单用户，与 /api 同口径），工具清单见 internal/mcpservers。
 	mcpHandler := gin.WrapH(mcpservers.McpOceanHarnessStreamableHTTPHandler())
 	r.Match([]string{"GET", "POST", "DELETE"}, "/mcp/streamableHttp/oceanHarness", mcpHandler)
 

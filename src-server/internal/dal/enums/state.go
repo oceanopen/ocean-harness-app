@@ -41,8 +41,8 @@ func (s StateCode) Value() (driver.Value, error) {
 
 // StateMeta 描述一个状态的展示元数据（列表分组头/徽章/看板列头用）。
 type StateMeta struct {
-	Code  StateCode `json:"code"`  // state_code
-	Name  string    `json:"name"`  // 中文展示名，Go 直出，不走 i18n
+	Code  StateCode `json:"code"` // state_code
+	Name  string    `json:"name"` // 中文展示名，Go 直出，不走 i18n
 	Color string    `json:"color"`
 }
 

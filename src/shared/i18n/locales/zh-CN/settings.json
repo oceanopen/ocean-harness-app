@@ -5,6 +5,7 @@
     "terminalConfig": "终端配置",
     "projectConfig": "项目配置",
     "serviceConfig": "服务配置",
+    "userProfile": "个人中心",
     "about": "关于"
   },
   "common": {
@@ -95,6 +96,26 @@
     },
     "help": {
       "httpServerPort": "留空使用默认端口（{{port}}），范围 3000–10000。修改后需在服务状态页手动重启服务生效。"
+    }
+  },
+  "userProfile": {
+    "github": {
+      "row": {
+        "pat": "GitHub Personal Access Token"
+      },
+      "status": {
+        "configured": "已配置",
+        "notConfigured": "未配置"
+      },
+      "placeholder": {
+        "pat": "输入新 Token 覆盖，留空保持不变"
+      },
+      "help": {
+        "pat": "用于 AI 终端内的 github 工具调用 GitHub API（创建 PR、查询 CI 状态）。可在 github.com/settings/tokens 创建（建议仅授予 repo 与 workflow 权限）。Token 仅存储于本地应用数据库。"
+      },
+      "button": {
+        "clear": "清除"
+      }
     }
   }
 }

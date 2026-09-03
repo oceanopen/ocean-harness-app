@@ -8,6 +8,7 @@ export {
   DEFAULT_ITERM2_SPLIT_DIRECTION,
   DEFAULT_POLL_INTERVAL_SECS,
   DEFAULT_TERMINAL_POST_OPEN_COMMAND,
+  GITHUB_PAT_KEY,
   HTTP_SERVER_PORT_KEY,
   HTTP_SERVER_PORT_RELEASE,
   HTTP_SERVER_PORT_TEST,
@@ -21,6 +22,11 @@ export {
   POLL_INTERVAL_SECS_KEY,
   TERMINAL_POST_OPEN_COMMAND_KEY,
 } from './bindings';
+
+// GitHub Personal Access Token 默认值：空串 = 未配置（Go sidecar 的 github MCP 工具
+// 经 GO_SERVER_APP_DB 指向的 app.db 只读此 key；敏感值，设置页不回显明文——见
+// UserProfilePage）。
+export const DEFAULT_GITHUB_PAT = '';
 
 // 本文件是前端配置项消费的统一出口。两类来源：
 // 1. 后端读取的 key（LANGUAGE_KEY / POLL_INTERVAL_SECS 族等）：SSOT 在

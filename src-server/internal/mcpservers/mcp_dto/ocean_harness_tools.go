@@ -50,18 +50,18 @@ type WorkspaceStatusArgs struct {
 
 // IssueContent 是单个 issue 的出参（issue_get_info 返回单对象；issue_child_create 返回新建对象）。
 type IssueContent struct {
-	ID                   string                 `json:"id" jsonschema:"issue 主键（uuid）"`
-	Name                 string                 `json:"name" jsonschema:"标题"`
-	Description          string                 `json:"description,omitempty" jsonschema:"描述（Markdown）"`
-	StateCode            string                 `json:"stateCode" jsonschema:"状态：BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
-	Priority             string                 `json:"priority" jsonschema:"优先级：urgent/high/medium/low/none"`
-	ParentID             string                 `json:"parentId,omitempty" jsonschema:"父 issue 主键；留空表示顶级任务"`
-	IsDraft              string                 `json:"isDraft" jsonschema:"是否草稿：Y/N"`
-	StartDate            string                 `json:"startDate,omitempty" jsonschema:"开始日期（yyyy-mm-dd），留空表示未设置"`
-	TargetDate           string                 `json:"targetDate,omitempty" jsonschema:"目标日期（yyyy-mm-dd），留空表示未设置"`
-	CompletedAt          string                 `json:"completedAt,omitempty" jsonschema:"完成时间（RFC3339），留空表示未完成"`
-	SortOrder            float64                `json:"sortOrder" jsonschema:"看板排序权重（升序）"`
-	Labels               []IssueLabelContent    `json:"labels" jsonschema:"标签列表"`
+	ID                   string                   `json:"id" jsonschema:"issue 主键（uuid）"`
+	Name                 string                   `json:"name" jsonschema:"标题"`
+	Description          string                   `json:"description,omitempty" jsonschema:"描述（Markdown）"`
+	StateCode            string                   `json:"stateCode" jsonschema:"状态：BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
+	Priority             string                   `json:"priority" jsonschema:"优先级：urgent/high/medium/low/none"`
+	ParentID             string                   `json:"parentId,omitempty" jsonschema:"父 issue 主键；留空表示顶级任务"`
+	IsDraft              string                   `json:"isDraft" jsonschema:"是否草稿：Y/N"`
+	StartDate            string                   `json:"startDate,omitempty" jsonschema:"开始日期（yyyy-mm-dd），留空表示未设置"`
+	TargetDate           string                   `json:"targetDate,omitempty" jsonschema:"目标日期（yyyy-mm-dd），留空表示未设置"`
+	CompletedAt          string                   `json:"completedAt,omitempty" jsonschema:"完成时间（RFC3339），留空表示未完成"`
+	SortOrder            float64                  `json:"sortOrder" jsonschema:"看板排序权重（升序）"`
+	Labels               []IssueLabelContent      `json:"labels" jsonschema:"标签列表"`
 	RepositoryBranchList []IssueRepoBranchContent `json:"repositoryBranchList" jsonschema:"关联仓库与基准分支列表"`
 }
 
@@ -85,30 +85,30 @@ type IssueChildListContent struct {
 
 // WorkspaceStatusContent 是 workspace_status 的出参。
 type WorkspaceStatusContent struct {
-	ServerStatus string                `json:"serverStatus" jsonschema:"顶层结论：NOT_INITIALIZED(未初始化)/PENDING/RUNNING(初始化进行中)/SUCCESS(就绪)/FAILED(失败可重试)/CORRUPTED(状态文件损坏)/INTERRUPTED(进程中断遗留可重试)"`
+	ServerStatus string                 `json:"serverStatus" jsonschema:"顶层结论：NOT_INITIALIZED(未初始化)/PENDING/RUNNING(初始化进行中)/SUCCESS(就绪)/FAILED(失败可重试)/CORRUPTED(状态文件损坏)/INTERRUPTED(进程中断遗留可重试)"`
 	State        *WorkspaceStateContent `json:"state,omitempty" jsonschema:"状态文件全文（serverStatus 为 NOT_INITIALIZED 时缺失）"`
 }
 
 // WorkspaceStateContent 是 .workspace-init-state.json 的镜像。
 type WorkspaceStateContent struct {
-	Version   int                     `json:"version" jsonschema:"schema 版本"`
-	IssueID   string                  `json:"issueId" jsonschema:"issue 主键"`
-	BaseDir   string                  `json:"baseDir" jsonschema:"工作空间根目录（绝对路径；各仓库在 {baseDir}/{issueId}/repo/{仓库名}）"`
-	Status    string                  `json:"status" jsonschema:"顶层状态（含义同 serverStatus，另含 SKIPPED）"`
-	Steps     []*WorkspaceStepContent `json:"steps" jsonschema:"各初始化步骤进度（固定顺序：createDirs→sshConfig→cloneRepos）"`
+	Version   int                        `json:"version" jsonschema:"schema 版本"`
+	IssueID   string                     `json:"issueId" jsonschema:"issue 主键"`
+	BaseDir   string                     `json:"baseDir" jsonschema:"工作空间根目录（绝对路径；各仓库在 {baseDir}/{issueId}/repo/{仓库名}）"`
+	Status    string                     `json:"status" jsonschema:"顶层状态（含义同 serverStatus，另含 SKIPPED）"`
+	Steps     []*WorkspaceStepContent    `json:"steps" jsonschema:"各初始化步骤进度（固定顺序：createDirs→sshConfig→cloneRepos）"`
 	Manifest  []*WorkspaceRepoRefContent `json:"manifest" jsonschema:"已受理的仓库+基准分支清单（幂等键）"`
-	Error     string                  `json:"error,omitempty" jsonschema:"顶层失败原因"`
-	CreatedAt string                  `json:"createdAt" jsonschema:"受理时间（RFC3339）"`
-	UpdatedAt string                  `json:"updatedAt" jsonschema:"最后更新时间（RFC3339）"`
+	Error     string                     `json:"error,omitempty" jsonschema:"顶层失败原因"`
+	CreatedAt string                     `json:"createdAt" jsonschema:"受理时间（RFC3339）"`
+	UpdatedAt string                     `json:"updatedAt" jsonschema:"最后更新时间（RFC3339）"`
 }
 
 // WorkspaceStepContent 是单个初始化步骤的进度镜像。
 type WorkspaceStepContent struct {
-	Key     string                     `json:"key" jsonschema:"步骤 key：createDirs/sshConfig/cloneRepos"`
-	Title   string                     `json:"title" jsonschema:"步骤中文名"`
-	Status  string                     `json:"status" jsonschema:"步骤状态：PENDING/RUNNING/SUCCESS/FAILED/SKIPPED(本期未实现占位)"`
+	Key     string                       `json:"key" jsonschema:"步骤 key：createDirs/sshConfig/cloneRepos"`
+	Title   string                       `json:"title" jsonschema:"步骤中文名"`
+	Status  string                       `json:"status" jsonschema:"步骤状态：PENDING/RUNNING/SUCCESS/FAILED/SKIPPED(本期未实现占位)"`
 	Repos   []*WorkspaceRepoStateContent `json:"repos,omitempty" jsonschema:"仓库级子状态（仅 cloneRepos 步骤）"`
-	Message string                     `json:"message,omitempty" jsonschema:"步骤说明（如 SKIPPED 原因、失败信息）"`
+	Message string                       `json:"message,omitempty" jsonschema:"步骤说明（如 SKIPPED 原因、失败信息）"`
 }
 
 // WorkspaceRepoStateContent 是 cloneRepos 步骤内单仓库进度镜像。

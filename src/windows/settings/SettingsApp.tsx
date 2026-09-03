@@ -2,6 +2,7 @@ import type { MenuKey } from './routes';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HttpOutlinedIcon from '@mui/icons-material/HttpOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import PersonOutlinedIcon from '@mui/icons-material/PersonOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import {
@@ -27,6 +28,7 @@ import ProjectConfigPage from './ProjectConfigPage';
 import { DEFAULT_MENU, isMenuKey, MENU_PATHS, menuToPath, pathToMenu } from './routes';
 import ServiceConfigPage from './ServiceConfigPage';
 import TerminalConfigPage from './TerminalConfigPage';
+import UserProfilePage from './UserProfilePage';
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
 const TOP_BAR_HEIGHT = 56;
@@ -59,6 +61,7 @@ function SettingsApp() {
     { key: 'terminalConfig', label: t('settings:menu.terminalConfig'), icon: <TerminalOutlinedIcon /> },
     { key: 'projectConfig', label: t('settings:menu.projectConfig'), icon: <FolderOutlinedIcon /> },
     { key: 'serviceConfig', label: t('settings:menu.serviceConfig'), icon: <HttpOutlinedIcon /> },
+    { key: 'userProfile', label: t('settings:menu.userProfile'), icon: <PersonOutlinedIcon /> },
     { key: 'about', label: t('settings:menu.about'), icon: <InfoOutlinedIcon /> },
   ];
   // 顶部导航栏页面标题：当前激活菜单项 label；单层面包屑，预留未来主/子菜单扩展。
@@ -180,6 +183,7 @@ function SettingsApp() {
             <Route path={MENU_PATHS.terminalConfig} element={<TerminalConfigPage />} />
             <Route path={MENU_PATHS.projectConfig} element={<ProjectConfigPage />} />
             <Route path={MENU_PATHS.serviceConfig} element={<ServiceConfigPage />} />
+            <Route path={MENU_PATHS.userProfile} element={<UserProfilePage />} />
             <Route path={MENU_PATHS.about} element={<AboutPage />} />
             <Route path="*" element={<Navigate to={menuToPath(DEFAULT_MENU)} replace />} />
           </Routes>

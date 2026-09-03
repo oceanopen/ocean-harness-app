@@ -131,6 +131,10 @@
   - Server 定义 + Tool 注册：`mcp_servers/mcp_ocean_harness.go`
   - Tool Handler 实现：`mcp_servers/mcp_ocean_harness_tools.go`
   - DTO 类型定义：`mcp_servers/mcp_dto/ocean_harness_tools.go`
+
+> **注（2026-09-03 随 T4.1 实施后用户定稿变更）**：原「多 server 并存、路由按 server
+> 扩展」的预留框架取消——全部工具（含 T4.1 的 github_*）归口单一 ocean_harness server，
+> 详见 T4.1 实施定稿的「单 server 归口」变更段。
 - 复用现有 `apis.McpTool` 基类（MakeContext/MakeOrm/Validate/MakeService）
 
 **首期工具清单**：
@@ -389,7 +393,7 @@
 
 ### T4.1 MCP Server 外部服务工具（GitHub）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：MCP Server 新增 GitHub 外部服务工具，支持创建 PR、列出 PR、获取 CI 状态
 
@@ -406,6 +410,37 @@
 | `github_ci_status` | 获取 PR 的 CI 检查状态 |
 
 **依赖**：T2.1（MCP Server 框架已搭建）
+
+**实施定稿（2026-09-03）**：
+- **落地结构（按 T2.1 预留扩展框架）**：`mcpservers/mcp_github.go`（Server 单例 + 3 工具
+  注册 + Handler 工厂）+ `mcp_tool/mcp_github_tools.go`（handler）+ `mcp_dto/github_tools.go`
+  （三 tag DTO）+ router 一行挂 `/mcp/streamableHttp/github`；`McpTool` 基类与
+  McpOK/McpFail 共用零改动
+- **变更（2026-09-03 用户定稿：单 server 归口）**：github 独立 server 取消——`mcp_github.go`
+  删除、3 个 `github_*` 工具注册并入 `mcp_ocean_harness.go` 的 `init()`（工具名前缀分组，
+  对 AI 调用方透明），router 删 `/mcp/streamableHttp/github`，插件 `.mcp.json` 回归单
+  `ocean-harness` 条目；T2.1 预留的「多 server 按路径扩展」框架整体取消（多端点对调用方
+  有割裂感），代码组织改为「单 server + 工具前缀分组 + handler 按业务域文件」
+- **方案变更（oauth2 未引入）**：PAT 为静态令牌，oauth2 全套流程用不上——改
+  `internal/githubapi/` 纯 net/http 客户端（Authorization: Bearer + vnd.github+json），
+  API base 固定 api.github.com，少一个依赖（全库首个出站 HTTP 保持最小面）
+- **平台适配（用户定稿「各 host 单独适配」）**：`gitutil.ParseRemoteURL`（新写，scp/
+  https/ssh:// 三形态 → host/owner/repo + 单测，企业 host 用例覆盖）→ host 判定集中
+  handler 层 `githubTarget`：github.com → githubapi，其他 host 报「暂仅支持 github.com，
+  gitee/gitlab 待后续」——后续平台加 api 包 + 判定分支即可，不动现有结构
+- **PAT 链路（用户定稿 app_config KV）**：设置窗口新增 **userProfile（个人中心）分区**
+  （用户定稿命名，凭据卡片组织——后续第三方账号/gitee 私有部署/apikey 各自成卡片）；
+  GitHub 卡片密码型录入（不回显明文、已配置状态 Chip、空输入保持不变、清除按钮）；
+  Rust `GITHUB_PAT_KEY` 常量经 specta 导出（gen:bindings），Go `mcputil.ReadGithubPAT()`
+  短连接只读 app.db（与 ReadWorkspaceBaseDir 同范式，顺带重构出共用 helper）
+- **工具入参（用户定稿 localRepositoryId）**：三工具均以 localRepositoryId 定位仓库
+  （service.GithubTool.ResolveRepo 查 remote_url + issue 关联基准分支）；create_pr 的
+  head 缺省 `agent_{issueId}`、base 缺省「issue 关联基准分支 → 仓库默认分支」（两级
+  回退，均空则要求显式传 base）；list 缺省 open（≤50 条）；ci_status 为 combined
+  status + check runs 归并
+- **插件侧同步（用户定稿纳入本期）**：ocean-claude-plugins 的 `.mcp.json` 加 github
+  server 条目（同款 `${OCEAN_HARNESS_PORT:-9100}` 展开）+ plugin.json bump 1.4.0 +
+  README 补 github 工具说明（变更在插件仓库工作树，待随插件仓库提交）
 
 ---
 

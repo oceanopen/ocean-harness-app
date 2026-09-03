@@ -1,13 +1,15 @@
 // Package mcpservers 内嵌 MCP Server（docs/agent_dev_01_tasks.md T2.1），把 tracker /
-// issueWorkspace 的既有 service 能力以 MCP 工具形式暴露，供 issue 运行工作空间内的 AI
-// agent（经 T1.3 生成的 .mcp.json 接入）调用。模式移植自 pros-admin-server/mcp_servers
-// （go-sdk v0.2.0，Streamable HTTP，无鉴权单机场景）。
+// issueWorkspace 的既有 service 能力与 GitHub 外部服务工具（T4.1）以 MCP 工具形式暴露，
+// 供 issue 运行工作空间内的 AI agent（经 T1.3 生成的 .mcp.json 接入）调用。模式移植自
+// pros-admin-server/mcp_servers（go-sdk v0.2.0，Streamable HTTP，无鉴权单机场景）。
 //
-// 组织方式（多 server 并存的通用框架，后续 T4.1 github / 第三方对接按同构扩展）：
-// 根目录每业务域一个 mcp_<server>.go（Server 定义 + 工具注册 + Handler 工厂），路由按
-// server 扩展 /mcp/streamableHttp/<serverName>（见 router.go）；共用基础设施在 mcp_util/
-// （McpTool 基类、McpOK/McpFail 结果包装、app_config 只读读取），工具 handler 实现在
-// mcp_tool/（文件按 server 命名），入出参 DTO 在 mcp_dto/。
+// 组织方式（2026-09-03 用户定稿：单 server 归口——T2.1 原预留的「每业务域一个 server
+// 按路径扩展」框架取消，多端点对调用方有割裂感）：全部工具注册在唯一的 ocean_harness
+// server（本文件 init()），工具名按前缀分组（issue_* / github_*，后续平台/业务同理）；
+// 共用基础设施在 mcp_util/（McpTool 基类、McpOK/McpFail 结果包装、app_config 只读
+// 读取），工具 handler 实现在 mcp_tool/（文件按业务域命名），入出参 DTO 在 mcp_dto/。
+// 注意：同包多文件 init() 按文件名序执行，新工具注册一律追加在本文件 init() 内，
+// 不另立 mcp_*.go 的 init（避免字母序在前拿到未初始化的 server 单例）。
 package mcpservers
 
 import (
@@ -27,7 +29,7 @@ func init() {
 	mcpServerOceanHarness = mcp.NewServer(&mcp.Implementation{
 		Name:    "ocean_harness",
 		Version: "v1.0.0",
-		Title:   "ocean-harness 项目管理工具（issue / 子任务 / 工作空间）",
+		Title:   "ocean-harness 项目管理工具（issue / 子任务 / 工作空间 / GitHub）",
 	}, nil)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
@@ -64,6 +66,26 @@ func init() {
 		Description: "查询某 issue 运行工作空间的初始化状态（顶层结论 + createDirs/sshConfig/" +
 			"cloneRepos 各步骤与仓库级进度）。workspace 基目录取应用设置，无需传入。",
 	}, mcptool.McpOceanHarnessTool{}.WorkspaceStatus)
+
+	// —— GitHub 外部服务工具（T4.1，github_ 前缀分组；PAT 经设置 → 个人中心录入）——
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "github_create_pr",
+		Description: "为本地仓库对应的 GitHub 仓库创建 Pull Request。" +
+			"仓库按 localRepositoryId 定位（issue_get_info 的 repositoryBranchList）；" +
+			"head 留空默认 agent_{issueId}，base 留空默认该 issue 关联的基准分支；" +
+			"需先在 设置 → 个人中心 → GitHub 录入 PAT。",
+	}, mcptool.McpGithubTool{}.CreatePullRequest)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "github_list_prs",
+		Description: "列出本地仓库对应的 GitHub 仓库的 Pull Request（state 留空默认 open，最多 50 条）。",
+	}, mcptool.McpGithubTool{}.ListPullRequests)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "github_ci_status",
+		Description: "获取指定 PR 的 CI 检查状态（汇总结论 + 逐项检查：GitHub Actions 与旧 commit status 归并）。",
+	}, mcptool.McpGithubTool{}.PullRequestCIStatus)
 }
 
 // McpOceanHarnessStreamableHTTPHandler 构造 ocean_harness server 的 Streamable HTTP handler

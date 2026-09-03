@@ -39,6 +39,11 @@ pub const HTTP_SERVER_PORT_KEY: &str = "http_server_port";
 pub const MIN_HTTP_SERVER_PORT: u16 = 3000;
 pub const MAX_HTTP_SERVER_PORT: u16 = 10000;
 
+/// GitHub Personal Access Token（设置 → 个人中心录入，T4.1）。空串 = 未配置。
+/// Go sidecar 的 github MCP 工具经 GO_SERVER_APP_DB 指向的本表只读此 key 调 GitHub API。
+/// 敏感值：设置页不回显明文（仅示「已配置」），写入即生效（无缓存）。
+pub const GITHUB_PAT_KEY: &str = "github_pat";
+
 pub struct AppConfigState(pub Mutex<Connection>);
 
 pub fn init(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
