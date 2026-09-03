@@ -33,7 +33,8 @@ interface ToolPanelAreaProps {
   onWidthCommit: (width: number) => void;
 }
 
-/// ToolPanelArea：中栏右侧的工具面板区——tab 头（可滚动 + 每 tab 关闭按钮）+ 当前激活
+/// ToolPanelArea：中栏右侧的工具面板区（内容行全高，自标题栏带起）——tab 头（48px，与
+/// 终端列标题栏同高对齐、底边线连通；可滚动 + 每 tab 关闭按钮）+ 当前激活
 /// 工具内容（注册表 render 分发）。宽度默认 600（config），左缘 4px 把手拖拽调整：
 /// pointer capture，down 实测容器宽 → move 内存态（transition 关）→ up 复位并一次落盘
 /// （时序参照 PaneDivider，无防抖）。空 tab 栏保持面板区展开（空态提示；后续版本 tab 栏
@@ -132,7 +133,7 @@ export default function ToolPanelArea({ issue, projectId, visible, width, onWidt
           }}
           variant="scrollable"
           scrollButtons={false}
-          sx={{ minHeight: 36, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}
+          sx={{ minHeight: 48, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}
         >
           {validEntries.map(({ tab, def }) => (
             <Tab
@@ -156,7 +157,7 @@ export default function ToolPanelArea({ issue, projectId, visible, width, onWidt
                   </IconButton>
                 </Box>
               )}
-              sx={{ minHeight: 36 }}
+              sx={{ minHeight: 48 }}
             />
           ))}
         </Tabs>

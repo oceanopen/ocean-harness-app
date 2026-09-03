@@ -88,10 +88,11 @@ const PANEL_LAYOUT_CONFIG_KEYS: readonly string[] = [
 ];
 
 // DevWorkbenchPage：控制台「开发工作台」骨架页。
-// 左中右布局：左栏任务树（IN_PROGRESS 的 issue）｜中栏标题栏 + 终端区 + 工具面板区（tab 化，
-// ToolPanelArea）｜最右常驻工具条（WorkbenchToolRail，顶部方格 = 面板区总开关，下方工具图标，
-// 注册表驱动扩展——后续浏览器/文件目录见 toolRegistry）。工具 tabs 按 issue 隔离（workbenchTools
-// 域 + localStorage），面板区折叠/宽度走 config 持久化。
+// 左中右布局：左栏任务树（IN_PROGRESS 的 issue）｜中栏 = 终端列（标题栏 + 终端区）+ 工具
+// 面板区（tab 化，ToolPanelArea，tab 头与标题栏同带对齐）｜最右常驻工具条（WorkbenchToolRail，
+// 顶部方格 = 面板区总开关，下方工具图标，注册表驱动扩展——后续浏览器/文件目录见
+// toolRegistry）。工具 tabs 按 issue 隔离（workbenchTools 域 + localStorage），面板区
+// 折叠/宽度走 config 持久化。
 //
 // 路由接入（全 query 风格）：issue 选中由 URL 驱动——
 //   ?pid=<projectId>&iid=<issueId>   选中 issue（项目→issue，issue 靠 project 加载，故 pid 同在 URL）
@@ -224,108 +225,108 @@ export default function DevWorkbenchPage() {
         </Box>
       </Box>
 
-      {/* 右栏：顶部操作栏 + 内容区 */}
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* 顶部操作栏：左栏折叠开关 + 状态徽章 + 选中 issue 的 id 尾 8 位 + 名称 + 右侧快捷区（终端分割） */}
-        <Box
-          sx={{
-            height: 48,
-            flexShrink: 0,
-            display: 'flex',
-            alignItems: 'center',
-            px: 1,
-            gap: 0.5,
-            borderBottom: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-          }}
-        >
-          <IconButton
-            size="small"
-            onClick={toggleIssueTreeCollapsed}
-            aria-label={issueTreeCollapsed ? '显示任务列表' : '隐藏任务列表'}
-            sx={{ color: 'text.secondary' }}
+      {/* 中栏 = 内容行：终端列（含标题栏）+ 工具面板区（tab 头与标题栏同带对齐）。
+          标题栏下沉终端列——操作组（ml:auto）落终端列右缘：面板展开时紧贴其左边界，不被推到最右。 */}
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* 终端列：标题栏 + 终端内容；minWidth 与工具面板区拖拽上限联动（ToolPanelArea 按容器实测宽收紧 max） */}
+        <Box sx={{ flex: 1, minWidth: TERMINAL_MIN_WIDTH, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {/* 标题栏：左栏折叠开关 + 状态徽章 + 选中 issue 的 id 尾 8 位 + 名称 + 右侧快捷区（终端分割） */}
+          <Box
+            sx={{
+              height: 48,
+              flexShrink: 0,
+              display: 'flex',
+              alignItems: 'center',
+              px: 1,
+              gap: 0.5,
+              borderBottom: 1,
+              borderColor: 'divider',
+              bgcolor: 'background.paper',
+            }}
           >
-            {issueTreeCollapsed ? <ViewSidebarOutlinedIcon /> : <ViewSidebarIcon />}
-          </IconButton>
-          {hasSelection && issue && stateMeta && (
-            <Chip
+            <IconButton
               size="small"
-              label={stateMeta.name}
-              sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: '0.75rem', flexShrink: 0 }}
-            />
-          )}
-          {hasSelection && issue && (
-            <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
-              <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400, fontFamily: 'monospace' }}>
-                …{issue.id.slice(-8)}
-              </Box>
-              {' '}
-              {issue.name}
-            </Typography>
-          )}
-          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-            {/* 清理终端并重新初始化（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
+              onClick={toggleIssueTreeCollapsed}
+              aria-label={issueTreeCollapsed ? '显示任务列表' : '隐藏任务列表'}
+              sx={{ color: 'text.secondary' }}
+            >
+              {issueTreeCollapsed ? <ViewSidebarOutlinedIcon /> : <ViewSidebarIcon />}
+            </IconButton>
+            {hasSelection && issue && stateMeta && (
+              <Chip
+                size="small"
+                label={stateMeta.name}
+                sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: '0.75rem', flexShrink: 0 }}
+              />
+            )}
+            {hasSelection && issue && (
+              <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
+                <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400, fontFamily: 'monospace' }}>
+                  …{issue.id.slice(-8)}
+                </Box>
+                {' '}
+                {issue.name}
+              </Typography>
+            )}
+            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+              {/* 清理终端并重新初始化（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
                 与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。
                 图标用扫帚（CleaningServices）而非循环箭头，与子任务面板刷新按钮（Autorenew）区分。 */}
-            {hasSelection && issue && (
-              <Tooltip title="清理终端并重新初始化">
-                <span>
+              {hasSelection && issue && (
+                <Tooltip title="清理终端并重新初始化">
+                  <span>
+                    <IconButton
+                      size="small"
+                      aria-label="清理终端并重新初始化"
+                      disabled={initWorkspace.isPending || baseDir === ''}
+                      onClick={() => initWorkspace.mutate({ issueId: issue.id, baseDir })}
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      {/* 满幅实心构图光学尺寸偏大，字号 16（small 默认 18）与轻笔画邻居平衡 */}
+                      <CleaningServicesIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
+              {/* 终端分割按钮组（作用于活跃 pane；原终端区工具条上移至此） */}
+              {hasSelection && issue && <TerminalSplitButtons issueId={issue.id} />}
+              {/* 任务操作菜单（T3.2）：⋯ 入口，归档/取消（删工作空间目录 + 流转 issue 状态，两段式确认） */}
+              {hasSelection && issue && loadPid != null && (
+                <>
                   <IconButton
                     size="small"
-                    aria-label="清理终端并重新初始化"
-                    disabled={initWorkspace.isPending || baseDir === ''}
-                    onClick={() => initWorkspace.mutate({ issueId: issue.id, baseDir })}
+                    aria-label="更多任务操作"
+                    onClick={e => setActionsMenuAnchor(e.currentTarget)}
                     sx={{ color: 'text.secondary' }}
                   >
-                    {/* 满幅实心构图光学尺寸偏大，字号 16（small 默认 18）与轻笔画邻居平衡 */}
-                    <CleaningServicesIcon sx={{ fontSize: 16 }} />
+                    <MoreHorizIcon />
                   </IconButton>
-                </span>
-              </Tooltip>
-            )}
-            {/* 终端分割按钮组（作用于活跃 pane；原终端区工具条上移至此） */}
-            {hasSelection && issue && <TerminalSplitButtons issueId={issue.id} />}
-            {/* 任务操作菜单（T3.2）：⋯ 入口，归档/取消（删工作空间目录 + 流转 issue 状态，两段式确认） */}
-            {hasSelection && issue && loadPid != null && (
-              <>
-                <IconButton
-                  size="small"
-                  aria-label="更多任务操作"
-                  onClick={e => setActionsMenuAnchor(e.currentTarget)}
-                  sx={{ color: 'text.secondary' }}
-                >
-                  <MoreHorizIcon />
-                </IconButton>
-                <Menu anchorEl={actionsMenuAnchor} open={actionsMenuAnchor != null} onClose={() => setActionsMenuAnchor(null)}>
-                  <MenuItem
-                    onClick={() => {
-                      setActionsMenuAnchor(null);
-                      setArchiveConfirm({ kind: 'archive', warnings: null });
-                    }}
-                  >
-                    归档任务…
-                  </MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      setActionsMenuAnchor(null);
-                      setArchiveConfirm({ kind: 'cancel', warnings: null });
-                    }}
-                  >
-                    取消任务…
-                  </MenuItem>
-                </Menu>
-              </>
-            )}
+                  <Menu anchorEl={actionsMenuAnchor} open={actionsMenuAnchor != null} onClose={() => setActionsMenuAnchor(null)}>
+                    <MenuItem
+                      onClick={() => {
+                        setActionsMenuAnchor(null);
+                        setArchiveConfirm({ kind: 'archive', warnings: null });
+                      }}
+                    >
+                      归档任务…
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        setActionsMenuAnchor(null);
+                        setArchiveConfirm({ kind: 'cancel', warnings: null });
+                      }}
+                    >
+                      取消任务…
+                    </MenuItem>
+                  </Menu>
+                </>
+              )}
+            </Box>
           </Box>
-        </Box>
 
-        {/* 内容区行：终端列（flex 占余宽）+ 工具面板区（tab 化，宽 = config/拖拽） */}
-        <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
-          {/* 终端列：选中 issue → 终端 split 树容器（一 issue 一布局，多 pane 各自独立
-              PTY 会话；切换 issue 即重挂载，后端会话常驻）。minWidth 与工具面板区拖拽
-              上限联动（ToolPanelArea 按容器实测宽收紧 max）。 */}
-          <Box sx={{ flex: 1, minWidth: TERMINAL_MIN_WIDTH, minHeight: 0 }}>
+          {/* 终端内容：选中 issue → 终端 split 树容器（一 issue 一布局，多 pane 各自独立
+            PTY 会话；切换 issue 即重挂载，后端会话常驻） */}
+          <Box sx={{ flex: 1, minHeight: 0 }}>
             {!hasSelection
               ? (
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
@@ -354,14 +355,14 @@ export default function DevWorkbenchPage() {
                       </Box>
                     )}
           </Box>
-          <ToolPanelArea
-            issue={issue ?? null}
-            projectId={loadPid}
-            visible={toolAreaVisible}
-            width={toolAreaWidth}
-            onWidthCommit={commitToolAreaWidth}
-          />
         </Box>
+        <ToolPanelArea
+          issue={issue ?? null}
+          projectId={loadPid}
+          visible={toolAreaVisible}
+          width={toolAreaWidth}
+          onWidthCommit={commitToolAreaWidth}
+        />
       </Box>
 
       {/* 最右常驻工具条：顶部方格（面板区总开关）+ 工具图标列（注册表驱动）。无选中时禁用。 */}
