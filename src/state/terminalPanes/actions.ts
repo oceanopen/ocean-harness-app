@@ -169,3 +169,13 @@ export function saveLayout(issueId: string, tree: PaneLayoutNode): void {
 export function isMainPane(paneId: string): boolean {
   return paneId === MAIN_PANE_ID;
 }
+
+/// 清理 issue 的布局记录（归档/取消 onSuccess 调用——issue 终结时移除本地痕迹，
+/// 防 localStorage 积累脏 key；此前无清理机制，顺手补上）。
+export function removeLayout(issueId: string): void {
+  try {
+    localStorage.removeItem(layoutKey(issueId));
+  } catch (e) {
+    console.warn('[terminalPanes] remove layout failed:', e);
+  }
+}

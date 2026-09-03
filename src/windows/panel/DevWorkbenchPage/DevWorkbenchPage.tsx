@@ -1,8 +1,6 @@
 import type { IssueWorkspaceArchiveAction, ProjectIssueResponseData } from '@src/services';
 import {
   CleaningServices as CleaningServicesIcon,
-  KeyboardDoubleArrowLeft as KeyboardDoubleArrowLeftIcon,
-  KeyboardDoubleArrowRight as KeyboardDoubleArrowRightIcon,
   MoreHoriz as MoreHorizIcon,
   ViewSidebar as ViewSidebarIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
@@ -26,11 +24,13 @@ import {
 } from '@mui/material';
 import {
   decodeWorkspaceBaseDir,
-  DEFAULT_PANEL_DEV_SUBTASK_COLLAPSED,
+  DEFAULT_PANEL_DEV_TOOL_AREA_COLLAPSED,
+  DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH,
   DEFAULT_PANEL_DEV_TREE_COLLAPSED,
   DEFAULT_WORKSPACE_BASE_DIR,
   isYes,
-  PANEL_DEV_SUBTASK_COLLAPSED_KEY,
+  PANEL_DEV_TOOL_AREA_COLLAPSED_KEY,
+  PANEL_DEV_TOOL_AREA_WIDTH_KEY,
   PANEL_DEV_TREE_COLLAPSED_KEY,
   parseYesNo,
   setAppConfig,
@@ -42,15 +42,18 @@ import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useArchiveIssueWorkspace, useInitIssueWorkspace } from '@src/state/issueWorkspace';
+import { removeLayout } from '@src/state/terminalPanes';
 import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
+import { clearToolTabs } from '@src/state/workbenchTools';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
-import IssueSubTaskPanel from './components/IssueSubTaskPanel/IssueSubTaskPanel';
 import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
 import TerminalSplitButtons from './components/TerminalPanes/TerminalSplitButtons';
+import ToolPanelArea, { TERMINAL_MIN_WIDTH, TOOL_AREA_MIN_WIDTH } from './components/WorkbenchTools/ToolPanelArea';
+import WorkbenchToolRail from './components/WorkbenchTools/WorkbenchToolRail';
 import WorkspaceInitGate from './components/WorkspaceInitGate/WorkspaceInitGate';
 
 // 左栏折叠状态 decode：缺失/非法值回落到默认（展开）。
@@ -59,24 +62,36 @@ function decodeDevTreeCollapsed(raw: string | null): boolean {
   return isYes(parseYesNo(raw, DEFAULT_PANEL_DEV_TREE_COLLAPSED));
 }
 
-// 右侧子任务面板折叠状态 decode：同左栏范式。
-function decodeDevSubtaskCollapsed(raw: string | null): boolean {
-  return isYes(parseYesNo(raw, DEFAULT_PANEL_DEV_SUBTASK_COLLAPSED));
+// 右侧工具面板区折叠状态 decode：同左栏范式（默认收起）。
+function decodeToolAreaCollapsed(raw: string | null): boolean {
+  return isYes(parseYesNo(raw, DEFAULT_PANEL_DEV_TOOL_AREA_COLLAPSED));
 }
 
-// 三栏布局挂载前置配置集：两个折叠态 key 决定左右栏首帧宽度。就绪前渲染会按
-// 默认展开态布局、配置到达后动画收起——每次挂载都「先展开再收起」翻转一遍，
-// 中栏终端区逐帧 resize 产生 SIGWINCH 重绘伪影。就绪后首帧即终值（过渡动画
-// 本身保留，仅手动开合时触发）。模块级常量保证引用稳定（useConfigReady 要求）。
+// 工具面板区宽度 decode：非法/越界回落默认 600。上界 2400 仅防 DB 手改乱值——
+// 运行时实际上限由拖拽按容器实测宽收紧（ToolPanelArea）。
+function decodeToolAreaWidth(raw: string | null): number {
+  const parsed = raw != null ? Number.parseInt(raw, 10) : Number.NaN;
+  if (!Number.isFinite(parsed) || parsed < TOOL_AREA_MIN_WIDTH || parsed > 2400) {
+    return DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH;
+  }
+  return parsed;
+}
+
+// 布局挂载前置配置集：左栏折叠 + 工具面板区折叠/宽度三个 key 决定各栏首帧几何。
+// 就绪前渲染会按默认态布局、配置到达后动画纠正——每次挂载翻转一遍，中栏终端区
+// 逐帧 resize 产生 SIGWINCH 重绘伪影。就绪后首帧即终值（过渡动画本身保留，仅手动
+// 开合时触发）。模块级常量保证引用稳定（useConfigReady 要求）。
 const PANEL_LAYOUT_CONFIG_KEYS: readonly string[] = [
   PANEL_DEV_TREE_COLLAPSED_KEY,
-  PANEL_DEV_SUBTASK_COLLAPSED_KEY,
+  PANEL_DEV_TOOL_AREA_COLLAPSED_KEY,
+  PANEL_DEV_TOOL_AREA_WIDTH_KEY,
 ];
 
 // DevWorkbenchPage：控制台「开发工作台」骨架页。
-// 原固定开发步骤流程（init→developing→pull_request→cleanup，基于 started 组子状态）已移除，
-// 后续将接入 AI 驱动开发流程。当前保留：左栏任务树（IN_PROGRESS 的 issue）+ 中栏顶部信息栏与
-// 终端区 + 右侧子任务面板（T3.1，选中 issue 展示子任务清单与状态）。
+// 左中右布局：左栏任务树（IN_PROGRESS 的 issue）｜中栏标题栏 + 终端区 + 工具面板区（tab 化，
+// ToolPanelArea）｜最右常驻工具条（WorkbenchToolRail，顶部方格 = 面板区总开关，下方工具图标，
+// 注册表驱动扩展——后续浏览器/文件目录见 toolRegistry）。工具 tabs 按 issue 隔离（workbenchTools
+// 域 + localStorage），面板区折叠/宽度走 config 持久化。
 //
 // 路由接入（全 query 风格）：issue 选中由 URL 驱动——
 //   ?pid=<projectId>&iid=<issueId>   选中 issue（项目→issue，issue 靠 project 加载，故 pid 同在 URL）
@@ -96,10 +111,15 @@ export default function DevWorkbenchPage() {
     void setAppConfig(PANEL_DEV_TREE_COLLAPSED_KEY, toYesNo(!issueTreeCollapsed));
   };
 
-  // 右栏子任务面板（T3.1）折叠态：同左栏范式，config 持久化（跨重启、多窗口同步）。
-  const subtaskPanelCollapsed = useConfigValue(PANEL_DEV_SUBTASK_COLLAPSED_KEY, decodeDevSubtaskCollapsed, false);
-  const toggleSubtaskPanelCollapsed = () => {
-    void setAppConfig(PANEL_DEV_SUBTASK_COLLAPSED_KEY, toYesNo(!subtaskPanelCollapsed));
+  // 右侧工具面板区折叠态（工具条顶部方格开关）：同左栏范式，config 持久化（跨重启、多窗口同步）。
+  const toolAreaCollapsed = useConfigValue(PANEL_DEV_TOOL_AREA_COLLAPSED_KEY, decodeToolAreaCollapsed, true);
+  const toggleToolAreaCollapsed = () => {
+    void setAppConfig(PANEL_DEV_TOOL_AREA_COLLAPSED_KEY, toYesNo(!toolAreaCollapsed));
+  };
+  // 工具面板区宽度：拖拽结束落盘（ToolPanelArea up 回调），拖拽期纯组件内存态。
+  const toolAreaWidth = useConfigValue(PANEL_DEV_TOOL_AREA_WIDTH_KEY, decodeToolAreaWidth, DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH);
+  const commitToolAreaWidth = (width: number) => {
+    void setAppConfig(PANEL_DEV_TOOL_AREA_WIDTH_KEY, String(width));
   };
 
   // 工作空间根目录（issueWorkspace 初始化闸门与右上角重新初始化按钮共用；空串 = 未设置）。
@@ -124,7 +144,8 @@ export default function DevWorkbenchPage() {
   const stateMeta = issue ? STATE_MAP.get(issue.stateCode) : undefined;
 
   // 提交归档/取消：首确认（warnings=null → force=false，后端干净则内部续发执行段）/
-  // 警告态强确认（warnings 非空 → force=true 只走执行段）。成功后清选中 + 清 URL
+  // 警告态强确认（warnings 非空 → force=true 只走执行段）。成功后按序清理：该 issue 本地
+  // 痕迹（工具 tabs + 终端分屏布局，防 localStorage 积脏 key）→ 清选中 + 清 URL
   // （URL→store 同步 effect 会从 iid 恢复选中，双清才彻底，参照 DevIssueRow 取消选中）。
   const submitArchive = () => {
     if (archiveConfirm == null || issue == null || loadPid == null) {
@@ -141,6 +162,8 @@ export default function DevWorkbenchPage() {
           }
           setArchiveConfirm(null);
           showToast(kind === 'archive' ? '已归档：工作空间目录已删除' : '已取消：工作空间目录已删除', 'success');
+          clearToolTabs(issue.id);
+          removeLayout(issue.id);
           selectIssue(null);
           setSearchParams({}, { replace: true });
         },
@@ -151,8 +174,8 @@ export default function DevWorkbenchPage() {
     );
   };
 
-  // 子任务面板可见性：选中 issue 且用户未折叠（未选中时整体收 0，不占位）。
-  const subtaskPanelOpen = hasSelection && issue != null && !subtaskPanelCollapsed;
+  // 工具面板区可见性：用户展开（config）且选中 issue 有效（面板内容均围绕选中任务）。
+  const toolAreaVisible = !toolAreaCollapsed && hasSelection && issue != null;
 
   // 三栏折叠态配置就绪闸门（见 PANEL_LAYOUT_CONFIG_KEYS 注释）：就绪后才渲染
   // 布局，首帧即终值。一次性等待（本地 IPC，~ms 级）。
@@ -242,17 +265,6 @@ export default function DevWorkbenchPage() {
             </Typography>
           )}
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-            {/* 右侧子任务面板折叠开关（双箭头指向收合方向，与左栏 ViewSidebar 区分） */}
-            {hasSelection && issue && (
-              <IconButton
-                size="small"
-                onClick={toggleSubtaskPanelCollapsed}
-                aria-label={subtaskPanelCollapsed ? '显示子任务面板' : '隐藏子任务面板'}
-                sx={{ color: 'text.secondary' }}
-              >
-                {subtaskPanelCollapsed ? <KeyboardDoubleArrowLeftIcon /> : <KeyboardDoubleArrowRightIcon />}
-              </IconButton>
-            )}
             {/* 清理终端并重新初始化（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
                 与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。
                 图标用扫帚（CleaningServices）而非循环箭头，与子任务面板刷新按钮（Autorenew）区分。 */}
@@ -308,60 +320,57 @@ export default function DevWorkbenchPage() {
           </Box>
         </Box>
 
-        {/* 内容区：选中 issue → 终端 split 树容器（一 issue 一布局，多 pane 各自独立
-            PTY 会话；切换 issue 即重挂载，后端会话常驻） */}
-        <Box sx={{ flex: 1, minHeight: 0 }}>
-          {!hasSelection
-            ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
-                  <Typography variant="body2" color="text.secondary">选择左侧任务开始开发</Typography>
-                </Box>
-              )
-            : issue
+        {/* 内容区行：终端列（flex 占余宽）+ 工具面板区（tab 化，宽 = config/拖拽） */}
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+          {/* 终端列：选中 issue → 终端 split 树容器（一 issue 一布局，多 pane 各自独立
+              PTY 会话；切换 issue 即重挂载，后端会话常驻）。minWidth 与工具面板区拖拽
+              上限联动（ToolPanelArea 按容器实测宽收紧 max）。 */}
+          <Box sx={{ flex: 1, minWidth: TERMINAL_MIN_WIDTH, minHeight: 0 }}>
+            {!hasSelection
               ? (
-                  // 初始化闸门（T1.5）：三段式引导面板占位内容区，工作空间 SUCCESS 才渲染终端；
-                  // key 随 issue 切换重挂载（过渡态/轮询随 key 重建，互不串扰）。
-                  <WorkspaceInitGate key={issue.id} issueId={issue.id} baseDir={baseDir}>
-                    <TerminalErrorBoundary key={issue.id}>
-                      <TerminalPaneRoot issueId={issue.id} />
-                    </TerminalErrorBoundary>
-                  </WorkspaceInitGate>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+                    <Typography variant="body2" color="text.secondary">选择左侧任务开始开发</Typography>
+                  </Box>
                 )
-              : issuesLoading
+              : issue
                 ? (
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-                      <CircularProgress />
-                    </Box>
+                    // 初始化闸门（T1.5）：三段式引导面板占位终端列，工作空间 SUCCESS 才渲染终端；
+                    // key 随 issue 切换重挂载（过渡态/轮询随 key 重建，互不串扰）。
+                    <WorkspaceInitGate key={issue.id} issueId={issue.id} baseDir={baseDir}>
+                      <TerminalErrorBoundary key={issue.id}>
+                        <TerminalPaneRoot issueId={issue.id} />
+                      </TerminalErrorBoundary>
+                    </WorkspaceInitGate>
                   )
-                : (
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
-                      <Typography variant="body2" color="text.secondary">任务不存在或已移出开发流程</Typography>
-                    </Box>
-                  )}
+                : issuesLoading
+                  ? (
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                        <CircularProgress />
+                      </Box>
+                    )
+                  : (
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+                        <Typography variant="body2" color="text.secondary">任务不存在或已移出开发流程</Typography>
+                      </Box>
+                    )}
+          </Box>
+          <ToolPanelArea
+            issue={issue ?? null}
+            projectId={loadPid}
+            visible={toolAreaVisible}
+            width={toolAreaWidth}
+            onWidthCommit={commitToolAreaWidth}
+          />
         </Box>
       </Box>
 
-      {/* 右侧第三栏：子任务面板（T3.1）。选中 issue 且未折叠时展开 280px，否则收 0（未选中不占位）；
-          折叠范式同左栏（外层 width 过渡动画 + 内层固定宽防内容重排）。 */}
-      <Box
-        sx={{
-          width: subtaskPanelOpen ? 280 : 0,
-          flexShrink: 0,
-          borderLeft: subtaskPanelOpen ? 1 : 0,
-          borderColor: 'divider',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: theme.transitions.create(['width'], {
-            duration: theme.transitions.duration.standard,
-            easing: theme.transitions.easing.sharp,
-          }),
-        }}
-      >
-        <Box sx={{ width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
-          {issue && loadPid != null && <IssueSubTaskPanel projectId={loadPid} issueId={issue.id} />}
-        </Box>
-      </Box>
+      {/* 最右常驻工具条：顶部方格（面板区总开关）+ 工具图标列（注册表驱动）。无选中时禁用。 */}
+      <WorkbenchToolRail
+        issueId={issue?.id ?? null}
+        panelCollapsed={toolAreaCollapsed}
+        onTogglePanel={toggleToolAreaCollapsed}
+        onExpandPanel={() => void setAppConfig(PANEL_DEV_TOOL_AREA_COLLAPSED_KEY, toYesNo(false))}
+      />
 
       {/* 归档/取消确认（T3.2）：首确认（后果说明）→ 后端安全检查 → 警告态强确认（force 执行） */}
       <Dialog

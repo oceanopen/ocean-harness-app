@@ -65,13 +65,14 @@ interface IssueSubTaskPanelProps {
 }
 
 /**
- * IssueSubTaskPanel：开发工作台右侧子任务面板（T3.1）。
+ * IssueSubTaskPanel：开发工作台工具面板区的「子任务」tab 内容（T3.1，经 toolRegistry 挂载）。
  * 展示当前 issue 的子任务清单（parentId 指向该 issue 的子 issue，sortOrder 升序）与状态图标，
  * 供用户在终端跑 agent-dev 时旁观执行进度。本期纯展示（子任务与终端会话无映射，行不可点）。
+ * 面板标题由 tab 头承载（「子任务」），本组件头部仅留完成进度 + 刷新按钮。
  *
  * 数据复用 tracker 缓存（与左树/顶栏同 query key 共享，零新增请求）；实时性靠头部刷新按钮
  * 手动 invalidate——agent-dev 经 MCP 写库后后端不推事件，自动刷新待后续单独方案。
- * 父级（DevWorkbenchPage）仅在选中 issue 时挂载本面板，projectId/issueId 保证非空。
+ * 挂载方保证选中 issue 有效，projectId/issueId 非空。
  */
 export default function IssueSubTaskPanel({ projectId, issueId }: IssueSubTaskPanelProps) {
   const qc = useQueryClient();
@@ -85,7 +86,8 @@ export default function IssueSubTaskPanel({ projectId, issueId }: IssueSubTaskPa
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 头部：标题 + 完成进度 + 刷新按钮（isFetching 旋转，参照 ProjectIssueList 刷新先例） */}
+      {/* 头部：完成进度 + 刷新按钮（标题「子任务」由外层 tab 头承载；isFetching 旋转，
+          参照 ProjectIssueList 刷新先例） */}
       <Box
         sx={{
           height: 40,
@@ -98,10 +100,14 @@ export default function IssueSubTaskPanel({ projectId, issueId }: IssueSubTaskPa
           borderColor: 'divider',
         }}
       >
-        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>子任务</Typography>
-        {subTasks.length > 0 && (
-          <Typography variant="caption" color="text.secondary">{doneCount}/{subTasks.length}</Typography>
-        )}
+        {subTasks.length > 0
+          ? (
+              <Typography variant="caption" color="text.secondary">
+                完成
+                {doneCount}/{subTasks.length}
+              </Typography>
+            )
+          : null}
         <IconButton
           size="small"
           onClick={refresh}
