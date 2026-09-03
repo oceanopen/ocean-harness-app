@@ -168,20 +168,24 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const canSubmit = (mode === 'create' ? name.trim().length > 0 : !!dirty) && !hasEmptyRepoRow;
 
   // T3.3「AI 润色」可用条件（与进入开发同款「始终展示 + disabled + title 提示」范式）：
-  // 终态（DONE/CANCELLED）任务无需润色——与左树过滤（devWorkbench/derive.ts isDevIssue）
+  // 子任务禁用（refine-issue 作用于父任务需求描述并生成/维护子任务列表，子任务需求
+  // 来自父任务拆分，不独立润色——子任务身份比终态判定更根本，判定顺序在前）；终态
+  // （DONE/CANCELLED）任务无需润色——与左树过滤（devWorkbench/derive.ts isDevIssue）
   // 同一判定语义；dirty 时禁用——润色作用于已保存描述，未保存编辑直接跳转会静默
   // 丢弃且润色旧版（按钮语义「润色我刚写的」放大误用概率，故比「进入开发」更严）。
   // 点击写入润色意图标志后跳工作台，终端就绪后自动执行 refine-issue（编排见
   // EmbeddedTerminal/useRefineInjection；跳转与 handleEnterDev 同款）。
   const isTerminalState = projectIssue?.stateCode === 'DONE' || projectIssue?.stateCode === 'CANCELLED';
-  const canRefine = mode === 'edit' && !!projectIssue && !isTerminalState && !dirty;
+  const canRefine = mode === 'edit' && !!projectIssue && !isChild && !isTerminalState && !dirty;
   const refineDisabledReason = !projectIssue
     ? '请先保存 issue'
-    : isTerminalState
-      ? '终态任务无需润色'
-      : dirty
-        ? '有未保存修改，请先保存'
-        : '';
+    : isChild
+      ? '仅父任务可 AI 润色，子任务随父任务一起润色'
+      : isTerminalState
+        ? '终态任务无需润色'
+        : dirty
+          ? '有未保存修改，请先保存'
+          : '';
   const requestRefine = useDevWorkbenchStore(s => s.requestRefine);
   const handleRefine = () => {
     if (!projectIssue) {
@@ -274,9 +278,10 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     }
   };
 
-  // 头部标题：edit 显示 id 尾 8 位 + 名称（uuid 过长，与卡片/工作台同款截断）；create-sub 显示"新建子 Issue"；其余 create 显示"新建 Issue"。
+  // 头部标题：edit 完整显示 uuid + 名称（用户定稿——详情抽屉不隐藏 id，便于核对/复制；
+  // 卡片/工作台等列表位仍用尾 8 位截断）；create-sub 显示"新建子 Issue"；其余 create 显示"新建 Issue"。
   const title = mode === 'edit'
-    ? `…${projectIssue?.id.slice(-8)} ${projectIssue?.name ?? ''}`
+    ? `${projectIssue?.id ?? ''} - ${projectIssue?.name ?? ''}`
     : isCreateSub
       ? t('tracker:projectIssue.create.subTitle')
       : t('tracker:projectIssue.create.title');
