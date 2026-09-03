@@ -88,8 +88,8 @@ interface WorkspaceInitGateProps {
  *  ① 初始化工作空间目录（后端 createDirs，无则创建有则秒过）
  *  ② 工作空间初始化（sshConfig / cloneRepos 工程化步骤，cloneRepos 展开仓库级进度）
  *  ③ 启动 Claude 终端 / 启动终端（文案按 startupCodeCli 配置区分）
- * 右上角「初始化」按钮（DevWorkbenchPage）与面板按钮共用 useInitIssueWorkspace——同一 query key
- * 订阅，任一触发面板自动切换状态。
+ * 右上角「清理终端并重新初始化」按钮（DevWorkbenchPage）与面板按钮共用 useInitIssueWorkspace——
+ * 同一 query key 订阅，任一触发面板自动切换状态。
  */
 export default function WorkspaceInitGate({ issueId, baseDir, children }: WorkspaceInitGateProps) {
   const { data: statusResp, isLoading, error, refetch } = useIssueWorkspaceStatus(issueId, baseDir);

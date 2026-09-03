@@ -16,8 +16,8 @@ xattr -cr "/Applications/Ocean Harness.app"
 
 可以用 [DBeaver](https://dbeaver.io/) 查看 sqlite 数据库（文件名固定为 `app.db`，位于 Tauri 的 `app_data_dir` 下）：
 
-| 平台    | 环境    | 路径                                                              |
-| ------- | ------- | ----------------------------------------------------------------- |
+| 平台    | 环境    | 路径                                                         |
+| ------- | ------- | ------------------------------------------------------------ |
 | macOS   | Release | `~/Library/Application Support/com.ocean.harness/app.db`     |
 | macOS   | Dev     | `~/Library/Application Support/com.ocean.harness.dev/app.db` |
 | Windows | Release | `%APPDATA%\com.ocean.harness\app.db`                         |
@@ -31,8 +31,8 @@ xattr -cr "/Applications/Ocean Harness.app"
 
 应用内置的 Go 旁路服务（HTTP sidecar）持有独立的业务数据库，文件名固定为 `server.db`，位于 `app_data_dir` 下的 `app-server/db/` 子目录，与本地配置库 `app.db` 相互隔离。同样可用 [DBeaver](https://dbeaver.io/) 查看：
 
-| 平台    | 环境    | 路径                                                                               |
-| ------- | ------- | ---------------------------------------------------------------------------------- |
+| 平台    | 环境    | 路径                                                                          |
+| ------- | ------- | ----------------------------------------------------------------------------- |
 | macOS   | Release | `~/Library/Application Support/com.ocean.harness/app-server/db/server.db`     |
 | macOS   | Dev     | `~/Library/Application Support/com.ocean.harness.dev/app-server/db/server.db` |
 | Windows | Release | `%APPDATA%\com.ocean.harness\app-server\db\server.db`                         |

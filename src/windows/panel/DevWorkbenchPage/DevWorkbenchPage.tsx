@@ -1,9 +1,9 @@
 import type { IssueWorkspaceArchiveAction, ProjectIssueResponseData } from '@src/services';
 import {
+  CleaningServices as CleaningServicesIcon,
   KeyboardDoubleArrowLeft as KeyboardDoubleArrowLeftIcon,
   KeyboardDoubleArrowRight as KeyboardDoubleArrowRightIcon,
   MoreHoriz as MoreHorizIcon,
-  RestartAlt as RestartAltIcon,
   ViewSidebar as ViewSidebarIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
 } from '@mui/icons-material';
@@ -253,19 +253,21 @@ export default function DevWorkbenchPage() {
                 {subtaskPanelCollapsed ? <KeyboardDoubleArrowLeftIcon /> : <KeyboardDoubleArrowRightIcon />}
               </IconButton>
             )}
-            {/* 重新初始化工作空间（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
-                与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。 */}
+            {/* 清理终端并重新初始化（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
+                与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。
+                图标用扫帚（CleaningServices）而非循环箭头，与子任务面板刷新按钮（Autorenew）区分。 */}
             {hasSelection && issue && (
-              <Tooltip title="重新初始化工作空间">
+              <Tooltip title="清理终端并重新初始化">
                 <span>
                   <IconButton
                     size="small"
-                    aria-label="重新初始化工作空间"
+                    aria-label="清理终端并重新初始化"
                     disabled={initWorkspace.isPending || baseDir === ''}
                     onClick={() => initWorkspace.mutate({ issueId: issue.id, baseDir })}
                     sx={{ color: 'text.secondary' }}
                   >
-                    <RestartAltIcon />
+                    {/* 满幅实心构图光学尺寸偏大，字号 16（small 默认 18）与轻笔画邻居平衡 */}
+                    <CleaningServicesIcon sx={{ fontSize: 16 }} />
                   </IconButton>
                 </span>
               </Tooltip>
