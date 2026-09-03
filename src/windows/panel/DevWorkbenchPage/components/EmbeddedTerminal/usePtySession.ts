@@ -14,8 +14,19 @@ export type PtySessionStatus
     // spawn 失败（如目录不存在），可重试
     | 'error';
 
+// 本编排轮 attach 落定的会话进程形态（T3.3 注入编排消费）：
+//   direct   = 全新 spawn 且带 directCommand（CLI 是第一进程——向其补发 `claude\r`
+//              会被 CLI REPL 当 prompt 文本，注入编排据此跳过补发）
+//   plain    = 全新 spawn 的裸 shell
+//   reattach = 复用既有会话（进程形态取决于历史 spawn，前端不可知）
+// null = 编排未完成（connecting）或未启动。Rust 侧直启失败（CLI 不在场）会回落
+// 裸 shell 但 spawnKind 仍报 direct——此时 claude 本就起不来，等待超时兜底，无分流危害。
+export type PtySpawnKind = 'direct' | 'plain' | 'reattach';
+
 export interface UsePtySessionResult {
   status: PtySessionStatus;
+  // 本编排轮 attach 落定的进程形态（active/exited 时有值；重编排随 attachKey 重置为 null）
+  spawnKind: PtySpawnKind | null;
   // status === 'error' 时的错误信息（后端 Err 文案，如「任务目录不存在：<路径>」）
   errorMessage: string | null;
   // 键盘输入 → ptyWrite（TerminalView onData 接入；稳定引用）
@@ -104,6 +115,7 @@ async function attach(
 
 export function usePtySession({ sessionId, cwd, enabled, cols, rows, directCommand, onData }: UsePtySessionArgs): UsePtySessionResult {
   const [status, setStatus] = useState<PtySessionStatus>('connecting');
+  const [spawnKind, setSpawnKind] = useState<PtySpawnKind | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   // 重开/重试驱动：attempt 自增触发 effect 重跑编排
   const [attempt, setAttempt] = useState(0);
@@ -126,6 +138,7 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
   if (lastAttachKeyRef.current !== attachKey) {
     lastAttachKeyRef.current = attachKey;
     setStatus('connecting');
+    setSpawnKind(null);
     setErrorMessage(null);
   }
 
@@ -162,6 +175,7 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
           return;
         }
         setStatus(result.next);
+        setSpawnKind(result.spawned ? (directCommand ? 'direct' : 'plain') : 'reattach');
         if (result.spawned) {
           lastRequestedRef.current = spawnSize;
         }
@@ -230,5 +244,5 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
       });
   }, [sessionId]);
 
-  return { status, errorMessage, write, resize, reopen, close };
+  return { status, spawnKind, errorMessage, write, resize, reopen, close };
 }

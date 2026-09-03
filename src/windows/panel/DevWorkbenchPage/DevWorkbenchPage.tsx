@@ -88,7 +88,7 @@ const PANEL_LAYOUT_CONFIG_KEYS: readonly string[] = [
 ];
 
 // DevWorkbenchPage：控制台「开发工作台」骨架页。
-// 左中右布局：左栏任务树（IN_PROGRESS 的 issue）｜中栏 = 终端列（标题栏 + 终端区）+ 工具
+// 左中右布局：左栏任务树（非终态顶级 issue，T3.3 放宽——BACKLOG/TODO/IN_PROGRESS 全生命周期）｜中栏 = 终端列（标题栏 + 终端区）+ 工具
 // 面板区（tab 化，ToolPanelArea，tab 头与标题栏同带对齐）｜最右常驻工具条（WorkbenchToolRail，
 // 顶部方格 = 面板区总开关，下方工具图标，注册表驱动扩展——后续浏览器/文件目录见
 // toolRegistry）。工具 tabs 按 issue 隔离（workbenchTools 域 + localStorage），面板区

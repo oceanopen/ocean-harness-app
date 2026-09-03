@@ -1,6 +1,6 @@
 import type { IssueRepositoryBranchModel, Priority, ProjectIssueResponseData, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
 import type { StateCode } from '@src/state/tracker';
-import { CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon } from '@mui/icons-material';
+import { AutoFixHighOutlined as AutoFixHighOutlinedIcon, CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon } from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -18,6 +18,7 @@ import { WorkspaceLabelService } from '@src/services';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
+import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useLocalRepositories } from '@src/state/localRepositories';
 import { STATE_CODE_DEFAULT, useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } from '@src/state/tracker';
 import dayjs from 'dayjs';
@@ -165,6 +166,31 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const hasEmptyRepoRow = repoBranchRows.some(row => row.localRepositoryId <= 0);
 
   const canSubmit = (mode === 'create' ? name.trim().length > 0 : !!dirty) && !hasEmptyRepoRow;
+
+  // T3.3「AI 润色」可用条件（与进入开发同款「始终展示 + disabled + title 提示」范式）：
+  // 终态（DONE/CANCELLED）任务无需润色——与左树过滤（devWorkbench/derive.ts isDevIssue）
+  // 同一判定语义；dirty 时禁用——润色作用于已保存描述，未保存编辑直接跳转会静默
+  // 丢弃且润色旧版（按钮语义「润色我刚写的」放大误用概率，故比「进入开发」更严）。
+  // 点击写入润色意图标志后跳工作台，终端就绪后自动执行 refine-issue（编排见
+  // EmbeddedTerminal/useRefineInjection；跳转与 handleEnterDev 同款）。
+  const isTerminalState = projectIssue?.stateCode === 'DONE' || projectIssue?.stateCode === 'CANCELLED';
+  const canRefine = mode === 'edit' && !!projectIssue && !isTerminalState && !dirty;
+  const refineDisabledReason = !projectIssue
+    ? '请先保存 issue'
+    : isTerminalState
+      ? '终态任务无需润色'
+      : dirty
+        ? '有未保存修改，请先保存'
+        : '';
+  const requestRefine = useDevWorkbenchStore(s => s.requestRefine);
+  const handleRefine = () => {
+    if (!projectIssue) {
+      return;
+    }
+    requestRefine(projectIssue.id);
+    onClose();
+    routerNavigate(`/devWorkbench?pid=${projectIssue.projectId}&iid=${projectIssue.id}`);
+  };
 
   // labels 本地切换（不发请求）：create/edit 统一，提交时随 create/update 一起发。
   const handleToggleLabel = useCallback((labelId: number) => {
@@ -359,8 +385,19 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           )}
         </Box>
 
-        {/* 底部操作栏：一律左对齐（edit 删除+取消+保存；create 取消+创建） */}
+        {/* 底部操作栏：一律左对齐（edit 润色+进入开发+删除+取消+保存；create 取消+创建） */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+          {mode === 'edit' && (
+            <Button
+              size="small"
+              startIcon={<AutoFixHighOutlinedIcon />}
+              onClick={handleRefine}
+              disabled={!canRefine || submitting || deleting}
+              title={!canRefine ? refineDisabledReason : undefined}
+            >
+              {t('panel:devWorkbench.refineIssue')}
+            </Button>
+          )}
           {mode === 'edit' && (
             <Button
               size="small"

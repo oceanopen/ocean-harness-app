@@ -44,6 +44,11 @@ const FILE_PATH_PATTERN = /(\/[\w.@+-]+)*\/[\w.-]+\.(?:rs|ts|tsx|js|jsx|go|py|ja
 // 避开工具栏（保持关闭按钮可达），双写 magic number 会漏改。
 const TOOLBAR_HEIGHT = 28;
 
+// 工具栏 IconButton 统一 sx：text.secondary 色调 + 禁用态半透明。显式 color 的
+// 优先级高于 MUI 默认 .Mui-disabled 灰（不补则禁用与启用视觉无差，用户反馈
+// 「启动 claude」置灰看不出来）。
+const TOOLBAR_ICON_SX = { 'color': 'text.secondary', '&.Mui-disabled': { opacity: 0.5 } } as const;
+
 // 匹配结果 → ILink[]（range 列 0-based index 转 1-based，end 含末字符）。
 function buildLinks(
   bufferLineNumber: number,
@@ -469,7 +474,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* 工具栏：左侧 pane 标识（main pane 专属）+ 基础操作组 + 右侧关闭终端
           （aria-label，不挂 Tooltip）。exited 禁用策略：清屏/粘贴对死会话无意义；
-          复制/搜索保留——scrollback 检索与历史复制仍有价值。 */}
+          复制/搜索保留——scrollback 检索与历史复制仍有价值。
+          禁用可见性：显式 sx color（text.secondary）优先级高于 MUI 默认 .Mui-disabled
+          灰，禁用态与启用态视觉无差——统一补半透明（用户反馈「启动 claude」置灰
+          看不出来）。 */}
       <Box sx={{ height: TOOLBAR_HEIGHT, flexShrink: 0, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.5 }}>
         {toolbarLabel != null && (
           <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', lineHeight: 1 }}>
@@ -477,16 +485,16 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           </Typography>
         )}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-          <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={{ color: 'text.secondary' }}>
+          <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={TOOLBAR_ICON_SX}>
             <LayersClearOutlinedIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={handleCopy} disabled={!hasSelection} aria-label="复制选区" sx={{ color: 'text.secondary' }}>
+          <IconButton size="small" onClick={handleCopy} disabled={!hasSelection} aria-label="复制选区" sx={TOOLBAR_ICON_SX}>
             <ContentCopyOutlinedIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={handlePaste} disabled={exited} aria-label="粘贴" sx={{ color: 'text.secondary' }}>
+          <IconButton size="small" onClick={handlePaste} disabled={exited} aria-label="粘贴" sx={TOOLBAR_ICON_SX}>
             <ContentPasteOutlinedIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={{ color: 'text.secondary' }}>
+          <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={TOOLBAR_ICON_SX}>
             <SearchOutlinedIcon fontSize="small" />
           </IconButton>
           {/* 启动 claude（terminal_03 §3.2）：跑着置灰（探测驱动）、退出恢复、
@@ -496,7 +504,7 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
             onClick={onStartClaude}
             disabled={claudeRunning || exited}
             aria-label="启动 claude"
-            sx={{ color: 'text.secondary' }}
+            sx={TOOLBAR_ICON_SX}
           >
             <ClaudeIcon fontSize="small" />
           </IconButton>

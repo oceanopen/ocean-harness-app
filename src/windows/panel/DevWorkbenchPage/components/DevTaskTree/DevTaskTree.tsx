@@ -9,10 +9,10 @@ import { useQueries } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// DevTaskTree：开发工作台左任务树——跨所有工作空间展示进行中（IN_PROGRESS）的 issue。
+// DevTaskTree：开发工作台左任务树——跨所有工作空间展示非终态（BACKLOG/TODO/IN_PROGRESS）的顶级 issue。
 // 三级：workspace → project → dev issue。复用 MUI List 组件族（ListSubheader / ListItemButton / Chip）的内置样式，
 // 选中态/hover 走 ListItemButton selected（与侧栏一致），最大限度复用 MUI、少手写 sx。
-// 数据复用 tracker 缓存；过滤走 filterDevIssues（IN_PROGRESS 顶级）。选中 issue → useDevWorkbenchStore。
+// 数据复用 tracker 缓存；过滤走 filterDevIssues（非终态顶级，T3.3 放宽）。选中 issue → useDevWorkbenchStore。
 export default function DevTaskTree() {
   const { data: workspaces = [], isLoading } = useWorkspaces();
 
@@ -26,7 +26,7 @@ export default function DevTaskTree() {
   if (workspaces.length === 0) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
-        <Typography variant="body2" color="text.secondary">暂无开发中的任务</Typography>
+        <Typography variant="body2" color="text.secondary">暂无任务</Typography>
       </Box>
     );
   }

@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { Alert, Snackbar } from '@mui/material';
 import { useCallback, useState } from 'react';
 
-export type ToastSeverity = 'success' | 'error';
+export type ToastSeverity = 'success' | 'error' | 'info';
 
 export interface UseToastResult {
   /** 弹出一条 toast（保留最近一次内容，退出动画期间不闪烁）。 */

@@ -337,7 +337,7 @@
 
 ### T3.3 Issue 详情页「AI 润色」触发按钮
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：Issue 详情页（ProjectIssueDrawer）新增「AI 润色」按钮，点击后在终端中执行 `/ocean-harness:refine-issue`
 
@@ -350,6 +350,38 @@
 - 终端命令注入：复用现有 `startup_command` 机制（shell-ready 后自动注入）
 
 **依赖**：T2.2（Skill 已存在）、T1.5（工作空间初始化）
+
+**实施定稿（2026-09-03）**：
+- **方案变更（startup_command 已退役）**：原方案的「startup_command 机制（shell-ready
+  后自动注入）」已随 chat 模式退役删除，现行 directCommand 仅能整条直启 CLI（token
+  白名单不含空格/冒号），承载不了 slash 命令注入。落地为「意图标志 + 终端侧编排」：
+  devWorkbench store 新增 `pendingRefine {issueId, requestedAt}`，抽屉按钮写入 +
+  跳转（与「进入开发」同款 URL），EmbeddedTerminal（main pane）useRefineInjection
+  hook 消费编排；工作空间未初始化由 WorkspaceInitGate 现有面板引导手动初始化，
+  闸门放行后编排自然续上（零新增 UI）
+- **注入编排时序**（全链事件驱动，无延时猜测）：会话 active → await 进程探测
+  （ptyClaudeRunning，不复用 useClaudeRunning——其回填存在「先见 false」竞态，
+  自动注入不可接受）→ claude 已运行 toast 提示手动执行 / 未运行则裸 shell
+  （plain/reattach）补发 claude\r（直启 direct 不补发，防 REPL 当 prompt 文本）
+  → 等 EVENT_CLAUDE_SESSIONS_CHANGED 重 probe 转 true → 写入命令 → 清标志。
+  usePtySession 新暴露 spawnKind（direct/plain/reattach，attach 落点真值）供直启判定
+- **双超时职责分离**：意图过期 10 分钟（编排启动前搁置——闸门卡住/用户离开场景防
+  「数小时后误注入」）+ 就绪超时 30s（编排启动后 claude 未起来，静默清不提示——
+  用户定稿「尽力而为」）；finish 幂等 latch 保证「一次注入」为本地不变量
+- **左树过滤放宽**（用户定稿）：isDevIssue 从「IN_PROGRESS 顶级」放宽为「非终态
+  （BACKLOG/TODO/IN_PROGRESS）顶级」——工作台覆盖润色→开发全生命周期，「AI 润色」
+  与「进入开发」共用 URL 选中链路；DONE/CANCELLED 不展示（终态已收尾且工作空间多
+  已归档清理）
+- **按钮门槛**（用户定稿）：仅终态禁用（DONE/CANCELLED，title 提示「终态任务无需
+  润色」）+ dirty 禁用（未保存修改时禁用，防静默丢弃编辑且润色旧版——按钮语义
+  「润色我刚写的」放大误用概率，故比「进入开发」更严）
+- **无需环境变量**：refine-issue 由 cwd basename 推导 issueId（T2.2 定稿），
+  OCEAN_HARNESS_PORT 已由 pty_spawn 注入，链路零新增环境变量
+- **随附**：useToast 新增 info severity；TerminalView 工具栏禁用态半透明修复
+  （显式 sx color 压过 MUI .Mui-disabled 灰导致置灰不可见，用户反馈）
+- **遗留**（审查记录，低收益重构待后续）：终态判定在 derive.ts 与抽屉双写（A-2）、
+  注入 hook 内锚点重派生 issueId::main（D-1）、Rust 直启回落裸 shell 时 spawnKind
+  误报 direct（alias 安装 claude 场景自动润色静默失效，已留 debug 日志）
 
 ---
 

@@ -46,6 +46,7 @@
     }
   },
   "devWorkbench": {
-    "enterDev": "Enter dev"
+    "enterDev": "Enter dev",
+    "refineIssue": "AI refine"
   }
 }
