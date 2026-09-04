@@ -501,7 +501,7 @@
 
 ### T5.1 工作空间文件浏览器与 Diff 查看
 
-**状态**：⬜
+**状态**：⬜（列表 + 预览已落地，diff 未做——见实施定稿）
 
 **功能**：右侧工具条展示工作空间文件列表，查看 diff 和文件内容
 
@@ -517,6 +517,79 @@
 **依赖**：T1.1（工作空间已初始化）
 
 **参考**：hello-halo 的 `src/renderer/components/diff/`
+
+**实施定稿（2026-09-04，列表 + 预览部分落地）**：
+
+- 本期完成：工具条「文件」工具（toolRegistry 注册，FolderOutlined/exclusive）；工具面板区
+  展示工作空间一次性全目录树（自绘递归树 + 默认展开 `repo/` + 手动刷新）；点击文件在
+  **终端内容区上方浮层**预览（absolute inset 0 + zIndex mobileStepper，不挤压布局零
+  SIGWINCH），浮层内**多 tab**（tab id = 文件相对路径，按 issue localStorage 持久化，
+  Escape 关激活 tab）。预览查看器：代码 = CodeMirror 6 只读态（`readOnly + editable(false)`，
+  虚拟滚动）、markdown = 复用 `@uiw/react-md-editor` 的 `MDEditor.Markdown`、图片 = base64
+  data URL `<img>`、二进制/超大 = 信息面板。
+- 后端落地：`/api/issueWorkspace/getFileTree`（WalkDir 扁平节点表 + 前端 `buildFileTree` 纯函数
+  组树）与 `/api/issueWorkspace/getFileContent`（kind = text/image/binary/tooLarge，后端定夺
+  传输类型；文本 2MB / 图片 8MB / 节点 2 万上限）。
+- 方案偏离 ①：fileList 由 `git ls-files` 改为**全目录树 + 后端忽略清单**（.git/
+  node_modules/.workspace-init-state.json/.DS_Store + \_\_pycache\_\_/target/dist/build/out/
+  .next/.venv/venv 共 12 项——.ssh 按用户决策移出名单、树中可见，2026-09-04）——产物浏览
+  需看见 agent 产出的未跟踪新文件；忽略名单同时约束两接口（列表看不见的文件点名也读不到）。
+- 方案偏离 ②：路由由规划的 `/api/workspace/*` 改挂 **`/api/issueWorkspace/*`**——与 tracker
+  的 workspace（任务管理容器）区分，文件浏览器操作对象即 issue 运行工作空间本体，且复用该域
+  baseDir/issueId 防穿越校验范式。
+- 方案偏离 ③：代码高亮选 **CodeMirror 6 只读态**（原方案未定组件）——为下期编辑铺路，
+  摘掉两行只读配置即得编辑器；配套语言包 js/ts/go/py/rs/json/css/html（未命中纯文本展示，
+  刻意不引 legacy-modes 近似映射）。
+- 前端状态：新域 `src/state/workspaceFiles/`（keys/queries + zustand store：预览 tabs 持久化、
+  树展开态会话级）；`useInitIssueWorkspace` 成功后整域失效文件缓存。
+- 剩余未做（下期接续，契约已预留）：`fileDiff`（git 变更标记 + diff 视图，gitutil 基建在位）、
+  `fileSave`（编辑保存，复用同一套路径安全链/文本判定，前端 CodeViewer 摘 readOnly 即编辑器）。
+
+**实施定稿补记（2026-09-04，预览层升级为 hello-halo 同款栈）**：
+
+- **CM6 代码查看观感对齐 halo**：移植其 `codemirror-theme.ts`（SF Mono 字体栈/行高 1.6/
+  gutter 样式/活动行/折叠槽/搜索面板全套样式 → 新增 `fileViewer/codeViewerTheme.ts`，
+  shadcn CSS 变量改接 MUI palette 双模式）+ reader-first 扩展集（foldGutter ▸/▾、Cmd+F
+  搜索、选词高亮、括号匹配、scrollPastEnd）+ 官方语言包扩充（yaml/xml/sql/cpp/java/php/
+  vue/markdown；仍不引 legacy-modes 近似映射）。
+- **Markdown 换 Streamdown**（halo 同款）：static 模式 + `@streamdown/code` Shiki 双主题
+  （github-dark 在前——内联色取首主题的已知约定）+ KaTeX 公式（remark-math/rehype-katex，
+  katex css 随插件懒加载——Streamdown 声明不注入的必要补充）+ 预览/源码切换 + 复制按钮。
+  配色排版由容器 sx 承载（streamdown styles.css 只管动画布局；halo 靠 tailwind prose，
+  本项目用 sx 复刻关键排版参数，不引入 tailwind——避免 MUI 双体系/preflight 冲突）。
+  md 内嵌相对路径图片解析（./ ../ / 裸相对，halo resolveImageSrc 简化版）→ fileRaw URL。
+- **图片直连**：新增 `GET /api/issueWorkspace/fileRaw`（query 传 issueId/baseDir/path；校验链
+  与 getFileContent 完全一致 + 图片扩展名白名单；原始字节 + Content-Type，类静态资源，
+  no-store）。`getFileContent` image 分支改 stat-only（kind/mimeType/size，不再 base64 整读，
+  图片不再受大小上限约束）。前端 `<img src>` 直指（零 base64 转码），`?v=dataUpdatedAt`
+  缓存刷新令牌。curl 自测 9 项全过（含 symlink 逃逸/穿越/忽略名单回归）。
+- **.ssh 移出忽略名单**（用户决策，2026-09-04）：工作空间内 ssh 配置在树中可见、可点击
+  预览；其余过滤项不变，忽略名单对两接口的双约束不变，`../` 穿越与 EvalSymlinks root
+  包含断言等路径安全全部保留。
+- **图片交互换 react-zoom-pan-pinch**（替代 halo ~150 行手写缩放平移数学）：滚轮/双击/pinch
+  缩放、拖拽平移内建，fitOnInit 加载即 contain，适应窗口按钮重算（先测量容器后使用），
+  棋盘格透明底（halo 同款四渐变，随主题深浅两套）+ 尺寸/百分比显示。
+- 依赖净增：streamdown/@streamdown/code、@codemirror/{search,commands,lang-yaml,lang-xml,
+  lang-sql,lang-cpp,lang-java,lang-php,lang-vue,lang-markdown}、@lezer/highlight、
+  react-zoom-pan-pinch、remark-math/rehype-katex/katex。
+
+**实施定稿补记二（2026-09-04，预览细节打磨）**：
+
+- **tab 栏交互**：右缘新增「关闭全部」按钮（store 增 `closeAllPreviewTabs` → 置共享空常量，
+  落盘链自动清 key）；长文件名省略号截断（label Typography `flex + minWidth:0`、关闭钮
+  `flexShrink:0`——flex 默认 `min-width:auto` 不收缩是截断失效根源）。
+- **CM6 光标与活动行**：去掉 `editable.of(false)`（与 readOnly 双挂会把光标/焦点一起禁掉；
+  readOnly 单独即可防编辑且保留闪烁光标与选中，halo 同款）；活动行/活动行号/内联码底色
+  修正 `alpha(action.hover, 0.6)` 误用（alpha() 会整体覆盖 MUI token 自带透明度 → 深色下
+  60% 白刺眼）——直接用 `action.hover` 原生微灰。
+- **md 代码块整块自绘**（弃用 streamdown 2.6 内置 CodeBlock）：其 token 配色/块样式只通过
+  tailwind 任意值类（`text-[var(--sdm-c)]` 等）生效，无 tailwind 全失效；且 context 缺省
+  `shikiTheme` 时其 highlight 同步崩溃（读 `undefined[0]`，实测复现）——「代码块展示不出
+  来」的双重根因。改走 `plugins.renderers`（精确语言匹配，覆盖常见 fence 语言清单）自绘：
+  CM6 CodeViewer 承载配色/明暗/折叠/搜索（与源码模式同观感），头部语言标签 + 复制 + 全屏
+  （Dialog 铺满），**无下载按钮**（halo 同款为已知 bug，刻意不跟）。`@streamdown/code` 依赖
+  移除；`shikiTheme` 传合法元组兜底罕见语言不崩溃；`controls` 全关（表格等内置控件同为
+  tailwind 依赖）。版本保持最新 streamdown@2.6.0（用户决策，不随 halo 降 2.2.0）。
 
 ---
 

@@ -12,8 +12,9 @@
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { ProjectIssueResponseData } from '@src/services';
 import type { ReactNode } from 'react';
-import { Checklist as ChecklistIcon } from '@mui/icons-material';
+import { Checklist as ChecklistIcon, FolderOutlined as FolderOutlinedIcon } from '@mui/icons-material';
 import IssueSubTaskPanel from '../IssueSubTaskPanel/IssueSubTaskPanel';
+import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
 
 /// 工具渲染上下文：当前选中 issue（面板内容均围绕选中任务；hasSelection 已由外层保证非空）。
 export interface WorkbenchToolRenderCtx {
@@ -37,6 +38,13 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     icon: ChecklistIcon,
     exclusive: true,
     render: ({ issue, projectId }) => <IssueSubTaskPanel projectId={projectId} issueId={issue.id} />,
+  },
+  {
+    id: 'files',
+    title: '文件',
+    icon: FolderOutlinedIcon,
+    exclusive: true,
+    render: ({ issue }) => <WorkspaceFilePanel issueId={issue.id} />,
   },
 ];
 

@@ -27,6 +27,7 @@ import {
   WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
+import { openProjectConfigSettings } from '@src/shared/openSettings';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
@@ -197,12 +198,8 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   });
 
   const openSettings = useCallback(() => {
-    // 语义化深链：错误态引导用户去「项目配置」分区设置工作空间根目录。
-    void commands.showSettingsWindow('projectConfig').then((res) => {
-      if (res.status === 'error') {
-        console.warn('[EmbeddedTerminal] open settings failed:', res.error);
-      }
-    });
+    // 语义化深链：错误态引导用户去「项目配置」分区设置工作空间根目录（共享助手）。
+    openProjectConfigSettings('EmbeddedTerminal');
   }, []);
 
   // 一键创建工作目录（mkdir -p 语义），成功后自动重试终端初始化。

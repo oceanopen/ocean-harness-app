@@ -1,4 +1,4 @@
-import { request } from './http';
+import { request, serverUrl } from './http';
 
 // ─── 类型（对齐后端 src-server/internal/dal/types/issue_workspace.go）───
 
@@ -102,6 +102,57 @@ export interface IssueWorkspaceArchiveResponseData {
   warnings: string[];
 }
 
+// ─── 文件浏览（T5.1 本期：列表 + 预览，对齐后端 types/issue_workspace_files.go）───
+
+/**
+ * 文件内容传输类型（后端定夺，前后端单一真相）：text（UTF-8 全文，呈现分派在前端按
+ * 扩展名）/ image（元信息，字节经 fileRaw URL 直连）/ binary（检出非文本，提示态）/
+ * tooLarge（超文本预览上限，合法响应态）。
+ */
+export type IssueWorkspaceFileContentKind
+  = | 'text'
+    | 'image'
+    | 'binary'
+    | 'tooLarge';
+
+/** POST /api/issueWorkspace/getFileTree 的入参。 */
+export interface IssueWorkspaceFileTreeRequest {
+  issueId: string;
+  baseDir: string;
+}
+
+/**
+ * 文件树节点（扁平表成员）。path 为相对 {baseDir}/{issueId}/ 的正斜杠路径，前端直接
+ * 用作树 key 与 getFileContent 的 path 入参；目录 size 恒 0。
+ */
+export interface IssueWorkspaceFileNode {
+  path: string;
+  name: string;
+  isDir: boolean;
+  size: number;
+}
+
+/** getFileTree 响应：一次性全树扁平节点表 + 截断标志（节点数超后端上限）。 */
+export interface IssueWorkspaceFileTreeResponseData {
+  nodes: IssueWorkspaceFileNode[];
+  truncated: boolean;
+}
+
+/** POST /api/issueWorkspace/getFileContent 的入参（path 即树节点 path）。 */
+export interface IssueWorkspaceFileContentRequest {
+  issueId: string;
+  baseDir: string;
+  path: string;
+}
+
+/** getFileContent 响应：各 kind 字段占用——text→content / image→mimeType（字节走 fileRaw）/ 其余仅 size。 */
+export interface IssueWorkspaceFileContentResponseData {
+  kind: IssueWorkspaceFileContentKind;
+  size: number;
+  mimeType?: string;
+  content?: string;
+}
+
 export class IssueWorkspaceService {
   // init：受理工作空间初始化（异步执行；幂等可重入——执行中重复触发返回当前进度，
   // 已成功且关联未变直接 SUCCESS，失败重试只补失败仓库）。返回受理后的状态快照。
@@ -117,5 +168,25 @@ export class IssueWorkspaceService {
   // archive：归档/取消工作空间（T3.2，两段式契约见请求类型注释）。
   static archive(req: IssueWorkspaceArchiveRequest): Promise<IssueWorkspaceArchiveResponseData> {
     return request<IssueWorkspaceArchiveResponseData>('POST', '/api/issueWorkspace/archive', req);
+  }
+
+  // getFileTree：一次性返回工作空间全部文件/目录扁平节点表（前端纯函数组树）。
+  static fileTree(req: IssueWorkspaceFileTreeRequest): Promise<IssueWorkspaceFileTreeResponseData> {
+    return request<IssueWorkspaceFileTreeResponseData>('POST', '/api/issueWorkspace/getFileTree', req);
+  }
+
+  // getFileContent：读取单个文件内容并定夺传输 kind（text/image/binary/tooLarge）。
+  static fileContent(req: IssueWorkspaceFileContentRequest): Promise<IssueWorkspaceFileContentResponseData> {
+    return request<IssueWorkspaceFileContentResponseData>('POST', '/api/issueWorkspace/getFileContent', req);
+  }
+
+  // fileRawUrl：图片原始字节直连 URL（<img src>，类静态资源；base 解析同 request）。
+  // v 为缓存刷新参数（重验/重开时变化强制重新加载）。
+  static fileRawUrl(req: { issueId: string; baseDir: string; path: string; v?: string | number }): Promise<string> {
+    const query: Record<string, string> = { issueId: req.issueId, baseDir: req.baseDir, path: req.path };
+    if (req.v != null) {
+      query.v = String(req.v);
+    }
+    return serverUrl('/api/issueWorkspace/fileRaw', query);
   }
 }

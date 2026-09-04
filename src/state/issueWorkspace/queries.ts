@@ -2,6 +2,7 @@ import type { IssueWorkspaceArchiveAction, IssueWorkspaceStatusResponseData } fr
 import { IssueWorkspaceService } from '@src/services';
 import { commands } from '@src/shared/bindings';
 import { trackerKeys } from '@src/state/tracker';
+import { workspaceFilesKeys } from '@src/state/workspaceFiles';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { issueWorkspaceKeys } from './keys';
 
@@ -26,7 +27,8 @@ export function useIssueWorkspaceStatus(issueId: string | null, baseDir: string)
 /**
  * 触发（重新）初始化：先清理该 issue 的全部 PTY 会话（重新初始化要求终端对象重建，
  * 会话可能本就不存在——清理失败仅告警不阻断），再调 init（幂等：已完成步骤/仓库跳过）。
- * 返回的受理态直接 setQueryData 就地更新缓存（同 localRepositories 的 refresh 先例）。
+ * 返回的受理态直接 setQueryData 就地更新缓存；文件树/内容整域失效（重新初始化后
+ * 工作空间文件必变——跨域 invalidate 有 trackerKeys 先例）。
  */
 export function useInitIssueWorkspace() {
   const qc = useQueryClient();
@@ -40,6 +42,7 @@ export function useInitIssueWorkspace() {
     },
     onSuccess: (data, req) => {
       qc.setQueryData<IssueWorkspaceStatusResponseData>(issueWorkspaceKeys.status(req.issueId), data);
+      qc.invalidateQueries({ queryKey: workspaceFilesKeys.root });
     },
   });
 }

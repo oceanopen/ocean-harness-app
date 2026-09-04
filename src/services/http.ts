@@ -65,3 +65,15 @@ export async function request<T>(method: 'GET' | 'POST', path: string, body?: un
   }
   return json.data;
 }
+
+// serverUrl 构造带查询参数的绝对 URL（供 <img src> 等无法走 request() 的直连场景；
+// base 解析与缓存失效逻辑同 request）。query 值逐项 encodeURIComponent。
+export async function serverUrl(path: string, query: Record<string, string>): Promise<string> {
+  ensureStateListener();
+  const base = await getServerAddress();
+  if (!base) {
+    throw new Error('go-server 未运行');
+  }
+  const qs = Object.entries(query).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  return qs === '' ? `${base}${path}` : `${base}${path}?${qs}`;
+}

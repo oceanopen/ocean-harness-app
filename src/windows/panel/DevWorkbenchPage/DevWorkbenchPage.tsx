@@ -45,11 +45,13 @@ import { useArchiveIssueWorkspace, useInitIssueWorkspace } from '@src/state/issu
 import { removeLayout } from '@src/state/terminalPanes';
 import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
 import { clearToolTabs } from '@src/state/workbenchTools';
+import { clearPreviewTabs } from '@src/state/workspaceFiles';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
+import FilePreviewOverlay from './components/FilePreviewOverlay/FilePreviewOverlay';
 import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
 import TerminalSplitButtons from './components/TerminalPanes/TerminalSplitButtons';
 import ToolPanelArea, { TERMINAL_MIN_WIDTH, TOOL_AREA_MIN_WIDTH } from './components/WorkbenchTools/ToolPanelArea';
@@ -164,6 +166,7 @@ export default function DevWorkbenchPage() {
           setArchiveConfirm(null);
           showToast(kind === 'archive' ? '已归档：工作空间目录已删除' : '已取消：工作空间目录已删除', 'success');
           clearToolTabs(issue.id);
+          clearPreviewTabs(issue.id);
           removeLayout(issue.id);
           selectIssue(null);
           setSearchParams({}, { replace: true });
@@ -325,8 +328,9 @@ export default function DevWorkbenchPage() {
           </Box>
 
           {/* 终端内容：选中 issue → 终端 split 树容器（一 issue 一布局，多 pane 各自独立
-            PTY 会话；切换 issue 即重挂载，后端会话常驻） */}
-          <Box sx={{ flex: 1, minHeight: 0 }}>
+            PTY 会话；切换 issue 即重挂载，后端会话常驻）。relative 供文件预览浮层
+            （absolute inset 0 铺满本区、不挤压布局零 SIGWINCH）锚定。 */}
+          <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
             {!hasSelection
               ? (
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
@@ -354,6 +358,9 @@ export default function DevWorkbenchPage() {
                         <Typography variant="body2" color="text.secondary">任务不存在或已移出开发流程</Typography>
                       </Box>
                     )}
+            {/* 工作空间文件预览浮层（T5.1 本期）：tabs 按 issue 隔离、非空才可见；与终端
+                内容为兄弟节点，absolute 定位不参与 flex 布局（会话后端常驻仅视觉遮盖）。 */}
+            {issue != null && <FilePreviewOverlay issueId={issue.id} baseDir={baseDir} />}
           </Box>
         </Box>
         <ToolPanelArea
