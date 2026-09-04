@@ -59,6 +59,6 @@ type GitHubCIStatusContent struct {
 type GitHubCIRecordContent struct {
 	Name       string `json:"name" jsonschema:"检查名（如 workflow / job 名）"`
 	Status     string `json:"status" jsonschema:"执行状态：queued/in_progress/completed"`
-	Conclusion string `json:"conclusion,omitempty" jsonschema:"结论（status=completed 时有值）：success/failure/neutral/cancelled/skipped/timed_out"`
+	Conclusion string `json:"conclusion,omitempty" jsonschema:"结论（status 为 completed 时有值）：success/failure/neutral/cancelled/skipped/timed_out"`
 	HTMLURL    string `json:"htmlUrl,omitempty" jsonschema:"检查详情地址"`
 }
