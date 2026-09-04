@@ -1,5 +1,5 @@
 import type { PreviewTab } from '@src/state/workspaceFiles';
-import { CloseFullscreenOutlined as CloseFullscreenOutlinedIcon, Close as CloseIcon } from '@mui/icons-material';
+import { Close as CloseIcon } from '@mui/icons-material';
 import { Box, IconButton, Tab, Tabs, Tooltip, Typography } from '@mui/material';
 import { basename } from '@src/shared/repoPath';
 import { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
@@ -58,7 +58,7 @@ export default function PreviewTabsBar({ tabs, activeTabId, onSelect, onClose, o
       <Box sx={{ display: 'flex', alignItems: 'center', px: 0.5, borderLeft: 1, borderColor: 'divider' }}>
         <Tooltip title="关闭全部预览">
           <IconButton size="small" aria-label="关闭全部预览" onClick={onCloseAll} sx={{ color: 'text.secondary' }}>
-            <CloseFullscreenOutlinedIcon sx={{ fontSize: 16 }} />
+            <CloseIcon sx={{ fontSize: 16 }} />
           </IconButton>
         </Tooltip>
       </Box>

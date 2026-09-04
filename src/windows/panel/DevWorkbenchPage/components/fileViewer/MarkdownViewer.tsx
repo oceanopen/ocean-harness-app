@@ -7,14 +7,35 @@ import {
   OpenInFull as OpenInFullScreenIcon,
   VisibilityOutlined as VisibilityOutlinedIcon,
 } from '@mui/icons-material';
-import { Box, Dialog, IconButton, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import { Box, Dialog, IconButton, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme } from '@mui/material';
 import { serverUrl } from '@src/services/http';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
 import { useEffect, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import CodeViewer from './CodeViewer';
+import { highlightCodeBlock } from './shikiHighlighter';
 import { useMathPlugin } from './streamdownPlugins';
 import 'streamdown/styles.css';
+
+// 等宽字体栈（行内码/md 代码块/源码 pre 共用）。
+const MONO_FONT = '\'SF Mono\', \'Fira Code\', \'JetBrains Mono\', Menlo, Monaco, monospace';
+
+// 自绘块体 pre（shiki 输出与纯文本兜底共用）：显式 border/borderRadius/bgcolor 归零阻断
+// proseSx '& pre' 兜底规则（面向 streamdown 内置块）泄漏——否则自绘块外框内再套一圈边框
+// 成框中框；调用点以 '&&' 提升特异性，属性覆盖确定性生效（不依赖 emotion 插入顺序）。
+const codePreSx = {
+  m: 0,
+  p: '10px 12px',
+  maxHeight: 480,
+  overflow: 'auto',
+  border: 0,
+  borderRadius: 0,
+  bgcolor: 'transparent',
+  fontFamily: MONO_FONT,
+  fontSize: '0.86rem',
+  lineHeight: 1.6,
+  tabSize: 4,
+};
 
 // Streamdown 的 styles.css 只承载动画/布局（--sd-* 变量），配色与排版由容器提供——
 // halo 靠 tailwind prose 提供，本项目用 sx 复刻关键排版参数（标题层级/段落间距/表格
@@ -36,9 +57,9 @@ const proseSx: SxProps<Theme> = {
     borderColor: 'divider',
     color: 'text.secondary',
   },
-  // 行内码（块内 code 由 CodeViewer 承载，不受此样式影响——:not(pre) 限定行内）
+  // 行内码（块内 code 由 shiki 自绘块承载，不受此样式影响——:not(pre) 限定行内）
   '& :not(pre) > code': {
-    fontFamily: '\'SF Mono\', \'Fira Code\', \'JetBrains Mono\', Menlo, Monaco, monospace',
+    fontFamily: MONO_FONT,
     fontSize: '0.86em',
     bgcolor: 'action.hover',
     px: '4px',
@@ -54,7 +75,7 @@ const proseSx: SxProps<Theme> = {
     borderColor: 'divider',
     borderRadius: 1,
     bgcolor: 'background.default',
-    fontFamily: '\'SF Mono\', \'Fira Code\', \'JetBrains Mono\', Menlo, Monaco, monospace',
+    fontFamily: MONO_FONT,
     fontSize: '0.86rem',
   },
   '& table': { my: '12px', borderCollapse: 'collapse', width: '100%', display: 'block', overflowX: 'auto' },
@@ -133,8 +154,8 @@ function CodeBlockHeader({ language, copied, onCopy, onToggleFullscreen }: {
 }
 
 /// md 代码围栏语言清单（Streamdown renderers 为精确匹配、无通配——清单覆盖常见 fence
-/// 标识，未列语言回落 streamdown 内置块）。CM 语言表未命中的（sh/toml 等）由 CodeViewer
-/// 纯文本兜底，观感仍统一。
+/// 标识，未列语言回落 streamdown 内置块）。清单内语言由 shiki 静态高亮（未收录/加载失败
+/// 回落纯文本 pre，观感仍统一）。
 const MD_CODE_LANGUAGES = [
   'ts',
   'tsx',
@@ -212,13 +233,27 @@ const MD_CODE_LANGUAGES = [
   'nginx',
 ];
 
-/// 自绘 md 代码块（经 Streamdown renderers 机制整块替换其内置 CodeBlock）：配色/明暗/
-/// 折叠/搜索复用 CodeViewer（CM6，与源码模式同观感），不受 streamdown 内置块对 tailwind
-/// 类的依赖（无 tailwind 时其配色与块样式全部失效，且 shikiTheme 缺省时其 highlight
-/// 同步崩溃）。块内超高内部滚动；全屏走 Dialog 铺满预览浮层。
+/// 自绘 md 代码块（经 Streamdown renderers 机制整块替换其内置 CodeBlock）：块体走 shiki
+/// 静态高亮（VS Code 同源语法/主题，halo 同款内核；异步回填——挂载即纯文本底，与 katex
+/// 插件懒加载回填同模式：静态底 = 终态排版，高亮 = 渐进增强；未知语言/失败恒纯文本）。
+/// 替换原「每块一个 CM6 实例」方案：切 tab 整层重挂载时 N 个编辑器同步重建卡主线程数秒。
+/// 头部（语言标签 + 复制 + 全屏）不变；全屏 Dialog 内按需挂 CM6（折叠/Cmd+F 保留，单实例
+/// 打开才建）；Escape 由 Dialog 自身处理，stopPropagation 防冒泡浮层根误关预览 tab。
 function MdCodeBlock({ code, language }: CustomRendererProps) {
+  const theme = useTheme();
+  const dark = theme.palette.mode === 'dark';
   const [copied, setCopied] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  // shiki 双主题 HTML（null = 未就绪/不支持，渲染纯文本底）。
+  const [html, setHtml] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void highlightCodeBlock(code, language).then(h => alive && setHtml(h));
+    return () => {
+      alive = false;
+    };
+  }, [code, language]);
 
   const handleCopy = () => {
     void navigator.clipboard.writeText(code).then(() => {
@@ -244,11 +279,26 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
         onCopy={handleCopy}
         onToggleFullscreen={() => setFullscreen(true)}
       />
-      <Box sx={{ '& .cm-scroller': { maxHeight: 480 } }}>
-        <CodeViewer content={code} path="" language={language} scrollPastEnd={false} />
-      </Box>
-      {/* 全屏：Dialog 铺满预览浮层（Escape 由 Dialog 自身处理；stopPropagation 防冒泡
-          到浮层根误关预览 tab） */}
+      {html != null
+        ? (
+            <Box
+              // shiki 输出为 <pre class="shiki">（defaultColor:false 仅携带 --shiki-* 变量，
+              // 布局/字体/底色全由下方 sx 提供）；token 颜色 span 级选 var，明暗切换零重高亮。
+              sx={{
+                '&& pre': codePreSx,
+                '& span': {
+                  color: `var(--shiki-${dark ? 'dark' : 'light'})`,
+                  fontStyle: `var(--shiki-${dark ? 'dark' : 'light'}-font-style)`,
+                  fontWeight: `var(--shiki-${dark ? 'dark' : 'light'}-font-weight)`,
+                  textDecoration: `var(--shiki-${dark ? 'dark' : 'light'}-text-decoration)`,
+                },
+              }}
+              // eslint-disable-next-line react/dom-no-dangerously-set-innerhtml -- shiki 生成的高亮 HTML：token 文本经其内部转义，来源为本地工作空间文件，无 XSS 注入面
+              dangerouslySetInnerHTML={{ __html: html }}
+            />
+          )
+        : <Box component="pre" sx={{ '&&': codePreSx }}>{code}</Box>}
+      {/* 全屏：Dialog 铺满预览浮层 */}
       <Dialog
         fullScreen
         open={fullscreen}
@@ -272,9 +322,10 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
 }
 
 /// Markdown 只读渲染（观感对齐 halo，实现按本项目栈裁剪）：Streamdown static 模式承载
-/// 排版/GFM/公式；代码块走自绘渲染器（CM6）；图片经 fileRaw 直连；外链经 plugin-shell
-/// 走系统浏览器（Tauri webview 内 target=_blank 不可靠，MarkdownEditor 同款处理）。
-/// 头部 36px：预览/源码切换 + 复制；源码视图复用 CodeViewer（与代码文件预览同观感）。
+/// 排版/GFM/公式；代码块自绘渲染器（shiki 静态高亮，全屏内按需 CM6）；图片经 fileRaw
+/// 直连；外链经 plugin-shell 走系统浏览器（Tauri webview 内 target=_blank 不可靠，
+/// MarkdownEditor 同款处理）。头部 36px：预览/源码切换 + 复制；源码视图复用 CodeViewer
+/// （与代码文件预览同观感）。
 export default function MarkdownViewer({ content, issueId, baseDir, path }: MarkdownViewerProps) {
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
   const [copied, setCopied] = useState(false);

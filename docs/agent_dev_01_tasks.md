@@ -591,6 +591,25 @@
   移除；`shikiTheme` 传合法元组兜底罕见语言不崩溃；`controls` 全关（表格等内置控件同为
   tailwind 依赖）。版本保持最新 streamdown@2.6.0（用户决策，不随 halo 降 2.2.0）。
 
+**实施定稿补记三（2026-09-04，md 切 tab 卡顿根治与 tab 观感修正）**：
+
+- **md 代码块弃用「每块一个 CM6 实例」改 shiki 静态高亮**（halo 同款高亮内核，直连 shiki
+  而非 @streamdown/code 插件——保留自绘块头部，块体引擎与 halo 同源）：卡顿根因为切 tab
+  整层重挂载（`PreviewContent` 按 path 作 key）时 N 个代码块各建一个完整 EditorView 同步
+  压在主线程（实测观感 4-5s，仅 md 触发；请求层排除——服务地址缓存 + 内容 SWR 缓存命中
+  同步返回）。新链路：块挂载即纯文本 pre 底，`highlightCodeBlock` 异步回填双主题静态 HTML
+  （`github-light/dark` + `defaultColor:false` → token 颜色走 `--shiki-light/dark` CSS var，
+  明暗切换零重高亮）；highlighter 单例懒加载 + 语言按需 `loadLanguage`（shiki 内部幂等守卫
+  去重，无需额外簿记；单例/加载失败置空缓存可重试），模式同 katex 插件；未知语言/失败回落
+  纯文本。新增依赖 shiki@4.4.3（动态 import 按需 chunk 不进
+  首屏）。折叠/Cmd+F 保留在全屏 Dialog 的按需 CM6 实例（单实例打开才建）。
+- **MuiTab 全局关大写**（`AppThemeProvider` styleOverrides，MuiButton 同款先例）：MUI Tab 根
+  默认 `text-transform: uppercase` 把预览 tab 文件名整体大写，与磁盘实际大小写不一致。
+- **右缘「关闭全部」icon** 由 `CloseFullscreenOutlined` 改 `Close`（用户决策，与单 tab 关闭
+  视觉统一，tooltip 区分语义）。
+- **DEV 计时日志**：`workspaceFiles` content query 记录 fetch 耗时；`PreviewContent` 记录
+  「挂载 → 内容提交」耗时（`import.meta.env.DEV` 门控），供切 tab 性能自查。
+
 ---
 
 ### T5.2 Skill/MCP/Plugin 可视化配置

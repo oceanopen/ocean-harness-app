@@ -45,3 +45,4 @@ xattr -cr "/Applications/Ocean Harness.app"
 - https://mui.com/material-ui/getting-started/
 - https://mui.com/x/introduction/
 - https://mui.com/components/
+- https://fonts.google.com/icons?icon.set=Material+Icons

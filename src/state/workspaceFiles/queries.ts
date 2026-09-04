@@ -26,7 +26,14 @@ export function useWorkspaceFileTree(issueId: string | null, baseDir: string) {
 export function useWorkspaceFileContent(issueId: string | null, baseDir: string, path: string | null) {
   return useQuery({
     queryKey: workspaceFilesKeys.content(issueId ?? '', path ?? ''),
-    queryFn: () => IssueWorkspaceService.fileContent({ issueId: issueId!, baseDir, path: path! }),
+    queryFn: async () => {
+      const t0 = performance.now();
+      const data = await IssueWorkspaceService.fileContent({ issueId: issueId!, baseDir, path: path! });
+      if (import.meta.env.DEV) {
+        console.info(`[workspaceFiles] content fetch ${path} ${Math.round(performance.now() - t0)}ms`);
+      }
+      return data;
+    },
     enabled: issueId != null && baseDir !== '' && path != null && path !== '',
     staleTime: 0,
   });

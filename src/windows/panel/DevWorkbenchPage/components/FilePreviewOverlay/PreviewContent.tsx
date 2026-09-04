@@ -27,11 +27,26 @@ interface PreviewContentProps {
 export default function PreviewContent({ issueId, baseDir, path }: PreviewContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { data, dataUpdatedAt, error, isLoading, refetch } = useWorkspaceFileContent(issueId, baseDir, path);
+  // 挂载→内容就绪耗时观测（含传输与渲染提交；DEV 计时日志，每挂载记首份数据一次）。
+  // t0 在 mount effect 里取（纯净性：渲染期不调 performance.now），切 tab 重挂载即重置。
+  const mountedAtRef = useRef<number | null>(null);
+  const readyLoggedRef = useRef(false);
 
   // 夺焦：mount 时一次（组件按 path 作 key，切 tab 重挂载即重新夺焦）。
   useEffect(() => {
+    mountedAtRef.current = performance.now();
     containerRef.current?.focus();
   }, []);
+
+  useEffect(() => {
+    const t0 = mountedAtRef.current;
+    if (data != null && !readyLoggedRef.current && t0 != null) {
+      readyLoggedRef.current = true;
+      if (import.meta.env.DEV) {
+        console.info(`[FilePreviewOverlay] 预览就绪 ${path} ${Math.round(performance.now() - t0)}ms（挂载→内容提交）`);
+      }
+    }
+  }, [data, path]);
 
   return (
     <Box
