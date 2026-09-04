@@ -123,7 +123,12 @@ export default function ToolPanelArea({ issue, projectId, visible, width, onWidt
     >
       {/* 内层固定显示宽（外层 overflow hidden 裁切/动画，范式同左栏） */}
       <Box sx={{ width: displayWidth, height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        {/* tab 头：可滚动；每 tab 带关闭按钮（stopPropagation 防误切 tab） */}
+        {/* tab 头：可滚动；每 tab 带关闭按钮（stopPropagation 防误切 tab）。
+            高度精确对齐终端列标题栏的 48px：Tabs 的 height 收口（border-box 含 1px 底线
+            → 内容区 47px），Tab 保持 MUI 默认 minHeight 48，向下溢出的 1px（纯 padding）
+            被 Tabs 默认 overflow: hidden 裁掉——内容居中不受影响。不加 height 时 Tab
+            默认 padding 12×2 + label 24 会把 Tabs 撑到 49px，比标题栏高 1px（底线错位
+            的根源）。Tab 上写 height < 48 无效（默认 minHeight 压制）。 */}
         <Tabs
           value={displayActiveId ?? ''}
           onChange={(_, tabId: string) => {
@@ -133,7 +138,7 @@ export default function ToolPanelArea({ issue, projectId, visible, width, onWidt
           }}
           variant="scrollable"
           scrollButtons={false}
-          sx={{ minHeight: 48, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}
+          sx={{ height: 48, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}
         >
           {validEntries.map(({ tab, def }) => (
             <Tab
@@ -157,7 +162,6 @@ export default function ToolPanelArea({ issue, projectId, visible, width, onWidt
                   </IconButton>
                 </Box>
               )}
-              sx={{ minHeight: 48 }}
             />
           ))}
         </Tabs>

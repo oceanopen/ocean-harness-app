@@ -6,6 +6,7 @@ import {
 } from '@mui/icons-material';
 import { Box, IconButton, InputBase, Typography, useTheme } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
+import { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
 
 interface TerminalSearchProps {
   // TerminalView mount effect 建立的 SearchAddon 实例（本地 ref 桥直读）
@@ -113,7 +114,8 @@ export default function TerminalSearch({ searchAddon, background, onClose }: Ter
     <Box
       sx={{
         position: 'absolute',
-        top: 32,
+        // 工具栏下方 4px 间隙：高度走共享常量（原 top:32 是与旧工具栏高 28 的双写）
+        top: PANEL_TOOLBAR_HEIGHT + 4,
         right: 8,
         // xterm 容器是静态定位不建堆叠上下文，其内部层（helpers z-5、
         // accessibility z-10、webgl canvas z-0..2）直接参与外层 z-index 竞争；

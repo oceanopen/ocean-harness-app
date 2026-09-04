@@ -17,6 +17,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import PanelToolbar, { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
 import ClaudeIcon from './ClaudeIcon';
 import TerminalSearch from './TerminalSearch';
 import '@xterm/xterm/css/xterm.css';
@@ -40,9 +41,8 @@ const URL_PATTERN = /https?:\/\/\S+/g;
 // ls 输出里到处是）。
 const FILE_PATH_PATTERN = /(\/[\w.@+-]+)*\/[\w.-]+\.(?:rs|ts|tsx|js|jsx|go|py|java|kt|c|h|cpp|hpp|json|toml|yaml|yml|md|txt|log|sh|sql|html|css)(?::\d+(?::\d+)?)?/g;
 
-// 工具栏高度（px）：工具栏自身高度与 exited 覆盖层的 top 偏移共用——后者须精确
-// 避开工具栏（保持关闭按钮可达），双写 magic number 会漏改。
-const TOOLBAR_HEIGHT = 28;
+// 工具栏高度统一走共享常量 PANEL_TOOLBAR_HEIGHT（../PanelToolbar，与右侧工具面板
+// 头部对齐；exited 覆盖层 top 偏移同源引用）。
 
 // 工具栏 IconButton 统一 sx：text.secondary 色调 + 禁用态半透明。显式 color 的
 // 优先级高于 MUI 默认 .Mui-disabled 灰（不补则禁用与启用视觉无差，用户反馈
@@ -478,42 +478,47 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           禁用可见性：显式 sx color（text.secondary）优先级高于 MUI 默认 .Mui-disabled
           灰，禁用态与启用态视觉无差——统一补半透明（用户反馈「启动 claude」置灰
           看不出来）。 */}
-      <Box sx={{ height: TOOLBAR_HEIGHT, flexShrink: 0, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.5 }}>
-        {toolbarLabel != null && (
-          <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', lineHeight: 1 }}>
-            {toolbarLabel}
-          </Typography>
+      <PanelToolbar
+        left={(
+          <>
+            {toolbarLabel != null && (
+              <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', lineHeight: 1 }}>
+                {toolbarLabel}
+              </Typography>
+            )}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+              <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={TOOLBAR_ICON_SX}>
+                <LayersClearOutlinedIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={handleCopy} disabled={!hasSelection} aria-label="复制选区" sx={TOOLBAR_ICON_SX}>
+                <ContentCopyOutlinedIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={handlePaste} disabled={exited} aria-label="粘贴" sx={TOOLBAR_ICON_SX}>
+                <ContentPasteOutlinedIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={TOOLBAR_ICON_SX}>
+                <SearchOutlinedIcon fontSize="small" />
+              </IconButton>
+              {/* 启动 claude（terminal_03 §3.2）：跑着置灰（探测驱动）、退出恢复、
+                  exited 禁用（shell 已死注入无意义） */}
+              <IconButton
+                size="small"
+                onClick={onStartClaude}
+                disabled={claudeRunning || exited}
+                aria-label="启动 claude"
+                sx={TOOLBAR_ICON_SX}
+              >
+                <ClaudeIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </>
         )}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-          <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={TOOLBAR_ICON_SX}>
-            <LayersClearOutlinedIcon fontSize="small" />
+        right={(
+          <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
+            <CloseOutlinedIcon fontSize="small" />
           </IconButton>
-          <IconButton size="small" onClick={handleCopy} disabled={!hasSelection} aria-label="复制选区" sx={TOOLBAR_ICON_SX}>
-            <ContentCopyOutlinedIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={handlePaste} disabled={exited} aria-label="粘贴" sx={TOOLBAR_ICON_SX}>
-            <ContentPasteOutlinedIcon fontSize="small" />
-          </IconButton>
-          <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={TOOLBAR_ICON_SX}>
-            <SearchOutlinedIcon fontSize="small" />
-          </IconButton>
-          {/* 启动 claude（terminal_03 §3.2）：跑着置灰（探测驱动）、退出恢复、
-              exited 禁用（shell 已死注入无意义） */}
-          <IconButton
-            size="small"
-            onClick={onStartClaude}
-            disabled={claudeRunning || exited}
-            aria-label="启动 claude"
-            sx={TOOLBAR_ICON_SX}
-          >
-            <ClaudeIcon fontSize="small" />
-          </IconButton>
-        </Box>
-        <Box sx={{ flex: 1 }} />
-        <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
-          <CloseOutlinedIcon fontSize="small" />
-        </IconButton>
-      </Box>
+        )}
+      />
       {/* 搜索条 overlay：addon 实例就绪才渲染（ref 桥直读，mount 后即有值） */}
       {searchOpen && searchAddonRef.current != null && (
         <TerminalSearch searchAddon={searchAddonRef.current} background={theme.background} onClose={closeSearch} />
@@ -525,7 +530,7 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
         <Box
           sx={{
             position: 'absolute',
-            top: TOOLBAR_HEIGHT,
+            top: PANEL_TOOLBAR_HEIGHT,
             left: 0,
             right: 0,
             bottom: 0,

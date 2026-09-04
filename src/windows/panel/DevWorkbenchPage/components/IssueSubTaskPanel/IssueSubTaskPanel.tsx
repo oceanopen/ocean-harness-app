@@ -21,6 +21,7 @@ import { filterIssueSubTasks } from '@src/state/devWorkbench';
 import { trackerKeys, useProjectIssues } from '@src/state/tracker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import PanelToolbar from '../PanelToolbar';
 
 /** 子任务状态图标（参照 WorkspaceInitGate StepStatusIcon 风格）：待办（含待办池）灰圈 / 进行中转圈 / 已完成绿勾 / 已取消灰杠。 */
 function SubtaskStateIcon({ stateCode }: { stateCode: StateCode }) {
@@ -87,20 +88,10 @@ export default function IssueSubTaskPanel({ projectId, issueId }: IssueSubTaskPa
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* 头部：完成进度 + 刷新按钮（标题「子任务」由外层 tab 头承载；isFetching 旋转，
-          参照 ProjectIssueList 刷新先例） */}
-      <Box
-        sx={{
-          height: 40,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 0.75,
-          px: 1.5,
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        {subTasks.length > 0
+          参照 ProjectIssueList 刷新先例）。统一样式走 PanelToolbar（与终端 pane 工具栏
+          同高同内边距）。 */}
+      <PanelToolbar
+        left={subTasks.length > 0
           ? (
               <Typography variant="caption" color="text.secondary">
                 完成
@@ -108,24 +99,27 @@ export default function IssueSubTaskPanel({ projectId, issueId }: IssueSubTaskPa
               </Typography>
             )
           : null}
-        <IconButton
-          size="small"
-          onClick={refresh}
-          disabled={isFetching}
-          aria-label="刷新子任务状态"
-          sx={{ ml: 'auto', color: 'text.secondary' }}
-        >
-          <AutorenewIcon
-            sx={{
-              'animation': isFetching ? 'spin 0.8s linear infinite' : undefined,
-              '@keyframes spin': {
-                from: { transform: 'rotate(0deg)' },
-                to: { transform: 'rotate(360deg)' },
-              },
-            }}
-          />
-        </IconButton>
-      </Box>
+        right={(
+          <IconButton
+            size="small"
+            onClick={refresh}
+            disabled={isFetching}
+            aria-label="刷新子任务状态"
+            sx={{ color: 'text.secondary' }}
+          >
+            <AutorenewIcon
+              fontSize="small"
+              sx={{
+                'animation': isFetching ? 'spin 0.8s linear infinite' : undefined,
+                '@keyframes spin': {
+                  from: { transform: 'rotate(0deg)' },
+                  to: { transform: 'rotate(360deg)' },
+                },
+              }}
+            />
+          </IconButton>
+        )}
+      />
 
       {/* 内容区：错误 / 加载中 / 空态引导 / 列表 */}
       {error
