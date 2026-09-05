@@ -10,6 +10,8 @@
 pub mod iterm2;
 pub mod terminal_app;
 
+use std::process::Command;
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
@@ -73,6 +75,19 @@ pub fn open_directory_dispatch(
             Err(NavErr::UnsupportedHostApp)
         }
     }
+}
+
+/// 执行 AppleScript：非零退出返回 OsaScriptFailed（含 stderr）。
+/// 两个子模块（iterm2 / terminal_app）共用，保持退出码 → NavErr 的映射单一。
+pub(super) fn run_osascript(script: &str) -> Result<(), NavErr> {
+    let output = Command::new("osascript")
+        .args(["-e", script])
+        .output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        return Err(NavErr::OsaScriptFailed { stderr });
+    }
+    Ok(())
 }
 
 /// 把自定义命令转义后嵌入 AppleScript 字符串字面量内部（不加外层引号）。
