@@ -28,8 +28,8 @@ pub mod state;
 use local_provider::LocalPtyProvider;
 use provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, SpawnOpts};
 use session::PtyEvent;
-use tauri::Manager;
 use state::PtySessionStore;
+use tauri::Manager;
 
 /// 全局 provider 实例。Tauri State 管理的是 store，provider 以 once 语义全局唯一
 ///（本机后端无状态，仅持 store 引用不便拆双份——直接 lazy 常量）。
@@ -57,7 +57,10 @@ pub fn pty_spawn(
         .state::<crate::shared::http_server::HttpServerState>()
         .port
         .load(std::sync::atomic::Ordering::SeqCst);
-    let envs = vec![("OCEAN_HARNESS_PORT".to_string(), http_port.to_string())];
+    let envs = vec![(
+        "OCEAN_HARNESS_PORT".to_string(),
+        http_port.to_string(),
+    )];
     let result = provider().spawn(opts, on_event, &envs);
     match &result {
         Ok(s) => log::info!(
