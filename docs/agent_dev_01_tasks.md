@@ -610,6 +610,38 @@
 - **DEV 计时日志**：`workspaceFiles` content query 记录 fetch 耗时；`PreviewContent` 记录
   「挂载 → 内容提交」耗时（`import.meta.env.DEV` 门控），供切 tab 性能自查。
 
+**实施定稿补记四（2026-09-08，md 预览渲染缺陷修复与能力补齐）**：
+
+- **代码块换行丢失根治**（用户反馈：目录树等代码块多行挤成一行，halo 正常）：根因为裸 ```
+  围栏与未列语言回落 streamdown 内置 CodeBlock，其行分隔依赖 tailwind `block` 类（本项目无
+  tailwind，行 span 全 inline 且 DOM 中无换行符）——renderers 匹配有 `e &&` 空值守卫，
+  往 `MD_CODE_LANGUAGES` 塞 `''` 也拦不住裸围栏。治本双管：proseSx 补
+  `[data-streamdown="code-block-body"] pre > code > span { display:block }` 兜底一切未知
+  语言；清单补 tree/powershell/ps1/pwsh/cmd/bat/batch/cmake 走自绘块统一观感。
+- **h1/h2 下划线**（halo 主题同款）：proseSx 加 borderBottom + paddingBottom，h3 以下不动。
+- **shiki 高亮 LRU 缓存**（容量 50，命中重排/超限淘汰）：切 tab 重挂载不再整批重跑
+  codeToHtml；缓存值为双主题静态 HTML 与明暗无关，失败路径不入缓存。
+- **段内单换行即换行**（remark-breaks，用户决策偏离 GitHub 标准 soft break 语义）：经
+  streamdown 的 `remarkPlugins` 透传。**关键坑**：该 prop 是替换语义非追加——直接传
+  `[remarkBreaks]` 会丢弃默认链（gfm/codeMeta），表格/删除线/任务列表全部退化；必须显式
+  并入 `defaultRemarkPlugins` 成员后再追加。`rehypePlugins` 同理（rehype-slug 接入时须
+  并入默认 raw/sanitize/harden 链，否则内嵌 HTML 显示为字面标签文本）。
+- **锚点链接跳转**：rehype-slug 生成 github 同款 slug id（streamdown sanitize schema 放行
+  id 且 clobberPrefix 为空串，已核 dist 源码）；`a` 点击 handler 增 `#` 分支——
+  safeDecodeFragment（裸 `%` 容错）+ CSS.escape 属性选择器 + 容器内 scrollIntoView；
+  外链行为不变。
+- **mermaid 图表渲染**（官方适配包方案，用户决策；主题随明暗，用户决策）：`@streamdown/
+  mermaid`（Vercel 官方薄适配器，mermaid 为其常规依赖无需宿主直接声明）经
+  `useMermaidPlugin` 懒加载（createLazyPluginHook 同构 katex 模式，MB 级 chunk 不进首屏，
+  已核 dist 产物）；主题经顶层 `mermaid` prop 的 config 按 dark 记忆化传入，明暗切换触发
+  图表重渲染（适配包 getMermaid 每次 initialize 合并配置，effect 依赖含 config）。
+- **顺手修复**：createLazyPluginHook 补失败可重试语义（loadPromise reject 置空 + catch
+  记录，对齐 shikiHighlighter 范式——原实现失败后本会话插件静默缺席 + unhandled
+  rejection）；streamdownPlugins.ts 过期注释更正（「配色复用 CM6 主题」为上一版方案残留）。
+- 依赖净增：remark-breaks、rehype-slug、@streamdown/mermaid（mermaid 经其传递解析）。
+  审查（正确性/简洁性/规范三维 code-reviewer）发现并修复 remarkPlugins/rehypePlugins
+  替换语义回归 ×2；`pnpm web:build` + `web:lint` 通过。
+
 ---
 
 ### T5.2 Skill/MCP/Plugin 可视化配置

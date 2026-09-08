@@ -33,6 +33,16 @@ function getHighlighter(): Promise<Highlighter> {
   return highlighterPromise;
 }
 
+// codeToHtml 结果 LRU 缓存：切 tab 预览整层重挂载时，同一批代码块直接命中不再重跑高亮。
+// 缓存值为双主题静态 HTML（token 颜色全在 --shiki-light/--shiki-dark CSS var），与明暗
+// 无关，缓存安全。Map 插入序即 LRU 序——命中 delete+set 重排，超限淘汰最旧（首个 key）。
+const HTML_CACHE_LIMIT = 50;
+const htmlCache = new Map<string, string>();
+
+function cacheKey(langId: BundledLanguage, code: string): string {
+  return `${langId}\0${code}`;
+}
+
 // 围栏语言标识 → shiki 语言 id（bundledLanguagesInfo 归一 id 与 aliases，如 'c++'→'cpp'、
 // 'zsh'→'shellscript'）；纯文本与未收录语言返回 null（调用方回退纯文本 pre）。
 async function resolveShikiLangId(fenceLang: string): Promise<BundledLanguage | null> {
@@ -49,21 +59,36 @@ async function resolveShikiLangId(fenceLang: string): Promise<BundledLanguage | 
 
 /// 高亮为双主题静态 HTML。defaultColor:false → 颜色不落内联，token 走 --shiki-light /
 /// --shiki-dark CSS var（含 font-style/weight/text-decoration 变体），明暗切换由容器
-/// sx 按 MUI palette mode 选取对应 var，无需重新高亮。任何失败（未知语言/语法加载异常）
-/// 返回 null，调用方回退纯文本 pre。
+/// sx 按 MUI palette mode 选取对应 var，无需重新高亮。结果经 LRU 缓存（见 htmlCache）。
+/// 任何失败（未知语言/语法加载异常）返回 null，调用方回退纯文本 pre。
 export async function highlightCodeBlock(code: string, fenceLang: string): Promise<string | null> {
   try {
     const langId = await resolveShikiLangId(fenceLang);
     if (langId == null) {
       return null;
     }
+    const key = cacheKey(langId, code);
+    const cached = htmlCache.get(key);
+    if (cached != null) {
+      htmlCache.delete(key);
+      htmlCache.set(key, cached);
+      return cached;
+    }
     const highlighter = await getHighlighter();
     await highlighter.loadLanguage(langId);
-    return highlighter.codeToHtml(code, {
+    const html = highlighter.codeToHtml(code, {
       lang: langId,
       themes: { light: 'github-light', dark: 'github-dark' },
       defaultColor: false,
     });
+    htmlCache.set(key, html);
+    if (htmlCache.size > HTML_CACHE_LIMIT) {
+      const oldest = htmlCache.keys().next().value;
+      if (oldest != null) {
+        htmlCache.delete(oldest);
+      }
+    }
+    return html;
   } catch (e) {
     console.warn('[shikiHighlighter] highlight failed, fallback to plain:', fenceLang, e);
     return null;

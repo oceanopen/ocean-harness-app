@@ -3,9 +3,10 @@
 // 构建一次（多渲染器共享缓存）。
 // 注：Shiki 代码高亮插件（@streamdown/code）已弃用——streamdown 2.6 的代码块配色/背景
 // 只通过 tailwind 任意值类生效（本项目无 tailwind，全失效），且 context 未给 shikiTheme
-// 时其 highlight 会同步崩溃；md 代码块改走 renderers 自绘（见 MarkdownViewer），配色
-// 复用 CM6 主题，与源码模式同观感。
-import type { MathPlugin } from 'streamdown';
+// 时其 highlight 会同步崩溃；md 代码块改走 renderers 自绘（见 MarkdownViewer）：配色由
+// shiki github 双主题 CSS var 承载（见 shikiHighlighter.ts），仅全屏 Dialog 内按需挂
+// CM6（与源码模式同观感）。
+import type { DiagramPlugin, MathPlugin } from 'streamdown';
 import { useEffect, useState } from 'react';
 
 function createLazyPluginHook<T>(loader: () => Promise<T>): () => T | undefined {
@@ -14,10 +15,18 @@ function createLazyPluginHook<T>(loader: () => Promise<T>): () => T | undefined 
 
   const load = (): Promise<T> => {
     if (!loadPromise) {
-      loadPromise = loader().then((plugin) => {
-        cached = plugin;
-        return plugin;
-      });
+      // 失败可重试（同 shikiHighlighter.getHighlighter 语义）：rejected promise 滞留模块
+      // 级变量会让本会话插件静默失效——置空待下次挂载重建。
+      loadPromise = loader().then(
+        (plugin) => {
+          cached = plugin;
+          return plugin;
+        },
+        (e) => {
+          loadPromise = null;
+          throw e;
+        },
+      );
     }
     return loadPromise;
   };
@@ -30,7 +39,9 @@ function createLazyPluginHook<T>(loader: () => Promise<T>): () => T | undefined 
       if (cached != null) {
         return;
       }
-      void load().then(setPlugin);
+      void load()
+        .then(setPlugin)
+        .catch(e => console.warn('[streamdownPlugins] plugin load failed:', e));
     }, []);
     return plugin;
   };
@@ -45,4 +56,13 @@ export const useMathPlugin = createLazyPluginHook<MathPlugin>(async () => {
     import('rehype-katex').then(m => m.default),
   ]);
   return { name: 'katex', type: 'math', remarkPlugin: remarkMath, rehypePlugin: rehypeKatex };
+});
+
+/// Mermaid 图表插件（```mermaid 围栏渲染为图）。mermaid 属重依赖（MB 级），经适配包动态
+/// import 首用加载并模块级缓存——不进首屏 bundle。主题不在此处固化：适配包的
+/// getMermaid(config) 每次渲染时 initialize 合并配置，由调用方经 Streamdown 的 mermaid
+/// prop 按当前明暗传 theme（见 MarkdownViewer）。
+export const useMermaidPlugin = createLazyPluginHook<DiagramPlugin>(async () => {
+  const { createMermaidPlugin } = await import('@streamdown/mermaid');
+  return createMermaidPlugin();
 });

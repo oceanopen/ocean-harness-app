@@ -10,11 +10,13 @@ import {
 import { Box, Dialog, IconButton, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme } from '@mui/material';
 import { serverUrl } from '@src/services/http';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
-import { useEffect, useState } from 'react';
-import { Streamdown } from 'streamdown';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import rehypeSlug from 'rehype-slug';
+import remarkBreaks from 'remark-breaks';
+import { defaultRehypePlugins, defaultRemarkPlugins, Streamdown } from 'streamdown';
 import CodeViewer from './CodeViewer';
 import { highlightCodeBlock } from './shikiHighlighter';
-import { useMathPlugin } from './streamdownPlugins';
+import { useMathPlugin, useMermaidPlugin } from './streamdownPlugins';
 import 'streamdown/styles.css';
 
 // 等宽字体栈（行内码/md 代码块/源码 pre 共用）。
@@ -38,11 +40,12 @@ const codePreSx = {
 };
 
 // Streamdown 的 styles.css 只承载动画/布局（--sd-* 变量），配色与排版由容器提供——
-// halo 靠 tailwind prose 提供，本项目用 sx 复刻关键排版参数（标题层级/段落间距/表格
-// 边框/行内码底色/引用块边线，颜色全走 MUI 主题 token，明暗自适应）。
+// halo 靠 tailwind prose 提供，本项目用 sx 复刻关键排版参数（标题层级与 h1/h2 下划线/
+// 段落间距/表格边框/行内码底色/引用块边线，颜色全走 MUI 主题 token，明暗自适应）。
 const proseSx: SxProps<Theme> = {
-  '& h1': { fontSize: '1.6rem', fontWeight: 700, mt: '24px', mb: '14px', lineHeight: 1.3 },
-  '& h2': { fontSize: '1.35rem', fontWeight: 700, mt: '22px', mb: '12px', lineHeight: 1.35 },
+  // h1/h2 带下分割线（halo 主题同款），h3 以下保持纯字重层级
+  '& h1': { fontSize: '1.6rem', fontWeight: 700, mt: '24px', mb: '14px', lineHeight: 1.3, pb: '10px', borderBottom: '1px solid', borderColor: 'divider' },
+  '& h2': { fontSize: '1.35rem', fontWeight: 700, mt: '22px', mb: '12px', lineHeight: 1.35, pb: '8px', borderBottom: '1px solid', borderColor: 'divider' },
   '& h3': { fontSize: '1.15rem', fontWeight: 600, mt: '20px', mb: '10px', lineHeight: 1.4 },
   '& h4, & h5, & h6': { fontSize: '1rem', fontWeight: 600, mt: '16px', mb: '8px' },
   '& p': { my: '10px', lineHeight: 1.75 },
@@ -78,6 +81,13 @@ const proseSx: SxProps<Theme> = {
     fontFamily: MONO_FONT,
     fontSize: '0.86rem',
   },
+  // 内置块行分隔兜底（根治代码块换行丢失）：streamdown 内置 CodeBlock 把每行渲染为
+  // <span class="block">，行分隔完全依赖 tailwind 的 display:block（本项目无 tailwind，
+  // 行 span 全 inline → 多行挤成一行，DOM 中亦无换行符可保留）。显式补 display:block
+  // 恢复逐行展示；'>' 仅命中 code 直接子级的行 span，不波及其内 token 着色 span。
+  '& [data-streamdown="code-block-body"] pre > code > span': {
+    display: 'block',
+  },
   '& table': { my: '12px', borderCollapse: 'collapse', width: '100%', display: 'block', overflowX: 'auto' },
   '& th, & td': { border: '1px solid', borderColor: 'divider', px: '10px', py: '6px', textAlign: 'left' },
   '& th': { bgcolor: 'action.hover', fontWeight: 600 },
@@ -112,6 +122,34 @@ function resolveRelativeSrc(src: string, basePath: string): string | null {
   }
   return parts.join('/');
 }
+
+/// 锚点 fragment 解码：URL 编码形式（浏览器自动编码的中文锚点）解码为原文；含裸 '%'
+/// 的手写锚点（如「覆盖率 50%」）解码会抛 URIError，原样返回。
+function safeDecodeFragment(fragment: string): string {
+  try {
+    return decodeURIComponent(fragment);
+  } catch {
+    return fragment;
+  }
+}
+
+// 插件常量提为模块级：数组字面量入参会因每次渲染的身份变化击穿 Streamdown 的块级
+// memoization。注意 streamdown 的 remarkPlugins/rehypePlugins 是替换语义（传入即丢弃
+// 默认链——gfm 表格/删除线/内嵌 HTML 的 raw+sanitize 全丢），必须显式并入默认链再
+// 追加本项目插件：
+// - remark 链：gfm/codeMeta 为默认链成员；remark-breaks 追加其后——单换行渲染为换行
+//   （贴合中文「每行一句」写法，区别于 GitHub 文件渲染的标准 soft break 语义；breaks
+//   只作用于 text 节点，fence 内换行不受影响）
+// - rehype 链：raw/sanitize/harden 为默认链成员；rehype-slug 插在 raw 之后（元素树已
+//   含内嵌 HTML 解析结果）、sanitize 之前（其默认 schema 放行 id 且 clobberPrefix 为
+//   空串）——给标题生成 github 同款 slug id，供 #fragment 锚点定位
+const REMARK_PLUGINS = [defaultRemarkPlugins.gfm, defaultRemarkPlugins.codeMeta, remarkBreaks];
+const REHYPE_PLUGINS = [
+  defaultRehypePlugins.raw,
+  rehypeSlug,
+  defaultRehypePlugins.sanitize,
+  defaultRehypePlugins.harden,
+];
 
 /// 自绘 md 代码块头部（语言标签 + 复制 + 全屏）——不含下载按钮（halo 同款按钮为已知
 /// bug，刻意不跟）。fullscreen 时头部进 Dialog（全屏钮换关闭钮）。
@@ -155,7 +193,9 @@ function CodeBlockHeader({ language, copied, onCopy, onToggleFullscreen }: {
 
 /// md 代码围栏语言清单（Streamdown renderers 为精确匹配、无通配——清单覆盖常见 fence
 /// 标识，未列语言回落 streamdown 内置块）。清单内语言由 shiki 静态高亮（未收录/加载失败
-/// 回落纯文本 pre，观感仍统一）。
+/// 回落纯文本 pre，观感仍统一）；tree/cmd 等无着色语言亦入清单——统一走自绘块观感
+/// （复制/全屏头 + 纯文本底）。裸 ``` 围栏（语言标识为空）被 streamdown 的空值守卫拦下，
+/// 必落内置块，由 proseSx 的行分隔兜底覆盖。
 const MD_CODE_LANGUAGES = [
   'ts',
   'tsx',
@@ -204,6 +244,13 @@ const MD_CODE_LANGUAGES = [
   'shell',
   'shell-session',
   'console',
+  'powershell',
+  'ps1',
+  'pwsh',
+  'cmd',
+  'bat',
+  'batch',
+  'tree',
   'text',
   'plaintext',
   'txt',
@@ -219,6 +266,7 @@ const MD_CODE_LANGUAGES = [
   'docker',
   'makefile',
   'make',
+  'cmake',
   'graphql',
   'gql',
   'kotlin',
@@ -327,9 +375,16 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
 /// MarkdownEditor 同款处理）。头部 36px：预览/源码切换 + 复制；源码视图复用 CodeViewer
 /// （与代码文件预览同观感）。
 export default function MarkdownViewer({ content, issueId, baseDir, path }: MarkdownViewerProps) {
+  const theme = useTheme();
+  const dark = theme.palette.mode === 'dark';
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
   const [copied, setCopied] = useState(false);
   const mathPlugin = useMathPlugin();
+  const mermaidPlugin = useMermaidPlugin();
+  // 预览滚动容器锚点：#fragment 点击定位目标标题后在此容器内平滑滚动。
+  const scrollRef = useRef<HTMLElement | null>(null);
+  // mermaid 主题随明暗（config 对象按 dark 记忆——身份变化触发图表按新主题重渲染）。
+  const mermaidOptions = useMemo(() => ({ config: { theme: dark ? 'dark' : 'default' } }), [dark]);
   // fileRaw 端点 base（一次解析，渲染期同步拼 img src；path 逐张 encodeURIComponent）。
   const [rawBase, setRawBase] = useState<string | null>(null);
   useEffect(() => {
@@ -398,7 +453,7 @@ export default function MarkdownViewer({ content, issueId, baseDir, path }: Mark
 
       {viewMode === 'rendered'
         ? (
-            <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', ...proseSx }}>
+            <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflow: 'auto', ...proseSx }}>
               <Box sx={{ maxWidth: 860, mx: 'auto', px: 3, py: 2.5, color: 'text.primary' }}>
                 <Streamdown
                   mode="static"
@@ -408,8 +463,13 @@ export default function MarkdownViewer({ content, issueId, baseDir, path }: Mark
                   // shikiTheme 兜底：未列语言仍走内置块时，缺省 themes 会让其 highlight
                   // 同步崩溃（读 undefined[0]）——给合法元组保底（顺序 [light, dark]）。
                   shikiTheme={['github-light', 'github-dark']}
+                  // mermaid 图表配置（主题随明暗）；插件本体经 plugins.mermaid 懒加载接入
+                  mermaid={mermaidOptions}
+                  remarkPlugins={REMARK_PLUGINS}
+                  rehypePlugins={REHYPE_PLUGINS}
                   plugins={{
                     ...(mathPlugin != null ? { math: mathPlugin } : {}),
+                    ...(mermaidPlugin != null ? { mermaid: mermaidPlugin } : {}),
                     // md 代码块自绘渲染器（renderers 是 plugins 配置项，精确语言匹配）
                     renderers: [{ language: MD_CODE_LANGUAGES, component: MdCodeBlock }],
                   }}
@@ -418,10 +478,20 @@ export default function MarkdownViewer({ content, issueId, baseDir, path }: Mark
                       <a
                         href={href}
                         onClick={(e) => {
-                          if (typeof href === 'string') {
-                            e.preventDefault();
-                            void openUrl(href);
+                          if (typeof href !== 'string') {
+                            return;
                           }
+                          e.preventDefault();
+                          // 锚点（#fragment）：预览容器内定位标题（rehype-slug 生成 id）
+                          // 平滑滚动；外链经 plugin-shell 走系统浏览器
+                          if (href.startsWith('#')) {
+                            const id = safeDecodeFragment(href.slice(1));
+                            scrollRef.current
+                              ?.querySelector(`[id="${CSS.escape(id)}"]`)
+                              ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            return;
+                          }
+                          void openUrl(href);
                         }}
                       >
                         {children}
