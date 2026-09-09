@@ -41,6 +41,11 @@ export default function AppThemeProvider({ children }: Props) {
           MuiTab: {
             styleOverrides: { root: { textTransform: 'none' } },
           },
+          // MuiTooltip 默认 placement=bottom，提示弹在鼠标下方遮盖操作区——全局改默认 top。
+          // 贴边场景显式覆盖：折叠侧边栏图标 placement="right"（PanelApp）、工作台工具条 placement="left"（WorkbenchToolRail）。
+          MuiTooltip: {
+            defaultProps: { placement: 'top' },
+          },
           // 全局关闭 webview（macOS WKWebView）对输入框的自动大写/自动纠正/拼写检查，
           // 避免输入英文时首字母被自动大写。作用于所有 InputBase 派生组件（TextField/Select 输入框等）。
           MuiInputBase: {

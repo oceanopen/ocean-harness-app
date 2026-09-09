@@ -48,8 +48,9 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
         bgcolor: 'background.paper',
       }}
     >
-      {/* 面板区总开关（正方形 48×48，与标题栏同高；Chevron 指示运动方向：收起态向左展开） */}
-      <Tooltip title={panelCollapsed ? '展开工具面板区' : '收起工具面板区'}>
+      {/* 面板区总开关（正方形 48×48，与标题栏同高；Chevron 指示运动方向：收起态向左展开）。
+          贴窗口右缘，Tooltip 显式向左展开（全局默认 top，见 AppThemeProvider）。 */}
+      <Tooltip title={panelCollapsed ? '展开工具面板区' : '收起工具面板区'} placement="left">
         <span>
           <IconButton
             onClick={onTogglePanel}
@@ -63,11 +64,11 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
       </Tooltip>
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }} />
 
-      {/* 工具图标列：注册表驱动；激活 tab 所属工具高亮 */}
+      {/* 工具图标列：注册表驱动；激活 tab 所属工具高亮；Tooltip 同贴右缘向左展开 */}
       {WORKBENCH_TOOLS.map((tool) => {
         const active = activeTab?.toolId === tool.id;
         return (
-          <Tooltip key={tool.id} title={tool.title}>
+          <Tooltip key={tool.id} title={tool.title} placement="left">
             <span>
               <IconButton
                 onClick={() => handleToolClick(tool.id, tool.exclusive)}
