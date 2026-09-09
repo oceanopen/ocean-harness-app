@@ -106,6 +106,9 @@ export default function TerminalSearch({ searchAddon, background, onClose }: Ter
       runFind(e.shiftKey ? 'previous' : 'next', false);
     } else if (e.key === 'Escape') {
       e.preventDefault();
+      // 阻断冒泡：搜索条内 Esc 只关搜索，不触发 document 级监听（沉浸模式退出等页面级 Esc
+      // 编排）——与 MdCodeBlock 全屏 Dialog 的 stopPropagation 同款处理。
+      e.stopPropagation();
       onClose();
     }
   };

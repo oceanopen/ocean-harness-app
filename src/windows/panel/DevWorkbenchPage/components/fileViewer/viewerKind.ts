@@ -28,6 +28,108 @@ export function extOf(path: string): string {
   return dot < 0 ? '' : path.slice(dot + 1).toLowerCase();
 }
 
+// 扩展名 → 语言显示名（文件预览操作栏左侧 meta 用）：覆盖 langByToken 语言表全部条目
+// 及 md 代码围栏常见标识；键集同时派生 MD_CODE_LANGUAGES（见下），新增语言时与
+// langByToken 两处同步。未命中回退原始扩展名（如 env/dockerfile 自身即语义），不猜近似语言。
+const LANGUAGE_LABELS: Record<string, string> = {
+  'js': 'JavaScript',
+  'mjs': 'JavaScript',
+  'cjs': 'JavaScript',
+  'javascript': 'JavaScript',
+  'jsx': 'JSX',
+  'ts': 'TypeScript',
+  'mts': 'TypeScript',
+  'cts': 'TypeScript',
+  'typescript': 'TypeScript',
+  'tsx': 'TSX',
+  'go': 'Go',
+  'golang': 'Go',
+  'py': 'Python',
+  'pyi': 'Python',
+  'python': 'Python',
+  'rs': 'Rust',
+  'rust': 'Rust',
+  'java': 'Java',
+  'php': 'PHP',
+  'json': 'JSON',
+  'jsonc': 'JSON',
+  'yaml': 'YAML',
+  'yml': 'YAML',
+  'sql': 'SQL',
+  'c': 'C',
+  'h': 'C',
+  'cc': 'C++',
+  'cpp': 'C++',
+  'hpp': 'C++',
+  'c++': 'C++',
+  'css': 'CSS',
+  'scss': 'SCSS',
+  'less': 'Less',
+  'html': 'HTML',
+  'htm': 'HTML',
+  'svelte': 'Svelte',
+  'vue': 'Vue',
+  'xml': 'XML',
+  'svg': 'SVG',
+  'md': 'Markdown',
+  'markdown': 'Markdown',
+  'sh': 'Shell',
+  'bash': 'Shell',
+  'zsh': 'Shell',
+  'shell': 'Shell',
+  'shell-session': 'Shell',
+  'console': 'Shell',
+  'powershell': 'PowerShell',
+  'ps1': 'PowerShell',
+  'pwsh': 'PowerShell',
+  'cmd': 'Batch',
+  'bat': 'Batch',
+  'batch': 'Batch',
+  'toml': 'TOML',
+  'ini': 'INI',
+  'conf': 'Conf',
+  'properties': 'Properties',
+  'graphql': 'GraphQL',
+  'gql': 'GraphQL',
+  'kotlin': 'Kotlin',
+  'kt': 'Kotlin',
+  'swift': 'Swift',
+  'ruby': 'Ruby',
+  'rb': 'Ruby',
+  'lua': 'Lua',
+  'dart': 'Dart',
+  'proto': 'Protobuf',
+  'protobuf': 'Protobuf',
+  'nginx': 'Nginx',
+  'diff': 'Diff',
+  'patch': 'Diff',
+  'dockerfile': 'Dockerfile',
+  'docker': 'Dockerfile',
+  'makefile': 'Makefile',
+  'make': 'Makefile',
+  'cmake': 'CMake',
+  'txt': 'Text',
+  'text': 'Text',
+  'plaintext': 'Text',
+  'log': 'Log',
+  'env': 'Env',
+};
+
+/// 文件路径 → 语言显示名（预览操作栏 meta，如 "TypeScript · 128 行"）。未识别回退
+/// 原始扩展名（空扩展名回退 'File'），不猜近似语言（与 langByToken 立场一致）。
+export function languageLabel(path: string): string {
+  const ext = extOf(path);
+  return LANGUAGE_LABELS[ext] ?? (ext !== '' ? ext : 'File');
+}
+
+/// md 代码围栏语言清单（MarkdownViewer 的 Streamdown renderers 用，精确匹配、无通配——
+/// 未列语言回落 streamdown 内置块；清单内语言由 shiki 静态高亮或纯文本底，统一带
+/// 自绘复制/全屏头）。由语言名表派生 + 'tree'（无着色语言，仅为统一自绘块观感入列）。
+/// 原为 MarkdownViewer 内手写 84 项平行清单、与语言名表键集完全重合——派生归一后
+/// 新增语言只改 LANGUAGE_LABELS 与 langByToken 两处。裸 ``` 围栏（语言标识为空）被
+/// streamdown 空值守卫拦下，必落内置块（MarkdownViewer proseSx 兜底），与本清单无关。
+export const MD_CODE_LANGUAGES: string[] = [...Object.keys(LANGUAGE_LABELS), 'tree'];
+
 /// token → CM6 语言扩展：token 兼收文件扩展名（ts/go）与 fence 语言名（typescript/golang）。
 /// 未命中返回 []——纯文本等宽展示。刻意不引 legacy-modes 做近似映射（halo 的
 /// elixir→erlang 类降级）：没有准确高亮就纯文本。

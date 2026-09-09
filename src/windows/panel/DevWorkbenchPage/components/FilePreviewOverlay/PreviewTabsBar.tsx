@@ -1,5 +1,5 @@
 import type { PreviewTab } from '@src/state/workspaceFiles';
-import { Close as CloseIcon } from '@mui/icons-material';
+import { Autorenew as AutorenewIcon, Close as CloseIcon } from '@mui/icons-material';
 import { Box, IconButton, Tab, Tabs, Tooltip, Typography } from '@mui/material';
 import { basename } from '@src/shared/repoPath';
 import { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
@@ -11,6 +11,8 @@ interface PreviewTabsBarProps {
   onClose: (path: string) => void;
   /// 一键关闭全部（tab 栏右缘固定按钮——逐 tab 关闭太繁琐，halo 同款入口语义）。
   onCloseAll: () => void;
+  /// 刷新激活 tab 的文件内容（halo 同款右缘入口；作用于激活 tab 而非全部）。
+  onRefresh: () => void;
 }
 
 /// 预览 tab 头（36px，PANEL_TOOLBAR_HEIGHT 操作栏带族——浮层在终端内容区（标题栏带之下），
@@ -18,7 +20,7 @@ interface PreviewTabsBarProps {
 /// label 取 basename、title 悬浮全路径；长文件名收缩出省略号（Typography flex+minWidth:0，
 /// 关闭钮 flexShrink:0 恒可见——flex 默认 min-width:auto 不收缩是省略号失效的根源）。
 /// 每 tab 带关闭按钮（stopPropagation 防误切）；右缘固定「关闭全部」。
-export default function PreviewTabsBar({ tabs, activeTabId, onSelect, onClose, onCloseAll }: PreviewTabsBarProps) {
+export default function PreviewTabsBar({ tabs, activeTabId, onSelect, onClose, onCloseAll, onRefresh }: PreviewTabsBarProps) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}>
       <Tabs
@@ -56,6 +58,20 @@ export default function PreviewTabsBar({ tabs, activeTabId, onSelect, onClose, o
         ))}
       </Tabs>
       <Box sx={{ display: 'flex', alignItems: 'center', px: 0.5, borderLeft: 1, borderColor: 'divider' }}>
+        <Tooltip title="刷新当前文件">
+          <span>
+            <IconButton
+              size="small"
+              aria-label="刷新当前文件"
+              disabled={activeTabId == null}
+              onClick={onRefresh}
+              sx={{ color: 'text.secondary' }}
+            >
+              {/* Autorenew 与子任务面板刷新按钮同款图标 */}
+              <AutorenewIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title="关闭全部预览">
           <IconButton size="small" aria-label="关闭全部预览" onClick={onCloseAll} sx={{ color: 'text.secondary' }}>
             <CloseIcon sx={{ fontSize: 16 }} />

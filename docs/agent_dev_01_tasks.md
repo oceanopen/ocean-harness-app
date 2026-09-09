@@ -658,6 +658,30 @@
   审查（正确性/简洁性/规范三维 code-reviewer）发现并修复 remarkPlugins/rehypePlugins
   替换语义回归 ×2；`pnpm web:build` + `web:lint` 通过。
 
+实施定稿增记二（2026-09-09，预览操作栏统一 + tab 刷新 + 工作台沉浸模式）：
+
+- **预览操作栏统一（halo 同款 meta 位）**：新增 `fileViewer/ViewerToolbar.tsx`（组合
+  PanelToolbar 36px 带）——左「语言名 · N 行」（`viewerKind.ts` 新增 `languageLabel`，
+  语言名表未识别回退原始扩展名）+ 左扩展槽（md 的预览/源码切换）+ 右复制全文。代码文件
+  分支在 `PreviewContent` 层组合操作栏 + CodeViewer（**刻意不内置进 CodeViewer**——后者被
+  md 源码视图/代码块全屏 Dialog 复用，内置栏会在复用点重复）；MarkdownViewer 操作栏替换
+  为 ViewerToolbar 同源观感；图片（自带缩放工具栏）/binary/tooLarge 不动。行数前端派生
+  （末尾换行视为行终止符，"a\nb\n" = 2 行，空文件 0 行）。
+- **tab 栏右缘新增「刷新当前文件」**（关闭全部左侧）：`invalidateQueries(content key)` 与
+  文件树面板刷新同范式——text 原位 SWR 重取、image 经 dataUpdatedAt 版本令牌换 URL 重载。
+- **工作台沉浸模式（全屏）**：`devWorkbench` store 新增会话态 `workbenchFullscreen`（不
+  持久化——跨域消费 PanelApp 隐藏外壳故入 store；与「折叠态走 config」判据不同：会话态
+  不跨重启不跨窗口）。入口 issue 标题栏「...」左侧切换钮；生效 = PanelApp 左侧菜单栏 +
+  顶部导航栏 + 工作台左栏任务树隐藏（与用户折叠 config 合成只读不改写）；右侧工具面板区
+  保持现状。Esc 直退全屏（用户决策，浮层 Esc 关 tab 让位）；终端内 Esc 按事件来源让位
+  （`closest('.xterm')`——xterm keydown 不 stopPropagation 会冒泡 document，TUI 高频键
+  误触即退出全屏且触发 SIGWINCH 重绘）；TerminalSearch Esc 补 stopPropagation；页面卸载
+  复位防残留。
+- **顺手治理**（四维审查发现）：抽 `useCopyFeedback` 消复制反馈双实现；`MD_CODE_LANGUAGES`
+  改由语言名表派生（三表降两表，84 项手写清单删除）；`IssueWorkspaceService` 新增
+  `fileRawBase` 收归 MarkdownViewer 手拼 fileRaw 端点 SSOT；`treeHidden` 复合条件提变量。
+  `pnpm web:build` + `web:lint` 通过。
+
 ---
 
 ### T5.2 Skill/MCP/Plugin 可视化配置

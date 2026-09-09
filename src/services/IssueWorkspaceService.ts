@@ -189,4 +189,10 @@ export class IssueWorkspaceService {
     }
     return serverUrl('/api/issueWorkspace/fileRaw', query);
   }
+
+  // fileRawBase：fileRaw 端点基址（不带 query）。MarkdownViewer 一次解析基址、渲染期同步
+  // 拼逐图 src（避免逐图异步解析闪烁）——端点路径 SSOT 收归本类，参数约定与 fileRawUrl 同源。
+  static fileRawBase(): Promise<string> {
+    return serverUrl('/api/issueWorkspace/fileRaw', {});
+  }
 }

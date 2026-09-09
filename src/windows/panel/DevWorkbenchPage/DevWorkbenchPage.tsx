@@ -1,7 +1,9 @@
 import type { IssueWorkspaceArchiveAction, ProjectIssueResponseData } from '@src/services';
 import {
   CleaningServices as CleaningServicesIcon,
+  CloseFullscreen as CloseFullscreenIcon,
   MoreHoriz as MoreHorizIcon,
+  OpenInFull as OpenInFullIcon,
   ViewSidebar as ViewSidebarIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
 } from '@mui/icons-material';
@@ -109,9 +111,19 @@ export default function DevWorkbenchPage() {
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
   const selectedProjectId = useDevWorkbenchStore(s => s.selectedProjectId);
   const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
+  // 沉浸模式（全屏）：隐藏 App 外壳 + 左栏任务树（PanelApp 同步订阅隐藏菜单栏/顶栏）。
+  // 会话态存 devWorkbench store（见 store.ts 头注释）；退出路径 = 切换钮 / Esc / 切页卸载复位。
+  const workbenchFullscreen = useDevWorkbenchStore(s => s.workbenchFullscreen);
+  const setWorkbenchFullscreen = useDevWorkbenchStore(s => s.setWorkbenchFullscreen);
   // 左栏 issue 任务树折叠态：订阅 config（跨重启持久化、多窗口同步，参照 PanelApp 侧边栏）。
   const issueTreeCollapsed = useConfigValue(PANEL_DEV_TREE_COLLAPSED_KEY, decodeDevTreeCollapsed, false);
+  // 全屏下任务树恒隐藏：与用户折叠配置合成（只读不改写 config，退出全屏按原配置恢复）。
+  // 该钮在全屏下语义转为「退出全屏」——全屏中点击折叠钮无可见反馈，语义让位更直觉。
   const toggleIssueTreeCollapsed = () => {
+    if (workbenchFullscreen) {
+      setWorkbenchFullscreen(false);
+      return;
+    }
     void setAppConfig(PANEL_DEV_TREE_COLLAPSED_KEY, toYesNo(!issueTreeCollapsed));
   };
 
@@ -182,6 +194,9 @@ export default function DevWorkbenchPage() {
   // 工具面板区可见性：用户展开（config）且选中 issue 有效（面板内容均围绕选中任务）。
   const toolAreaVisible = !toolAreaCollapsed && hasSelection && issue != null;
 
+  // 左栏任务树隐藏合成：用户折叠配置 || 沉浸模式（只读不改写 config，退出全屏按原配置恢复）。
+  const treeHidden = issueTreeCollapsed || workbenchFullscreen;
+
   // 三栏折叠态配置就绪闸门（见 PANEL_LAYOUT_CONFIG_KEYS 注释）：就绪后才渲染
   // 布局，首帧即终值。一次性等待（本地 IPC，~ms 级）。
   const panelConfigReady = useConfigReady(PANEL_LAYOUT_CONFIG_KEYS);
@@ -224,6 +239,35 @@ export default function DevWorkbenchPage() {
     return () => document.removeEventListener('keydown', handler);
   }, [issue?.id]);
 
+  // Esc 直退沉浸模式（全屏态下预览浮层的 Esc 关 tab 让位——浮层 onKeyDown 读 store 判断）。
+  // 仅全屏态挂监听；Dialog 类浮层（归档确认/md 代码块全屏）内的 Esc 由 MUI Modal 自身
+  // stopPropagation 吞掉。终端内键入的 Esc（claude CLI/vim 等 TUI 高频按键）按事件来源
+  // 让位——xterm 的 keydown 只 preventDefault 不 stopPropagation，会冒泡到 document，
+  // 若不排除会把终端交互误判为退出全屏（且外壳弹回触发终端宽度骤变的 SIGWINCH 重绘）。
+  useEffect(() => {
+    if (!workbenchFullscreen) {
+      return;
+    }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') {
+        return;
+      }
+      if ((e.target as HTMLElement | null)?.closest('.xterm') != null) {
+        return;
+      }
+      e.preventDefault();
+      useDevWorkbenchStore.getState().setWorkbenchFullscreen(false);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [workbenchFullscreen]);
+
+  // 切出工作台（页面卸载）复位沉浸模式：外壳隐藏是页面级语义，离开页面必须恢复——
+  // 否则下次进入工作台带着隐藏外壳启动，且菜单栏/顶栏（含命令面板入口）不可达。
+  useEffect(() => () => {
+    useDevWorkbenchStore.getState().setWorkbenchFullscreen(false);
+  }, []);
+
   // 折叠态配置未就绪：空占位，避免首帧默认展开 → 动画收起的宽度翻转。
   if (!panelConfigReady) {
     return <Box sx={{ height: '100%' }} />;
@@ -232,12 +276,14 @@ export default function DevWorkbenchPage() {
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* 左栏：任务树（workspace→project→dev issue 三级，跨所有工作空间）。
-          恒渲染 + width 过渡动画折叠（参照 PanelApp 侧边栏），折叠到 0 后右栏占满整宽。 */}
+          恒渲染 + width 过渡动画折叠（参照 PanelApp 侧边栏），折叠到 0 后右栏占满整宽。
+          沉浸模式（全屏）与用户折叠配置合成隐藏（treeHidden）——不改写 config，
+          退出全屏按原配置恢复。 */}
       <Box
         sx={{
-          width: issueTreeCollapsed ? 0 : 260,
+          width: treeHidden ? 0 : 260,
           flexShrink: 0,
-          borderRight: issueTreeCollapsed ? 0 : 1,
+          borderRight: treeHidden ? 0 : 1,
           borderColor: 'divider',
           overflow: 'hidden',
           display: 'flex',
@@ -275,10 +321,10 @@ export default function DevWorkbenchPage() {
             <IconButton
               size="small"
               onClick={toggleIssueTreeCollapsed}
-              aria-label={issueTreeCollapsed ? '显示任务列表' : '隐藏任务列表'}
+              aria-label={workbenchFullscreen ? '退出全屏' : issueTreeCollapsed ? '显示任务列表' : '隐藏任务列表'}
               sx={{ color: 'text.secondary' }}
             >
-              {issueTreeCollapsed ? <ViewSidebarOutlinedIcon /> : <ViewSidebarIcon />}
+              {treeHidden ? <ViewSidebarOutlinedIcon /> : <ViewSidebarIcon />}
             </IconButton>
             {hasSelection && issue && stateMeta && (
               <Chip
@@ -318,6 +364,20 @@ export default function DevWorkbenchPage() {
               )}
               {/* 终端分割按钮组（作用于活跃 pane；原终端区工具条上移至此） */}
               {hasSelection && issue && <TerminalSplitButtons issueId={issue.id} />}
+              {/* 沉浸模式（全屏）：隐藏 App 外壳（菜单栏/顶栏）与左栏任务树，本区占满窗口；
+                  右侧工具面板区保持当前展开/收起态。Esc 直退（浮层 Esc 关 tab 让位）。 */}
+              {hasSelection && issue && (
+                <Tooltip title={workbenchFullscreen ? '退出全屏' : '全屏（隐藏菜单栏与任务树）'}>
+                  <IconButton
+                    size="small"
+                    aria-label={workbenchFullscreen ? '退出全屏' : '全屏'}
+                    onClick={() => setWorkbenchFullscreen(!workbenchFullscreen)}
+                    sx={{ color: 'text.secondary' }}
+                  >
+                    {workbenchFullscreen ? <CloseFullscreenIcon sx={{ fontSize: 16 }} /> : <OpenInFullIcon sx={{ fontSize: 16 }} />}
+                  </IconButton>
+                </Tooltip>
+              )}
               {/* 任务操作菜单（T3.2）：⋯ 入口，归档/取消（删工作空间目录 + 流转 issue 状态，两段式确认） */}
               {hasSelection && issue && loadPid != null && (
                 <>

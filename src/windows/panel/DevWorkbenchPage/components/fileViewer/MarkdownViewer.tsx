@@ -8,7 +8,7 @@ import {
   VisibilityOutlined as VisibilityOutlinedIcon,
 } from '@mui/icons-material';
 import { Box, Dialog, IconButton, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme } from '@mui/material';
-import { serverUrl } from '@src/services/http';
+import { IssueWorkspaceService } from '@src/services';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import rehypeSlug from 'rehype-slug';
@@ -17,6 +17,9 @@ import { defaultRehypePlugins, defaultRemarkPlugins, Streamdown } from 'streamdo
 import CodeViewer from './CodeViewer';
 import { highlightCodeBlock } from './shikiHighlighter';
 import { useMathPlugin, useMermaidPlugin } from './streamdownPlugins';
+import { useCopyFeedback } from './useCopyFeedback';
+import { MD_CODE_LANGUAGES } from './viewerKind';
+import ViewerToolbar from './ViewerToolbar';
 import 'streamdown/styles.css';
 
 // 等宽字体栈（行内码/md 代码块/源码 pre 共用）。
@@ -191,96 +194,6 @@ function CodeBlockHeader({ language, copied, onCopy, onToggleFullscreen }: {
   );
 }
 
-/// md 代码围栏语言清单（Streamdown renderers 为精确匹配、无通配——清单覆盖常见 fence
-/// 标识，未列语言回落 streamdown 内置块）。清单内语言由 shiki 静态高亮（未收录/加载失败
-/// 回落纯文本 pre，观感仍统一）；tree/cmd 等无着色语言亦入清单——统一走自绘块观感
-/// （复制/全屏头 + 纯文本底）。裸 ``` 围栏（语言标识为空）被 streamdown 的空值守卫拦下，
-/// 必落内置块，由 proseSx 的行分隔兜底覆盖。
-const MD_CODE_LANGUAGES = [
-  'ts',
-  'tsx',
-  'js',
-  'jsx',
-  'javascript',
-  'typescript',
-  'mjs',
-  'cjs',
-  'mts',
-  'cts',
-  'go',
-  'golang',
-  'py',
-  'python',
-  'pyi',
-  'rs',
-  'rust',
-  'java',
-  'php',
-  'json',
-  'jsonc',
-  'yaml',
-  'yml',
-  'xml',
-  'svg',
-  'html',
-  'htm',
-  'vue',
-  'svelte',
-  'css',
-  'scss',
-  'less',
-  'sql',
-  'markdown',
-  'md',
-  'c',
-  'h',
-  'cc',
-  'cpp',
-  'c++',
-  'hpp',
-  'sh',
-  'bash',
-  'zsh',
-  'shell',
-  'shell-session',
-  'console',
-  'powershell',
-  'ps1',
-  'pwsh',
-  'cmd',
-  'bat',
-  'batch',
-  'tree',
-  'text',
-  'plaintext',
-  'txt',
-  'diff',
-  'patch',
-  'log',
-  'env',
-  'toml',
-  'ini',
-  'conf',
-  'properties',
-  'dockerfile',
-  'docker',
-  'makefile',
-  'make',
-  'cmake',
-  'graphql',
-  'gql',
-  'kotlin',
-  'kt',
-  'swift',
-  'ruby',
-  'rb',
-  'lua',
-  'dart',
-  'proto',
-  'protobuf',
-  'nginx',
-];
-
 /// 自绘 md 代码块（经 Streamdown renderers 机制整块替换其内置 CodeBlock）：块体走 shiki
 /// 静态高亮（VS Code 同源语法/主题，halo 同款内核；异步回填——挂载即纯文本底，与 katex
 /// 插件懒加载回填同模式：静态底 = 终态排版，高亮 = 渐进增强；未知语言/失败恒纯文本）。
@@ -290,7 +203,7 @@ const MD_CODE_LANGUAGES = [
 function MdCodeBlock({ code, language }: CustomRendererProps) {
   const theme = useTheme();
   const dark = theme.palette.mode === 'dark';
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyFeedback();
   const [fullscreen, setFullscreen] = useState(false);
   // shiki 双主题 HTML（null = 未就绪/不支持，渲染纯文本底）。
   const [html, setHtml] = useState<string | null>(null);
@@ -302,13 +215,6 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
       alive = false;
     };
   }, [code, language]);
-
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      setTimeout(setCopied, 2000, false);
-    });
-  };
 
   return (
     <Box
@@ -324,7 +230,7 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
       <CodeBlockHeader
         language={language}
         copied={copied}
-        onCopy={handleCopy}
+        onCopy={() => copy(code)}
         onToggleFullscreen={() => setFullscreen(true)}
       />
       {html != null
@@ -357,7 +263,7 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
           <CodeBlockHeader
             language={language}
             copied={copied}
-            onCopy={handleCopy}
+            onCopy={() => copy(code)}
             onToggleFullscreen={() => setFullscreen(false)}
           />
           <Box sx={{ flex: 1, minHeight: 0 }}>
@@ -372,13 +278,12 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
 /// Markdown 只读渲染（观感对齐 halo，实现按本项目栈裁剪）：Streamdown static 模式承载
 /// 排版/GFM/公式；代码块自绘渲染器（shiki 静态高亮，全屏内按需 CM6）；图片经 fileRaw
 /// 直连；外链经 plugin-shell 走系统浏览器（Tauri webview 内 target=_blank 不可靠，
-/// MarkdownEditor 同款处理）。头部 36px：预览/源码切换 + 复制；源码视图复用 CodeViewer
-/// （与代码文件预览同观感）。
+/// MarkdownEditor 同款处理）。头部 36px（ViewerToolbar 共享载体）：meta + 预览/源码切换
+/// + 复制；源码视图复用 CodeViewer（与代码文件预览同观感）。
 export default function MarkdownViewer({ content, issueId, baseDir, path }: MarkdownViewerProps) {
   const theme = useTheme();
   const dark = theme.palette.mode === 'dark';
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
-  const [copied, setCopied] = useState(false);
   const mathPlugin = useMathPlugin();
   const mermaidPlugin = useMermaidPlugin();
   // 预览滚动容器锚点：#fragment 点击定位目标标题后在此容器内平滑滚动。
@@ -386,10 +291,11 @@ export default function MarkdownViewer({ content, issueId, baseDir, path }: Mark
   // mermaid 主题随明暗（config 对象按 dark 记忆——身份变化触发图表按新主题重渲染）。
   const mermaidOptions = useMemo(() => ({ config: { theme: dark ? 'dark' : 'default' } }), [dark]);
   // fileRaw 端点 base（一次解析，渲染期同步拼 img src；path 逐张 encodeURIComponent）。
+  // 端点 SSOT 在 IssueWorkspaceService.fileRawBase（与 fileRawUrl 同源）。
   const [rawBase, setRawBase] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    serverUrl('/api/issueWorkspace/fileRaw', {})
+    IssueWorkspaceService.fileRawBase()
       .then(url => alive && setRawBase(url))
       .catch(e => console.warn('[MarkdownViewer] resolve fileRaw base failed:', e));
     return () => {
@@ -406,28 +312,11 @@ export default function MarkdownViewer({ content, issueId, baseDir, path }: Mark
     return `${rawBase}?issueId=${encodeURIComponent(issueId)}&baseDir=${encodeURIComponent(baseDir)}&path=${encodeURIComponent(relPath)}`;
   };
 
-  const handleCopy = () => {
-    void navigator.clipboard.writeText(content).then(() => {
-      setCopied(true);
-      setTimeout(setCopied, 2000, false);
-    });
-  };
-
   return (
     <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      {/* 工具栏：预览/源码切换 + 复制（PanelToolbar 同款 36px 带） */}
-      <Box
-        sx={{
-          height: 36,
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          px: 1,
-          gap: 0.5,
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
+      {/* 操作栏（ViewerToolbar 共享载体）：左「Markdown · N 行」meta + 预览/源码切换，
+          右复制全文——与代码文件预览的操作栏同源同观感。 */}
+      <ViewerToolbar path={path} content={content}>
         <ToggleButtonGroup
           size="small"
           exclusive
@@ -443,13 +332,7 @@ export default function MarkdownViewer({ content, issueId, baseDir, path }: Mark
             <Typography variant="caption">源码</Typography>
           </ToggleButton>
         </ToggleButtonGroup>
-        <Box sx={{ flex: 1 }} />
-        <Tooltip title={copied ? '已复制' : '复制全文'}>
-          <IconButton size="small" onClick={handleCopy} aria-label="复制 markdown 全文" sx={{ color: 'text.secondary' }}>
-            {copied ? <CheckIcon sx={{ fontSize: 16, color: 'success.main' }} /> : <ContentCopyIcon sx={{ fontSize: 16 }} />}
-          </IconButton>
-        </Tooltip>
-      </Box>
+      </ViewerToolbar>
 
       {viewMode === 'rendered'
         ? (

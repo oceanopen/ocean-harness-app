@@ -11,6 +11,7 @@ import CodeViewer from '../fileViewer/CodeViewer';
 import ImageViewer from '../fileViewer/ImageViewer';
 import MarkdownViewer from '../fileViewer/MarkdownViewer';
 import { resolveTextViewer } from '../fileViewer/viewerKind';
+import ViewerToolbar from '../fileViewer/ViewerToolbar';
 
 interface PreviewContentProps {
   issueId: string;
@@ -92,7 +93,14 @@ function renderContent(data: IssueWorkspaceFileContentResponseData, ctx: RenderC
     case 'text':
       return resolveTextViewer(ctx.path) === 'markdown'
         ? <MarkdownViewer content={data.content ?? ''} issueId={ctx.issueId} baseDir={ctx.baseDir} path={ctx.path} />
-        : <CodeViewer content={data.content ?? ''} path={ctx.path} />;
+        : (
+            <>
+              {/* 操作栏（语言名·行数 + 复制）在 PreviewContent 层组合而非塞进 CodeViewer
+                  本体——后者被 md 源码视图/代码块全屏 Dialog 复用，内置栏会在复用点重复。 */}
+              <ViewerToolbar path={ctx.path} content={data.content ?? ''} />
+              <CodeViewer content={data.content ?? ''} path={ctx.path} />
+            </>
+          );
     case 'binary':
       return <InfoPanel icon={<BrokenImageOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />} title="二进制文件，暂不支持预览" size={data.size} />;
     case 'tooLarge':

@@ -34,6 +34,7 @@ import { commands } from '@src/shared/bindings';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
 import { useCloseWindowShortcut } from '@src/shared/useCloseWindowShortcut';
 import { useConfigValue } from '@src/shared/useConfigValue';
+import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useTrackerStore } from '@src/state/tracker';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -83,6 +84,11 @@ function PanelApp() {
   const toggleCollapsed = () => {
     void setAppConfig(PANEL_SIDEBAR_COLLAPSED_KEY, toYesNo(!collapsed));
   };
+  // 工作台沉浸模式（全屏）：devWorkbench 页激活且全屏时隐藏 App 外壳（本组件左侧菜单
+  // 栏 + 顶部导航栏），页面占满窗口；其余页面不受影响。全屏态由 DevWorkbenchPage 持有
+  // （入口/退出/卸载复位均在彼处，见 devWorkbench store 头注释）——此处只读订阅。
+  const workbenchFullscreen = useDevWorkbenchStore(s => s.workbenchFullscreen);
+  const immersive = activeMenu === 'devWorkbench' && workbenchFullscreen;
 
   // 记忆每个子状态页的「上次完整路径（含 query）」：切走后再切回时恢复到子状态，而非基础路径——
   // 页面已改为切走即卸载，切回经此路径记忆 + URL→store 同步重建选中态（store 全局，不随组件卸载丢）。
@@ -172,119 +178,122 @@ function PanelApp() {
       selectWorkspaceProject={selectWorkspaceProject}
     >
       <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        <Box
-          sx={{
-            width: collapsed ? 56 : 200,
-            flexShrink: 0,
-            borderRight: 1,
-            borderColor: 'divider',
-            display: 'flex',
-            flexDirection: 'column',
-            bgcolor: 'background.paper',
-            overflow: 'hidden',
-            transition: theme.transitions.create('width', {
-              duration: theme.transitions.duration.standard,
-              easing: theme.transitions.easing.sharp,
-            }),
-          }}
-        >
-          {/* 展开态：pl:3 = 24px = List px:1(8) + ListItemButton paddingLeft(16)，logo 容器宽 36px
+        {/* 沉浸模式（devWorkbench 全屏）不渲染左侧菜单栏与顶部导航栏——页面占满窗口 */}
+        {!immersive && (
+          <Box
+            sx={{
+              width: collapsed ? 56 : 200,
+              flexShrink: 0,
+              borderRight: 1,
+              borderColor: 'divider',
+              display: 'flex',
+              flexDirection: 'column',
+              bgcolor: 'background.paper',
+              overflow: 'hidden',
+              transition: theme.transitions.create('width', {
+                duration: theme.transitions.duration.standard,
+                easing: theme.transitions.easing.sharp,
+              }),
+            }}
+          >
+            {/* 展开态：pl:3 = 24px = List px:1(8) + ListItemButton paddingLeft(16)，logo 容器宽 36px
             复刻 ListItemIcon minWidth，使 logo / 标题与下方菜单项 icon / 文字分别垂直对齐。
             折叠态：仅居中显示 logo，隐藏标题文字。 */}
-          <Box
-            sx={{
-              height: TOP_BAR_HEIGHT,
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: collapsed ? 'center' : 'flex-start',
-              pl: collapsed ? 0 : 3,
-              pr: collapsed ? 0 : 2,
-              borderBottom: 1,
-              borderColor: 'divider',
-            }}
-          >
-            <Box sx={{ width: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Box
-                component="img"
-                src={appIcon}
-                alt={t('common:brand')}
-                sx={{ width: 20, height: 20, borderRadius: 0.5 }}
-              />
-            </Box>
-            {!collapsed && (
-              <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }} color="text.secondary">
-                {t('panel:title')}
-              </Typography>
-            )}
-          </Box>
-          <List sx={{ px: collapsed ? 0 : 1 }}>
-            {menuItems.filter(item => !SIDEBAR_HIDDEN.has(item.key)).map(item => (
-              <ListItemButton
-                key={item.key}
-                selected={activeMenu === item.key}
-                onClick={() => goMenu(item.key)}
-                {...(collapsed ? { 'aria-label': item.label } : {})}
-                sx={{
-                  'borderRadius': 2,
-                  'mb': 0.5,
-                  'justifyContent': collapsed ? 'center' : 'flex-start',
-                  'px': collapsed ? 0 : 2,
-                  '&.Mui-selected': {
-                    bgcolor:
-                    theme.palette.mode === 'light'
-                      ? alpha(theme.palette.primary.main, 0.15)
-                      : alpha(theme.palette.primary.main, 0.35),
-                  },
-                  '&.Mui-selected:hover': {
-                    bgcolor:
-                    theme.palette.mode === 'light'
-                      ? alpha(theme.palette.primary.main, 0.15)
-                      : alpha(theme.palette.primary.main, 0.35),
-                  },
-                  '& .MuiListItemText-primary': {
-                    fontWeight: 600,
-                    fontSize: '0.875rem',
-                    whiteSpace: 'nowrap',
-                  },
-                }}
-              >
-                <Tooltip title={collapsed ? item.label : ''} placement="right" disableInteractive>
-                  <ListItemIcon
-                    sx={{
-                      minWidth: collapsed ? 0 : 36,
-                      justifyContent: 'center',
-                      color: 'text.primary',
-                    }}
-                  >
-                    {item.icon}
-                  </ListItemIcon>
-                </Tooltip>
-                {!collapsed && <ListItemText primary={item.label} />}
-              </ListItemButton>
-            ))}
-          </List>
-          {/* 底部折叠切换按钮：mt:auto 推到侧边栏底部，展开态 ChevronLeft / 折叠态 ChevronRight。 */}
-          <Box
-            sx={{
-              mt: 'auto',
-              borderTop: 1,
-              borderColor: 'divider',
-              display: 'flex',
-              justifyContent: 'center',
-              py: 0.5,
-            }}
-          >
-            <IconButton
-              onClick={toggleCollapsed}
-              size="small"
-              aria-label={collapsed ? t('panel:sidebar.expand') : t('panel:sidebar.collapse')}
-              sx={{ color: 'text.secondary' }}
+            <Box
+              sx={{
+                height: TOP_BAR_HEIGHT,
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                pl: collapsed ? 0 : 3,
+                pr: collapsed ? 0 : 2,
+                borderBottom: 1,
+                borderColor: 'divider',
+              }}
             >
-              {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-            </IconButton>
+              <Box sx={{ width: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Box
+                  component="img"
+                  src={appIcon}
+                  alt={t('common:brand')}
+                  sx={{ width: 20, height: 20, borderRadius: 0.5 }}
+                />
+              </Box>
+              {!collapsed && (
+                <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }} color="text.secondary">
+                  {t('panel:title')}
+                </Typography>
+              )}
+            </Box>
+            <List sx={{ px: collapsed ? 0 : 1 }}>
+              {menuItems.filter(item => !SIDEBAR_HIDDEN.has(item.key)).map(item => (
+                <ListItemButton
+                  key={item.key}
+                  selected={activeMenu === item.key}
+                  onClick={() => goMenu(item.key)}
+                  {...(collapsed ? { 'aria-label': item.label } : {})}
+                  sx={{
+                    'borderRadius': 2,
+                    'mb': 0.5,
+                    'justifyContent': collapsed ? 'center' : 'flex-start',
+                    'px': collapsed ? 0 : 2,
+                    '&.Mui-selected': {
+                      bgcolor:
+                    theme.palette.mode === 'light'
+                      ? alpha(theme.palette.primary.main, 0.15)
+                      : alpha(theme.palette.primary.main, 0.35),
+                    },
+                    '&.Mui-selected:hover': {
+                      bgcolor:
+                    theme.palette.mode === 'light'
+                      ? alpha(theme.palette.primary.main, 0.15)
+                      : alpha(theme.palette.primary.main, 0.35),
+                    },
+                    '& .MuiListItemText-primary': {
+                      fontWeight: 600,
+                      fontSize: '0.875rem',
+                      whiteSpace: 'nowrap',
+                    },
+                  }}
+                >
+                  <Tooltip title={collapsed ? item.label : ''} placement="right" disableInteractive>
+                    <ListItemIcon
+                      sx={{
+                        minWidth: collapsed ? 0 : 36,
+                        justifyContent: 'center',
+                        color: 'text.primary',
+                      }}
+                    >
+                      {item.icon}
+                    </ListItemIcon>
+                  </Tooltip>
+                  {!collapsed && <ListItemText primary={item.label} />}
+                </ListItemButton>
+              ))}
+            </List>
+            {/* 底部折叠切换按钮：mt:auto 推到侧边栏底部，展开态 ChevronLeft / 折叠态 ChevronRight。 */}
+            <Box
+              sx={{
+                mt: 'auto',
+                borderTop: 1,
+                borderColor: 'divider',
+                display: 'flex',
+                justifyContent: 'center',
+                py: 0.5,
+              }}
+            >
+              <IconButton
+                onClick={toggleCollapsed}
+                size="small"
+                aria-label={collapsed ? t('panel:sidebar.expand') : t('panel:sidebar.collapse')}
+                sx={{ color: 'text.secondary' }}
+              >
+                {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+              </IconButton>
+            </Box>
           </Box>
-        </Box>
+        )}
 
         <Box
           sx={{
@@ -296,36 +305,38 @@ function PanelApp() {
           }}
         >
           {/* 顶部导航栏：固定高度，与左侧标题栏等高；底部分隔线与左侧标题/菜单分隔线水平对齐。 */}
-          <Box
-            sx={{
-              height: TOP_BAR_HEIGHT,
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              px: 2,
-              borderBottom: 1,
-              borderColor: 'divider',
-              bgcolor: 'background.paper',
-            }}
-          >
-            <Breadcrumbs aria-label="breadcrumb">
-              <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                {activeLabel}
-              </Typography>
-            </Breadcrumbs>
-            <Box sx={{ flex: 1 }} />
-            <CommandPaletteTrigger />
-            <ServerStatusIndicator />
-            <IconButton
-              size="small"
-              aria-label={t('settings:title')}
-              onClick={openSettings}
-              sx={{ color: 'text.secondary' }}
+          {!immersive && (
+            <Box
+              sx={{
+                height: TOP_BAR_HEIGHT,
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                px: 2,
+                borderBottom: 1,
+                borderColor: 'divider',
+                bgcolor: 'background.paper',
+              }}
             >
-              <SettingsOutlinedIcon />
-            </IconButton>
-          </Box>
+              <Breadcrumbs aria-label="breadcrumb">
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {activeLabel}
+                </Typography>
+              </Breadcrumbs>
+              <Box sx={{ flex: 1 }} />
+              <CommandPaletteTrigger />
+              <ServerStatusIndicator />
+              <IconButton
+                size="small"
+                aria-label={t('settings:title')}
+                onClick={openSettings}
+                sx={{ color: 'text.secondary' }}
+              >
+                <SettingsOutlinedIcon />
+              </IconButton>
+            </Box>
+          )}
           {/* 页面内容区：声明式路由（各页面自带 header 原样保留）；'/' 与未知路径 replace 归一到默认页。 */}
           <Box sx={{ flex: 1, overflow: 'hidden' }}>
             <Routes>
