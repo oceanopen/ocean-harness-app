@@ -22,7 +22,8 @@ export type TextViewerKind
   = | 'markdown'
     | 'code';
 
-function extOf(path: string): string {
+/// 路径（含点时取末段）→ 小写扩展名；无扩展名返回空串。预览分派与文件树图标分派共用。
+export function extOf(path: string): string {
   const dot = path.lastIndexOf('.');
   return dot < 0 ? '' : path.slice(dot + 1).toLowerCase();
 }

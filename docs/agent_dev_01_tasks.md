@@ -542,6 +542,22 @@
   刻意不引 legacy-modes 近似映射）。
 - 前端状态：新域 `src/state/workspaceFiles/`（keys/queries + zustand store：预览 tabs 持久化、
   树展开态会话级）；`useInitIssueWorkspace` 成功后整域失效文件缓存。
+
+实施定稿增记（2026-09-09，文件树 UI 对标 Halo 增强）：
+
+- 文件树节点 icon/样式四项增强：①目录 icon 随开合两态（`default-folder`/`default-folder-
+  opened`，chevron 旋转保留）；②文件 icon 按扩展名分派 vscode-icons 彩色图标（新增
+  `WorkspaceFilePanel/fileIcon.ts` 的 `FILE_ICONS` record，约 70 扩展名 key 含 dotfile 名段
+  如 gitignore，未命中回落 `default-file`——halo ui 同款链路）；③dotfile（`. 名`前缀，含
+  目录）整行 opacity 0.6 弱化；④选中态两级（激活 tab 行 `action.selected` 底色 + 主色文字，
+  已打开非激活行仅主色文字）+ 行 4px 圆角，hover 不降级激活行底色。
+- 新增 dev 依赖 `unplugin-icons` + `@iconify-json/vscode-icons` + `@svgr/core` +
+  `@svgr/plugin-jsx`（后两者为 compiler: 'jsx' 的运行依赖）；`vite.config.ts` 接入
+  `Icons({ compiler: 'jsx', scale: 1 })`（scale: 1 抵消默认 1.2 放大，保证 fontSize 即精确
+  像素），`tsconfig.app.json` types 加 `unplugin-icons/types/react`。
+- 复用与形态约束：`viewerKind.ts` 的 `extOf` 改导出共用（扩展名解析 SSOT）；`FILE_ICONS`
+  呈形为模块级 record 而非函数——渲染期纯引用查找，规避 react/static-components 规则
+  （禁止函数调用结果作组件渲染）。
 - 剩余未做（下期接续，契约已预留）：`fileDiff`（git 变更标记 + diff 视图，gitutil 基建在位）、
   `fileSave`（编辑保存，复用同一套路径安全链/文本判定，前端 CodeViewer 摘 readOnly 即编辑器）。
 

@@ -63,7 +63,7 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
   const toggleDirExpanded = useWorkspaceFilesStore(s => s.toggleDirExpanded);
   const openPreviewTab = useWorkspaceFilesStore(s => s.openPreviewTab);
   const expandedDirsRecorded = useExpandedDirs(issueId);
-  const { tabs } = usePreviewTabs(issueId);
+  const { tabs, activeTabId } = usePreviewTabs(issueId);
   const expandedDirs = expandedDirsRecorded ?? DEFAULT_EXPANDED_DIRS;
   const openPaths = useMemo(() => new Set(tabs.map(t => t.path)), [tabs]);
   const treeRoots = useMemo(() => (data != null ? buildFileTree(data.nodes) : []), [data]);
@@ -163,6 +163,7 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
                   roots={treeRoots}
                   expandedDirs={expandedDirs}
                   openPaths={openPaths}
+                  activePath={activeTabId ?? undefined}
                   onToggleDir={dirPath => toggleDirExpanded(issueId, dirPath)}
                   onOpenFile={path => openPreviewTab(issueId, path)}
                 />
