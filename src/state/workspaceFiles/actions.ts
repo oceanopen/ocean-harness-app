@@ -30,8 +30,8 @@ export function openPreviewTab(state: PreviewTabsState, path: string): PreviewTa
   return { tabs: [...state.tabs, { path }], activeTabId: path };
 }
 
-/// 关闭 tab：移除后若关的是激活 tab 则激活相邻（优先左侧兄弟，无则右侧，清空为 null——
-/// 浮层随空 tabs 卸载）。path 不存在时原样返回。
+/// 关闭 tab：移除后若关的是激活 tab 则激活相邻（优先右侧相邻，无则左侧，清空为 null——
+/// 浮层随空 tabs 卸载）。path 不存在时原样返回。⌘W / Escape / tab 关闭钮共用本规则。
 export function closePreviewTab(state: PreviewTabsState, path: string): PreviewTabsState {
   const index = state.tabs.findIndex(t => t.path === path);
   if (index < 0) {
@@ -41,7 +41,8 @@ export function closePreviewTab(state: PreviewTabsState, path: string): PreviewT
   if (state.activeTabId !== path) {
     return { tabs, activeTabId: state.activeTabId };
   }
-  const neighbor = tabs[Math.max(0, index - 1)] ?? null;
+  // 关闭位置右侧的 tab 过滤后仍落原 index；关的是末尾 tab 时取其左侧（index - 1）。
+  const neighbor = tabs[index] ?? tabs[index - 1] ?? null;
   return { tabs, activeTabId: neighbor?.path ?? null };
 }
 

@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import appIcon from '@src/assets/app-icon.svg';
 import { EVENT_SETTINGS_NAVIGATE } from '@src/shared/events';
+import { useCloseWindowShortcut } from '@src/shared/useCloseWindowShortcut';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,6 +41,10 @@ function SettingsApp() {
   const navigate = useNavigate();
   const activeMenu = pathToMenu(location.pathname);
   const theme = useTheme();
+
+  // ⌘W 兜底：settings 窗口在 macOS 菜单让位前靠菜单 accelerator 关窗（隐藏），让位后
+  // 由本兜底恢复同等行为（window.close → 既有 CloseRequested → prevent_close + hide 链）。
+  useCloseWindowShortcut(true);
 
   // 分区跳转：settings 无子状态，直跳基础 path。
   const goMenu = useCallback((menu: MenuKey) => {

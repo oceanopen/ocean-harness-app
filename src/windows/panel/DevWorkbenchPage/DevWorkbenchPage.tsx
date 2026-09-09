@@ -45,8 +45,9 @@ import { useArchiveIssueWorkspace, useInitIssueWorkspace } from '@src/state/issu
 import { removeLayout } from '@src/state/terminalPanes';
 import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
 import { clearToolTabs } from '@src/state/workbenchTools';
-import { clearPreviewTabs } from '@src/state/workspaceFiles';
+import { clearPreviewTabs, useWorkspaceFilesStore } from '@src/state/workspaceFiles';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
@@ -198,6 +199,30 @@ export default function DevWorkbenchPage() {
       }
     }
   }, [urlIid, issues, selectedIssueId, selectIssue]);
+
+  // ⌘W/Ctrl+W 页面级接管（macOS 应用菜单已让位，见 src/shared/useCloseWindowShortcut.ts
+  // 头注释）：文件查看模式（当前 issue 预览 tabs 非空且有激活 tab）→ 关闭激活 tab（关闭后
+  // 激活右侧相邻的规则由 closePreviewTab 纯函数统一，⌘W/Escape/关闭钮同源）；否则保持
+  // 默认关窗（走既有 CloseRequested → prevent_close + hide 链）。事件时 getState() 现读，
+  // 无陈旧闭包；不建渲染订阅——页面不因 tabs 变化多一次渲染。
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'w') {
+        return;
+      }
+      e.preventDefault();
+      const issueId = issue?.id ?? null;
+      const { previewTabsByIssue, closePreviewTab: closeTab } = useWorkspaceFilesStore.getState();
+      const tabs = issueId != null ? previewTabsByIssue[issueId] : undefined;
+      if (issueId != null && tabs != null && tabs.tabs.length > 0 && tabs.activeTabId != null) {
+        closeTab(issueId, tabs.activeTabId);
+      } else {
+        void getCurrentWindow().close();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [issue?.id]);
 
   // 折叠态配置未就绪：空占位，避免首帧默认展开 → 动画收起的宽度翻转。
   if (!panelConfigReady) {

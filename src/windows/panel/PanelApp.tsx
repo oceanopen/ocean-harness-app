@@ -32,6 +32,7 @@ import {
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
+import { useCloseWindowShortcut } from '@src/shared/useCloseWindowShortcut';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useTrackerStore } from '@src/state/tracker';
 import { listen } from '@tauri-apps/api/event';
@@ -66,6 +67,10 @@ function PanelApp() {
   const location = useLocation();
   const navigate = useNavigate();
   const activeMenu = pathToMenu(location.pathname);
+  // ⌘W 兜底（macOS 菜单让位后由前端接管，见 useCloseWindowShortcut 头注释）：非
+  // devWorkbench 菜单页保持默认关窗；devWorkbench 页由页面级处理器接管（关 tab/关窗），
+  // 本兜底让位——两者按 activeMenu 互斥，永不同时动作。
+  useCloseWindowShortcut(activeMenu !== 'devWorkbench');
   const [repoRefreshTrigger, setRepoRefreshTrigger] = useState(0);
   // tracker 三级选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
   const currentWorkspaceId = useTrackerStore(s => s.selectedWorkspace?.id ?? null);

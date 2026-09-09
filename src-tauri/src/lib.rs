@@ -166,12 +166,34 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
 pub fn run() {
     let specta_builder = build_specta_builder();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(specta_builder.invoke_handler())
+        .invoke_handler(specta_builder.invoke_handler());
+
+    // macOS：自定义应用菜单替代默认菜单——close_window 让出 ⌘W accelerator 交给前端
+    // 接管（见 shared/app_menu.rs 头注释）。Windows/Linux 本就无应用菜单，不设置。
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(shared::app_menu::build)
+        // 菜单栏点击「Close Window」：关闭聚焦窗口（走各窗口 CloseRequested 拦截链，
+        // 与前端 ⌘W 兜底的 window.close() 同一条路径）。
+        .on_menu_event(|app, event| {
+            if event.id() == shared::app_menu::CLOSE_WINDOW_MENU_ID {
+                // get_focused_window 需要 unstable feature，改用遍历 + is_focused 等价实现。
+                if let Some(win) = app
+                    .webview_windows()
+                    .values()
+                    .find(|w| w.is_focused().unwrap_or(false))
+                {
+                    let _ = win.close();
+                }
+            }
+        });
+
+    builder
         .setup(move |app| {
             // macOS 隐藏 Dock 图标：将应用激活策略设为 Accessory（代理应用），
             // 应用不再出现在程序坞和应用菜单栏，只保留顶部状态栏托盘图标。
