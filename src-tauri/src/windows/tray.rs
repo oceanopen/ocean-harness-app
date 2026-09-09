@@ -1,17 +1,11 @@
 use std::sync::Mutex;
 use tauri::{
-    AppHandle, Emitter, Manager,
+    AppHandle, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
-use crate::shared::app_config::{
-    AppConfigState, LANGUAGE_KEY, PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY, read_app_config_raw,
-    write_app_config_raw,
-};
-use crate::shared::events::EVENT_APP_CONFIG_CHANGED;
-use crate::shared::i18n::{ResolvedLanguage, menu_text, resolve};
-use crate::shared::types::{AppConfigChangedPayload, YesNo};
+use crate::shared::i18n::{current_language, menu_text};
 use crate::windows::pet_claude_sessions_summary::get_pet_claude_sessions_summary_visibility_state;
 
 /// 已构建的托盘菜单项引用，用于后续动态更新文案。
@@ -19,17 +13,8 @@ struct TrayMenuItems {
     panel: MenuItem<tauri::Wry>,
     settings: MenuItem<tauri::Wry>,
     pet_claude_sessions_summary: MenuItem<tauri::Wry>,
-    drag: MenuItem<tauri::Wry>,
     restart: MenuItem<tauri::Wry>,
     quit: MenuItem<tauri::Wry>,
-}
-
-fn current_language(app: &AppHandle) -> ResolvedLanguage {
-    let Some(state) = app.try_state::<AppConfigState>() else {
-        return resolve(None);
-    };
-    let raw = read_app_config_raw(state.inner(), LANGUAGE_KEY).unwrap_or(None);
-    resolve(raw.as_deref())
 }
 
 /// 桌宠当前显隐 → menu text key。隐藏时显示"显示桌宠"，显示时显示"隐藏桌宠"。
@@ -38,30 +23,6 @@ fn pet_claude_sessions_summary_menu_key(app: &AppHandle) -> &'static str {
         "pet-hide"
     } else {
         "pet-show"
-    }
-}
-
-/// 读取持久化的桌宠拖拽开关。缺失或非 "Y" 均视为关闭（默认不可拖拽）。
-fn drag_enabled_pref(app: &AppHandle) -> bool {
-    let Some(state) = app.try_state::<AppConfigState>() else {
-        return false;
-    };
-    match read_app_config_raw(
-        state.inner(),
-        PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
-    ) {
-        Ok(Some(v)) if v == YesNo::Yes.as_str() => true,
-        _ => false,
-    }
-}
-
-/// 拖拽开关当前态 → menu text key。已开启显示"关闭拖拽"，未开启显示"开启拖拽"
-/// （动作指向目标态，与 pet-show/pet-hide 一致）。
-fn drag_menu_key(app: &AppHandle) -> &'static str {
-    if drag_enabled_pref(app) {
-        "drag-off"
-    } else {
-        "drag-on"
     }
 }
 
@@ -155,14 +116,6 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
-    // 拖拽开关：初始禁用，由首次 refresh_menu_texts 按桌宠显隐纠正。
-    let drag_item = MenuItem::with_id(
-        app,
-        "drag",
-        menu_text(lang, drag_menu_key(app.handle())),
-        false,
-        None::<&str>,
-    )?;
     let quit_item = MenuItem::with_id(
         app,
         "quit",
@@ -184,7 +137,6 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             &panel_item,
             &PredefinedMenuItem::separator(app)?,
             &pet_claude_sessions_summary_item,
-            &drag_item,
             &PredefinedMenuItem::separator(app)?,
             &settings_item,
             &restart_item,
@@ -239,27 +191,8 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 if let Err(e) = crate::windows::pet_claude_sessions_summary::toggle_pet_claude_sessions_summary_window(app.clone()) {
                     log::warn!("failed to toggle pet window: {e}");
                 }
-                // 切换后立刻刷新菜单文案（pet 文案 + drag enabled 都依赖显隐态）。
-                crate::windows::tray::refresh_menu_texts(app);
-            }
-            "drag" => {
-                // 翻转拖拽开关：落盘后广播 app-config-changed 通知前端 PetClaudeSessionsSummaryApp 实时响应，再刷新菜单文案。
-                // drag 的 enabled 只随桌宠显隐变化，不由此处改变。
-                let new_val = if drag_enabled_pref(app) {
-                    YesNo::No
-                } else {
-                    YesNo::Yes
-                };
-                if let Some(state) = app.try_state::<AppConfigState>() {
-                    let _ = write_app_config_raw(state.inner(), PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY, new_val.as_str());
-                }
-                let _ = app.emit(
-                    EVENT_APP_CONFIG_CHANGED,
-                    AppConfigChangedPayload {
-                        key: PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY.to_string(),
-                        value: new_val.as_str().to_string(),
-                    },
-                );
+                // 切换后立刻刷新菜单文案（pet 文案依赖显隐态；隐藏路径在
+                // pet_claude_sessions_summary::hide_and_persist 内已刷新，此处兜底显示路径）。
                 crate::windows::tray::refresh_menu_texts(app);
             }
             "settings" => {
@@ -282,7 +215,6 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         panel: panel_item,
         settings: settings_item,
         pet_claude_sessions_summary: pet_claude_sessions_summary_item,
-        drag: drag_item,
         restart: restart_item,
         quit: quit_item,
     }));
@@ -307,15 +239,6 @@ pub fn refresh_menu_texts(app: &AppHandle) {
         .set_text(menu_text(
             lang,
             pet_claude_sessions_summary_menu_key(app),
-        ));
-    // drag 文案随开关状态切换；enabled 随桌宠显隐（隐藏时禁用，避免无桌宠时操作）。
-    let _ = items
-        .drag
-        .set_text(menu_text(lang, drag_menu_key(app)));
-    let _ = items
-        .drag
-        .set_enabled(get_pet_claude_sessions_summary_visibility_state(
-            app.clone(),
         ));
     let _ = items.restart.set_text(menu_text(lang, "restart"));
     let _ = items.quit.set_text(menu_text(lang, "quit"));

@@ -30,6 +30,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::pet_claude_sessions_summary::show_pet_claude_sessions_summary_window,
             windows::pet_claude_sessions_summary::hide_pet_claude_sessions_summary_window,
             windows::pet_claude_sessions_summary::toggle_pet_claude_sessions_summary_window,
+            windows::pet_claude_sessions_summary::show_pet_context_menu,
             windows::pet_claude_sessions_summary::get_pet_claude_sessions_summary_visibility_state,
             windows::pet_claude_sessions_task::show_pet_claude_sessions_task_window,
             windows::pet_claude_sessions_task::hide_pet_claude_sessions_task_window,
@@ -66,10 +67,6 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         // config key 族（app_config.rs）：后端读取的 key 在此定义，前端仅消费生成物，
         // 根治此前 appConfig.ts 手工镜像的双份维护漂移（POLL 三值曾实际漂移）。
         .constant("LANGUAGE_KEY", shared::app_config::LANGUAGE_KEY)
-        .constant(
-            "PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY",
-            shared::app_config::PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
-        )
         .constant(
             "POLL_INTERVAL_SECS_KEY",
             shared::app_config::POLL_INTERVAL_SECS_KEY,
@@ -230,6 +227,16 @@ pub fn run() {
             shared::app_config::init(app)?;
             shared::state::claude_sessions::init(app)?;
             windows::tray::setup(app)?;
+
+            // pet 右键菜单事件分发（show_pet_context_menu 弹出的原生菜单不经前端回调，
+            // 统一走 app 级 on_menu_event）：「隐藏桌宠」与托盘 toggle 隐藏路径同一语义。
+            app.on_menu_event(|app, event| {
+                if event.id().as_ref()
+                    == windows::pet_claude_sessions_summary::PET_CONTEXT_HIDE_MENU_ID
+                {
+                    windows::pet_claude_sessions_summary::hide_and_persist(app);
+                }
+            });
 
             // 先 rescan 填充 ClaudeSessionStore 并广播首批快照，保证后续 pet_claude_sessions_task / pet
             // 窗口 React mount 后初次拉取 IPC 时 store 必有数据，根治启动期"0 个活跃"竞态。

@@ -11,10 +11,6 @@ pub const LANGUAGE_KEY: &str = "language";
 /// 缺失视为 `YesNo::Yes`，向后兼容现有用户。
 pub const PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY: &str = "pet_claude_sessions_summary_visible";
 
-/// 桌宠拖拽开关。值用 `YesNo` enum（"Y"/"N"），缺失视为 `YesNo::No`（默认关闭）：
-/// 关闭时点击桌宠打开终端监控页，开启时桌宠可拖拽且点击静默。
-pub const PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY: &str = "pet_claude_sessions_summary_draggable";
-
 /// sessions 兜底轮询周期（秒）。即时性由 fs watcher 负责，此处仅驱动 Dead 老化与漏报兜底。
 /// 本组常量经 build_specta_builder().constant() 导出到前端 bindings.ts（Rust 单源，
 /// 前端 appConfig.ts 仅 re-export，不再手工镜像——曾实际漂移：TS 60/5/120 vs Rust 120/10/300）。

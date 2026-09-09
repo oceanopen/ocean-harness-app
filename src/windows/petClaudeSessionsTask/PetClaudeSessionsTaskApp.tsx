@@ -165,8 +165,8 @@ function PetClaudeSessionsTaskApp() {
         flexDirection: 'column',
         overflow: 'hidden',
         borderRadius: 2,
-        opacity: hovered ? 1 : 0.3,
-        transition: 'opacity 0.2s',
+        opacity: hovered ? 1 : 0.5,
+        transition: 'opacity 0.3s',
       }}
     >
       <Box

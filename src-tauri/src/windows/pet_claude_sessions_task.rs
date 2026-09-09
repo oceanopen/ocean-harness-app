@@ -24,7 +24,8 @@ use crate::shared::state::claude_sessions::ClaudeSessionStore;
 use crate::shared::types::ClaudeSessionStatus;
 
 /// 任务面板窗口 label（前端 get_webview_window 与 HTML 文件名均与此对齐）。
-const PET_CLAUDE_SESSIONS_TASK_LABEL: &str = "pet-claude-sessions-task";
+/// pub(crate)：pet 窗口 Moved 防抖提交时 emit_to REFIT 事件定向使用。
+pub(crate) const PET_CLAUDE_SESSIONS_TASK_LABEL: &str = "pet-claude-sessions-task";
 
 /// 面板宽度（逻辑像素）：固定，仅高度随内容动态变化。
 const PET_CLAUDE_SESSIONS_TASK_WIDTH: f64 = 280.0;

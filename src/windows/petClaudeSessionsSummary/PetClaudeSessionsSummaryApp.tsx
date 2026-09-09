@@ -1,19 +1,12 @@
 import type { ClaudeSessionInfo, ClaudeSessionStatus } from '@src/shared/bindings';
-import {
-  DEFAULT_PET_DRAGGABLE,
-  isYes,
-  parseYesNo,
-  PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
-} from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { CLAUDE_SESSION_STATUS_PRIORITY, countAttentionClaudeSessions } from '@src/shared/claudeSessionStatus';
 import { unwrap } from '@src/shared/commands';
 import { EVENT_CLAUDE_SESSIONS_CHANGED } from '@src/shared/events';
-import { useConfigValue } from '@src/shared/useConfigValue';
 import { usePetHover } from '@src/shared/usePetHover';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import PetSprite from './components/PetSprite';
 
 // 状态聚合：取所有会话中"最需关注"的那个作为桌宠展示态（优先级 SSOT: claudeSessionStatus.ts，
@@ -32,17 +25,24 @@ function aggregateStatus(sessions: ClaudeSessionInfo[]): { status: ClaudeSession
   return { status: top.status, count: countAttentionClaudeSessions(sessions) };
 }
 
-// 模块级 decode：稳定引用，避免 useConfigValue 每次渲染重复订阅。
-function decodeDraggable(v: string | null): boolean {
-  return isYes(parseYesNo(v, DEFAULT_PET_DRAGGABLE));
+// 点击/拖拽判定阈值（px）：按下后累计位移 ≥ 此值判定为拖拽意图。5px 对齐 macOS
+// 原生窗口拖拽手感——轻微手抖不会被误判为拖拽。
+const DRAG_THRESHOLD_PX = 5;
+
+// 一次按下的判定状态：起点坐标 + 是否已进入原生拖拽。
+interface PetPress {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  dragging: boolean;
 }
 
 function PetClaudeSessionsSummaryApp() {
   const [status, setStatus] = useState<ClaudeSessionStatus>('Dead');
   const [count, setCount] = useState(0);
   const { hovered, handlers } = usePetHover();
-  // 桌宠拖拽开关：开启时可拖拽、点击静默；关闭时不可拖拽、点击打开终端监控页。
-  const draggable = useConfigValue(PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY, decodeDraggable, false);
+  // 点击/拖拽判定状态（按下→松开的一次完整生命周期，不驱动渲染，用 ref）。
+  const pressRef = useRef<PetPress | null>(null);
 
   // 纯函数：从 sessions 快照计算 status + count。PetClaudeSessionsSummaryApp 与 PetClaudeSessionsTaskApp 共用
   // claude-sessions:changed payload 作为数据源，applySessions 保证两端对同一事件的响应原子化，
@@ -80,31 +80,70 @@ function PetClaudeSessionsSummaryApp() {
     });
   }, [count]);
 
-  // 开启拖拽：鼠标按下进入原生窗口拖拽（startDragging 会吞掉后续 click，故无需特殊处理）。
-  // 关闭拖拽：mouseDown 空转，交由 handleClick 打开终端监控页。
-  const handleMouseDown = useCallback(async () => {
-    // 点击即高亮：未聚焦窗口的 mouseenter 不触发，mousedown 是"鼠标在窗口内"最可靠的信号。
-    handlers.onMouseDown();
-    if (!draggable) {
+  // 点击/拖拽自动区分（替代旧「是否开启拖拽」开关）：
+  //   pointerdown 记录起点（不 startDragging）→ 按住移动 ≥ DRAG_THRESHOLD_PX 才进入
+  //   原生拖拽 → 未超阈值松开判定为点击，打开终端监控页。
+  // 不再消费 DOM click：startDragging 是异步 IPC，快速点击时 mouseup 在其生效前已被
+  // WebView 捕获并合成 click，click/mousedown 双入口无法在 DOM 层互斥——旧版靠开关
+  // 二选一即为此折中。现在唯一的点击判定入口是 pointerup，语义天然互斥。
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      // 仅主键参与判定：右键走 contextmenu（原生菜单），中键无语义。
+      if (e.button !== 0) {
+        return;
+      }
+      // 点击即高亮：未聚焦窗口的 mouseenter 不触发，按下是"鼠标在窗口内"最可靠的信号。
+      handlers.onMouseDown();
+      // pointer capture：保证按住后移出 128x128 窗口仍能收到 pointerup 完成点击判定。
+      e.currentTarget.setPointerCapture(e.pointerId);
+      pressRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        dragging: false,
+      };
+    },
+    [handlers],
+  );
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const press = pressRef.current;
+    if (!press || press.dragging || e.pointerId !== press.pointerId) {
       return;
     }
-    try {
-      await getCurrentWindow().startDragging();
-    } catch (e) {
-      console.warn('[pet-claude-sessions-summary] startDragging failed:', e);
-    }
-  }, [draggable, handlers]);
-  // 关闭拖拽模式下点击桌宠打开终端监控页；开启模式下 startDragging 已吞掉 click，兜底再判一次。
-  const handleClick = useCallback(async () => {
-    if (draggable) {
+    const dx = e.clientX - press.startX;
+    const dy = e.clientY - press.startY;
+    if (dx * dx + dy * dy < DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
       return;
     }
-    try {
-      await unwrap(commands.showPanelWindow('claudeSessions'));
-    } catch (e) {
-      console.warn('[pet-claude-sessions-summary] open panel failed', e);
+    // 超过阈值才进入原生拖拽：此刻窗口尚未移动，startDragging 从光标当前位置无缝接管。
+    // 之后 pointermove/pointerup 不再到达前端（原生循环接管），pressRef 留待下次
+    // pointerdown 重置；若松手早于 IPC 生效，原生循环因无按键按下立即退出，均无害。
+    press.dragging = true;
+    getCurrentWindow().startDragging().catch((err) => {
+      console.warn('[pet-claude-sessions-summary] startDragging failed:', err);
+    });
+  }, []);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const press = pressRef.current;
+    pressRef.current = null;
+    if (!press || press.dragging || e.pointerId !== press.pointerId) {
+      return;
     }
-  }, [draggable]);
+    // 位移未超阈值 = 点击：打开终端监控页。
+    unwrap(commands.showPanelWindow('claudeSessions')).catch((err) => {
+      console.warn('[pet-claude-sessions-summary] open panel failed', err);
+    });
+  }, []);
+
+  // 右键弹原生菜单（Rust 侧渲染，不受 128x128 窗口边界裁切），当前仅「隐藏桌宠」。
+  const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    unwrap(commands.showPetContextMenu(e.clientX, e.clientY)).catch((err) => {
+      console.warn('[pet-claude-sessions-summary] context menu failed', err);
+    });
+  }, []);
 
   return (
     <div
@@ -116,16 +155,17 @@ function PetClaudeSessionsSummaryApp() {
         alignItems: 'center',
         justifyContent: 'center',
         userSelect: 'none',
-        // 拖拽态用 grab 提示可拖动，点击态用 pointer 提示可点击打开监控页。
-        cursor: draggable ? 'grab' : 'pointer',
-        opacity: hovered ? 1 : 0.3,
-        transition: 'opacity 0.2s',
+        // 光标样式在 index.css：.pet-surface grab / :active grabbing。
+        opacity: hovered ? 1 : 0.5,
+        transition: 'opacity 0.3s',
       }}
       onMouseEnter={handlers.onMouseEnter}
       onMouseMove={handlers.onMouseMove}
       onMouseLeave={handlers.onMouseLeave}
-      onMouseDown={handleMouseDown}
-      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onContextMenu={handleContextMenu}
     >
       <PetSprite status={status} count={count} />
     </div>

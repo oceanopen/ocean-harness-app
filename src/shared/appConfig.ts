@@ -18,7 +18,6 @@ export {
   MAX_POLL_INTERVAL_SECS,
   MIN_HTTP_SERVER_PORT,
   MIN_POLL_INTERVAL_SECS,
-  PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY,
   POLL_INTERVAL_SECS_KEY,
   TERMINAL_POST_OPEN_COMMAND_KEY,
 } from './bindings';
@@ -65,10 +64,6 @@ export type Language = 'system' | 'zh-CN' | 'en';
 export type ResolvedLanguage = Exclude<Language, 'system'>;
 
 export const DEFAULT_LANGUAGE: Language = 'system';
-
-// 桌宠拖拽开关。值用 YesNo，缺失视为 NO（默认关闭：点击桌宠打开监控页）。
-// key 在 Rust 单源（见顶部 re-export）；默认值类型是 YesNo，走本地 satisfies 关联。
-export const DEFAULT_PET_DRAGGABLE = YES_NO.NO;
 
 // iTerm2 分屏方向。horizontal = 上下分屏，vertical = 左右分屏，none = 不分屏。
 // 类型与默认值均为字面量联合，默认值从 Rust 单源 re-export（as const 兼容）。

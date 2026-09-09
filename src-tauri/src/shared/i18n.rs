@@ -1,4 +1,7 @@
 use sys_locale::get_locale;
+use tauri::{AppHandle, Manager};
+
+use crate::shared::app_config::{AppConfigState, LANGUAGE_KEY, read_app_config_raw};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum ResolvedLanguage {
@@ -21,7 +24,17 @@ pub fn resolve(raw: Option<&str>) -> ResolvedLanguage {
     }
 }
 
-/// 后端文案仅覆盖托盘菜单（业务文案在前端 react-i18next）。
+/// 读取持久化语言配置解析为后端语言（托盘菜单 / pet 右键菜单共用）。
+/// 无配置或读取失败时回退系统语言检测。
+pub fn current_language(app: &AppHandle) -> ResolvedLanguage {
+    let Some(state) = app.try_state::<AppConfigState>() else {
+        return resolve(None);
+    };
+    let raw = read_app_config_raw(state.inner(), LANGUAGE_KEY).unwrap_or(None);
+    resolve(raw.as_deref())
+}
+
+/// 后端文案仅覆盖托盘菜单与 pet 右键菜单（业务文案在前端 react-i18next）。
 /// 加 key 时同步 refresh_menu_texts 与 setup 的菜单构建。
 pub fn menu_text(lang: ResolvedLanguage, key: &str) -> &'static str {
     match (lang, key) {
@@ -29,16 +42,12 @@ pub fn menu_text(lang: ResolvedLanguage, key: &str) -> &'static str {
         (ResolvedLanguage::ZhCn, "settings") => "系统设置",
         (ResolvedLanguage::ZhCn, "pet-show") => "显示桌宠",
         (ResolvedLanguage::ZhCn, "pet-hide") => "隐藏桌宠",
-        (ResolvedLanguage::ZhCn, "drag-on") => "开启拖拽",
-        (ResolvedLanguage::ZhCn, "drag-off") => "关闭拖拽",
         (ResolvedLanguage::ZhCn, "restart") => "重启",
         (ResolvedLanguage::ZhCn, "quit") => "退出",
         (ResolvedLanguage::En, "panel") => "Console",
         (ResolvedLanguage::En, "settings") => "Settings",
         (ResolvedLanguage::En, "pet-show") => "Show Pet",
         (ResolvedLanguage::En, "pet-hide") => "Hide Pet",
-        (ResolvedLanguage::En, "drag-on") => "Enable Drag",
-        (ResolvedLanguage::En, "drag-off") => "Disable Drag",
         (ResolvedLanguage::En, "restart") => "Restart",
         (ResolvedLanguage::En, "quit") => "Quit",
         _ => "",

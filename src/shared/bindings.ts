@@ -59,6 +59,12 @@ export const commands = {
 	showPetClaudeSessionsSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("show_pet_claude_sessions_summary_window")),
 	hidePetClaudeSessionsSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("hide_pet_claude_sessions_summary_window")),
 	togglePetClaudeSessionsSummaryWindow: () => typedError<boolean, string>(__TAURI_INVOKE("toggle_pet_claude_sessions_summary_window")),
+	/**
+	 *  在桌宠窗口光标处弹原生右键菜单（前端 contextmenu 事件调用）。
+	 *  单项「隐藏桌宠」；原生菜单由系统渲染，不受 128x128 窗口边界裁切。
+	 *  x/y 为前端传入的光标 CSS 逻辑坐标（相对窗口左上角），popup_at 内部按窗口 scale 换算。
+	 */
+	showPetContextMenu: (x: number | null, y: number | null) => typedError<null, string>(__TAURI_INVOKE("show_pet_context_menu", { x, y })),
 	/**  查询桌宠当前显隐状态。供前端启动时初始化 UI。 */
 	getPetClaudeSessionsSummaryVisibilityState: () => __TAURI_INVOKE<boolean>("get_pet_claude_sessions_summary_visibility_state"),
 	/**
@@ -198,8 +204,6 @@ export const MAX_POLL_INTERVAL_SECS = 300 as const;
 export const MIN_HTTP_SERVER_PORT = 3000 as const;
 
 export const MIN_POLL_INTERVAL_SECS = 10 as const;
-
-export const PET_CLAUDE_SESSIONS_SUMMARY_DRAGGABLE_KEY = "pet_claude_sessions_summary_draggable" as const;
 
 export const POLL_INTERVAL_SECS_KEY = "poll_interval_secs" as const;
 
