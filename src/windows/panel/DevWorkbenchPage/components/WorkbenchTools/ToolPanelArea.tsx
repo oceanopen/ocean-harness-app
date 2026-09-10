@@ -22,10 +22,14 @@ interface DragContext {
 }
 
 interface ToolPanelAreaProps {
-  /// 选中 issue（null = 未选中，面板区收起）。工具渲染上下文 + tabs 归属 key。
+  /// 选中 issue（null = 未选中/加载中，空态文案兜底）。工具渲染上下文 + tabs 归属 key。
   issue: ProjectIssueResponseData | null;
   projectId: number | null;
-  /// 面板区展开（页面按 config 折叠态 + 选中态合成传入；收起时外层 width 0）。
+  /// 是否存在选中意图（URL 优先 + store 兜底的合成值，非 issue 对象就绪）：空 tab 栏时
+  /// 按此区分文案——无选中「请先选择左侧任务」；有选中（含列表加载瞬态）「在右侧工具条
+  /// 选择工具」。锚定意图而非对象，跨项目切换的加载瞬态不闪文案。
+  hasSelection: boolean;
+  /// 面板区展开（页面按 config 折叠态传入，与选中态解耦；收起时外层 width 0）。
   visible: boolean;
   /// 持久化宽度（config 订阅值，拖拽结束经 onWidthCommit 落盘后回填）。
   width: number;
@@ -41,7 +45,7 @@ interface ToolPanelAreaProps {
 /// 加 + 号下拉快捷添加）。非激活 tab 的内容组件不渲染——工具会话必须后端常驻（见
 /// toolRegistry 架构红线注释），视口卸载不销毁会话。tabs 读取走域级 useToolTabs
 /// （hydration + 响应式订阅成对封装，见 store.ts 注释）。
-export default function ToolPanelArea({ issue, projectId, visible, width, onWidthCommit }: ToolPanelAreaProps) {
+export default function ToolPanelArea({ issue, projectId, hasSelection, visible, width, onWidthCommit }: ToolPanelAreaProps) {
   const theme = useTheme();
   const closeTab = useWorkbenchToolsStore(s => s.closeTab);
   const setActiveTab = useWorkbenchToolsStore(s => s.setActiveTab);
@@ -166,11 +170,15 @@ export default function ToolPanelArea({ issue, projectId, visible, width, onWidt
           ))}
         </Tabs>
 
-        {/* 内容区：激活 tab 的工具视口；空 tab 栏空态提示（面板区保持展开） */}
+        {/* 内容区：激活 tab 的工具视口；空 tab 栏空态提示（面板区保持展开）。文案按
+            选中意图区分：未选中提示去左侧选任务；已选中（不知道该 issue 有哪些工具 tab，
+            也可能没有）提示去右侧工具条选工具。 */}
         {activeEntry == null
           ? (
               <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
-                <Typography variant="body2" color="text.secondary">在右侧工具条选择工具</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {hasSelection ? '在右侧工具条选择工具' : '请先选择左侧任务'}
+                </Typography>
               </Box>
             )
           : issue != null && projectId != null

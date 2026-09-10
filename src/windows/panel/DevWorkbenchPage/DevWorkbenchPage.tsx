@@ -191,8 +191,10 @@ export default function DevWorkbenchPage() {
     );
   };
 
-  // 工具面板区可见性：用户展开（config）且选中 issue 有效（面板内容均围绕选中任务）。
-  const toolAreaVisible = !toolAreaCollapsed && hasSelection && issue != null;
+  // 工具面板区可见性：仅由用户展开（config）决定，与 issue 选中态解耦——面板内容虽围绕
+  // 选中任务，但选中/取消选中驱动的开合动画是布局闪动来源；未选中时空态文案兜底（见
+  // ToolPanelArea，按 hasSelection 二分）。
+  const toolAreaVisible = !toolAreaCollapsed;
 
   // 左栏任务树隐藏合成：用户折叠配置 || 沉浸模式（只读不改写 config，退出全屏按原配置恢复）。
   const treeHidden = issueTreeCollapsed || workbenchFullscreen;
@@ -451,13 +453,15 @@ export default function DevWorkbenchPage() {
         <ToolPanelArea
           issue={issue ?? null}
           projectId={loadPid}
+          hasSelection={hasSelection}
           visible={toolAreaVisible}
           width={toolAreaWidth}
           onWidthCommit={commitToolAreaWidth}
         />
       </Box>
 
-      {/* 最右常驻工具条：顶部方格（面板区总开关）+ 工具图标列（注册表驱动）。无选中时禁用。 */}
+      {/* 最右常驻工具条：顶部方格（面板区总开关）+ 工具图标列（注册表驱动）。未选中时
+          仅工具图标禁用（工具须挂具体 issue），方格开关保持可用（面板恒展示后须能收起）。 */}
       <WorkbenchToolRail
         issueId={issue?.id ?? null}
         panelCollapsed={toolAreaCollapsed}

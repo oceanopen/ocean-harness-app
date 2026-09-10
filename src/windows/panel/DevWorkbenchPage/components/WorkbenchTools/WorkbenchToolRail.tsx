@@ -4,7 +4,8 @@ import { useToolTabs, useWorkbenchToolsStore } from '@src/state/workbenchTools';
 import { WORKBENCH_TOOLS } from './toolRegistry';
 
 interface WorkbenchToolRailProps {
-  /// 选中 issue id；null = 未选中（方格与工具图标全部禁用）。
+  /// 选中 issue id；null = 未选中（工具图标禁用；方格开关保持可用——面板区可见性与
+  /// 选中态解耦后，未选中时也须能收起面板）。
   issueId: string | null;
   /// 面板区折叠态（config SSOT 订阅值，由页面传入；rail 不直接订阅 config）。
   panelCollapsed: boolean;
@@ -54,7 +55,6 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
         <span>
           <IconButton
             onClick={onTogglePanel}
-            disabled={issueId == null}
             aria-label={panelCollapsed ? '展开工具面板区' : '收起工具面板区'}
             sx={{ width: 48, height: 48, borderRadius: 0, color: 'text.secondary' }}
           >
