@@ -327,7 +327,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         cursorStyle={cursorStyle}
         cursorBlink={cursorBlink}
         lineHeight={lineHeight}
-        toolbarLabel={isMain ? 'main' : undefined}
+        isMain={isMain}
         onData={session.write}
         onResize={session.resize}
         exited={session.status === 'exited'}

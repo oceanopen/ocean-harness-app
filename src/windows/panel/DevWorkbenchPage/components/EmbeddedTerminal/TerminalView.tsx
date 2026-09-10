@@ -5,6 +5,7 @@ import {
   CloseOutlined as CloseOutlinedIcon,
   ContentCopyOutlined as ContentCopyOutlinedIcon,
   ContentPasteOutlined as ContentPasteOutlinedIcon,
+  HomeOutlined as HomeOutlinedIcon,
   HorizontalSplit as HorizontalSplitIcon,
   LayersClearOutlined as LayersClearOutlinedIcon,
   SearchOutlined as SearchOutlinedIcon,
@@ -47,10 +48,19 @@ const FILE_PATH_PATTERN = /(\/[\w.@+-]+)*\/[\w.-]+\.(?:rs|ts|tsx|js|jsx|go|py|ja
 // 工具栏高度统一走共享常量 PANEL_TOOLBAR_HEIGHT（../PanelToolbar，与右侧工具面板
 // 头部对齐；exited 覆盖层 top 偏移同源引用）。
 
-// 工具栏 IconButton 统一 sx：text.secondary 色调 + 禁用态半透明。显式 color 的
-// 优先级高于 MUI 默认 .Mui-disabled 灰（不补则禁用与启用视觉无差，用户反馈
-// 「启动 claude」置灰看不出来）。
-const TOOLBAR_ICON_SX = { 'color': 'text.secondary', '&.Mui-disabled': { opacity: 0.5 } } as const;
+// 工具栏 IconButton 统一 sx：text.secondary 色调 + 禁用态半透明 + icon 尺寸 16px。
+// 尺寸必须走 '& svg' 后代选择器——SvgIcon 的 width/height = 1em 跟随自身 font-size，
+// 而该值由其 variant class 显式设定（fontSize="small" → 20px、缺省 medium → 24px），
+// 在 IconButton 上直接设 fontSize 只改按钮、svg 不继承、完全无效（实测教训）。
+// 后代选择器（.css-xxx svg）优先级高于 variant class，且一个常量管住按钮内全部
+// icon（含 ClaudeIcon 自定义 svg）。显式 color 的优先级高于 MUI 默认 .Mui-disabled
+// 灰（不补则禁用与启用视觉无差，用户反馈「启动 claude」置灰看不出来）。
+// 主窗口标识复用 disabled 态：不可点 + 半透明置灰，无需专属样式。
+const TOOLBAR_ICON_SX = {
+  'color': 'text.secondary',
+  '& svg': { fontSize: 16 },
+  '&.Mui-disabled': { opacity: 0.5 },
+} as const;
 
 // 匹配结果 → ILink[]（range 列 0-based index 转 1-based，end 含末字符）。
 function buildLinks(
@@ -99,8 +109,9 @@ interface TerminalViewProps {
   // 终端字号（terminal_font_size 配置）：运行时生效（options.fontSize 赋值 +
   // refit，不重建实例）——首个运行时可变的 option，见组件头注释。
   fontSize: number;
-  // 工具栏左侧标识（如 main pane 的 'main' 标签）。不传则不渲染。
-  toolbarLabel?: string;
+  // 主窗口标识（main pane 专属）：工具栏左侧渲染房子 icon + Tooltip「主窗口」
+  // （关闭语义/会话锚点均以 main 为特殊位，识别它对「关闭后重开」等操作有价值）。
+  isMain?: boolean;
   // 回滚缓冲行数（terminal_scrollback_rows 配置，terminal_04）：运行时纯
   // options.scrollback 赋值（不 refit 不通知 PTY——缓冲容量与尺寸无关）。
   scrollbackRows: number;
@@ -142,7 +153,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, claudeRunning, onStartClaude, onClose, onWriteReady, onSplitPane }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, isMain, onData, onResize, exited, onReopen, claudeRunning, onStartClaude, onClose, onWriteReady, onSplitPane }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -463,7 +474,7 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
 
   return (
     <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 工具栏：左侧 pane 标识（main pane 专属）+ 基础操作组 + 右侧分割本 pane
+      {/* 工具栏：左侧主窗口标识（main pane 专属房子 icon）+ 基础操作组 + 右侧分割本 pane
           （左右/上下分屏）+ 关闭终端。全部挂 Tooltip（全局默认上方展示；禁用态按钮
           包 <span>——MUI Tooltip 对 disabled 元素不触发）。exited 禁用策略：清屏/粘贴
           对死会话无意义；复制/搜索保留——scrollback 检索与历史复制仍有价值；分屏
@@ -474,37 +485,41 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       <PanelToolbar
         left={(
           <>
-            {toolbarLabel != null && (
-              <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', lineHeight: 1 }}>
-                {toolbarLabel}
-              </Typography>
+            {isMain && (
+              <Tooltip title="主窗口">
+                <span>
+                  <IconButton size="small" disabled aria-label="主窗口" sx={{ ...TOOLBAR_ICON_SX, '& svg': { fontSize: 20 } }}>
+                    <HomeOutlinedIcon />
+                  </IconButton>
+                </span>
+              </Tooltip>
             )}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
               <Tooltip title="清屏">
                 <span>
                   <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={TOOLBAR_ICON_SX}>
-                    <LayersClearOutlinedIcon fontSize="small" />
+                    <LayersClearOutlinedIcon />
                   </IconButton>
                 </span>
               </Tooltip>
               <Tooltip title="复制选区">
                 <span>
                   <IconButton size="small" onClick={handleCopy} disabled={!hasSelection} aria-label="复制选区" sx={TOOLBAR_ICON_SX}>
-                    <ContentCopyOutlinedIcon fontSize="small" />
+                    <ContentCopyOutlinedIcon />
                   </IconButton>
                 </span>
               </Tooltip>
               <Tooltip title="粘贴">
                 <span>
                   <IconButton size="small" onClick={handlePaste} disabled={exited} aria-label="粘贴" sx={TOOLBAR_ICON_SX}>
-                    <ContentPasteOutlinedIcon fontSize="small" />
+                    <ContentPasteOutlinedIcon />
                   </IconButton>
                 </span>
               </Tooltip>
               <Tooltip title="搜索">
                 <span>
                   <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={TOOLBAR_ICON_SX}>
-                    <SearchOutlinedIcon fontSize="small" />
+                    <SearchOutlinedIcon />
                   </IconButton>
                 </span>
               </Tooltip>
@@ -519,7 +534,7 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
                     aria-label="启动 claude"
                     sx={TOOLBAR_ICON_SX}
                   >
-                    <ClaudeIcon fontSize="small" />
+                    <ClaudeIcon />
                   </IconButton>
                 </span>
               </Tooltip>
@@ -533,21 +548,21 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
             <Tooltip title="终端左右分屏">
               <span>
                 <IconButton size="small" onClick={() => onSplitPane('horizontal')} aria-label="终端左右分屏" sx={TOOLBAR_ICON_SX}>
-                  <VerticalSplitIcon fontSize="small" />
+                  <VerticalSplitIcon />
                 </IconButton>
               </span>
             </Tooltip>
             <Tooltip title="终端上下分屏">
               <span>
                 <IconButton size="small" onClick={() => onSplitPane('vertical')} aria-label="终端上下分屏" sx={TOOLBAR_ICON_SX}>
-                  <HorizontalSplitIcon fontSize="small" />
+                  <HorizontalSplitIcon />
                 </IconButton>
               </span>
             </Tooltip>
             <Tooltip title="关闭终端">
               <span>
-                <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
-                  <CloseOutlinedIcon fontSize="small" />
+                <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={TOOLBAR_ICON_SX}>
+                  <CloseOutlinedIcon />
                 </IconButton>
               </span>
             </Tooltip>

@@ -81,6 +81,12 @@ function decodeToolAreaWidth(raw: string | null): number {
   return parsed;
 }
 
+// 标题栏 IconButton 统一 sx：text.secondary 色调 + icon 尺寸 16px（与终端工具栏
+// TOOLBAR_ICON_SX 同档对齐）。尺寸必须走 '& svg' 后代选择器——SvgIcon 的
+// width/height = 1em 跟随自身 font-size，由其 variant class 显式设定（缺省
+// medium = 24px），在 IconButton 上直接设 fontSize 对 svg 无效（实测教训）。
+const TITLEBAR_ICON_SX = { 'color': 'text.secondary', '& svg': { fontSize: 16 } } as const;
+
 // 布局挂载前置配置集：左栏折叠 + 工具面板区折叠/宽度三个 key 决定各栏首帧几何。
 // 就绪前渲染会按默认态布局、配置到达后动画纠正——每次挂载翻转一遍，中栏终端区
 // 逐帧 resize 产生 SIGWINCH 重绘伪影。就绪后首帧即终值（过渡动画本身保留，仅手动
@@ -323,7 +329,7 @@ export default function DevWorkbenchPage() {
               size="small"
               onClick={toggleIssueTreeCollapsed}
               aria-label={workbenchFullscreen ? '退出全屏' : issueTreeCollapsed ? '显示任务列表' : '隐藏任务列表'}
-              sx={{ color: 'text.secondary' }}
+              sx={TITLEBAR_ICON_SX}
             >
               {treeHidden ? <ViewSidebarOutlinedIcon /> : <ViewSidebarIcon />}
             </IconButton>
@@ -355,10 +361,9 @@ export default function DevWorkbenchPage() {
                       aria-label="清理终端并重新初始化"
                       disabled={initWorkspace.isPending || baseDir === ''}
                       onClick={() => initWorkspace.mutate({ issueId: issue.id, baseDir })}
-                      sx={{ color: 'text.secondary' }}
+                      sx={TITLEBAR_ICON_SX}
                     >
-                      {/* 满幅实心构图光学尺寸偏大，字号 16（small 默认 18）与轻笔画邻居平衡 */}
-                      <CleaningServicesIcon sx={{ fontSize: 16 }} />
+                      <CleaningServicesIcon />
                     </IconButton>
                   </span>
                 </Tooltip>
@@ -371,9 +376,9 @@ export default function DevWorkbenchPage() {
                     size="small"
                     aria-label={workbenchFullscreen ? '退出全屏' : '全屏'}
                     onClick={() => setWorkbenchFullscreen(!workbenchFullscreen)}
-                    sx={{ color: 'text.secondary' }}
+                    sx={TITLEBAR_ICON_SX}
                   >
-                    {workbenchFullscreen ? <CloseFullscreenIcon sx={{ fontSize: 16 }} /> : <OpenInFullIcon sx={{ fontSize: 16 }} />}
+                    {workbenchFullscreen ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
                   </IconButton>
                 </Tooltip>
               )}
@@ -385,7 +390,7 @@ export default function DevWorkbenchPage() {
                       size="small"
                       aria-label="更多任务操作"
                       onClick={e => setActionsMenuAnchor(e.currentTarget)}
-                      sx={{ color: 'text.secondary' }}
+                      sx={TITLEBAR_ICON_SX}
                     >
                       <MoreHorizIcon />
                     </IconButton>
