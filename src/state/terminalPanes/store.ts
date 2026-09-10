@@ -5,7 +5,7 @@
 //
 // 持久化：localStorage 按 issue（loadLayout/saveLayout）。hydration 由消费方渲染期
 // 调 ensureLayout（store 无记录时同步写入读回值，F5 首渲染即还原布局）；模块级
-// subscribe 监听 layouts 引用变化逐 issue 落盘。activePanes 纯焦点不持久化。
+// subscribe 监听 layouts 引用变化逐 issue 落盘。
 
 import type { PaneLayoutNode, SplitDirection } from '@src/windows/panel/DevWorkbenchPage/components/TerminalPanes/types';
 import { create } from 'zustand';
@@ -15,18 +15,13 @@ interface TerminalPanesState {
   /// issueId → 布局树。未登记 issue 由 selector 惰性派生单 main leaf（不预填）；
   /// 打开过的 issue 经 ensureLayout hydration 后有记录（持久化还原）。
   layouts: Record<string, PaneLayoutNode>;
-  /// issueId → 各 issue 独立的活跃 pane（focus 跟随，任务 4 待办接 xterm focus 事件；
-  /// 纯焦点状态不持久化）。
-  activePanes: Record<string, string>;
   splitPane: (issueId: string, paneId: string, direction: SplitDirection) => void;
   closePane: (issueId: string, paneId: string) => void;
   setRatio: (issueId: string, splitId: string, ratio: number) => void;
-  setActivePane: (issueId: string, paneId: string) => void;
 }
 
 export const useTerminalPanesStore = create<TerminalPanesState>()(set => ({
   layouts: {},
-  activePanes: {},
   splitPane: (issueId, paneId, direction) => set((state) => {
     const tree = splitNode(layoutFor(state.layouts[issueId]), paneId, direction);
     return { layouts: { ...state.layouts, [issueId]: tree } };
@@ -43,9 +38,6 @@ export const useTerminalPanesStore = create<TerminalPanesState>()(set => ({
     const tree = setRatioNode(layoutFor(state.layouts[issueId]), splitId, ratio);
     return { layouts: { ...state.layouts, [issueId]: tree } };
   }),
-  setActivePane: (issueId, paneId) => set(state => ({
-    activePanes: { ...state.activePanes, [issueId]: paneId },
-  })),
 }));
 
 /// hydration：store 无该 issue 记录时从 localStorage 读回写入（渲染期调用，同步）。

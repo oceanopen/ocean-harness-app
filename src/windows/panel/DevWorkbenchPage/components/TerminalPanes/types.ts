@@ -3,8 +3,8 @@
 // 二叉树（orca 同构）：递归 split 只在 leaf 上操作，操作集收敛为
 // splitPane / closePane，无重排/移动等复杂树变换。
 //
-// 类型同时被组件目录（PaneLayout/TerminalPaneRoot）与 state 域
-// （terminalPanes store/actions）引用，是两者的共享契约。
+// 类型同时被组件目录（PaneLayout/TerminalPaneRoot/EmbeddedTerminal 分屏回调）与
+// state 域（terminalPanes store/actions）引用，是两者的共享契约。
 
 export type SplitDirection = 'horizontal' | 'vertical';
 

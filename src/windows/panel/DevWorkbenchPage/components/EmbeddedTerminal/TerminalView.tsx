@@ -1,13 +1,16 @@
 import type { IBufferRange, ILink } from '@xterm/xterm';
+import type { SplitDirection } from '../TerminalPanes/types';
 import type { TerminalViewTheme } from './terminalTheme';
 import {
   CloseOutlined as CloseOutlinedIcon,
   ContentCopyOutlined as ContentCopyOutlinedIcon,
   ContentPasteOutlined as ContentPasteOutlinedIcon,
+  HorizontalSplit as HorizontalSplitIcon,
   LayersClearOutlined as LayersClearOutlinedIcon,
   SearchOutlined as SearchOutlinedIcon,
+  VerticalSplit as VerticalSplitIcon,
 } from '@mui/icons-material';
-import { Box, Button, IconButton, Typography } from '@mui/material';
+import { Box, Button, IconButton, Tooltip, Typography } from '@mui/material';
 import { commands } from '@src/shared/bindings';
 import { unwrap } from '@src/shared/commands';
 import { useToast } from '@src/shared/useToast';
@@ -126,10 +129,10 @@ interface TerminalViewProps {
   // 期间抑制 onData（见 replayDepth 注释），防止回放流里的 DA1/CPR 查询被新 xterm
   // 实例解析并应答、应答写回 PTY 成乱码。
   onWriteReady: (write: ((text: string, replay?: boolean) => void) | null) => void;
-  // 本 pane 获得键盘焦点时上抛（xterm onFocus；blur 不报——焦点只会转移，新 pane
-  // 的 onFocus 自然接管活跃位）。父层据此写 terminalPanes store 的 activePanes
-  // （分割/关闭作用对象跟随焦点，terminal_02 §3.4）。要求稳定引用。
-  onActive?: () => void;
+  // 分割本 pane（工具栏左右/上下分屏按钮，新增 pane 在分割方向后位——右/下）。
+  // 方向语义：horizontal = 左右分（split 树水平排列）、vertical = 上下分。目标 pane
+  // 由父层 props 闭包自识别（同 onClose），本组件不感知 paneId/store。
+  onSplitPane: (direction: SplitDirection) => void;
 }
 
 // TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——
@@ -139,7 +142,7 @@ interface TerminalViewProps {
 // 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
 // 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
 // （父层保证稳定引用），不做 ref 转发层。
-export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, claudeRunning, onStartClaude, onClose, onWriteReady, onActive }: TerminalViewProps) {
+export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, toolbarLabel, onData, onResize, exited, onReopen, claudeRunning, onStartClaude, onClose, onWriteReady, onSplitPane }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
   // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
@@ -266,15 +269,6 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     terminal.onSelectionChange(() => {
       setHasSelection(terminal.hasSelection());
     });
-    // xterm 6 公开 API 无 focus 事件（旧 onFocusChange 已移除，内部 _onFocus 属
-    // 私有）。订阅官方 DOM 结构 .xterm-helper-textarea 的 focus 事件（open 后存在；
-    // blur 不报——焦点只会转移，新 pane 的 focus 自然接管活跃位）。
-    const activeTextarea = onActive != null
-      ? container.querySelector<HTMLTextAreaElement>('.xterm-helper-textarea')
-      : null;
-    if (onActive != null && activeTextarea != null) {
-      activeTextarea.addEventListener('focus', onActive);
-    }
 
     // 4. 输出桥上抛。守卫非字符串输入（null/undefined）：xterm.write 内部直接取
     //    .length 会抛 TypeError 并在 React 19 下卸载整树（白屏），宁可丢包不可崩页。
@@ -338,9 +332,6 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       observer.disconnect();
       linkDisposable.dispose();
       container.removeEventListener('mousedown', focusTerminal);
-      if (onActive != null && activeTextarea != null) {
-        activeTextarea.removeEventListener('focus', onActive);
-      }
       onWriteReady(null);
       terminalRef.current = null;
       searchAddonRef.current = null;
@@ -472,9 +463,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
 
   return (
     <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 工具栏：左侧 pane 标识（main pane 专属）+ 基础操作组 + 右侧关闭终端
-          （aria-label，不挂 Tooltip）。exited 禁用策略：清屏/粘贴对死会话无意义；
-          复制/搜索保留——scrollback 检索与历史复制仍有价值。
+      {/* 工具栏：左侧 pane 标识（main pane 专属）+ 基础操作组 + 右侧分割本 pane
+          （左右/上下分屏）+ 关闭终端。全部挂 Tooltip（全局默认上方展示；禁用态按钮
+          包 <span>——MUI Tooltip 对 disabled 元素不触发）。exited 禁用策略：清屏/粘贴
+          对死会话无意义；复制/搜索保留——scrollback 检索与历史复制仍有价值；分屏
+          始终可用——新 pane 是全新会话，与本 pane 存活状态无关。
           禁用可见性：显式 sx color（text.secondary）优先级高于 MUI 默认 .Mui-disabled
           灰，禁用态与启用态视觉无差——统一补半透明（用户反馈「启动 claude」置灰
           看不出来）。 */}
@@ -487,36 +480,78 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
               </Typography>
             )}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-              <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={TOOLBAR_ICON_SX}>
-                <LayersClearOutlinedIcon fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={handleCopy} disabled={!hasSelection} aria-label="复制选区" sx={TOOLBAR_ICON_SX}>
-                <ContentCopyOutlinedIcon fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={handlePaste} disabled={exited} aria-label="粘贴" sx={TOOLBAR_ICON_SX}>
-                <ContentPasteOutlinedIcon fontSize="small" />
-              </IconButton>
-              <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={TOOLBAR_ICON_SX}>
-                <SearchOutlinedIcon fontSize="small" />
-              </IconButton>
+              <Tooltip title="清屏">
+                <span>
+                  <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={TOOLBAR_ICON_SX}>
+                    <LayersClearOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="复制选区">
+                <span>
+                  <IconButton size="small" onClick={handleCopy} disabled={!hasSelection} aria-label="复制选区" sx={TOOLBAR_ICON_SX}>
+                    <ContentCopyOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="粘贴">
+                <span>
+                  <IconButton size="small" onClick={handlePaste} disabled={exited} aria-label="粘贴" sx={TOOLBAR_ICON_SX}>
+                    <ContentPasteOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="搜索">
+                <span>
+                  <IconButton size="small" onClick={toggleSearch} aria-label="搜索" sx={TOOLBAR_ICON_SX}>
+                    <SearchOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
               {/* 启动 claude（terminal_03 §3.2）：跑着置灰（探测驱动）、退出恢复、
                   exited 禁用（shell 已死注入无意义） */}
-              <IconButton
-                size="small"
-                onClick={onStartClaude}
-                disabled={claudeRunning || exited}
-                aria-label="启动 claude"
-                sx={TOOLBAR_ICON_SX}
-              >
-                <ClaudeIcon fontSize="small" />
-              </IconButton>
+              <Tooltip title="启动 claude">
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={onStartClaude}
+                    disabled={claudeRunning || exited}
+                    aria-label="启动 claude"
+                    sx={TOOLBAR_ICON_SX}
+                  >
+                    <ClaudeIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
             </Box>
           </>
         )}
         right={(
-          <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
-            <CloseOutlinedIcon fontSize="small" />
-          </IconButton>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+            {/* 分割本 pane：图标与方向刻意交叉（VerticalSplitIcon = 左右分、
+                HorizontalSplitIcon = 上下分），沿用原标题栏按钮组的语义映射 */}
+            <Tooltip title="终端左右分屏">
+              <span>
+                <IconButton size="small" onClick={() => onSplitPane('horizontal')} aria-label="终端左右分屏" sx={TOOLBAR_ICON_SX}>
+                  <VerticalSplitIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="终端上下分屏">
+              <span>
+                <IconButton size="small" onClick={() => onSplitPane('vertical')} aria-label="终端上下分屏" sx={TOOLBAR_ICON_SX}>
+                  <HorizontalSplitIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="关闭终端">
+              <span>
+                <IconButton size="small" onClick={onClose} aria-label="关闭终端" sx={{ color: 'text.secondary' }}>
+                  <CloseOutlinedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
         )}
       />
       {/* 搜索条 overlay：addon 实例就绪才渲染（ref 桥直读，mount 后即有值） */}

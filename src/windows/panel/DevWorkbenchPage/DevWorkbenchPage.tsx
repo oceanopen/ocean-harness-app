@@ -56,7 +56,6 @@ import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
 import FilePreviewOverlay from './components/FilePreviewOverlay/FilePreviewOverlay';
 import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
-import TerminalSplitButtons from './components/TerminalPanes/TerminalSplitButtons';
 import ToolPanelArea, { TERMINAL_MIN_WIDTH, TOOL_AREA_MIN_WIDTH } from './components/WorkbenchTools/ToolPanelArea';
 import WorkbenchToolRail from './components/WorkbenchTools/WorkbenchToolRail';
 import WorkspaceInitGate from './components/WorkspaceInitGate/WorkspaceInitGate';
@@ -306,7 +305,7 @@ export default function DevWorkbenchPage() {
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* 终端列：标题栏 + 终端内容；minWidth 与工具面板区拖拽上限联动（ToolPanelArea 按容器实测宽收紧 max） */}
         <Box sx={{ flex: 1, minWidth: TERMINAL_MIN_WIDTH, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {/* 标题栏：左栏折叠开关 + 状态徽章 + 选中 issue 的 id 尾 8 位 + 名称 + 右侧快捷区（终端分割） */}
+          {/* 标题栏：左栏折叠开关 + 状态徽章 + 选中 issue 的 id 尾 8 位 + 名称 + 右侧快捷区 */}
           <Box
             sx={{
               height: 48,
@@ -364,8 +363,6 @@ export default function DevWorkbenchPage() {
                   </span>
                 </Tooltip>
               )}
-              {/* 终端分割按钮组（作用于活跃 pane；原终端区工具条上移至此） */}
-              {hasSelection && issue && <TerminalSplitButtons issueId={issue.id} />}
               {/* 沉浸模式（全屏）：隐藏 App 外壳（菜单栏/顶栏）与左栏任务树，本区占满窗口；
                   右侧工具面板区保持当前展开/收起态。Esc 直退（浮层 Esc 关 tab 让位）。 */}
               {hasSelection && issue && (
@@ -383,14 +380,16 @@ export default function DevWorkbenchPage() {
               {/* 任务操作菜单（T3.2）：⋯ 入口，归档/取消（删工作空间目录 + 流转 issue 状态，两段式确认） */}
               {hasSelection && issue && loadPid != null && (
                 <>
-                  <IconButton
-                    size="small"
-                    aria-label="更多任务操作"
-                    onClick={e => setActionsMenuAnchor(e.currentTarget)}
-                    sx={{ color: 'text.secondary' }}
-                  >
-                    <MoreHorizIcon />
-                  </IconButton>
+                  <Tooltip title="更多任务操作">
+                    <IconButton
+                      size="small"
+                      aria-label="更多任务操作"
+                      onClick={e => setActionsMenuAnchor(e.currentTarget)}
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      <MoreHorizIcon />
+                    </IconButton>
+                  </Tooltip>
                   <Menu anchorEl={actionsMenuAnchor} open={actionsMenuAnchor != null} onClose={() => setActionsMenuAnchor(null)}>
                     <MenuItem
                       onClick={() => {

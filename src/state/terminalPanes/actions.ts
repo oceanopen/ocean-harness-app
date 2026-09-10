@@ -6,7 +6,6 @@
 import type { PaneLayoutNode, SplitDirection } from '@src/windows/panel/DevWorkbenchPage/components/TerminalPanes/types';
 import {
   INITIAL_LAYOUT,
-  MAIN_PANE_ID,
   MAX_PANE_RATIO,
   MIN_PANE_RATIO,
   newPaneId,
@@ -87,19 +86,6 @@ export function setRatioNode(tree: PaneLayoutNode, splitId: string, ratio: numbe
   return { ...tree, children: [nextFirst, nextSecond] };
 }
 
-/// 树上全部 leaf paneId（从左到右/从上到下）。活跃 pane 兜底与工具条判定用。
-export function leafPaneIds(tree: PaneLayoutNode): string[] {
-  if (tree.type === 'leaf') {
-    return [tree.paneId];
-  }
-  return [...leafPaneIds(tree.children[0]), ...leafPaneIds(tree.children[1])];
-}
-
-/// 树上是否存在 paneId（main 恒在）。
-export function hasPane(tree: PaneLayoutNode, paneId: string): boolean {
-  return leafPaneIds(tree).includes(paneId);
-}
-
 /// issue 的有效布局：store 未登记（首次打开/布局损坏回落）→ 单 main leaf。
 /// selector 侧调用（store 不预填所有 issue，惰性派生）。
 export function layoutFor(tree: PaneLayoutNode | undefined): PaneLayoutNode {
@@ -163,11 +149,6 @@ export function saveLayout(issueId: string, tree: PaneLayoutNode): void {
     // 写失败（隐私模式/超限）不致命：布局仅 UI 状态，下次会话回落单 pane。
     console.warn('[terminalPanes] save layout failed:', e);
   }
-}
-
-/// main pane 判定（锚点统一后：main 锚点 = `issueId::main`，见 EmbeddedTerminal）。
-export function isMainPane(paneId: string): boolean {
-  return paneId === MAIN_PANE_ID;
 }
 
 /// 清理 issue 的布局记录（归档/取消 onSuccess 调用——issue 终结时移除本地痕迹，

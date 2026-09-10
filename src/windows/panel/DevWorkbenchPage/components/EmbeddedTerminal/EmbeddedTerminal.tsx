@@ -1,4 +1,5 @@
 import type { TerminalFontSize, TerminalScrollbackRows } from '@src/shared/appConfig';
+import type { SplitDirection } from '../TerminalPanes/types';
 import type { TerminalThemeId } from './terminalTheme';
 import { CreateNewFolderOutlined as CreateNewFolderOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
@@ -220,12 +221,12 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
   // 断会话 + store 树剪枝，pane 从树上消失）；main pane 先二次确认，确认后仅杀会话
   // （树保单 main leaf）+ 进 mainClosed 占位态（不卸载组件，保留重新打开出口）。
   const closePaneTree = useTerminalPanesStore(s => s.closePane);
-  // focus 跟随（§3.4）：本 pane 获得键盘焦点 → store activePanes 记活跃位，分割
-  // 按钮作用对象跟随。挂载即 focus（TerminalView 现有行为）天然触发首帧激活。
-  const setActivePane = useTerminalPanesStore(s => s.setActivePane);
-  const handleActive = useCallback(() => {
-    setActivePane(issueId, paneId);
-  }, [setActivePane, issueId, paneId]);
+  // 分割本 pane（工具栏左右/上下分屏按钮）：目标 pane 由 props 闭包自识别（同 onClose
+  // 模式），不依赖焦点记录——原 activePanes 焦点追踪机制随按钮迁入 pane 工具栏而删除。
+  const splitPane = useTerminalPanesStore(s => s.splitPane);
+  const handleSplit = useCallback((direction: SplitDirection) => {
+    splitPane(issueId, paneId, direction);
+  }, [splitPane, issueId, paneId]);
 
   // 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 写入 claude\r。
   // 运行态探测（按钮置灰）走 useClaudeRunning——进程真相（pid 父链匹配），
@@ -335,7 +336,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         onStartClaude={startClaude}
         onClose={handleClose}
         onWriteReady={handleWriteReady}
-        onActive={handleActive}
+        onSplitPane={handleSplit}
       />
       {/* main 关闭二次确认（附加 pane 无此弹窗） */}
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)} maxWidth="xs" fullWidth>
