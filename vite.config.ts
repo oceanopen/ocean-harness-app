@@ -32,8 +32,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         panel: resolve(__dirname, 'panel.html'),
-        petClaudeSessionsSummary: resolve(__dirname, 'pet-claude-sessions-summary.html'),
-        petClaudeSessionsTask: resolve(__dirname, 'pet-claude-sessions-task.html'),
+        petSessionSummary: resolve(__dirname, 'pet-session-summary.html'),
+        petSessionTask: resolve(__dirname, 'pet-session-task.html'),
       },
     },
   },

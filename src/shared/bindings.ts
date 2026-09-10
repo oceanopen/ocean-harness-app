@@ -11,7 +11,7 @@ export const commands = {
 	getClaudeSessions: () => typedError<ClaudeSessionInfo[], string>(__TAURI_INVOKE("get_claude_sessions")),
 	/**
 	 *  手动刷新会话列表：触发全量重扫并广播 claude-sessions:changed，
-	 *  订阅该事件的前端（panel 的 ClaudeSessionsPage 页、pet_claude_sessions_summary、pet_claude_sessions_task）自动收到新快照。
+	 *  订阅该事件的前端（panel 的 ClaudeSessionsPage 页、pet_session_summary、pet_session_task）自动收到新快照。
 	 *  force_git=true：手动刷新强制重算空闲会话的 GitPending，立即反映最新 git 状态。
 	 */
 	refreshSessions: () => typedError<null, string>(__TAURI_INVOKE("refresh_sessions")),
@@ -56,9 +56,9 @@ export const commands = {
 	 *  是定位而非默认打开）。path 必须为非空绝对路径。
 	 */
 	openPath: (path: string) => typedError<null, string>(__TAURI_INVOKE("open_path", { path })),
-	showPetClaudeSessionsSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("show_pet_claude_sessions_summary_window")),
-	hidePetClaudeSessionsSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("hide_pet_claude_sessions_summary_window")),
-	togglePetClaudeSessionsSummaryWindow: () => typedError<boolean, string>(__TAURI_INVOKE("toggle_pet_claude_sessions_summary_window")),
+	showPetSessionSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("show_pet_session_summary_window")),
+	hidePetSessionSummaryWindow: () => typedError<null, string>(__TAURI_INVOKE("hide_pet_session_summary_window")),
+	togglePetSessionSummaryWindow: () => typedError<boolean, string>(__TAURI_INVOKE("toggle_pet_session_summary_window")),
 	/**
 	 *  在桌宠窗口光标处弹原生右键菜单（前端 contextmenu 事件调用）。
 	 *  单项「隐藏桌宠」；原生菜单由系统渲染，不受 128x128 窗口边界裁切。
@@ -66,27 +66,27 @@ export const commands = {
 	 */
 	showPetContextMenu: (x: number | null, y: number | null) => typedError<null, string>(__TAURI_INVOKE("show_pet_context_menu", { x, y })),
 	/**  查询桌宠当前显隐状态。供前端启动时初始化 UI。 */
-	getPetClaudeSessionsSummaryVisibilityState: () => __TAURI_INVOKE<boolean>("get_pet_claude_sessions_summary_visibility_state"),
+	getPetSessionSummaryVisibilityState: () => __TAURI_INVOKE<boolean>("get_pet_session_summary_visibility_state"),
 	/**
-	 *  显示 pet_claude_sessions_task 面板：仅当 pet 可见且存在待关注会话（Busy+Waiting+GitPending）时 show + 定位，
+	 *  显示 pet_session_task 面板：仅当 pet 可见且存在待关注会话（Busy+Waiting+GitPending）时 show + 定位，
 	 *  否则 hide。显隐主导权在 pet 前端（基于 claude-sessions:changed payload 的 count），
 	 *  本命令作为前端驱动入口；pet 显隐命令也调用它做联动兜底。
 	 * 
 	 *  待关注会话口径与前端 isAttentionClaudeSession / countAttentionClaudeSessions 一致（SSOT: claudeSessionStatus.ts）。
 	 *  含 GitPending：用户 commit 后空闲会话仍需展示"待提交"，与"仅活跃"语义升级为"待关注"。
 	 */
-	showPetClaudeSessionsTaskWindow: () => typedError<null, string>(__TAURI_INVOKE("show_pet_claude_sessions_task_window")),
+	showPetSessionTaskWindow: () => typedError<null, string>(__TAURI_INVOKE("show_pet_session_task_window")),
 	/**
-	 *  隐藏 pet_claude_sessions_task 面板。pet 隐藏时由后端 hide_pet_claude_sessions_summary_window 命令联动调用，
+	 *  隐藏 pet_session_task 面板。pet 隐藏时由后端 hide_pet_session_summary_window 命令联动调用，
 	 *  避免孤立的悬浮列表；pet 前端 count 归零时也主动调用。
 	 */
-	hidePetClaudeSessionsTaskWindow: () => typedError<null, string>(__TAURI_INVOKE("hide_pet_claude_sessions_task_window")),
+	hidePetSessionTaskWindow: () => typedError<null, string>(__TAURI_INVOKE("hide_pet_session_task_window")),
 	/**
 	 *  前端测得实际内容高度后回调，调整窗口高度并重新定位以保持与 pet 中心水平对齐。
-	 *  由 PetClaudeSessionsTaskApp 的 ResizeObserver（rAF 节流）触发；窗口已可见，不需 show。
+	 *  由 PetSessionTaskApp 的 ResizeObserver（rAF 节流）触发；窗口已可见，不需 show。
 	 *  高度变化时 Y 按 panel 中心 = pet 中心重算，保证增减会话不破坏水平对齐。
 	 */
-	fitPetClaudeSessionsTask: (height: number | null) => typedError<null, string>(__TAURI_INVOKE("fit_pet_claude_sessions_task", { height })),
+	fitPetSessionTask: (height: number | null) => typedError<null, string>(__TAURI_INVOKE("fit_pet_session_task", { height })),
 	getAppConfig: (key: string) => typedError<string | null, string>(__TAURI_INVOKE("get_app_config", { key })),
 	setAppConfig: (key: string, value: string) => typedError<null, string>(__TAURI_INVOKE("set_app_config", { key, value })),
 	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
@@ -180,7 +180,7 @@ export const EVENT_PANEL_NAVIGATE = "panel:navigate" as const;
 
 export const EVENT_PANEL_SHOWN = "panel:shown" as const;
 
-export const EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT = "pet-claude-sessions-task:refit" as const;
+export const EVENT_PET_SESSION_TASK_REFIT = "pet-session-task:refit" as const;
 
 export const GITHUB_PAT_KEY = "github_pat" as const;
 
@@ -220,7 +220,7 @@ export type AppConfigChangedPayload = {
 
 /**
  *  终端会话快照。ClaudeSessionsPage 渲染 ClaudeSessionCard 列表的数据源；
- *  PetClaudeSessionsSummaryApp 聚合所有会话取"最忙"状态作为桌宠展示态。
+ *  PetSessionSummaryApp 聚合所有会话取"最忙"状态作为桌宠展示态。
  */
 export type ClaudeSessionInfo = {
 	/**  Claude Code 进程 pid（也是 `~/.claude/sessions/<pid>.json` 的文件名）。 */

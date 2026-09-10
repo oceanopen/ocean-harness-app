@@ -6,20 +6,20 @@ use tauri::{
 };
 
 use crate::shared::i18n::{current_language, menu_text};
-use crate::windows::pet_claude_sessions_summary::get_pet_claude_sessions_summary_visibility_state;
+use crate::windows::pet_session_summary::get_pet_session_summary_visibility_state;
 
 /// 已构建的托盘菜单项引用，用于后续动态更新文案。
 struct TrayMenuItems {
     panel: MenuItem<tauri::Wry>,
     settings: MenuItem<tauri::Wry>,
-    pet_claude_sessions_summary: MenuItem<tauri::Wry>,
+    pet_session_summary: MenuItem<tauri::Wry>,
     restart: MenuItem<tauri::Wry>,
     quit: MenuItem<tauri::Wry>,
 }
 
 /// 桌宠当前显隐 → menu text key。隐藏时显示"显示桌宠"，显示时显示"隐藏桌宠"。
-fn pet_claude_sessions_summary_menu_key(app: &AppHandle) -> &'static str {
-    if get_pet_claude_sessions_summary_visibility_state(app.clone()) {
+fn pet_session_summary_menu_key(app: &AppHandle) -> &'static str {
+    if get_pet_session_summary_visibility_state(app.clone()) {
         "pet-hide"
     } else {
         "pet-show"
@@ -106,13 +106,10 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
-    let pet_claude_sessions_summary_item = MenuItem::with_id(
+    let pet_session_summary_item = MenuItem::with_id(
         app,
-        "pet-claude-sessions-summary",
-        menu_text(
-            lang,
-            pet_claude_sessions_summary_menu_key(app.handle()),
-        ),
+        "pet-session-summary",
+        menu_text(lang, pet_session_summary_menu_key(app.handle())),
         true,
         None::<&str>,
     )?;
@@ -136,7 +133,7 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         &[
             &panel_item,
             &PredefinedMenuItem::separator(app)?,
-            &pet_claude_sessions_summary_item,
+            &pet_session_summary_item,
             &PredefinedMenuItem::separator(app)?,
             &settings_item,
             &restart_item,
@@ -187,12 +184,16 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     log::warn!("failed to open panel window: {e}");
                 }
             }
-            "pet-claude-sessions-summary" => {
-                if let Err(e) = crate::windows::pet_claude_sessions_summary::toggle_pet_claude_sessions_summary_window(app.clone()) {
+            "pet-session-summary" => {
+                if let Err(e) =
+                    crate::windows::pet_session_summary::toggle_pet_session_summary_window(
+                        app.clone(),
+                    )
+                {
                     log::warn!("failed to toggle pet window: {e}");
                 }
                 // 切换后立刻刷新菜单文案（pet 文案依赖显隐态；隐藏路径在
-                // pet_claude_sessions_summary::hide_and_persist 内已刷新，此处兜底显示路径）。
+                // pet_session_summary::hide_and_persist 内已刷新，此处兜底显示路径）。
                 crate::windows::tray::refresh_menu_texts(app);
             }
             "settings" => {
@@ -217,7 +218,7 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(Mutex::new(TrayMenuItems {
         panel: panel_item,
         settings: settings_item,
-        pet_claude_sessions_summary: pet_claude_sessions_summary_item,
+        pet_session_summary: pet_session_summary_item,
         restart: restart_item,
         quit: quit_item,
     }));
@@ -238,11 +239,8 @@ pub fn refresh_menu_texts(app: &AppHandle) {
         .settings
         .set_text(menu_text(lang, "settings"));
     let _ = items
-        .pet_claude_sessions_summary
-        .set_text(menu_text(
-            lang,
-            pet_claude_sessions_summary_menu_key(app),
-        ));
+        .pet_session_summary
+        .set_text(menu_text(lang, pet_session_summary_menu_key(app)));
     let _ = items.restart.set_text(menu_text(lang, "restart"));
     let _ = items.quit.set_text(menu_text(lang, "quit"));
 }

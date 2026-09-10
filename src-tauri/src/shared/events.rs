@@ -11,14 +11,14 @@ pub const EVENT_APP_CONFIG_CHANGED: &str = "app-config-changed";
 pub const EVENT_CLAUDE_SESSIONS_CHANGED: &str = "claude-sessions:changed";
 
 /// 终端跳转失败时广播（payload = `SessionNavFailed`）。
-/// navigate_to_claude_session 命令失败时 emit；ClaudeSessionsPage / PetClaudeSessionsTaskApp 据此弹 toast。
+/// navigate_to_claude_session 命令失败时 emit；ClaudeSessionsPage / PetSessionTaskApp 据此弹 toast。
 pub const EVENT_CLAUDE_SESSION_NAV_FAILED: &str = "claude-sessions:nav-failed";
 
-/// pet_claude_sessions_task 重定位请求（无 payload）。show_pet_claude_sessions_task_window 在 show 后
-/// emit_to 给该窗口；PetClaudeSessionsTaskApp 监听后重新测量内容高度并回调 fit_pet_claude_sessions_task
+/// pet_session_task 重定位请求（无 payload）。show_pet_session_task_window 在 show 后
+/// emit_to 给该窗口；PetSessionTaskApp 监听后重新测量内容高度并回调 fit_pet_session_task
 /// 刷新位置。作为统一可复用的"重定位"入口——刷新按钮（经 rescan→内容变→ResizeObserver 间接复用）、
 /// 未来 pet 拖动跟随等"尺寸不变却需重定位"的场景均可复用同一事件。
-pub const EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT: &str = "pet-claude-sessions-task:refit";
+pub const EVENT_PET_SESSION_TASK_REFIT: &str = "pet-session-task:refit";
 
 /// panel 窗口导航请求（payload = MenuKey 字符串）。show_panel_window 在 show 后 emit_to panel 窗口，
 /// PanelApp 监听后切换到指定页面（如 pet 点击打开控制台时自动导航到 Claude 会话监听页）。

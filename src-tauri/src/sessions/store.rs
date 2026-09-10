@@ -10,7 +10,7 @@
 //     (force_git=true) 强制重算，最长延迟 60s。
 //
 // 显隐联动不再在此触发：pet 前端收到 claude-sessions:changed payload 后基于 count
-// 自行调 show_pet_claude_sessions_task_window / hide_pet_claude_sessions_task_window，后端不做自动联动。
+// 自行调 show_pet_session_task_window / hide_pet_session_task_window，后端不做自动联动。
 
 use std::collections::HashMap;
 

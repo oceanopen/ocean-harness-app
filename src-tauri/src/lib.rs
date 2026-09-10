@@ -27,14 +27,14 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::panel::open_in_terminal,
             windows::panel::open_in_file_manager,
             windows::panel::open_path,
-            windows::pet_claude_sessions_summary::show_pet_claude_sessions_summary_window,
-            windows::pet_claude_sessions_summary::hide_pet_claude_sessions_summary_window,
-            windows::pet_claude_sessions_summary::toggle_pet_claude_sessions_summary_window,
-            windows::pet_claude_sessions_summary::show_pet_context_menu,
-            windows::pet_claude_sessions_summary::get_pet_claude_sessions_summary_visibility_state,
-            windows::pet_claude_sessions_task::show_pet_claude_sessions_task_window,
-            windows::pet_claude_sessions_task::hide_pet_claude_sessions_task_window,
-            windows::pet_claude_sessions_task::fit_pet_claude_sessions_task,
+            windows::pet_session_summary::show_pet_session_summary_window,
+            windows::pet_session_summary::hide_pet_session_summary_window,
+            windows::pet_session_summary::toggle_pet_session_summary_window,
+            windows::pet_session_summary::show_pet_context_menu,
+            windows::pet_session_summary::get_pet_session_summary_visibility_state,
+            windows::pet_session_task::show_pet_session_task_window,
+            windows::pet_session_task::hide_pet_session_task_window,
+            windows::pet_session_task::fit_pet_session_task,
             shared::app_config::get_app_config,
             shared::app_config::set_app_config,
             shared::http_server::http_server_status,
@@ -137,8 +137,8 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             crate::shared::events::EVENT_CLAUDE_SESSION_NAV_FAILED,
         )
         .constant(
-            "EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT",
-            crate::shared::events::EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT,
+            "EVENT_PET_SESSION_TASK_REFIT",
+            crate::shared::events::EVENT_PET_SESSION_TASK_REFIT,
         )
         .constant(
             "EVENT_PANEL_NAVIGATE",
@@ -226,33 +226,28 @@ pub fn run() {
             // pet 右键菜单事件分发（show_pet_context_menu 弹出的原生菜单不经前端回调，
             // 统一走 app 级 on_menu_event）：「隐藏桌宠」与托盘 toggle 隐藏路径同一语义。
             app.on_menu_event(|app, event| {
-                if event.id().as_ref()
-                    == windows::pet_claude_sessions_summary::PET_CONTEXT_HIDE_MENU_ID
-                {
-                    windows::pet_claude_sessions_summary::hide_and_persist(app);
+                if event.id().as_ref() == windows::pet_session_summary::PET_CONTEXT_HIDE_MENU_ID {
+                    windows::pet_session_summary::hide_and_persist(app);
                 }
             });
 
-            // 先 rescan 填充 ClaudeSessionStore 并广播首批快照，保证后续 pet_claude_sessions_task / pet
+            // 先 rescan 填充 ClaudeSessionStore 并广播首批快照，保证后续 pet_session_task / pet
             // 窗口 React mount 后初次拉取 IPC 时 store 必有数据，根治启动期"0 个活跃"竞态。
             // force_git=true：启动首次对空闲会话跑一次 git，得到准确的 GitPending 初值。
             sessions::rescan(app.handle(), true);
 
-            // 预构建 pet_claude_sessions_task 窗口（隐藏）：webview 异步加载，React mount 时机虽不确定，
+            // 预构建 pet_session_task 窗口（隐藏）：webview 异步加载，React mount 时机虽不确定，
             // 但 store 已满，初次 IPC 必拿到非空数据；后续 claude-sessions:changed 事件持续驱动。
-            if let Err(e) = windows::pet_claude_sessions_task::ensure(app.handle()) {
-                log::warn!(
-                    "[pet-claude-sessions-task] startup ensure failed: {}",
-                    e
-                );
+            if let Err(e) = windows::pet_session_task::ensure(app.handle()) {
+                log::warn!("[pet-session-task] startup ensure failed: {}", e);
             }
 
             sessions::watch::start(app.handle().clone());
             sessions::poll::start(app.handle().clone());
 
-            // 桌宠显隐读 pet_claude_sessions_summary_visible 偏好：用户上次隐藏则保持隐藏，否则启动显示。
-            // pet 显示后由前端基于 count 调 show_pet_claude_sessions_task_window 联动面板显隐。
-            windows::pet_claude_sessions_summary::startup_show(app.handle());
+            // 桌宠显隐读 pet_session_summary_visible 偏好：用户上次隐藏则保持隐藏，否则启动显示。
+            // pet 显示后由前端基于 count 调 show_pet_session_task_window 联动面板显隐。
+            windows::pet_session_summary::startup_show(app.handle());
             // 托盘菜单在 setup 时基于窗口可见性初始化文案，此时 pet 窗口尚未创建，
             // 故恒为"显示桌宠"；startup_show 确定真实显隐后刷新一次以纠正文案。
             windows::tray::refresh_menu_texts(app.handle());

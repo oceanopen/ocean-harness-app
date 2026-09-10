@@ -30,7 +30,7 @@ pub fn get_claude_sessions(
 }
 
 /// 手动刷新会话列表：触发全量重扫并广播 claude-sessions:changed，
-/// 订阅该事件的前端（panel 的 ClaudeSessionsPage 页、pet_claude_sessions_summary、pet_claude_sessions_task）自动收到新快照。
+/// 订阅该事件的前端（panel 的 ClaudeSessionsPage 页、pet_session_summary、pet_session_task）自动收到新快照。
 /// force_git=true：手动刷新强制重算空闲会话的 GitPending，立即反映最新 git 状态。
 #[tauri::command]
 #[specta::specta]

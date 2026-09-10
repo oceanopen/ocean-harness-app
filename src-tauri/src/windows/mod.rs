@@ -1,4 +1,4 @@
 pub mod panel;
-pub mod pet_claude_sessions_summary;
-pub mod pet_claude_sessions_task;
+pub mod pet_session_summary;
+pub mod pet_session_task;
 pub mod tray;

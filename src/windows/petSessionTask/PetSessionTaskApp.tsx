@@ -7,17 +7,17 @@ import { unwrap } from '@src/shared/commands';
 import {
   EVENT_CLAUDE_SESSION_NAV_FAILED,
   EVENT_CLAUDE_SESSIONS_CHANGED,
-  EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT,
+  EVENT_PET_SESSION_TASK_REFIT,
 } from '@src/shared/events';
 import { usePetHover } from '@src/shared/usePetHover';
 import { listen } from '@tauri-apps/api/event';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ClaudeSessionItem from './components/ClaudeSessionItem';
-import PetClaudeSessionsTaskEmptyState from './components/PetClaudeSessionsTaskEmptyState';
+import PetSessionTaskEmptyState from './components/PetSessionTaskEmptyState';
 
 // 排序优先级 SSOT（Waiting > GitPending > Busy > Idle > Dead）与 sortClaudeSessions
-// 均收敛在 claudeSessionStatus.ts，与 ClaudeSessionList / PetClaudeSessionsSummaryApp 共用。
+// 均收敛在 claudeSessionStatus.ts，与 ClaudeSessionList / PetSessionSummaryApp 共用。
 
 // 与 ClaudeSessionsPage 共用的 NavErr → toast i18n key 映射（保持两端错误文案一致）。
 function navErrToToastKey(err: NavErr): { key: string; opts?: Record<string, unknown> } {
@@ -33,8 +33,8 @@ function navErrToToastKey(err: NavErr): { key: string; opts?: Record<string, unk
   }
 }
 
-// 纯渲染组件：会话列表 + nav 失败 toast。窗口显隐由 pet 前端基于 count 驱动（show_pet_claude_sessions_task_window / hide_pet_claude_sessions_task_window）。
-function PetClaudeSessionsTaskApp() {
+// 纯渲染组件：会话列表 + nav 失败 toast。窗口显隐由 pet 前端基于 count 驱动（show_pet_session_task_window / hide_pet_session_task_window）。
+function PetSessionTaskApp() {
   const { t } = useTranslation();
   const [sessions, setSessions] = useState<ClaudeSessionInfo[]>([]);
   const [toast, setToast] = useState<string | null>(null);
@@ -47,7 +47,7 @@ function PetClaudeSessionsTaskApp() {
     unwrap(commands.getClaudeSessions())
       .then(setSessions)
       .catch((e) => {
-        console.warn('[pet-claude-sessions-task] load failed', e);
+        console.warn('[pet-session-task] load failed', e);
       });
   }, []);
 
@@ -61,7 +61,7 @@ function PetClaudeSessionsTaskApp() {
       unlisten
         .then(fn => fn())
         .catch((err: unknown) => {
-          console.warn('[pet-claude-sessions-task:claude-sessions:changed] unlisten failed:', err);
+          console.warn('[pet-session-task:claude-sessions:changed] unlisten failed:', err);
         });
     };
   }, []);
@@ -76,13 +76,13 @@ function PetClaudeSessionsTaskApp() {
       unlisten
         .then(fn => fn())
         .catch((err: unknown) => {
-          console.warn('[pet-claude-sessions-task:nav-failed] unlisten failed:', err);
+          console.warn('[pet-session-task:nav-failed] unlisten failed:', err);
         });
     };
   }, [t]);
 
   // 点击列表项：navigateToClaudeSession 失败走 claude-sessions:nav-failed 事件，此处不 catch。
-  // 窗口显隐由 pet 前端基于 count 驱动（调 show_pet_claude_sessions_task_window / hide_pet_claude_sessions_task_window），前端点击后不主动 hide。
+  // 窗口显隐由 pet 前端基于 count 驱动（调 show_pet_session_task_window / hide_pet_session_task_window），前端点击后不主动 hide。
   const handleOpenTerminal = useCallback(async (pid: number) => {
     await commands.navigateToClaudeSession(pid);
   }, []);
@@ -97,7 +97,7 @@ function PetClaudeSessionsTaskApp() {
     }
   }, []);
 
-  // 重新测量 Paper 实际内容高度并回调 fit_pet_claude_sessions_task（set_size + 重新定位）。
+  // 重新测量 Paper 实际内容高度并回调 fit_pet_session_task（set_size + 重新定位）。
   // 可复用：ResizeObserver（内容尺寸变化）、refit 事件（show / 未来 pet 拖动跟随）均调用它。
   const refit = useCallback(() => {
     const root = rootRef.current;
@@ -105,15 +105,15 @@ function PetClaudeSessionsTaskApp() {
       return;
     }
     const height = root.offsetHeight;
-    unwrap(commands.fitPetClaudeSessionsTask(height)).catch((e) => {
-      console.warn('[pet-claude-sessions-task] fitPetClaudeSessionsTask failed', e);
+    unwrap(commands.fitPetSessionTask(height)).catch((e) => {
+      console.warn('[pet-session-task] fitPetSessionTask failed', e);
     });
   }, []);
 
-  // 监听后端 refit 请求（show_pet_claude_sessions_task_window 在 show 后 emit_to）：重新测量并刷新位置。
+  // 监听后端 refit 请求（show_pet_session_task_window 在 show 后 emit_to）：重新测量并刷新位置。
   // 统一可复用入口——未来 pet 拖动跟随等"尺寸不变却需重定位"的场景也可复用同一事件。
   useEffect(() => {
-    const unlisten = listen(EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT, () => {
+    const unlisten = listen(EVENT_PET_SESSION_TASK_REFIT, () => {
       // show / 重定位后立刻 reset：清掉 hide 残留的 hovered 并抵消紧随的合成 mouseenter，确保弹出即暗态。
       reset();
       refit();
@@ -122,7 +122,7 @@ function PetClaudeSessionsTaskApp() {
       unlisten
         .then(fn => fn())
         .catch((err: unknown) => {
-          console.warn('[pet-claude-sessions-task:refit] unlisten failed:', err);
+          console.warn('[pet-session-task:refit] unlisten failed:', err);
         });
     };
   }, [refit, reset]);
@@ -182,7 +182,7 @@ function PetClaudeSessionsTaskApp() {
         }}
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          {t('petClaudeSessionsTask:task.summary', { total: sessions.length, attention: attentionSessions.length })}
+          {t('petSessionTask:task.summary', { total: sessions.length, attention: attentionSessions.length })}
         </Typography>
         <Box sx={{ flex: 1 }} />
         <IconButton size="small" onClick={handleRefresh} disabled={refreshing} aria-label="refresh">
@@ -199,7 +199,7 @@ function PetClaudeSessionsTaskApp() {
       </Box>
       {attentionSessions.length === 0
         ? (
-            <PetClaudeSessionsTaskEmptyState />
+            <PetSessionTaskEmptyState />
           )
         : (
             <List sx={{ flex: 1, overflow: 'auto', p: 0.5 }}>
@@ -219,4 +219,4 @@ function PetClaudeSessionsTaskApp() {
   );
 }
 
-export default PetClaudeSessionsTaskApp;
+export default PetSessionTaskApp;

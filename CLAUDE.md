@@ -40,7 +40,7 @@ React 前端（多窗口 webview）─ IPC ─ Rust（Tauri shell）─ spawn/HT
 
 ### 前端（`src/`）
 
-- **多窗口入口**（vite 多页构建，各自独立 JS realm，QueryClient 缓存不共享）：`panel.html`（主控台，含系统设置页 `/settings`——隐藏菜单页，分区路由在 `SettingsPage/routes.ts`）、`pet-claude-sessions-*.html`（悬浮窗）。路由在 `src/windows/<window>/routes.ts`。
+- **多窗口入口**（vite 多页构建，各自独立 JS realm，QueryClient 缓存不共享）：`panel.html`（主控台，含系统设置页 `/settings`——隐藏菜单页，分区路由在 `SettingsPage/routes.ts`）、`pet-session-*.html`（悬浮窗）。路由在 `src/windows/<window>/routes.ts`。
 - **页面切走即卸载**：`PanelApp` 声明式路由，切菜单 = 整页卸载重建（状态放 store 不丢）。
 - **状态管理**（`src/state/`，约定见其 README.md）：一业务域一目录（store + keys + queries + index），server 状态用 TanStack Query、client 选中态用 zustand；跨窗口同步一律走后端 SSOT + Tauri 事件，前端不做。
 - **Go API 客户端**：`src/services/`；服务地址从 Rust `http_server_status` 命令获取，不硬编码端口。

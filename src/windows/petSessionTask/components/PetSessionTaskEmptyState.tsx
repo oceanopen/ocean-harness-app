@@ -1,8 +1,8 @@
 import { Box, Typography } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
-// 面板空状态：紧凑居中，文案对应 petClaudeSessionsTask:task.empty.*。
-function PetClaudeSessionsTaskEmptyState() {
+// 面板空状态：紧凑居中，文案对应 petSessionTask:task.empty.*。
+function PetSessionTaskEmptyState() {
   const { t } = useTranslation();
 
   return (
@@ -19,13 +19,13 @@ function PetClaudeSessionsTaskEmptyState() {
       }}
     >
       <Typography variant="body2" sx={{ fontWeight: 600 }}>
-        {t('petClaudeSessionsTask:task.empty.title')}
+        {t('petSessionTask:task.empty.title')}
       </Typography>
       <Typography variant="caption" color="text.secondary" align="center">
-        {t('petClaudeSessionsTask:task.empty.desc')}
+        {t('petSessionTask:task.empty.desc')}
       </Typography>
     </Box>
   );
 }
 
-export default PetClaudeSessionsTaskEmptyState;
+export default PetSessionTaskEmptyState;

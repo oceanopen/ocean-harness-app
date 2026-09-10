@@ -37,14 +37,14 @@ interface PetPress {
   dragging: boolean;
 }
 
-function PetClaudeSessionsSummaryApp() {
+function PetSessionSummaryApp() {
   const [status, setStatus] = useState<ClaudeSessionStatus>('Dead');
   const [count, setCount] = useState(0);
   const { hovered, handlers } = usePetHover();
   // 点击/拖拽判定状态（按下→松开的一次完整生命周期，不驱动渲染，用 ref）。
   const pressRef = useRef<PetPress | null>(null);
 
-  // 纯函数：从 sessions 快照计算 status + count。PetClaudeSessionsSummaryApp 与 PetClaudeSessionsTaskApp 共用
+  // 纯函数：从 sessions 快照计算 status + count。PetSessionSummaryApp 与 PetSessionTaskApp 共用
   // claude-sessions:changed payload 作为数据源，applySessions 保证两端对同一事件的响应原子化，
   // 不再走 IPC 二次拉取（消除高频 rescan 下的版本错位）。
   const applySessions = useCallback((sessions: ClaudeSessionInfo[]) => {
@@ -53,13 +53,13 @@ function PetClaudeSessionsSummaryApp() {
     setCount(agg.count);
   }, []);
 
-  // 初次 mount 主动拉一次（与 PetClaudeSessionsTaskApp 一致）；事件回调直接用 payload 调 applySessions。
+  // 初次 mount 主动拉一次（与 PetSessionTaskApp 一致）；事件回调直接用 payload 调 applySessions。
   // cleanup 用 .then().catch() 防竞态。
   useEffect(() => {
     unwrap(commands.getClaudeSessions())
       .then(applySessions)
       .catch((e) => {
-        console.warn('[pet-claude-sessions-summary] load failed', e);
+        console.warn('[pet-session-summary] load failed', e);
       });
     const unlisten = listen<ClaudeSessionInfo[]>(EVENT_CLAUDE_SESSIONS_CHANGED, (e) => {
       applySessions(e.payload);
@@ -67,16 +67,16 @@ function PetClaudeSessionsSummaryApp() {
     return () => {
       unlisten
         .then(fn => fn())
-        .catch(err => console.warn('[pet-claude-sessions-summary] unlisten failed:', err));
+        .catch(err => console.warn('[pet-session-summary] unlisten failed:', err));
     };
   }, [applySessions]);
 
-  // count 变化时驱动 pet_claude_sessions_task 显隐：count > 0 调 show_pet_claude_sessions_task_window（后端按 pet 可见 && count 裁决），
-  // count == 0 调 hide_pet_claude_sessions_task_window。pet_claude_sessions_task 显隐主导权在此，后端 rescan 不再自动联动。
+  // count 变化时驱动 pet_session_task 显隐：count > 0 调 show_pet_session_task_window（后端按 pet 可见 && count 裁决），
+  // count == 0 调 hide_pet_session_task_window。pet_session_task 显隐主导权在此，后端 rescan 不再自动联动。
   useEffect(() => {
-    const cmd = count > 0 ? commands.showPetClaudeSessionsTaskWindow() : commands.hidePetClaudeSessionsTaskWindow();
+    const cmd = count > 0 ? commands.showPetSessionTaskWindow() : commands.hidePetSessionTaskWindow();
     unwrap(cmd).catch((e) => {
-      console.warn('[pet-claude-sessions-summary] pet_claude_sessions_task visibility failed', e);
+      console.warn('[pet-session-summary] pet_session_task visibility failed', e);
     });
   }, [count]);
 
@@ -121,7 +121,7 @@ function PetClaudeSessionsSummaryApp() {
     // pointerdown 重置；若松手早于 IPC 生效，原生循环因无按键按下立即退出，均无害。
     press.dragging = true;
     getCurrentWindow().startDragging().catch((err) => {
-      console.warn('[pet-claude-sessions-summary] startDragging failed:', err);
+      console.warn('[pet-session-summary] startDragging failed:', err);
     });
   }, []);
 
@@ -133,7 +133,7 @@ function PetClaudeSessionsSummaryApp() {
     }
     // 位移未超阈值 = 点击：打开终端监控页。
     unwrap(commands.showPanelWindow('claudeSessions')).catch((err) => {
-      console.warn('[pet-claude-sessions-summary] open panel failed', err);
+      console.warn('[pet-session-summary] open panel failed', err);
     });
   }, []);
 
@@ -141,7 +141,7 @@ function PetClaudeSessionsSummaryApp() {
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     e.preventDefault();
     unwrap(commands.showPetContextMenu(e.clientX, e.clientY)).catch((err) => {
-      console.warn('[pet-claude-sessions-summary] context menu failed', err);
+      console.warn('[pet-session-summary] context menu failed', err);
     });
   }, []);
 
@@ -172,4 +172,4 @@ function PetClaudeSessionsSummaryApp() {
   );
 }
 
-export default PetClaudeSessionsSummaryApp;
+export default PetSessionSummaryApp;

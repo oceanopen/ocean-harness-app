@@ -9,7 +9,7 @@ pub const LANGUAGE_KEY: &str = "language";
 
 /// 桌宠窗口显隐状态。值用 `YesNo` enum（见 types.rs，"Y"/"N"），
 /// 缺失视为 `YesNo::Yes`，向后兼容现有用户。
-pub const PET_CLAUDE_SESSIONS_SUMMARY_VISIBLE_KEY: &str = "pet_claude_sessions_summary_visible";
+pub const PET_SESSION_SUMMARY_VISIBLE_KEY: &str = "pet_session_summary_visible";
 
 /// sessions 兜底轮询周期（秒）。即时性由 fs watcher 负责，此处仅驱动 Dead 老化与漏报兜底。
 /// 本组常量经 build_specta_builder().constant() 导出到前端 bindings.ts（Rust 单源，
