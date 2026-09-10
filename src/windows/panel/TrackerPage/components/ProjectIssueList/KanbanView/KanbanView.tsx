@@ -13,7 +13,7 @@ interface KanbanViewProps {
   projectIssues: ProjectIssueResponseData[];
   subtaskStats: SubtaskStats;
   childrenByParent: Map<string, ProjectIssueResponseData[]>;
-  expandedParents: Set<string>;
+  collapsedParents: Set<string>;
   setIssues: Dispatch<SetStateAction<ProjectIssueResponseData[]>>;
   onAddIssue: (stateCode: StateCode) => void;
   onEdit: (projectIssue: ProjectIssueResponseData) => void;
@@ -26,7 +26,7 @@ interface KanbanViewProps {
 // 列 = 状态（固定 5 列，与列表模式分组一致），分列用 useKanbanColumns（按 stateCode），拖拽逻辑用 useKanbanDnd（与渲染解耦）。
 // 注：看板展示全量 projectIssues（不应用列表的筛选，避免破坏列结构与拖拽排序基准）。
 // 卡片复用统一 IssueCard（variant=kanban），交互回调与列表同源。
-function KanbanView({ projectIssues, subtaskStats, childrenByParent, expandedParents, setIssues, onAddIssue, onEdit, onAddChild, onToggleExpand, showToast }: KanbanViewProps) {
+function KanbanView({ projectIssues, subtaskStats, childrenByParent, collapsedParents, setIssues, onAddIssue, onEdit, onAddChild, onToggleExpand, showToast }: KanbanViewProps) {
   const { t } = useTranslation();
   const { columnsByState, orderedStates } = useKanbanColumns(projectIssues);
   const onDragEnd = useKanbanDnd({
@@ -46,7 +46,7 @@ function KanbanView({ projectIssues, subtaskStats, childrenByParent, expandedPar
             projectIssues={columnsByState.get(code) ?? []}
             subtaskStats={subtaskStats}
             childrenByParent={childrenByParent}
-            expandedParents={expandedParents}
+            collapsedParents={collapsedParents}
             onAdd={() => onAddIssue(code)}
             onEdit={onEdit}
             onAddChild={onAddChild}

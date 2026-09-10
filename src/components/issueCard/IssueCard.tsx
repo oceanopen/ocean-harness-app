@@ -49,8 +49,8 @@ export interface IssueCardDnd {
 }
 
 // 卡片消费场景（组件内部按场景控制样式与展示，后续个性化在此分支扩展，不逐一枚举 props）：
-// - tracker（默认）：项目事项管理列表/看板——id 尾 8 位 + 拖拽标识 + 右侧操作列 + IN_PROGRESS 徽章可跳转工作台。
-// - devWorkbench：开发工作台左树/子任务面板——窄栏裁剪（隐藏 id/拖拽标识）、无操作列，点击/选中由回调驱动（不传即纯展示）。
+// - tracker（默认）：项目事项管理列表/看板——拖拽标识 + 右侧操作列 + IN_PROGRESS 徽章可跳转工作台。
+// - devWorkbench：开发工作台左树/子任务面板——窄栏裁剪（隐藏拖拽标识）、无操作列，点击/选中由回调驱动（不传即纯展示）。
 export type IssueCardScene = 'tracker' | 'devWorkbench';
 
 export interface IssueCardProps {
@@ -80,8 +80,8 @@ export interface IssueCardProps {
 // 场景差异（id/拖拽标识/操作列/徽章跳转等）由 viewScene 在组件内部分支控制，调用方不逐项传样式开关。
 // 列表/看板差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
 // 左右布局：左侧三行内容，右侧新增子/编辑按钮列（相对卡片整体上下居中；tracker 场景才渲染操作列）。
-// 三行内容：首行 [展开/占位] id尾8位 标题；第二行 [拖拽标识] [优先级] [状态]；
-// 第三行 [占位] 标签颜色横杠 目标日期 子任务进度（统一左对齐）。
+// 三行内容：首行 [拖拽标识] 标题；第二行 [占位] [优先级] [状态]；
+// 第三行 [展开/占位] 标签颜色横杠 目标日期 子任务进度（统一左对齐，不展示 id 尾 8 位）。
 // 点击卡片主体：onCardClick 优先，否则 onEdit 打开编辑抽屉；子任务列表显隐仅由首行左侧展开图标控制。
 // 所有 icon/button 不挂 Tooltip（避免遮挡鼠标），改用 aria-label。
 function IssueCard({
@@ -142,12 +142,12 @@ function IssueCard({
           'px': 1,
           'py': 1,
           'borderRadius': 0.75,
-          'bgcolor': isWorkbench ? 'background.paper' : 'action.hover',
+          'bgcolor': 'action.hover',
           'border': 1,
           'borderColor': 'divider',
           'cursor': clickable ? 'pointer' : 'default',
           'position': 'relative',
-          '&:hover': { bgcolor: isWorkbench ? 'action.hover' : 'action.selected' },
+          '&:hover': { bgcolor: 'action.selected' },
         },
         { '&:hover .child-drag-indicator': { opacity: 1 } },
       ]
@@ -170,7 +170,7 @@ function IssueCard({
       };
 
   // —— 共享原子 ——
-  // 展开图标列（depth=0 且 tracker 场景才有；无子 issue 时空占位保持左侧对齐）。
+  // 展开图标列（depth=0 且 tracker 场景才有；位于第三行左侧，无子 issue 时空占位保持左侧对齐）。
   // devWorkbench 场景不展开子任务，不渲染占位——三行内容全部顶格左对齐。
   const gutter = depth === 0 && !isWorkbench && (
     <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -191,10 +191,10 @@ function IssueCard({
       )}
     </Box>
   );
-  // 行内占位（让第二、三行内容与首行优先级色点左对齐）；devWorkbench 场景不渲染（三行顶格左对齐）。
+  // 行内占位（第二行徽章与首行拖拽标识/第三行展开图标的 28px 左列对齐）；devWorkbench 场景不渲染（三行顶格左对齐）。
   const gutterPlaceholder = depth === 0 && !isWorkbench && <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0 }} />;
 
-  // 第二行标题左侧拖拽标识（depth=0 顶级卡才有；位于展开/折叠 icon 正下方的 28px 列内）。
+  // 首行标题左侧拖拽标识（depth=0 顶级卡才有；28px 列内）。
   // 纯视觉标识：看板正常色提示可拖（整卡即柄），列表禁用色提示不可拖。devWorkbench 场景不渲染。
   const dragIndicatorEl = depth === 0 && !isWorkbench && (
     <Box
@@ -279,12 +279,6 @@ function IssueCard({
       <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>」</Typography>
     </Box>
   );
-  // issue id 为 uuid：过长截断展示（尾 8 位即可肉眼区分）。
-  const idText = (
-    <Typography variant="caption" color="text.disabled" sx={{ flexShrink: 0, fontFamily: 'monospace' }}>
-      …{issue.id.slice(-8)}
-    </Typography>
-  );
   const nameEl = <Typography variant="body2" sx={{ flex: 1, minWidth: 0, ...truncateSx }}>{issue.name}</Typography>;
 
   const progressEl = stat && stat.total > 0 && (
@@ -340,22 +334,22 @@ function IssueCard({
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, minWidth: 0 }}>
       {/* 三行各自固定高度（24/24/24），内容垂直居中——任何字段组合（有无子任务展开钮/日期/进度/标签）
           卡片高度都完全一致，不再受行内元素实际高度影响 */}
-      {/* 首行：展开/占位 id尾8位 标题（devWorkbench 场景隐藏 id 与占位，给标题让空间且顶格左对齐） */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
-        {gutter}
-        {!isWorkbench && idText}
-        {nameEl}
-      </Box>
-      {/* 第二行：拖拽标识 优先级 状态 */}
+      {/* 首行：拖拽标识 标题（所有场景均不展示 id 尾 8 位，标题占满剩余空间） */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
         {dragIndicatorEl}
+        {nameEl}
+      </Box>
+      {/* 第二行：占位 优先级 状态（占位与首行拖拽标识列对齐） */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
+        {gutterPlaceholder}
         {priorityBadge}
         {stateBadge}
       </Box>
-      {/* 第三行：占位 标签颜色横杠 目标日期 子任务进度，统一左对齐（三者皆无时不渲染空行） */}
-      {(issue.labels.length > 0 || !!issue.targetDate || (stat?.total ?? 0) > 0) && (
+      {/* 第三行：展开/占位 标签颜色横杠 目标日期 子任务进度，统一左对齐。
+          渲染条件含 hasChildren：展开图标在本行，无标签/日期/进度的父卡片也要渲染以保留展开入口 */}
+      {(issue.labels.length > 0 || !!issue.targetDate || (stat?.total ?? 0) > 0 || hasChildren) && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
-          {gutterPlaceholder}
+          {gutter}
           {labelBars}
           {dateEl}
           {progressEl}

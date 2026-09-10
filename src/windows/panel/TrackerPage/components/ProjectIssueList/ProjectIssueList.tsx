@@ -65,8 +65,9 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   const [createChildParent, setCreateChildParent] = useState<ProjectIssueResponseData | null>(null);
   // 编辑抽屉：无子级卡片点击或编辑 icon 进入。
   const [editIssue, setEditIssue] = useState<ProjectIssueResponseData | null>(null);
-  // 展开的父 issue 集合（列表/看板共享，内联展开子 issue 卡片）。
-  const [expandedParents, setExpandedParents] = useState<Set<string>>(() => new Set());
+  // 折叠的父 issue 集合（列表/看板共享）：语义反转——默认空集 = 全部展开子任务，
+  // 手动点展开图标才加入集合（异步加载的父卡片无需预填 id，天然默认展开）。
+  const [collapsedParents, setCollapsedParents] = useState<Set<string>>(() => new Set());
   // 视图模式按项目持久化（localStorage），默认列表。
   const [viewMode, setViewMode] = useState<IssueViewMode>(
     () => (localStorage.getItem(`tracker.viewMode.${workspaceProject.id}`) === 'kanban' ? 'kanban' : 'list'),
@@ -189,7 +190,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   }, []);
 
   const toggleExpand = useCallback((id: string) => {
-    setExpandedParents((prev) => {
+    setCollapsedParents((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
@@ -205,14 +206,16 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     showToast(t('tracker:projectIssue.toast.created', { name: projectIssue.name }), 'success');
   }, [t, showToast]);
 
-  // 新建子 issue 成功：弹 toast + 自动展开父级，便于看到新建的子卡片。
+  // 新建子 issue 成功：弹 toast + 确保父级展开（从折叠集合移除），便于看到新建的子卡片。
   const handleChildCreated = useCallback((projectIssue: ProjectIssueResponseData) => {
     showToast(t('tracker:projectIssue.toast.created', { name: projectIssue.name }), 'success');
-    setExpandedParents((prev) => {
-      if (!createChildParent || prev.has(createChildParent.id)) {
+    setCollapsedParents((prev) => {
+      if (!createChildParent || !prev.has(createChildParent.id)) {
         return prev;
       }
-      return new Set(prev).add(createChildParent.id);
+      const next = new Set(prev);
+      next.delete(createChildParent.id);
+      return next;
     });
   }, [t, showToast, createChildParent]);
 
@@ -387,7 +390,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
             projectIssues={projectIssues}
             subtaskStats={subtaskStats}
             childrenByParent={childrenByParent}
-            expandedParents={expandedParents}
+            collapsedParents={collapsedParents}
             setIssues={updateProjectIssues}
             onAddIssue={openCreate}
             onEdit={setEditIssue}
@@ -437,7 +440,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
                           issue={projectIssue}
                           subtaskStats={subtaskStats}
                           childIssues={childrenByParent.get(projectIssue.id) ?? []}
-                          expanded={expandedParents.has(projectIssue.id)}
+                          expanded={!collapsedParents.has(projectIssue.id)}
                           onToggleExpand={toggleExpand}
                           onEdit={setEditIssue}
                           onAddChild={openCreateChild}
