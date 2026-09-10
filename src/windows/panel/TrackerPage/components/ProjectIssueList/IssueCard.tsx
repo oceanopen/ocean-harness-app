@@ -27,15 +27,17 @@ import { GUTTER_WIDTH, truncateSx } from './shared';
 const CHILD_INDENT_PL = 3.5;
 
 // 子任务块统一样式（列表/看板平级共用，模块级常量避免每次渲染重建对象 + MUI sx 重复序列化）：
-// mx 平级补偿(border 1px + p:1 8px = 9px)使子卡左右边界与色点对齐父卡内容区；pl 为子任务层级缩进。
+// 上下间距与卡片 mb 同值（12px）保持固定：mt:0（父→子由父卡 mb 提供）、mb 与块内 gap 均 1.5。
+// ml 平级补偿(border 1px + p:1 8px = 9px)使子卡左缘对齐父卡内容区；mr:0 使子卡右缘与父卡右边框对齐；pl 为子任务层级缩进。
 const childrenBlockSx: SxProps<Theme> = {
   display: 'flex',
   flexDirection: 'column',
-  mt: 0.5,
-  mb: 0.75,
-  mx: '9px',
+  mt: 0,
+  mb: 1.5,
+  ml: '9px',
+  mr: 0,
   pl: CHILD_INDENT_PL,
-  gap: 0.5,
+  gap: 1.5,
 };
 // 看板父卡拖拽时用 CSS 隐藏子任务块（display:none，不卸载 DOM），松手恢复——避免松手瞬间重建子任务子树导致卡顿。
 const childrenBlockSxHidden: SxProps<Theme> = { ...childrenBlockSx, display: 'none' };
@@ -63,11 +65,12 @@ export interface IssueCardProps {
   onReorderChild?: (parentId: string, from: number, to: number) => void;
 }
 
-// 统一 Issue 卡片：列表与看板共用同一组件、同一外观（看板式三行 Paper 卡片）。
+// 统一 Issue 卡片：列表与看板共用同一组件、同一外观（看板式三行 Paper 卡片，双模式布局一致）。
 // 列表/看板唯一差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
-// 三行布局：首行 [展开/占位] id尾8位 [优先级] [状态] … [进度][新增][编辑]；看板模式下新增+编辑下移到第二行标题右侧。
-// 第二行 [占位] 标题；第三行 [占位] 标签颜色横杠 … 结束日期。
-// 点击卡片主体：有子级（父级）→ 切换展开；无子级 → 打开编辑抽屉（onEdit）。
+// 左右布局：左侧三行内容，右侧新增子/编辑按钮列（相对卡片整体上下居中）。
+// 三行内容：首行 [展开/占位] id尾8位 标题；第二行 [拖拽标识] [优先级] [状态]；
+// 第三行 [占位] 标签颜色横杠 目标日期 子任务进度（统一左对齐）。
+// 点击卡片主体：父/子任务一律打开编辑抽屉（onEdit）；子任务列表显隐仅由首行左侧展开图标控制。
 // 所有 icon/button 不挂 Tooltip（避免遮挡鼠标），改用 aria-label。
 function IssueCard({
   issue,
@@ -87,7 +90,7 @@ function IssueCard({
   const provided = dnd?.provided;
   const isDragging = dnd?.snapshot?.isDragging ?? false;
   // 看板模式（单一标记 kanban prop：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传；列表不传）。
-  // 看板下增加/编辑 icon 下移到第二行标题右侧，缓解首行拥挤；列表模式不变。
+  // 仅影响拖拽行为与拖拽标识颜色（看板顶级可拖、列表子任务可拖），三行布局双模式一致。
   const isKanban = kanban ?? false;
 
   const hasChildren = depth === 0 && childIssues.length > 0;
@@ -96,8 +99,6 @@ function IssueCard({
   // 看板父卡拖拽时用 CSS 隐藏子任务块（display:none，不卸载 DOM），松手恢复——平级后子任务无法跟随父卡移动，
   // 拖拽中暂隐；用 CSS 隐藏而非卸载，避免松手瞬间重建子任务子树导致卡顿。
   const hideChildrenWhileDragging = isKanban && isDragging;
-  // 子任务块实际可见（占空间）：用于父卡底部间距切换（可见时让出 mb 由子块接管；拖拽隐藏时不占空间，按无子任务处理）。
-  const childrenVisible = showChildren && !hideChildrenWhileDragging;
   const stat = subtaskStats.get(issue.id);
 
   // 打开时刻冻结的"现在"，用于逾期判断（new Date(str) 解析为纯函数）。
@@ -109,20 +110,21 @@ function IssueCard({
     && issue.stateCode !== 'CANCELLED';
 
   // depth=1 子卡片用轻量缩进行（与父卡片视觉区分）；depth=0 用 Paper 卡片（列表/看板一致）。
+  // 根为左右布局：[卡片内容(flex:1)] [新增子/编辑 按钮列]，按钮列垂直居中于卡片右侧。
   const rootSx: SxProps<Theme> = depth === 1
     ? [
-        { display: 'flex', flexDirection: 'column', px: 1, py: 0.5, my: 0.25, borderRadius: 0.75, bgcolor: 'action.hover', cursor: 'pointer', position: 'relative' },
+        { display: 'flex', flexDirection: 'row', gap: 0.5, px: 1, py: 1, borderRadius: 0.75, bgcolor: 'action.hover', cursor: 'pointer', position: 'relative' },
         { '&:hover': { bgcolor: 'action.selected' } },
         { '&:hover .child-drag-indicator': { opacity: 1 } },
         { '&:hover .child-drag-indicator.child-drag-indicator-disabled': { opacity: 0.4 } },
       ]
     : {
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'row',
+        gap: 0.5,
         p: 1,
-        // 子任务块可见（占空间）时让出底部间距，由兄弟子任务块的 mt/mb 接管父→子、子→下一父间距。
-        // 拖拽隐藏（display:none 不占空间）时按无子任务处理，保持父卡与下一卡间距。
-        mb: childrenVisible ? 0 : 0.75,
+        // 卡片间固定间距 12px（父→父、父→子均由此 mb 提供，子任务块 mt:0 不再叠加）。
+        mb: 1.5,
         borderRadius: 1,
         bgcolor: 'background.paper',
         border: 1,
@@ -249,8 +251,8 @@ function IssueCard({
 
   const progressEl = stat && stat.total > 0 && (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, flexShrink: 0, color: 'text.secondary' }}>
-      <AssignmentOutlinedIcon sx={{ fontSize: '0.9rem' }} />
-      <Typography variant="caption" color="inherit">{stat.done}/{stat.total}</Typography>
+      <AssignmentOutlinedIcon sx={{ fontSize: 14 }} />
+      <Typography variant="caption" color="inherit" sx={{ lineHeight: 1 }}>{stat.done}/{stat.total}</Typography>
     </Box>
   );
   const addBtn = depth === 0 && (
@@ -279,71 +281,55 @@ function IssueCard({
       <EditOutlinedIcon fontSize="small" />
     </IconButton>
   );
-  const rightCluster = (
-    <>
-      {progressEl}
-      {addBtn}
-      {editBtn}
-    </>
-  );
-
   const dateEl = issue.targetDate && (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0, color: overdue ? 'error.main' : 'text.disabled' }}>
-      <CalendarMonthOutlinedIcon sx={{ fontSize: '0.9rem' }} />
-      <Typography variant="caption" color="inherit">{formatDate(issue.targetDate, 'YYYY-MM-DD')}</Typography>
+      <CalendarMonthOutlinedIcon sx={{ fontSize: 14 }} />
+      <Typography variant="caption" color="inherit" sx={{ lineHeight: 1 }}>{formatDate(issue.targetDate, 'YYYY-MM-DD')}</Typography>
     </Box>
   );
-  // 标签颜色横杠（列表/看板一致），全部展示可换行。
+  // 标签颜色横杠（列表/看板一致），不做 flex 拉伸，与日期/进度统一左对齐；全部展示可换行。
   const labelBars = issue.labels.length > 0 && (
-    <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.25, flexWrap: 'wrap' }}>
+    <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.25, flexWrap: 'wrap' }}>
       {issue.labels.map(l => (
         <Box key={l.id} sx={{ width: 24, height: 4, borderRadius: 1, bgcolor: l.color }} />
       ))}
     </Box>
   );
 
-  // 卡片主体（首行/第二行/第三行），看板/列表双 return 分支共用，避免重复。
+  // 卡片主体（首行/第二行/第三行），列表/看板共用同一布局；占根布局左侧（flex:1），
+  // 新增子/编辑按钮在根布局右侧独立成列、垂直居中（见 render 处）。
   const cardBodyEl = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-      {/* 首行：展开/占位 id尾8位 优先级 状态 … [列表:进度+新增+编辑] / [看板:仅进度] */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, minWidth: 0 }}>
+      {/* 三行各自固定高度（24/24/24），内容垂直居中——任何字段组合（有无子任务展开钮/日期/进度/标签）
+          卡片高度都完全一致，不再受行内元素实际高度影响 */}
+      {/* 首行：展开/占位 id尾8位 标题 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
         {gutter}
         {idText}
+        {nameEl}
+      </Box>
+      {/* 第二行：拖拽标识 优先级 状态 */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
+        {dragIndicatorEl}
         {priorityBadge}
         {stateBadge}
-        <Box sx={{ flex: 1 }} />
-        {isKanban ? progressEl : rightCluster}
       </Box>
-      {/* 第二行：拖拽标识 标题 … [看板:新增+编辑] */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        {dragIndicatorEl}
-        {nameEl}
-        {isKanban && (
-          <>
-            {addBtn}
-            {editBtn}
-          </>
-        )}
-      </Box>
-      {/* 第三行：占位 标签颜色横杠 … 结束日期（无标签/日期时不渲染空行） */}
-      {(issue.labels.length > 0 || issue.targetDate) && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      {/* 第三行：占位 标签颜色横杠 目标日期 子任务进度，统一左对齐（三者皆无时不渲染空行） */}
+      {(issue.labels.length > 0 || !!issue.targetDate || (stat?.total ?? 0) > 0) && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
           {gutterPlaceholder}
-          {labelBars ?? <Box sx={{ flex: 1 }} />}
+          {labelBars}
           {dateEl}
+          {progressEl}
         </Box>
       )}
     </Box>
   );
 
-  // 点击卡片主体：有子级（父级）→ 切换展开；无子级 → 打开编辑抽屉（onEdit）。
+  // 点击卡片主体：父/子任务一律打开编辑抽屉；子任务列表显隐仅由首行左侧展开图标控制。
   const handleCardClick = (e: MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    if (hasChildren) {
-      onToggleExpand?.(issue.id);
-    } else {
-      onEdit(issue);
-    }
+    onEdit(issue);
   };
 
   // 子任务块（平级兄弟 DOM）：看板纯 Box 渲染不可拖、列表 DragDropContext 可拖（同父内排序）。
@@ -420,6 +406,11 @@ function IssueCard({
       >
         {childDragIndicatorEl}
         {cardBodyEl}
+        {/* 右侧操作列：新增子/编辑垂直堆叠，相对卡片整体上下居中 */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.25, flexShrink: 0 }}>
+          {addBtn}
+          {editBtn}
+        </Box>
       </Box>
       {renderChildrenBlock()}
     </>
