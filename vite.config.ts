@@ -34,7 +34,6 @@ export default defineConfig({
         panel: resolve(__dirname, 'panel.html'),
         petClaudeSessionsSummary: resolve(__dirname, 'pet-claude-sessions-summary.html'),
         petClaudeSessionsTask: resolve(__dirname, 'pet-claude-sessions-task.html'),
-        settings: resolve(__dirname, 'settings.html'),
       },
     },
   },

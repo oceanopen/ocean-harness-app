@@ -87,7 +87,6 @@ export const commands = {
 	 *  高度变化时 Y 按 panel 中心 = pet 中心重算，保证增减会话不破坏水平对齐。
 	 */
 	fitPetClaudeSessionsTask: (height: number | null) => typedError<null, string>(__TAURI_INVOKE("fit_pet_claude_sessions_task", { height })),
-	showSettingsWindow: (navigateTo: string | null) => typedError<null, string>(__TAURI_INVOKE("show_settings_window", { navigateTo })),
 	getAppConfig: (key: string) => typedError<string | null, string>(__TAURI_INVOKE("get_app_config", { key })),
 	setAppConfig: (key: string, value: string) => typedError<null, string>(__TAURI_INVOKE("set_app_config", { key, value })),
 	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
@@ -182,8 +181,6 @@ export const EVENT_PANEL_NAVIGATE = "panel:navigate" as const;
 export const EVENT_PANEL_SHOWN = "panel:shown" as const;
 
 export const EVENT_PET_CLAUDE_SESSIONS_TASK_REFIT = "pet-claude-sessions-task:refit" as const;
-
-export const EVENT_SETTINGS_NAVIGATE = "settings:navigate" as const;
 
 export const GITHUB_PAT_KEY = "github_pat" as const;
 

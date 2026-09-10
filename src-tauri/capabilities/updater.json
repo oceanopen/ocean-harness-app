@@ -1,9 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "updater",
-  "description": "auto-updater permissions scoped to the settings window (where AboutPage lives)",
+  "description": "auto-updater permissions scoped to the panel window (where the settings AboutPage lives)",
   "windows": [
-    "settings"
+    "panel"
   ],
   "permissions": [
     "updater:default",

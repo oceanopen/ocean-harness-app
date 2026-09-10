@@ -5,8 +5,7 @@
   "windows": [
     "panel",
     "pet-claude-sessions-summary",
-    "pet-claude-sessions-task",
-    "settings"
+    "pet-claude-sessions-task"
   ],
   "permissions": [
     "core:default",

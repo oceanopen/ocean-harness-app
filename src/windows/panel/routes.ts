@@ -2,6 +2,9 @@ import type { MenuKey } from './commandPalette/types';
 
 // panel 窗口路由 SSOT。
 // 风格：全 query——path 仅承载顶层页面，子状态走查询参数（顺序无关、全可选、单一路由形态）。
+// 例外：settings 是唯一带嵌套子路径的页面（/settings/<section>，分区是子页面而非临时状态），
+// 分区段 SSOT 在 SettingsPage/routes.ts；pathToMenu 的 startsWith 匹配天然把 /settings/*
+// 归到 'settings'，判定逻辑无需特判。
 // 子状态 query 键名（跨页统一，读写共用常量，避免散落魔法字符串拼错而静默破坏 URL↔store 同步）：
 //   tracker:      wid=<workspaceId>            （项目选中态保留 store，不入 URL）
 //   devWorkbench: pid=<projectId> & iid=<issueId>
@@ -19,6 +22,7 @@ export const MENU_PATHS: Record<MenuKey, string> = {
   repositories: '/repositories',
   tracker: '/tracker',
   devWorkbench: '/devWorkbench',
+  settings: '/settings',
 };
 
 // 菜单 → 基础 path（不含 query）。子状态页切回时优先用「记忆的上次完整路径」，回落到此。

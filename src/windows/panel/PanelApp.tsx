@@ -8,20 +8,9 @@ import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SpaceDashboardOutlinedIcon from '@mui/icons-material/SpaceDashboardOutlined';
-import {
-  alpha,
-  Box,
-  Breadcrumbs,
-  IconButton,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Tooltip,
-  Typography,
-  useTheme,
-} from '@mui/material';
+import { Box, Breadcrumbs, IconButton, List, Typography, useTheme } from '@mui/material';
 import appIcon from '@src/assets/app-icon.svg';
+import MenuListItemButton from '@src/components/menuListItemButton/MenuListItemButton';
 import {
   DEFAULT_PANEL_SIDEBAR_COLLAPSED,
   isYes,
@@ -30,7 +19,6 @@ import {
   setAppConfig,
   toYesNo,
 } from '@src/shared/appConfig';
-import { commands } from '@src/shared/bindings';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
 import { useCloseWindowShortcut } from '@src/shared/useCloseWindowShortcut';
 import { useConfigValue } from '@src/shared/useConfigValue';
@@ -48,6 +36,8 @@ import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
 import { DEFAULT_MENU, MENU_PATHS, menuToPath, pathToMenu, TRACKER_WID_PARAM } from './routes';
 import ServerStatusIndicator from './ServerStatusIndicator';
 import ServerStatusPage from './ServerStatusPage';
+import { pathToSection, SECTION_MENUS } from './SettingsPage/routes';
+import SettingsPage from './SettingsPage/SettingsPage';
 import TrackerPage from './TrackerPage/TrackerPage';
 
 // 侧边栏折叠状态 decode：缺失/非法值回落到默认（展开）。
@@ -60,7 +50,12 @@ function decodeSidebarCollapsed(raw: string | null): boolean {
 const TOP_BAR_HEIGHT = 56;
 
 // 子状态页：切回时经「记忆上次完整路径」恢复 URL 子状态（wid/pid/iid），页面组件随之重建。
-const PATH_MEMORY_MENUS: ReadonlySet<MenuKey> = new Set<MenuKey>(['tracker', 'devWorkbench']);
+// settings 同理记忆上次分区（/settings/<section>），齿轮/托盘/命令面板再入时回到上次分区。
+const PATH_MEMORY_MENUS: ReadonlySet<MenuKey> = new Set<MenuKey>([
+  'tracker',
+  'devWorkbench',
+  'settings',
+]);
 
 function PanelApp() {
   const { t } = useTranslation();
@@ -105,14 +100,6 @@ function PanelApp() {
     navigate(lastPathRef.current[menu] ?? menuToPath(menu));
   }, [navigate]);
 
-  const openSettings = useCallback(() => {
-    // panel 顶栏为通用入口：不传深链分区，保留上次分区（与托盘一致）。
-    void commands.showSettingsWindow(null).then((res) => {
-      if (res.status === 'error') {
-        console.warn('[PanelApp] open settings failed:', res.error);
-      }
-    });
-  }, []);
   // 跳到工作空间：回写选中（清空项目避免跨空间残留）并导航 /tracker?wid=<id>（项目选中态保留 store，不入 URL）。
   const selectWorkspace = useCallback((ws: WorkspaceModel) => {
     useTrackerStore.getState().selectWorkspace(ws); // 联动清空 workspaceProject 在 store 内
@@ -159,17 +146,21 @@ function PanelApp() {
     { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
     { key: 'tracker', label: t('panel:menu.tracker'), icon: <SpaceDashboardOutlinedIcon /> },
     { key: 'devWorkbench', label: t('panel:menu.devWorkbench'), icon: <DeveloperModeOutlinedIcon /> },
+    { key: 'settings', label: t('settings:title'), icon: <SettingsOutlinedIcon /> },
   ];
-  // 侧栏隐藏菜单：不渲染入口但页面仍可达（服务状态经顶栏指示器跳转进入）。
-  const SIDEBAR_HIDDEN: ReadonlySet<MenuKey> = new Set<MenuKey>(['serverStatus']);
-  // 顶部导航栏页面标题：当前激活菜单项 label（含隐藏菜单，故仍从全量 menuItems 查）；单层面包屑，预留未来主/子菜单扩展。
+  // 侧栏隐藏菜单：不渲染入口但页面仍可达（服务状态经顶栏指示器、设置经顶栏齿轮跳转进入）。
+  const SIDEBAR_HIDDEN: ReadonlySet<MenuKey> = new Set<MenuKey>(['serverStatus', 'settings']);
+  // 顶部导航栏页面标题：当前激活菜单项 label（含隐藏菜单，故仍从全量 menuItems 查）。
+  // settings 页两级面包屑：第二级为当前分区 label（SECTION_MENUS 单源）。
   const activeLabel = menuItems.find(item => item.key === activeMenu)?.label ?? '';
+  const activeSectionLabel = activeMenu === 'settings'
+    ? t(SECTION_MENUS.find(m => m.key === pathToSection(location.pathname))?.labelI18nKey ?? '')
+    : null;
 
   return (
     <CommandPaletteProvider
       activeMenu={activeMenu}
       navigate={goMenu}
-      openSettings={openSettings}
       toggleSidebar={toggleCollapsed}
       currentWorkspaceId={currentWorkspaceId}
       currentWorkspaceName={currentWorkspaceName}
@@ -228,48 +219,15 @@ function PanelApp() {
             </Box>
             <List sx={{ px: collapsed ? 0 : 1 }}>
               {menuItems.filter(item => !SIDEBAR_HIDDEN.has(item.key)).map(item => (
-                <ListItemButton
+                <MenuListItemButton
                   key={item.key}
+                  scene="panelSidebar"
+                  collapsed={collapsed}
                   selected={activeMenu === item.key}
                   onClick={() => goMenu(item.key)}
-                  {...(collapsed ? { 'aria-label': item.label } : {})}
-                  sx={{
-                    'borderRadius': 2,
-                    'mb': 0.5,
-                    'justifyContent': collapsed ? 'center' : 'flex-start',
-                    'px': collapsed ? 0 : 2,
-                    '&.Mui-selected': {
-                      bgcolor:
-                    theme.palette.mode === 'light'
-                      ? alpha(theme.palette.primary.main, 0.15)
-                      : alpha(theme.palette.primary.main, 0.35),
-                    },
-                    '&.Mui-selected:hover': {
-                      bgcolor:
-                    theme.palette.mode === 'light'
-                      ? alpha(theme.palette.primary.main, 0.15)
-                      : alpha(theme.palette.primary.main, 0.35),
-                    },
-                    '& .MuiListItemText-primary': {
-                      fontWeight: 600,
-                      fontSize: '0.875rem',
-                      whiteSpace: 'nowrap',
-                    },
-                  }}
-                >
-                  <Tooltip title={collapsed ? item.label : ''} placement="right" disableInteractive>
-                    <ListItemIcon
-                      sx={{
-                        minWidth: collapsed ? 0 : 36,
-                        justifyContent: 'center',
-                        color: 'text.primary',
-                      }}
-                    >
-                      {item.icon}
-                    </ListItemIcon>
-                  </Tooltip>
-                  {!collapsed && <ListItemText primary={item.label} />}
-                </ListItemButton>
+                  icon={item.icon}
+                  label={item.label}
+                />
               ))}
             </List>
             {/* 底部折叠切换按钮：mt:auto 推到侧边栏底部，展开态 ChevronLeft / 折叠态 ChevronRight。 */}
@@ -323,6 +281,11 @@ function PanelApp() {
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   {activeLabel}
                 </Typography>
+                {activeSectionLabel != null && (
+                  <Typography variant="body2" color="text.secondary">
+                    {activeSectionLabel}
+                  </Typography>
+                )}
               </Breadcrumbs>
               <Box sx={{ flex: 1 }} />
               <CommandPaletteTrigger />
@@ -330,7 +293,7 @@ function PanelApp() {
               <IconButton
                 size="small"
                 aria-label={t('settings:title')}
-                onClick={openSettings}
+                onClick={() => goMenu('settings')}
                 sx={{ color: 'text.secondary' }}
               >
                 <SettingsOutlinedIcon />
@@ -346,6 +309,8 @@ function PanelApp() {
               <Route path={MENU_PATHS.repositories} element={<RepositoriesPage windowShownTrigger={repoRefreshTrigger} />} />
               <Route path={MENU_PATHS.tracker} element={<TrackerPage />} />
               <Route path={MENU_PATHS.devWorkbench} element={<DevWorkbenchPage />} />
+              {/* settings 为嵌套页：splat 挂载，分区子路由由 SettingsPage 内层 Routes 消费。 */}
+              <Route path={`${MENU_PATHS.settings}/*`} element={<SettingsPage />} />
               <Route path="*" element={<Navigate to={menuToPath(DEFAULT_MENU)} replace />} />
             </Routes>
           </Box>

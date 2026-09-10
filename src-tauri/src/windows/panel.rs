@@ -258,6 +258,9 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
         .map(|m| ratio_size(m, PANEL_RATIO))
         .unwrap_or(DEFAULT_SIZE);
 
+    // 窗口是否已存在：决定导航用初始 URL（首开）还是 emit 事件（二次唤起）。
+    let panel_win_is_existing = app.get_webview_window("panel").is_some();
+
     let panel_win = match app.get_webview_window("panel") {
         // 窗口已存在（从隐藏恢复）：尊重用户上次的尺寸/位置/最大化状态，不强制重设。
         Some(w) => w,
@@ -267,18 +270,22 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
                 .product_name
                 .as_deref()
                 .unwrap_or("Ocean Harness");
-            let win = WebviewWindowBuilder::new(
-                &app,
-                "panel",
-                WebviewUrl::App("panel.html".into()),
-            )
-            .title(format!("{product} - 控制台"))
-            .inner_size(width, height) // 还原尺寸：取消最大化后回到此 85% 屏尺寸
-            // 先隐藏：等下方定位 + 最大化完成后再由 panel_win.show() 显现，避免初帧跳动。
-            .visible(false)
-            .skip_taskbar(true)
-            .build()
-            .map_err(|e| e.to_string())?;
+            // 首开导航走初始 URL（panel.html#/<page>，HashRouter 首帧直接消费）而非事件：
+            // build() 返回时 webview 尚未加载、前端 listen 未注册，此时 emit_to 必然丢失
+            //（托盘「系统设置」冷启动首开、pet 点击跳会话页同受此保护）。MenuKey 与顶层
+            // path 恒为 `/{menuKey}` 同名映射（panel/routes.ts MENU_PATHS），无需双份映射。
+            let url = match &navigate_to {
+                Some(page) => format!("panel.html#/{page}").into(),
+                None => "panel.html".into(),
+            };
+            let win = WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App(url))
+                .title(format!("{product} - 控制台"))
+                .inner_size(width, height) // 还原尺寸：取消最大化后回到此 85% 屏尺寸
+                // 先隐藏：等下方定位 + 最大化完成后再由 panel_win.show() 显现，避免初帧跳动。
+                .visible(false)
+                .skip_taskbar(true)
+                .build()
+                .map_err(|e| e.to_string())?;
 
             // 必须在 maximize 之前定位：macOS 上对已最大化（zoom）态的窗口调用 set_position
             // 会破坏 zoom 定位、但保留撑开的全屏尺寸，导致「尺寸=全屏、左上角≠(0,0)」的错位窗口。
@@ -310,7 +317,9 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
     let _ = panel_win.set_focus();
 
     // 先导航再通知 shown，确保前端收到 shown 时 activeMenu 已更新。
-    if let Some(page) = navigate_to {
+    // 二次唤起（webview 已就绪、listen 已注册）走事件；首开导航已在上方写入初始 URL。
+    // 无参不 emit，保持前端当前页面。
+    if let (true, Some(page)) = (panel_win_is_existing, navigate_to) {
         let _ = app.emit_to("panel", EVENT_PANEL_NAVIGATE, page);
     }
 

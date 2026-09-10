@@ -3,7 +3,15 @@ import type { ReactNode } from 'react';
 
 // panel 顶级页面标识（与 PanelApp 的 MenuKey 同源；此处为 SSOT，PanelApp 反向 import 复用，
 // 避免 union 字面量双份维护导致不一致）。后端 EVENT_PANEL_NAVIGATE payload 亦为同集合字符串。
-export type MenuKey = 'claudeSessions' | 'repositories' | 'serverStatus' | 'tracker' | 'devWorkbench';
+// 'settings' 为隐藏菜单页（无侧栏入口，仅顶栏齿轮/命令面板/托盘可达），且是唯一带嵌套
+// 子路径的成员——分区段 SSOT 在 SettingsPage/routes.ts，本层只持有 '/settings' 前缀。
+export type MenuKey
+  = | 'claudeSessions'
+    | 'repositories'
+    | 'serverStatus'
+    | 'tracker'
+    | 'devWorkbench'
+    | 'settings';
 
 // 命令分组：导航 / 动作 / 跳转。决定 Dialog 内 Command.Group 的渲染顺序与分组标题。
 export type CommandGroup = 'navigation' | 'action' | 'jump';
@@ -25,7 +33,6 @@ export interface CommandPaletteContextValue {
   // 宿主：导航与动作
   activeMenu: MenuKey;
   navigate: (menu: MenuKey) => void;
-  openSettings: () => void;
   toggleSidebar: () => void;
 
   // 宿主：tracker 跳转（二级页面选中实体后回写）

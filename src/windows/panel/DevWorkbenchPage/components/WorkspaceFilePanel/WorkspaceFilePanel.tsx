@@ -16,7 +16,6 @@ import {
   DEFAULT_WORKSPACE_BASE_DIR,
   WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
-import { openProjectConfigSettings } from '@src/shared/openSettings';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import {
@@ -27,6 +26,7 @@ import {
   useWorkspaceFileTree,
   workspaceFilesKeys,
 } from '@src/state/workspaceFiles';
+import { useSettingsNavigate } from '@src/windows/panel/useSettingsNavigate';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import PanelToolbar from '../PanelToolbar';
@@ -57,8 +57,8 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
   const configReady = useConfigReady(FILE_PANEL_CONFIG_KEYS);
   const { data, isLoading, error, isFetching, refetch } = useWorkspaceFileTree(issueId, baseDir);
 
-  // 语义化深链：引导用户去「项目配置」分区设置工作空间根目录（共享助手，EmbeddedTerminal 同源）。
-  const openSettings = () => openProjectConfigSettings('WorkspaceFilePanel');
+  // 语义化深链：引导用户去「项目配置」分区设置工作空间根目录（统一 hook 入口，EmbeddedTerminal 同源）。
+  const openSettings = useSettingsNavigate('projectConfig');
 
   const toggleDirExpanded = useWorkspaceFilesStore(s => s.toggleDirExpanded);
   const openPreviewTab = useWorkspaceFilesStore(s => s.openPreviewTab);

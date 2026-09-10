@@ -16,7 +16,7 @@ import {
 // registry/Dialog 自动按 group 渲染与过滤，无需改动别处。
 // icons 在模块级实例化（静态数组，渲染开销可忽略），避免每命令存组件类型再 render。
 export const commands: CommandConfig[] = [
-  // ── 导航：跳到四个顶级页面 ────────────────────────────────────────────
+  // ── 导航：跳到各顶级页面（隐藏菜单页经命令面板可达，与侧栏入口互补） ──────
   {
     id: 'nav.claudeSessions',
     group: 'navigation',
@@ -70,7 +70,7 @@ export const commands: CommandConfig[] = [
     titleI18nKey: 'panel:commandPalette.action.settings',
     icon: <SettingsOutlinedIcon />,
     keywords: ['settings', 'preference', '设置', '偏好'],
-    action: ctx => ctx.openSettings(),
+    action: ctx => ctx.navigate('settings'),
     closeOnSelect: true,
   },
   {

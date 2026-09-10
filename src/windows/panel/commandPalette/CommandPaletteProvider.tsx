@@ -10,7 +10,6 @@ interface CommandPaletteProviderProps {
   // 由 PanelApp 构造（持有 activeMenu 与上提后的 tracker 选择状态）。
   activeMenu: MenuKey;
   navigate: (menu: MenuKey) => void;
-  openSettings: () => void;
   toggleSidebar: () => void;
   currentWorkspaceId: number | null;
   currentWorkspaceName: string | null;
@@ -62,7 +61,6 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
     setSubPage,
     activeMenu: props.activeMenu,
     navigate: props.navigate,
-    openSettings: props.openSettings,
     toggleSidebar: props.toggleSidebar,
     currentWorkspaceId: props.currentWorkspaceId,
     currentWorkspaceName: props.currentWorkspaceName,
@@ -78,7 +76,6 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
     setSubPage,
     props.activeMenu,
     props.navigate,
-    props.openSettings,
     props.toggleSidebar,
     props.currentWorkspaceId,
     props.currentWorkspaceName,

@@ -9,8 +9,8 @@ import { useEffect } from 'react';
  *
  * 背景：macOS 应用菜单已重建、close_window 不再占用 ⌘W accelerator（Rust
  * shared/app_menu.rs），⌘W 由前端全权接管。本 hook 只承担「保持默认关窗」的兜底
- * （panel 非 devWorkbench 菜单页、settings 窗口）；panel 的 devWorkbench 页有更高
- * 优先级的页面级处理器（文件查看模式关 tab），不挂本 hook。
+ * （panel 非 devWorkbench 菜单页，含并入的 SettingsPage）；panel 的 devWorkbench 页
+ * 有更高优先级的页面级处理器（文件查看模式关 tab），不挂本 hook。
  *
  * enabled 恒定语义由调用方保证（PanelApp 按 activeMenu 传入布尔表达式，React
  * state 派生值变化时 effect 重挂、监听器刷新，无陈旧闭包）。

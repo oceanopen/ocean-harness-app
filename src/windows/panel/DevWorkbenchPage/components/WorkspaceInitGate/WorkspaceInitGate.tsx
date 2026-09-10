@@ -20,9 +20,9 @@ import {
   parseTerminalStartupCodeCli,
   TERMINAL_STARTUP_CODE_CLI_KEY,
 } from '@src/shared/appConfig';
-import { commands } from '@src/shared/bindings';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useInitIssueWorkspace, useIssueWorkspaceStatus } from '@src/state/issueWorkspace';
+import { useSettingsNavigate } from '@src/windows/panel/useSettingsNavigate';
 import { useEffect, useRef, useState } from 'react';
 
 // 启动 CLI decode：parse 内含回落（非法/缺失 → none）。模块级保证引用稳定（useConfigValue 要求）。
@@ -95,6 +95,8 @@ export default function WorkspaceInitGate({ issueId, baseDir, children }: Worksp
   const { data: statusResp, isLoading, error, refetch } = useIssueWorkspaceStatus(issueId, baseDir);
   const initWorkspace = useInitIssueWorkspace();
   const startupCli = useConfigValue(TERMINAL_STARTUP_CODE_CLI_KEY, decodeStartupCodeCli, DEFAULT_TERMINAL_STARTUP_CODE_CLI);
+  // 深链入口统一走 useSettingsNavigate（设置页已并入 panel，纯前端导航）。
+  const openProjectConfigSettings = useSettingsNavigate('projectConfig');
   const serverStatus = statusResp?.serverStatus;
   const state = statusResp?.state;
 
@@ -127,7 +129,7 @@ export default function WorkspaceInitGate({ issueId, baseDir, children }: Worksp
     return (
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, p: 2 }}>
         <Typography variant="body2" color="text.secondary">工作空间根目录未设置，无法初始化</Typography>
-        <Button variant="outlined" size="small" onClick={() => void commands.showSettingsWindow('projectConfig')}>
+        <Button variant="outlined" size="small" onClick={openProjectConfigSettings}>
           前往设置
         </Button>
       </Box>

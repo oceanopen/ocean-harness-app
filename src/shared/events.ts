@@ -15,8 +15,4 @@ export { EVENT_PANEL_NAVIGATE } from './bindings';
 
 export { EVENT_PANEL_SHOWN } from './bindings';
 
-// settings 窗口导航请求（payload = 分区 MenuKey 字符串）。show_settings_window 在 show 后
-// emit_to settings 窗口，SettingsApp 监听后切到指定分区（前端宽容解析，非法回落 appConfig）。
-export { EVENT_SETTINGS_NAVIGATE } from './bindings';
-
 export { EVENT_HTTP_SERVER_STATE_CHANGED } from './bindings';

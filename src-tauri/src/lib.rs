@@ -35,7 +35,6 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::pet_claude_sessions_task::show_pet_claude_sessions_task_window,
             windows::pet_claude_sessions_task::hide_pet_claude_sessions_task_window,
             windows::pet_claude_sessions_task::fit_pet_claude_sessions_task,
-            windows::settings::show_settings_window,
             shared::app_config::get_app_config,
             shared::app_config::set_app_config,
             shared::http_server::http_server_status,
@@ -148,10 +147,6 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
         .constant(
             "EVENT_PANEL_SHOWN",
             crate::shared::events::EVENT_PANEL_SHOWN,
-        )
-        .constant(
-            "EVENT_SETTINGS_NAVIGATE",
-            crate::shared::events::EVENT_SETTINGS_NAVIGATE,
         )
         .constant(
             "EVENT_HTTP_SERVER_STATE_CHANGED",

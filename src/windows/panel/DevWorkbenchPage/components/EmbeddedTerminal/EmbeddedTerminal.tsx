@@ -28,11 +28,11 @@ import {
   WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
-import { openProjectConfigSettings } from '@src/shared/openSettings';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
+import { useSettingsNavigate } from '@src/windows/panel/useSettingsNavigate';
 import { useCallback, useRef, useState } from 'react';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } from './terminalTheme';
 import TerminalView from './TerminalView';
@@ -198,10 +198,8 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     onData: handleTerminalData,
   });
 
-  const openSettings = useCallback(() => {
-    // 语义化深链：错误态引导用户去「项目配置」分区设置工作空间根目录（共享助手）。
-    openProjectConfigSettings('EmbeddedTerminal');
-  }, []);
+  // 语义化深链：错误态引导用户去「项目配置」分区设置工作空间根目录（统一 hook 入口）。
+  const openSettings = useSettingsNavigate('projectConfig');
 
   // 一键创建工作目录（mkdir -p 语义），成功后自动重试终端初始化。
   const handleCreateDirectory = useCallback(() => {
