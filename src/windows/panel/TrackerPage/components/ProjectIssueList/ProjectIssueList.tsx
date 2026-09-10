@@ -24,9 +24,10 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
+import IssueCard from '@src/components/issueCard/IssueCard';
 import { ProjectIssueService } from '@src/services';
 import { useToast } from '@src/shared/useToast';
-import { STATE_MAP, STATE_ORDER, trackerKeys, useProjectIssues } from '@src/state/tracker';
+import { buildSubtaskStats, STATE_MAP, STATE_ORDER, trackerKeys, useProjectIssues } from '@src/state/tracker';
 import { PRIORITY_WEIGHT } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import PrioritySelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/PrioritySelect';
 import ProjectIssueDrawer from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectIssueDrawer';
@@ -34,7 +35,6 @@ import ProjectStateSelect from '@src/windows/panel/TrackerPage/components/Projec
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import IssueCard from './IssueCard';
 import KanbanView from './KanbanView/KanbanView';
 import { computeSortOrder } from './KanbanView/useKanbanDnd';
 import StateGroupCard from './StateGroupCard';
@@ -86,22 +86,8 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     });
   }, [qc, workspaceProject.id]);
 
-  // 各父 issue 的子任务统计（done/total），用于卡片进度小标（从全量扁平 issue 派生）。
-  const subtaskStats = useMemo(() => {
-    const m = new Map<string, { done: number; total: number }>();
-    for (const i of projectIssues) {
-      if (i.parentId === '') {
-        continue;
-      }
-      const s = m.get(i.parentId) ?? { done: 0, total: 0 };
-      s.total += 1;
-      if (i.completedAt) {
-        s.done += 1;
-      }
-      m.set(i.parentId, s);
-    }
-    return m;
-  }, [projectIssues]);
+  // 各父 issue 的子任务统计（done/total），用于卡片进度小标（共享派生，开发工作台左树复用同款）。
+  const subtaskStats = useMemo(() => buildSubtaskStats(projectIssues), [projectIssues]);
 
   // 各父 issue 的子 issue 列表（按 sortOrder 升序），用于卡片内联展开渲染。
   const childrenByParent = useMemo(() => {

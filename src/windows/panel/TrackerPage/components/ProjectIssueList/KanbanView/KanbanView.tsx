@@ -1,7 +1,7 @@
+import type { SubtaskStats } from '@src/components/issueCard/shared';
 import type { ProjectIssueResponseData } from '@src/services';
 import type { StateCode } from '@src/state/tracker';
 import type { Dispatch, SetStateAction } from 'react';
-import type { SubtaskStats } from '../shared';
 import { DragDropContext } from '@hello-pangea/dnd';
 import { Box } from '@mui/material';
 import { useTranslation } from 'react-i18next';

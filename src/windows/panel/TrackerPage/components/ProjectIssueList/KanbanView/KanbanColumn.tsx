@@ -1,10 +1,10 @@
+import type { SubtaskStats } from '@src/components/issueCard/shared';
 import type { ProjectIssueResponseData } from '@src/services';
 import type { StateCode } from '@src/state/tracker';
-import type { SubtaskStats } from '../shared';
 import { Draggable, Droppable } from '@hello-pangea/dnd';
 import { Box, Paper } from '@mui/material';
+import IssueCard from '@src/components/issueCard/IssueCard';
 import { STATE_MAP } from '@src/state/tracker';
-import IssueCard from '../IssueCard';
 import StateGroupCard from '../StateGroupCard';
 
 interface KanbanColumnProps {

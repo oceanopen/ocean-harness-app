@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { AddOutlined as AddOutlinedIcon } from '@mui/icons-material';
 import { Box, Chip, IconButton, Typography } from '@mui/material';
+import { GUTTER_WIDTH, truncateSx } from '@src/components/issueCard/shared';
 import { useTranslation } from 'react-i18next';
-import { GUTTER_WIDTH, truncateSx } from './shared';
 
 interface StateGroupCardProps {
   // 色点颜色（复用 state.color；列表分组取该组首个状态色，看板取列状态色）。缺省用 text.disabled。

@@ -1,11 +1,6 @@
-import type { ProjectIssueResponseData } from '@src/services';
-import type { StateCode } from '@src/state/tracker/stateMeta';
 import {
   Autorenew as AutorenewIcon,
-  CheckCircle as CheckCircleIcon,
   ChecklistOutlined as ChecklistOutlinedIcon,
-  RadioButtonUnchecked as RadioButtonUncheckedIcon,
-  RemoveCircleOutlined as RemoveCircleOutlinedIcon,
 } from '@mui/icons-material';
 import {
   Alert,
@@ -13,52 +8,14 @@ import {
   Button,
   CircularProgress,
   IconButton,
-  List,
-  ListItem,
   Typography,
 } from '@mui/material';
+import IssueCard from '@src/components/issueCard/IssueCard';
 import { filterIssueSubTasks } from '@src/state/devWorkbench';
 import { trackerKeys, useProjectIssues } from '@src/state/tracker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import PanelToolbar from '../PanelToolbar';
-
-/** 子任务状态图标（参照 WorkspaceInitGate StepStatusIcon 风格）：待办（含待办池）灰圈 / 进行中转圈 / 已完成绿勾 / 已取消灰杠。 */
-function SubtaskStateIcon({ stateCode }: { stateCode: StateCode }) {
-  switch (stateCode) {
-    case 'IN_PROGRESS':
-      return <CircularProgress size={16} />;
-    case 'DONE':
-      return <CheckCircleIcon sx={{ fontSize: 18, color: 'success.main' }} />;
-    case 'CANCELLED':
-      return <RemoveCircleOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />;
-    default:
-      return <RadioButtonUncheckedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />;
-  }
-}
-
-/** 子任务行：序号 + 状态图标 + 标题（noWrap）。本期纯展示不可点（子任务与终端会话无映射）。 */
-function SubtaskRow({ index, subtask }: { index: number; subtask: ProjectIssueResponseData }) {
-  const cancelled = subtask.stateCode === 'CANCELLED';
-  return (
-    <ListItem disableGutters sx={{ py: 0.25, px: 1.5 }}>
-      <Typography variant="caption" color="text.disabled" sx={{ width: 18, flexShrink: 0, textAlign: 'right', mr: 1 }}>
-        {index}
-      </Typography>
-      <Box sx={{ width: 18, height: 18, flexShrink: 0, mr: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <SubtaskStateIcon stateCode={subtask.stateCode} />
-      </Box>
-      <Typography
-        variant="body2"
-        noWrap
-        title={subtask.name}
-        sx={{ color: cancelled ? 'text.disabled' : 'text.primary', textDecoration: cancelled ? 'line-through' : 'none' }}
-      >
-        {subtask.name}
-      </Typography>
-    </ListItem>
-  );
-}
 
 interface IssueSubTaskPanelProps {
   projectId: number;
@@ -67,8 +24,9 @@ interface IssueSubTaskPanelProps {
 
 /**
  * IssueSubTaskPanel：开发工作台工具面板区的「子任务」tab 内容（T3.1，经 toolRegistry 挂载）。
- * 展示当前 issue 的子任务清单（parentId 指向该 issue 的子 issue，sortOrder 升序）与状态图标，
- * 供用户在终端跑 agent-dev 时旁观执行进度。本期纯展示（子任务与终端会话无映射，行不可点）。
+ * 展示当前 issue 的子任务清单（parentId 指向该 issue 的子 issue，sortOrder 升序），
+ * 复用共享 IssueCard 子卡样式（depth=1 轻量卡，徽章/日期/标签齐全，不传回调即纯展示——
+ * 子任务与终端会话无映射，本期不可点），与项目事项管理/左树视觉交互一致。
  * 面板标题由 tab 头承载（「子任务」），本组件头部仅留完成进度 + 刷新按钮。
  *
  * 数据复用 tracker 缓存（与左树/顶栏同 query key 共享，零新增请求）；实时性靠头部刷新按钮
@@ -165,9 +123,12 @@ export default function IssueSubTaskPanel({ projectId, issueId }: IssueSubTaskPa
                 </Box>
               )
             : (
-                <List dense disablePadding sx={{ flex: 1, overflow: 'auto', py: 0.5 }}>
-                  {subTasks.map((task, i) => <SubtaskRow key={task.id} index={i + 1} subtask={task} />)}
-                </List>
+                // 子任务卡片列表：复用共享 IssueCard depth=1（viewScene="devWorkbench" → 正常背景色/隐藏 id，
+                // 不传回调 → 无点击/hover，纯展示）；gap 与项目事项管理卡片间固定间距 12px 一致；
+                // pt 加大与顶部 tab 栏的留白。
+                <Box sx={{ flex: 1, overflow: 'auto', pt: 1.5, pb: 0.5, px: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {subTasks.map(task => <IssueCard key={task.id} issue={task} depth={1} viewScene="devWorkbench" />)}
+                </Box>
               )}
     </Box>
   );

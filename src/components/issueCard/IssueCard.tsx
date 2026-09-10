@@ -48,16 +48,27 @@ export interface IssueCardDnd {
   snapshot?: DraggableStateSnapshot;
 }
 
+// 卡片消费场景（组件内部按场景控制样式与展示，后续个性化在此分支扩展，不逐一枚举 props）：
+// - tracker（默认）：项目事项管理列表/看板——id 尾 8 位 + 拖拽标识 + 右侧操作列 + IN_PROGRESS 徽章可跳转工作台。
+// - devWorkbench：开发工作台左树/子任务面板——窄栏裁剪（隐藏 id/拖拽标识）、无操作列，点击/选中由回调驱动（不传即纯展示）。
+export type IssueCardScene = 'tracker' | 'devWorkbench';
+
 export interface IssueCardProps {
   issue: ProjectIssueResponseData;
   depth?: number; // 0=顶级（可展开/可新增子），1=子任务（叶节点）
-  subtaskStats: SubtaskStats;
+  viewScene?: IssueCardScene;
+  // 各父 issue 的子任务统计（done/total）；开发工作台左树按项目派生传入，右栏子任务面板可省略。
+  subtaskStats?: SubtaskStats;
   // 子 issue（已按 sortOrder 排序）；展开时内联渲染。子卡片不传（叶节点）。
   childIssues?: ProjectIssueResponseData[];
   expanded?: boolean;
   onToggleExpand?: (id: string) => void;
-  onEdit: (issue: ProjectIssueResponseData) => void;
-  onAddChild: (parent: ProjectIssueResponseData) => void;
+  // 点击卡片主体：tracker 场景默认 onEdit 打开编辑抽屉；devWorkbench 场景由调用方传入选中逻辑；都不传则纯展示不可点。
+  onCardClick?: (issue: ProjectIssueResponseData) => void;
+  onEdit?: (issue: ProjectIssueResponseData) => void;
+  onAddChild?: (parent: ProjectIssueResponseData) => void;
+  // 选中态高亮边框（depth=0 Paper 卡；depth=1 轻量行不消费）。
+  selected?: boolean;
   dnd?: IssueCardDnd;
   // 看板模式标记：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传。
   kanban?: boolean;
@@ -65,22 +76,26 @@ export interface IssueCardProps {
   onReorderChild?: (parentId: string, from: number, to: number) => void;
 }
 
-// 统一 Issue 卡片：列表与看板共用同一组件、同一外观（看板式三行 Paper 卡片，双模式布局一致）。
-// 列表/看板唯一差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
-// 左右布局：左侧三行内容，右侧新增子/编辑按钮列（相对卡片整体上下居中）。
+// 统一 Issue 卡片（共享组件）：项目事项管理列表/看板 + 开发工作台左树/子任务面板共用同一组件、同一外观。
+// 场景差异（id/拖拽标识/操作列/徽章跳转等）由 viewScene 在组件内部分支控制，调用方不逐项传样式开关。
+// 列表/看板差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
+// 左右布局：左侧三行内容，右侧新增子/编辑按钮列（相对卡片整体上下居中；tracker 场景才渲染操作列）。
 // 三行内容：首行 [展开/占位] id尾8位 标题；第二行 [拖拽标识] [优先级] [状态]；
 // 第三行 [占位] 标签颜色横杠 目标日期 子任务进度（统一左对齐）。
-// 点击卡片主体：父/子任务一律打开编辑抽屉（onEdit）；子任务列表显隐仅由首行左侧展开图标控制。
+// 点击卡片主体：onCardClick 优先，否则 onEdit 打开编辑抽屉；子任务列表显隐仅由首行左侧展开图标控制。
 // 所有 icon/button 不挂 Tooltip（避免遮挡鼠标），改用 aria-label。
 function IssueCard({
   issue,
   depth = 0,
+  viewScene = 'tracker',
   subtaskStats,
   childIssues = [],
   expanded = false,
   onToggleExpand,
+  onCardClick,
   onEdit,
   onAddChild,
+  selected = false,
   dnd,
   kanban,
   onReorderChild,
@@ -92,6 +107,8 @@ function IssueCard({
   // 看板模式（单一标记 kanban prop：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传；列表不传）。
   // 仅影响拖拽行为与拖拽标识颜色（看板顶级可拖、列表子任务可拖），三行布局双模式一致。
   const isKanban = kanban ?? false;
+  // devWorkbench 场景展示裁剪（后续工作台个性化在此扩展）。
+  const isWorkbench = viewScene === 'devWorkbench';
 
   const hasChildren = depth === 0 && childIssues.length > 0;
   // 父卡展开其子任务（子任务作为兄弟 DOM 平级渲染，列表/看板共用）。
@@ -99,7 +116,9 @@ function IssueCard({
   // 看板父卡拖拽时用 CSS 隐藏子任务块（display:none，不卸载 DOM），松手恢复——平级后子任务无法跟随父卡移动，
   // 拖拽中暂隐；用 CSS 隐藏而非卸载，避免松手瞬间重建子任务子树导致卡顿。
   const hideChildrenWhileDragging = isKanban && isDragging;
-  const stat = subtaskStats.get(issue.id);
+  const stat = subtaskStats?.get(issue.id);
+  // 卡片可点（工作台纯展示场景不传任何点击回调）。
+  const clickable = !!onCardClick || !!onEdit;
 
   // 打开时刻冻结的"现在"，用于逾期判断（new Date(str) 解析为纯函数）。
   const [now] = useState(() => Date.now());
@@ -109,34 +128,51 @@ function IssueCard({
     && issue.stateCode !== 'DONE'
     && issue.stateCode !== 'CANCELLED';
 
-  // depth=1 子卡片用轻量缩进行（与父卡片视觉区分）；depth=0 用 Paper 卡片（列表/看板一致）。
+  // depth=1 子卡片用轻量缩进行（与父卡片视觉区分）；depth=0 用 Paper 卡片（列表/看板/工作台左树一致）。
   // 根为左右布局：[卡片内容(flex:1)] [新增子/编辑 按钮列]，按钮列垂直居中于卡片右侧。
+  // hover 反馈所有卡片统一一套：背景加深一档（不按 clickable/场景门控——纯展示卡 hover 也要有反应）。
   const rootSx: SxProps<Theme> = depth === 1
     ? [
-        { display: 'flex', flexDirection: 'row', gap: 0.5, px: 1, py: 1, borderRadius: 0.75, bgcolor: 'action.hover', cursor: 'pointer', position: 'relative' },
-        { '&:hover': { bgcolor: 'action.selected' } },
+        // depth=1 子卡：统一边框 + 圆角；tracker 场景灰底轻量行（嵌套于父卡下），
+        // devWorkbench 场景子任务面板为独立列表，用正常背景色。
+        {
+          'display': 'flex',
+          'flexDirection': 'row',
+          'gap': 0.5,
+          'px': 1,
+          'py': 1,
+          'borderRadius': 0.75,
+          'bgcolor': isWorkbench ? 'background.paper' : 'action.hover',
+          'border': 1,
+          'borderColor': 'divider',
+          'cursor': clickable ? 'pointer' : 'default',
+          'position': 'relative',
+          '&:hover': { bgcolor: isWorkbench ? 'action.hover' : 'action.selected' },
+        },
         { '&:hover .child-drag-indicator': { opacity: 1 } },
-        { '&:hover .child-drag-indicator.child-drag-indicator-disabled': { opacity: 0.4 } },
       ]
     : {
-        display: 'flex',
-        flexDirection: 'row',
-        gap: 0.5,
-        p: 1,
+        'display': 'flex',
+        'flexDirection': 'row',
+        'gap': 0.5,
+        'p': 1,
         // 卡片间固定间距 12px（父→父、父→子均由此 mb 提供，子任务块 mt:0 不再叠加）。
-        mb: 1.5,
-        borderRadius: 1,
-        bgcolor: 'background.paper',
-        border: 1,
-        borderColor: 'divider',
-        boxShadow: isDragging ? 3 : 0,
-        opacity: isDragging ? 0.95 : 1,
-        cursor: 'pointer',
+        'mb': 1.5,
+        'borderRadius': 1,
+        'bgcolor': 'background.paper',
+        'border': 1,
+        'borderColor': selected ? 'primary.main' : 'divider',
+        'boxShadow': isDragging ? 3 : 0,
+        'opacity': isDragging ? 0.95 : 1,
+        'cursor': clickable ? 'pointer' : 'default',
+        // 公共 hover 反馈：背景加深一档 + 抬升阴影（拖拽中 boxShadow 3 优先级更高，不受影响）。
+        '&:hover': { bgcolor: 'action.hover', boxShadow: 2 },
       };
 
   // —— 共享原子 ——
-  // 展开图标列（depth=0 才有；无子 issue 时空占位保持左侧对齐）。
-  const gutter = depth === 0 && (
+  // 展开图标列（depth=0 且 tracker 场景才有；无子 issue 时空占位保持左侧对齐）。
+  // devWorkbench 场景不展开子任务，不渲染占位——三行内容全部顶格左对齐。
+  const gutter = depth === 0 && !isWorkbench && (
     <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       {hasChildren && (
         <IconButton
@@ -155,12 +191,12 @@ function IssueCard({
       )}
     </Box>
   );
-  // 行内占位（让第二、三行内容与首行优先级色点左对齐）。
-  const gutterPlaceholder = depth === 0 && <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0 }} />;
+  // 行内占位（让第二、三行内容与首行优先级色点左对齐）；devWorkbench 场景不渲染（三行顶格左对齐）。
+  const gutterPlaceholder = depth === 0 && !isWorkbench && <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0 }} />;
 
   // 第二行标题左侧拖拽标识（depth=0 顶级卡才有；位于展开/折叠 icon 正下方的 28px 列内）。
-  // 纯视觉标识：看板正常色提示可拖（整卡即柄），列表禁用色提示不可拖。不改 dragHandleProps 挂载方式。
-  const dragIndicatorEl = depth === 0 && (
+  // 纯视觉标识：看板正常色提示可拖（整卡即柄），列表禁用色提示不可拖。devWorkbench 场景不渲染。
+  const dragIndicatorEl = depth === 0 && !isWorkbench && (
     <Box
       sx={{
         width: GUTTER_WIDTH,
@@ -177,11 +213,12 @@ function IssueCard({
     </Box>
   );
 
-  // 子任务卡（depth=1）左侧缩进空白处的拖拽标识：hover 子卡时显现，颜色反映可拖性
-  // （列表可拖→正常色，看板不可拖→禁用色）。绝对定位到子卡左侧 28px 缩进区（子块 pl 留白），不改子卡首行/第二行布局。
-  const childDragIndicatorEl = depth === 1 && (
+  // 子任务卡（depth=1）左侧缩进空白处的拖拽标识：hover 子卡时显现（列表子任务可拖，正常色提示）。
+  // 绝对定位到子卡左侧 28px 缩进区（子块 pl 留白），不改子卡首行/第二行布局。
+  // 仅在有 dnd 注入时渲染：看板子卡/工作台子任务面板均无拖拽，不出现无意义的拖拽标识。
+  const childDragIndicatorEl = depth === 1 && dnd && (
     <Box
-      className={isKanban ? 'child-drag-indicator child-drag-indicator-disabled' : 'child-drag-indicator'}
+      className="child-drag-indicator"
       aria-hidden
       sx={{
         position: 'absolute',
@@ -192,7 +229,7 @@ function IssueCard({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: isKanban ? 'text.disabled' : 'text.secondary',
+        color: 'text.secondary',
         opacity: 0,
         pointerEvents: 'none',
         transition: 'opacity 0.15s ease',
@@ -216,7 +253,8 @@ function IssueCard({
     </Box>
   );
   // F2：进行中（IN_PROGRESS）状态徽章可点击，跳转开发工作台定位该 issue。
-  const canJumpToDev = issue.stateCode === 'IN_PROGRESS';
+  // 仅可点卡片开放（纯展示卡如工作台子任务面板的徽章 inert，不误导 hover）。
+  const canJumpToDev = clickable && issue.stateCode === 'IN_PROGRESS';
   const stateBadge = state && (
     <Box
       sx={[
@@ -255,7 +293,7 @@ function IssueCard({
       <Typography variant="caption" color="inherit" sx={{ lineHeight: 1 }}>{stat.done}/{stat.total}</Typography>
     </Box>
   );
-  const addBtn = depth === 0 && (
+  const addBtn = depth === 0 && onAddChild && (
     <IconButton
       size="small"
       aria-label={t('tracker:projectIssue.card.addSub')}
@@ -268,7 +306,7 @@ function IssueCard({
       <AddOutlinedIcon fontSize="small" />
     </IconButton>
   );
-  const editBtn = (
+  const editBtn = onEdit && (
     <IconButton
       size="small"
       aria-label={t('tracker:projectIssue.card.edit')}
@@ -302,10 +340,10 @@ function IssueCard({
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, minWidth: 0 }}>
       {/* 三行各自固定高度（24/24/24），内容垂直居中——任何字段组合（有无子任务展开钮/日期/进度/标签）
           卡片高度都完全一致，不再受行内元素实际高度影响 */}
-      {/* 首行：展开/占位 id尾8位 标题 */}
+      {/* 首行：展开/占位 id尾8位 标题（devWorkbench 场景隐藏 id 与占位，给标题让空间且顶格左对齐） */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
         {gutter}
-        {idText}
+        {!isWorkbench && idText}
         {nameEl}
       </Box>
       {/* 第二行：拖拽标识 优先级 状态 */}
@@ -326,10 +364,15 @@ function IssueCard({
     </Box>
   );
 
-  // 点击卡片主体：父/子任务一律打开编辑抽屉；子任务列表显隐仅由首行左侧展开图标控制。
+  // 点击卡片主体：onCardClick 优先（如开发工作台选中 issue），否则默认 onEdit 打开编辑抽屉。
+  // 两者皆无时不挂 onClick（纯展示，如工作台子任务面板）；子任务列表显隐仅由首行左侧展开图标控制。
   const handleCardClick = (e: MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    onEdit(issue);
+    if (onCardClick) {
+      onCardClick(issue);
+    } else {
+      onEdit?.(issue);
+    }
   };
 
   // 子任务块（平级兄弟 DOM）：看板纯 Box 渲染不可拖、列表 DragDropContext 可拖（同父内排序）。
@@ -401,16 +444,18 @@ function IssueCard({
         {...provided?.draggableProps}
         {...provided?.dragHandleProps}
         ref={provided?.innerRef}
-        onClick={handleCardClick}
+        onClick={clickable ? handleCardClick : undefined}
         sx={rootSx}
       >
         {childDragIndicatorEl}
         {cardBodyEl}
-        {/* 右侧操作列：新增子/编辑垂直堆叠，相对卡片整体上下居中 */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.25, flexShrink: 0 }}>
-          {addBtn}
-          {editBtn}
-        </Box>
+        {/* 右侧操作列：新增子/编辑垂直堆叠，相对卡片整体上下居中；devWorkbench 场景不渲染操作列 */}
+        {!isWorkbench && (addBtn || editBtn) && (
+          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.25, flexShrink: 0 }}>
+            {addBtn}
+            {editBtn}
+          </Box>
+        )}
       </Box>
       {renderChildrenBlock()}
     </>
