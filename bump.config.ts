@@ -12,11 +12,11 @@ function bumpCargoVersion(filePath: string, newVersion: string): void {
 }
 
 export default defineConfig({
-  files: ['package.json', 'src-tauri/tauri.conf.json'],
+  files: ['package.json', 'app/tauri.conf.json'],
   execute: (operation) => {
     const { newVersion } = operation.state;
-    bumpCargoVersion('src-tauri/Cargo.toml', newVersion);
-    bumpCargoVersion('src-tauri/Cargo.lock', newVersion);
-    operation.state.updatedFiles.push('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock');
+    bumpCargoVersion('app/Cargo.toml', newVersion);
+    bumpCargoVersion('app/Cargo.lock', newVersion);
+    operation.state.updatedFiles.push('app/Cargo.toml', 'app/Cargo.lock');
   },
 });

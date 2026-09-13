@@ -628,7 +628,7 @@ Claude CLI ←── MCP Protocol ──→ Go MCP Server（嵌入 Go 后端进�
 **实现结构**（参考 pros-admin-server 的三层分离）：
 
 ```
-src-server/internal/
+server/internal/
 ├── mcp_servers/
 │   ├── mcp_ocean_harness.go           # Server 定义 + Tool 注册
 │   ├── mcp_ocean_harness_tools.go     # Tool Handler 实现

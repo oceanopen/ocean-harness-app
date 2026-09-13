@@ -1,0 +1,18 @@
+// 所有 Tauri 事件名的统一出口。SSOT 在 app/src/shared/events.rs（Rust 单源），
+// 经 tauri-specta .constant() 导出到 bindings.ts，本文件仅 re-export 保持既有
+// import 路径稳定。新增事件：events.rs 加 const + lib.rs 注册 .constant() 后
+// pnpm gen:bindings，再在此补 re-export 行。
+
+export { EVENT_APP_CONFIG_CHANGED } from './bindings';
+
+export { EVENT_CLAUDE_SESSIONS_CHANGED } from './bindings';
+
+export { EVENT_CLAUDE_SESSION_NAV_FAILED } from './bindings';
+
+export { EVENT_PET_SESSION_TASK_REFIT } from './bindings';
+
+export { EVENT_PANEL_NAVIGATE } from './bindings';
+
+export { EVENT_PANEL_SHOWN } from './bindings';
+
+export { EVENT_HTTP_SERVER_STATE_CHANGED } from './bindings';

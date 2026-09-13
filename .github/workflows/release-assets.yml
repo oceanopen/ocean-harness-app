@@ -38,19 +38,20 @@ jobs:
       # 必须在 setup-node 之前：setup-node 的 cache: pnpm 需要调用 pnpm 读取 lockfile 来设置缓存 key
       - uses: pnpm/action-setup@v6
 
-      # 安装 Node.js（前端构建需要）
+      # 安装 Node.js（前端构建需要）；按 lockfile 缓存 pnpm store（action-setup 已在前提供 pnpm 版本）
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+          cache: 'pnpm'
 
-      # 安装 Go 工具链（src-server 本地 HTTP 服务编译需要）。
-      # runner 预装了 Go，但显式 setup-go 按 go-version-file 锁定版本（与 src-server/go.mod 对齐），避免 runner 镜像变动风险；
-      # 并按 src-server/go.sum 缓存模块（src-server 含 gin/gorm 等外部依赖，矩阵多架构共享模块缓存省去重复下载）。
+      # 安装 Go 工具链（server 本地 HTTP 服务编译需要）。
+      # runner 预装了 Go，但显式 setup-go 按 go-version-file 锁定版本（与 server/go.mod 对齐），避免 runner 镜像变动风险；
+      # 并按 server/go.sum 缓存模块（server 含 gin/gorm 等外部依赖，矩阵多架构共享模块缓存省去重复下载）。
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: src-server/go.mod
-          cache-dependency-path: src-server/go.sum
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
 
       # 安装 Rust 工具链（Tauri 后端使用 Rust 编写）
       - name: Install Rust stable
@@ -69,7 +70,7 @@ jobs:
 
       # 预拉取 Go 依赖，供 beforeBuildCommand 的交叉编译复用（setup-go 缓存命中时近瞬时）。
       - name: Download Go modules
-        run: go -C src-server mod download
+        run: go -C server mod download
 
       # tag 推送：构建 + 发布一体化。
       # tauri-action 在检测到 updater 配置后会自动：
@@ -95,7 +96,10 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         with:
-          tauriScript: pnpm tauri:build
+          # tauri:build:ci 是裸 `tauri`：tauri-action 会把它空格切分后追加 `build [args]`
+          # 组装成最终命令（`pnpm tauri:build:action build --target x` → `tauri build --target x`），
+          # 故此脚本必须保持裸 CLI，本地构建请用 pnpm tauri:build:local。
+          tauriScript: pnpm tauri:build:ci
           args: ${{ matrix.args }}
           updaterJsonPreferNsis: true
           tagName: ${{ github.ref_name }}

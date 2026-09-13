@@ -5,11 +5,14 @@ export default await antfu(
     ignores: [
       '**/*.yaml',
       '**/**.yml',
-      'src-tauri',
-      'src-server',
-      'dist',
+      // pnpm-workspace.yaml 例外放行：antfu v9 的 pnpm 规则组（catalog 防重复/防孤儿、
+      // enforce-settings）只作用于该文件，全局忽略 yaml 会把它一并关掉。
+      '!pnpm-workspace.yaml',
+      'app',
+      'server',
+      'web/dist',
       'node_modules',
-      'src/shared/bindings.ts',
+      'web/src/shared/bindings.ts',
       'docs',
     ],
     stylistic: {

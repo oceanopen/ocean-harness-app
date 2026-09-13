@@ -1,0 +1,97 @@
+// Package mcpservers 内嵌 MCP Server（docs/agent_dev_01_tasks.md T2.1），把 tracker /
+// issueWorkspace 的既有 service 能力与 GitHub 外部服务工具（T4.1）以 MCP 工具形式暴露，
+// 供 issue 运行工作空间内的 AI agent（经 T1.3 生成的 .mcp.json 接入）调用。模式移植自
+// pros-admin-server/mcp_servers（go-sdk v0.2.0，Streamable HTTP，无鉴权单机场景）。
+//
+// 组织方式（2026-09-03 用户定稿：单 server 归口——T2.1 原预留的「每业务域一个 server
+// 按路径扩展」框架取消，多端点对调用方有割裂感）：全部工具注册在唯一的 ocean_harness
+// server（本文件 init()），工具名按前缀分组（issue_* / github_*，后续平台/业务同理）；
+// 共用基础设施在 mcp_util/（McpTool 基类、McpOK/McpFail 结果包装、app_config 只读
+// 读取），工具 handler 实现在 mcp_tool/（文件按业务域命名），入出参 DTO 在 mcp_dto/。
+// 注意：同包多文件 init() 按文件名序执行，新工具注册一律追加在本文件 init() 内，
+// 不另立 mcp_*.go 的 init（避免字母序在前拿到未初始化的 server 单例）。
+package mcpservers
+
+import (
+	"net/http"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"ocean-harness/server/internal/mcpservers/mcp_tool"
+)
+
+// mcpServerOceanHarness 是 ocean_harness server 的进程级单例（多会话共享；会话管理由
+// StreamableHTTPHandler 负责）。init() 完成全部工具注册：InputSchema/OutputSchema 均由
+// handler 泛型 Args/Content 反射推导（字段描述 = DTO 的 jsonschema tag），不手写 schema。
+var mcpServerOceanHarness *mcp.Server
+
+func init() {
+	mcpServerOceanHarness = mcp.NewServer(&mcp.Implementation{
+		Name:    "ocean_harness",
+		Version: "v1.0.0",
+		Title:   "ocean-harness 项目管理工具（issue / 子任务 / 工作空间 / GitHub）",
+	}, nil)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "issue_get_info",
+		Description: "获取 issue 详情（标题、描述、状态、优先级、标签、关联仓库与基准分支、父子关系）。",
+	}, mcptool.McpOceanHarnessTool{}.IssueGetInfo)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "issue_update",
+		Description: "部分更新 issue：stateCode/name/description 仅更新传入的非空字段，其余字段（含标签、" +
+			"关联仓库分支、日期）保留原值。stateCode 变化触发完成时间流转与父子状态联动" +
+			"（父任务状态变化级联子任务；全部子任务完成后父任务自动完成）。",
+	}, mcptool.McpOceanHarnessTool{}.IssueUpdate)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "issue_child_list",
+		Description: "列出某 issue 的全部一级子任务（按看板顺序）。目标不能自身是子任务（仅支持一层）。",
+	}, mcptool.McpOceanHarnessTool{}.IssueChildList)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "issue_child_create",
+		Description: "为指定 issue 创建一级子任务（项目/工作空间归属自动继承父任务）。" +
+			"name 必填；stateCode 留空默认 BACKLOG。",
+	}, mcptool.McpOceanHarnessTool{}.IssueChildCreate)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "issue_child_update",
+		Description: "部分更新子任务：stateCode/name/description 仅更新传入的非空字段，其余字段保留原值。" +
+			"目标必须是子任务（parentId 非空），否则请改用 issue_update。",
+	}, mcptool.McpOceanHarnessTool{}.IssueChildUpdate)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "issue_workspace_status",
+		Description: "查询某 issue 运行工作空间的初始化状态（顶层结论 + createDirs/sshConfig/" +
+			"cloneRepos 各步骤与仓库级进度）。workspace 基目录取应用设置，无需传入。",
+	}, mcptool.McpOceanHarnessTool{}.WorkspaceStatus)
+
+	// —— GitHub 外部服务工具（T4.1，github_ 前缀分组；PAT 经设置 → 个人中心录入）——
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "github_create_pr",
+		Description: "为本地仓库对应的 GitHub 仓库创建 Pull Request。" +
+			"仓库按 localRepositoryId 定位（issue_get_info 的 repositoryBranchList）；" +
+			"head 留空默认 agent_{issueId}，base 留空默认该 issue 关联的基准分支；" +
+			"需先在 设置 → 个人中心 → GitHub 录入 PAT。",
+	}, mcptool.McpGithubTool{}.CreatePullRequest)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "github_list_prs",
+		Description: "列出本地仓库对应的 GitHub 仓库的 Pull Request（state 留空默认 open，最多 50 条）。",
+	}, mcptool.McpGithubTool{}.ListPullRequests)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "github_ci_status",
+		Description: "获取指定 PR 的 CI 检查状态（汇总结论 + 逐项检查：GitHub Actions 与旧 commit status 归并）。",
+	}, mcptool.McpGithubTool{}.PullRequestCIStatus)
+}
+
+// McpOceanHarnessStreamableHTTPHandler 构造 ocean_harness server 的 Streamable HTTP handler
+// （由 router 调用一次；v0.2.0 的 options 为空占位结构，nil 即默认：有状态会话 + SSE 流式响应）。
+func McpOceanHarnessStreamableHTTPHandler() http.Handler {
+	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		return mcpServerOceanHarness
+	}, nil)
+}
