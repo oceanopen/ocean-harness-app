@@ -1,0 +1,57 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Ocean Harness",
+  "version": "0.2.0",
+  "identifier": "com.ocean.harness",
+  "build": {
+    "frontendDist": "../web/dist",
+    "devUrl": "http://localhost:7102",
+    "beforeDevCommand": "pnpm server:test && pnpm web:dev",
+    "beforeBuildCommand": "pnpm server:release && pnpm web:build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/oceanopen/ocean-harness-app/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEMyRDMyOUU0NzBFMzVBOUIKUldTYld1Tnc1Q25Ud2wwamFMOThFSEc5NnBDenRnd25vbk9FU1V3cDJmNlJLOUYwL3RRMjFmdHEK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": ["app", "dmg", "nsis"],
+    "publisher": "oceangao",
+    "copyright": "Copyright (C) 2026 oceangao",
+    "category": "Utility",
+    "shortDescription": "Ocean Harness Desktop App",
+    "longDescription": "Ocean Harness Desktop App",
+    "externalBin": ["binaries/com.ocean.harness-go_server_bin"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  }
+}
