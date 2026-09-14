@@ -3,6 +3,10 @@
   "identifier": "com.ocean.harness.build.local",
   "productName": "Ocean Harness [BUILD.LOCAL]",
   "bundle": {
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": false,
+    "externalBin": [
+      "binaries/com.ocean.harness.build.local-go_server_bin",
+      "binaries/com.ocean.harness.build.local-cli_bin"
+    ]
   }
 }

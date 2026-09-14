@@ -1,6 +1,7 @@
 pub mod app_config;
 #[cfg(target_os = "macos")]
 pub mod app_menu;
+pub mod cli_register;
 pub mod events;
 pub mod http_server;
 pub mod i18n;

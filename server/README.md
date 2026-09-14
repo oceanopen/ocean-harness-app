@@ -16,6 +16,7 @@ server/
 ├── config/
 │   └── settings.dev.yaml           # 本地调试默认配置（环境变量缺失时回退于此）
 ├── cmd/server/main.go              # 服务入口：初始化序列 + 优雅退出
+├── cmd/cli/main.go                 # ocean-harness CLI 入口（薄壳，逻辑在 internal/cli，见「CLI 命令」）
 ├── cmd/gormgen/                    # gorm/gen 代码生成器（pnpm server:gorm:gen，见「gorm/gen 代码生成」）
 └── internal/
     ├── config/config.go            # MustLoadConfig()：yaml 默认 + 环境变量覆盖（env 优先）+ 校验
@@ -25,6 +26,8 @@ server/
     │   ├── sqlite.go               # MustInitSQLite：gorm + glebarez/sqlite（目录来自配置）
     │   └── gin_writer.go           # InitGinLoggerWriter：gin 日志桥接到 zap
     ├── apis/                        # API 管道：Api/Service 链式基类 + 统一响应封装（JsonOK/JsonFail/Response）
+    ├── cli/                         # ocean-harness CLI 实现（纯函数 Run(args, streams) int，可测）
+    ├── buildinfo/buildinfo.go       # CLI 编译期注入点（Mode/Version，-ldflags -X 写入）
     ├── service/base_info.go        # 业务逻辑层
     ├── controller/base_info.go     # HTTP 处理层（参数 + 响应封装）
     ├── middleware/recovery.go      # panic 恢复（zap 记录 + 统一 500）
@@ -124,8 +127,23 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 
 - 客户端/生产场景：端口由 Rust 按模式注入环境变量（覆盖 yaml）。前端从 Rust `http_server_status` 命令获取服务地址（`http://127.0.0.1:<port>`），不硬编码端口。
 - 本地 air 自测：端口 9200 来自 `config/settings.dev.yaml`，与客户端的 9000 隔离，互不影响。
+- CLI 侧同源约定：dev 构建（`ocean-harness-dev`）默认 9000、release（`ocean-harness`）默认 9100，与 Rust 的 `HTTP_SERVER_PORT_TEST`/`RELEASE` 同源；`OCEAN_HARNESS_PORT` env 可覆盖（见下节）。
 
-## API
+## CLI 命令（cmd/cli）
+
+随包分发的 `ocean-harness` 命令行工具（release app 注册 `ocean-harness`，dev 构建注册 `ocean-harness-dev`；由 Rust 侧 `app/src/shared/cli_register.rs` 在 app 启动时 symlink 到 `/usr/local/bin`）。内置 MCP 客户端直连本机 HTTP 服务的 MCP 端点，作为 skill ↔ MCP 之间的可调试中间层（先 CLI 调通，再给大模型用）。
+
+```bash
+ocean-harness version                          # 自报版本与构建模式
+ocean-harness mcp tools                        # 列出全部 MCP 工具（完整 Tool JSON）
+ocean-harness mcp schema <tool>                # 查看单个工具 inputSchema/outputSchema
+ocean-harness mcp call <tool> --data '<json>'  # 调用工具（--data 省略视为 {}），stdout 输出结果 JSON
+```
+
+- **输出契约**：stdout 纯 JSON（`SetEscapeHTML(false)`），stderr 纯中文文案；**退出码** `0` 成功 / `1` 工具业务错误（服务端 IsError）/ `2` 用法或连接错误。
+- **端口**：编译期常量（test 模式 9000 / release 9100，`internal/cli/port.go` 与 Rust 同源）；`OCEAN_HARNESS_PORT` env 为唯一逃生通道（典型用途：`OCEAN_HARNESS_PORT=9200` 指向 air 自测服务联调）。
+- **构建**：由 `scripts/build-server.mjs` 与 server 二进制同批构建（`-ldflags -X` 注入 `internal/buildinfo.Mode/Version`，Version 取根 `package.json`）；tauri `externalBin` 名 `{identifier}-cli_bin-{triple}`，打包进 app 随主程序签名。
+- **会话管理**：每次命令独立 `WithSession`（新建 MCP 会话 → 调用 → `Close()` 下发 DELETE），不在服务端残留会话。
 
 - `GET /api/baseInfo/getServerRunInfo` → `{ code, msg, data: { sysInfo: { hostname, goVersion, os, arch }, serverInfo: { mode, address, logDir, sqliteDir } } }`
 

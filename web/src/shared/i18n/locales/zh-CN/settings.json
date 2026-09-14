@@ -4,7 +4,6 @@
     "appConfig": "应用设置",
     "terminalConfig": "终端配置",
     "projectConfig": "项目配置",
-    "serviceConfig": "服务配置",
     "userProfile": "个人中心",
     "about": "关于"
   },
@@ -88,14 +87,6 @@
     },
     "help": {
       "workspaceBaseDir": "任务的本地工作目录都在此根目录下（目录名 = 任务 ID）。嵌入式终端与外部终端打开均以此为基准"
-    }
-  },
-  "service": {
-    "row": {
-      "httpServerPort": "HTTP 服务端口"
-    },
-    "help": {
-      "httpServerPort": "留空使用默认端口（{{port}}），范围 3000–10000。修改后需在服务状态页手动重启服务生效。"
     }
   },
   "userProfile": {

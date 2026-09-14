@@ -40,6 +40,9 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::http_server::http_server_status,
             shared::http_server::set_http_server_enabled,
             shared::http_server::cleanup_orphan_http_server,
+            shared::cli_register::cli_link_status,
+            shared::cli_register::cli_link_install,
+            shared::cli_register::cli_link_uninstall,
             pty::pty_spawn,
             pty::pty_write,
             pty::pty_resize,
@@ -99,30 +102,15 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::app_config::DEFAULT_TERMINAL_POST_OPEN_COMMAND,
         )
         .constant(
-            "HTTP_SERVER_PORT_KEY",
-            shared::app_config::HTTP_SERVER_PORT_KEY,
-        )
-        .constant(
-            "MIN_HTTP_SERVER_PORT",
-            shared::app_config::MIN_HTTP_SERVER_PORT,
-        )
-        .constant(
-            "MAX_HTTP_SERVER_PORT",
-            shared::app_config::MAX_HTTP_SERVER_PORT,
-        )
-        .constant(
             "GITHUB_PAT_KEY",
             shared::app_config::GITHUB_PAT_KEY,
         )
-        // HTTP 端口默认值（http_server.rs）：设置页帮助文案按运行模式展示默认端口。
         .constant(
-            "HTTP_SERVER_PORT_TEST",
-            shared::http_server::HTTP_SERVER_PORT_TEST,
+            "CLI_ELEVATION_DECLINED_KEY",
+            shared::app_config::CLI_ELEVATION_DECLINED_KEY,
         )
-        .constant(
-            "HTTP_SERVER_PORT_RELEASE",
-            shared::http_server::HTTP_SERVER_PORT_RELEASE,
-        )
+        // HTTP 端口已彻底固化为编译期常量（http_server.rs：dev=9000/release=9100），
+        // 不再经 .constant() 导出，前端无消费点（服务地址走 http_server_status 实时获取）。
         // 事件名（events.rs）：emit/listen 字符串 typo 不编译报错，单源导出消双份。
         .constant(
             "EVENT_APP_CONFIG_CHANGED",
@@ -280,6 +268,10 @@ pub fn run() {
             // 后台异步拉起 Go 本地 HTTP 服务（dev 先 go build，build 用随包二进制），前端 fetch 直连。
             // 非核心依赖：init 在后台线程进行，失败仅 log::warn，永不阻塞 setup、永不拖垮 app。
             shared::http_server::init(app.handle());
+
+            // 后台线程自动注册 ocean-harness CLI 命令（symlink 到 /usr/local/bin，
+            // 幂等；提权取消有版本化记忆）。同为非核心依赖，失败仅 log，不阻塞 setup。
+            shared::cli_register::init(app.handle());
 
             Ok(())
         })

@@ -717,6 +717,33 @@
 
 ---
 
+## 阶段 6：CLI 命令层（P1）
+
+### T6.1 ocean-harness CLI（skill ↔ MCP 中间层 + 终端直达入口）
+
+**状态**：✅
+
+**功能**：随包分发 `ocean-harness` 命令行工具，app 安装后自动注册到终端；内置 MCP 客户端，把 skill ↔ MCP 的两层架构升级为 skill + CLI + MCP 三层（CLI 可终端调试、bot 可复用）
+
+**技术方案**：
+- Go 实现（`server/cmd/cli` + `server/internal/cli`，复用 go-sdk 的 MCP 客户端），与 server 二进制同批构建（`scripts/build-server.mjs`，`-ldflags -X` 注入 `internal/buildinfo.Mode/Version`）
+- 注册：Rust `app/src/shared/cli_register.rs`——app 启动后台线程把随包 sidecar（`{identifier}-cli_bin`）symlink 到 `/usr/local/bin`（release=`ocean-harness`、dev=`ocean-harness-dev`，编译期常量）；orca 式四态状态机（Installed/Stale/Conflict/NotInstalled），Conflict（用户自有同名文件）永不改写；直连 symlink EACCES 时 osascript 提权，用户取消按版本记忆（同版本不重弹、升版自动重试）
+- 命令：`version` / `mcp tools` / `mcp schema <tool>` / `mcp call <tool> --data '<json>'`；stdout 纯 JSON、stderr 中文文案、退出码 0 成功 / 1 业务错误 / 2 用法或连接错误
+- 端口契约：彻底固化（dev=9000 / release=9100，与 Rust 同源编译期常量），`OCEAN_HARNESS_PORT` env 为唯一逃生通道（air 自测联调）；设置页「服务配置」分区随自定义端口能力一并移除
+- 插件迁移：ocean-claude-plugins 的 ocean-harness-plugin 移除捆绑 MCP server（删 `.mcp.json`），refine-issue / issue-context 全部工具引用改经 CLI
+
+**依赖**：T2.1（MCP Server 为 CLI 的调用对象）
+
+**实施定稿（2026-09-15）**：
+- CLI 输出契约落地为：stdout 纯 JSON（`SetEscapeHTML(false)`）、stderr 纯中文、退出码 0/1/2；`mcp call` 手动解析参数（Go flag 包在首个位置参数处停止解析，无法表达「工具名在前、--data 在后」）
+- go-sdk v0.2.0 客户端 API 经源码逐一签名验证：`Transport` 一次性（至多一次 `Connect`），每次命令独立 `WithSession`（新建 → 调用 → `Close()` 下发 DELETE 防服务端会话泄漏）
+- 端口方案较原设计简化：否决 `~/.ocean-harness/settings.json` 配置文件与端口文件 SSOT，定为编译期常量 + env 逃生；存量 DB 的 `http_server_port` 行无读取者，留置无需迁移
+- 提权取消记忆采用版本化语义（app_config 存「被拒时的 app 版本」），同版本不重弹、升版自动重试一次
+- 已验证：tauri:dev 启动自动注册 symlink（本机 /usr/local/bin 需提权，osascript 弹框授权后完成）；三命令对 9000 全链路（tools 9 个/schema/call）；退出码三路径；`OCEAN_HARNESS_PORT=9200` 指向 air 自测成功；release 构建（BUILD.LOCAL）注册 `ocean-harness` 命令 + 包内 sidecar 签名可执行（AMFI 不拦）+ `mode: release` + 对 9100 `mcp tools` 成功
+- 顺带修复存量问题：`tauri.build.local.conf.json` 改 identifier 但未同步 `externalBin`，本地发布构建的 sidecar（go_server_bin/cli_bin）运行期按 identifier 解析名失败、从未 spawn 成功；现 overlay 覆盖 externalBin + `build-server.mjs` build 模式按主 conf 与 build.local conf 各产一套产物
+
+---
+
 ## 依赖关系图
 
 ```
@@ -725,8 +752,9 @@ T2.1 MCP Server（无前置依赖，子任务复用现有 issue 父子关系）
   │    └─→ T2.3 AGENT.md/CLAUDE.md 生成
   │    └─→ T2.4 agent-dev Skill
   │         └─→ T4.3 自动提交代码
-  └─→ T4.1 GitHub MCP 工具
-       └─→ T4.2 create-pr Skill
+  ├─→ T4.1 GitHub MCP 工具
+  │     └─→ T4.2 create-pr Skill
+  └─→ T6.1 ocean-harness CLI（skill 调用层随之从 MCP 直连改为经 CLI）
 
 T1.1 工作空间初始化 Service
   ├─→ T1.2 SSH Config 生成

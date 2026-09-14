@@ -138,7 +138,7 @@ pub struct HttpServerStatus {
     pub run_state: HttpServerRunState,
     /// 服务地址（http://127.0.0.1:<port>），前端 fetch getServerRunInfo 用。
     pub address: String,
-    /// 监听端口（默认 dev=9000/build=9100，可由「服务配置」覆盖）。
+    /// 监听端口（编译期固化：dev=9000 / build=9100）。
     pub port: u16,
     /// 运行模式（debug/release），与 Go gin mode 对齐。
     pub mode: String,
@@ -147,4 +147,37 @@ pub struct HttpServerStatus {
     pub start_last_error: Option<String>,
     /// 本次启动过程的全量日志（stdout+stderr，换行拼接；仅 Starting 期间累积，启动结束即定格）。
     pub start_recent_log: Option<String>,
+}
+
+// ============================================================
+// ocean-harness CLI 命令注册（/usr/local/bin symlink，见 shared/cli_register.rs）
+// ============================================================
+
+/// CLI 命令注册四态（cli_register::classify 判定）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Type)]
+pub enum CliCommandLinkState {
+    /// symlink 存在且指向本 app 的 cli 二进制（随包 sidecar）。
+    Installed,
+    /// symlink 存在但指向别处（旧安装位置/悬空链接）。
+    Stale,
+    /// 同名普通文件/目录已存在——用户自有文件，拒绝覆盖。
+    Conflict,
+    /// 目标路径不存在。
+    NotInstalled,
+}
+
+/// CLI 注册状态快照（cli_link_status 命令返回）。仅出参，不 derive Deserialize。
+#[derive(Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CliCommandStatus {
+    /// 四态判定结果。
+    pub state: CliCommandLinkState,
+    /// 注册的命令名（debug 构建 = ocean-harness-dev，release = ocean-harness）。
+    pub link_name: String,
+    /// symlink 落点（/usr/local/bin/<link_name>）。
+    pub link_path: String,
+    /// 本 app 的 cli 二进制绝对路径（随包 sidecar，与主程序同目录）。
+    pub bin_path: String,
+    /// 当前版本曾取消管理员授权（Some = 同版本内 init 不再自动弹提权框；app 升级后版本变化，自动重试一次）。
+    pub elevation_declined_version: Option<String>,
 }

@@ -29,16 +29,19 @@ pub const DEFAULT_ITERM2_SPLIT_DIRECTION: &str = "horizontal";
 pub const TERMINAL_POST_OPEN_COMMAND_KEY: &str = "terminal_post_open_command";
 pub const DEFAULT_TERMINAL_POST_OPEN_COMMAND: &str = "";
 
-/// HTTP 本地服务端口（Go sidecar）。留空或越界=用模式默认（dev 9000 / release 9100，由 http_server 解析）。
-/// min/max 对齐 Go sidecar 的端口校验区间。同经 .constant() 导出（Rust 单源）。
-pub const HTTP_SERVER_PORT_KEY: &str = "http_server_port";
-pub const MIN_HTTP_SERVER_PORT: u16 = 3000;
-pub const MAX_HTTP_SERVER_PORT: u16 = 10000;
+/// HTTP 本地服务端口（Go sidecar）已彻底固化为编译期常量（dev=9000/release=9100，
+/// 见 http_server.rs 端口契约注释），不再提供 http_server_port 配置项。
+/// 存量 DB 里的 http_server_port 行无读取者，留置无害、无需迁移。
 
 /// GitHub Personal Access Token（设置 → 个人中心录入，T4.1）。空串 = 未配置。
 /// Go sidecar 的 github MCP 工具经 GO_SERVER_APP_DB 指向的本表只读此 key 调 GitHub API。
 /// 敏感值：设置页不回显明文（仅示「已配置」），写入即生效（无缓存）。
 pub const GITHUB_PAT_KEY: &str = "github_pat";
+
+/// CLI 命令注册提权被取消时的 app 版本记录（cli_register 写入）。值为取消发生时的 app 版本
+/// （如 "0.2.1"）：同版本内 init 不再自动弹 osascript 提权框，app 升级后版本变化自动重试一次。
+/// 经 .constant() 导出到前端（Rust 单源）。
+pub const CLI_ELEVATION_DECLINED_KEY: &str = "cli_elevation_declined_version";
 
 pub struct AppConfigState(pub Mutex<Connection>);
 

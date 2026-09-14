@@ -1,5 +1,5 @@
 import type { YesNo } from './bindings';
-import { commands, HTTP_SERVER_PORT_RELEASE, HTTP_SERVER_PORT_TEST } from './bindings';
+import { commands } from './bindings';
 import { unwrap } from './commands';
 
 // —— Rust 单源常量 re-export（SSOT：app/src/shared/app_config.rs 等，经
@@ -9,14 +9,9 @@ export {
   DEFAULT_POLL_INTERVAL_SECS,
   DEFAULT_TERMINAL_POST_OPEN_COMMAND,
   GITHUB_PAT_KEY,
-  HTTP_SERVER_PORT_KEY,
-  HTTP_SERVER_PORT_RELEASE,
-  HTTP_SERVER_PORT_TEST,
   ITERM2_SPLIT_DIRECTION_KEY,
   LANGUAGE_KEY,
-  MAX_HTTP_SERVER_PORT,
   MAX_POLL_INTERVAL_SECS,
-  MIN_HTTP_SERVER_PORT,
   MIN_POLL_INTERVAL_SECS,
   POLL_INTERVAL_SECS_KEY,
   TERMINAL_POST_OPEN_COMMAND_KEY,
@@ -149,13 +144,8 @@ export function parseTerminalLineHeight(value: string | null): TerminalLineHeigh
     : DEFAULT_TERMINAL_LINE_HEIGHT;
 }
 
-// HTTP 本地服务端口（Go sidecar）。留空=用模式默认（由后端解析）。
-// key/min/max 与模式默认端口均 Rust 单源（见顶部 re-export：app_config.rs + http_server.rs）。
-// defaultHttpServerPort 与 Rust http_server.rs 的 default_port() 逻辑对应，
-// 用于设置页帮助文案展示当前运行时的具体默认端口（而非 dev/release 并列）。
-export function defaultHttpServerPort(mode: string): number {
-  return mode === 'release' ? HTTP_SERVER_PORT_RELEASE : HTTP_SERVER_PORT_TEST;
-}
+// HTTP 本地服务端口已彻底固化（Rust 编译期常量：dev=9000/release=9100），无前端配置项；
+// 前端消费服务地址一律走 http_server_status 实时获取，不持有端口字面量。
 
 // panel 窗口侧边栏折叠状态。值用 YesNo，缺失视为 NO（默认展开）。
 // 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 appearance 先例）。

@@ -3,6 +3,6 @@
   "identifier": "com.ocean.harness.dev",
   "productName": "Ocean Harness [DEV]",
   "bundle": {
-    "externalBin": ["binaries/com.ocean.harness.dev-go_server_bin"]
+    "externalBin": ["binaries/com.ocean.harness.dev-go_server_bin", "binaries/com.ocean.harness.dev-cli_bin"]
   }
 }

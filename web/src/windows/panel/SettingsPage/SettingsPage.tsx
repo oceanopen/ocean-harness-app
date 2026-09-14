@@ -1,6 +1,5 @@
 import type { SettingsSection } from './routes';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
-import HttpOutlinedIcon from '@mui/icons-material/HttpOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import PersonOutlinedIcon from '@mui/icons-material/PersonOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
@@ -14,7 +13,6 @@ import AboutPage from './AboutPage';
 import AppConfigPage from './AppConfigPage';
 import ProjectConfigPage from './ProjectConfigPage';
 import { DEFAULT_SECTION, pathToSection, SECTION_MENUS, SECTION_PATHS, sectionToPath } from './routes';
-import ServiceConfigPage from './ServiceConfigPage';
 import TerminalConfigPage from './TerminalConfigPage';
 import UserProfilePage from './UserProfilePage';
 
@@ -23,7 +21,6 @@ const SECTION_ICONS: Record<SettingsSection, React.ReactNode> = {
   appConfig: <SettingsOutlinedIcon />,
   terminalConfig: <TerminalOutlinedIcon />,
   projectConfig: <FolderOutlinedIcon />,
-  serviceConfig: <HttpOutlinedIcon />,
   userProfile: <PersonOutlinedIcon />,
   about: <InfoOutlinedIcon />,
 };
@@ -86,7 +83,6 @@ function SettingsPage() {
             <Route path={SECTION_PATHS.appConfig} element={<AppConfigPage />} />
             <Route path={SECTION_PATHS.terminalConfig} element={<TerminalConfigPage />} />
             <Route path={SECTION_PATHS.projectConfig} element={<ProjectConfigPage />} />
-            <Route path={SECTION_PATHS.serviceConfig} element={<ServiceConfigPage />} />
             <Route path={SECTION_PATHS.userProfile} element={<UserProfilePage />} />
             <Route path={SECTION_PATHS.about} element={<AboutPage />} />
             <Route path="*" element={<Navigate to={sectionToPath(DEFAULT_SECTION)} replace />} />

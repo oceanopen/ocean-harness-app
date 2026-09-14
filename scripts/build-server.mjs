@@ -1,4 +1,5 @@
-// 编译 server（Go 旁路服务）为 Tauri sidecar 二进制（dev/build 各自命名），产出 target-triple 后缀名。
+// 编译 server（Go 旁路服务）与 cli（ocean-harness 命令行）为 Tauri sidecar 二进制
+// （dev/build 各自命名），产出 target-triple 后缀名。
 //
 // Tauri sidecar 约定（见 tauri.conf.json bundle.externalBin）：
 // 打包时按当前 target triple 找 app/binaries/<baseName>-<triple>，去后缀随包分发，
@@ -77,20 +78,49 @@ if (runMode !== 'dev' && runMode !== 'build') {
 }
 
 // dev 读 dev.conf、build 读主 conf，取各自的 identifier 作为 sidecar baseName 前缀。
+// build 模式额外读 build.local.conf（本地发布构建的 overlay，identifier 不同步则运行期
+// sidecar 名解析失败），为它多产一套同名产物；CI 走主 conf，多余产物留在 binaries/ 不入包。
 const confPath = resolve(repoRoot, runMode === 'dev' ? 'app/tauri.dev.conf.json' : 'app/tauri.conf.json');
 const identifier = JSON.parse(readFileSync(confPath, 'utf8')).identifier;
+const identifiers = [identifier];
+if (runMode === 'build') {
+  const localConf = resolve(repoRoot, 'app/tauri.build.local.conf.json');
+  identifiers.push(JSON.parse(readFileSync(localConf, 'utf8')).identifier);
+}
 
 // 全新克隆下 binaries/ 可能不存在，递归创建兜底（go build -o 不会自动建父目录）。
 const outDir = resolve(repoRoot, 'app/binaries');
 mkdirSync(outDir, { recursive: true });
 
-// 产目标 triple 一份（app 实际运行的架构）。
+// 产目标 triple 一份（app 实际运行的架构）；build 模式下 CI 名与本地 overlay 名各一套。
 // 文件名 = {identifier}-go_server_bin-{triple}{exe}：triple 是 Tauri sidecar 约定后缀，
 // 去掉后即进程名（identifier 携带 dev/build 标识）。
 const triple = targetTriple(targetGOOS, targetGOARCH);
-const outName = `${identifier}-go_server_bin-${triple}${exeSuffixFor(targetGOOS)}`;
-execFileSync(
-  'go',
-  ['build', '-C', resolve(repoRoot, 'server'), '-o', resolve(outDir, outName), './cmd/server'],
-  { stdio: 'inherit', env: { ...process.env, GOOS: targetGOOS, GOARCH: targetGOARCH, CGO_ENABLED: '0' } },
-);
+for (const id of identifiers) {
+  const outName = `${id}-go_server_bin-${triple}${exeSuffixFor(targetGOOS)}`;
+  execFileSync(
+    'go',
+    ['build', '-C', resolve(repoRoot, 'server'), '-o', resolve(outDir, outName), './cmd/server'],
+    { stdio: 'inherit', env: { ...process.env, GOOS: targetGOOS, GOARCH: targetGOARCH, CGO_ENABLED: '0' } },
+  );
+}
+
+// —— CLI 二进制（ocean-harness / ocean-harness-dev，见 server/cmd/cli）——
+//
+// 与 server 的差异：模式不走运行时 env，而是编译期 -ldflags 注入（dev→test 默认端口 9000、
+// build→release 9100，见 server/internal/buildinfo 与 internal/cli/port.go），Version 取根
+// package.json（bumpp release 流的 SSOT）供 ocean-harness version 自报。
+// 绕过本脚本直接 go build ./cmd/cli 会得到默认值，此时用 OCEAN_HARNESS_PORT env 运行期纠正。
+const pkgVersion = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')).version;
+const cliMode = runMode === 'dev' ? 'test' : 'release';
+const cliLdflags
+  = `-X ocean-harness/server/internal/buildinfo.Mode=${cliMode} `
+    + `-X ocean-harness/server/internal/buildinfo.Version=${pkgVersion}`;
+for (const id of identifiers) {
+  const cliOutName = `${id}-cli_bin-${triple}${exeSuffixFor(targetGOOS)}`;
+  execFileSync(
+    'go',
+    ['build', '-C', resolve(repoRoot, 'server'), '-ldflags', cliLdflags, '-o', resolve(outDir, cliOutName), './cmd/cli'],
+    { stdio: 'inherit', env: { ...process.env, GOOS: targetGOOS, GOARCH: targetGOARCH, CGO_ENABLED: '0' } },
+  );
+}

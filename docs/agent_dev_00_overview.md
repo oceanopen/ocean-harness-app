@@ -591,21 +591,23 @@ description: 生成 Pull Request，基于当前分支变更自动生成 PR 标�
 #### 3.9.1 MCP Server 架构
 
 ```
-Claude CLI ←── MCP Protocol ──→ Go MCP Server（嵌入 Go 后端进程）
-                                    │
-                                    ├── 项目管理工具
-                                    │   ├── issue_get_info     # 获取 issue 详情
-                                    │   ├── issue_update       # 更新 issue（状态/描述）
-                                    │   ├── issue_child_list       # 获取子任务列表（查 parent_id 的子 issue）
-                                    │   ├── issue_child_create     # 创建子任务（创建子 issue，parent_id 指向父 issue）
-                                    │   ├── issue_child_update     # 更新子任务状态（更新子 issue 的 state_code）
-                                    │   └── workspace_status   # 获取工作空间状态
-                                    │
-                                    └── 外部服务工具
-                                        ├── github_create_pr    # 创建 PR
-                                        ├── github_list_prs     # 列出 PR
-                                        └── github_ci_status    # 获取 CI 状态
+Skill（refine-issue 等）──Bash──→ ocean-harness CLI ──MCP──→ Go MCP Server（嵌入 Go 后端进程）
+                                                                │
+                                                                ├── 项目管理工具
+                                                                │   ├── issue_get_info     # 获取 issue 详情
+                                                                │   ├── issue_update       # 更新 issue（状态/描述）
+                                                                │   ├── issue_child_list       # 获取子任务列表（查 parent_id 的子 issue）
+                                                                │   ├── issue_child_create     # 创建子任务（创建子 issue，parent_id 指向父 issue）
+                                                                │   ├── issue_child_update     # 更新子任务状态（更新子 issue 的 state_code）
+                                                                │   └── workspace_status   # 获取工作空间状态
+                                                                │
+                                                                └── 外部服务工具
+                                                                    ├── github_create_pr    # 创建 PR
+                                                                    ├── github_list_prs     # 列出 PR
+                                                                    └── github_ci_status    # 获取 CI 状态
 ```
+
+**CLI 中间层**（skill + CLI + MCP 三层架构）：skill 不直连 MCP，统一经 `ocean-harness` CLI（app 安装时自动注册到 `/usr/local/bin`；dev 构建为 `ocean-harness-dev`）。CLI 内置 MCP 客户端直连服务端点，价值有二：**调试可见**（MCP 盲盒问题——先 `ocean-harness mcp tools` / `mcp schema` / `mcp call` 在终端调通，再给大模型用）与 **bot 可复用**（后续企微 bot 自动化直接基于 CLI 建任务/调起 app，无需 MCP 会话管理）。详见 `server/README.md`「CLI 命令」节。
 
 #### 3.9.2 实现方案
 

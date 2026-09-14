@@ -4,7 +4,6 @@
     "appConfig": "App Settings",
     "terminalConfig": "Terminal Config",
     "projectConfig": "Project Config",
-    "serviceConfig": "Service Config",
     "userProfile": "User Profile",
     "about": "About"
   },
@@ -88,14 +87,6 @@
     },
     "help": {
       "workspaceBaseDir": "Task working directories live under this base (directory name = task ID). Both embedded and external terminals use it as the base"
-    }
-  },
-  "service": {
-    "row": {
-      "httpServerPort": "HTTP server port"
-    },
-    "help": {
-      "httpServerPort": "Leave empty to use the default port ({{port}}). Range 3000–10000. Manually restart the service on the status page to apply."
     }
   },
   "userProfile": {

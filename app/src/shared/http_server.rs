@@ -9,7 +9,7 @@
 //
 // 配置全部走环境变量注入 Go 进程（不读配置文件）：
 //   GO_SERVER_MODE（dev 编译→test、build 编译→release）、
-//   GO_SERVER_PORT（默认 dev=9000/build=9100，可由系统设置「服务配置」覆盖）、
+//   GO_SERVER_PORT（端口已彻底固化：dev=9000/build=9100，见下方端口契约常量注释）、
 //   GO_SERVER_LOG_DIR、GO_SERVER_SQLITE_DIR（均由 app_data_dir 派生，dev/build 自动隔离）、
 //   GO_SERVER_APP_DB（可选：Rust 自身 app_config 库路径，Go MCP workspace_status 只读
 //   workspace_base_dir 用；解析失败缺省注入，Go 侧按「未配置」降级）。
@@ -45,15 +45,12 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 
-use crate::shared::app_config::{
-    AppConfigState, HTTP_SERVER_PORT_KEY, MAX_HTTP_SERVER_PORT, MIN_HTTP_SERVER_PORT,
-    read_app_config_raw,
-};
 use crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED;
 use crate::shared::types::{HttpServerRunState, HttpServerStatus};
 
-/// dev/build 编译各自的默认端口（用户未在「服务配置」设置 http_server_port 时回退于此）。
-/// pub + .constant() 导出到前端 bindings.ts（设置页帮助文案展示用），Rust 单源。
+/// dev/build 编译各自的固定端口（端口契约 SSOT；CLI 侧同源常量见 server/internal/cli/port.go）。
+/// 端口已彻底固化、不再支持用户自定义：dev=9000 / release=9100，仅 OCEAN_HARNESS_PORT
+/// env 作为逃生通道（Rust pty_spawn 注入 / 手动设置）。本组常量不再 .constant() 导出前端。
 pub const HTTP_SERVER_PORT_TEST: u16 = 9000;
 pub const HTTP_SERVER_PORT_RELEASE: u16 = 9100;
 
@@ -63,36 +60,12 @@ const STARTUP_VERDICT_DEADLINE: Duration = Duration::from_secs(10);
 /// Go 启动期 SQLite 迁移可能数秒无控制台输出，「日志静默」式触发会误杀正常启动，故改轮询。
 const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
-/// 当前编译模式的默认端口（cfg! 编译期决定）。
+/// 当前编译模式的固定端口（cfg! 编译期决定）。
 fn default_port() -> u16 {
     if cfg!(debug_assertions) {
         HTTP_SERVER_PORT_TEST
     } else {
         HTTP_SERVER_PORT_RELEASE
-    }
-}
-
-/// 解析 HTTP 服务端口：读 app_config 的 http_server_port，合法则用，否则回退模式默认。
-/// 在 start_server 调用，保证每次（手动）重启都用最新配置（不监听配置变更）。
-fn resolve_server_port(app: &AppHandle) -> u16 {
-    let default = default_port();
-    let Some(cfg) = app.try_state::<AppConfigState>() else {
-        return default;
-    };
-    let raw = read_app_config_raw(cfg.inner(), HTTP_SERVER_PORT_KEY).unwrap_or(None);
-    let Some(raw) = raw.filter(|s| !s.trim().is_empty()) else {
-        return default;
-    };
-    match raw.trim().parse::<u16>() {
-        Ok(p) if (MIN_HTTP_SERVER_PORT..=MAX_HTTP_SERVER_PORT).contains(&p) => p,
-        _ => {
-            log::warn!(
-                "[http-server] invalid http_server_port {:?}, fallback to default {}",
-                raw,
-                default
-            );
-            default
-        }
     }
 }
 
@@ -106,7 +79,7 @@ pub struct HttpServerState {
     pub run_state: AtomicU8,
     /// 运行模式（debug/release），对应 Go 的 gin mode。
     pub mode: &'static str,
-    /// 监听端口（默认 dev=9000/build=9100；start_server 读 app_config 的 http_server_port 覆盖）。
+    /// 监听端口（编译期固化：dev=9000 / build=9100）。
     pub port: AtomicU16,
     /// 日志目录（注入 GO_SERVER_LOG_DIR）。
     pub log_dir: String,
@@ -560,8 +533,8 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         return Err("log_dir/sqlite_dir not resolved".into());
     }
 
-    // 解析端口：读 app_config 的 http_server_port，缺省回退模式默认；更新 state 供 status/settle 使用。
-    let port = resolve_server_port(app);
+    // 端口为编译期固定值（dev=9000 / release=9100，见本文件顶部端口契约注释）。
+    let port = default_port();
     state.set_port(port);
 
     // 解析 Rust 自身 app_config 库路径（app_data_dir/app.db，与 resolve_dirs/app_config::init 同口径）：

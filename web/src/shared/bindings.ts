@@ -108,6 +108,12 @@ export const commands = {
 	 *  注：init 自动启动场景不调用本命令（按需求仅在服务状态页开关触发）。
 	 */
 	cleanupOrphanHttpServer: () => typedError<null, string>(__TAURI_INVOKE("cleanup_orphan_http_server")),
+	/**  查询 CLI 命令注册状态（四态 + 路径 + 提权取消记录）。 */
+	cliLinkStatus: () => __TAURI_INVOKE<CliCommandStatus>("cli_link_status"),
+	/**  注册 CLI 命令（幂等）：/usr/local/bin 建 symlink，权限不足时弹管理员密码框。 */
+	cliLinkInstall: () => typedError<CliCommandStatus, string>(__TAURI_INVOKE("cli_link_install")),
+	/**  移除 CLI 命令注册（幂等，仅删指向本 app 的 symlink）。 */
+	cliLinkUninstall: () => typedError<CliCommandStatus, string>(__TAURI_INVOKE("cli_link_uninstall")),
 	/**
 	 *  启动/复用会话（幂等）：未退出复用 + 换装 listener；已退出重起（重开语义）。
 	 *  前端挂载即调本命令；输出/退出事件经 on_event Channel 流式回传。
@@ -162,6 +168,8 @@ export const commands = {
 };
 
 /* Constants */
+export const CLI_ELEVATION_DECLINED_KEY = "cli_elevation_declined_version" as const;
+
 export const DEFAULT_ITERM2_SPLIT_DIRECTION = "horizontal" as const;
 
 export const DEFAULT_POLL_INTERVAL_SECS = 120 as const;
@@ -184,21 +192,11 @@ export const EVENT_PET_SESSION_TASK_REFIT = "pet-session-task:refit" as const;
 
 export const GITHUB_PAT_KEY = "github_pat" as const;
 
-export const HTTP_SERVER_PORT_KEY = "http_server_port" as const;
-
-export const HTTP_SERVER_PORT_RELEASE = 9100 as const;
-
-export const HTTP_SERVER_PORT_TEST = 9000 as const;
-
 export const ITERM2_SPLIT_DIRECTION_KEY = "iterm2_split_direction" as const;
 
 export const LANGUAGE_KEY = "language" as const;
 
-export const MAX_HTTP_SERVER_PORT = 10000 as const;
-
 export const MAX_POLL_INTERVAL_SECS = 300 as const;
-
-export const MIN_HTTP_SERVER_PORT = 3000 as const;
 
 export const MIN_POLL_INTERVAL_SECS = 10 as const;
 
@@ -270,6 +268,31 @@ export type ClaudeSessionStatus =
 /**  已失效：进程已退出，json 残留。discover 阶段会过滤掉，理论上不会出现在前端。 */
 "Dead";
 
+/**  CLI 命令注册四态（cli_register::classify 判定）。 */
+export type CliCommandLinkState = 
+/**  symlink 存在且指向本 app 的 cli 二进制（随包 sidecar）。 */
+"Installed" | 
+/**  symlink 存在但指向别处（旧安装位置/悬空链接）。 */
+"Stale" | 
+/**  同名普通文件/目录已存在——用户自有文件，拒绝覆盖。 */
+"Conflict" | 
+/**  目标路径不存在。 */
+"NotInstalled";
+
+/**  CLI 注册状态快照（cli_link_status 命令返回）。仅出参，不 derive Deserialize。 */
+export type CliCommandStatus = {
+	/**  四态判定结果。 */
+	state: CliCommandLinkState,
+	/**  注册的命令名（debug 构建 = ocean-harness-dev，release = ocean-harness）。 */
+	linkName: string,
+	/**  symlink 落点（/usr/local/bin/<link_name>）。 */
+	linkPath: string,
+	/**  本 app 的 cli 二进制绝对路径（随包 sidecar，与主程序同目录）。 */
+	binPath: string,
+	/**  当前版本曾取消管理员授权（Some = 同版本内 init 不再自动弹提权框；app 升级后版本变化，自动重试一次）。 */
+	elevationDeclinedVersion: string | null,
+};
+
 /**
  *  HTTP 本地服务的运行态：三态，反映 sidecar 生命周期。
  *  - Stopped：未运行（从未启动 / 已停止 / 启动失败回退）
@@ -288,7 +311,7 @@ export type HttpServerStatus = {
 	runState: HttpServerRunState,
 	/**  服务地址（http://127.0.0.1:<port>），前端 fetch getServerRunInfo 用。 */
 	address: string,
-	/**  监听端口（默认 dev=9000/build=9100，可由「服务配置」覆盖）。 */
+	/**  监听端口（编译期固化：dev=9000 / build=9100）。 */
 	port: number,
 	/**  运行模式（debug/release），与 Go gin mode 对齐。 */
 	mode: string,
