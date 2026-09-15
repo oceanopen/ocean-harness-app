@@ -108,11 +108,11 @@ export const commands = {
 	 *  注：init 自动启动场景不调用本命令（按需求仅在服务状态页开关触发）。
 	 */
 	cleanupOrphanHttpServer: () => typedError<null, string>(__TAURI_INVOKE("cleanup_orphan_http_server")),
-	/**  查询 CLI 命令注册状态（四态 + 路径 + 提权取消记录）。 */
+	/**  查询 CLI 命令注册状态（四态 + 路径）。 */
 	cliLinkStatus: () => __TAURI_INVOKE<CliCommandStatus>("cli_link_status"),
-	/**  注册 CLI 命令（幂等）：/usr/local/bin 建 symlink，权限不足时弹管理员密码框。 */
+	/**  注册 CLI 命令（幂等）：~/.local/bin 建 symlink + ~/.zshrc 注入 PATH，全程免提权。 */
 	cliLinkInstall: () => typedError<CliCommandStatus, string>(__TAURI_INVOKE("cli_link_install")),
-	/**  移除 CLI 命令注册（幂等，仅删指向本 app 的 symlink）。 */
+	/**  移除 CLI 命令注册（幂等，仅删指向本 app 的 symlink + 摘除 PATH 注入块）。 */
 	cliLinkUninstall: () => typedError<CliCommandStatus, string>(__TAURI_INVOKE("cli_link_uninstall")),
 	/**
 	 *  启动/复用会话（幂等）：未退出复用 + 换装 listener；已退出重起（重开语义）。
@@ -168,8 +168,6 @@ export const commands = {
 };
 
 /* Constants */
-export const CLI_ELEVATION_DECLINED_KEY = "cli_elevation_declined_version" as const;
-
 export const DEFAULT_ITERM2_SPLIT_DIRECTION = "horizontal" as const;
 
 export const DEFAULT_POLL_INTERVAL_SECS = 120 as const;
@@ -285,12 +283,10 @@ export type CliCommandStatus = {
 	state: CliCommandLinkState,
 	/**  注册的命令名（debug 构建 = ocean-harness-dev-cli，release = ocean-harness-cli）。 */
 	linkName: string,
-	/**  symlink 落点（/usr/local/bin/<link_name>）。 */
+	/**  symlink 落点（~/.local/bin/<link_name>）。 */
 	linkPath: string,
 	/**  本 app 的 cli 二进制绝对路径（随包 sidecar，与主程序同目录）。 */
 	binPath: string,
-	/**  当前版本曾取消管理员授权（Some = 同版本内 init 不再自动弹提权框；app 升级后版本变化，自动重试一次）。 */
-	elevationDeclinedVersion: string | null,
 };
 
 /**

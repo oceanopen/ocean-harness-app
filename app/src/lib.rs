@@ -105,10 +105,6 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             "GITHUB_PAT_KEY",
             shared::app_config::GITHUB_PAT_KEY,
         )
-        .constant(
-            "CLI_ELEVATION_DECLINED_KEY",
-            shared::app_config::CLI_ELEVATION_DECLINED_KEY,
-        )
         // HTTP 端口已彻底固化为编译期常量（http_server.rs：dev=9000/release=9100），
         // 不再经 .constant() 导出，前端无消费点（服务地址走 http_server_status 实时获取）。
         // 事件名（events.rs）：emit/listen 字符串 typo 不编译报错，单源导出消双份。

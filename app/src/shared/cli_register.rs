@@ -1,4 +1,4 @@
-// ocean-harness CLI 命令注册：把随包 sidecar 的 cli 二进制 symlink 到 /usr/local/bin，
+// ocean-harness CLI 命令注册：把随包 sidecar 的 cli 二进制 symlink 到 ~/.local/bin，
 // 让任意终端可直接执行 `ocean-harness-cli xxx`（release）/ `ocean-harness-dev-cli xxx`（debug）。
 //
 // 注册模型（参照 orca 四态状态机）：
@@ -6,26 +6,22 @@
 //   cli_bin）/ Stale（symlink 指向别处，含悬空）/ Conflict（同名普通文件，用户自有文件，拒碰）/
 //   NotInstalled。只在 NotInstalled/Stale 上操作，Conflict 永不改写。
 //
-// 提权链路：先试直接 symlink（多数机器 admin 用户对 /usr/local/bin 有组写权限）；
-// EACCES 时 osascript `with administrator privileges` 弹系统密码框。init 自动注册路径下
-// 用户取消授权 → 写 app_config 记「被拒时的 app 版本」（版本化语义：同版本不再自动弹框，
-// app 升级后自动重试一次），见 CLI_ELEVATION_DECLINED_KEY。
+// 免密设计：落点 ~/.local/bin 为用户级可写目录，建链/删除全程纯 fs 操作、无需提权
+// （历史版本曾 symlink 到 root 属主的 /usr/local/bin 并经 osascript 弹管理员密码框，已废弃；
+// 升级用户如存留 root 属主旧链接，需手动 sudo rm 一次）。PATH 依赖经 ~/.zshrc 幂等注入
+// （marker 注释 + export PATH 行，ensure_path_line/remove_path_line，有单测），卸载时按
+// marker 精确摘除、不碰用户自写的 PATH 行；fish 等其他 shell 需手动把 ~/.local/bin
+// 加入 PATH。
 //
-// 生命周期：init 在 setup 末尾后台线程幂等执行（仅 NotInstalled 且本版本未拒绝时自动装，
-// Stale/Conflict 只留日志不动手）；install/uninstall 以 IPC 命令暴露供前端/后续 bot 调用。
-// 非 macOS 平台整体 no-op（Windows 注册进 PATH 属后续工作）。
+// 生命周期：init 在 setup 末尾后台线程幂等执行（仅 NotInstalled 时自动装，免密故静默无
+// 打扰；Stale/Conflict 只留日志不动手）；install/uninstall 以 IPC 命令暴露供前端/后续 bot
+// 调用。非 macOS 平台整体 no-op（Windows 注册进用户级 PATH 属后续工作，同样免密）。
 
 use std::path::{Path, PathBuf};
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-use crate::shared::app_config::{
-    AppConfigState, CLI_ELEVATION_DECLINED_KEY, read_app_config_raw, write_app_config_raw,
-};
 use crate::shared::types::{CliCommandLinkState, CliCommandStatus};
-
-/// CLI symlink 落点目录（macOS 上 PATH 默认包含，orca 同款）。
-const CLI_BIN_DIR: &str = "/usr/local/bin";
 
 /// 注册的命令名：debug 构建 = ocean-harness-dev-cli（连 dev app 的 9000 端口服务），
 /// release 构建 = ocean-harness-cli（连 release app 的 9100）。按编译期区分，与
@@ -38,9 +34,22 @@ pub fn link_name() -> &'static str {
     }
 }
 
+/// 用户主目录（HOME 环境变量；守护级缺失视为环境异常）。
+fn home_dir() -> Result<PathBuf, String> {
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or_else(|| "未获取到 HOME 环境变量，无法定位用户目录".to_string())
+}
+
+/// symlink 落点目录：~/.local/bin（用户级可写，免提权）。
+fn bin_dir() -> Result<PathBuf, String> {
+    Ok(home_dir()?.join(".local").join("bin"))
+}
+
 /// symlink 完整路径。
-fn link_path() -> PathBuf {
-    Path::new(CLI_BIN_DIR).join(link_name())
+fn link_path() -> Result<PathBuf, String> {
+    Ok(bin_dir()?.join(link_name()))
 }
 
 /// 本 app 的 cli 二进制路径：随包 sidecar 与主程序同目录，命名 = {identifier}-cli_bin
@@ -54,108 +63,85 @@ fn cli_bin_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join(format!("{}-cli_bin", app.config().identifier)))
 }
 
-// ---- app_config：提权取消记忆（版本化语义） ----
+// ---- PATH 注入/摘除（幂等，marker 精确配对） ----
 
-fn declined_version(app: &AppHandle) -> Option<String> {
-    let state = app.try_state::<AppConfigState>()?;
-    read_app_config_raw(state.inner(), CLI_ELEVATION_DECLINED_KEY)
-        .ok()
-        .flatten()
-        .filter(|v| !v.trim().is_empty())
+/// 注入块的 marker 注释行：幂等判重与卸载摘除的唯一依据。
+const PATH_MARKER: &str = "# added by Ocean Harness CLI registration";
+
+/// 注入的 export 行（与 marker 成对写入）。普通转义字符串——裸字符串 r#"…"# 的终止
+/// 序列 `"#` 会吞掉本行 shell 语法的收尾引号（内容以 `$PATH"` 结尾恰好命中），已踩坑。
+const PATH_EXPORT_LINE: &str = "export PATH=\"$HOME/.local/bin:$PATH\"";
+
+/// PATH 注入目标：~/.zshrc（zsh 交互 shell 通用读取，Terminal.app/iTerm2/VS Code 终端
+/// 一致，与终端 App 无关）。
+fn zshrc_path() -> Result<PathBuf, String> {
+    Ok(home_dir()?.join(".zshrc"))
 }
 
-fn is_declined_for_current_version(app: &AppHandle) -> bool {
-    declined_version(app).is_some_and(|v| v == app.package_info().version.to_string())
-}
-
-/// 记录「本版本用户已拒绝提权」。仅注册路径被取消时写入——自动弹框打扰一次即止。
-fn mark_declined(app: &AppHandle) {
-    let Some(state) = app.try_state::<AppConfigState>() else {
-        return;
+/// 幂等注入 PATH 块：文件缺失则创建；已含 marker 则跳过；否则尾部追加
+/// marker 注释 + export PATH 两行（用户文件末行无换行时先补换行，避免拼接）。
+fn ensure_path_line(rc: &Path) -> Result<(), String> {
+    let existing = match std::fs::read_to_string(rc) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("读取 {} 失败: {e}", rc.display())),
     };
-    let version = app.package_info().version.to_string();
-    if let Err(e) = write_app_config_raw(
-        state.inner(),
-        CLI_ELEVATION_DECLINED_KEY,
-        &version,
-    ) {
-        log::warn!("[cli-register] 写入提权取消记录失败: {e}");
+    if existing.contains(PATH_MARKER) {
+        return Ok(());
     }
+    let mut out = existing;
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(PATH_MARKER);
+    out.push('\n');
+    out.push_str(PATH_EXPORT_LINE);
+    out.push('\n');
+    std::fs::write(rc, out).map_err(|e| format!("写入 {} 失败: {e}", rc.display()))
 }
 
-// ---- macOS 实现（symlink + osascript 提权） ----
+/// 按 marker 摘除注入块（marker 行及其后紧邻的 export 行成对删除，可多对；
+/// 用户自写的其他 PATH 行原样保留）。文件缺失视为已摘除。
+fn remove_path_line(rc: &Path) -> Result<(), String> {
+    let existing = match std::fs::read_to_string(rc) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("读取 {} 失败: {e}", rc.display())),
+    };
+    if !existing.contains(PATH_MARKER) {
+        return Ok(());
+    }
+    let mut kept: Vec<&str> = Vec::new();
+    let mut lines = existing.lines().peekable();
+    while let Some(line) = lines.next() {
+        if line.trim_end() == PATH_MARKER {
+            // 成对摘除：marker 后紧邻的 export 行一并跳过。
+            if lines
+                .peek()
+                .is_some_and(|next| *next == PATH_EXPORT_LINE)
+            {
+                lines.next();
+            }
+            continue;
+        }
+        kept.push(line);
+    }
+    let mut out = kept.join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    std::fs::write(rc, out).map_err(|e| format!("写入 {} 失败: {e}", rc.display()))
+}
+
+// ---- macOS 实现（纯 fs，免提权） ----
 
 #[cfg(target_os = "macos")]
 mod imp {
     use std::fs;
-    use std::io;
     use std::os::unix::fs::symlink;
-    use std::process::Command;
     use std::thread;
 
     use super::*;
-
-    /// 提权操作结果。Canceled 单列：自动注册路径据此写取消记忆。
-    enum ElevateOutcome {
-        Success,
-        Canceled(String),
-        Failed(String),
-    }
-
-    /// shell 单引号包裹（路径含空格/特殊字符安全；单引号本身按 '\'' 惯例转义）。
-    fn shell_quote(s: &str) -> String {
-        format!("'{}'", s.replace('\'', r"'\''"))
-    }
-
-    /// osascript 通用执行：包一层「用户取消」判定——错误文案随系统语言变化，
-    /// errAECanceled(-128) 是唯一的 locale 无关信号。
-    fn run_osascript(apple_script: &str) -> ElevateOutcome {
-        match Command::new("osascript")
-            .arg("-e")
-            .arg(apple_script)
-            .output()
-        {
-            Ok(out) if out.status.success() => ElevateOutcome::Success,
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                if stderr.contains("-128") {
-                    ElevateOutcome::Canceled(stderr.trim().to_string())
-                } else {
-                    ElevateOutcome::Failed(stderr.trim().to_string())
-                }
-            }
-            Err(e) => ElevateOutcome::Failed(e.to_string()),
-        }
-    }
-
-    /// AppleScript 字符串内转义反斜杠与双引号（单引号原样穿透给 shell）。
-    fn wrap_admin(shell_cmd: &str) -> String {
-        format!(
-            "do shell script \"{}\" with administrator privileges",
-            shell_cmd
-                .replace('\\', "\\\\")
-                .replace('"', "\\\""),
-        )
-    }
-
-    /// 提权建链：mkdir -p + ln -sfn（-n 替换既有 symlink，-f 强制覆盖）。
-    fn symlink_elevated(bin: &Path, link: &Path) -> ElevateOutcome {
-        let shell_cmd = format!(
-            "mkdir -p {} && ln -sfn {} {}",
-            shell_quote(CLI_BIN_DIR),
-            shell_quote(&bin.to_string_lossy()),
-            shell_quote(&link.to_string_lossy()),
-        );
-        run_osascript(&wrap_admin(&shell_cmd))
-    }
-
-    /// 卸载时对 /usr/local/bin 无写权限的兜底提权 rm。
-    fn remove_elevated(link: &Path) -> ElevateOutcome {
-        run_osascript(&wrap_admin(&format!(
-            "rm -f {}",
-            shell_quote(&link.to_string_lossy())
-        )))
-    }
 
     /// 四态判定。悬空 symlink（目标已删）归 Stale——「指向别处」的特例，同样可安全替换。
     fn classify(link: &Path, bin: &Path) -> CliCommandLinkState {
@@ -174,11 +160,13 @@ mod imp {
     fn build_status(app: &AppHandle) -> CliCommandStatus {
         let bin = cli_bin_path(app).unwrap_or_default();
         CliCommandStatus {
-            state: classify(&link_path(), &bin),
+            state: classify(&link_path().unwrap_or_default(), &bin),
             link_name: link_name().to_string(),
-            link_path: link_path().to_string_lossy().to_string(),
+            link_path: link_path()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
             bin_path: bin.to_string_lossy().to_string(),
-            elevation_declined_version: declined_version(app),
         }
     }
 
@@ -186,8 +174,8 @@ mod imp {
         build_status(app)
     }
 
-    /// 确保命令已注册（幂等）。返回终态快照；失败返回中文错误。
-    /// 提权被取消时同样写入取消记忆（用户主动拒绝，本轮不再打扰）。
+    /// 确保命令已注册（幂等，纯 fs 免提权）。顺序：建链成功后再注入 PATH（失败不污染 rc）；
+    /// PATH 注入失败时报「已注册但需手动加 PATH」，不回滚建链。
     pub fn install(app: &AppHandle) -> Result<CliCommandStatus, String> {
         let bin = cli_bin_path(app)?;
         if fs::symlink_metadata(&bin).is_err() {
@@ -196,7 +184,8 @@ mod imp {
                 bin.display()
             ));
         }
-        let link = link_path();
+        let dir = bin_dir()?;
+        let link = dir.join(link_name());
         match classify(&link, &bin) {
             CliCommandLinkState::Conflict => {
                 return Err(format!(
@@ -205,29 +194,27 @@ mod imp {
                 ));
             }
             CliCommandLinkState::Installed => return Ok(build_status(app)),
-            // 旧 symlink 指向别处：先尝试摘掉再走正常建链（摘不掉也无妨，提权分支的 ln -sfn 会覆盖）。
+            // 旧 symlink 指向别处：先摘掉再建链。摘除失败（如 root 属主的历史残留）
+            // 不盲目继续——用户级目录里不该出现摘不掉的条目，报错并给手动清理指引。
             CliCommandLinkState::Stale => {
-                let _ = fs::remove_file(&link);
+                if let Err(e) = fs::remove_file(&link) {
+                    return Err(format!(
+                        "旧符号链接 {} 无法移除（{e}）；若为 root 属主的历史残留，请手动 sudo rm 后重试",
+                        link.display()
+                    ));
+                }
             }
             CliCommandLinkState::NotInstalled => {}
         }
-        match symlink(&bin, &link) {
-            Ok(()) => {}
-            // 权限不足（或摘旧链接失败导致的 EEXIST）→ osascript 提权。
-            Err(e)
-                if e.kind() == io::ErrorKind::PermissionDenied
-                    || e.kind() == io::ErrorKind::AlreadyExists =>
-            {
-                match symlink_elevated(&bin, &link) {
-                    ElevateOutcome::Success => {}
-                    ElevateOutcome::Canceled(msg) => {
-                        mark_declined(app);
-                        return Err(format!("已取消管理员授权，本次未注册（{msg}）"));
-                    }
-                    ElevateOutcome::Failed(msg) => return Err(format!("提权注册失败: {msg}")),
-                }
-            }
-            Err(e) => return Err(format!("创建符号链接失败: {e}")),
+        fs::create_dir_all(&dir).map_err(|e| format!("创建 {} 失败: {e}", dir.display()))?;
+        symlink(&bin, &link).map_err(|e| format!("创建符号链接失败: {e}"))?;
+        if let Err(e) = ensure_path_line(&zshrc_path()?) {
+            return Err(format!(
+                "命令已注册（{} -> {}），但 PATH 注入 ~/.zshrc 失败: {e}；请手动执行 {} 后重开终端",
+                link.display(),
+                bin.display(),
+                PATH_EXPORT_LINE
+            ));
         }
         let status = build_status(app);
         if status.state != CliCommandLinkState::Installed {
@@ -239,11 +226,12 @@ mod imp {
         Ok(status)
     }
 
-    /// 移除本 app 注册的命令（幂等）。仅删除指向本 app cli_bin 的 symlink；
-    /// Stale/Conflict 拒删——symlink 指向别处或同名普通文件都不是本 app 的产物。
+    /// 移除本 app 注册的命令（幂等）。仅删除指向本 app cli_bin 的 symlink + 按 marker
+    /// 摘除 PATH 注入块；Stale/Conflict 拒删——symlink 指向别处或同名普通文件都不是
+    /// 本 app 的产物。PATH 摘除失败不阻断卸载（链接已删，残留两行注释无害，留日志）。
     pub fn uninstall(app: &AppHandle) -> Result<CliCommandStatus, String> {
         let bin = cli_bin_path(app)?;
-        let link = link_path();
+        let link = link_path()?;
         match classify(&link, &bin) {
             CliCommandLinkState::NotInstalled => return Ok(build_status(app)),
             CliCommandLinkState::Stale | CliCommandLinkState::Conflict => {
@@ -254,21 +242,14 @@ mod imp {
             }
             CliCommandLinkState::Installed => {}
         }
-        match fs::remove_file(&link) {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => match remove_elevated(&link) {
-                ElevateOutcome::Success => {}
-                ElevateOutcome::Canceled(msg) => {
-                    return Err(format!("已取消管理员授权，未删除（{msg}）"));
-                }
-                ElevateOutcome::Failed(msg) => return Err(format!("提权删除失败: {msg}")),
-            },
-            Err(e) => return Err(format!("删除符号链接失败: {e}")),
+        fs::remove_file(&link).map_err(|e| format!("删除符号链接失败: {e}"))?;
+        if let Err(e) = remove_path_line(&zshrc_path()?) {
+            log::warn!("[cli-register] ~/.zshrc PATH 块摘除失败（无害残留）: {e}");
         }
         Ok(build_status(app))
     }
 
-    /// setup 钩子：后台线程自动注册（幂等）。仅 NotInstalled 且本版本未拒绝提权时出手；
+    /// setup 钩子：后台线程自动注册（幂等、免密故静默无打扰）。仅 NotInstalled 时出手；
     /// Stale（指向别处）与 Conflict（用户自有文件）保持只读不动，避免误伤。
     pub fn init(app: &AppHandle) {
         let app = app.clone();
@@ -280,7 +261,13 @@ mod imp {
                     return;
                 }
             };
-            let link = link_path();
+            let link = match link_path() {
+                Ok(p) => p,
+                Err(e) => {
+                    log::warn!("[cli-register] 自动注册跳过: {e}");
+                    return;
+                }
+            };
             match classify(&link, &bin) {
                 CliCommandLinkState::Installed => {
                     log::info!("[cli-register] {} 已注册", link.display());
@@ -297,23 +284,14 @@ mod imp {
                         link.display()
                     );
                 }
-                CliCommandLinkState::NotInstalled => {
-                    if is_declined_for_current_version(&app) {
-                        log::info!(
-                            "[cli-register] 本版本（{}）曾取消授权，跳过自动注册",
-                            app.package_info().version
-                        );
-                        return;
-                    }
-                    match install(&app) {
-                        Ok(_) => log::info!(
-                            "[cli-register] 已注册命令 {} -> {}",
-                            link.display(),
-                            bin.display()
-                        ),
-                        Err(e) => log::warn!("[cli-register] 自动注册未完成: {e}"),
-                    }
-                }
+                CliCommandLinkState::NotInstalled => match install(&app) {
+                    Ok(_) => log::info!(
+                        "[cli-register] 已注册命令 {} -> {}",
+                        link.display(),
+                        bin.display()
+                    ),
+                    Err(e) => log::warn!("[cli-register] 自动注册未完成: {e}"),
+                },
             }
         });
     }
@@ -329,12 +307,14 @@ pub fn status(app: &AppHandle) -> CliCommandStatus {
     CliCommandStatus {
         state: CliCommandLinkState::NotInstalled,
         link_name: link_name().to_string(),
-        link_path: link_path().to_string_lossy().to_string(),
+        link_path: link_path()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
         bin_path: cli_bin_path(app)
             .unwrap_or_default()
             .to_string_lossy()
             .to_string(),
-        elevation_declined_version: declined_version(app),
     }
 }
 
@@ -351,32 +331,112 @@ pub fn uninstall(_app: &AppHandle) -> Result<CliCommandStatus, String> {
     Err("CLI 命令注册仅支持 macOS".to_string())
 }
 
-// ---- IPC 命令（install/uninstall 含 osascript 密码框交互，可能长时间等待用户输入，
-// 故 async + spawn_blocking 脱离主线程；status 纯文件元数据读取，同步即可） ----
+// ---- IPC 命令（纯 fs 操作毫秒级完成，同步命令即可；osascript 提权交互已随免密设计移除） ----
 
-/// 查询 CLI 命令注册状态（四态 + 路径 + 提权取消记录）。
+/// 查询 CLI 命令注册状态（四态 + 路径）。
 #[tauri::command]
 #[specta::specta]
 pub fn cli_link_status(app: AppHandle) -> CliCommandStatus {
     status(&app)
 }
 
-/// 注册 CLI 命令（幂等）：/usr/local/bin 建 symlink，权限不足时弹管理员密码框。
+/// 注册 CLI 命令（幂等）：~/.local/bin 建 symlink + ~/.zshrc 注入 PATH，全程免提权。
 #[tauri::command]
 #[specta::specta]
-pub async fn cli_link_install(app: AppHandle) -> Result<CliCommandStatus, String> {
-    let res = tauri::async_runtime::spawn_blocking(move || install(&app))
-        .await
-        .map_err(|e| format!("CLI 注册任务执行失败: {e}"))??;
-    Ok(res)
+pub fn cli_link_install(app: AppHandle) -> Result<CliCommandStatus, String> {
+    install(&app)
 }
 
-/// 移除 CLI 命令注册（幂等，仅删指向本 app 的 symlink）。
+/// 移除 CLI 命令注册（幂等，仅删指向本 app 的 symlink + 摘除 PATH 注入块）。
 #[tauri::command]
 #[specta::specta]
-pub async fn cli_link_uninstall(app: AppHandle) -> Result<CliCommandStatus, String> {
-    let res = tauri::async_runtime::spawn_blocking(move || uninstall(&app))
-        .await
-        .map_err(|e| format!("CLI 卸载任务执行失败: {e}"))??;
-    Ok(res)
+pub fn cli_link_uninstall(app: AppHandle) -> Result<CliCommandStatus, String> {
+    uninstall(&app)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试专用 rc 文件：tempdir 下唯一命名，测试结束自行清理由 temp_dir 惯例兜底。
+    fn test_rc(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "ocean-cli-register-{}-{}",
+            std::process::id(),
+            name
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("zshrc")
+    }
+
+    #[test]
+    fn ensure_file_missing_creates_block() {
+        let rc = test_rc("create");
+        let _ = std::fs::remove_file(&rc);
+        ensure_path_line(&rc).unwrap();
+        let content = std::fs::read_to_string(&rc).unwrap();
+        assert!(content.contains(PATH_MARKER));
+        assert!(content.contains(PATH_EXPORT_LINE));
+    }
+
+    #[test]
+    fn export_line_is_well_formed_shell() {
+        // 钉死精确值：曾因裸字符串终止符 `"#` 吞掉收尾引号，注入了未闭合的 shell 行。
+        assert_eq!(
+            PATH_EXPORT_LINE,
+            "export PATH=\"$HOME/.local/bin:$PATH\""
+        );
+    }
+
+    #[test]
+    fn ensure_idempotent_no_duplicate() {
+        let rc = test_rc("idempotent");
+        let _ = std::fs::remove_file(&rc);
+        ensure_path_line(&rc).unwrap();
+        let once = std::fs::read_to_string(&rc).unwrap();
+        ensure_path_line(&rc).unwrap();
+        let twice = std::fs::read_to_string(&rc).unwrap();
+        assert_eq!(once, twice, "重复注入不得产生第二份块");
+    }
+
+    #[test]
+    fn ensure_appends_after_user_lines_with_newline_fix() {
+        let rc = test_rc("append");
+        let _ = std::fs::remove_file(&rc);
+        std::fs::write(&rc, "export EDITOR=vim").unwrap(); // 末行无换行
+        ensure_path_line(&rc).unwrap();
+        let content = std::fs::read_to_string(&rc).unwrap();
+        assert!(
+            content.starts_with("export EDITOR=vim\n"),
+            "先补换行再拼接"
+        );
+        assert!(content.contains(PATH_EXPORT_LINE));
+    }
+
+    #[test]
+    fn remove_keeps_user_lines_and_is_idempotent() {
+        let rc = test_rc("remove");
+        let _ = std::fs::remove_file(&rc);
+        std::fs::write(
+            &rc,
+            "export EDITOR=vim\nexport PATH=$HOME/bin:$PATH\n",
+        )
+        .unwrap();
+        ensure_path_line(&rc).unwrap();
+        remove_path_line(&rc).unwrap();
+        let content = std::fs::read_to_string(&rc).unwrap();
+        assert_eq!(
+            content, "export EDITOR=vim\nexport PATH=$HOME/bin:$PATH\n",
+            "只摘注入块，用户自写行原样保留"
+        );
+        remove_path_line(&rc).unwrap(); // 再摘一次：无 marker 幂等
+        assert_eq!(std::fs::read_to_string(&rc).unwrap(), content);
+    }
+
+    #[test]
+    fn remove_missing_file_is_ok() {
+        let rc = test_rc("remove-missing");
+        let _ = std::fs::remove_file(&rc);
+        remove_path_line(&rc).unwrap();
+    }
 }

@@ -131,7 +131,7 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 
 ## CLI 命令（cmd/cli）
 
-随包分发的 `ocean-harness-cli` 命令行工具（release app 注册 `ocean-harness-cli`，dev 构建注册 `ocean-harness-dev-cli`；由 Rust 侧 `app/src/shared/cli_register.rs` 在 app 启动时 symlink 到 `/usr/local/bin`）。命令层基于 spf13/cobra（`root.go` 命令树 + `mcp.go` 命令组，`SetUsageTemplate` 全中文帮助）。内置 MCP 客户端直连本机 HTTP 服务的 MCP 端点，作为 skill ↔ MCP 之间的可调试中间层（先 CLI 调通，再给大模型用）。
+随包分发的 `ocean-harness-cli` 命令行工具（release app 注册 `ocean-harness-cli`，dev 构建注册 `ocean-harness-dev-cli`；由 Rust 侧 `app/src/shared/cli_register.rs` 在 app 启动时 symlink 到用户级目录 `~/.local/bin` 并向 `~/.zshrc` 幂等注入 PATH 行——全程免提权、不弹管理员密码框；fish 等其他 shell 需手动把 `~/.local/bin` 加入 PATH）。命令层基于 spf13/cobra（`root.go` 命令树 + `mcp.go` 命令组，`SetUsageTemplate` 全中文帮助）。内置 MCP 客户端直连本机 HTTP 服务的 MCP 端点，作为 skill ↔ MCP 之间的可调试中间层（先 CLI 调通，再给大模型用）。
 
 ```bash
 ocean-harness-cli --version / version          # 版本与构建模式（root --version 与子命令输出一致）

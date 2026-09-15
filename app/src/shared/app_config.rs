@@ -38,11 +38,6 @@ pub const DEFAULT_TERMINAL_POST_OPEN_COMMAND: &str = "";
 /// 敏感值：设置页不回显明文（仅示「已配置」），写入即生效（无缓存）。
 pub const GITHUB_PAT_KEY: &str = "github_pat";
 
-/// CLI 命令注册提权被取消时的 app 版本记录（cli_register 写入）。值为取消发生时的 app 版本
-/// （如 "0.2.1"）：同版本内 init 不再自动弹 osascript 提权框，app 升级后版本变化自动重试一次。
-/// 经 .constant() 导出到前端（Rust 单源）。
-pub const CLI_ELEVATION_DECLINED_KEY: &str = "cli_elevation_declined_version";
-
 pub struct AppConfigState(pub Mutex<Connection>);
 
 pub fn init(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {

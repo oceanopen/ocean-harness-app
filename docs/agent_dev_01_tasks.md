@@ -750,6 +750,13 @@
 - ocean-claude-plugins 插件文档同步改名（refine-issue / README / issue-context SKILL）并补 `--data @file|-` 用法
 - 质量审查 + 规范审查修复后定稿文件结构：`root.go`（命令树/错误契约）+ `mcp.go`（mcp 命令组）+ `session.go`（直连 sidecar 共用编排：`withMcpSession`/`connErr`/超时，未来新命名空间复用）+ `port.go`/`client.go`/`render.go`；错误构造统一经 `usageErr`/`toolErr`（2026-09-16）
 
+**实施定稿（2026-09-16，CLI 注册免密改造）**：
+- symlink 落点 `/usr/local/bin`（root 属主，EACCES 后 osascript 弹管理员密码框）→ 用户级 `~/.local/bin`：建链/删除全程纯 fs 操作、永久免提权；osascript 提权链路（`ElevateOutcome`/`run_osascript`/`wrap_admin`/`symlink_elevated`/`remove_elevated`）与「提权取消版本记忆」（`CLI_ELEVATION_DECLINED_KEY` 常量 + `.constant()` 导出 + `CliCommandStatus.elevationDeclinedVersion` 字段）整体删除——免密后 init 自动注册静默无打扰，记忆机制失去存在意义
+- PATH 依赖：`~/.zshrc` 幂等注入 marker 注释 + `export PATH="$HOME/.local/bin:$PATH"` 两行（`ensure_path_line`/`remove_path_line`，6 个单测覆盖创建/幂等/末行无换行拼接/摘除保留用户行/文件缺失/export 行精确值）；uninstall 按 marker 精确摘除、不碰用户自写 PATH 行；fish 等其他 shell 需手动加 PATH。曾评估「检测 `.zshrc` source `.bash_profile` 时改注入后者」方案，确认 zsh rc 加载与终端 App 无关、`.bash_profile` 对 zsh 非通用后否决，定稿统一 `~/.zshrc`。踩坑记录：export 行曾用裸字符串 `r#"…"#` 书写，终止序列 `"#` 恰好吞掉行尾 shell 引号产出未闭合行，已改普通转义字符串并以精确值单测钉死
+- 语义保持：四态状态机（Installed/Stale/Conflict/NotInstalled）与 Conflict 拒碰不变；Stale 摘除失败（root 属主历史残留）报错并给 `sudo rm` 指引；install 顺序 = 建链成功后再注入 PATH（失败不污染 rc，报「已注册但需手动加 PATH」）
+- Windows 侧维持 no-op；后续实现时走用户级 PATH（HKCU 环境变量），同样免提权
+- 已知迁移点：旧版本升级用户若存留 `/usr/local/bin` root 属主旧链接，需手动 `sudo rm` 一次（本机已在改名清理时处理）
+
 ---
 
 ## 依赖关系图

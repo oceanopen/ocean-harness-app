@@ -174,10 +174,8 @@ pub struct CliCommandStatus {
     pub state: CliCommandLinkState,
     /// 注册的命令名（debug 构建 = ocean-harness-dev-cli，release = ocean-harness-cli）。
     pub link_name: String,
-    /// symlink 落点（/usr/local/bin/<link_name>）。
+    /// symlink 落点（~/.local/bin/<link_name>）。
     pub link_path: String,
     /// 本 app 的 cli 二进制绝对路径（随包 sidecar，与主程序同目录）。
     pub bin_path: String,
-    /// 当前版本曾取消管理员授权（Some = 同版本内 init 不再自动弹提权框；app 升级后版本变化，自动重试一次）。
-    pub elevation_declined_version: Option<String>,
 }
