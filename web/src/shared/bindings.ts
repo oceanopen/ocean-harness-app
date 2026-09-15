@@ -283,7 +283,7 @@ export type CliCommandLinkState =
 export type CliCommandStatus = {
 	/**  四态判定结果。 */
 	state: CliCommandLinkState,
-	/**  注册的命令名（debug 构建 = ocean-harness-dev，release = ocean-harness）。 */
+	/**  注册的命令名（debug 构建 = ocean-harness-dev-cli，release = ocean-harness-cli）。 */
 	linkName: string,
 	/**  symlink 落点（/usr/local/bin/<link_name>）。 */
 	linkPath: string,

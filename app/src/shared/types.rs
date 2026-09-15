@@ -172,7 +172,7 @@ pub enum CliCommandLinkState {
 pub struct CliCommandStatus {
     /// 四态判定结果。
     pub state: CliCommandLinkState,
-    /// 注册的命令名（debug 构建 = ocean-harness-dev，release = ocean-harness）。
+    /// 注册的命令名（debug 构建 = ocean-harness-dev-cli，release = ocean-harness-cli）。
     pub link_name: String,
     /// symlink 落点（/usr/local/bin/<link_name>）。
     pub link_path: String,

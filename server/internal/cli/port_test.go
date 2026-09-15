@@ -17,11 +17,11 @@ func withMode(t *testing.T, mode string) {
 func TestResolvePort(t *testing.T) {
 	t.Run("默认跟随构建模式", func(t *testing.T) {
 		withMode(t, "test")
-		if port, err := resolvePort(); err != nil || port != portTest {
+		if port, err := resolvePort(0); err != nil || port != portTest {
 			t.Fatalf("mode=test: got (%d, %v), want (%d, nil)", port, err, portTest)
 		}
 		withMode(t, "release")
-		if port, err := resolvePort(); err != nil || port != portRelease {
+		if port, err := resolvePort(0); err != nil || port != portRelease {
 			t.Fatalf("mode=release: got (%d, %v), want (%d, nil)", port, err, portRelease)
 		}
 	})
@@ -29,15 +29,31 @@ func TestResolvePort(t *testing.T) {
 	t.Run("env 覆盖默认", func(t *testing.T) {
 		withMode(t, "test")
 		t.Setenv(EnvPort, "9200")
-		if port, err := resolvePort(); err != nil || port != 9200 {
+		if port, err := resolvePort(0); err != nil || port != 9200 {
 			t.Fatalf("env=9200: got (%d, %v), want (9200, nil)", port, err)
+		}
+	})
+
+	t.Run("flag 优先于 env 与默认", func(t *testing.T) {
+		withMode(t, "test")
+		t.Setenv(EnvPort, "9200")
+		if port, err := resolvePort(9300); err != nil || port != 9300 {
+			t.Fatalf("flag=9300: got (%d, %v), want (9300, nil)", port, err)
+		}
+	})
+
+	t.Run("flag 非法报错", func(t *testing.T) {
+		for _, p := range []int{-1, 65536} {
+			if port, err := resolvePort(p); err == nil {
+				t.Fatalf("flag=%d: got (%d, nil), want error", p, port)
+			}
 		}
 	})
 
 	t.Run("env 非空但非法报错", func(t *testing.T) {
 		for _, raw := range []string{"abc", "0", "-1", "65536", " 9000x "} {
 			t.Setenv(EnvPort, raw)
-			if port, err := resolvePort(); err == nil {
+			if port, err := resolvePort(0); err == nil {
 				t.Fatalf("env=%q: got (%d, nil), want error", raw, port)
 			}
 		}
@@ -46,7 +62,7 @@ func TestResolvePort(t *testing.T) {
 	t.Run("env 空白视同未设置", func(t *testing.T) {
 		withMode(t, "release")
 		t.Setenv(EnvPort, "   ")
-		if port, err := resolvePort(); err != nil || port != portRelease {
+		if port, err := resolvePort(0); err != nil || port != portRelease {
 			t.Fatalf("env=blank: got (%d, %v), want (%d, nil)", port, err, portRelease)
 		}
 	})

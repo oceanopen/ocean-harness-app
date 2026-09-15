@@ -2,9 +2,9 @@ package cli
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spf13/cobra"
 )
 
 // callPayload 归一化成功结果供 stdout 输出：StructuredContent 优先（服务端 McpOK 双挂载
@@ -32,26 +32,15 @@ func errText(res *mcp.CallToolResult) string {
 	return "工具执行失败（无错误详情）"
 }
 
-// findTool 按名查找工具；schema 命令用于校验未知工具名。
-func findTool(tools []*mcp.Tool, name string) (*mcp.Tool, bool) {
-	for _, t := range tools {
-		if t.Name == name {
-			return t, true
-		}
-	}
-	return nil, false
-}
-
 // writeJSON 把数据以紧凑 JSON 写入 stdout（机器消费主轨，SetEscapeHTML(false) 保持中文/符号原样；
-// 编码器自带换行收尾）。
-func writeJSON(streams Streams, v any) int {
-	enc := json.NewEncoder(streams.Stdout)
+// 编码器自带换行收尾）。输出流经 cobra 注入点（OutOrStdout），测试可 SetOut 替换。
+func writeJSON(cmd *cobra.Command, v any) error {
+	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		fmt.Fprintf(streams.Stderr, "输出序列化失败：%v\n", err)
-		return ExitUsage
+		return usageErr("输出序列化失败：%v", err)
 	}
-	return ExitOK
+	return nil
 }
 
 // firstText 取结果内首个 TextContent 的文本。

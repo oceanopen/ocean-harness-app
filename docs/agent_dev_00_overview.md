@@ -607,7 +607,7 @@ Skill（refine-issue 等）──Bash──→ ocean-harness CLI ──MCP──
                                                                     └── github_ci_status    # 获取 CI 状态
 ```
 
-**CLI 中间层**（skill + CLI + MCP 三层架构）：skill 不直连 MCP，统一经 `ocean-harness` CLI（app 安装时自动注册到 `/usr/local/bin`；dev 构建为 `ocean-harness-dev`）。CLI 内置 MCP 客户端直连服务端点，价值有二：**调试可见**（MCP 盲盒问题——先 `ocean-harness mcp tools` / `mcp schema` / `mcp call` 在终端调通，再给大模型用）与 **bot 可复用**（后续企微 bot 自动化直接基于 CLI 建任务/调起 app，无需 MCP 会话管理）。详见 `server/README.md`「CLI 命令」节。
+**CLI 中间层**（skill + CLI + MCP 三层架构）：skill 不直连 MCP，统一经 `ocean-harness-cli` 命令（app 安装时自动注册到 `/usr/local/bin`；dev 构建为 `ocean-harness-dev-cli`）。CLI 内置 MCP 客户端直连服务端点，价值有二：**调试可见**（MCP 盲盒问题——先 `ocean-harness-cli mcp tools` / `mcp schema` / `mcp call` 在终端调通，再给大模型用）与 **bot 可复用**（后续企微 bot 自动化直接基于 CLI 建任务/调起 app，无需 MCP 会话管理）。详见 `server/README.md`「CLI 命令」节。
 
 #### 3.9.2 实现方案
 

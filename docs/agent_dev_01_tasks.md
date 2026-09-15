@@ -727,7 +727,7 @@
 
 **技术方案**：
 - Go 实现（`server/cmd/cli` + `server/internal/cli`，复用 go-sdk 的 MCP 客户端），与 server 二进制同批构建（`scripts/build-server.mjs`，`-ldflags -X` 注入 `internal/buildinfo.Mode/Version`）
-- 注册：Rust `app/src/shared/cli_register.rs`——app 启动后台线程把随包 sidecar（`{identifier}-cli_bin`）symlink 到 `/usr/local/bin`（release=`ocean-harness`、dev=`ocean-harness-dev`，编译期常量）；orca 式四态状态机（Installed/Stale/Conflict/NotInstalled），Conflict（用户自有同名文件）永不改写；直连 symlink EACCES 时 osascript 提权，用户取消按版本记忆（同版本不重弹、升版自动重试）
+- 注册：Rust `app/src/shared/cli_register.rs`——app 启动后台线程把随包 sidecar（`{identifier}-cli_bin`）symlink 到 `/usr/local/bin`（release=`ocean-harness-cli`、dev=`ocean-harness-dev-cli`，编译期常量）；orca 式四态状态机（Installed/Stale/Conflict/NotInstalled），Conflict（用户自有同名文件）永不改写；直连 symlink EACCES 时 osascript 提权，用户取消按版本记忆（同版本不重弹、升版自动重试）
 - 命令：`version` / `mcp tools` / `mcp schema <tool>` / `mcp call <tool> --data '<json>'`；stdout 纯 JSON、stderr 中文文案、退出码 0 成功 / 1 业务错误 / 2 用法或连接错误
 - 端口契约：彻底固化（dev=9000 / release=9100，与 Rust 同源编译期常量），`OCEAN_HARNESS_PORT` env 为唯一逃生通道（air 自测联调）；设置页「服务配置」分区随自定义端口能力一并移除
 - 插件迁移：ocean-claude-plugins 的 ocean-harness-plugin 移除捆绑 MCP server（删 `.mcp.json`），refine-issue / issue-context 全部工具引用改经 CLI
@@ -741,6 +741,14 @@
 - 提权取消记忆采用版本化语义（app_config 存「被拒时的 app 版本」），同版本不重弹、升版自动重试一次
 - 已验证：tauri:dev 启动自动注册 symlink（本机 /usr/local/bin 需提权，osascript 弹框授权后完成）；三命令对 9000 全链路（tools 9 个/schema/call）；退出码三路径；`OCEAN_HARNESS_PORT=9200` 指向 air 自测成功；release 构建（BUILD.LOCAL）注册 `ocean-harness` 命令 + 包内 sidecar 签名可执行（AMFI 不拦）+ `mode: release` + 对 9100 `mcp tools` 成功
 - 顺带修复存量问题：`tauri.build.local.conf.json` 改 identifier 但未同步 `externalBin`，本地发布构建的 sidecar（go_server_bin/cli_bin）运行期按 identifier 解析名失败、从未 spawn 成功；现 overlay 覆盖 externalBin + `build-server.mjs` build 模式按主 conf 与 build.local conf 各产一套产物
+
+**实施定稿（2026-09-15，cobra 化重构）**：
+- 命令层自研 switch 分发 + Streams 注入重构为 spf13/cobra v1.10 惯用法（constructor 命令树 `newRootCmd` + `Execute` 入口，命令树每次重建无包级状态，测试走 `SetArgs`/`SetOut`/`SetErr`）；`Streams` 抽象、`help.go` 手写文案、`mcp call` 手写 flag 解析循环删除——「工具名在前、--data 在后」由 pflag 原生 interspersed 解析接管，上述约束消灭
+- CLI 注册名变更：`ocean-harness`/`ocean-harness-dev` → `ocean-harness-cli`/`ocean-harness-dev-cli`（`cli_register.rs` link_name 与 Go `commandName()` 均按构建模式派生，两侧同构；未上线无存量用户，本机旧 symlink 需手动删一次）
+- 新增能力：`--port` 全局 flag（优先级 `--port` > env > 编译期默认，env 通道保留——Rust pty_spawn 注入链路不动）、root `--version`（与 `version` 子命令输出一致）、`--data` 支持 `@file`/`-`（stdin）、全中文 Usage/Help 模板与未知命令「您是不是想执行」建议、cobra 自动 completion（bash/zsh/fish/powershell）
+- 输出契约与退出码 0/1/2 不变；单横线 `-data` 别名随 pflag 移除（帮助文档自始只写 `--data`）；completion 子命令内建描述保持英文，属已知取舍
+- ocean-claude-plugins 插件文档同步改名（refine-issue / README / issue-context SKILL）并补 `--data @file|-` 用法
+- 质量审查 + 规范审查修复后定稿文件结构：`root.go`（命令树/错误契约）+ `mcp.go`（mcp 命令组）+ `session.go`（直连 sidecar 共用编排：`withMcpSession`/`connErr`/超时，未来新命名空间复用）+ `port.go`/`client.go`/`render.go`；错误构造统一经 `usageErr`/`toolErr`（2026-09-16）
 
 ---
 

@@ -1,5 +1,5 @@
 // ocean-harness CLI 命令注册：把随包 sidecar 的 cli 二进制 symlink 到 /usr/local/bin，
-// 让任意终端可直接执行 `ocean-harness xxx`（release）/ `ocean-harness-dev xxx`（debug）。
+// 让任意终端可直接执行 `ocean-harness-cli xxx`（release）/ `ocean-harness-dev-cli xxx`（debug）。
 //
 // 注册模型（参照 orca 四态状态机）：
 //   classify 用 symlink_metadata + canonicalize 判定四态——Installed（symlink 指向本 app 的
@@ -27,14 +27,14 @@ use crate::shared::types::{CliCommandLinkState, CliCommandStatus};
 /// CLI symlink 落点目录（macOS 上 PATH 默认包含，orca 同款）。
 const CLI_BIN_DIR: &str = "/usr/local/bin";
 
-/// 注册的命令名：debug 构建 = ocean-harness-dev（连 dev app 的 9000 端口服务），
-/// release 构建 = ocean-harness（连 release app 的 9100）。按编译期区分，与
+/// 注册的命令名：debug 构建 = ocean-harness-dev-cli（连 dev app 的 9000 端口服务），
+/// release 构建 = ocean-harness-cli（连 release app 的 9100）。按编译期区分，与
 /// app_data_dir 的 dev/release 隔离同构——两套环境互不覆盖。
 pub fn link_name() -> &'static str {
     if cfg!(debug_assertions) {
-        "ocean-harness-dev"
+        "ocean-harness-dev-cli"
     } else {
-        "ocean-harness"
+        "ocean-harness-cli"
     }
 }
 
