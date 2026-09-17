@@ -521,39 +521,6 @@
 
 ---
 
-### T4.3 agent-dev 完成后自动提交代码
-
-**状态**：⬜
-
-**功能**：agent-dev 执行完子任务后，自动调用 `/ocean-code:git-auto-commit-push` 提交并推送
-
-**技术方案**：
-- 在 agent-dev Skill 的子任务执行完成逻辑中，增加步骤：调用 `/ocean-code:git-auto-commit-push`
-- 复用现有 git-auto-commit-push Skill，无需新建
-- 提交后继续下一个子任务（如有）
-- 全部子任务完成后，提示用户是否执行 `/ocean-harness:create-pr`
-
-**依赖**：T2.4（agent-dev）
-
----
-
-### T4.4 完整流程端到端验证
-
-**状态**：⬜
-
-**功能**：验证从初始化 → 润色 → 执行 → 提交 → PR → 归档的完整闭环
-
-**验证场景**：
-1. 新建 issue → 选中 → 工作空间自动初始化
-2. Issue 详情页点击「AI 润色」→ 终端执行 refine-issue → AGENT.md/CLAUDE.md 生成 → 子任务创建
-3. 终端执行 agent-dev → 逐项执行子任务 → 状态实时更新
-4. 执行完成 → git-auto-commit-push → create-pr
-5. 归档 → 工作空间删除 → issue 状态更新
-
-**依赖**：T1.x ~ T4.x 全部完成
-
----
-
 ## 阶段 5：增值功能（P2）
 
 ### T5.1 工作空间文件浏览器与 Diff 查看
