@@ -1,0 +1,17 @@
+{
+  "name": "ocean-harness-app",
+  "metadata": {
+    "description": "Ocean Harness app marketplace——issue 驱动的 agent 开发流程插件（ocean-harness）",
+    "version": "1.0.0"
+  },
+  "owner": {
+    "name": "Ocean Gao"
+  },
+  "plugins": [
+    {
+      "name": "ocean-harness",
+      "source": "./plugins/ocean-harness-plugin",
+      "description": "issue 驱动的 agent 开发流程插件，提供需求润色（issue-refine）、自动开发（issue-dev）、GitHub PR 创建（github-create-pr）等流程 skill，后端读写经 ocean-harness CLI"
+    }
+  ]
+}

@@ -66,10 +66,11 @@
 
 **功能**：让工作空间内的 Claude CLI 自动接入 Go 后端 MCP Server
 
-**技术方案（2026-09-01 变更后）**：
-- MCP 以 plugin 方式驱动，workspace 级单独配置收益不大；`.mcp.json` 放 ocean-claude-plugins
-  的 `plugins/ocean-harness-plugin/` 根目录（issue 流程专用插件，插件自动发现、随插件安装注册，
-  免逐项审批；后续 T2.2/T2.4 的 issue 相关 skill 亦落此插件）
+**技术方案（2026-09-01 变更后；2026-09-17 插件迁址）**：
+- MCP 以 plugin 方式驱动，workspace 级单独配置收益不大；插件 ocean-harness-plugin 原放
+  ocean-claude-plugins，2026-09-17 迁至本仓库 `plugins/ocean-harness-plugin/`（仓库根
+  `.claude-plugin/marketplace.json` 自成 marketplace 分发；T4.2 后 skill 已改经 CLI，不再
+  捆绑 `.mcp.json`，MCP 端点契约见总览 §3.9.3）
 - 生成内容：`{"mcpServers": {"ocean-harness": {"type": "http", "url": "http://127.0.0.1:${OCEAN_HARNESS_PORT:-9100}/mcp/streamableHttp/oceanHarness"}}}`
   （type 用 Claude CLI 合法值 `http` 即 Streamable HTTP；插件 .mcp.json 支持 `${VAR:-default}` 展开）
 - 端口注入：Rust `pty_spawn` spawn PTY 时注入 `OCEAN_HARNESS_PORT=<HttpServerState 端口>`

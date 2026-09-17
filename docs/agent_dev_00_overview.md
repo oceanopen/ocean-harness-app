@@ -44,8 +44,13 @@
 ### 2.1 Ocean Claude Plugins（`~/MyFiles/Project/ocean-claude-plugins`）
 
 **定位**：自建 Claude Plugin 项目（marketplace：ocean-claude-plugins），包含 ocean-code-plugin
-（通用研发技能）与 ocean-harness-plugin（issue 流程专用：refine-issue/agent-dev 等 skill +
-ocean-harness MCP 捆绑）。
+（通用研发技能）与 ocean-office-plugin（办公技能）。
+
+> **方案变更（2026-09-17）**：ocean-harness-plugin（issue 流程专用）已迁至本仓库
+> `plugins/ocean-harness-plugin/`，本仓库根 `.claude-plugin/marketplace.json` 自成
+> marketplace 独立分发（`claude plugin marketplace add oceanopen/ocean-harness-app`），
+> 与 server CLI / issue 流程文档同仓库原子演进；其版本号纳入 `pnpm release`（bumpp）
+> 同步清单。
 
 **现有 Skill**：
 
@@ -712,12 +717,14 @@ func (mt McpOceanHarnessTool) IssueGetInfo(
 }
 ```
 
-#### 3.9.3 MCP 配置（方案变更 2026-09-01：插件捆绑承载）
+#### 3.9.3 MCP 配置（方案变更 2026-09-01：插件捆绑承载；2026-09-17：插件迁入本仓库）
 
-MCP 以 plugin 方式驱动，不在工作空间初始化时生成 `.mcp.json`；配置放 ocean-claude-plugins
-的 `plugins/ocean-harness-plugin/`（issue 流程专用插件，后续 refine-issue/agent-dev 等
-skill 亦落此插件）根目录（插件安装即注册，免逐项审批；工具名带
-`mcp__plugin_ocean-harness_ocean-harness__*` 前缀）：
+MCP 以 plugin 方式驱动，不在工作空间初始化时生成 `.mcp.json`。插件
+ocean-harness-plugin（issue 流程专用）原放 ocean-claude-plugins，2026-09-17 迁至本仓库
+`plugins/ocean-harness-plugin/`，本仓库根 `.claude-plugin/marketplace.json` 自成
+marketplace 独立分发（插件安装即注册 MCP，免逐项审批；工具名带
+`mcp__plugin_ocean-harness_ocean-harness__*` 前缀）。CLI 迁移（T4.2）后 skill 后端读写
+已改经 ocean-harness CLI，插件不再捆绑 `.mcp.json`；下方 MCP 配置仅作为端点契约留档：
 
 ```json
 {
@@ -735,7 +742,8 @@ skill 亦落此插件）根目录（插件安装即注册，免逐项审批；�
   （与手工配置的 server 同一套环境变量语义）。
 - 端口注入：Rust `pty_spawn` spawn PTY 时注入 `OCEAN_HARNESS_PORT`（HttpServerState 的端口：
   默认 dev=9000 / build=9100 / 用户配置覆盖）；外部终端无此 env 时回落默认 9100。
-- 插件更新生效：bump plugin.json 版本 → `claude plugin update` → `/reload-plugins`。
+- 插件更新生效：bump plugin.json 版本（已纳入 `pnpm release` bumpp 同步清单）→
+  `claude plugin update ocean-harness@ocean-harness-app` → `/reload-plugins`。
 - 工作空间初始化的 mcpConfig 步骤保留 SKIPPED 占位，未来需要 workspace 级单独支持时恢复。
 
 > **注**：pros-admin-server 使用 StreamableHTTP（`mcp.NewStreamableHTTPHandler`），Claude Code 原生支持 streamable HTTP 类型的 MCP 配置。本期不需要 stdio transport。

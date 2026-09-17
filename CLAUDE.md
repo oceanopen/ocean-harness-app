@@ -15,12 +15,13 @@ ocean-harness-app/
 ├── app/                  # Rust/Tauri 端（原 src-tauri，不进 pnpm workspace）
 ├── web/                  # 前端（workspace 包 "web"，vite 多页构建，产物 web/dist）
 ├── server/               # Go sidecar（原 src-server，module ocean-harness/server）
+├── plugins/              # Claude Code 插件（ocean-harness-plugin；根 .claude-plugin/marketplace.json 自成 marketplace 分发）
 ├── docs/                 # 任务文档（workspace 包 "docs"，占位）
 └── scripts/              # 根编排辅助脚本（build-server.mjs）
 ```
 
-- `app/`、`server/` 游离于 pnpm workspace 之外（非 Node 包），由根脚本 `go -C server` / `cargo --manifest-path app/Cargo.toml` 编排；后续 `cli/`、`bot/` 等新顶层包进 `pnpm-workspace.yaml` 各加一行。
-- 版本号 SSOT 在根 `package.json`，`pnpm release`（bumpp）同步 `app/tauri.conf.json` + `app/Cargo.{toml,lock}`；`web`、`docs` 包 private 无版本。
+- `app/`、`server/`、`plugins/` 游离于 pnpm workspace 之外（非 Node 包），由根脚本 `go -C server` / `cargo --manifest-path app/Cargo.toml` 编排；后续 `cli/`、`bot/` 等新顶层包进 `pnpm-workspace.yaml` 各加一行。
+- 版本号 SSOT 在根 `package.json`，`pnpm release`（bumpp）同步 `app/tauri.conf.json` + `app/Cargo.{toml,lock}` + `plugins/ocean-harness-plugin/.claude-plugin/plugin.json`；`web`、`docs` 包 private 无版本。
 - 前端依赖装在 `web/package.json`，公共版本（typescript/vite/vitest/@types/node）走 `pnpm-workspace.yaml` 的 catalog（包内以 `catalog:` 引用）。
 
 ## 常用命令
