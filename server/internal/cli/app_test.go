@@ -198,4 +198,8 @@ func TestWriteJSON(t *testing.T) {
 	if got["名"] != "值" {
 		t.Fatalf("got %v", got)
 	}
+	// 回归锚：stdout JSON 为换行 + 2 空格缩进的格式化输出
+	if want := "{\n  \"名\": \"值\"\n}"; out.String() != want+"\n" {
+		t.Fatalf("got %q, want %q", out.String(), want+"\n")
+	}
 }

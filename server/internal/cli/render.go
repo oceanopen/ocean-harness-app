@@ -32,11 +32,13 @@ func errText(res *mcp.CallToolResult) string {
 	return "工具执行失败（无错误详情）"
 }
 
-// writeJSON 把数据以紧凑 JSON 写入 stdout（机器消费主轨，SetEscapeHTML(false) 保持中文/符号原样；
-// 编码器自带换行收尾）。输出流经 cobra 注入点（OutOrStdout），测试可 SetOut 替换。
+// writeJSON 把数据以格式化 JSON（换行 + 2 空格缩进）写入 stdout：终端人读为主轨，
+// 格式化后仍是合法 JSON、jq/解析器消费不受空白影响；SetEscapeHTML(false) 保持中文/符号
+// 原样（编码器自带换行收尾）。输出流经 cobra 注入点（OutOrStdout），测试可 SetOut 替换。
 func writeJSON(cmd *cobra.Command, v any) error {
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
 		return usageErr("输出序列化失败：%v", err)
 	}
