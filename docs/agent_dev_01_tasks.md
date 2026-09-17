@@ -193,6 +193,9 @@
 > 「进度段更新规范」「CLAUDE.md 子任务表含 DB ID，agent-dev 凭此更新状态」「仅 BACKLOG 时
 > 流转 TODO（后改为双条件：BACKLOG 且无 IN_PROGRESS/DONE 子任务）」已被 T2.3 的 CLAUDE.md
 > 去状态化变更推翻——以 T2.3/T2.4 段与 issue-context 技能现行契约为准。
+>
+> **注（2026-09-17 随 T4.2 全局调整）**：命令更名 refine-issue → **issue-refine**，
+> 工具调用由 MCP 直连改为 CLI 原子操作（详见 T4.2 实施定稿补记）。
 
 **依赖**：T2.1（MCP 工具）、T1.4（仓库已 clone 才能读源码）
 
@@ -252,6 +255,10 @@
   插件 README 更新
 
 **依赖**：T2.1（MCP 工具）、T2.2（需求上下文软依赖——未润色 issue 可直接执行）
+
+> **注（2026-09-17 随 T4.2 全局调整）**：命令更名 agent-dev → **issue-dev**，工具调用由
+> MCP 直连改为 CLI 原子操作；收尾的「提交推送 + create-pr」串流程提示已删除（串流程后续
+> 单独 command 承载）。详见 T4.2 实施定稿补记。
 
 ---
 
@@ -444,23 +451,72 @@
 
 ---
 
-### T4.2 新增 Skill：`/ocean-harness:create-pr`
+### T4.2 新增 Skill：`/ocean-harness:github-create-pr`
 
-**状态**：⬜
+**状态**：✅（方案变更：更名 github-create-pr、skill→CLI→MCP 链路、不流转 issue 状态）
 
-**功能**：基于当前分支变更自动生成 PR 标题和描述，通过 MCP 创建 PR
+**功能**：基于当前分支变更自动生成 PR 标题和描述，通过 CLI 创建 GitHub PR
 
 **技术方案**：
-- 在 ocean-claude-plugins 项目中新增 `commands/create-pr.md`
-- allowed-tools：AskUserQuestion, Bash(git*), Read, MCP
+- 在 ocean-claude-plugins 项目中新增 `commands/github-create-pr.md`
+- allowed-tools：AskUserQuestion, Read, Glob, Grep, Bash, TaskCreate, TaskUpdate
 - 流程：
   1. 获取当前分支名和基准分支
   2. `git diff base...head` 获取变更
   3. AI 生成 PR 标题和描述（变更摘要 + 测试计划）
-  4. 通过 MCP `github_create_pr` 创建 PR
-  5. 通过 MCP `issue_update` 更新 issue 状态
+  4. 通过 CLI `github_create_pr` 创建 PR
+  5. 不流转 issue 状态（见实施定稿）
 
 **依赖**：T4.1（GitHub MCP 工具）
+
+**实施定稿（2026-09-17）**：
+
+- **命令更名**：create-pr → **github-create-pr**（用户定稿）——GitHub 专属命名，skill 内判定
+  remote 非 github.com 的仓库跳过并在摘要说明（其他 git 平台后续各自独立命令承载）；
+  agent-dev 预埋的 `/ocean-harness:create-pr` 引用随更名同步（后随命令更名整体重写）
+- **链路定稿：skill → CLI → MCP**（用户定稿）——本命令全部后端调用经
+  `ocean-harness-cli mcp call <tool> --data`（issue_get_info / issue_workspace_status /
+  github_create_pr），不直连 MCP 工具；CLI 是可调试、可追溯的中间层，skill 的定位是
+  把一系列 CLI 原子操作编排聚合
+- **CLI 透明执行铁律（全局规则，新共享契约 skills/cli-usage）**：每条 CLI 调用的完整
+  命令行（含参数与 --data JSON）与输出必须回显在会话中，禁止静默调用；命令名按构建
+  模式探测（release=`ocean-harness-cli` / dev=`ocean-harness-dev-cli`，command -v 依次
+  探测）；退出码 0/1/2 与 stdout JSON 解析契约一并入契约。宁可冗长不可省略，后续再按
+  情况精简（用户明确）
+- **五阶段流程**：定位采集（issueId 推导 + CLI 命令名探测 + issue_get_info 拿
+  repositoryBranchList + workspace 校验 + 逐仓库检查分支/host/相对基准分支变更/未提交
+  未推送）→ 变更分析（git diff 生成标题+描述：变更摘要+测试计划）→ 呈现确认（回写闸门，
+  多仓库逐个，refine-issue 同款循环确认）→ 创建（逐仓库 github_create_pr，head/base
+  缺省不传——与工作空间 clone 语义同构）→ 收尾摘要（PR 清单 + 跳过仓库说明 + CI 观察
+  建议 github_ci_status）
+- **不流转 issue 状态**（用户定稿，偏离原方案第 5 步 issue_update）：PR 创建 ≠ 任务收尾，
+  issue 状态流转与工作空间归档由各自独立流程处理；agent-dev 全部子任务 DONE 后后端已
+  自动置父 DONE，显式流转另有父→子级联风险
+- **多仓库**：只对有变更的 github.com 仓库逐个建 PR（用户定稿）；创建前检测未提交/未推送
+  变更，AskUserQuestion（自动 push / 终止）（用户定稿）
+- **本机 CLI 变更随附**：`mcp tools` 默认输出精简为 name+description 摘要 + `--full`
+  旗标（2026-09-17 提交 e54ca12），长输出刷屏问题治理
+
+**实施定稿补记（2026-09-17，全插件 CLI 迁移与命令更名——用户定稿，随 T4.2 一并落地）**：
+
+- **全插件工具调用一律改经 CLI**（用户定稿）：refine-issue / agent-dev 的 MCP 直连
+  （`mcp__plugin_ocean-harness_ocean-harness` 工具引用）全部改为 CLI 原子操作——MCP 直连
+  是黑盒，遇到问题排查「很魔幻」；CLI 每步可看可查。**T6.1 预留的插件侧迁移至此收口**：
+  删插件捆绑 `.mcp.json`（不再注册 MCP server，CLI 独立建会话，OCEAN_HARNESS_PORT 注入
+  链路不变）
+- **命令更名**（用户定稿，对齐 MCP 工具「域前缀」命名风格，便于 command/CLI 增多后识别
+  维护）：refine-issue → **issue-refine**、agent-dev → **issue-dev**、新增
+  **github-create-pr**；命名规范「域-动作」入插件 README
+- **各命令只做各自的事**（用户定稿）：skill 内每个动作都是基于 CLI 的原子操作（该查
+  issue 查 issue、该建子任务建子任务），skill 起编排聚合作用；**删除串流程提示**——
+  agent-dev 收尾的「提交推送 + create-pr」后续建议、refine-issue 收尾的 agent-dev 提示
+  整体移除，跨命令流程编排后续单独 command 承载（目前全部命令手动 `/ocean-harness:xxx`
+  调用；**T4.3 的 agent-dev 内自动提交定位随之待重新评估**，串流程统一归入后续编排命令）
+- **skills/cli-usage 共享契约**（新增）：命令名探测 / 透明执行铁律 / 退出码与输出解析，
+  三命令 front-matter 统一引用 `skills: ..., cli-usage`；issue-context SKILL 的 MCP 提法
+  与旧命令名引用同步修订
+- **插件版本 2.0.0**（semver major：命令更名 + 删捆绑 MCP server 属破坏性变更）；
+  plugin.json / README（调用链路一节替代 MCP server 一节）/ marketplace.json 描述同步
 
 ---
 
@@ -757,19 +813,23 @@
 - Windows 侧维持 no-op；后续实现时走用户级 PATH（HKCU 环境变量），同样免提权
 - 已知迁移点：旧版本升级用户若存留 `/usr/local/bin` root 属主旧链接，需手动 `sudo rm` 一次（本机已在改名清理时处理）
 
+> **注（2026-09-17 收口）**：T6.1 预留的插件侧迁移（删插件捆绑 `.mcp.json`、命令工具引用
+> 改经 CLI）随 T4.2 全局 CLI 化落地收口，并新增 skills/cli-usage 共享契约（透明执行铁律），
+> 详见 T4.2 实施定稿补记。
+
 ---
 
 ## 依赖关系图
 
 ```
 T2.1 MCP Server（无前置依赖，子任务复用现有 issue 父子关系）
-  ├─→ T2.2 refine-issue Skill
+  ├─→ T2.2 issue-refine Skill（2026-09-17 更名，原 refine-issue）
   │    └─→ T2.3 AGENT.md/CLAUDE.md 生成
-  │    └─→ T2.4 agent-dev Skill
-  │         └─→ T4.3 自动提交代码
+  │    └─→ T2.4 issue-dev Skill（2026-09-17 更名，原 agent-dev）
+  │         └─→ T4.3 自动提交代码（定位随串流程方案待重新评估）
   ├─→ T4.1 GitHub MCP 工具
-  │     └─→ T4.2 create-pr Skill
-  └─→ T6.1 ocean-harness CLI（skill 调用层随之从 MCP 直连改为经 CLI）
+  │     └─→ T4.2 github-create-pr Skill（2026-09-17 更名，原 create-pr）
+  └─→ T6.1 ocean-harness CLI（插件侧迁移已随 T4.2 收口：全部命令经 CLI）
 
 T1.1 工作空间初始化 Service
   ├─→ T1.2 SSH Config 生成
