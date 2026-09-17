@@ -25,14 +25,17 @@ func newMcpCmd() *cobra.Command {
 	return cmd
 }
 
-// newMcpToolsCmd 列出全部 MCP 工具（完整 Tool JSON：name/description/inputSchema/outputSchema）。
+// newMcpToolsCmd 列出全部 MCP 工具：默认精简 JSON（仅 name/description），
+// --full 输出完整 Tool JSON（含 inputSchema/outputSchema），单工具详情走 mcp schema。
 func newMcpToolsCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "tools",
-		Short: "列出全部 MCP 工具（JSON）",
+		Short: "列出全部 MCP 工具（精简 JSON；--full 含 schema）",
 		Args:  noArgs,
 		RunE:  runMcpTools,
 	}
+	cmd.Flags().Bool("full", false, "输出完整 Tool JSON（含 inputSchema/outputSchema）")
+	return cmd
 }
 
 // newMcpSchemaCmd 输出指定工具的完整定义（含 inputSchema/outputSchema）。
@@ -58,7 +61,7 @@ func newMcpCallCmd() *cobra.Command {
 	return cmd
 }
 
-// runMcpTools 列出全部工具。
+// runMcpTools 列出全部工具：默认精简（name/description），--full 走完整 Tool JSON。
 func runMcpTools(cmd *cobra.Command, args []string) error {
 	var tools []*mcp.Tool
 	err := withMcpSession(cmd, func(ctx context.Context, session *mcp.ClientSession) error {
@@ -69,10 +72,32 @@ func runMcpTools(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if tools == nil {
-		tools = []*mcp.Tool{} // 空列表输出 [] 而非 null
+	full, err := cmd.Flags().GetBool("full")
+	if err != nil {
+		return err
 	}
-	return writeJSON(cmd, tools)
+	if full {
+		if tools == nil {
+			tools = []*mcp.Tool{} // 空列表输出 [] 而非 null
+		}
+		return writeJSON(cmd, tools)
+	}
+	return writeJSON(cmd, toolBriefs(tools))
+}
+
+// toolBriefs 把工具列表映射为精简摘要（仅 name/description）；schema 详情走 mcp schema。
+func toolBriefs(tools []*mcp.Tool) []toolBrief {
+	briefs := make([]toolBrief, 0, len(tools)) // 空列表输出 [] 而非 null
+	for _, t := range tools {
+		briefs = append(briefs, toolBrief{Name: t.Name, Description: t.Description})
+	}
+	return briefs
+}
+
+// toolBrief 是 mcp tools 默认输出的单工具摘要（结构体而非 map，保证 name 在 description 前）。
+type toolBrief struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 // findTool 按名查找工具；schema 命令用于校验未知工具名。
