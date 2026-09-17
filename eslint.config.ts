@@ -14,6 +14,7 @@ export default await antfu(
       'node_modules',
       'web/src/shared/bindings.ts',
       'docs',
+      'plugins',
     ],
     stylistic: {
       indent: 2,
