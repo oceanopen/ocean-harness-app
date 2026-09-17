@@ -135,7 +135,7 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 
 ```bash
 ocean-harness-cli --version / version          # 版本与构建模式（root --version 与子命令输出一致）
-ocean-harness-cli mcp tools                    # 列出全部 MCP 工具（完整 Tool JSON）
+ocean-harness-cli mcp tools                    # 列出全部 MCP 工具（name + description；--full 看完整 Tool JSON）
 ocean-harness-cli mcp schema <tool>            # 查看单个工具 inputSchema/outputSchema
 ocean-harness-cli mcp call <tool> --data '<json>'       # 调用工具（省略视为 {}），stdout 输出结果 JSON
 ocean-harness-cli mcp call <tool> --data @payload.json  # 复杂/多行入参走文件；--data - 读 stdin
