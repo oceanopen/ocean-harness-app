@@ -22,8 +22,8 @@
     "server:fmt": "gofmt -l -w server",
     "server:gorm:gen": "go -C server run ./cmd/gormgen -config=config/settings.dev.yaml",
     "gen:bindings": "cargo run --manifest-path app/Cargo.toml --features gen-bindings --bin export_bindings",
-    "gen:app:icons": "tauri icon web/src/assets/app-icon.svg && rm -rf app/icons/android && rm -rf app/icons/ios && cp app/icons/icon.png web/src/assets/app-icon.png && cp web/src/assets/app-icon.svg web/public/favicon.svg",
-    "verify:bindings": "pnpm gen:bindings && git ls-files --error-unmatch web/src/shared/bindings.ts && git diff --exit-code web/src/shared/bindings.ts",
+    "gen:app:icons": "tauri icon packages/web/src/assets/app-icon.svg && rm -rf app/icons/android && rm -rf app/icons/ios && cp app/icons/icon.png packages/web/src/assets/app-icon.png && cp packages/web/src/assets/app-icon.svg packages/web/public/favicon.svg",
+    "verify:bindings": "pnpm gen:bindings && git ls-files --error-unmatch packages/web/src/shared/bindings.ts && git diff --exit-code packages/web/src/shared/bindings.ts",
     "release": "bumpp"
   },
   "devDependencies": {

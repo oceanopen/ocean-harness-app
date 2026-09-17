@@ -1,4 +1,4 @@
-//! tauri-specta 绑定生成器：导出 TypeScript 绑定到 web/src/shared/bindings.ts。
+//! tauri-specta 绑定生成器：导出 TypeScript 绑定到 packages/web/src/shared/bindings.ts。
 //!
 //! 触发方式：`pnpm gen:bindings`（见 workspace 根 package.json）—— 实际跑
 //! `cargo run --manifest-path app/Cargo.toml --features gen-bindings --bin export_bindings`。
@@ -18,9 +18,9 @@ use specta_typescript::Typescript;
 fn main() {
     // CARGO_MANIFEST_DIR 在编译时由 cargo 注入，指向 app/（Rust 端包目录）的绝对路径。
     // 用 env!() 在编译时嵌入，保证无论 cargo run 的 CWD 在哪里，绑定都能写到正确位置。
-    // 目标是 workspace 内 web 包的 src/shared/bindings.ts（web 与 app 为兄弟目录）。
+    // 目标是 workspace 内 web 包的 src/shared/bindings.ts（packages/web，与 app 为叔侄目录）。
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let out_path = format!("{manifest_dir}/../web/src/shared/bindings.ts");
+    let out_path = format!("{manifest_dir}/../packages/web/src/shared/bindings.ts");
 
     let builder = build_specta_builder();
     builder

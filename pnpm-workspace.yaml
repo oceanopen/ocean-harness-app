@@ -1,14 +1,14 @@
 # pnpm workspace：仅收编 Node/TS 包；app（Rust）与 server（Go）游离于 workspace 外，
 # 由根 package.json 脚本编排（go -C server / cargo --manifest-path app/Cargo.toml）。
-# 后续 cli、bot 等新顶层包在此各加一行。
+# packages/* 下无 package.json 的目录（如 .gitkeep 占位期的 packages/docs）自动跳过，
+# 后续 cli、bot 等新 Node 包落 packages/ 下即自动收编。
 # pnpm 内建 shell 语义：脚本支持 `ENV=val cmd` 前缀，跨平台无需 cross-env。
 # trustPolicy 供应链防护：禁止依赖安装时静默降级签名信任（antfu pnpm 规则组 enforce-settings 的默认目标值）。
 shellEmulator: true
 trustPolicy: no-downgrade
 
 packages:
-  - web
-  - docs
+  - 'packages/*'
 
 # 依赖版本 SSOT：全仓依赖一律在此登记版本、包内以 "catalog:" 引用
 # （eslint pnpm/json-enforce-catalog 规则兜底校验），杜绝各包版本漂移。

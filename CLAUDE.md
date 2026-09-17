@@ -11,18 +11,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 ocean-harness-app/
 ├── package.json          # workspace 根：编排脚本（全部转发）+ lint 工具链
-├── pnpm-workspace.yaml   # packages: ['web', 'docs'] + catalog（公共 TS 依赖版本 SSOT）
+├── pnpm-workspace.yaml   # packages: ['packages/*'] + catalog（公共 TS 依赖版本 SSOT）
 ├── app/                  # Rust/Tauri 端（原 src-tauri，不进 pnpm workspace）
-├── web/                  # 前端（workspace 包 "web"，vite 多页构建，产物 web/dist）
+├── packages/
+│   ├── web/              # 前端（workspace 包 "web"，vite 多页构建，产物 packages/web/dist）
+│   └── docs/             # vitepress 文档项目占位（.gitkeep，后续嵌入 app）
 ├── server/               # Go sidecar（原 src-server，module ocean-harness/server）
 ├── plugins/              # Claude Code 插件（ocean-harness-plugin；根 .claude-plugin/marketplace.json 自成 marketplace 分发）
-├── docs/                 # 任务文档（workspace 包 "docs"，占位）
+├── docs/                 # 临时开发文档（agent_dev_*.md，非 workspace 包，与 packages/docs 无关）
 └── scripts/              # 根编排辅助脚本（build-server.mjs）
 ```
 
-- `app/`、`server/`、`plugins/` 游离于 pnpm workspace 之外（非 Node 包），由根脚本 `go -C server` / `cargo --manifest-path app/Cargo.toml` 编排；后续 `cli/`、`bot/` 等新顶层包进 `pnpm-workspace.yaml` 各加一行。
-- 版本号 SSOT 在根 `package.json`，`pnpm release`（bumpp）同步 `app/tauri.conf.json` + `app/Cargo.{toml,lock}` + `plugins/ocean-harness-plugin/.claude-plugin/plugin.json`；`web`、`docs` 包 private 无版本。
-- 前端依赖装在 `web/package.json`，公共版本（typescript/vite/vitest/@types/node）走 `pnpm-workspace.yaml` 的 catalog（包内以 `catalog:` 引用）。
+- `app/`、`server/`、`plugins/`、`docs/` 游离于 pnpm workspace 之外（非 Node 包/纯文档），由根脚本 `go -C server` / `cargo --manifest-path app/Cargo.toml` 编排；后续 `cli/`、`bot/` 等新 Node 包落 `packages/` 下即被 `packages/*` glob 自动收编。
+- 版本号 SSOT 在根 `package.json`，`pnpm release`（bumpp）同步 `app/tauri.conf.json` + `app/Cargo.{toml,lock}` + `plugins/ocean-harness-plugin/.claude-plugin/plugin.json`；`web` 包 private 无版本。
+- 前端依赖装在 `packages/web/package.json`，公共版本（typescript/vite/vitest/@types/node）走 `pnpm-workspace.yaml` 的 catalog（包内以 `catalog:` 引用）。
 
 ## 常用命令
 
@@ -43,7 +45,7 @@ pnpm server:release       # 构建发布二进制（端口 9100，CGO_ENABLED=0�
 pnpm server:gorm:gen      # goose 迁移 + gorm/gen 重新生成 DO 层（改表后必跑）
 
 # Rust ↔ 前端桥接
-pnpm gen:bindings         # 从 Rust command 重新生成 web/src/shared/bindings.ts
+pnpm gen:bindings         # 从 Rust command 重新生成 packages/web/src/shared/bindings.ts
 pnpm verify:bindings      # CI 校验 bindings.ts 与 Rust 无漂移
 
 pnpm tauri:fmt            # cargo fmt；Go 格式化：pnpm server:fmt
@@ -57,20 +59,20 @@ pnpm tauri:fmt            # cargo fmt；Go 格式化：pnpm server:fmt
 React 前端（多窗口 webview）─ IPC ─ Rust（Tauri shell）─ spawn/HTTP ─ Go sidecar（业务 HTTP 服务）
 ```
 
-### 前端（`web/src/`）
+### 前端（`packages/web/src/`）
 
-- **多窗口入口**（vite 多页构建，各自独立 JS realm，QueryClient 缓存不共享）：`panel.html`（主控台，含系统设置页 `/settings`——隐藏菜单页，分区路由在 `SettingsPage/routes.ts`）、`pet-session-*.html`（悬浮窗）。路由在 `web/src/windows/<window>/routes.ts`。
+- **多窗口入口**（vite 多页构建，各自独立 JS realm，QueryClient 缓存不共享）：`panel.html`（主控台，含系统设置页 `/settings`——隐藏菜单页，分区路由在 `SettingsPage/routes.ts`）、`pet-session-*.html`（悬浮窗）。路由在 `packages/web/src/windows/<window>/routes.ts`。
 - **页面切走即卸载**：`PanelApp` 声明式路由，切菜单 = 整页卸载重建（状态放 store 不丢）。
-- **状态管理**（`web/src/state/`，约定见其 README.md）：一业务域一目录（store + keys + queries + index），server 状态用 TanStack Query、client 选中态用 zustand；跨窗口同步一律走后端 SSOT + Tauri 事件，前端不做。
-- **Go API 客户端**：`web/src/services/`；服务地址从 Rust `http_server_status` 命令获取，不硬编码端口。
-- **配置体系**：key 常量与默认值的 SSOT 是 `web/src/shared/appConfig.ts`。`useConfigValue` 订阅单 key（**初值为同步默认值、真实值异步回填**）；挂载期消费度量/编排类配置的组件用 `useConfigReady` 闸门等就绪（见「编码规则 1」）。
-- **Tauri 桥**：所有 IPC command 类型在 `web/src/shared/bindings.ts`（生成物，勿手改）——**改 Rust command 后必须 `pnpm gen:bindings`**，否则 CI `verify:bindings` 漂移失败。
+- **状态管理**（`packages/web/src/state/`，约定见其 README.md）：一业务域一目录（store + keys + queries + index），server 状态用 TanStack Query、client 选中态用 zustand；跨窗口同步一律走后端 SSOT + Tauri 事件，前端不做。
+- **Go API 客户端**：`packages/web/src/services/`；服务地址从 Rust `http_server_status` 命令获取，不硬编码端口。
+- **配置体系**：key 常量与默认值的 SSOT 是 `packages/web/src/shared/appConfig.ts`。`useConfigValue` 订阅单 key（**初值为同步默认值、真实值异步回填**）；挂载期消费度量/编排类配置的组件用 `useConfigReady` 闸门等就绪（见「编码规则 1」）。
+- **Tauri 桥**：所有 IPC command 类型在 `packages/web/src/shared/bindings.ts`（生成物，勿手改）——**改 Rust command 后必须 `pnpm gen:bindings`**，否则 CI `verify:bindings` 漂移失败。
 
 ### 终端链路（本项目核心，跨 React ↔ Rust）
 
 - 前端：`DevWorkbenchPage/components/EmbeddedTerminal/` 下 `EmbeddedTerminal`（配置组装/会话锚点 `${issueId}::${paneId}`）→ `TerminalView`（xterm.js 唯一封装，FitAddon/WebGL）→ `usePtySession`（attach 编排：exists → reattach / spawn）。
 - Rust：`app/src/pty/`（`session.rs` 会话 + ring buffer，`local_provider.rs` spawn/resize）。**会话生命周期在后端常驻**：前端卸载只断订阅，重挂载走 reattach 并一次性回放 scrollback。
-- 终端分屏：`TerminalPanes/`（布局二叉树持久化于 `web/src/state/terminalPanes/`）。
+- 终端分屏：`TerminalPanes/`（布局二叉树持久化于 `packages/web/src/state/terminalPanes/`）。
 - 固定编排时序（勿破坏）：配置就绪闸门 → TerminalView mount fit 实测尺寸 → 以实测尺寸 spawn → attach 后仅在尺寸不一致时校正一次。**先测量后生胎，禁止「占位 spawn → 事后补发纠正」**——每次事后纠正都是一次打在已绘制提示符上的 SIGWINCH 重绘伪影。
 
 ### Rust 侧其余模块（`app/src/`）
@@ -91,7 +93,7 @@ Gin + GORM + sqlite（纯 Go，无 CGO），分层规范/API 范式/配置优先
 
 异步数据（配置、查询结果）**就绪之后**才挂载消费组件、才发起依赖它的副作用编排。禁止「先用默认值渲染/生胎，数据到达后再纠正」——每次纠正都是一次副作用重放。
 
-- 消费异步配置的组件挂载前，用就绪闸门（`web/src/shared/useConfigReady.ts`）等待相关 key 读取完成，**首帧即终值**。
+- 消费异步配置的组件挂载前，用就绪闸门（`packages/web/src/shared/useConfigReady.ts`）等待相关 key 读取完成，**首帧即终值**。
 - 副作用编排按固定时序逐项处理（参照 `usePtySession.ts`：闸门 → fit 实测 → 以实测尺寸 spawn → 收尾校正一次），出问题时直接定位到时序中的某一步。**不引入防抖/节流这类时间性手段掩盖时序缺陷**。
 - 尺寸/度量类状态遵循「先测量后使用」。
 

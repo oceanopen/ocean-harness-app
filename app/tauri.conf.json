@@ -4,7 +4,7 @@
   "version": "0.2.1",
   "identifier": "com.ocean.harness",
   "build": {
-    "frontendDist": "../web/dist",
+    "frontendDist": "../packages/web/dist",
     "devUrl": "http://localhost:7102",
     "beforeDevCommand": "pnpm server:test && pnpm web:dev",
     "beforeBuildCommand": "pnpm server:release && pnpm web:build"

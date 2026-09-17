@@ -1,6 +1,6 @@
 # PR / push 检查：守住 Rust→TS 类型绑定不漂移。
 #
-# 为何需要：web/src/shared/bindings.ts 由 gen:bindings 从 #[tauri::command] 签名 + types.rs 生成并提交进 git，
+# 为何需要：packages/web/src/shared/bindings.ts 由 gen:bindings 从 #[tauri::command] 签名 + types.rs 生成并提交进 git，
 # 构建期不再自动重新生成（见 web 包的 dev/build 脚本）。故类型改动后必须手动 pnpm gen:bindings
 # 同步本文件，否则前后端类型会静默漂移。本 workflow 跑 verify:bindings（重新生成并断言 git diff 为空）
 # 作为兜底，把漂移拦在 PR 阶段。

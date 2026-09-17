@@ -1,7 +1,7 @@
 {
   // 仓库根 TS 配置文件（bump.config.ts / eslint.config.ts）的类型支撑，不参与构建：
-  // web 的类型检查在 web/tsconfig*.json 独立闭环，此处 include 显式圈定根级文件，
-  // 避免默认全量 include 把 web/ 吞进来。types 显式收窄为 node，不受依赖提升波及。
+  // web 的类型检查在 packages/web/tsconfig*.json 独立闭环，此处 include 显式圈定根级文件，
+  // 避免默认全量 include 把 packages/web/ 吞进来。types 显式收窄为 node，不受依赖提升波及。
   "compilerOptions": {
     "target": "es2023",
     "lib": ["ES2023"],

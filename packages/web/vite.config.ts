@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import Icons from 'unplugin-icons/vite';
 import { defineConfig } from 'vitest/config';
 // 版本号 SSOT 在 workspace 根 package.json（bumpp 同步链路不变），web 包自身 private 无版本。
-import pkg from '../package.json';
+import pkg from '../../package.json';
 
 export default defineConfig({
   define: {
