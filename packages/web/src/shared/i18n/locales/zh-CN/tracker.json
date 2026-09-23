@@ -205,7 +205,7 @@
     }
   },
   "workspaceLabel": {
-    "title": "管理标签",
+    "title": "管理工作空间标签",
     "name": "名称",
     "namePlaceholder": "输入标签名称或搜索",
     "color": "颜色",

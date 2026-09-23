@@ -205,7 +205,7 @@
     }
   },
   "workspaceLabel": {
-    "title": "Manage labels",
+    "title": "Manage workspace labels",
     "name": "Name",
     "namePlaceholder": "Enter or search label name",
     "color": "Color",

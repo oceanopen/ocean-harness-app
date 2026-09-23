@@ -22,7 +22,7 @@ import {
 } from '@mui/material';
 import { WorkspaceLabelService } from '@src/services';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // 预设色板（与 plane 默认状态色系接近），勾选 + 可手填 hex。
@@ -41,17 +41,18 @@ const COLOR_PRESETS = [
 type ToastSeverity = 'success' | 'error';
 
 // workspace 标签管理抽屉（CRUD）：顶部新建/编辑表单（name + 色板/hex + description）+ 已有标签列表。
-// 由父组件按需挂载。create 不传 sortOrder（后端 MAX+10000）；update 直接覆盖 color/description；
-// delete 级联清 projectIssue 关联。每次变更调 onChanged 让父级重拉。
+// 由父组件按需挂载，标签列表自加载：挂载即按 workspaceId 拉取，每次 CRUD 后内部重拉刷新。
+// create 不传 sortOrder（后端 MAX+10000）；update 直接覆盖 color/description；
+// delete 级联清 projectIssue 关联。每次变更后调 onChanged 通知父级同步（如需）。
 interface LabelManagerDrawerProps {
   workspaceId: number;
-  labels: WorkspaceLabelModel[];
   onClose: () => void;
-  onChanged: () => void;
+  onChanged?: () => void;
 }
 
-function WorkspaceLabelManagerDrawer({ workspaceId, labels, onClose, onChanged }: LabelManagerDrawerProps) {
+function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelManagerDrawerProps) {
   const { t } = useTranslation();
+  const [labels, setLabels] = useState<WorkspaceLabelModel[]>([]);
   const [editId, setEditId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [color, setColor] = useState(COLOR_PRESETS[0]);
@@ -67,6 +68,20 @@ function WorkspaceLabelManagerDrawer({ workspaceId, labels, onClose, onChanged }
     setToast({ text, severity });
     setToastOpen(true);
   }, []);
+
+  // 拉取当前 workspace 全量标签（挂载时 + 每次 CRUD 成功后）。
+  const loadLabels = useCallback(async () => {
+    try {
+      setLabels(await WorkspaceLabelService.getList({ workspaceId }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast(t('tracker:projectIssue.toast.labelOpFailed', { message: msg }), 'error');
+    }
+  }, [workspaceId, showToast, t]);
+
+  useEffect(() => {
+    void loadLabels();
+  }, [loadLabels]);
 
   const isEdit = editId !== null;
   const canSubmit = name.trim().length > 0 && !submitting;
@@ -99,7 +114,8 @@ function WorkspaceLabelManagerDrawer({ workspaceId, labels, onClose, onChanged }
         await WorkspaceLabelService.create({ workspaceId, ...payload });
         showToast(t('tracker:projectIssue.toast.labelCreated', { name: payload.name }), 'success');
       }
-      onChanged();
+      await loadLabels();
+      onChanged?.();
       resetForm();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -121,7 +137,8 @@ function WorkspaceLabelManagerDrawer({ workspaceId, labels, onClose, onChanged }
         resetForm();
       }
       setDeleteTarget(null);
-      onChanged();
+      await loadLabels();
+      onChanged?.();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       showToast(t('tracker:projectIssue.toast.labelOpFailed', { message: msg }), 'error');

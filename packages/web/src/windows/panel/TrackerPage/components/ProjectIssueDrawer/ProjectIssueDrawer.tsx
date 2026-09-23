@@ -437,7 +437,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
       {drawerManagerOpen && (
         <WorkspaceLabelManagerDrawer
           workspaceId={workspaceProject.workspaceId}
-          labels={wsLabels}
           onClose={() => setDrawerManagerOpen(false)}
           onChanged={loadWsLabels}
         />
