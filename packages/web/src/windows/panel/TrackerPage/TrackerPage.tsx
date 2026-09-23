@@ -1,7 +1,4 @@
-import {
-  AddOutlined as AddOutlinedIcon,
-  AppsOutlined as AppsOutlinedIcon,
-} from '@mui/icons-material';
+import { Apps as AppsIcon, AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
 import { Box, CircularProgress, IconButton, Typography } from '@mui/material';
 import { useTrackerStore, useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
 import { numParam, TRACKER_WID_PARAM } from '@src/windows/panel/routes';
@@ -10,7 +7,6 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import ProjectIssueList from './components/ProjectIssueList/ProjectIssueList';
 import WorkspaceProjectList from './components/WorkspaceProjectList/WorkspaceProjectList';
-import WorkspaceDrawer from './components/WorkspacesView/WorkspaceDrawer';
 import WorkspacesView from './components/WorkspacesView/WorkspacesView';
 
 // TrackerPage：控制台「项目事项管理」页面内容组件（工作空间 → 项目 → Issue 三级管理）。
@@ -18,8 +14,9 @@ import WorkspacesView from './components/WorkspacesView/WorkspacesView';
 // 嵌在 PanelApp 内容区内（panel 顶栏已显示「项目事项管理」页面名），故自身不再重复标题。
 //
 // 标题栏恒驻（选中/未选两态）：左侧「当前工作空间：<名称>」（未选显示「请先选择工作空间」置灰），
-// 右侧 icon 组 [新建空间 | 展开空间列表]。空间卡片网格（WorkspacesView 完整视图）以页面内
-// 绝对定位叠层盖在主体内容上方（铺满标题栏以下区域，非弹窗样式）；未选时默认展开，选中后可再开。
+// 右侧仅列表开关 icon（展开态实心 + primary 色标识）。新建空间入口在工作空间列表工具栏（刷新右侧）。
+// 空间卡片网格（WorkspacesView 完整视图）以页面内绝对定位叠层盖在主体内容上方（铺满标题栏以下区域，
+// 非弹窗样式）；未选时默认展开，选中后可再开。
 //
 // 路由接入（全 query 风格）：工作空间选中态由 URL ?wid=<id> 驱动；本页单向同步 URL→store。
 // 项目选中态保留 store（不入 URL）。store 全局，页面卸载/重挂载（声明式路由切走即卸载）不丢选中。
@@ -42,8 +39,6 @@ export default function TrackerPage() {
   // 空间选择浮层开合：未选空间时默认展开（首访引导）；选中后收起，点列表 icon 可再开。
   // reload 落在 ?wid=<id> 但 store 未回写时也保持展开，避免网格→浮层闪烁。
   const [selectorOpen, setSelectorOpen] = useState(selected == null && urlWid == null);
-  // 新建空间抽屉（标题栏 add icon 快捷入口）。
-  const [drawerCreateOpen, setDrawerCreateOpen] = useState(false);
 
   // URL → store 单向同步：
   //   有 wid 且 store 不一致 → 按实体回写（reload/前进后退恢复）；
@@ -98,7 +93,7 @@ export default function TrackerPage() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* 工作空间标题栏（恒驻）：当前工作空间名（未选置灰提示）+ 新建/列表 icon 组 */}
+      {/* 工作空间标题栏（恒驻）：当前工作空间名（未选置灰提示）+ 列表开关 icon */}
       <Box
         sx={{
           height: 48,
@@ -131,23 +126,14 @@ export default function TrackerPage() {
               )}
         </Typography>
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          {/* 快捷新建空间：直接打开新建抽屉（浮层内的新建按钮已移除，入口上收至此） */}
-          <IconButton
-            size="small"
-            onClick={() => setDrawerCreateOpen(true)}
-            aria-label={t('tracker:workspace.actions.addShort')}
-            sx={{ color: 'text.secondary' }}
-          >
-            <AddOutlinedIcon />
-          </IconButton>
-          {/* 展开空间列表浮层（标题栏下方，不遮盖标题栏） */}
+          {/* 展开空间列表浮层（标题栏下方，不遮盖标题栏）：展开态实心 + primary 色与收起态区分 */}
           <IconButton
             size="small"
             onClick={() => setSelectorOpen(o => !o)}
             aria-label={t('tracker:workspace.actions.switch')}
-            sx={{ color: 'text.secondary' }}
+            sx={{ color: selectorOpen ? 'primary.main' : 'text.secondary' }}
           >
-            <AppsOutlinedIcon />
+            {selectorOpen ? <AppsIcon /> : <AppsOutlinedIcon />}
           </IconButton>
         </Box>
       </Box>
@@ -211,14 +197,6 @@ export default function TrackerPage() {
               </Box>
             )}
       </Box>
-
-      {/* 新建空间抽屉（标题栏 add icon 快捷入口；创建成功后 invalidate 自动刷新浮层网格并关闭抽屉） */}
-      {drawerCreateOpen && (
-        <WorkspaceDrawer
-          onClose={() => setDrawerCreateOpen(false)}
-          onCreated={() => setDrawerCreateOpen(false)}
-        />
-      )}
     </Box>
   );
 }

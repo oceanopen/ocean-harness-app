@@ -100,7 +100,7 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 顶栏：计数 + 搜索 + 刷新（新建入口上收到外层标题栏 add icon，此处不再放新建按钮） */}
+      {/* 顶栏：计数 + 搜索 + 刷新 + 新建（新建入口收回本工具栏，外层标题栏只留列表开关） */}
       <Box
         sx={{
           p: 2,
@@ -138,6 +138,13 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
                 },
               }}
             />
+          </IconButton>
+          <IconButton
+            size="small"
+            onClick={() => setAddDialogOpen(true)}
+            aria-label={t('tracker:workspace.actions.add')}
+          >
+            <AddOutlinedIcon />
           </IconButton>
         </Box>
       </Box>
