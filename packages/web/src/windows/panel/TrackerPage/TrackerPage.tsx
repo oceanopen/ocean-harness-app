@@ -1,5 +1,5 @@
 import { Apps as AppsIcon, AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
-import { Box, CircularProgress, IconButton, Typography } from '@mui/material';
+import { Box, CircularProgress, IconButton, Link, Typography } from '@mui/material';
 import { useTrackerStore, useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
 import { numParam, TRACKER_WID_PARAM } from '@src/windows/panel/routes';
 import { useEffect, useState } from 'react';
@@ -110,12 +110,21 @@ export default function TrackerPage() {
         <Typography variant="subtitle1" sx={{ fontWeight: 600 }} noWrap>
           {selected
             ? (
-              // 前缀「当前工作空间：」用次级色 + 细字重，与名称做区分
+              // 前缀「当前工作空间：」用次级色 + 细字重，与名称做区分；
+              // 名称可点击（link 样式）：默认标题字色，hover 转 primary（无下划线），点击切换空间列表浮层（与右侧开关 icon 同口径）
                 <>
                   <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>
                     {t('tracker:workspace.current')}
                   </Box>
-                  {selected.name}
+                  <Link
+                    component="button"
+                    underline="none"
+                    onClick={() => setSelectorOpen(o => !o)}
+                    aria-label={t('tracker:workspace.actions.switch')}
+                    sx={{ 'color': selectorOpen ? 'primary.main' : 'text.primary', 'fontWeight': 600, '&:hover': { color: 'primary.main' } }}
+                  >
+                    {selected.name}
+                  </Link>
                 </>
               )
             : (
