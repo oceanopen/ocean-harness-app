@@ -262,8 +262,9 @@ function PanelApp() {
                 }),
               }}
             >
-              {/* pt:0.5 与顶栏分隔线留一点呼吸间距 */}
-              <List sx={{ px: collapsed ? 0 : 1, pt: 0.5 }}>
+              {/* pt:1.5 与顶栏分隔线留呼吸间距；px 恒 1——收起态项宽 = 56-16 = 40px，
+                  与菜单项固定 40px 高构成正方形 hover/选中背景框（左右各留 8px 白边）。 */}
+              <List sx={{ px: 1, pt: 1 }}>
                 {menuItems.filter(item => !SIDEBAR_HIDDEN.has(item.key)).map(item => (
                   <MenuListItemButton
                     key={item.key}

@@ -43,6 +43,10 @@ export default function MenuListItemButton({
       onClick={onClick}
       {...(iconOnly ? { 'aria-label': label } : {})}
       sx={{
+        // 固定 40px 高度：吸收 ListItemText 默认 margin（展开态约 45px）与收起态（40px）
+        // 的 5px 高度差，两态切换不闪跳；py:0 由固定高度 + alignItems 居中接管。
+        'height': 40,
+        'py': 0,
         'borderRadius': 2,
         'mb': 0.5,
         'justifyContent': iconOnly ? 'center' : 'flex-start',
