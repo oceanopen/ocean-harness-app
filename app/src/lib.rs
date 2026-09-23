@@ -37,6 +37,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             windows::pet_session_task::fit_pet_session_task,
             shared::app_config::get_app_config,
             shared::app_config::set_app_config,
+            shared::app_info::get_app_name,
             shared::http_server::http_server_status,
             shared::http_server::set_http_server_enabled,
             shared::http_server::cleanup_orphan_http_server,

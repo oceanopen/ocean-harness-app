@@ -89,6 +89,13 @@ export const commands = {
 	fitPetSessionTask: (height: number | null) => typedError<null, string>(__TAURI_INVOKE("fit_pet_session_task", { height })),
 	getAppConfig: (key: string) => typedError<string | null, string>(__TAURI_INVOKE("get_app_config", { key })),
 	setAppConfig: (key: string, value: string) => typedError<null, string>(__TAURI_INVOKE("set_app_config", { key, value })),
+	/**
+	 *  当前应用名（panel 面包屑根 crumb 等 UI 展示用）。
+	 *  取自 config product_name（与窗口标题同源）：dev 构建经 tauri.dev.conf.json 覆盖为
+	 *  "Ocean Harness [DEV]"，发布构建为 "Ocean Harness"——前端借此区分当前构建形态
+	 *  （i18n common:brand 无此后缀，仅作异步回填前的同步初值）。缺失时回退品牌名。
+	 */
+	getAppName: () => __TAURI_INVOKE<string>("get_app_name"),
 	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
 	httpServerStatus: () => __TAURI_INVOKE<HttpServerStatus>("http_server_status"),
 	/**

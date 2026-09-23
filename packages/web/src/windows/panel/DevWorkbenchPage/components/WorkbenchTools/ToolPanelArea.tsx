@@ -6,6 +6,7 @@ import { Close as CloseIcon } from '@mui/icons-material';
 import { Box, IconButton, Tab, Tabs, Typography, useTheme } from '@mui/material';
 import { useToolTabs, useWorkbenchToolsStore } from '@src/state/workbenchTools';
 import { useRef, useState } from 'react';
+import { WORKBENCH_TITLEBAR_HEIGHT } from '../../workbenchLayout';
 import { toolDefById } from './toolRegistry';
 
 /// 面板区最小宽度（左边界拖拽下限；tab 头 + 列表内容的最小可读宽）。
@@ -37,7 +38,7 @@ interface ToolPanelAreaProps {
   onWidthCommit: (width: number) => void;
 }
 
-/// ToolPanelArea：中栏右侧的工具面板区（内容行全高，自标题栏带起）——tab 头（48px，与
+/// ToolPanelArea：中栏右侧的工具面板区（内容行全高，自标题栏带起）——tab 头（40px，与
 /// 终端列标题栏同高对齐、底边线连通；可滚动 + 每 tab 关闭按钮）+ 当前激活
 /// 工具内容（注册表 render 分发）。宽度默认 600（config），左缘 4px 把手拖拽调整：
 /// pointer capture，down 实测容器宽 → move 内存态（transition 关）→ up 复位并一次落盘
@@ -128,11 +129,12 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
       {/* 内层固定显示宽（外层 overflow hidden 裁切/动画，范式同左栏） */}
       <Box sx={{ width: displayWidth, height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         {/* tab 头：可滚动；每 tab 带关闭按钮（stopPropagation 防误切 tab）。
-            高度精确对齐终端列标题栏的 48px：Tabs 的 height 收口（border-box 含 1px 底线
-            → 内容区 47px），Tab 保持 MUI 默认 minHeight 48，向下溢出的 1px（纯 padding）
-            被 Tabs 默认 overflow: hidden 裁掉——内容居中不受影响。不加 height 时 Tab
-            默认 padding 12×2 + label 24 会把 Tabs 撑到 49px，比标题栏高 1px（底线错位
-            的根源）。Tab 上写 height < 48 无效（默认 minHeight 压制）。 */}
+            高度精确对齐终端列标题栏的 40px：Tabs 的 height 收口（border-box 含 1px 底线
+            → 内容区 39px），Tab 经 '& .MuiTab-root' 后代选择器同时覆写 minHeight（默认
+            48 会压制 height）与 padding（默认 12px 会撑回 48）：8×2 + label 24 = 40，
+            向下溢出的 1px（纯 padding）被 Tabs 默认 overflow: hidden 裁掉——内容居中
+            不受影响。关闭按钮 p:0.25 收窄（size=small 盒高 30 + 默认 padding 会把 Tab
+            撑过 40 再被裁切，hover 背景溢出视觉切边）。 */}
         <Tabs
           value={displayActiveId ?? ''}
           onChange={(_, tabId: string) => {
@@ -142,7 +144,15 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
           }}
           variant="scrollable"
           scrollButtons={false}
-          sx={{ height: 48, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}
+          sx={{
+            'height': WORKBENCH_TITLEBAR_HEIGHT,
+            // 根节点也要覆写：MUI Tabs 根默认 minHeight:48，height 压不住 minHeight。
+            'minHeight': WORKBENCH_TITLEBAR_HEIGHT,
+            'flexShrink': 0,
+            'borderBottom': 1,
+            'borderColor': 'divider',
+            '& .MuiTab-root': { minHeight: WORKBENCH_TITLEBAR_HEIGHT, padding: '8px 12px' },
+          }}
         >
           {validEntries.map(({ tab, def }) => (
             <Tab
@@ -160,7 +170,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
                         closeTab(issueId, tab.id);
                       }
                     }}
-                    sx={{ 'ml': 0.25, 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
+                    sx={{ 'ml': 0.25, 'p': 0.25, 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
                   >
                     <CloseIcon sx={{ fontSize: 14 }} />
                   </IconButton>

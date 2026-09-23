@@ -1,4 +1,5 @@
 pub mod app_config;
+pub mod app_info;
 #[cfg(target_os = "macos")]
 pub mod app_menu;
 pub mod cli_register;

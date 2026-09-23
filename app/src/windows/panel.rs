@@ -19,6 +19,25 @@ use crate::shared::types::ClaudeSessionInfo;
 #[cfg(target_os = "macos")]
 use crate::terminal::open_directory_dispatch;
 use crate::terminal::{NavErr, Target, dispatch};
+#[cfg(target_os = "macos")]
+use tauri::TitleBarStyle;
+
+/// 隐藏原生标题栏上的标题文字（仅 macOS，Overlay 标题栏收尾）。
+/// TitleBarStyle::Overlay 只设 titlebar_transparent + fullsize_content_view，不隐藏
+/// 标题——macOS 仍会把窗口标题画在标题栏正中，叠在前端 44px 顶栏上。此处补
+/// setTitleVisibility:（NSWindowTitleVisibilityHidden = 1）取消绘制；标题字符串本身
+/// 保留（Mission Control / ⌘Tab 窗口管理器仍显示）。AppKit 窗口操作非线程安全，
+/// 包 run_on_main_thread 防御（范式同 shared/window_show.rs，同步命令本就在主线程）。
+#[cfg(target_os = "macos")]
+fn hide_titlebar_text(win: &tauri::WebviewWindow) {
+    let w = win.clone();
+    let _ = win.app_handle().run_on_main_thread(move || {
+        if let Ok(ns) = w.ns_window() {
+            let ns: *mut objc2::runtime::AnyObject = ns.cast();
+            let _: () = unsafe { objc2::msg_send![ns, setTitleVisibility: 1i64] };
+        }
+    });
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -278,14 +297,21 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
                 Some(page) => format!("panel.html#/{page}").into(),
                 None => "panel.html".into(),
             };
-            let win = WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App(url))
-                .title(format!("{product} - 控制台"))
+            // macOS Overlay 标题栏（对应 Electron hiddenInset）：红绿灯保留、内容从窗口
+            // y=0 铺起，前端 44px 顶栏（PanelApp TOP_BAR_HEIGHT）吃进原生标题栏区域，
+            // 合并为单条自定义标题栏；拖拽由前端顶栏 data-tauri-drag-region 承担。
+            // 仅 macOS；其余平台保持默认窗口装饰（原生标题栏在内容区之外）。
+            let win_builder = WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App(url))
+                .title(format!("{product} - 控制台")) // Overlay 下不显示，但 Mission Control 仍消费
                 .inner_size(width, height) // 还原尺寸：取消最大化后回到此 85% 屏尺寸
                 // 先隐藏：等下方定位 + 最大化完成后再由 panel_win.show() 显现，避免初帧跳动。
                 .visible(false)
-                .skip_taskbar(true)
-                .build()
-                .map_err(|e| e.to_string())?;
+                .skip_taskbar(true);
+            #[cfg(target_os = "macos")]
+            let win_builder = win_builder.title_bar_style(TitleBarStyle::Overlay);
+            let win = win_builder.build().map_err(|e| e.to_string())?;
+            #[cfg(target_os = "macos")]
+            hide_titlebar_text(&win);
 
             // 必须在 maximize 之前定位：macOS 上对已最大化（zoom）态的窗口调用 set_position
             // 会破坏 zoom 定位、但保留撑开的全屏尺寸，导致「尺寸=全屏、左上角≠(0,0)」的错位窗口。

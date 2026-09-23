@@ -3,7 +3,7 @@ import { Box } from '@mui/material';
 
 /// 面板操作栏统一高度（px）：终端 pane 工具栏、右侧工具面板头部共用。依赖方（终端
 /// exited 覆盖层 top、搜索条浮层 top 偏移）一律引用此常量，禁止另写 magic number。
-/// 刻意小于标题栏/tab 头的 48px——操作栏是 48px 对齐带之下的二级带，字号/图标也偏小。
+/// 刻意小于标题栏/tab 头的 40px——操作栏是 40px 对齐带之下的二级带，字号/图标也偏小。
 export const PANEL_TOOLBAR_HEIGHT = 36;
 
 interface PanelToolbarProps {

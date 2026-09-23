@@ -16,7 +16,7 @@ interface PreviewTabsBarProps {
 }
 
 /// 预览 tab 头（36px，PANEL_TOOLBAR_HEIGHT 操作栏带族——浮层在终端内容区（标题栏带之下），
-/// 与终端 pane 工具栏同带而非 ToolPanelArea 的 48px 对齐带）。tab id = 文件相对路径，
+/// 与终端 pane 工具栏同带而非 ToolPanelArea 的 40px 对齐带）。tab id = 文件相对路径，
 /// label 取 basename、title 悬浮全路径；长文件名收缩出省略号（Typography flex+minWidth:0，
 /// 关闭钮 flexShrink:0 恒可见——flex 默认 min-width:auto 不收缩是省略号失效的根源）。
 /// 每 tab 带关闭按钮（stopPropagation 防误切）；右缘固定「关闭全部」。

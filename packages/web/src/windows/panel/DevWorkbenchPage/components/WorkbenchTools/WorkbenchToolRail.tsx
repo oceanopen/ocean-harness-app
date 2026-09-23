@@ -1,6 +1,7 @@
 import { ChevronLeft as ChevronLeftIcon, ChevronRight as ChevronRightIcon } from '@mui/icons-material';
 import { Box, IconButton, Tooltip } from '@mui/material';
 import { useToolTabs, useWorkbenchToolsStore } from '@src/state/workbenchTools';
+import { WORKBENCH_TITLEBAR_HEIGHT } from '../../workbenchLayout';
 import { WORKBENCH_TOOLS } from './toolRegistry';
 
 interface WorkbenchToolRailProps {
@@ -15,8 +16,8 @@ interface WorkbenchToolRailProps {
   onExpandPanel: () => void;
 }
 
-/// WorkbenchToolRail：开发工作台最右侧常驻工具条（48px 竖条）。
-/// 顶部方格（48×48，与中栏标题栏同高对齐）= 面板区总开关（切 config 折叠态，不动 tabs）；
+/// WorkbenchToolRail：开发工作台最右侧常驻工具条（40px 竖条）。
+/// 顶部方格（40×40，与中栏标题栏同高对齐）= 面板区总开关（切 config 折叠态，不动 tabs）；
 /// 下方为工具图标列（注册表驱动，点击 = openTool + 面板区未展开则展开）。激活 tab 所属
 /// 工具高亮（并存工具任一实例激活即高亮；有 tab 非激活不作次级态，保持两态简单）。
 /// tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
@@ -39,7 +40,7 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
   return (
     <Box
       sx={{
-        width: 48,
+        width: WORKBENCH_TITLEBAR_HEIGHT,
         flexShrink: 0,
         display: 'flex',
         flexDirection: 'column',
@@ -49,14 +50,14 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
         bgcolor: 'background.paper',
       }}
     >
-      {/* 面板区总开关（正方形 48×48，与标题栏同高；Chevron 指示运动方向：收起态向左展开）。
+      {/* 面板区总开关（正方形 40×40，与标题栏同高；Chevron 指示运动方向：收起态向左展开）。
           贴窗口右缘，Tooltip 显式向左展开（全局默认 top，见 AppThemeProvider）。 */}
       <Tooltip title={panelCollapsed ? '展开工具面板区' : '收起工具面板区'} placement="left">
         <span>
           <IconButton
             onClick={onTogglePanel}
             aria-label={panelCollapsed ? '展开工具面板区' : '收起工具面板区'}
-            sx={{ width: 48, height: 48, borderRadius: 0, color: 'text.secondary' }}
+            sx={{ width: WORKBENCH_TITLEBAR_HEIGHT, height: WORKBENCH_TITLEBAR_HEIGHT, borderRadius: 0, color: 'text.secondary' }}
           >
             {panelCollapsed ? <ChevronLeftIcon /> : <ChevronRightIcon />}
           </IconButton>
@@ -75,8 +76,8 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
                 disabled={issueId == null}
                 aria-label={`打开${tool.title}`}
                 sx={{
-                  'width': 48,
-                  'height': 48,
+                  'width': WORKBENCH_TITLEBAR_HEIGHT,
+                  'height': WORKBENCH_TITLEBAR_HEIGHT,
                   'borderRadius': 0,
                   'color': active ? 'primary.main' : 'text.secondary',
                   '&:hover': { bgcolor: 'action.hover' },

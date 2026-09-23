@@ -1,13 +1,12 @@
 import { SearchOutlined as SearchOutlinedIcon } from '@mui/icons-material';
 import { Box, ButtonBase, Typography } from '@mui/material';
+import { isMacOS } from '@src/shared/platform';
 import { useTranslation } from 'react-i18next';
 import { useCommandPalette } from './CommandPaletteContext';
 
 // 顶栏命令面板触发入口：胶囊样式（搜索图标 + 占位文案 + 快捷键徽标），点击打开面板。
-// 快捷键徽标按平台自适应：macOS 显 ⌘K，Windows/Linux 显 Ctrl K。
-// navigator.platform 模块级一次判定（webview 中 mac→"MacIntel" / win→"Win32" / linux→"Linux x86_64"），零依赖。
-const isMac = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
-const SHORTCUT_BADGE = isMac ? '⌘+K' : 'Ctrl+K';
+// 快捷键徽标按平台自适应：macOS 显 ⌘K，Windows/Linux 显 Ctrl K（判定见 shared/platform.ts）。
+const SHORTCUT_BADGE = isMacOS ? '⌘+K' : 'Ctrl+K';
 
 function CommandPaletteTrigger() {
   const { t } = useTranslation();

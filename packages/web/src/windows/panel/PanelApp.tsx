@@ -19,7 +19,9 @@ import {
   setAppConfig,
   toYesNo,
 } from '@src/shared/appConfig';
+import { commands } from '@src/shared/bindings';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
+import { isMacOS, TRAFFIC_LIGHT_CLEARANCE } from '@src/shared/platform';
 import { useCloseWindowShortcut } from '@src/shared/useCloseWindowShortcut';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
@@ -47,7 +49,14 @@ function decodeSidebarCollapsed(raw: string | null): boolean {
 }
 
 // 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
-const TOP_BAR_HEIGHT = 56;
+// macOS Overlay 窗口（panel.rs TitleBarStyle::Overlay）下顶栏吃进原生标题栏区域，
+// 44px 单条自定义标题栏（红绿灯纵向居中其中）；顶栏/侧边栏头部带 data-tauri-drag-region
+// 自拖拽（双击自动切换 maximize）。
+const TOP_BAR_HEIGHT = 44;
+
+// 侧边栏折叠宽度提为常量：顶栏在折叠态需按「让位带 - 折叠宽」补左侧内边距
+// （让位带常量见 shared/platform.ts TRAFFIC_LIGHT_CLEARANCE）。
+const SIDEBAR_COLLAPSED_WIDTH = 56;
 
 // 子状态页：切回时经「记忆上次完整路径」恢复 URL 子状态（wid/pid/iid），页面组件随之重建。
 // settings 同理记忆上次分区（/settings/<section>），齿轮/托盘/命令面板再入时回到上次分区。
@@ -156,6 +165,15 @@ function PanelApp() {
   const activeSectionLabel = activeMenu === 'settings'
     ? t(SECTION_MENUS.find(m => m.key === pathToSection(location.pathname))?.labelI18nKey ?? '')
     : null;
+  // 应用名（面包屑根 crumb）：Rust get_app_name 为 SSOT——dev 构建带 [DEV] 后缀、发布
+  // 构建为品牌名，借此区分构建形态。i18n common:brand 作同步初值、异步回填（纯文字
+  // 变化，无布局副作用；拉取范式同 ServerStatusIndicator）。会话内恒定，不订阅变更。
+  const [appName, setAppName] = useState(() => t('common:brand'));
+  useEffect(() => {
+    void commands.getAppName().then(setAppName).catch((err: unknown) => {
+      console.warn('[PanelApp] 应用名获取失败:', err);
+    });
+  }, []);
 
   return (
     <CommandPaletteProvider
@@ -173,7 +191,7 @@ function PanelApp() {
         {!immersive && (
           <Box
             sx={{
-              width: collapsed ? 56 : 200,
+              width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : 200,
               flexShrink: 0,
               borderRight: 1,
               borderColor: 'divider',
@@ -187,32 +205,40 @@ function PanelApp() {
               }),
             }}
           >
-            {/* 展开态：pl:3 = 24px = List px:1(8) + ListItemButton paddingLeft(16)，logo 容器宽 36px
-            复刻 ListItemIcon minWidth，使 logo / 标题与下方菜单项 icon / 文字分别垂直对齐。
-            折叠态：仅居中显示 logo，隐藏标题文字。 */}
+            {/* 展开态（非 macOS）：pl:3 = 24px = List px:1(8) + ListItemButton paddingLeft(16)，
+            logo 容器宽 36px 复刻 ListItemIcon minWidth，使 logo / 标题与下方菜单项 icon / 文字
+            分别垂直对齐。展开态（macOS Overlay）：pl 让位红绿灯 80px（logo 移到红绿灯右侧，
+            与 macOS 原生应用标题栏视觉一致，不再与菜单项对齐）。折叠态：macOS 下 56px 宽容
+            不下 80px 让位带 → 隐藏 logo/标题、头部退化为纯拖拽带（顶栏侧补让位距）；其余平台
+            仅居中显示 logo，隐藏标题文字。头部带 data-tauri-drag-region 承担窗口拖拽
+            （macOS Overlay 无原生标题栏拖拽区），非交互子元素 pointerEvents:none 让 mousedown
+            穿透到头部本尊。 */}
             <Box
+              data-tauri-drag-region={isMacOS || undefined}
               sx={{
                 height: TOP_BAR_HEIGHT,
                 flexShrink: 0,
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: collapsed ? 'center' : 'flex-start',
-                pl: collapsed ? 0 : 3,
+                justifyContent: collapsed && !isMacOS ? 'center' : 'flex-start',
+                pl: collapsed ? 0 : isMacOS ? `${TRAFFIC_LIGHT_CLEARANCE}px` : 3,
                 pr: collapsed ? 0 : 2,
                 borderBottom: 1,
                 borderColor: 'divider',
               }}
             >
-              <Box sx={{ width: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Box
-                  component="img"
-                  src={appIcon}
-                  alt={t('common:brand')}
-                  sx={{ width: 20, height: 20, borderRadius: 0.5 }}
-                />
-              </Box>
+              {(!collapsed || !isMacOS) && (
+                <Box sx={{ width: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                  <Box
+                    component="img"
+                    src={appIcon}
+                    alt={t('common:brand')}
+                    sx={{ width: 20, height: 20, borderRadius: 0.5 }}
+                  />
+                </Box>
+              )}
               {!collapsed && (
-                <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }} color="text.secondary">
+                <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} color="text.secondary">
                   {t('panel:title')}
                 </Typography>
               )}
@@ -262,9 +288,15 @@ function PanelApp() {
             bgcolor: 'background.default',
           }}
         >
-          {/* 顶部导航栏：固定高度，与左侧标题栏等高；底部分隔线与左侧标题/菜单分隔线水平对齐。 */}
+          {/* 顶部导航栏：固定高度，与左侧标题栏等高；底部分隔线与左侧标题/菜单分隔线水平对齐。
+              macOS Overlay：整条带 data-tauri-drag-region 承担窗口拖拽（双击切换 maximize）；
+              侧边栏折叠时红绿灯尾部（~56-70px）探入本栏左段，pl 补「让位带 - 折叠宽」避让
+              （展开时红绿灯整个落在左侧侧边栏头部）。drag region 精确匹配 mousedown target，
+              胶囊/齿轮等交互子元素天然不触发拖拽；Breadcrumbs/flex 占位为非交互元素，须
+              pointerEvents:none 让 mousedown 穿透到本栏。 */}
           {!immersive && (
             <Box
+              data-tauri-drag-region={isMacOS || undefined}
               sx={{
                 height: TOP_BAR_HEIGHT,
                 flexShrink: 0,
@@ -272,12 +304,17 @@ function PanelApp() {
                 alignItems: 'center',
                 gap: 1,
                 px: 2,
+                pl: collapsed && isMacOS ? `${TRAFFIC_LIGHT_CLEARANCE - SIDEBAR_COLLAPSED_WIDTH}px` : 2,
                 borderBottom: 1,
                 borderColor: 'divider',
                 bgcolor: 'background.paper',
               }}
             >
-              <Breadcrumbs aria-label="breadcrumb">
+              <Breadcrumbs aria-label="breadcrumb" sx={{ pointerEvents: 'none' }}>
+                {/* 根 crumb = 应用名（原生标题文字已隐藏，这里是唯一的窗口级标识展示） */}
+                <Typography variant="body2" color="text.secondary">
+                  {appName}
+                </Typography>
                 <Typography variant="body2" sx={{ fontWeight: 600 }}>
                   {activeLabel}
                 </Typography>
@@ -287,7 +324,7 @@ function PanelApp() {
                   </Typography>
                 )}
               </Breadcrumbs>
-              <Box sx={{ flex: 1 }} />
+              <Box sx={{ flex: 1, pointerEvents: 'none' }} />
               <CommandPaletteTrigger />
               <ServerStatusIndicator />
               <IconButton

@@ -39,6 +39,7 @@ import {
   toYesNo,
   WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
+import { isMacOS, TRAFFIC_LIGHT_CLEARANCE } from '@src/shared/platform';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
@@ -59,6 +60,7 @@ import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
 import ToolPanelArea, { TERMINAL_MIN_WIDTH, TOOL_AREA_MIN_WIDTH } from './components/WorkbenchTools/ToolPanelArea';
 import WorkbenchToolRail from './components/WorkbenchTools/WorkbenchToolRail';
 import WorkspaceInitGate from './components/WorkspaceInitGate/WorkspaceInitGate';
+import { WORKBENCH_TITLEBAR_HEIGHT } from './workbenchLayout';
 
 // 左栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
@@ -311,14 +313,20 @@ export default function DevWorkbenchPage() {
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* 终端列：标题栏 + 终端内容；minWidth 与工具面板区拖拽上限联动（ToolPanelArea 按容器实测宽收紧 max） */}
         <Box sx={{ flex: 1, minWidth: TERMINAL_MIN_WIDTH, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {/* 标题栏：左栏折叠开关 + 状态徽章 + 选中 issue 的 id 尾 8 位 + 名称 + 右侧快捷区 */}
+          {/* 标题栏：左栏折叠开关 + 状态徽章 + 选中 issue 的 id 尾 8 位 + 名称 + 右侧快捷区。
+              macOS Overlay：沉浸模式下外壳（含顶栏）不渲染、本栏顶到窗口 y=0，带
+              data-tauri-drag-region 承担窗口拖拽，pl 让位红绿灯 80px（非沉浸时本栏在
+              顶栏 y=44 之下、无重叠，不避让）。Chip/名称为非交互元素，pointerEvents:none
+              让 mousedown 穿透到本栏（拖拽语义）。 */}
           <Box
+            data-tauri-drag-region={isMacOS || undefined}
             sx={{
-              height: 48,
+              height: WORKBENCH_TITLEBAR_HEIGHT,
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
               px: 1,
+              pl: workbenchFullscreen && isMacOS ? `${TRAFFIC_LIGHT_CLEARANCE}px` : 1,
               gap: 0.5,
               borderBottom: 1,
               borderColor: 'divider',
@@ -337,11 +345,11 @@ export default function DevWorkbenchPage() {
               <Chip
                 size="small"
                 label={stateMeta.name}
-                sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: '0.75rem', flexShrink: 0 }}
+                sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: '0.75rem', flexShrink: 0, pointerEvents: 'none' }}
               />
             )}
             {hasSelection && issue && (
-              <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
+              <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600, pointerEvents: 'none' }}>
                 <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400, fontFamily: 'monospace' }}>
                   …{issue.id.slice(-8)}
                 </Box>
