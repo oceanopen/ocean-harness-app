@@ -309,6 +309,12 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
                 .skip_taskbar(true);
             #[cfg(target_os = "macos")]
             let win_builder = win_builder.title_bar_style(TitleBarStyle::Overlay);
+            // 红绿灯下移与顶栏内容水平对齐：traffic_light_position(x, y) 中 x = close 按钮
+            // 左缘（默认 ~7 不动），y = 按钮圆心距窗口顶部距离（默认 14 = 原生 28px 标题栏
+            // 居中）。取 24（顶栏 44px 垂直中心 22 再下沉 2px，目测对齐面包屑文字基线更佳）。
+            // tao 每次绘制重放该 inset，maximize/还原后位置不漂移。
+            #[cfg(target_os = "macos")]
+            let win_builder = win_builder.traffic_light_position(LogicalPosition::new(7.0, 24.0));
             let win = win_builder.build().map_err(|e| e.to_string())?;
             #[cfg(target_os = "macos")]
             hide_titlebar_text(&win);

@@ -48,14 +48,12 @@ function decodeSidebarCollapsed(raw: string | null): boolean {
   return isYes(parseYesNo(raw, DEFAULT_PANEL_SIDEBAR_COLLAPSED));
 }
 
-// 顶部栏高度：左侧标题栏与右侧顶部导航栏共用，保证两者等高、底部分隔线水平对齐。
-// macOS Overlay 窗口（panel.rs TitleBarStyle::Overlay）下顶栏吃进原生标题栏区域，
-// 44px 单条自定义标题栏（红绿灯纵向居中其中）；顶栏/侧边栏头部带 data-tauri-drag-region
-// 自拖拽（双击自动切换 maximize）。
+// 顶部栏高度：全宽独立行（macOS Overlay 窗口，panel.rs TitleBarStyle::Overlay）——吃进
+// 原生标题栏区域的 44px 单条自定义标题栏（红绿灯纵向居中其中），带 data-tauri-drag-region
+// 自拖拽（双击自动切换 maximize）。侧边栏在其下方，不再与顶栏并排。
 const TOP_BAR_HEIGHT = 44;
 
-// 侧边栏折叠宽度提为常量：顶栏在折叠态需按「让位带 - 折叠宽」补左侧内边距
-// （让位带常量见 shared/platform.ts TRAFFIC_LIGHT_CLEARANCE）。
+// 侧边栏折叠宽度（展开 200px）。
 const SIDEBAR_COLLAPSED_WIDTH = 56;
 
 // 子状态页：切回时经「记忆上次完整路径」恢复 URL 子状态（wid/pid/iid），页面组件随之重建。
@@ -186,159 +184,123 @@ function PanelApp() {
       selectWorkspace={selectWorkspace}
       selectWorkspaceProject={selectWorkspaceProject}
     >
-      <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        {/* 沉浸模式（devWorkbench 全屏）不渲染左侧菜单栏与顶部导航栏——页面占满窗口 */}
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+        {/* 顶部导航栏：全宽独立行（侧边栏在其下方），左侧统一预留红绿灯让位带
+            （macOS Overlay，恒 80px——顶栏不与侧边栏并排，无折叠态换算）。整条带
+            data-tauri-drag-region 承担窗口拖拽（双击切换 maximize）；drag region 精确
+            匹配 mousedown target，胶囊/齿轮等交互子元素天然不触发拖拽；logo/Breadcrumbs/
+            flex 占位为非交互元素，须 pointerEvents:none 让 mousedown 穿透到本栏。
+            沉浸模式（devWorkbench 全屏）不渲染——页面占满窗口。 */}
         {!immersive && (
           <Box
+            data-tauri-drag-region={isMacOS || undefined}
             sx={{
-              width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : 200,
+              height: TOP_BAR_HEIGHT,
               flexShrink: 0,
-              borderRight: 1,
-              borderColor: 'divider',
               display: 'flex',
-              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 1,
+              px: 2,
+              pl: isMacOS ? `${TRAFFIC_LIGHT_CLEARANCE}px` : 2,
+              borderBottom: 1,
+              borderColor: 'divider',
               bgcolor: 'background.paper',
-              overflow: 'hidden',
-              transition: theme.transitions.create('width', {
-                duration: theme.transitions.duration.standard,
-                easing: theme.transitions.easing.sharp,
-              }),
             }}
           >
-            {/* 展开态（非 macOS）：pl:3 = 24px = List px:1(8) + ListItemButton paddingLeft(16)，
-            logo 容器宽 36px 复刻 ListItemIcon minWidth，使 logo / 标题与下方菜单项 icon / 文字
-            分别垂直对齐。展开态（macOS Overlay）：pl 让位红绿灯 80px（logo 移到红绿灯右侧，
-            与 macOS 原生应用标题栏视觉一致，不再与菜单项对齐）。折叠态：macOS 下 56px 宽容
-            不下 80px 让位带 → 隐藏 logo/标题、头部退化为纯拖拽带（顶栏侧补让位距）；其余平台
-            仅居中显示 logo，隐藏标题文字。头部带 data-tauri-drag-region 承担窗口拖拽
-            （macOS Overlay 无原生标题栏拖拽区），非交互子元素 pointerEvents:none 让 mousedown
-            穿透到头部本尊。 */}
+            {/* logo：原侧边栏头部移入，任意折叠态恒显示（品牌标识与面包屑根的应用名同处） */}
             <Box
-              data-tauri-drag-region={isMacOS || undefined}
-              sx={{
-                height: TOP_BAR_HEIGHT,
-                flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: collapsed && !isMacOS ? 'center' : 'flex-start',
-                pl: collapsed ? 0 : isMacOS ? `${TRAFFIC_LIGHT_CLEARANCE}px` : 3,
-                pr: collapsed ? 0 : 2,
-                borderBottom: 1,
-                borderColor: 'divider',
-              }}
-            >
-              {(!collapsed || !isMacOS) && (
-                <Box sx={{ width: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                  <Box
-                    component="img"
-                    src={appIcon}
-                    alt={t('common:brand')}
-                    sx={{ width: 20, height: 20, borderRadius: 0.5 }}
-                  />
-                </Box>
-              )}
-              {!collapsed && (
-                <Typography variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap', pointerEvents: 'none' }} color="text.secondary">
-                  {t('panel:title')}
+              component="img"
+              src={appIcon}
+              alt={t('common:brand')}
+              sx={{ width: 20, height: 20, borderRadius: 0.5, pointerEvents: 'none' }}
+            />
+            <Breadcrumbs aria-label="breadcrumb" sx={{ pointerEvents: 'none' }}>
+              {/* 根 crumb = 应用名（原生标题文字已隐藏，这里是唯一的窗口级标识展示） */}
+              <Typography variant="body2" color="text.secondary">
+                {appName}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {activeLabel}
+              </Typography>
+              {activeSectionLabel != null && (
+                <Typography variant="body2" color="text.secondary">
+                  {activeSectionLabel}
                 </Typography>
               )}
-            </Box>
-            <List sx={{ px: collapsed ? 0 : 1 }}>
-              {menuItems.filter(item => !SIDEBAR_HIDDEN.has(item.key)).map(item => (
-                <MenuListItemButton
-                  key={item.key}
-                  scene="panelSidebar"
-                  collapsed={collapsed}
-                  selected={activeMenu === item.key}
-                  onClick={() => goMenu(item.key)}
-                  icon={item.icon}
-                  label={item.label}
-                />
-              ))}
-            </List>
-            {/* 底部折叠切换按钮：mt:auto 推到侧边栏底部，展开态 ChevronLeft / 折叠态 ChevronRight。 */}
-            <Box
-              sx={{
-                mt: 'auto',
-                borderTop: 1,
-                borderColor: 'divider',
-                display: 'flex',
-                justifyContent: 'center',
-                py: 0.5,
-              }}
+            </Breadcrumbs>
+            <Box sx={{ flex: 1, pointerEvents: 'none' }} />
+            <CommandPaletteTrigger />
+            <ServerStatusIndicator />
+            <IconButton
+              size="small"
+              aria-label={t('settings:title')}
+              onClick={() => goMenu('settings')}
+              sx={{ color: 'text.secondary' }}
             >
-              <IconButton
-                onClick={toggleCollapsed}
-                size="small"
-                aria-label={collapsed ? t('panel:sidebar.expand') : t('panel:sidebar.collapse')}
-                sx={{ color: 'text.secondary' }}
-              >
-                {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
-              </IconButton>
-            </Box>
+              <SettingsOutlinedIcon />
+            </IconButton>
           </Box>
         )}
 
-        <Box
-          sx={{
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            bgcolor: 'background.default',
-          }}
-        >
-          {/* 顶部导航栏：固定高度，与左侧标题栏等高；底部分隔线与左侧标题/菜单分隔线水平对齐。
-              macOS Overlay：整条带 data-tauri-drag-region 承担窗口拖拽（双击切换 maximize）；
-              侧边栏折叠时红绿灯尾部（~56-70px）探入本栏左段，pl 补「让位带 - 折叠宽」避让
-              （展开时红绿灯整个落在左侧侧边栏头部）。drag region 精确匹配 mousedown target，
-              胶囊/齿轮等交互子元素天然不触发拖拽；Breadcrumbs/flex 占位为非交互元素，须
-              pointerEvents:none 让 mousedown 穿透到本栏。 */}
+        <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          {/* 左侧菜单栏：顶栏之下的全高列（原头部 logo/标题行移除，「|」竖线只存在于
+              顶栏下方，不再与红绿灯相遇）。沉浸模式不渲染。 */}
           {!immersive && (
             <Box
-              data-tauri-drag-region={isMacOS || undefined}
               sx={{
-                height: TOP_BAR_HEIGHT,
+                width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : 200,
                 flexShrink: 0,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                px: 2,
-                pl: collapsed && isMacOS ? `${TRAFFIC_LIGHT_CLEARANCE - SIDEBAR_COLLAPSED_WIDTH}px` : 2,
-                borderBottom: 1,
+                borderRight: 1,
                 borderColor: 'divider',
+                display: 'flex',
+                flexDirection: 'column',
                 bgcolor: 'background.paper',
+                overflow: 'hidden',
+                transition: theme.transitions.create('width', {
+                  duration: theme.transitions.duration.standard,
+                  easing: theme.transitions.easing.sharp,
+                }),
               }}
             >
-              <Breadcrumbs aria-label="breadcrumb" sx={{ pointerEvents: 'none' }}>
-                {/* 根 crumb = 应用名（原生标题文字已隐藏，这里是唯一的窗口级标识展示） */}
-                <Typography variant="body2" color="text.secondary">
-                  {appName}
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  {activeLabel}
-                </Typography>
-                {activeSectionLabel != null && (
-                  <Typography variant="body2" color="text.secondary">
-                    {activeSectionLabel}
-                  </Typography>
-                )}
-              </Breadcrumbs>
-              <Box sx={{ flex: 1, pointerEvents: 'none' }} />
-              <CommandPaletteTrigger />
-              <ServerStatusIndicator />
-              <IconButton
-                size="small"
-                aria-label={t('settings:title')}
-                onClick={() => goMenu('settings')}
-                sx={{ color: 'text.secondary' }}
+              {/* pt:0.5 与顶栏分隔线留一点呼吸间距 */}
+              <List sx={{ px: collapsed ? 0 : 1, pt: 0.5 }}>
+                {menuItems.filter(item => !SIDEBAR_HIDDEN.has(item.key)).map(item => (
+                  <MenuListItemButton
+                    key={item.key}
+                    scene="panelSidebar"
+                    collapsed={collapsed}
+                    selected={activeMenu === item.key}
+                    onClick={() => goMenu(item.key)}
+                    icon={item.icon}
+                    label={item.label}
+                  />
+                ))}
+              </List>
+              {/* 底部折叠切换按钮：mt:auto 推到侧边栏底部，展开态 ChevronLeft / 折叠态 ChevronRight。 */}
+              <Box
+                sx={{
+                  mt: 'auto',
+                  borderTop: 1,
+                  borderColor: 'divider',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  py: 0.5,
+                }}
               >
-                <SettingsOutlinedIcon />
-              </IconButton>
+                <IconButton
+                  onClick={toggleCollapsed}
+                  size="small"
+                  aria-label={collapsed ? t('panel:sidebar.expand') : t('panel:sidebar.collapse')}
+                  sx={{ color: 'text.secondary' }}
+                >
+                  {collapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+                </IconButton>
+              </Box>
             </Box>
           )}
+
           {/* 页面内容区：声明式路由（各页面自带 header 原样保留）；'/' 与未知路径 replace 归一到默认页。 */}
-          <Box sx={{ flex: 1, overflow: 'hidden' }}>
+          <Box sx={{ flex: 1, overflow: 'hidden', bgcolor: 'background.default' }}>
             <Routes>
               <Route path="/" element={<Navigate to={menuToPath(DEFAULT_MENU)} replace />} />
               <Route path={MENU_PATHS.claudeSessions} element={<ClaudeSessionsPage />} />
