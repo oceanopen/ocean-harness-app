@@ -113,7 +113,7 @@ function ClaudeSessionCard({ session, onOpenTerminal }: ClaudeSessionCardProps) 
             <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: CLAUDE_SESSION_STATUS_COLOR[session.status] }} />
             <Typography
               variant="caption"
-              sx={{ color: CLAUDE_SESSION_STATUS_COLOR[session.status], fontWeight: 700, fontSize: '0.7rem' }}
+              sx={{ color: CLAUDE_SESSION_STATUS_COLOR[session.status], fontWeight: 700, fontSize: 12 }}
             >
               {t(CLAUDE_SESSION_STATUS_I18N_KEY[session.status])}
             </Typography>
@@ -122,13 +122,13 @@ function ClaudeSessionCard({ session, onOpenTerminal }: ClaudeSessionCardProps) 
       />
       <Divider />
       <CardContent sx={{ flex: 1 }}>
-        <InfoRow icon={<FolderOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('claudeSessions:card.dirLabel')}>
+        <InfoRow icon={<FolderOutlinedIcon sx={{ fontSize: 15 }} />} label={t('claudeSessions:card.dirLabel')}>
           <Typography
             variant="caption"
             title={session.cwd}
             sx={{
               fontFamily: 'monospace',
-              fontSize: '0.75rem',
+              fontSize: 12,
               textAlign: 'left',
               display: 'block',
               width: '100%',
@@ -139,7 +139,7 @@ function ClaudeSessionCard({ session, onOpenTerminal }: ClaudeSessionCardProps) 
             {session.cwd}
           </Typography>
         </InfoRow>
-        <InfoRow icon={<HistoryOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('claudeSessions:card.timeLabel')}>
+        <InfoRow icon={<HistoryOutlinedIcon sx={{ fontSize: 15 }} />} label={t('claudeSessions:card.timeLabel')}>
           <Typography variant="caption" sx={{ color: 'text.secondary' }}>
             {formatRelativeTime(session.updatedAt, t)} | {formatDate(session.updatedAt, 'YYYY-MM-DD HH:mm:ss')}
           </Typography>
@@ -159,7 +159,7 @@ function ClaudeSessionCard({ session, onOpenTerminal }: ClaudeSessionCardProps) 
             size="small"
             disabled={!isJava}
             onClick={() => handleOpenInEditor('idea')}
-            startIcon={<SiIntellijidea size="1.15rem" color="currentColor" />}
+            startIcon={<SiIntellijidea size={18} color="currentColor" />}
           >
             {t('claudeSessions:editor.idea')}
           </Button>
@@ -168,7 +168,7 @@ function ClaudeSessionCard({ session, onOpenTerminal }: ClaudeSessionCardProps) 
           size="small"
           disabled={unsupported}
           onClick={() => onOpenTerminal(session.pid)}
-          startIcon={session.hostApp === 'ITerm2' ? <SiIterm2 size="1.25rem" color="currentColor" /> : <TerminalIcon style={{ fontSize: '1.5rem' }} />}
+          startIcon={session.hostApp === 'ITerm2' ? <SiIterm2 size={20} color="currentColor" /> : <TerminalIcon style={{ fontSize: 24 }} />}
         >
           {t(hostAppI18nKey[session.hostApp])}
         </Button>

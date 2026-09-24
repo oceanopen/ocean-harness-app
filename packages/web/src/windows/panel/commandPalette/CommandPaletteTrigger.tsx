@@ -42,7 +42,7 @@ function CommandPaletteTrigger() {
         component="kbd"
         sx={{
           fontFamily: 'monospace',
-          fontSize: '0.7rem',
+          fontSize: 12,
           lineHeight: 1.4,
           px: 0.5,
           borderRadius: 0.5,

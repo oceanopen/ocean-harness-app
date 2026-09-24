@@ -1,7 +1,9 @@
 import type { Priority } from '@src/services';
 
-// 优先级元数据（tracker 域单一来源）：顺序、颜色 token、业务排序权重。
-// 列表分组排序、卡片徽标、PrioritySelect 下拉均从此引用，避免多处分散维护导致漏改。
+// 优先级元数据（跨页面共享单一来源，src/components 常量层）：顺序、颜色 token、业务排序权重。
+// 项目事项管理列表分组排序、IssueCard 徽标、PrioritySelect 下拉均从此引用，避免多处分散维护
+// 导致漏改。原属 TrackerPage 页面目录，因 IssueCard/PrioritySelect（src/components 共享组件）
+// 反向依赖页面目录而迁出收口（2026-09-24）。
 
 // 下拉/展示顺序（urgent 在前）。
 export const PRIORITY_ORDER: Priority[] = ['urgent', 'high', 'medium', 'low', 'none'];

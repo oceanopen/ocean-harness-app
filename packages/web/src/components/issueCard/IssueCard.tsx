@@ -14,9 +14,9 @@ import {
   KeyboardArrowRightRounded as KeyboardArrowRightRoundedIcon,
 } from '@mui/icons-material';
 import { Box, Chip, IconButton, Typography } from '@mui/material';
+import { PRIORITY_COLOR } from '@src/components/priorityMeta';
 import { formatDate } from '@src/shared/time';
 import { STATE_MAP } from '@src/state/tracker';
-import { PRIORITY_COLOR } from '@src/windows/panel/TrackerPage/components/priorityMeta';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate as useRouterNavigate } from 'react-router-dom';
@@ -63,7 +63,8 @@ export interface IssueCardProps {
   childIssues?: ProjectIssueResponseData[];
   expanded?: boolean;
   onToggleExpand?: (id: string) => void;
-  // 点击卡片主体：tracker 场景默认 onEdit 打开编辑抽屉；devWorkbench 场景由调用方传入选中逻辑；都不传则纯展示不可点。
+  // 点击卡片主体：tracker 场景默认 onEdit 打开编辑抽屉；devWorkbench 场景左树传 onCardClick
+  // 选中、子任务面板传 onEdit 打开编辑抽屉（徽章跳转恒 inert，见 canJumpToDev）；都不传则纯展示不可点。
   onCardClick?: (issue: ProjectIssueResponseData) => void;
   onEdit?: (issue: ProjectIssueResponseData) => void;
   onAddChild?: (parent: ProjectIssueResponseData) => void;
@@ -253,8 +254,9 @@ function IssueCard({
     </Box>
   );
   // F2：进行中（IN_PROGRESS）状态徽章可点击，跳转开发工作台定位该 issue。
-  // 仅可点卡片开放（纯展示卡如工作台子任务面板的徽章 inert，不误导 hover）。
-  const canJumpToDev = clickable && issue.stateCode === 'IN_PROGRESS';
+  // 仅 tracker 场景开放：devWorkbench 场景卡片本身可点开编辑抽屉（onEdit），徽章若再
+  // 激活跳转会把工作台选中切到该卡片 issue（触发其工作空间初始化链路），属误触——恒 inert。
+  const canJumpToDev = clickable && !isWorkbench && issue.stateCode === 'IN_PROGRESS';
   const stateBadge = state && (
     <Box
       sx={[

@@ -37,7 +37,7 @@ const codePreSx = {
   borderRadius: 0,
   bgcolor: 'transparent',
   fontFamily: MONO_FONT,
-  fontSize: '0.86rem',
+  fontSize: 14,
   lineHeight: 1.6,
   tabSize: 4,
 };
@@ -47,10 +47,10 @@ const codePreSx = {
 // 段落间距/表格边框/行内码底色/引用块边线，颜色全走 MUI 主题 token，明暗自适应）。
 const proseSx: SxProps<Theme> = {
   // h1/h2 带下分割线（halo 主题同款），h3 以下保持纯字重层级
-  '& h1': { fontSize: '1.6rem', fontWeight: 700, mt: '24px', mb: '14px', lineHeight: 1.3, pb: '10px', borderBottom: '1px solid', borderColor: 'divider' },
-  '& h2': { fontSize: '1.35rem', fontWeight: 700, mt: '22px', mb: '12px', lineHeight: 1.35, pb: '8px', borderBottom: '1px solid', borderColor: 'divider' },
-  '& h3': { fontSize: '1.15rem', fontWeight: 600, mt: '20px', mb: '10px', lineHeight: 1.4 },
-  '& h4, & h5, & h6': { fontSize: '1rem', fontWeight: 600, mt: '16px', mb: '8px' },
+  '& h1': { fontSize: 26, fontWeight: 700, mt: '24px', mb: '14px', lineHeight: 1.3, pb: '10px', borderBottom: '1px solid', borderColor: 'divider' },
+  '& h2': { fontSize: 22, fontWeight: 700, mt: '22px', mb: '12px', lineHeight: 1.35, pb: '8px', borderBottom: '1px solid', borderColor: 'divider' },
+  '& h3': { fontSize: 18, fontWeight: 600, mt: '20px', mb: '10px', lineHeight: 1.4 },
+  '& h4, & h5, & h6': { fontSize: 16, fontWeight: 600, mt: '16px', mb: '8px' },
   '& p': { my: '10px', lineHeight: 1.75 },
   '& ul, & ol': { my: '10px', pl: '26px' },
   '& li': { my: '3px', lineHeight: 1.7 },
@@ -66,7 +66,7 @@ const proseSx: SxProps<Theme> = {
   // 行内码（块内 code 由 shiki 自绘块承载，不受此样式影响——:not(pre) 限定行内）
   '& :not(pre) > code': {
     fontFamily: MONO_FONT,
-    fontSize: '0.86em',
+    fontSize: 12,
     bgcolor: 'action.hover',
     px: '4px',
     py: '1px',
@@ -82,7 +82,7 @@ const proseSx: SxProps<Theme> = {
     borderRadius: 1,
     bgcolor: 'background.default',
     fontFamily: MONO_FONT,
-    fontSize: '0.86rem',
+    fontSize: 14,
   },
   // 内置块行分隔兜底（根治代码块换行丢失）：streamdown 内置 CodeBlock 把每行渲染为
   // <span class="block">，行分隔完全依赖 tailwind 的 display:block（本项目无 tailwind，

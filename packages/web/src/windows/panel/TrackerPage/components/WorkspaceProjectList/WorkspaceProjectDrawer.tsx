@@ -234,7 +234,7 @@ function WorkspaceProjectDrawer({ workspaceId, workspaceName, onClose, onCreated
                       'width': 32,
                       'height': 32,
                       'p': 0,
-                      'fontSize': '1.1rem',
+                      'fontSize': 18,
                       'lineHeight': 1,
                       'border': 2,
                       'borderColor': selected ? 'primary.main' : 'transparent',

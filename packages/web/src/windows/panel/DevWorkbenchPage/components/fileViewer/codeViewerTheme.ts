@@ -298,8 +298,8 @@ function highlightStyle(p: Palette): HighlightStyle {
     { tag: tags.special(tags.regexp), color: '#c678dd' },
 
     { tag: tags.heading, color: '#e06c75', fontWeight: 'bold' },
-    { tag: tags.heading1, color: '#e06c75', fontWeight: 'bold', fontSize: '1.2em' },
-    { tag: tags.heading2, color: '#e06c75', fontWeight: 'bold', fontSize: '1.1em' },
+    { tag: tags.heading1, color: '#e06c75', fontWeight: 'bold', fontSize: '16px' },
+    { tag: tags.heading2, color: '#e06c75', fontWeight: 'bold', fontSize: '14px' },
     { tag: tags.heading3, color: '#e06c75', fontWeight: 'bold' },
     { tag: tags.quote, color: p.text.secondary, fontStyle: 'italic' },
     { tag: tags.emphasis, fontStyle: 'italic' },

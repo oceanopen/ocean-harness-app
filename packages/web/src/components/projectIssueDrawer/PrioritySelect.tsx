@@ -1,7 +1,7 @@
 import type { SxProps } from '@mui/material';
 import type { Priority } from '@src/services';
 import { Box, FormControl, InputLabel, MenuItem, Select, Typography } from '@mui/material';
-import { PRIORITY_COLOR, PRIORITY_ORDER } from '@src/windows/panel/TrackerPage/components/priorityMeta';
+import { PRIORITY_COLOR, PRIORITY_ORDER } from '@src/components/priorityMeta';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 

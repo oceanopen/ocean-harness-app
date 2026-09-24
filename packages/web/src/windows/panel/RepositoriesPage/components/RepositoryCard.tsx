@@ -188,7 +188,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
       />
       <Divider />
       <CardContent sx={{ flex: 1 }}>
-        <InfoRow icon={<FolderOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('repositories:card.dirLabel')}>
+        <InfoRow icon={<FolderOutlinedIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.dirLabel')}>
           <Link
             component="button"
             type="button"
@@ -197,7 +197,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
             underline="hover"
             sx={{
               fontFamily: 'monospace',
-              fontSize: '0.75rem',
+              fontSize: 12,
               textAlign: 'left',
               display: 'block',
               width: '100%',
@@ -209,13 +209,13 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
           </Link>
         </InfoRow>
 
-        <InfoRow icon={<CloudOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('repositories:card.remoteLabel')}>
+        <InfoRow icon={<CloudOutlinedIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.remoteLabel')}>
           <Typography variant="caption" sx={{ ...truncateSx, color: hasRemote ? 'text.primary' : 'text.disabled' }} title={repo.remoteUrl}>
             {hasRemote ? repo.remoteUrl : t('repositories:card.noRemote')}
           </Typography>
         </InfoRow>
 
-        <InfoRow icon={<StarBorderOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('repositories:card.defaultBranchLabel')}>
+        <InfoRow icon={<StarBorderOutlinedIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.defaultBranchLabel')}>
           {hasDefaultBranch
             ? (
                 <Chip size="small" variant="outlined" label={repo.defaultBranch} />
@@ -227,7 +227,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
               )}
         </InfoRow>
 
-        <InfoRow icon={<AccountTreeIcon sx={{ fontSize: '0.95rem' }} />} label={t('repositories:card.branchLabel')}>
+        <InfoRow icon={<AccountTreeIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.branchLabel')}>
           {hasBranch
             ? (
                 <Chip size="small" variant="outlined" label={repo.currentBranch} />
@@ -239,7 +239,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
               )}
         </InfoRow>
 
-        <InfoRow icon={<HistoryOutlinedIcon sx={{ fontSize: '0.95rem' }} />} label={t('repositories:card.commitLabel')}>
+        <InfoRow icon={<HistoryOutlinedIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.commitLabel')}>
           <Typography variant="caption" sx={{ color: hasCommit ? 'text.secondary' : 'text.disabled' }}>
             {hasCommit
               ? `${formatRelativeTime(repo.lastCommitAt, t, 'repositories')} | ${formatDate(repo.lastCommitAt, 'YYYY-MM-DD HH:mm:ss')}`
@@ -261,12 +261,12 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
             size="small"
             disabled={!isJava}
             onClick={e => handleActionClick('idea', e)}
-            startIcon={<SiIntellijidea size="1.15rem" color="currentColor" />}
+            startIcon={<SiIntellijidea size={18} color="currentColor" />}
           >
             {t('repositories:card.idea')}
           </Button>
         </Box>
-        <Button size="small" onClick={e => handleActionClick('iterm2', e)} startIcon={<SiIterm2 size="1.25rem" color="currentColor" />}>
+        <Button size="small" onClick={e => handleActionClick('iterm2', e)} startIcon={<SiIterm2 size={20} color="currentColor" />}>
           {t('repositories:card.iTerm2')}
         </Button>
       </CardActions>
@@ -278,7 +278,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
             key={sub.subDir}
             onClick={() => handleMenuItemClick(sub.subDir)}
             title={sub.subDirDescription || sub.subDir}
-            sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}
+            sx={{ fontFamily: 'monospace', fontSize: 13 }}
           >
             {sub.subDir}
           </MenuItem>

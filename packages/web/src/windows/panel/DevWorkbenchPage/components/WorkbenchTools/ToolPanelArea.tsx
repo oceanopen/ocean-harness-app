@@ -36,6 +36,9 @@ interface ToolPanelAreaProps {
   width: number;
   /// 拖拽结束落盘（up 时一次性回调，写 config——move 高频期只走组件内存态）。
   onWidthCommit: (width: number) => void;
+  /// 工具回调上抛（页面层挂 issue 抽屉）：编辑指定 issue / 新建其子任务，经 render ctx 注入工具内容。
+  onEditIssue: (issue: ProjectIssueResponseData) => void;
+  onCreateSubIssue: () => void;
 }
 
 /// ToolPanelArea：中栏右侧的工具面板区（内容行全高，自标题栏带起）——tab 头（40px，与
@@ -46,7 +49,7 @@ interface ToolPanelAreaProps {
 /// 加 + 号下拉快捷添加）。非激活 tab 的内容组件不渲染——工具会话必须后端常驻（见
 /// toolRegistry 架构红线注释），视口卸载不销毁会话。tabs 读取走域级 useToolTabs
 /// （hydration + 响应式订阅成对封装，见 store.ts 注释）。
-export default function ToolPanelArea({ issue, projectId, hasSelection, visible, width, onWidthCommit }: ToolPanelAreaProps) {
+export default function ToolPanelArea({ issue, projectId, hasSelection, visible, width, onWidthCommit, onEditIssue, onCreateSubIssue }: ToolPanelAreaProps) {
   const theme = useTheme();
   const closeTab = useWorkbenchToolsStore(s => s.closeTab);
   const setActiveTab = useWorkbenchToolsStore(s => s.setActiveTab);
@@ -194,7 +197,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
           : issue != null && projectId != null
             ? (
                 <Box sx={{ flex: 1, minHeight: 0 }}>
-                  <Box sx={{ height: '100%' }}>{activeEntry.def.render({ issue, projectId })}</Box>
+                  <Box sx={{ height: '100%' }}>{activeEntry.def.render({ issue, projectId, onEditIssue, onCreateSubIssue })}</Box>
                 </Box>
               )
             : null}

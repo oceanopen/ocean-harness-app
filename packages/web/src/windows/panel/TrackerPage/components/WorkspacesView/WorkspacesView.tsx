@@ -28,12 +28,12 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import WorkspaceTypeManagerDrawer from '@src/components/projectIssueDrawer/WorkspaceTypeManagerDrawer';
 import { formatDate, formatRelativeTime } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
 import { useDeleteWorkspace, useTrackerStore, useWorkspaces } from '@src/state/tracker';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import WorkspaceTypeManagerDrawer from '../ProjectIssueDrawer/WorkspaceTypeManagerDrawer';
 import WorkspaceDrawer from './WorkspaceDrawer';
 
 const truncateSx = {
@@ -303,7 +303,7 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete
             {isActive && (
               <CheckOutlinedIcon
                 color="primary"
-                sx={{ fontSize: '1.1rem' }}
+                sx={{ fontSize: 18 }}
                 aria-label={t('tracker:workspace.card.current')}
               />
             )}
@@ -349,7 +349,7 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete
       <Divider />
       <CardContent sx={{ flex: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
-          <TagOutlinedIcon sx={{ fontSize: '0.95rem', color: 'text.disabled' }} />
+          <TagOutlinedIcon sx={{ fontSize: 15, color: 'text.disabled' }} />
           <Chip size="small" variant="outlined" label={ws.slug} sx={{ ...truncateSx, maxWidth: '100%' }} />
         </Box>
         <Typography

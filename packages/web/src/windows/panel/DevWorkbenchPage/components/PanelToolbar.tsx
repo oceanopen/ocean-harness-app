@@ -21,7 +21,8 @@ interface PanelToolbarProps {
  *
  * 操作按钮规格约定（复用方遵守，图标/文字大小保持一致）：
  * - 按钮：`IconButton size="small"` + 图标 `fontSize="small"`（20px），色调 text.secondary
- * - 文字：`Typography variant="caption"`（12px）
+ * - 文字：`Typography variant="caption"`（主题已覆写为整数 12px，见 AppThemeProvider 字号阶梯；
+ *   字号规则：最小 12px、一律整数 px 禁小数，变体默认值即安全值）
  */
 export default function PanelToolbar({ left, right }: PanelToolbarProps) {
   return (

@@ -17,9 +17,15 @@ import IssueSubTaskPanel from '../IssueSubTaskPanel/IssueSubTaskPanel';
 import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
 
 /// 工具渲染上下文：当前选中 issue（面板内容均围绕选中任务；hasSelection 已由外层保证非空）。
+/// 回调由页面层注入（ToolPanelArea 透传）：issue 编辑抽屉/新建子任务抽屉均挂页面层
+/// （共享 ProjectIssueDrawer，与项目事项管理同组件），工具内容内只发意图不挂抽屉。
 export interface WorkbenchToolRenderCtx {
   issue: ProjectIssueResponseData;
   projectId: number;
+  /// 打开指定 issue 的编辑抽屉（如子任务卡片点击）。
+  onEditIssue: (issue: ProjectIssueResponseData) => void;
+  /// 新建当前 issue 的子任务（create+parentIssue 抽屉，父 = ctx.issue）。
+  onCreateSubIssue: () => void;
 }
 
 /// 工具定义：id 唯一；title 为 tab 头文案；exclusive 见文件头注释；render 渲染 tab 内容。
@@ -37,7 +43,14 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     title: '子任务',
     icon: ChecklistIcon,
     exclusive: true,
-    render: ({ issue, projectId }) => <IssueSubTaskPanel projectId={projectId} issueId={issue.id} />,
+    render: ({ issue, projectId, onEditIssue, onCreateSubIssue }) => (
+      <IssueSubTaskPanel
+        projectId={projectId}
+        issueId={issue.id}
+        onEditIssue={onEditIssue}
+        onCreateSubIssue={onCreateSubIssue}
+      />
+    ),
   },
   {
     id: 'files',

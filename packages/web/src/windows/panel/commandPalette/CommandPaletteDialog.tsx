@@ -28,7 +28,7 @@ const commandSx = {
     'border': 'none',
     'outline': 'none',
     'background': 'transparent',
-    'fontSize': '0.95rem',
+    'fontSize': 14,
     'color': 'text.primary',
     '&::placeholder': { color: 'text.disabled', opacity: 1 },
   },
@@ -41,7 +41,7 @@ const commandSx = {
     scrollbarWidth: 'thin',
   },
   '& [cmdk-group-heading]': {
-    fontSize: '0.7rem',
+    fontSize: 12,
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
@@ -59,8 +59,8 @@ const commandSx = {
     'borderRadius': 1,
     'cursor': 'pointer',
     'color': 'text.primary',
-    'fontSize': '0.8rem',
-    // 命令项图标等比缩小（MUI SvgIcon 默认 24px），与 0.8rem 文字视觉平衡。
+    'fontSize': 13,
+    // 命令项图标等比缩小（MUI SvgIcon 默认 24px），与 13px 文字视觉平衡。
     '& [data-cmdk-icon] svg': { width: 18, height: 18 },
     // cmdk 在激活项上置 data-selected="true"；用 action.selected 标识，避免自调 alpha。
     '&[data-selected="true"]': {
@@ -84,7 +84,7 @@ const commandSx = {
     py: 3,
     textAlign: 'center',
     color: 'text.disabled',
-    fontSize: '0.85rem',
+    fontSize: 14,
   },
   // cmdk 内部 active 项自动滚入可视区；滚动条 thumb 用 divider token（深浅色都协调，勿手调 alpha）。
   '& [cmdk-list]::-webkit-scrollbar': { width: 8 },
@@ -331,12 +331,12 @@ function SubPageList({ loading, workspaces, workspaceProjects, onPickWorkspace, 
     <>
       {workspaces.map(ws => (
         <Command.Item key={ws.id} value={ws.name} onSelect={() => onPickWorkspace(ws)}>
-          <Typography sx={{ fontSize: '0.8rem' }}>{ws.name}</Typography>
+          <Typography sx={{ fontSize: 13 }}>{ws.name}</Typography>
         </Command.Item>
       ))}
       {workspaceProjects.map(p => (
         <Command.Item key={p.id} value={p.name} onSelect={() => onPickWorkspaceProject(p)}>
-          <Typography sx={{ fontSize: '0.8rem' }}>{p.name}</Typography>
+          <Typography sx={{ fontSize: 13 }}>{p.name}</Typography>
         </Command.Item>
       ))}
     </>
@@ -350,7 +350,7 @@ function Kbd({ children }: { children: ReactNode }) {
       component="kbd"
       sx={{
         fontFamily: 'monospace',
-        fontSize: '0.7rem',
+        fontSize: 12,
         px: 0.5,
         borderRadius: 0.5,
         border: 1,

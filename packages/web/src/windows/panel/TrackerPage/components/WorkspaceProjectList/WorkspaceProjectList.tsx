@@ -293,12 +293,12 @@ function WorkspaceProjectRow({ workspaceProject, selected, onSelect, onEdit, onD
       <Box sx={{ width: 22, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {emoji
           ? (
-              <Typography component="span" sx={{ fontSize: '1.1rem', lineHeight: 1 }}>
+              <Typography component="span" sx={{ fontSize: 18, lineHeight: 1 }}>
                 {emoji}
               </Typography>
             )
           : (
-              <FolderOutlinedIcon sx={{ fontSize: '1.1rem', color: 'text.disabled' }} />
+              <FolderOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />
             )}
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>

@@ -24,6 +24,7 @@ import {
   Typography,
   useTheme,
 } from '@mui/material';
+import ProjectIssueDrawer from '@src/components/projectIssueDrawer/ProjectIssueDrawer';
 import {
   decodeWorkspaceBaseDir,
   DEFAULT_PANEL_DEV_TOOL_AREA_COLLAPSED,
@@ -46,7 +47,7 @@ import { useToast } from '@src/shared/useToast';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useArchiveIssueWorkspace, useInitIssueWorkspace } from '@src/state/issueWorkspace';
 import { removeLayout } from '@src/state/terminalPanes';
-import { STATE_MAP, useProjectIssues } from '@src/state/tracker';
+import { STATE_MAP, useProjectIssues, useWorkspaceProjects } from '@src/state/tracker';
 import { clearToolTabs } from '@src/state/workbenchTools';
 import { clearPreviewTabs, useWorkspaceFilesStore } from '@src/state/workspaceFiles';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
@@ -157,6 +158,12 @@ export default function DevWorkbenchPage() {
   // 确认弹窗态：null = 关闭；warnings = null 首确认态，非空 = 安全检查警告态（二次确认）。
   const [archiveConfirm, setArchiveConfirm] = useState<{ kind: IssueWorkspaceArchiveAction; warnings: string[] | null } | null>(null);
 
+  // Issue 编辑抽屉（共享 ProjectIssueDrawer，挂载范式照搬 ProjectIssueList 本地 state 条件渲染——
+  // 每次打开新挂载，表单本地态无需 reset）。editIssue 非空 = 编辑态（标题栏名称/子任务卡片点击）；
+  // createChildParent 非空 = 新建子任务态（子任务面板 + 按钮），快照父对象防打开期间选中变化串扰。
+  const [editIssue, setEditIssue] = useState<ProjectIssueResponseData | null>(null);
+  const [createChildParent, setCreateChildParent] = useState<ProjectIssueResponseData | null>(null);
+
   // 加载用 pid：URL 优先（reload/恢复），否则 store（URL 无 dev 参数的兜底）；null 时不发请求。
   const loadPid = urlPid ?? selectedProjectId;
   const { data: issues = [], isLoading: issuesLoading } = useProjectIssues(loadPid);
@@ -167,10 +174,25 @@ export default function DevWorkbenchPage() {
   const issue = issues.find(i => i.id === effIssueId);
   const stateMeta = issue ? STATE_MAP.get(issue.stateCode) : undefined;
 
+  // 抽屉所需 workspaceProject：issue 自带 workspaceId/projectId，按 workspace 查项目列表
+  // （与左树 DevTaskTree 同 query key 共享缓存，命中即零请求）后按 id 反查实体——刻意不读
+  // 任何快照，关联仓库随项目刷新保持新鲜（参照 TrackerPage 同款派生注释）。
+  const { data: wsProjects = [] } = useWorkspaceProjects(issue?.workspaceId ?? null);
+  const workspaceProject = issue != null ? wsProjects.find(p => p.id === issue.projectId) ?? null : null;
+
+  // 删除/归档成功的本地痕迹清理（工具 tabs + 预览 tabs + 终端分屏布局，按 issueId 隔离的
+  // localStorage key，对任意 id 无副作用——删除非选中任务也须清，防积脏 key）。清理顺序即
+  // 不变量本身：归档与抽屉删除两条路径共享本函数，防后续调整只改一处。
+  const clearIssueLocalTraces = (issueId: string) => {
+    clearToolTabs(issueId);
+    clearPreviewTabs(issueId);
+    removeLayout(issueId);
+  };
+
   // 提交归档/取消：首确认（warnings=null → force=false，后端干净则内部续发执行段）/
   // 警告态强确认（warnings 非空 → force=true 只走执行段）。成功后按序清理：该 issue 本地
-  // 痕迹（工具 tabs + 终端分屏布局，防 localStorage 积脏 key）→ 清选中 + 清 URL
-  // （URL→store 同步 effect 会从 iid 恢复选中，双清才彻底，参照 DevIssueRow 取消选中）。
+  // 痕迹（clearIssueLocalTraces）→ 清选中 + 清 URL（URL→store 同步 effect 会从 iid 恢复
+  // 选中，双清才彻底，参照 DevIssueRow 取消选中）。
   const submitArchive = () => {
     if (archiveConfirm == null || issue == null || loadPid == null) {
       return;
@@ -186,9 +208,7 @@ export default function DevWorkbenchPage() {
           }
           setArchiveConfirm(null);
           showToast(kind === 'archive' ? '已归档：工作空间目录已删除' : '已取消：工作空间目录已删除', 'success');
-          clearToolTabs(issue.id);
-          clearPreviewTabs(issue.id);
-          removeLayout(issue.id);
+          clearIssueLocalTraces(issue.id);
           selectIssue(null);
           setSearchParams({}, { replace: true });
         },
@@ -197,6 +217,34 @@ export default function DevWorkbenchPage() {
         },
       },
     );
+  };
+
+  // 抽屉回调（保存/创建成功由 mutation 内部失效 projectIssues 缓存，标题栏/子任务面板/左树
+  // 同 key 自动更新；此处只关抽屉 + toast）。onDeleted：本地痕迹无条件清理（含删非选中
+  // 任务）；删除的是当前选中任务时再清选中 + 清 URL（双清防 iid 恢复）。
+  const handleIssueUpdated = () => {
+    setEditIssue(null);
+    showToast('任务已保存', 'success');
+  };
+  const handleSubTaskCreated = () => {
+    setCreateChildParent(null);
+    showToast('子任务已创建', 'success');
+  };
+  const handleIssueDeleted = (issueId: string) => {
+    setEditIssue(null);
+    clearIssueLocalTraces(issueId);
+    if (issueId === effIssueId) {
+      selectIssue(null);
+      setSearchParams({}, { replace: true });
+    }
+    showToast('任务已删除', 'success');
+  };
+  // 工具面板回调（ToolPanelArea → render ctx → 子任务面板）：编辑目标 issue / 新建当前 issue 的子任务。
+  const openEditIssue = (target: ProjectIssueResponseData) => setEditIssue(target);
+  const openCreateSubIssue = () => {
+    if (issue != null) {
+      setCreateChildParent(issue);
+    }
   };
 
   // 工具面板区可见性：仅由用户展开（config）决定，与 issue 选中态解耦——面板内容虽围绕
@@ -314,11 +362,12 @@ export default function DevWorkbenchPage() {
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* 终端列：标题栏 + 终端内容；minWidth 与工具面板区拖拽上限联动（ToolPanelArea 按容器实测宽收紧 max） */}
         <Box sx={{ flex: 1, minWidth: TERMINAL_MIN_WIDTH, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {/* 标题栏：左栏折叠开关 + 状态徽章 + 选中 issue 的 id 尾 8 位 + 名称 + 右侧快捷区。
+          {/* 标题栏：左栏折叠开关 + 状态徽章 + 选中 issue 名称 + 右侧快捷区。
               macOS Overlay：沉浸模式下外壳（含顶栏）不渲染、本栏顶到窗口 y=0，带
               data-tauri-drag-region 承担窗口拖拽，pl 让位红绿灯 80px（非沉浸时本栏在
-              顶栏 y=44 之下、无重叠，不避让）。Chip/名称为非交互元素，pointerEvents:none
-              让 mousedown 穿透到本栏（拖拽语义）。 */}
+              顶栏 y=44 之下、无重叠，不避让）。Chip 保持非交互（pointerEvents:none，
+              mousedown 穿透拖拽）；名称可点（hover 转 primary，link 样式）打开 issue
+              编辑抽屉——点击名称处不触发拖拽，其余空白区域拖拽语义不变。 */}
           <Box
             data-tauri-drag-region={isMacOS || undefined}
             sx={{
@@ -346,15 +395,19 @@ export default function DevWorkbenchPage() {
               <Chip
                 size="small"
                 label={stateMeta.name}
-                sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: '0.75rem', flexShrink: 0, pointerEvents: 'none' }}
+                sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: 12, flexShrink: 0, pointerEvents: 'none' }}
               />
             )}
             {hasSelection && issue && (
-              <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600, pointerEvents: 'none' }}>
-                <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400, fontFamily: 'monospace' }}>
-                  …{issue.id.slice(-8)}
-                </Box>
-                {' '}
+              // 名称可点（link 样式，参照 TrackerPage 工作空间名同构写法）：默认标题字色，
+              // hover 转 primary（无下划线），点击打开 issue 编辑抽屉。不展示 id 尾 8 位
+              // （uuid 对用户无读义，任务身份由左树选中/抽屉详情承载）。
+              <Typography
+                variant="subtitle1"
+                noWrap
+                onClick={() => setEditIssue(issue)}
+                sx={{ 'fontWeight': 600, 'cursor': 'pointer', '&:hover': { color: 'primary.main' } }}
+              >
                 {issue.name}
               </Typography>
             )}
@@ -473,6 +526,8 @@ export default function DevWorkbenchPage() {
           visible={toolAreaVisible}
           width={toolAreaWidth}
           onWidthCommit={commitToolAreaWidth}
+          onEditIssue={openEditIssue}
+          onCreateSubIssue={openCreateSubIssue}
         />
       </Box>
 
@@ -525,6 +580,29 @@ export default function DevWorkbenchPage() {
           </Button>
         </DialogActions>
       </Dialog>
+      {/* Issue 编辑抽屉（上提共享组件，与项目事项管理同源）：workspaceProject 未就绪
+          （项目列表加载瞬态）不渲染、就绪即出现——抽屉态本就随页面卸载，瞬态不留残影。
+          编辑态父对象由列表反查补全（编辑子 issue 时顶部显示所属父任务）。 */}
+      {editIssue != null && workspaceProject != null && (
+        <ProjectIssueDrawer
+          mode="edit"
+          workspaceProject={workspaceProject}
+          projectIssue={editIssue}
+          parentIssue={editIssue.parentId ? issues.find(i => i.id === editIssue.parentId) : undefined}
+          onClose={() => setEditIssue(null)}
+          onUpdated={handleIssueUpdated}
+          onDeleted={handleIssueDeleted}
+        />
+      )}
+      {createChildParent != null && workspaceProject != null && (
+        <ProjectIssueDrawer
+          mode="create"
+          workspaceProject={workspaceProject}
+          parentIssue={createChildParent}
+          onClose={() => setCreateChildParent(null)}
+          onCreated={handleSubTaskCreated}
+        />
+      )}
       {toastSnack}
     </Box>
   );

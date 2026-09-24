@@ -35,7 +35,7 @@ function ClaudeSessionItem({ session, onClick }: ClaudeSessionItemProps) {
         sx={{
           flex: 1,
           fontWeight: 600,
-          fontSize: '0.875rem',
+          fontSize: 14,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -47,7 +47,7 @@ function ClaudeSessionItem({ session, onClick }: ClaudeSessionItemProps) {
         <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
         <Typography
           variant="caption"
-          sx={{ color, fontWeight: 700, fontSize: '0.7rem' }}
+          sx={{ color, fontWeight: 700, fontSize: 12 }}
         >
           {t(CLAUDE_SESSION_STATUS_I18N_KEY[session.status])}
         </Typography>

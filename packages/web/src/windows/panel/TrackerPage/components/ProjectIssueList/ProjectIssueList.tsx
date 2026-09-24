@@ -25,13 +25,13 @@ import {
   Typography,
 } from '@mui/material';
 import IssueCard from '@src/components/issueCard/IssueCard';
+import { PRIORITY_WEIGHT } from '@src/components/priorityMeta';
+import PrioritySelect from '@src/components/projectIssueDrawer/PrioritySelect';
+import ProjectIssueDrawer from '@src/components/projectIssueDrawer/ProjectIssueDrawer';
+import ProjectStateSelect from '@src/components/projectIssueDrawer/ProjectStateSelect';
 import { ProjectIssueService } from '@src/services';
 import { useToast } from '@src/shared/useToast';
 import { buildSubtaskStats, STATE_MAP, STATE_ORDER, trackerKeys, useProjectIssues } from '@src/state/tracker';
-import { PRIORITY_WEIGHT } from '@src/windows/panel/TrackerPage/components/priorityMeta';
-import PrioritySelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/PrioritySelect';
-import ProjectIssueDrawer from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectIssueDrawer';
-import ProjectStateSelect from '@src/windows/panel/TrackerPage/components/ProjectIssueDrawer/ProjectStateSelect';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';

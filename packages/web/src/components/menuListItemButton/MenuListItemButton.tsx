@@ -55,7 +55,7 @@ export default function MenuListItemButton({
         '&.Mui-selected:hover': { bgcolor: selectedBg },
         '& .MuiListItemText-primary': {
           fontWeight: 600,
-          fontSize: '0.875rem',
+          fontSize: 14,
           whiteSpace: 'nowrap',
         },
       }}

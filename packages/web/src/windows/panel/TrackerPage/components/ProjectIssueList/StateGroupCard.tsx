@@ -30,7 +30,7 @@ function StateGroupCard({ color, name, count, onAdd, leading }: StateGroupCardPr
       )}
       <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: color || 'text.disabled', flexShrink: 0 }} />
       <Typography variant="subtitle2" sx={{ flex: 1, minWidth: 0, fontWeight: 600, ...truncateSx }}>{name}</Typography>
-      <Chip label={count} size="small" sx={{ height: 18, fontSize: '0.7rem' }} />
+      <Chip label={count} size="small" sx={{ height: 20, fontSize: 12 }} />
       <IconButton
         size="small"
         aria-label={t('tracker:projectIssue.actions.add')}
