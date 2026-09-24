@@ -55,6 +55,7 @@
     "i18next": "catalog:",
     "katex": "catalog:",
     "react": "catalog:",
+    "react-diff-viewer-continued": "catalog:",
     "react-dom": "catalog:",
     "react-i18next": "catalog:",
     "react-router-dom": "catalog:",

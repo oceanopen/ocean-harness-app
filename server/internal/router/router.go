@@ -58,7 +58,8 @@ func SetupRouter() *gin.Engine {
 
 		// issueWorkspace 模块：issue 运行工作空间初始化（init 异步受理 + status 轮询读状态文件）
 		// 与归档/取消（archive 删目录 + 流转 issue 状态，T3.2）、文件浏览（getFileTree/
-		// getFileContent + fileRaw 图片字节直连，T5.1 本期列表 + 预览）。
+		// getFileContent + fileRaw 图片字节直连，T5.1 本期列表 + 预览）、Git 变更
+		//（getGitChanges/getFileDiff 未提交变更列表与内容对，T5.1「Git 变更」模式）。
 		// 与 /api/tracker/workspace（任务管理容器）是两个概念，故独立顶层分组。
 		issueWorkspaceGroup := apiGroup.Group("/issueWorkspace")
 		{
@@ -68,6 +69,8 @@ func SetupRouter() *gin.Engine {
 			issueWorkspaceGroup.POST("/getFileTree", controller.IssueWorkspace{}.FileTree)
 			issueWorkspaceGroup.POST("/getFileContent", controller.IssueWorkspace{}.FileContent)
 			issueWorkspaceGroup.GET("/fileRaw", controller.IssueWorkspace{}.FileRaw)
+			issueWorkspaceGroup.POST("/getGitChanges", controller.IssueWorkspace{}.GitChanges)
+			issueWorkspaceGroup.POST("/getFileDiff", controller.IssueWorkspace{}.FileDiff)
 		}
 
 		trackerGroup := apiGroup.Group("/tracker")

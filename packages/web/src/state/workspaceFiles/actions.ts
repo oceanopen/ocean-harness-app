@@ -1,13 +1,32 @@
 // workspaceFiles 域纯函数与按 issue 持久化（参照 workbenchTools/actions.ts 范式）。
 // 预览 tab 模型：tab id = 文件相对路径（getFileTree 的 node.path，issue 内天然唯一）——
 // 同文件重复点击 = 激活既有 tab（文件面板「已开 tab 行高亮」与浮层 tab 去重共用该语义）；
+// diff tab（Git 变更模式）id 带 `diff:` 前缀，与同路径的 file tab 天然隔离。
 // 不需要 workbenchTools 的随机 id（那是多实例并存工具才需要的）。
 // tabs 按 issue 隔离（一 issue 一工作环境）：localStorage 按 issue 存 JSON，损坏/缺失回落
 // 空 tabs——预览是纯查看意图，丢失仅 UI 回落重新点开，无副作用。
 
-/// 预览 tab：path 为相对 {baseDir}/{issueId}/ 的文件路径（即 tab id）；title 由 basename 派生。
+/// 预览 tab kind：file=普通文件内容预览；diff=未提交变更 diff 预览（Git 变更模式点开）。
+export type PreviewTabKind = 'file' | 'diff';
+
+/// diff tab 的 id 前缀：同一路径的 file tab 与 diff tab 天然去重隔离（互不顶替）。
+export const DIFF_TAB_ID_PREFIX = 'diff:';
+
+/// 由 kind 与文件路径派生 tab id（file=路径本身；diff=`diff:`+路径）。
+export function previewTabIdOf(kind: PreviewTabKind, path: string): string {
+  return kind === 'diff' ? DIFF_TAB_ID_PREFIX + path : path;
+}
+
+/// 预览 tab：path 为 tab id（file=相对 {baseDir}/{issueId}/ 的文件路径；diff=`diff:`+路径）；
+/// kind 决定内容分派（content query vs fileDiff query）与展示路径的还原。
 export interface PreviewTab {
   path: string;
+  kind: PreviewTabKind;
+}
+
+/// 还原 tab 的真实文件路径（去掉 diff 前缀；title/basename/query 入参共用）。
+export function tabFilePath(tab: PreviewTab): string {
+  return tab.kind === 'diff' ? tab.path.slice(DIFF_TAB_ID_PREFIX.length) : tab.path;
 }
 
 /// 预览 tabs 成对视图（tabs + activeTabId，纯函数/持久化/消费方三处成对出现，不拆双 record）。
@@ -20,14 +39,16 @@ export interface PreviewTabsState {
 /// 读回判废回落、组件 selector fallback 共用同一引用——保证 getSnapshot 引用稳定。
 export const EMPTY_PREVIEW_TABS: PreviewTabsState = { tabs: [], activeTabId: null };
 
-/// 打开预览 tab（文件面板点击文件行）：已存在则仅激活（已是激活态原样返回——重复点击
-/// 无操作）；不存在则追加并激活。浮层显隐由 tabs 非空派生（无独立开关）。
-export function openPreviewTab(state: PreviewTabsState, path: string): PreviewTabsState {
-  const existing = state.tabs.find(t => t.path === path);
+/// 打开预览 tab（文件面板点击文件行；kind 默认 file，Git 变更模式传 diff）：已存在则仅
+/// 激活（已是激活态原样返回——重复点击无操作）；不存在则追加并激活。浮层显隐由 tabs
+/// 非空派生（无独立开关）。同一路径的 file/diff tab 经 id 前缀天然隔离。
+export function openPreviewTab(state: PreviewTabsState, path: string, kind: PreviewTabKind = 'file'): PreviewTabsState {
+  const id = previewTabIdOf(kind, path);
+  const existing = state.tabs.find(t => t.path === id);
   if (existing != null) {
-    return state.activeTabId === path ? state : { tabs: state.tabs, activeTabId: path };
+    return state.activeTabId === id ? state : { tabs: state.tabs, activeTabId: id };
   }
-  return { tabs: [...state.tabs, { path }], activeTabId: path };
+  return { tabs: [...state.tabs, { path: id, kind }], activeTabId: id };
 }
 
 /// 关闭 tab：移除后若关的是激活 tab 则激活相邻（优先右侧相邻，无则左侧，清空为 null——
@@ -60,6 +81,7 @@ function tabsKey(issueId: string): string {
 
 /// 结构校验：防手改/版本演进/截断产生的脏数据进渲染层。规则：tabs 为数组且每项 path
 /// 非空、无重复；activeTabId 为 null 或在 tabs 内。任何一处不满足 → 整体判废（回落空 tabs）。
+/// kind 为存量兼容字段（diff 模式引入前无此字段）：缺失/非法值按 'file' 处理，不判废。
 function isValidTabsState(parsed: unknown): parsed is PreviewTabsState {
   if (typeof parsed !== 'object' || parsed == null) {
     return false;
@@ -83,6 +105,7 @@ function isValidTabsState(parsed: unknown): parsed is PreviewTabsState {
 }
 
 /// 读回 issue 的预览 tabs：无记录/JSON 解析失败/结构校验失败 → EMPTY_PREVIEW_TABS（共享引用）。
+/// kind 归一化：存量记录（diff 模式引入前）无 kind 字段，读回时统一补 'file'。
 export function loadPreviewTabs(issueId: string): PreviewTabsState {
   try {
     const raw = localStorage.getItem(tabsKey(issueId));
@@ -90,7 +113,13 @@ export function loadPreviewTabs(issueId: string): PreviewTabsState {
       return EMPTY_PREVIEW_TABS;
     }
     const parsed: unknown = JSON.parse(raw);
-    return isValidTabsState(parsed) ? parsed : EMPTY_PREVIEW_TABS;
+    if (!isValidTabsState(parsed)) {
+      return EMPTY_PREVIEW_TABS;
+    }
+    return {
+      tabs: parsed.tabs.map(t => ({ path: t.path, kind: t.kind === 'diff' ? 'diff' as const : 'file' as const })),
+      activeTabId: parsed.activeTabId,
+    };
   } catch {
     // JSON.parse 抛错（截断/非法）等同判废，不区分。
     return EMPTY_PREVIEW_TABS;

@@ -9,7 +9,7 @@
 // store 形状：单 record（issueId → 成对视图），订阅/写回/持久化三处成对（克隆
 // workbenchTools/store.ts 骨架，含 hydration + subscribe 落盘 + useXxx 成对封装 hook）。
 
-import type { PreviewTabsState } from './actions';
+import type { PreviewTabKind, PreviewTabsState } from './actions';
 import { create } from 'zustand';
 import {
   closePreviewTab,
@@ -35,7 +35,7 @@ interface WorkspaceFilesState {
   /// issueId → 展开目录 path 集（会话级，不持久化）。undefined = 该 issue 未 toggle 过
   /// （渲染层回落 DEFAULT_EXPANDED_DIR）。
   expandedDirsByIssue: Record<string, Set<string>>;
-  openPreviewTab: (issueId: string, path: string) => void;
+  openPreviewTab: (issueId: string, path: string, kind?: PreviewTabKind) => void;
   closePreviewTab: (issueId: string, path: string) => void;
   closeAllPreviewTabs: (issueId: string) => void;
   setActivePreviewTab: (issueId: string, path: string) => void;
@@ -45,9 +45,9 @@ interface WorkspaceFilesState {
 export const useWorkspaceFilesStore = create<WorkspaceFilesState>()(set => ({
   previewTabsByIssue: {},
   expandedDirsByIssue: {},
-  openPreviewTab: (issueId, path) => set((state) => {
+  openPreviewTab: (issueId, path, kind) => set((state) => {
     const prev = state.previewTabsByIssue[issueId] ?? EMPTY_PREVIEW_TABS;
-    const next = openPreviewTab(prev, path);
+    const next = openPreviewTab(prev, path, kind);
     return next === prev ? state : { previewTabsByIssue: { ...state.previewTabsByIssue, [issueId]: next } };
   }),
   closePreviewTab: (issueId, path) => set((state) => {

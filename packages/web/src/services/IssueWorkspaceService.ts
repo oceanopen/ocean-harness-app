@@ -153,6 +153,50 @@ export interface IssueWorkspaceFileContentResponseData {
   content?: string;
 }
 
+/**
+ * 单个文件的未提交变更（多仓库扁平，path 带 repo/{name}/ 前缀，与树节点 path 同构）。
+ * status：A=新增 / M=修改 / D=删除 / U=untracked；ins/del 为变更行数（binary 为 -1）。
+ */
+export interface IssueWorkspaceGitChangeFile {
+  path: string;
+  status: 'A' | 'M' | 'D' | 'U';
+  ins: number;
+  del: number;
+}
+
+/** POST /api/issueWorkspace/getGitChanges 的入参。 */
+export interface IssueWorkspaceGitChangesRequest {
+  issueId: string;
+  baseDir: string;
+}
+
+/**
+ * getGitChanges 响应：全部仓库未提交变更的扁平表（无变更为空数组）。
+ */
+export interface IssueWorkspaceGitChangesResponseData {
+  files: IssueWorkspaceGitChangeFile[];
+}
+
+/** POST /api/issueWorkspace/getFileDiff 的入参（path 为 getGitChanges 的 file.path）。 */
+export interface IssueWorkspaceFileDiffRequest {
+  issueId: string;
+  baseDir: string;
+  path: string;
+}
+
+/**
+ * getFileDiff 响应：前后内容对（diff 视图消费）。oldContent=HEAD 版本（新增/untracked 为空），
+ * newContent=工作区当前（删除为空）；kind 仅 text/binary/tooLarge。
+ */
+export interface IssueWorkspaceFileDiffResponseData {
+  kind: IssueWorkspaceFileContentKind;
+  status: 'A' | 'M' | 'D' | 'U';
+  ins: number;
+  del: number;
+  oldContent?: string;
+  newContent?: string;
+}
+
 export class IssueWorkspaceService {
   // init：受理工作空间初始化（异步执行；幂等可重入——执行中重复触发返回当前进度，
   // 已成功且关联未变直接 SUCCESS，失败重试只补失败仓库）。返回受理后的状态快照。
@@ -178,6 +222,16 @@ export class IssueWorkspaceService {
   // getFileContent：读取单个文件内容并定夺传输 kind（text/image/binary/tooLarge）。
   static fileContent(req: IssueWorkspaceFileContentRequest): Promise<IssueWorkspaceFileContentResponseData> {
     return request<IssueWorkspaceFileContentResponseData>('POST', '/api/issueWorkspace/getFileContent', req);
+  }
+
+  // getGitChanges：列出全部仓库的未提交变更（暂存+工作区 vs HEAD + untracked）。
+  static gitChanges(req: IssueWorkspaceGitChangesRequest): Promise<IssueWorkspaceGitChangesResponseData> {
+    return request<IssueWorkspaceGitChangesResponseData>('POST', '/api/issueWorkspace/getGitChanges', req);
+  }
+
+  // getFileDiff：返回单文件未提交变更的前后内容对（diff 视图消费）。
+  static fileDiff(req: IssueWorkspaceFileDiffRequest): Promise<IssueWorkspaceFileDiffResponseData> {
+    return request<IssueWorkspaceFileDiffResponseData>('POST', '/api/issueWorkspace/getFileDiff', req);
   }
 
   // fileRawUrl：图片原始字节直连 URL（<img src>，类静态资源；base 解析同 request）。

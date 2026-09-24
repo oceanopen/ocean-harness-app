@@ -76,6 +76,7 @@ catalog:
   katex: ^0.18.5
   prettier: ^3.6.2
   react: ^19.2.6
+  react-diff-viewer-continued: ^4.4.0
   react-dom: ^19.2.6
   react-i18next: ^17.0.8
   react-router-dom: ^7.18.2

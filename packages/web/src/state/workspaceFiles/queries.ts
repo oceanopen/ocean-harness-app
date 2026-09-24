@@ -38,3 +38,29 @@ export function useWorkspaceFileContent(issueId: string | null, baseDir: string,
     staleTime: 0,
   });
 }
+
+/**
+ * Git 变更列表（文件面板「Git 变更」模式消费）。enabled 闸与文件树同款（issueId 与
+ * baseDir 均有效才请求）；staleTime 0 与 content 同口径——agent 持续改文件，模式切换/
+ * 面板重挂载时静默重验。
+ */
+export function useWorkspaceGitChanges(issueId: string | null, baseDir: string) {
+  return useQuery({
+    queryKey: workspaceFilesKeys.gitChanges(issueId ?? ''),
+    queryFn: () => IssueWorkspaceService.gitChanges({ issueId: issueId!, baseDir }),
+    enabled: issueId != null && baseDir !== '',
+    staleTime: 0,
+  });
+}
+
+/**
+ * 单文件未提交变更内容对（预览浮层 diff tab 消费）。staleTime 0 与 content 同口径。
+ */
+export function useWorkspaceFileDiff(issueId: string | null, baseDir: string, path: string | null) {
+  return useQuery({
+    queryKey: workspaceFilesKeys.fileDiff(issueId ?? '', path ?? ''),
+    queryFn: () => IssueWorkspaceService.fileDiff({ issueId: issueId!, baseDir, path: path! }),
+    enabled: issueId != null && baseDir !== '' && path != null && path !== '',
+    staleTime: 0,
+  });
+}

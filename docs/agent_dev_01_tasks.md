@@ -525,7 +525,7 @@
 
 ### T5.1 工作空间文件浏览器与 Diff 查看
 
-**状态**：⬜（列表 + 预览已落地，diff 未做——见实施定稿）
+**状态**：✅（列表 + 预览 + Git 变更 diff 已全部落地——见实施定稿及 2026-09-24 补记五）
 
 **功能**：右侧工具条展示工作空间文件列表，查看 diff 和文件内容
 
@@ -705,6 +705,34 @@
   改由语言名表派生（三表降两表，84 项手写清单删除）；`IssueWorkspaceService` 新增
   `fileRawBase` 收归 MarkdownViewer 手拼 fileRaw 端点 SSOT；`treeHidden` 复合条件提变量。
   `pnpm web:build` + `web:lint` 通过。
+
+**实施定稿补记五（2026-09-24，Git 变更模式落地——T5.1 收口）**：
+
+- **口径定稿（三轮用户澄清）**：只看**未 commit** 的变更（暂存区 + 工作区 vs HEAD）+ untracked
+  新文件，**不**对比基准分支、**不**探测 upstream——用户分步 commit（子任务/分步骤各一次），
+  每次只关注当前未提交的部分；原技术方案的「对比基准分支 fileDiff」作废。
+- **后端**：`/api/issueWorkspace/getGitChanges`（仓库清单直接扫描 `{root}/repo/` 一级子目录、
+  `.git` 存在才算，不读状态文件——损坏不影响本功能；每仓库 `git diff HEAD --numstat` +
+  `--name-status` 合并 + `git status --porcelain -uall` 补 untracked，path 带 `repo/{name}/`
+  前缀与文件树同构）+ `getFileDiff`（内容对：old=`git show HEAD:<path>`、new=工作区文件，
+  untracked old 恒空/删除 new 恒空；kind=text/binary/tooLarge 沿 FileContent 判定范式，2MB
+  上限）。gitutil 新增 `UncommittedChanges`/`ShowHeadFile`/`IsGitDir`（错误携带式范式）。
+- **渲染选型（用户定稿）**：`react-diff-viewer-continued@4.4.0`（周下载 ~60 万、MIT、
+  hello-halo 同款、活跃维护；对比过零依赖自绘/react-diff-view/diff2html 后选成熟方案）——
+  unified/split 切换挂 ViewerToolbar 扩展槽、词级高亮、`useDarkTheme` 随 MUI 主题。
+- **前端**：文件面板操作条 ToggleButtonGroup（全部文件 / Git 变更，模式为面板本地态不持久化）；
+  变更树复用 FileTree + `marks` 徽标（A/M/D/N 着色 + `+N/-N`，untracked/binary 置 -1 哨兵不
+  显示数字）+ 目录默认全展开；`PreviewTab` 加 `kind`（diff tab id 带 `diff:` 前缀与同路径 file
+  tab 天然隔离，localStorage 存量记录读回归一化补 'file'）；`PreviewContent` 按 kind 分派
+  content/fileDiff 双 query（互斥启用）。
+- **正确性修复（审查发现四项，均已修）**：porcelain 须 `-uall`（默认把未跟踪目录折叠成
+  `?? dir/` 一行——agent 新建目录写文件的高频场景会整体漏列）；unborn HEAD 探测（无提交
+  仓库 `git diff HEAD` 退出 128，单仓库失败打挂整页变更列表）；三条 git 命令统一
+  `-c core.quotePath=false`（默认对中文文件名输出八进制转义，path 全链路失配致 diff 静默
+  空内容）；untracked 行数置 -1（默认 0 会显示误导性 `+0/-0`）。
+- **简洁性收口**：面板四分支骨架（错误/加载/空态/树）收敛为模式差异描述对象 + 单份渲染；
+  `SplitRepoPath` 改 `strings.CutPrefix/Cut`；`fileDiff` query key 拆段（issueId 与 path 分离）
+  支持按 issue 前缀失效。`go build/test` + `web:build` + `web:lint`（仅剩存量 3 错误）通过。
 
 ---
 

@@ -101,6 +101,40 @@ func (api IssueWorkspace) FileContent(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
+// GitChanges POST /api/issueWorkspace/getGitChanges：列出全部仓库的未提交变更
+//（暂存+工作区 vs HEAD + untracked，T5.1「Git 变更」模式）。
+func (api IssueWorkspace) GitChanges(ctx *gin.Context) {
+	req := &types.IssueWorkspaceGitChangesRequest{}
+	svc := service.IssueWorkspace{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.GitChanges(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}
+
+// FileDiff POST /api/issueWorkspace/getFileDiff：返回单文件未提交变更的前后内容对
+//（old=HEAD 版本 / new=工作区当前，前端 diff 视图消费）。
+func (api IssueWorkspace) FileDiff(ctx *gin.Context) {
+	req := &types.IssueWorkspaceFileDiffRequest{}
+	svc := service.IssueWorkspace{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.FileDiff(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}
+
 // FileRaw GET /api/issueWorkspace/fileRaw：图片原始字节直连（<img src> 消费，类静态资源；
 // 校验链与 getFileContent 一致 + 图片扩展名白名单）。参数走 query（GET 无法 JSON body）。
 func (api IssueWorkspace) FileRaw(ctx *gin.Context) {

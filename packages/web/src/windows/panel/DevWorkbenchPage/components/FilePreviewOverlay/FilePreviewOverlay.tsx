@@ -1,6 +1,6 @@
 import { Box, useTheme } from '@mui/material';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
-import { usePreviewTabs, useWorkspaceFilesStore, workspaceFilesKeys } from '@src/state/workspaceFiles';
+import { tabFilePath, usePreviewTabs, useWorkspaceFilesStore, workspaceFilesKeys } from '@src/state/workspaceFiles';
 import { useQueryClient } from '@tanstack/react-query';
 import PreviewContent from './PreviewContent';
 import PreviewTabsBar from './PreviewTabsBar';
@@ -34,11 +34,16 @@ export default function FilePreviewOverlay({ issueId, baseDir }: FilePreviewOver
     return null;
   }
 
-  // 刷新激活 tab：invalidate 内容 query（与文件树面板刷新同范式）——text 原位重取（SWR
-  // 语义，先显旧值后替换），image 经 dataUpdatedAt 版本令牌换 URL 强制重载。
+  // 刷新激活 tab：按 tab kind 分流 invalidate（file → 内容 query；diff → 变更内容对 query）——
+  // text 原位重取（SWR 语义，先显旧值后替换），image 经 dataUpdatedAt 版本令牌换 URL 强制重载。
+  const activeTab = tabs.find(t => t.path === activeTabId);
   const refreshActive = () => {
-    if (issueId != null && activeTabId != null) {
-      void queryClient.invalidateQueries({ queryKey: workspaceFilesKeys.content(issueId, activeTabId) });
+    if (issueId != null && activeTab != null) {
+      const path = tabFilePath(activeTab);
+      const key = activeTab.kind === 'diff'
+        ? workspaceFilesKeys.fileDiff(issueId, path)
+        : workspaceFilesKeys.content(issueId, path);
+      void queryClient.invalidateQueries({ queryKey: key });
     }
   };
 
@@ -70,8 +75,14 @@ export default function FilePreviewOverlay({ issueId, baseDir }: FilePreviewOver
         onCloseAll={() => issueId != null && closeAllTabs(issueId)}
         onRefresh={refreshActive}
       />
-      {issueId != null && activeTabId != null && (
-        <PreviewContent key={activeTabId} issueId={issueId} baseDir={baseDir} path={activeTabId} />
+      {issueId != null && activeTab != null && (
+        <PreviewContent
+          key={activeTabId}
+          issueId={issueId}
+          baseDir={baseDir}
+          path={tabFilePath(activeTab)}
+          kind={activeTab.kind}
+        />
       )}
     </Box>
   );

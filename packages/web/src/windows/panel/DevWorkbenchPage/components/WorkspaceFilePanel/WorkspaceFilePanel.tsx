@@ -9,6 +9,8 @@ import {
   Button,
   CircularProgress,
   IconButton,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import {
@@ -20,17 +22,20 @@ import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import {
   DEFAULT_EXPANDED_DIR,
+  tabFilePath,
   useExpandedDirs,
   usePreviewTabs,
   useWorkspaceFilesStore,
   useWorkspaceFileTree,
+  useWorkspaceGitChanges,
   workspaceFilesKeys,
 } from '@src/state/workspaceFiles';
 import { useSettingsNavigate } from '@src/windows/panel/useSettingsNavigate';
 import { useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import PanelToolbar from '../PanelToolbar';
 import { buildFileTree } from './buildFileTree';
+import { allDirsExpanded, buildGitChangesTree } from './buildGitChangesTree';
 import FileTree from './FileTree';
 
 // baseDir 分支渲染（未设置引导 vs 文件树）的挂载前置闸门：useConfigValue 初值为同步
@@ -46,16 +51,24 @@ interface WorkspaceFilePanelProps {
   issueId: string;
 }
 
-/// WorkspaceFilePanel：开发工作台工具面板区的「文件」tab 内容（T5.1 本期，经 toolRegistry
-/// 挂载）。展示当前 issue 工作空间 {workspace_base_dir}/{issueId}/ 的一次性全目录树，
-/// 头部文件计数 + 刷新按钮（手动刷新口径——无 watcher 无轮询，与子任务面板 T3.1 同决策）。
-/// 点击文件行 → openPreviewTab → 终端内容区浮层预览（浮层组件独立挂载，与本面板无耦合）。
-/// 面板标题由 tab 头承载（「文件」），本组件头部仅计数/截断提示 + 刷新。
+/// 文件查看模式：all=全部文件（一次性全目录树）；git=Git 变更（仅未提交变更的文件，
+/// 点击打开 diff 预览 tab）。面板本地态（切工具 tab 重挂载回默认 all——模式是浏览意图，
+/// 不值得持久化）。
+type FilePanelMode = 'all' | 'git';
+
+/// WorkspaceFilePanel：开发工作台工具面板区的「文件」tab 内容（T5.1，经 toolRegistry
+/// 挂载）。双模式：全部文件（一次性全目录树）/ Git 变更（未提交变更文件树 + 状态徽标 +
+/// +N/-N 行数，点击打开 diff 预览）。头部模式切换 + 计数 + 刷新按钮（手动刷新口径——
+/// 无 watcher 无轮询，与子任务面板 T3.1 同决策）。点击文件行 → openPreviewTab → 终端
+/// 内容区浮层预览（浮层组件独立挂载，与本面板无耦合）。面板标题由 tab 头承载（「文件」）。
 export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps) {
   const qc = useQueryClient();
+  const [mode, setMode] = useState<FilePanelMode>('all');
   const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const configReady = useConfigReady(FILE_PANEL_CONFIG_KEYS);
   const { data, isLoading, error, isFetching, refetch } = useWorkspaceFileTree(issueId, baseDir);
+  // 变更列表仅 git 模式拉取（issueId 传 null 关闸，切回模式命中缓存 + staleTime 0 重验）。
+  const gitQuery = useWorkspaceGitChanges(mode === 'git' ? issueId : null, baseDir);
 
   // 语义化深链：引导用户去「项目配置」分区设置工作空间根目录（统一 hook 入口，EmbeddedTerminal 同源）。
   const openSettings = useSettingsNavigate('projectConfig');
@@ -65,12 +78,35 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
   const expandedDirsRecorded = useExpandedDirs(issueId);
   const { tabs, activeTabId } = usePreviewTabs(issueId);
   const expandedDirs = expandedDirsRecorded ?? DEFAULT_EXPANDED_DIRS;
-  const openPaths = useMemo(() => new Set(tabs.map(t => t.path)), [tabs]);
+
+  // 全部文件模式：树根 + 计数。
   const treeRoots = useMemo(() => (data != null ? buildFileTree(data.nodes) : []), [data]);
   const fileCount = data?.nodes.filter(n => !n.isDir).length ?? 0;
 
+  // Git 变更模式：变更树（目录默认全展开）+ 行尾标记表 + 计数。
+  const changeFiles = gitQuery.data?.files ?? [];
+  const gitRoots = useMemo(() => buildGitChangesTree(changeFiles), [changeFiles]);
+  const gitExpandedDirs = useMemo(() => allDirsExpanded(gitRoots), [gitRoots]);
+  const gitMarks = useMemo(() => new Map(changeFiles.map(f => [f.path, f])), [changeFiles]);
+
+  // 行高亮口径随模式：openPaths/activePath 只取「与本模式同 kind」的 tab（diff tab id 带
+  // diff: 前缀，经 tabFilePath 还原真实路径后与树 path 对齐）。
+  const modeKind = mode === 'git' ? 'diff' : 'file';
+  const openPaths = useMemo(
+    () => new Set(tabs.filter(t => t.kind === modeKind).map(tabFilePath)),
+    [tabs, modeKind],
+  );
+  const activeTab = tabs.find(t => t.path === activeTabId);
+  const activePath = activeTab != null && activeTab.kind === modeKind ? tabFilePath(activeTab) : undefined;
+
   const refresh = () => {
-    void qc.invalidateQueries({ queryKey: workspaceFilesKeys.tree(issueId) });
+    if (mode === 'git') {
+      void qc.invalidateQueries({ queryKey: workspaceFilesKeys.gitChanges(issueId) });
+      // 已打开的 diff tab 内容随刷新重取（前缀失效该 issue 的全部 fileDiff key）。
+      void qc.invalidateQueries({ queryKey: [...workspaceFilesKeys.root, 'fileDiff', { issueId }] });
+    } else {
+      void qc.invalidateQueries({ queryKey: workspaceFilesKeys.tree(issueId) });
+    }
   };
 
   // baseDir 配置未就绪：空占位（闸门理由见 FILE_PANEL_CONFIG_KEYS 注释）。
@@ -88,27 +124,82 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
     );
   }
 
+  // 模式差异描述：内容区四分支骨架（错误/加载/空态/树）单份渲染（见 return），模式只换数据与文案。
+  const view = mode === 'git'
+    ? {
+        error: gitQuery.error,
+        isLoading: gitQuery.isLoading,
+        refetch: gitQuery.refetch,
+        errorLabel: '变更列表加载失败',
+        isEmpty: gitQuery.data != null && changeFiles.length === 0,
+        emptyTitle: '没有未提交变更',
+        emptyDesc: '工作区干净——agent 的改动都已 commit',
+        tree: (
+          <FileTree
+            roots={gitRoots}
+            expandedDirs={gitExpandedDirs}
+            openPaths={openPaths}
+            activePath={activePath}
+            marks={gitMarks}
+            onToggleDir={() => {}} // 目录已全展开，toggle 无操作（展开集是派生全集）
+            onOpenFile={path => openPreviewTab(issueId, path, 'diff')}
+          />
+        ),
+      }
+    : {
+        error,
+        isLoading,
+        refetch,
+        errorLabel: '文件列表加载失败',
+        isEmpty: data != null && treeRoots.length === 0,
+        emptyTitle: '工作空间目录为空',
+        emptyDesc: '初始化工作空间或等待终端内产出文件后刷新',
+        tree: (
+          <FileTree
+            roots={treeRoots}
+            expandedDirs={expandedDirs}
+            openPaths={openPaths}
+            activePath={activePath}
+            onToggleDir={dirPath => toggleDirExpanded(issueId, dirPath)}
+            onOpenFile={path => openPreviewTab(issueId, path)}
+          />
+        ),
+      };
+
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 头部：文件计数（+截断提示）+ 刷新（isFetching 旋转，IssueSubTaskPanel 同款） */}
+      {/* 头部：模式切换（全部文件 / Git 变更）+ 计数 + 刷新（isFetching 旋转，IssueSubTaskPanel 同款） */}
       <PanelToolbar
         left={(
-          <Typography variant="caption" color="text.secondary" noWrap>
-            {data != null ? `${fileCount} 个文件${data.truncated ? '（已截断）' : ''}` : ''}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={mode}
+              onChange={(_, v) => v != null && setMode(v)}
+            >
+              <ToggleButton value="all" sx={{ py: 0.25, px: 1 }}>全部文件</ToggleButton>
+              <ToggleButton value="git" sx={{ py: 0.25, px: 1 }}>Git 变更</ToggleButton>
+            </ToggleButtonGroup>
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {mode === 'git'
+                ? (gitQuery.data != null ? `${changeFiles.length} 个变更` : '')
+                : (data != null ? `${fileCount} 个文件${data.truncated ? '（已截断）' : ''}` : '')}
+            </Typography>
+          </Box>
         )}
         right={(
           <IconButton
             size="small"
             onClick={refresh}
-            disabled={isFetching}
+            disabled={mode === 'git' ? gitQuery.isFetching : isFetching}
             aria-label="刷新文件列表"
             sx={{ color: 'text.secondary' }}
           >
             <AutorenewIcon
               fontSize="small"
               sx={{
-                'animation': isFetching ? 'spin 0.8s linear infinite' : undefined,
+                'animation': (mode === 'git' ? gitQuery.isFetching : isFetching) ? 'spin 0.8s linear infinite' : undefined,
                 '@keyframes spin': {
                   from: { transform: 'rotate(0deg)' },
                   to: { transform: 'rotate(360deg)' },
@@ -119,25 +210,25 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
         )}
       />
 
-      {/* 内容区：错误 / 加载中 / 空目录 / 文件树 */}
-      {error
+      {/* 内容区四分支骨架（错误/加载/空态/树）单份渲染，模式只提供差异描述。 */}
+      {view.error != null
         ? (
             <Box sx={{ p: 1.5 }}>
               <Alert
                 severity="error"
-                action={<Button color="inherit" size="small" onClick={() => void refetch()}>重试</Button>}
+                action={<Button color="inherit" size="small" onClick={() => void view.refetch()}>重试</Button>}
               >
-                文件列表加载失败：{error.message}
+                {view.errorLabel}：{view.error.message}
               </Alert>
             </Box>
           )
-        : isLoading
+        : view.isLoading
           ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
                 <CircularProgress size={20} />
               </Box>
             )
-          : treeRoots.length === 0
+          : view.isEmpty
             ? (
                 <Box
                   sx={{
@@ -152,22 +243,11 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
                   }}
                 >
                   <FolderOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>工作空间目录为空</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    初始化工作空间或等待终端内产出文件后刷新
-                  </Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{view.emptyTitle}</Typography>
+                  <Typography variant="body2" color="text.secondary">{view.emptyDesc}</Typography>
                 </Box>
               )
-            : (
-                <FileTree
-                  roots={treeRoots}
-                  expandedDirs={expandedDirs}
-                  openPaths={openPaths}
-                  activePath={activeTabId ?? undefined}
-                  onToggleDir={dirPath => toggleDirExpanded(issueId, dirPath)}
-                  onOpenFile={path => openPreviewTab(issueId, path)}
-                />
-              )}
+            : view.tree}
     </Box>
   );
 }

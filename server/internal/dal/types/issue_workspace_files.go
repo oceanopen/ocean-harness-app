@@ -55,3 +55,51 @@ type IssueWorkspaceFileContentResponseData struct {
 	MimeType string                        `json:"mimeType,omitempty"`
 	Content  string                        `json:"content,omitempty"`
 }
+
+// —— Git 变更（T5.1：文件工具「Git 变更」模式）——
+// 口径：只看未 commit 的变更（暂存区 + 工作区 vs HEAD）+ untracked 新文件，不对比基准分支、
+// 不探测 upstream（用户分步 commit，每次只关注当前未提交的部分）。
+
+// IssueWorkspaceGitChangesRequest 是 POST /api/issueWorkspace/getGitChanges 的入参。
+type IssueWorkspaceGitChangesRequest struct {
+	IssueID string `json:"issueId" binding:"required"`
+	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
+}
+
+// IssueWorkspaceGitChangeFile 单个文件的未提交变更（多仓库扁平，Path 带 repo/{name}/ 前缀——
+// 与 getFileTree 的 node.path 同构，前端复用同一套组树与展示）。
+// Status：A=新增（HEAD 无此文件）/ M=修改 / D=删除（工作区已无）/ U=untracked（git 未跟踪的新文件）；
+// Ins/Del 为变更行数（binary 文件为 -1，前端不展示数字）。
+type IssueWorkspaceGitChangeFile struct {
+	Path   string `json:"path"`
+	Status string `json:"status"`
+	Ins    int    `json:"ins"`
+	Del    int    `json:"del"`
+}
+
+// IssueWorkspaceGitChangesResponseData 是 getGitChanges 的响应：全部仓库未提交变更的扁平表
+// （无变更为空数组）。
+type IssueWorkspaceGitChangesResponseData struct {
+	Files []IssueWorkspaceGitChangeFile `json:"files"`
+}
+
+// IssueWorkspaceFileDiffRequest 是 POST /api/issueWorkspace/getFileDiff 的入参。
+// Path 为 getGitChanges 返回的 file.path（repo/{name}/ 前缀的工作空间相对路径）。
+type IssueWorkspaceFileDiffRequest struct {
+	IssueID string `json:"issueId" binding:"required"`
+	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
+	Path    string `json:"path" binding:"required"`
+}
+
+// IssueWorkspaceFileDiffResponseData 是 getFileDiff 的响应：前后内容对（前端
+// react-diff-viewer-continued 消费）。OldContent = HEAD 版本（新增/untracked 为空串），
+// NewContent = 工作区当前内容（删除为空串）；Ins/Del 取自 numstat（binary 为 -1）。
+// Kind 仅 text/binary/tooLarge（diff 无图片态——图片变更直接给 binary 档信息提示）。
+type IssueWorkspaceFileDiffResponseData struct {
+	Kind       IssueWorkspaceFileContentKind `json:"kind"`
+	Status     string                        `json:"status"`
+	Ins        int                           `json:"ins"`
+	Del        int                           `json:"del"`
+	OldContent string                        `json:"oldContent,omitempty"`
+	NewContent string                        `json:"newContent,omitempty"`
+}

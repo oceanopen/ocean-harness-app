@@ -2,6 +2,7 @@ import type { PreviewTab } from '@src/state/workspaceFiles';
 import { Autorenew as AutorenewIcon, Close as CloseIcon } from '@mui/icons-material';
 import { Box, IconButton, Tab, Tabs, Tooltip, Typography } from '@mui/material';
 import { basename } from '@src/shared/repoPath';
+import { tabFilePath } from '@src/state/workspaceFiles';
 import { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
 
 interface PreviewTabsBarProps {
@@ -34,15 +35,15 @@ export default function PreviewTabsBar({ tabs, activeTabId, onSelect, onClose, o
           <Tab
             key={tab.path}
             value={tab.path}
-            title={tab.path}
+            title={tabFilePath(tab)}
             label={(
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, maxWidth: '100%' }}>
                 <Typography variant="caption" noWrap sx={{ flex: '1 1 auto', minWidth: 0 }}>
-                  {basename(tab.path)}
+                  {basename(tabFilePath(tab))}
                 </Typography>
                 <IconButton
                   size="small"
-                  aria-label={`关闭 ${basename(tab.path)}`}
+                  aria-label={`关闭 ${basename(tabFilePath(tab))}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onClose(tab.path);
