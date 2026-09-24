@@ -56,6 +56,7 @@ import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
 import FilePreviewOverlay from './components/FilePreviewOverlay/FilePreviewOverlay';
+import OpenWorkspaceDirButton from './components/OpenWorkspaceDir/OpenWorkspaceDirButton';
 import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
 import ToolPanelArea, { TERMINAL_MIN_WIDTH, TOOL_AREA_MIN_WIDTH } from './components/WorkbenchTools/ToolPanelArea';
 import WorkbenchToolRail from './components/WorkbenchTools/WorkbenchToolRail';
@@ -358,6 +359,9 @@ export default function DevWorkbenchPage() {
               </Typography>
             )}
             <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+              {/* 打开工作区目录（胶囊分体按钮，OpenWorkspaceDir/ 特性目录）：左段图标 =
+                  当前默认工具（点击即打开），hover/▼ 展开浮层切默认（串行：打开成功后才切）。 */}
+              {hasSelection && issue && <OpenWorkspaceDirButton issueId={issue.id} />}
               {/* 清理终端并重新初始化（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
                 与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。
                 图标用扫帚（CleaningServices）而非循环箭头，与子任务面板刷新按钮（Autorenew）区分。 */}

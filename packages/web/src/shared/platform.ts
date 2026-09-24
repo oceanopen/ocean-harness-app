@@ -3,6 +3,16 @@
 // 的红绿灯让位带 / 折叠态逻辑、快捷键徽标等 macOS 专属行为门控（其余平台保持原生窗口装饰语义）。
 export const isMacOS = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform);
 
+// Windows 判定（webview 的 navigator.platform 为 "Win32"）。与 isMacOS 同源同范式，
+// 仅作 currentPlatform 三值归约的中间量（对外消费一律走 currentPlatform）。
+const isWindows = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform);
+
+// 平台三值枚举（模块级一次判定，运行期恒定）：目录表/分支渲染按此过滤，
+// 消费方拿单值比 booleans 组合更直白。
+export type Platform = 'macos' | 'windows' | 'linux';
+
+export const currentPlatform: Platform = isMacOS ? 'macos' : isWindows ? 'windows' : 'linux';
+
 // macOS Overlay 红绿灯让位带（px）：红绿灯占窗口左上 ~0-70px（随 macOS 版本浮动），取 80px
 // 安全边。panel.rs 启用 TitleBarStyle::Overlay 后内容从窗口 (0,0) 铺起，顶部区域凡顶到
 // y=0 的横向条带（PanelApp 顶栏/侧边栏头部、沉浸模式工作台标题栏）左侧均须让出该宽度。

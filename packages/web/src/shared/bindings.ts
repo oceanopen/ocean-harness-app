@@ -33,7 +33,7 @@ export const commands = {
 	 *  **Windows / Linux**：GUI 应用继承的 PATH 通常含编辑器安装目录（VSCode 安装时默认勾选
 	 *  Add to PATH，IDEA 由 JetBrains Toolbox 创建 shell link），直接走 `code` / `idea` CLI 即可。
 	 * 
-	 *  editor 仅允许 "vscode" / "idea"；应用未安装 / 启动失败返回 Err(String)，前端 warn。
+	 *  editor 仅允许 "vscode" / "idea"；目录不存在 / 应用未安装 / 启动失败返回 Err(String)，前端 warn。
 	 */
 	openInEditor: (editor: string, cwd: string) => typedError<null, string>(__TAURI_INVOKE("open_in_editor", { editor, cwd })),
 	/**
@@ -42,9 +42,11 @@ export const commands = {
 	 */
 	isJavaProject: (cwd: string) => __TAURI_INVOKE<boolean>("is_java_project", { cwd }),
 	/**
-	 *  用指定终端打开目录。仅 macOS 支持；terminal 仅允许 "iterm2" / "terminal"。
-	 *  有窗口则新建 Tab，无窗口则新建窗口，并 cd 到指定目录。
-	 *  iTerm2 模式下根据 `iterm2_split_direction` 配置决定分屏方向（默认上下分屏）。
+	 *  用指定终端打开目录。macOS：terminal 仅允许 "iterm2" / "terminal"，有窗口则新建 Tab、
+	 *  无窗口则新建窗口并 cd 到指定目录（iTerm2 按 `iterm2_split_direction` 配置分屏）。
+	 *  Windows：terminal 仅允许 "windows-terminal"，spawn `wt -d <dir>`（-d 指定起始目录；
+	 *  wt 未安装时 spawn ENOENT 即刻返回 Err，前端 toast）。其余平台不支持。
+	 *  消费方：RepositoriesPage 仓库卡片、开发工作台「打开工作区目录」工具（openTools.tsx）。
 	 */
 	openInTerminal: (terminal: string, dir: string) => typedError<null, string>(__TAURI_INVOKE("open_in_terminal", { terminal, dir })),
 	/**  用系统文件管理器打开目录。dir 必须为存在的绝对路径。 */

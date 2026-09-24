@@ -111,10 +111,15 @@ pub fn navigate_to_claude_session(pid: u32, app: AppHandle) -> Result<(), String
 /// **Windows / Linux**：GUI 应用继承的 PATH 通常含编辑器安装目录（VSCode 安装时默认勾选
 /// Add to PATH，IDEA 由 JetBrains Toolbox 创建 shell link），直接走 `code` / `idea` CLI 即可。
 ///
-/// editor 仅允许 "vscode" / "idea"；应用未安装 / 启动失败返回 Err(String)，前端 warn。
+/// editor 仅允许 "vscode" / "idea"；目录不存在 / 应用未安装 / 启动失败返回 Err(String)，前端 warn。
 #[tauri::command]
 #[specta::specta]
 pub fn open_in_editor(editor: String, cwd: String) -> Result<(), String> {
+    // 目录不存在（如 issue 工作空间尚未初始化）时，macOS `open -a` 会以「应用未找到」
+    // 收场——文案误导排查方向（VSCode 明明装了）。前置存在性校验给出明确错误。
+    if !std::path::Path::new(&cwd).exists() {
+        return Err(format!("目录不存在：{cwd}"));
+    }
     // GUI 编辑器（尤其 IDEA）会把 Kotlin/Maven/Gradle 日志写到继承的 stdout/stderr，
     // 污染 ocean-harness 终端，stdio null 让子进程静默（所有平台共用）。
     #[cfg(target_os = "macos")]
@@ -181,9 +186,11 @@ pub fn is_java_project(cwd: String) -> bool {
         || path.join("build.gradle.kts").exists()
 }
 
-/// 用指定终端打开目录。仅 macOS 支持；terminal 仅允许 "iterm2" / "terminal"。
-/// 有窗口则新建 Tab，无窗口则新建窗口，并 cd 到指定目录。
-/// iTerm2 模式下根据 `iterm2_split_direction` 配置决定分屏方向（默认上下分屏）。
+/// 用指定终端打开目录。macOS：terminal 仅允许 "iterm2" / "terminal"，有窗口则新建 Tab、
+/// 无窗口则新建窗口并 cd 到指定目录（iTerm2 按 `iterm2_split_direction` 配置分屏）。
+/// Windows：terminal 仅允许 "windows-terminal"，spawn `wt -d <dir>`（-d 指定起始目录；
+/// wt 未安装时 spawn ENOENT 即刻返回 Err，前端 toast）。其余平台不支持。
+/// 消费方：RepositoriesPage 仓库卡片、开发工作台「打开工作区目录」工具（openTools.tsx）。
 #[tauri::command]
 #[specta::specta]
 pub fn open_in_terminal(app: AppHandle, terminal: String, dir: String) -> Result<(), String> {
@@ -199,10 +206,25 @@ pub fn open_in_terminal(app: AppHandle, terminal: String, dir: String) -> Result
         };
         open_directory_dispatch(&app, host_app, &dir).map_err(|e| format!("{e:?}"))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app; // AppHandle 仅 macOS 分支使用（AppleScript 读配置）
+        match terminal.as_str() {
+            "windows-terminal" => std::process::Command::new("wt")
+                .args(["-d", &dir])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("failed to launch wt: {e}")),
+            other => Err(format!("unsupported terminal: {other}")),
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
     {
         let _ = (app, terminal, dir);
-        Err("open_in_terminal is only supported on macOS".to_string())
+        Err("open_in_terminal is only supported on macOS and Windows".to_string())
     }
 }
 

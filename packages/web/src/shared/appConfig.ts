@@ -178,6 +178,13 @@ export function decodeWorkspaceBaseDir(raw: string | null): string {
   return raw ?? DEFAULT_WORKSPACE_BASE_DIR;
 }
 
+// 工作区目录默认打开工具（开发工作台标题栏胶囊按钮）。值域 = 五工具 id 全集
+// （finder/vscode/iterm2/terminal/windows-terminal），id 类型/默认值/decode/平台过滤
+// 全部随值域 SSOT 放 DevWorkbenchPage/components/OpenWorkspaceDir/openTools.tsx
+// （参照 TERMINAL_THEME_KEY 先例：值域同文件持有，appConfig 只留 key）。
+// 纯前端偏好，后端不读取（参照 workspace_base_dir 先例）。
+export const WORKSPACE_OPEN_TOOL_KEY = 'workspace_open_tool';
+
 // commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，
 // 保持 getAppConfig/setAppConfig 的对外 API 不变（错误时 throw）。
 export async function getAppConfig(key: string): Promise<string | null> {
