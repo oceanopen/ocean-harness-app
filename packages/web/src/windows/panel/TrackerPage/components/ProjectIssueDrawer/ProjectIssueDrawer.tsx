@@ -1,6 +1,6 @@
-import type { IssueRepositoryBranchModel, Priority, ProjectIssueResponseData, WorkspaceLabelModel, WorkspaceProjectModel } from '@src/services';
+import type { IssueRepositoryBranchModel, Priority, ProjectIssueResponseData, WorkspaceProjectModel, WorkspaceTypeModel } from '@src/services';
 import type { StateCode } from '@src/state/tracker';
-import { AutoFixHighOutlined as AutoFixHighOutlinedIcon, CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon } from '@mui/icons-material';
+import { AutoFixHighOutlined as AutoFixHighOutlinedIcon, CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -14,23 +14,22 @@ import {
 } from '@mui/material';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { WorkspaceLabelService } from '@src/services';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useLocalRepositories } from '@src/state/localRepositories';
-import { STATE_CODE_DEFAULT, useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue } from '@src/state/tracker';
+import { STATE_CODE_DEFAULT, useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue, useWorkspaceTypes } from '@src/state/tracker';
 import dayjs from 'dayjs';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate as useRouterNavigate } from 'react-router-dom';
 import IssueRepoBranchTable from './IssueRepoBranchTable';
 import MarkdownEditor from './MarkdownEditor/MarkdownEditor';
 import PrioritySelect from './PrioritySelect';
 import ProjectStateSelect from './ProjectStateSelect';
-import WorkspaceLabelManagerDrawer from './WorkspaceLabelManagerDrawer';
-import WorkspaceLabelSelect from './WorkspaceLabelSelect';
+import TypeSelect from './TypeSelect';
+import WorkspaceTypeManagerDrawer from './WorkspaceTypeManagerDrawer';
 import 'dayjs/locale/zh-cn';
 
 interface ProjectIssueDrawerProps {
@@ -47,7 +46,7 @@ interface ProjectIssueDrawerProps {
   onDeleted?: (issueId: string) => void;
 }
 
-// Issue 抽屉（create/edit 共用）。所有字段（含 labels）本地态，点保存/创建一次性提交，
+// Issue 抽屉（create/edit 共用）。所有字段（含类型）本地态，点保存/创建一次性提交，
 // 成功后关闭抽屉 + 父级刷新列表；失败 drawer 内弹 error toast（成功 toast 由父级统一弹）。
 // mode 决定：初值来源、提交 API、头部标题/元信息/删除按钮显隐。
 // create + parentIssue：新建子 issue（顶部只读父信息条 + parentId）。
@@ -72,7 +71,10 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const [priority, setPriority] = useState<Priority>(projectIssue?.priority ?? 'none');
   const [startDate, setStartDate] = useState(projectIssue?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(projectIssue?.targetDate ?? '');
-  const [labels, setLabels] = useState<WorkspaceLabelModel[]>(projectIssue?.labels ?? []);
+  // 类型可选列表（TanStack Query 共享缓存，与类型管理抽屉同源）。
+  const wsTypesQuery = useWorkspaceTypes(workspaceProject.workspaceId);
+  const wsTypes = wsTypesQuery.data;
+  const [type, setType] = useState<WorkspaceTypeModel | null>(projectIssue?.type ?? null);
   // 关联仓库+分支列表（多选）：create 的默认行由全局仓库缓存派生（项目关联仓库各一行、分支预填默认分支，
   // 数据异步就绪后自动出现，无需 effect 初始化）；用户在 table 里增删改后存 override（此后不再用派生值）。
   // edit 按回显数据初始化 override。
@@ -87,7 +89,8 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     mode === 'edit' ? (projectIssue?.repositoryBranchList ?? []) : null,
   );
   const repoBranchRows = repoBranchRowsOverride ?? defaultRepoBranchRows;
-  const [wsLabels, setWsLabels] = useState<WorkspaceLabelModel[]>([]);
+  // 用户是否已手动操作过类型（create 默认选中「需求」仅作用于未触碰时，避免覆盖用户显式选的「未分类」）。
+  const [typeTouched, setTypeTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [dialogDeleteOpen, setDialogDeleteOpen] = useState(false);
@@ -110,35 +113,15 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   };
   const { show: showToast, snack } = useToast();
 
-  const loadWsLabels = useCallback(async () => {
-    try {
-      const data = await WorkspaceLabelService.getList({ workspaceId: workspaceProject.workspaceId });
-      setWsLabels(data);
-      // 标签管理里若有删除，剔除本地已选 labels 中已不存在的。
-      setLabels(prev => prev.filter(l => data.some(w => w.id === l.id)));
-    } catch {
-      // 标签选项加载失败不阻塞编辑。
-    }
-  }, [workspaceProject.workspaceId]);
+  // create 且用户未触碰时，类型默认选「需求」（列表无「需求」则取第一项；无类型保持未分类）。
+  // 派生值而非 effect 回填：未触碰期间随类型列表异步到达自动生效，触碰后固定为用户显式选择。
+  const defaultType = wsTypes?.find(ty => ty.name === t('tracker:workspaceType.defaultRequirement')) ?? wsTypes?.[0] ?? null;
+  // 类型列表就绪后本地已选 type 匹配不到（已在类型管理里删除）则视为未分类；未就绪（undefined）时保持原选。
+  const typeAlive = !type || wsTypes === undefined || wsTypes.some(ty => ty.id === type.id);
+  const currentType = typeTouched || mode !== 'create' ? (typeAlive ? type : null) : defaultType;
 
-  useEffect(() => {
-    void loadWsLabels();
-  }, [loadWsLabels]);
-
-  // labels 是否相对原值变化（id 集合比较，覆盖增/删/替换）。
-  const labelsDirty = (() => {
-    const cur = new Set(labels.map(l => l.id));
-    const orig = new Set((projectIssue?.labels ?? []).map(l => l.id));
-    if (cur.size !== orig.size) {
-      return true;
-    }
-    for (const id of cur) {
-      if (!orig.has(id)) {
-        return true;
-      }
-    }
-    return false;
-  })();
+  // 类型是否相对原值变化（单值比较；0=未分类）。
+  const typeDirty = (currentType?.id ?? 0) !== (projectIssue?.typeId ?? 0);
 
   // 关联仓库+分支列表是否相对原值变化（逐行比较，覆盖增/删/改）。
   const repoBranchDirty = (() => {
@@ -159,7 +142,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     || startDate !== projectIssue.startDate
     || targetDate !== projectIssue.targetDate
     || repoBranchDirty
-    || labelsDirty
+    || typeDirty
   );
 
   // 存在未选仓库的行（空行）时不可保存（后端也会校验报错，前端先行禁用）。
@@ -196,16 +179,11 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     routerNavigate(`/devWorkbench?pid=${projectIssue.projectId}&iid=${projectIssue.id}`);
   };
 
-  // labels 本地切换（不发请求）：create/edit 统一，提交时随 create/update 一起发。
-  const handleToggleLabel = useCallback((labelId: number) => {
-    setLabels((prev) => {
-      if (prev.some(l => l.id === labelId)) {
-        return prev.filter(l => l.id !== labelId);
-      }
-      const found = wsLabels.find(w => w.id === labelId);
-      return found ? [...prev, found] : prev;
-    });
-  }, [wsLabels]);
+  // 类型本地切换（不发请求，0=未分类）：create/edit 统一，提交时随 create/update 一起发。
+  const handleTypeChange = useCallback((typeId: number) => {
+    setTypeTouched(true);
+    setType(wsTypes?.find(ty => ty.id === typeId) ?? null);
+  }, [wsTypes]);
 
   // IssueRepoBranchTable 受控回调：行增删/仓库分支变化都存 override（提交统一在 handleSave）。
   const handleRepoBranchRowsChange = useCallback((rows: IssueRepositoryBranchModel[]) => {
@@ -225,7 +203,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           startDate,
           targetDate,
           stateCode,
-          labelIds: labels.map(l => l.id),
+          typeId: currentType?.id ?? 0,
           repositoryBranchList: repoBranchRows,
           // 新建子 issue 带父 id（顶级创建不传，走后端默认 0）。
           ...(parentIssue ? { parentId: parentIssue.id } : {}),
@@ -241,7 +219,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           priority,
           startDate,
           targetDate,
-          labelIds: labels.map(l => l.id),
+          typeId: currentType?.id ?? 0,
           repositoryBranchList: repoBranchRows,
         });
         onUpdated?.(updated);
@@ -344,6 +322,19 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
               <ProjectStateSelect value={stateCode} onChange={setStateCode} disabled={submitting || deleting} />
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.priority')}</Typography>
               <PrioritySelect value={priority} onChange={setPriority} disabled={submitting || deleting} />
+              <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.type')}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <TypeSelect value={currentType?.id ?? 0} types={wsTypes ?? []} onChange={handleTypeChange} disabled={submitting || deleting} />
+                <IconButton
+                  size="small"
+                  onClick={() => setDrawerManagerOpen(true)}
+                  disabled={submitting || deleting}
+                  aria-label={t('tracker:workspaceType.title')}
+                  title={t('tracker:workspaceType.title')}
+                >
+                  <SettingsOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Box>
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.startDate')}</Typography>
               <DatePicker
                 format="YYYY-MM-DD"
@@ -362,13 +353,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
               />
             </Box>
           </LocalizationProvider>
-          <WorkspaceLabelSelect
-            issueLabels={labels}
-            options={wsLabels}
-            onToggle={handleToggleLabel}
-            onOpenManager={() => setDrawerManagerOpen(true)}
-            disabled={submitting || deleting}
-          />
           <IssueRepoBranchTable
             localRepositoryIds={workspaceProject.localRepositoryIds ?? []}
             rows={repoBranchRows}
@@ -435,10 +419,9 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
       </Box>
 
       {drawerManagerOpen && (
-        <WorkspaceLabelManagerDrawer
+        <WorkspaceTypeManagerDrawer
           workspaceId={workspaceProject.workspaceId}
           onClose={() => setDrawerManagerOpen(false)}
-          onChanged={loadWsLabels}
         />
       )}
 

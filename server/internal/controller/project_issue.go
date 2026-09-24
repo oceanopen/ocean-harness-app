@@ -14,7 +14,7 @@ type ProjectIssue struct {
 	apis.Api
 }
 
-// GetList POST /api/tracker/projectIssue/getList：返回某 project 下 issue 列表（扁平，含 labels）。
+// GetList POST /api/tracker/projectIssue/getList：返回某 project 下 issue 列表（扁平，含类型）。
 func (api ProjectIssue) GetList(ctx *gin.Context) {
 	req := &types.ProjectIssueGetListRequest{}
 	svc := service.ProjectIssue{}
@@ -30,7 +30,7 @@ func (api ProjectIssue) GetList(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// GetInfo POST /api/tracker/projectIssue/getInfo：返回单个 issue（含 labels）。
+// GetInfo POST /api/tracker/projectIssue/getInfo：返回单个 issue（含类型）。
 func (api ProjectIssue) GetInfo(ctx *gin.Context) {
 	req := &types.ProjectIssueGetInfoRequest{}
 	svc := service.ProjectIssue{}
@@ -94,7 +94,7 @@ func (api ProjectIssue) Move(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Delete POST /api/tracker/projectIssue/delete：删除 issue（级联清其 label/仓库关联与子任务）。
+// Delete POST /api/tracker/projectIssue/delete：删除 issue（级联清其仓库关联与子任务）。
 func (api ProjectIssue) Delete(ctx *gin.Context) {
 	req := &types.ProjectIssueDeleteRequest{}
 	svc := service.ProjectIssue{}

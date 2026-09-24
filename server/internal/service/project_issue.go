@@ -27,8 +27,8 @@ type ProjectIssue struct {
 	apis.Service
 }
 
-// GetList 按 projectId 查 issue（扁平列表），支持筛选（stateCode/priority/keyword/labelId）+ orderBy（默认 sort_order）。
-// 批量组装每个 issue 的 label 列表（3 次查询避免 N+1）。分组由前端对扁平列表自行分组。
+// GetList 按 projectId 查 issue（扁平列表），支持筛选（stateCode/priority/keyword/typeId）+ orderBy（默认 sort_order）。
+// 批量组装每个 issue 的类型与仓库+分支列表（避免 N+1）。分组由前端对扁平列表自行分组。
 func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types.ProjectIssueResponseData, error) {
 	q := query.Use(svc.Orm)
 	iq := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ProjectID.Eq(req.ProjectID))
@@ -41,20 +41,9 @@ func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types
 	if req.Keyword != "" {
 		iq = iq.Where(q.ProjectIssue.Name.Like("%" + req.Keyword + "%"))
 	}
-	if req.LabelID > 0 {
-		// 按关联表查 issueIds（两步，避免子查询类型不匹配）。
-		issueLabels, e := q.IssueLabel.WithContext(svc.Context).Where(q.IssueLabel.LabelID.Eq(req.LabelID)).Find()
-		if e != nil {
-			return nil, e
-		}
-		if len(issueLabels) == 0 {
-			return []*types.ProjectIssueResponseData{}, nil
-		}
-		ids := make([]string, 0, len(issueLabels))
-		for _, il := range issueLabels {
-			ids = append(ids, il.IssueID)
-		}
-		iq = iq.Where(q.ProjectIssue.ID.In(ids...))
+	if req.TypeID > 0 {
+		// type_id 为 issue 表单值列，直接等值匹配（原 label 多对多关联表已废）。
+		iq = iq.Where(q.ProjectIssue.TypeID.Eq(req.TypeID))
 	}
 
 	switch req.OrderBy {
@@ -71,10 +60,10 @@ func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types
 	if err != nil {
 		return nil, err
 	}
-	return svc.assembleWithLabels(issues)
+	return svc.assembleWithType(issues)
 }
 
-// GetInfo 按 id 返回单个 issue（含 label 列表）。
+// GetInfo 按 id 返回单个 issue（含类型）。
 func (svc ProjectIssue) GetInfo(req *types.ProjectIssueGetInfoRequest) (*types.ProjectIssueResponseData, error) {
 	q := query.Use(svc.Orm)
 	issue, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.ID)).First()
@@ -84,7 +73,7 @@ func (svc ProjectIssue) GetInfo(req *types.ProjectIssueGetInfoRequest) (*types.P
 		}
 		return nil, err
 	}
-	list, err := svc.assembleWithLabels([]*model.ProjectIssue{issue})
+	list, err := svc.assembleWithType([]*model.ProjectIssue{issue})
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +81,8 @@ func (svc ProjectIssue) GetInfo(req *types.ProjectIssueGetInfoRequest) (*types.P
 }
 
 // Create 新建 issue。stateCode 空值取默认 BACKLOG；sort_order 自算（同 project MAX+10000，首个 10000）；
-// priority/is_draft 空值规范为 none/N。事务内创建 issue + 全量同步 label 关联，completed_at 默认 nil（未完成）。
+// priority/is_draft 空值规范为 none/N；typeId 单值直写（0=未分类）。事务内创建 issue + 同步仓库分支关联，
+// completed_at 默认 nil（未完成）。
 func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.ProjectIssueResponseData, error) {
 	var created *model.ProjectIssue
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -167,6 +157,7 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			SortOrder:   sortOrder,
 			ParentID:    parentID,
 			IsDraft:     isDraft,
+			TypeID:      req.TypeID,
 			StartDate:   req.StartDate,
 			TargetDate:  req.TargetDate,
 			CompletedAt: completedAt,
@@ -174,15 +165,12 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 		if ce := q.ProjectIssue.WithContext(svc.Context).Create(created); ce != nil {
 			return ce
 		}
-		if se := svc.syncIssueRepos(tx, created.ID, repoBranchList); se != nil {
-			return se
-		}
-		return svc.syncIssueLabels(tx, created.ID, req.LabelIDs)
+		return svc.syncIssueRepos(tx, created.ID, repoBranchList)
 	})
 	if err != nil {
 		return nil, err
 	}
-	list, e := svc.assembleWithLabels([]*model.ProjectIssue{created})
+	list, e := svc.assembleWithType([]*model.ProjectIssue{created})
 	if e != nil {
 		return nil, e
 	}
@@ -191,7 +179,7 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 
 // Update 更新 issue 业务字段；检测 stateCode 变化触发 completed_at 流转：
 // 新 stateCode=DONE→写 now，否则清 nil（*time.Time 指针，Save 写 NULL）。
-// 事务内 Save + 全量同步 label 关联（labelIds）。
+// 事务内 Save + 全量同步仓库分支关联；typeId 为 *int：nil=保留原值（MCP 部分更新），0=未分类。
 func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.ProjectIssueResponseData, error) {
 	var issue *model.ProjectIssue
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -218,6 +206,10 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 		if req.IsDraft != "" {
 			issue.IsDraft = req.IsDraft
 		}
+		// typeId 单值：nil=保留原值（MCP 部分更新），非 nil 覆写（0=未分类）。
+		if req.TypeID != nil {
+			issue.TypeID = *req.TypeID
+		}
 
 		// 关联仓库+分支列表：逐项校验（仓库必选、不重复、须属于项目关联仓库）后全量替换关联表。
 		repoBranchList, ve := svc.validateIssueRepoList(tx, issue.ProjectID, req.RepositoryBranchList)
@@ -242,12 +234,12 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 		if se := svc.syncIssueRepos(tx, issue.ID, repoBranchList); se != nil {
 			return se
 		}
-		return svc.syncIssueLabels(tx, issue.ID, req.LabelIDs)
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	list, e := svc.assembleWithLabels([]*model.ProjectIssue{issue})
+	list, e := svc.assembleWithType([]*model.ProjectIssue{issue})
 	if e != nil {
 		return nil, e
 	}
@@ -307,45 +299,6 @@ func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.Proje
 	return q.ProjectIssue.WithContext(svc.Context).Save(parent)
 }
 
-// syncIssueLabels 全量同步某 issue 的 label 关联为 labelIDs（事务内调用，orm 传 tx）。
-// 全表物理删除（无软删恢复语义），diff 退化为两分支：
-//   - 现有且不在目标中 → 删除；
-//   - 目标中且无现有记录 → 插入。
-//
-// labelIDs 在内部去重。
-func (svc ProjectIssue) syncIssueLabels(orm *gorm.DB, issueID string, labelIDs []int) error {
-	q := query.Use(orm)
-	ilq := q.IssueLabel.WithContext(svc.Context)
-
-	target := make(map[int]struct{}, len(labelIDs))
-	for _, id := range labelIDs {
-		target[id] = struct{}{}
-	}
-
-	existings, err := ilq.Where(q.IssueLabel.IssueID.Eq(issueID)).Find()
-	if err != nil {
-		return err
-	}
-	existingSet := make(map[int]struct{}, len(existings))
-	for _, il := range existings {
-		existingSet[il.LabelID] = struct{}{}
-		if _, want := target[il.LabelID]; !want {
-			if _, e := ilq.Where(q.IssueLabel.ID.Eq(il.ID)).Delete(); e != nil {
-				return e
-			}
-		}
-	}
-
-	for lid := range target {
-		if _, ok := existingSet[lid]; !ok {
-			if e := ilq.Create(&model.IssueLabel{IssueID: issueID, LabelID: lid}); e != nil {
-				return e
-			}
-		}
-	}
-	return nil
-}
-
 // Move 看板拖拽单卡移动：写 sortOrder（前端按分数插值算好）+ stateCode 变化触发 completed_at 流转。
 // 子任务全完成时联动完成父（事务内：自身完成态先落库再查兄弟，避免部分失败不一致）。不碰其他业务字段。
 func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.ProjectIssueResponseData, error) {
@@ -382,15 +335,15 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 	if err != nil {
 		return nil, err
 	}
-	list, err := svc.assembleWithLabels([]*model.ProjectIssue{issue})
+	list, err := svc.assembleWithType([]*model.ProjectIssue{issue})
 	if err != nil {
 		return nil, err
 	}
 	return list[0], nil
 }
 
-// Delete 物理删除 issue（无 DB 外键），事务内级联：删其 t_issue_labels / t_issue_local_repositories
-// 两种关联与子任务（+ 子任务的 label / 仓库分支关联），避免悬挂。
+// Delete 物理删除 issue（无 DB 外键），事务内级联：删其 t_issue_local_repositories
+// 关联与子任务（+ 子任务的仓库分支关联），避免悬挂（type_id 为单值列，无独立关联可清）。
 func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
@@ -403,13 +356,10 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 		if _, e := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		if _, e := q.IssueLabel.WithContext(svc.Context).Where(q.IssueLabel.IssueID.Eq(req.ID)).Delete(); e != nil {
-			return e
-		}
 		if _, e := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 级联删子任务（parent_id 指向本 issue）+ 子任务的 label / 仓库分支关联。
+		// 级联删子任务（parent_id 指向本 issue）+ 子任务的仓库分支关联。
 		children, ce := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ParentID.Eq(req.ID)).Find()
 		if ce != nil {
 			return ce
@@ -422,9 +372,6 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 			if _, e := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.In(childIDs...)).Delete(); e != nil {
 				return e
 			}
-			if _, e := q.IssueLabel.WithContext(svc.Context).Where(q.IssueLabel.IssueID.In(childIDs...)).Delete(); e != nil {
-				return e
-			}
 			if _, e := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.In(childIDs...)).Delete(); e != nil {
 				return e
 			}
@@ -433,10 +380,10 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 	})
 }
 
-// assembleWithLabels 批量组装 issue 的 label 列表与关联仓库+分支列表（4 次查询避免 N+1）：
-// issues → t_issue_labels（按 issue_id 批查）→ t_workspace_labels（按 label_id 批查）
-// → t_issue_local_repositories（按 issue_id 批查）→ 按 issue 分组。
-func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*types.ProjectIssueResponseData, error) {
+// assembleWithType 批量组装 issue 的类型与关联仓库+分支列表（3 次查询避免 N+1）：
+// issues → t_workspace_types（按 type_id 批查）→ t_issue_local_repositories（按 issue_id 批查）
+// → 按 issue 组装（type 为单值，type_id=0 或类型已被删时为 null）。
+func (svc ProjectIssue) assembleWithType(issues []*model.ProjectIssue) ([]*types.ProjectIssueResponseData, error) {
 	result := make([]*types.ProjectIssueResponseData, 0, len(issues))
 	if len(issues) == 0 {
 		return result, nil
@@ -444,24 +391,18 @@ func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*typ
 	q := query.Use(svc.Orm)
 
 	issueIDs := make([]string, 0, len(issues))
+	typeIDSet := make(map[int]struct{})
 	for _, i := range issues {
 		issueIDs = append(issueIDs, i.ID)
-	}
-	issueLabels, err := q.IssueLabel.WithContext(svc.Context).Where(q.IssueLabel.IssueID.In(issueIDs...)).Find()
-	if err != nil {
-		return nil, err
+		if i.TypeID > 0 {
+			typeIDSet[i.TypeID] = struct{}{}
+		}
 	}
 	issueRepos, err := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.In(issueIDs...)).Find()
 	if err != nil {
 		return nil, err
 	}
 
-	issueToLabelIDs := make(map[string][]int, len(issues))
-	labelIDSet := make(map[int]struct{})
-	for _, il := range issueLabels {
-		issueToLabelIDs[il.IssueID] = append(issueToLabelIDs[il.IssueID], il.LabelID)
-		labelIDSet[il.LabelID] = struct{}{}
-	}
 	issueToRepoBranches := make(map[string][]types.IssueRepositoryBranch, len(issues))
 	for _, r := range issueRepos {
 		issueToRepoBranches[r.IssueID] = append(issueToRepoBranches[r.IssueID], types.IssueRepositoryBranch{
@@ -470,35 +411,29 @@ func (svc ProjectIssue) assembleWithLabels(issues []*model.ProjectIssue) ([]*typ
 		})
 	}
 
-	labelMap := make(map[int]*model.WorkspaceLabel, len(labelIDSet))
-	if len(labelIDSet) > 0 {
-		labelIDs := make([]int, 0, len(labelIDSet))
-		for id := range labelIDSet {
-			labelIDs = append(labelIDs, id)
+	typeMap := make(map[int]*model.WorkspaceType, len(typeIDSet))
+	if len(typeIDSet) > 0 {
+		typeIDs := make([]int, 0, len(typeIDSet))
+		for id := range typeIDSet {
+			typeIDs = append(typeIDs, id)
 		}
-		labels, e := q.WorkspaceLabel.WithContext(svc.Context).Where(q.WorkspaceLabel.ID.In(labelIDs...)).Find()
+		ts, e := q.WorkspaceType.WithContext(svc.Context).Where(q.WorkspaceType.ID.In(typeIDs...)).Find()
 		if e != nil {
 			return nil, e
 		}
-		for _, l := range labels {
-			labelMap[l.ID] = l
+		for _, t := range ts {
+			typeMap[t.ID] = t
 		}
 	}
 
 	for _, i := range issues {
-		labels := make([]*model.WorkspaceLabel, 0)
-		for _, lid := range issueToLabelIDs[i.ID] {
-			if l, ok := labelMap[lid]; ok {
-				labels = append(labels, l)
-			}
-		}
 		repoBranchList, ok := issueToRepoBranches[i.ID]
 		if !ok {
 			repoBranchList = []types.IssueRepositoryBranch{}
 		}
 		result = append(result, &types.ProjectIssueResponseData{
 			ProjectIssue:         i,
-			Labels:               labels,
+			Type:                 typeMap[i.TypeID], // map 取不到为 nil（未分类/类型已删）
 			RepositoryBranchList: repoBranchList,
 		})
 	}

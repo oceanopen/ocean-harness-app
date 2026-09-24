@@ -165,10 +165,10 @@
       "updateFailed": "Update failed: {{message}}",
       "deleted": "Issue deleted",
       "deleteFailed": "Delete failed: {{message}}",
-      "labelCreated": "Label \"{{name}}\" created",
-      "labelUpdated": "Label updated",
-      "labelDeleted": "Label deleted",
-      "labelOpFailed": "Label operation failed: {{message}}",
+      "typeCreated": "Type \"{{name}}\" created",
+      "typeUpdated": "Type updated",
+      "typeDeleted": "Type deleted",
+      "typeOpFailed": "Type operation failed: {{message}}",
       "moveFailed": "Move failed: {{message}}"
     },
     "detail": {
@@ -182,7 +182,7 @@
       "priority": "Priority",
       "startDate": "Start date",
       "targetDate": "Target date",
-      "labels": "Labels",
+      "type": "Type",
       "branch": "Branch",
       "branchPlaceholder": "Select or enter branch name",
       "branchNoRepoHint": "Associate a repository in project settings first",
@@ -203,21 +203,26 @@
       "placeholder": "Markdown supported: headings, lists, code, links (optional)"
     }
   },
-  "workspaceLabel": {
-    "title": "Manage workspace labels",
+  "workspaceType": {
+    "title": "Workspace type management",
     "name": "Name",
-    "namePlaceholder": "Enter or search label name",
+    "namePlaceholder": "Enter type name",
     "color": "Color",
     "description": "Description",
     "descriptionPlaceholder": "Optional",
-    "create": "New label",
+    "create": "New type",
     "save": "Save changes",
     "cancel": "Cancel",
     "close": "Close",
     "edit": "Edit",
     "delete": "Delete",
-    "deleteConfirmMsg": "Delete label \"{{name}}\"? It will be removed from all issues.",
-    "empty": "No labels"
+    "deleteConfirmMsg": "Delete type \"{{name}}\"? Issues using it will become uncategorized.",
+    "empty": "No types",
+    "uncategorized": "Uncategorized",
+    "defaultRequirement": "Requirement",
+    "defaultDefect": "Defect",
+    "add": "Add",
+    "adding": "Adding…"
   },
   "time": {
     "justNow": "just now",

@@ -93,14 +93,14 @@ func SetupRouter() *gin.Engine {
 				// 项目 ↔ 本地仓库 关联随 create/update 全量保存，ids 随项目响应返回（无独立读接口）。
 			}
 
-			// workspaceLabel 模块：标签 CRUD（action 风格，POST）。
-			workspaceLabelGroup := trackerGroup.Group("/workspaceLabel")
+			// workspaceType 模块：类型 CRUD（action 风格，POST）。
+			workspaceTypeGroup := trackerGroup.Group("/workspaceType")
 			{
-				workspaceLabelGroup.POST("/getList", controller.WorkspaceLabel{}.GetList)
-				workspaceLabelGroup.POST("/getInfo", controller.WorkspaceLabel{}.GetInfo)
-				workspaceLabelGroup.POST("/create", controller.WorkspaceLabel{}.Create)
-				workspaceLabelGroup.POST("/update", controller.WorkspaceLabel{}.Update)
-				workspaceLabelGroup.POST("/delete", controller.WorkspaceLabel{}.Delete)
+				workspaceTypeGroup.POST("/getList", controller.WorkspaceType{}.GetList)
+				workspaceTypeGroup.POST("/getInfo", controller.WorkspaceType{}.GetInfo)
+				workspaceTypeGroup.POST("/create", controller.WorkspaceType{}.Create)
+				workspaceTypeGroup.POST("/update", controller.WorkspaceType{}.Update)
+				workspaceTypeGroup.POST("/delete", controller.WorkspaceType{}.Delete)
 			}
 
 			// projectIssue 模块：issue CRUD + move（看板拖拽，action 风格，POST）。

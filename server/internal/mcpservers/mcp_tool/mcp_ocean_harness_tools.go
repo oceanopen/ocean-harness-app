@@ -24,7 +24,7 @@ type McpOceanHarnessTool struct {
 	mcputil.McpTool
 }
 
-// IssueGetInfo 获取 issue 详情（GetInfo 直通，含标签与关联仓库分支）。
+// IssueGetInfo 获取 issue 详情（GetInfo 直通，含类型与关联仓库分支）。
 func (mt McpOceanHarnessTool) IssueGetInfo(ctx context.Context, _ *mcp.ServerSession,
 	params *mcp.CallToolParamsFor[mcpdto.IssueIDArgs]) (*mcp.CallToolResultFor[mcpdto.IssueContent], error) {
 
@@ -177,8 +177,8 @@ func (mt McpOceanHarnessTool) partialUpdate(issueSvc *service.ProjectIssue, args
 }
 
 // buildIssueUpdateRequest 把部分更新入参合并到现值，产出 service.Update 的全量请求。
-// 现有 Update 是全量覆盖语义（Name/Description/StartDate/TargetDate 无条件覆写；labels 与
-// 关联仓库分支传空会清空关联），故须从 GetInfo 结果完整回填，仅覆盖显式给出的非空字段。
+// 现有 Update 是全量覆盖语义（Name/Description/StartDate/TargetDate 无条件覆写；typeId 与
+// 关联仓库分支传空会清空），故须从 GetInfo 结果完整回填，仅覆盖显式给出的非空字段。
 // 空串语义即「不改」（不支持经 MCP 置空字段，已写入工具描述）。
 func buildIssueUpdateRequest(cur *types.ProjectIssueResponseData, args *mcpdto.IssueUpdateArgs) *types.ProjectIssueUpdateRequest {
 	req := &types.ProjectIssueUpdateRequest{
@@ -190,11 +190,8 @@ func buildIssueUpdateRequest(cur *types.ProjectIssueResponseData, args *mcpdto.I
 		IsDraft:              cur.IsDraft,
 		StartDate:            cur.StartDate,
 		TargetDate:           cur.TargetDate,
-		LabelIDs:             make([]int, 0, len(cur.Labels)),
+		TypeID:               &cur.TypeID, // MCP 不支持改类型，原样回填现值（nil 语义不适用）
 		RepositoryBranchList: cur.RepositoryBranchList,
-	}
-	for _, l := range cur.Labels {
-		req.LabelIDs = append(req.LabelIDs, l.ID)
 	}
 	if args.Name != "" {
 		req.Name = args.Name
@@ -208,9 +205,9 @@ func buildIssueUpdateRequest(cur *types.ProjectIssueResponseData, args *mcpdto.I
 // —— Content 转换（service 出参 → mcp_dto 平铺镜像，时间转 RFC3339 字符串）——
 
 func newIssueContent(data *types.ProjectIssueResponseData) mcpdto.IssueContent {
-	labels := make([]mcpdto.IssueLabelContent, 0, len(data.Labels))
-	for _, l := range data.Labels {
-		labels = append(labels, mcpdto.IssueLabelContent{ID: l.ID, Name: l.Name, Color: l.Color})
+	var issueType *mcpdto.IssueTypeContent
+	if data.Type != nil {
+		issueType = &mcpdto.IssueTypeContent{ID: data.Type.ID, Name: data.Type.Name, Color: data.Type.Color}
 	}
 	repos := make([]mcpdto.IssueRepoBranchContent, 0, len(data.RepositoryBranchList))
 	for _, rb := range data.RepositoryBranchList {
@@ -232,7 +229,7 @@ func newIssueContent(data *types.ProjectIssueResponseData) mcpdto.IssueContent {
 		TargetDate:           issue.TargetDate,
 		CompletedAt:          formatTime(issue.CompletedAt),
 		SortOrder:            issue.SortOrder,
-		Labels:               labels,
+		Type:                 issueType,
 		RepositoryBranchList: repos,
 	}
 }

@@ -9,14 +9,11 @@ import (
 // 结构名取「单数、无 t_ 前缀」；表间无 DB 外键，此处 HasMany 为 gorm/gen 逻辑关联（仅生成结构体字段 + Preload）。
 // HasMany 在父表选项引用子表模板，故按「叶子优先」顺序创建。
 func GenModelTracker() {
-	issueLabel := G.GenerateModelAs("t_issue_labels", "IssueLabel",
-		// issue_id 逻辑指向 t_project_issues.id（TEXT uuid），覆盖全局 INTEGER→int 映射。
-		gen.FieldType("issue_id", "string"),
-	)
-	label := G.GenerateModelAs("t_workspace_labels", "WorkspaceLabel")
+	// 类型：workspace 级预定义（原「标签」，2026-09-24 更名），issue 经 t_project_issues.type_id 单值引用。
+	workspaceType := G.GenerateModelAs("t_workspace_types", "WorkspaceType")
 	// 项目 ↔ 本地仓库 多对多中间表：无关联关系，service 层手动 JOIN 查询（与表间无 DB 外键约定一致）。
 	projectLocalRepository := G.GenerateModelAs("t_project_local_repositories", "ProjectLocalRepository")
-	// issue ↔ 本地仓库+分支 关联表：issue_id 同为 TEXT uuid；service 层批量组装（同 t_issue_labels 模式）。
+	// issue ↔ 本地仓库+分支 关联表：issue_id 同为 TEXT uuid；service 层批量组装。
 	issueLocalRepository := G.GenerateModelAs("t_issue_local_repositories", "IssueLocalRepository",
 		gen.FieldType("issue_id", "string"),
 	)
@@ -30,14 +27,6 @@ func GenModelTracker() {
 		gen.FieldType("is_draft", "enums.YesNo"),
 		// completed_at 用 *time.Time 指针：未完成=nil（写 NULL）/ 完成=&time，便于 Save 统一处理可空语义。
 		gen.FieldType("completed_at", "*time.Time"),
-		gen.FieldRelate(field.HasMany, "IssueLabelList", issueLabel, &field.RelateConfig{
-			RelateSlicePointer: true,
-			GORMTag: field.GormTag{
-				"foreignKey": []string{"IssueID"}, // 子表 t_issue_labels.issue_id
-				"references": []string{"ID"},      // 父表 t_project_issues.id
-			},
-			JSONTag: "issueLabelList,omitempty",
-		}),
 		gen.FieldRelate(field.HasMany, "IssueLocalRepositoryList", issueLocalRepository, &field.RelateConfig{
 			RelateSlicePointer: true,
 			GORMTag: field.GormTag{
@@ -76,15 +65,15 @@ func GenModelTracker() {
 			},
 			JSONTag: "workspaceProjectList,omitempty",
 		}),
-		gen.FieldRelate(field.HasMany, "WorkspaceLabelList", label, &field.RelateConfig{
+		gen.FieldRelate(field.HasMany, "WorkspaceTypeList", workspaceType, &field.RelateConfig{
 			RelateSlicePointer: true,
 			GORMTag: field.GormTag{
-				"foreignKey": []string{"WorkspaceID"}, // 子表 t_workspace_labels.workspace_id
+				"foreignKey": []string{"WorkspaceID"}, // 子表 t_workspace_types.workspace_id
 				"references": []string{"ID"},          // 父表 t_workspaces.id
 			},
-			JSONTag: "workspaceLabelList,omitempty",
+			JSONTag: "workspaceTypeList,omitempty",
 		}),
 	)
 
-	G.ApplyBasic(workspace, project, issue, label, issueLabel, projectLocalRepository, issueLocalRepository)
+	G.ApplyBasic(workspace, project, issue, workspaceType, projectLocalRepository, issueLocalRepository)
 }

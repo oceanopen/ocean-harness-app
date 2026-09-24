@@ -19,7 +19,7 @@ type Workspace struct {
 	CreatedAt            time.Time           `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt            time.Time           `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 	WorkspaceProjectList []*WorkspaceProject `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceProjectList,omitempty"`
-	WorkspaceLabelList   []*WorkspaceLabel   `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceLabelList,omitempty"`
+	WorkspaceTypeList    []*WorkspaceType    `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceTypeList,omitempty"`
 }
 
 // TableName Workspace's table name

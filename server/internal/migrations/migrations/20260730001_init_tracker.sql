@@ -1,20 +1,20 @@
 -- +goose Up
--- 工作空间 / 项目 / Issue / 本地仓库 管理：基线 8 张业务表（最终态，已合并历次增量迁移：
+-- 工作空间 / 项目 / Issue / 本地仓库 管理：基线 7 张业务表（最终态，已合并历次增量迁移：
 -- 20260804001 local_repositories、20260804002 项目↔仓库中间表、20260811001 local_repository.default_branch、
--- issue 仓库+分支多选（曾为 issue 表两列/JSON 列，现独立关联表 t_issue_local_repositories））。
+-- issue 仓库+分支多选（曾为 issue 表两列/JSON 列，现独立关联表 t_issue_local_repositories）、
 -- 命名格式：YYYYMMDD + 三位序号 + _name.sql；启动时 goose 自动向前迁移（仅 Up，见 initialize/migrate.go）。
 --
 -- 约定：
 --   - 业务表统一 t_ 前缀，且表名带「所属关系」前缀：顶级 t_workspaces / t_local_repositories 保持，
 --     子表以直接父单数作前缀（t_workspace_projects / t_project_issues /
---     t_workspace_labels / t_issue_labels / t_project_local_repositories）；
+--     t_workspace_types / t_project_local_repositories）；
 --   - 主键统一自增 INTEGER（例外：t_project_issues.id 为 TEXT uuid）；
 --   - 公共字段 created_at/updated_at（DATETIME，gorm 自动维护）；【全部表物理删除】（单用户本地个人数据，
 --     无恢复需求，Delete 即 DELETE）；唯一索引随行删除自然释放；
 --   - 唯一索引 udx_ 前缀；命名 udx_{表名去t_}_{列名...}（SQLite 索引名 schema 级全局唯一，带表名段避免跨表重名）；
 --   - 普通索引：数据量较小，本期暂不建，后续按查询热点按 idx_{表名去t_}_{列名} 追加；
 --   - 【无 DB 外键约束】表间不建 FOREIGN KEY，跨表关联一律通过 SQL JOIN 或应用层组装查询；
---     数据级联清理（如删 workspace 连带清其下 project/issue/label）由 service 层手动处理；
+--     数据级联清理（如删 workspace 连带清其下 project/issue/type）由 service 层手动处理；
 --   - typed 枚举列（state_code / is_draft / priority）用 TEXT NOT NULL 无默认值，
 --     由代码显式赋值（避免 DEFAULT '' 触发 gorm 零值省略、静默存空串，见记忆 tracker-enum-pattern）。
 
@@ -46,7 +46,9 @@ CREATE TABLE t_workspace_projects (
 -- state_code 为固定 5 值 typed 枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，元数据见 enums.StateCatalog，
 -- 无 state_id/项目级状态行）；DONE 触发 issue.completed_at。
 -- parent_id 逻辑指向 t_project_issues.id，不建 DB 外键。
--- issue 关联的多仓库+分支在独立关联表 t_issue_local_repositories（同 label 关联 t_issue_labels 模式）。
+-- type_id 单值引用 t_workspace_types（每 issue 至多一个类型，0=未分类兜底；
+-- 删类型时由 service 层将引用的 issue.type_id 置 0）。
+-- issue 关联的多仓库+分支在独立关联表 t_issue_local_repositories。
 CREATE TABLE t_project_issues (
     id                  TEXT PRIMARY KEY,
     project_id          INTEGER  NOT NULL,
@@ -57,6 +59,7 @@ CREATE TABLE t_project_issues (
     priority            TEXT     NOT NULL,
     sort_order          REAL     NOT NULL DEFAULT 0,
     parent_id           TEXT,
+    type_id             INTEGER  NOT NULL DEFAULT 0,
     start_date          TEXT,
     target_date         TEXT,
     completed_at        DATETIME,
@@ -65,8 +68,9 @@ CREATE TABLE t_project_issues (
     updated_at          DATETIME NOT NULL
 );
 
--- t_workspace_labels：标签，所属 workspace；所有项目共享一套通用标签（无 project 级归属）。
-CREATE TABLE t_workspace_labels (
+-- t_workspace_types：类型，所属 workspace；所有项目共享一套通用类型（无 project 级归属）。
+-- 「必选、新建默认需求」为前端语义（类型列表含「需求」时默认选中），后端不强制校验 type_id>0。
+CREATE TABLE t_workspace_types (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     workspace_id INTEGER  NOT NULL,
     name         TEXT     NOT NULL,
@@ -76,16 +80,6 @@ CREATE TABLE t_workspace_labels (
     created_at   DATETIME NOT NULL,
     updated_at   DATETIME NOT NULL
 );
-
--- t_issue_labels：issue ↔ label 多对多关联，所属 issue。
-CREATE TABLE t_issue_labels (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    issue_id   TEXT     NOT NULL,
-    label_id   INTEGER  NOT NULL,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
-);
-CREATE UNIQUE INDEX udx_issue_labels_issue_id_label_id ON t_issue_labels (issue_id, label_id);
 
 -- t_local_repositories：本地仓库（顶层资源，无 workspace 归属）。
 -- sub_dir_list 存 JSON 文本（monorepo 子目录列表），由 service 层负责 []RepoSubDir ↔ JSON 序列化。

@@ -13,7 +13,7 @@ import {
   KeyboardArrowDownRounded as KeyboardArrowDownRoundedIcon,
   KeyboardArrowRightRounded as KeyboardArrowRightRoundedIcon,
 } from '@mui/icons-material';
-import { Box, IconButton, Typography } from '@mui/material';
+import { Box, Chip, IconButton, Typography } from '@mui/material';
 import { formatDate } from '@src/shared/time';
 import { STATE_MAP } from '@src/state/tracker';
 import { PRIORITY_COLOR } from '@src/windows/panel/TrackerPage/components/priorityMeta';
@@ -81,7 +81,7 @@ export interface IssueCardProps {
 // 列表/看板差异由调用方决定：看板在外层包 Draggable（经 dnd 透传）支持拖拽，列表不包、纵向排列、外加分组显示/隐藏。
 // 左右布局：左侧三行内容，右侧新增子/编辑按钮列（相对卡片整体上下居中；tracker 场景才渲染操作列）。
 // 三行内容：首行 [拖拽标识] 标题；第二行 [占位] [优先级] [状态]；
-// 第三行 [展开/占位] 标签颜色横杠 目标日期 子任务进度（统一左对齐，不展示 id 尾 8 位）。
+// 第三行 [展开/占位] 类型徽章 目标日期 子任务进度（统一左对齐，不展示 id 尾 8 位）。
 // 点击卡片主体：onCardClick 优先，否则 onEdit 打开编辑抽屉；子任务列表显隐仅由首行左侧展开图标控制。
 // 所有 icon/button 不挂 Tooltip（避免遮挡鼠标），改用 aria-label。
 function IssueCard({
@@ -319,20 +319,21 @@ function IssueCard({
       <Typography variant="caption" color="inherit" sx={{ lineHeight: 1 }}>{formatDate(issue.targetDate, 'YYYY-MM-DD')}</Typography>
     </Box>
   );
-  // 标签颜色横杠（列表/看板一致），不做 flex 拉伸，与日期/进度统一左对齐；全部展示可换行。
-  const labelBars = issue.labels.length > 0 && (
-    <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: 0.25, flexWrap: 'wrap' }}>
-      {issue.labels.map(l => (
-        <Box key={l.id} sx={{ width: 24, height: 4, borderRadius: 1, bgcolor: l.color }} />
-      ))}
-    </Box>
+  // 类型名文字徽章（单值，列表/看板一致），按类型色着色，不做 flex 拉伸，与日期/进度统一左对齐。
+  const typeBadge = issue.type && (
+    <Chip
+      label={issue.type.name}
+      size="small"
+      variant="outlined"
+      sx={{ height: 16, borderColor: issue.type.color || undefined, color: issue.type.color || undefined, flexShrink: 0 }}
+    />
   );
 
   // 卡片主体（首行/第二行/第三行），列表/看板共用同一布局；占根布局左侧（flex:1），
   // 新增子/编辑按钮在根布局右侧独立成列、垂直居中（见 render 处）。
   const cardBodyEl = (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, minWidth: 0 }}>
-      {/* 三行各自固定高度（24/24/24），内容垂直居中——任何字段组合（有无子任务展开钮/日期/进度/标签）
+      {/* 三行各自固定高度（24/24/24），内容垂直居中——任何字段组合（有无子任务展开钮/日期/进度/类型）
           卡片高度都完全一致，不再受行内元素实际高度影响 */}
       {/* 首行：拖拽标识 标题（所有场景均不展示 id 尾 8 位，标题占满剩余空间） */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
@@ -345,12 +346,12 @@ function IssueCard({
         {priorityBadge}
         {stateBadge}
       </Box>
-      {/* 第三行：展开/占位 标签颜色横杠 目标日期 子任务进度，统一左对齐。
-          渲染条件含 hasChildren：展开图标在本行，无标签/日期/进度的父卡片也要渲染以保留展开入口 */}
-      {(issue.labels.length > 0 || !!issue.targetDate || (stat?.total ?? 0) > 0 || hasChildren) && (
+      {/* 第三行：展开/占位 类型徽章 目标日期 子任务进度，统一左对齐。
+          渲染条件含 hasChildren：展开图标在本行，无类型/日期/进度的父卡片也要渲染以保留展开入口 */}
+      {(!!issue.type || !!issue.targetDate || (stat?.total ?? 0) > 0 || hasChildren) && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, height: 24 }}>
           {gutter}
-          {labelBars}
+          {typeBadge}
           {dateEl}
           {progressEl}
         </Box>

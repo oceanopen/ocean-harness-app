@@ -2,10 +2,10 @@ import type { WorkspaceModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
   Autorenew as AutorenewIcon,
+  CategoryOutlined as CategoryOutlinedIcon,
   CheckOutlined as CheckOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
-  SellOutlined as SellOutlinedIcon,
   TagOutlined as TagOutlinedIcon,
   WorkspacesOutlined as WorkspacesOutlinedIcon,
 } from '@mui/icons-material';
@@ -33,7 +33,7 @@ import { useToast } from '@src/shared/useToast';
 import { useDeleteWorkspace, useTrackerStore, useWorkspaces } from '@src/state/tracker';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import WorkspaceLabelManagerDrawer from '../ProjectIssueDrawer/WorkspaceLabelManagerDrawer';
+import WorkspaceTypeManagerDrawer from '../ProjectIssueDrawer/WorkspaceTypeManagerDrawer';
 import WorkspaceDrawer from './WorkspaceDrawer';
 
 const truncateSx = {
@@ -59,7 +59,7 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
   const [searchName, setSearchName] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<WorkspaceModel | null>(null);
-  const [labelManagerTarget, setLabelManagerTarget] = useState<WorkspaceModel | null>(null);
+  const [typeManagerTarget, setTypeManagerTarget] = useState<WorkspaceModel | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceModel | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -224,7 +224,7 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
                 isActive={ws.id === activeWorkspaceId}
                 onSelect={onSelect}
                 onEdit={setEditTarget}
-                onManageLabels={setLabelManagerTarget}
+                onManageTypes={setTypeManagerTarget}
                 onDelete={setDeleteTarget}
               />
             ))}
@@ -250,10 +250,10 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
         />
       )}
 
-      {labelManagerTarget && (
-        <WorkspaceLabelManagerDrawer
-          workspaceId={labelManagerTarget.id}
-          onClose={() => setLabelManagerTarget(null)}
+      {typeManagerTarget && (
+        <WorkspaceTypeManagerDrawer
+          workspaceId={typeManagerTarget.id}
+          onClose={() => setTypeManagerTarget(null)}
         />
       )}
 
@@ -275,18 +275,18 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
   );
 }
 
-// 单卡片：整卡可点击进入（onSelect）；Header 放标签管理/编辑/删除图标（stopPropagation 避免触发进入）；
+// 单卡片：整卡可点击进入（onSelect）；Header 放类型管理/编辑/删除图标（stopPropagation 避免触发进入）；
 // Content 放 slug/描述/更新时间。height:100% + flex column 保证网格内同行卡片等高。
 interface WorkspaceCardProps {
   ws: WorkspaceModel;
   isActive: boolean;
   onSelect: (ws: WorkspaceModel) => void;
   onEdit: (ws: WorkspaceModel) => void;
-  onManageLabels: (ws: WorkspaceModel) => void;
+  onManageTypes: (ws: WorkspaceModel) => void;
   onDelete: (ws: WorkspaceModel) => void;
 }
 
-function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageLabels, onDelete }: WorkspaceCardProps) {
+function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete }: WorkspaceCardProps) {
   const { t } = useTranslation();
   const hasDescription = ws.description.trim().length > 0;
 
@@ -316,11 +316,11 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageLabels, onDelet
               size="small"
               onClick={(e) => {
                 e.stopPropagation();
-                onManageLabels(ws);
+                onManageTypes(ws);
               }}
-              aria-label={t('tracker:workspaceLabel.title')}
+              aria-label={t('tracker:workspaceType.title')}
             >
-              <SellOutlinedIcon />
+              <CategoryOutlinedIcon />
             </IconButton>
             <IconButton
               size="small"

@@ -34,14 +34,14 @@ func init() {
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name:        "issue_get_info",
-		Description: "获取 issue 详情（标题、描述、状态、优先级、标签、关联仓库与基准分支、父子关系）。",
+		Description: "获取 issue 详情（标题、描述、状态、优先级、类型、关联仓库与基准分支、父子关系）。",
 	}, mcptool.McpOceanHarnessTool{}.IssueGetInfo)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "issue_update",
-		Description: "部分更新 issue：stateCode/name/description 仅更新传入的非空字段，其余字段（含标签、" +
-			"关联仓库分支、日期）保留原值。stateCode 变化触发完成时间流转与父子状态联动" +
-			"（父任务状态变化级联子任务；全部子任务完成后父任务自动完成）。",
+		Description: "部分更新 issue：stateCode/name/description 仅更新传入的非空字段，其余字段（含类型、" +
+			"关联仓库分支、日期）保留原值。stateCode 变化触发完成时间流转（DONE 记录完成时间）；" +
+			"父子状态独立变更不级联，唯一联动是全部子任务完成后父任务自动完成。",
 	}, mcptool.McpOceanHarnessTool{}.IssueUpdate)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{

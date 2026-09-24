@@ -61,15 +61,15 @@ type IssueContent struct {
 	TargetDate           string                   `json:"targetDate,omitempty" jsonschema:"目标日期（yyyy-mm-dd），留空表示未设置"`
 	CompletedAt          string                   `json:"completedAt,omitempty" jsonschema:"完成时间（RFC3339），留空表示未完成"`
 	SortOrder            float64                  `json:"sortOrder" jsonschema:"看板排序权重（升序）"`
-	Labels               []IssueLabelContent      `json:"labels" jsonschema:"标签列表"`
+	Type                 *IssueTypeContent        `json:"type,omitempty" jsonschema:"issue 类型（单值），留空表示未分类"`
 	RepositoryBranchList []IssueRepoBranchContent `json:"repositoryBranchList" jsonschema:"关联仓库与基准分支列表"`
 }
 
-// IssueLabelContent 是 issue 标签的出参项。
-type IssueLabelContent struct {
-	ID    int    `json:"id" jsonschema:"标签 id"`
-	Name  string `json:"name" jsonschema:"标签名"`
-	Color string `json:"color,omitempty" jsonschema:"标签颜色（如 #ff5050，留空表示无色）"`
+// IssueTypeContent 是 issue 类型的出参（单值）。
+type IssueTypeContent struct {
+	ID    int    `json:"id" jsonschema:"类型 id"`
+	Name  string `json:"name" jsonschema:"类型名"`
+	Color string `json:"color,omitempty" jsonschema:"类型颜色（如 #ff5050，留空表示无色）"`
 }
 
 // IssueRepoBranchContent 是 issue 关联仓库+分支的出参项。

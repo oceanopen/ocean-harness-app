@@ -16,7 +16,7 @@ type ProjectIssueGetListRequest struct {
 	OrderBy   string          `json:"orderBy"` // created_at/sort_order/priority，空则 sort_order
 	StateCode enums.StateCode `json:"stateCode"`
 	Priority  enums.Priority  `json:"priority"`
-	LabelID   int             `json:"labelId"`
+	TypeID    int             `json:"typeId"` // >0 按类型筛选（issue.type_id 单值等值匹配）
 	Keyword   string          `json:"keyword"`
 }
 
@@ -45,13 +45,13 @@ type ProjectIssueCreateRequest struct {
 	TargetDate           string                  `json:"targetDate" binding:"omitempty"`
 	StateCode            enums.StateCode         `json:"stateCode"`            // 空值 → 默认 BACKLOG
 	ParentID             string                  `json:"parentId"`             // ""=顶级，非空=子任务（须与父同 project，仅一层）
-	LabelIDs             []int                   `json:"labelIds"`             // 全量覆盖该 issue 的 label 关联
+	TypeID               int                     `json:"typeId"`               // issue 类型（t_workspace_types 单值引用，0=未分类；必选默认由前端保证）
 	RepositoryBranchList []IssueRepositoryBranch `json:"repositoryBranchList"` // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
 }
 
 // ProjectIssueUpdateRequest 是 POST /api/tracker/projectIssue/update 的入参。
 // stateCode 变化触发 completed_at 流转：DONE→写 now，否则清 NULL。
-// labelIds 全量覆盖该 issue 的 label 关联（事务内 diff：删多余/插入新增）。
+// typeId 为 *int：nil=保留原值（MCP 部分更新回填现值），非 nil 覆写（0=未分类）。
 // 不变更 projectId/workspaceId/sortOrder（sortOrder 后续拖拽迭代维护）。
 type ProjectIssueUpdateRequest struct {
 	ID                   string                  `json:"id" binding:"required"`
@@ -62,7 +62,7 @@ type ProjectIssueUpdateRequest struct {
 	IsDraft              enums.YesNo             `json:"isDraft"`
 	StartDate            string                  `json:"startDate" binding:"omitempty"`
 	TargetDate           string                  `json:"targetDate" binding:"omitempty"`
-	LabelIDs             []int                   `json:"labelIds"`             // 全量覆盖该 issue 的 label 关联
+	TypeID               *int                    `json:"typeId"`               // nil=保留原值，0=置为未分类
 	RepositoryBranchList []IssueRepositoryBranch `json:"repositoryBranchList"` // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
 }
 
@@ -81,11 +81,11 @@ type ProjectIssueDeleteRequest struct {
 }
 
 // ProjectIssueResponseData 是 issue 的响应：嵌入 DO（JSON 平铺 issue 字段）+ 应用层组装的
-// label 列表与关联仓库+分支列表（来自 t_issue_local_repositories 批量组装，见 assembleWithLabels）。
-// completedAt 为 *time.Time：未完成=null / 完成=时间。
+// 类型与关联仓库+分支列表（来自 t_issue_local_repositories 批量组装，见 assembleWithType）。
+// completedAt 为 *time.Time：未完成=null / 完成=时间；type 为单值（type_id=0 时为 null）。
 // 注：DO 的 IssueLocalRepositoryList 从不 Preload（手动批量组装），omitempty 恒不输出。
 type ProjectIssueResponseData struct {
 	*model.ProjectIssue
-	Labels               []*model.WorkspaceLabel `json:"labels"`
+	Type                 *model.WorkspaceType    `json:"type"`
 	RepositoryBranchList []IssueRepositoryBranch `json:"repositoryBranchList"`
 }

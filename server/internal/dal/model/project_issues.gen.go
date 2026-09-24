@@ -28,7 +28,7 @@ type ProjectIssue struct {
 	IsDraft                  enums.YesNo             `gorm:"column:is_draft;type:TEXT;not null" json:"isDraft"`
 	CreatedAt                time.Time               `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt                time.Time               `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	IssueLabelList           []*IssueLabel           `gorm:"foreignKey:IssueID;references:ID" json:"issueLabelList,omitempty"`
+	TypeID                   int                     `gorm:"column:type_id;type:INTEGER;not null" json:"typeId"`
 	IssueLocalRepositoryList []*IssueLocalRepository `gorm:"foreignKey:IssueID;references:ID" json:"issueLocalRepositoryList,omitempty"`
 }
 

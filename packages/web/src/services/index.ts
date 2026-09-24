@@ -46,15 +46,6 @@ export type {
   ProjectIssueUpdateRequest,
 } from './ProjectIssueService';
 
-export { WorkspaceLabelService } from './WorkspaceLabelService';
-export type {
-  WorkspaceLabelCreateRequest,
-  WorkspaceLabelDeleteRequest,
-  WorkspaceLabelGetListRequest,
-  WorkspaceLabelModel,
-  WorkspaceLabelUpdateRequest,
-} from './WorkspaceLabelService';
-
 export { WorkspaceProjectService } from './WorkspaceProjectService';
 export type {
   WorkspaceProjectCreateRequest,
@@ -72,3 +63,12 @@ export type {
   WorkspaceModel,
   WorkspaceUpdateRequest,
 } from './WorkspaceService';
+
+export { WorkspaceTypeService } from './WorkspaceTypeService';
+export type {
+  WorkspaceTypeCreateRequest,
+  WorkspaceTypeDeleteRequest,
+  WorkspaceTypeGetListRequest,
+  WorkspaceTypeModel,
+  WorkspaceTypeUpdateRequest,
+} from './WorkspaceTypeService';

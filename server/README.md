@@ -53,7 +53,7 @@ server/
 
 ## API 统一规范（tracker 域）
 
-tracker 业务域（workspace / project / issue / state / label）的所有接口遵循统一范式，作为后续模块的基线。
+tracker 业务域（workspace / project / issue / state / type）的所有接口遵循统一范式，作为后续模块的基线。
 
 **数据流**：`router → controller（嵌 apis.Api）→ service（嵌 apis.Service）→ dal(query/model)`。运行期依赖（ctx / Orm / Logger）由 controller 链式灌入 service，service 方法只收 request DTO，不用全局态。
 
@@ -197,7 +197,7 @@ pnpm tauri:dev     # Rust 拉起 sidecar 并打开客户端，端口 9000
 
 ## gorm/gen 代码生成（DO 层）
 
-业务表（workspace/project/state/issue/label 等）的 DO 层（`PO` 结构体 + 类型安全 CRUD）由 [gorm/gen](https://github.com/go-gorm/gen) 按**当前 sqlite 实际表结构**自动生成，落在 `internal/dal/`：
+业务表（workspace/project/state/issue/type 等）的 DO 层（`PO` 结构体 + 类型安全 CRUD）由 [gorm/gen](https://github.com/go-gorm/gen) 按**当前 sqlite 实际表结构**自动生成，落在 `internal/dal/`：
 
 - `internal/dal/query/`（package `query`）：query 层 + `gen.go`（`Use(db)` / `Query` / `WithContext` / `Transaction`）。
 - `internal/dal/model/`（package `model`）：各表 `PO` 结构体（如 `model.Workspace`）。

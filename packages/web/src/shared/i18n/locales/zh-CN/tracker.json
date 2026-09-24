@@ -165,10 +165,10 @@
       "updateFailed": "更新失败：{{message}}",
       "deleted": "Issue 已删除",
       "deleteFailed": "删除失败：{{message}}",
-      "labelCreated": "标签「{{name}}」已创建",
-      "labelUpdated": "标签已更新",
-      "labelDeleted": "标签已删除",
-      "labelOpFailed": "标签操作失败：{{message}}",
+      "typeCreated": "类型「{{name}}」已创建",
+      "typeUpdated": "类型已更新",
+      "typeDeleted": "类型已删除",
+      "typeOpFailed": "类型操作失败：{{message}}",
       "moveFailed": "移动失败：{{message}}"
     },
     "detail": {
@@ -182,7 +182,7 @@
       "priority": "优先级",
       "startDate": "开始日期",
       "targetDate": "目标日期",
-      "labels": "标签",
+      "type": "类型",
       "branch": "关联分支",
       "branchPlaceholder": "选择或输入分支名",
       "branchNoRepoHint": "请先在项目设置中关联仓库",
@@ -203,21 +203,26 @@
       "placeholder": "支持 Markdown：标题、列表、代码、链接等（选填）"
     }
   },
-  "workspaceLabel": {
-    "title": "管理工作空间标签",
+  "workspaceType": {
+    "title": "工作空间类型管理",
     "name": "名称",
-    "namePlaceholder": "输入标签名称或搜索",
+    "namePlaceholder": "输入类型名称",
     "color": "颜色",
     "description": "描述",
     "descriptionPlaceholder": "选填",
-    "create": "新建标签",
+    "create": "新建类型",
     "save": "保存修改",
     "cancel": "取消",
     "close": "关闭",
     "edit": "编辑",
     "delete": "删除",
-    "deleteConfirmMsg": "确认删除标签「{{name}}」？将自动从所有 Issue 上移除。",
-    "empty": "暂无标签"
+    "deleteConfirmMsg": "确认删除类型「{{name}}」？引用该类型的 Issue 将置为未分类。",
+    "empty": "暂无类型",
+    "uncategorized": "未分类",
+    "defaultRequirement": "需求",
+    "defaultDefect": "缺陷",
+    "add": "添加",
+    "adding": "添加中…"
   },
   "time": {
     "justNow": "刚刚",

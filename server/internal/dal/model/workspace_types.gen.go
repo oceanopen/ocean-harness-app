@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-const TableNameWorkspaceLabel = "t_workspace_labels"
+const TableNameWorkspaceType = "t_workspace_types"
 
-// WorkspaceLabel mapped from table <t_workspace_labels>
-type WorkspaceLabel struct {
+// WorkspaceType mapped from table <t_workspace_types>
+type WorkspaceType struct {
 	ID          int       `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
 	WorkspaceID int       `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
 	Name        string    `gorm:"column:name;type:TEXT;not null" json:"name"`
@@ -22,7 +22,7 @@ type WorkspaceLabel struct {
 	UpdatedAt   time.Time `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 }
 
-// TableName WorkspaceLabel's table name
-func (*WorkspaceLabel) TableName() string {
-	return TableNameWorkspaceLabel
+// TableName WorkspaceType's table name
+func (*WorkspaceType) TableName() string {
+	return TableNameWorkspaceType
 }

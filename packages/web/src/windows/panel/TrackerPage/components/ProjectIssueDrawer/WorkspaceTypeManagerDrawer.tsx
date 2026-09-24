@@ -1,4 +1,4 @@
-import type { WorkspaceLabelModel } from '@src/services';
+import type { WorkspaceTypeModel } from '@src/services';
 import {
   AddOutlined as AddOutlinedIcon,
   CloseOutlined as CloseOutlinedIcon,
@@ -16,13 +16,13 @@ import {
   DialogTitle,
   Divider,
   IconButton,
-  Snackbar,
   TextField,
   Typography,
 } from '@mui/material';
-import { WorkspaceLabelService } from '@src/services';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
-import { useCallback, useEffect, useState } from 'react';
+import { useToast } from '@src/shared/useToast';
+import { useCreateWorkspaceType, useDeleteWorkspaceType, useUpdateWorkspaceType, useWorkspaceTypes } from '@src/state/tracker';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // 预设色板（与 plane 默认状态色系接近），勾选 + 可手填 hex。
@@ -38,50 +38,39 @@ const COLOR_PRESETS = [
   '#64748b',
 ];
 
-type ToastSeverity = 'success' | 'error';
-
-// workspace 标签管理抽屉（CRUD）：顶部新建/编辑表单（name + 色板/hex + description）+ 已有标签列表。
-// 由父组件按需挂载，标签列表自加载：挂载即按 workspaceId 拉取，每次 CRUD 后内部重拉刷新。
+// workspace 类型管理抽屉（CRUD）：顶部新建/编辑表单（name + 色板/hex + description）+ 已有类型列表。
+// 类型列表走 TanStack Query 共享缓存（issue 抽屉同源），mutation 内部 invalidate，无需 onChanged 桥接。
 // create 不传 sortOrder（后端 MAX+10000）；update 直接覆盖 color/description；
-// delete 级联清 projectIssue 关联。每次变更后调 onChanged 通知父级同步（如需）。
-interface LabelManagerDrawerProps {
+// delete 将引用该类型的 issue 置为未分类。
+// 列表为空时展示「需求」「缺陷」两条默认建议项（含预设色），点「添加」才真正落库生效。
+interface TypeManagerDrawerProps {
   workspaceId: number;
   onClose: () => void;
-  onChanged?: () => void;
 }
 
-function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelManagerDrawerProps) {
+// 默认建议类型（仅空列表时展示，点添加才落库）：需求=蓝、缺陷=红。
+const DEFAULT_TYPE_PRESETS = [
+  { nameKey: 'tracker:workspaceType.defaultRequirement', color: '#3b82f6' },
+  { nameKey: 'tracker:workspaceType.defaultDefect', color: '#ef4444' },
+] as const;
+
+function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerProps) {
   const { t } = useTranslation();
-  const [labels, setLabels] = useState<WorkspaceLabelModel[]>([]);
+  const { show: showToast, snack } = useToast();
+  const typesQuery = useWorkspaceTypes(workspaceId);
+  const types = typesQuery.data ?? [];
+  const createType = useCreateWorkspaceType(workspaceId);
+  const updateType = useUpdateWorkspaceType(workspaceId);
+  const deleteType = useDeleteWorkspaceType(workspaceId);
   const [editId, setEditId] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [color, setColor] = useState(COLOR_PRESETS[0]);
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [creatingDefault, setCreatingDefault] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<WorkspaceLabelModel | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceTypeModel | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
-  const [toastOpen, setToastOpen] = useState(false);
-
-  const showToast = useCallback((text: string, severity: ToastSeverity) => {
-    setToast({ text, severity });
-    setToastOpen(true);
-  }, []);
-
-  // 拉取当前 workspace 全量标签（挂载时 + 每次 CRUD 成功后）。
-  const loadLabels = useCallback(async () => {
-    try {
-      setLabels(await WorkspaceLabelService.getList({ workspaceId }));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      showToast(t('tracker:projectIssue.toast.labelOpFailed', { message: msg }), 'error');
-    }
-  }, [workspaceId, showToast, t]);
-
-  useEffect(() => {
-    void loadLabels();
-  }, [loadLabels]);
 
   const isEdit = editId !== null;
   const canSubmit = name.trim().length > 0 && !submitting;
@@ -94,11 +83,11 @@ function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelM
     setError(null);
   };
 
-  const startEdit = (l: WorkspaceLabelModel) => {
-    setEditId(l.id);
-    setName(l.name);
-    setColor(l.color || COLOR_PRESETS[0]);
-    setDescription(l.description);
+  const startEdit = (ty: WorkspaceTypeModel) => {
+    setEditId(ty.id);
+    setName(ty.name);
+    setColor(ty.color || COLOR_PRESETS[0]);
+    setDescription(ty.description);
     setError(null);
   };
 
@@ -108,20 +97,32 @@ function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelM
     try {
       const payload = { name: name.trim(), color: color.trim(), description: description.trim() };
       if (isEdit && editId !== null) {
-        await WorkspaceLabelService.update({ id: editId, ...payload });
-        showToast(t('tracker:projectIssue.toast.labelUpdated'), 'success');
+        await updateType.mutateAsync({ id: editId, ...payload });
+        showToast(t('tracker:projectIssue.toast.typeUpdated'), 'success');
       } else {
-        await WorkspaceLabelService.create({ workspaceId, ...payload });
-        showToast(t('tracker:projectIssue.toast.labelCreated', { name: payload.name }), 'success');
+        await createType.mutateAsync({ workspaceId, ...payload });
+        showToast(t('tracker:projectIssue.toast.typeCreated', { name: payload.name }), 'success');
       }
-      await loadLabels();
-      onChanged?.();
       resetForm();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(t('tracker:projectIssue.toast.labelOpFailed', { message: msg }));
+      setError(t('tracker:projectIssue.toast.typeOpFailed', { message: msg }));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // 空列表默认建议项：点「添加」才落库（前端预填，提交生效）。
+  const handleCreateDefault = async (preset: (typeof DEFAULT_TYPE_PRESETS)[number]) => {
+    setCreatingDefault(preset.nameKey);
+    try {
+      await createType.mutateAsync({ workspaceId, name: t(preset.nameKey), color: preset.color });
+      showToast(t('tracker:projectIssue.toast.typeCreated', { name: t(preset.nameKey) }), 'success');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      showToast(t('tracker:projectIssue.toast.typeOpFailed', { message: msg }), 'error');
+    } finally {
+      setCreatingDefault(null);
     }
   };
 
@@ -131,17 +132,15 @@ function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelM
     }
     setDeleting(true);
     try {
-      await WorkspaceLabelService.delete({ id: deleteTarget.id });
-      showToast(t('tracker:projectIssue.toast.labelDeleted'), 'success');
+      await deleteType.mutateAsync(deleteTarget.id);
+      showToast(t('tracker:projectIssue.toast.typeDeleted'), 'success');
       if (editId === deleteTarget.id) {
         resetForm();
       }
       setDeleteTarget(null);
-      await loadLabels();
-      onChanged?.();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      showToast(t('tracker:projectIssue.toast.labelOpFailed', { message: msg }), 'error');
+      showToast(t('tracker:projectIssue.toast.typeOpFailed', { message: msg }), 'error');
     } finally {
       setDeleting(false);
     }
@@ -158,9 +157,9 @@ function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelM
         {/* 头部 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
-            {t('tracker:workspaceLabel.title')}
+            {t('tracker:workspaceType.title')}
           </Typography>
-          <IconButton size="small" onClick={onClose} disabled={submitting || deleting} aria-label={t('tracker:workspaceLabel.close')}>
+          <IconButton size="small" onClick={onClose} disabled={submitting || deleting} aria-label={t('tracker:workspaceType.close')}>
             <CloseOutlinedIcon fontSize="small" />
           </IconButton>
         </Box>
@@ -169,8 +168,8 @@ function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelM
         <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           {/* 新建/编辑表单 */}
           <TextField
-            label={t('tracker:workspaceLabel.name')}
-            placeholder={t('tracker:workspaceLabel.namePlaceholder')}
+            label={t('tracker:workspaceType.name')}
+            placeholder={t('tracker:workspaceType.namePlaceholder')}
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -182,7 +181,7 @@ function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelM
             disabled={submitting}
           />
           <Box>
-            <Typography variant="caption" color="text.secondary">{t('tracker:workspaceLabel.color')}</Typography>
+            <Typography variant="caption" color="text.secondary">{t('tracker:workspaceType.color')}</Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.5, alignItems: 'center' }}>
               {COLOR_PRESETS.map(c => (
                 <Box
@@ -214,8 +213,8 @@ function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelM
             </Box>
           </Box>
           <TextField
-            label={t('tracker:workspaceLabel.description')}
-            placeholder={t('tracker:workspaceLabel.descriptionPlaceholder')}
+            label={t('tracker:workspaceType.description')}
+            placeholder={t('tracker:workspaceType.descriptionPlaceholder')}
             value={description}
             onChange={(e) => {
               setDescription(e.target.value);
@@ -238,72 +237,84 @@ function WorkspaceLabelManagerDrawer({ workspaceId, onClose, onChanged }: LabelM
               onClick={handleCreateOrUpdate}
               disabled={!canSubmit}
             >
-              {isEdit ? t('tracker:workspaceLabel.save') : t('tracker:workspaceLabel.create')}
+              {isEdit ? t('tracker:workspaceType.save') : t('tracker:workspaceType.create')}
             </Button>
             {isEdit && (
               <Button color="inherit" size="small" onClick={resetForm} disabled={submitting}>
-                {t('tracker:workspaceLabel.cancel')}
+                {t('tracker:workspaceType.cancel')}
               </Button>
             )}
           </Box>
 
-          {labels.length > 0 && <Divider sx={{ my: 0.5 }} />}
+          {types.length > 0 && <Divider sx={{ my: 0.5 }} />}
 
-          {/* 已有标签列表 */}
-          {labels.map(l => (
-            <Box key={l.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: l.color || 'text.disabled', flexShrink: 0 }} />
-              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{l.name}</Typography>
-              {l.description && <Chip label={l.description} size="small" variant="outlined" sx={{ maxWidth: 160 }} />}
-              <IconButton size="small" onClick={() => startEdit(l)} aria-label={t('tracker:workspaceLabel.edit')}>
+          {/* 已有类型列表 */}
+          {types.map(ty => (
+            <Box key={ty.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: ty.color || 'text.disabled', flexShrink: 0 }} />
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{ty.name}</Typography>
+              {ty.description && <Chip label={ty.description} size="small" variant="outlined" sx={{ maxWidth: 160 }} />}
+              <IconButton size="small" onClick={() => startEdit(ty)} aria-label={t('tracker:workspaceType.edit')}>
                 <EditOutlinedIcon />
               </IconButton>
-              <IconButton size="small" onClick={() => setDeleteTarget(l)} aria-label={t('tracker:workspaceLabel.delete')}>
+              <IconButton size="small" onClick={() => setDeleteTarget(ty)} aria-label={t('tracker:workspaceType.delete')}>
                 <DeleteOutlinedIcon />
               </IconButton>
             </Box>
           ))}
-          {labels.length === 0 && (
-            <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 1 }}>
-              {t('tracker:workspaceLabel.empty')}
-            </Typography>
+          {types.length === 0 && !typesQuery.isLoading && (
+            <>
+              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 1 }}>
+                {t('tracker:workspaceType.empty')}
+              </Typography>
+              {/* 默认建议类型（需求/缺陷）：点「添加」才落库生效 */}
+              {DEFAULT_TYPE_PRESETS.map(preset => (
+                <Box key={preset.nameKey} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: preset.color, flexShrink: 0 }} />
+                  <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{t(preset.nameKey)}</Typography>
+                  <Button
+                    size="small"
+                    startIcon={<AddOutlinedIcon />}
+                    onClick={() => void handleCreateDefault(preset)}
+                    disabled={creatingDefault !== null}
+                  >
+                    {creatingDefault === preset.nameKey
+                      ? t('tracker:workspaceType.adding')
+                      : t('tracker:workspaceType.add')}
+                  </Button>
+                </Box>
+              ))}
+            </>
           )}
         </Box>
 
         {/* 底部操作栏：一律左对齐 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
           <Button color="inherit" onClick={onClose} disabled={submitting || deleting}>
-            {t('tracker:workspaceLabel.close')}
+            {t('tracker:workspaceType.close')}
           </Button>
         </Box>
       </Box>
 
       {/* 删除确认 */}
       <Dialog open={deleteTarget !== null} onClose={deleting ? undefined : () => setDeleteTarget(null)}>
-        <DialogTitle>{t('tracker:workspaceLabel.delete')}</DialogTitle>
+        <DialogTitle>{t('tracker:workspaceType.delete')}</DialogTitle>
         <DialogContent>
-          <Typography>{t('tracker:workspaceLabel.deleteConfirmMsg', { name: deleteTarget?.name ?? '' })}</Typography>
+          <Typography>{t('tracker:workspaceType.deleteConfirmMsg', { name: deleteTarget?.name ?? '' })}</Typography>
         </DialogContent>
         <DialogActions>
           <Button color="inherit" onClick={() => setDeleteTarget(null)} disabled={deleting}>
-            {t('tracker:workspaceLabel.cancel')}
+            {t('tracker:workspaceType.cancel')}
           </Button>
           <Button color="error" variant="contained" onClick={handleDelete} disabled={deleting}>
-            {t('tracker:workspaceLabel.delete')}
+            {t('tracker:workspaceType.delete')}
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Snackbar
-        open={toastOpen}
-        autoHideDuration={2000}
-        onClose={() => setToastOpen(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity={toast.severity} variant="filled">{toast.text}</Alert>
-      </Snackbar>
+      {snack}
     </ResizableDrawer>
   );
 }
 
-export default WorkspaceLabelManagerDrawer;
+export default WorkspaceTypeManagerDrawer;

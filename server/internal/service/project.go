@@ -186,7 +186,7 @@ func (svc Project) Delete(req *types.ProjectDeleteRequest) error {
 }
 
 // deleteProjectCascade 物理删除 project 及其全部下挂数据（无 DB 外键，service 层手动级联）：
-// project 本体 → 其下 issue → 这些 issue 的 t_issue_labels / t_issue_local_repositories 关联
+// project 本体 → 其下 issue → 这些 issue 的 t_issue_local_repositories 关联
 // → 项目↔仓库中间表 t_project_local_repositories。ctx 为调用方 service 的 Context；orm 传 tx 复用事务。
 // 供 Project.Delete 与 Workspace.Delete（级联删其下 project）共用。
 func deleteProjectCascade(ctx context.Context, orm *gorm.DB, projectID int) error {
@@ -196,7 +196,7 @@ func deleteProjectCascade(ctx context.Context, orm *gorm.DB, projectID int) erro
 		Where(q.WorkspaceProject.ID.Eq(projectID)).Delete(); e != nil {
 		return e
 	}
-	// 2) 查其下 issue，删 issue 本体 + 两种关联。
+	// 2) 查其下 issue，删 issue 本体 + 仓库分支关联（type_id 为单值列，随 issue 行删除自然消失）。
 	issues, e := q.ProjectIssue.WithContext(ctx).
 		Where(q.ProjectIssue.ProjectID.Eq(projectID)).Find()
 	if e != nil {
@@ -209,10 +209,6 @@ func deleteProjectCascade(ctx context.Context, orm *gorm.DB, projectID int) erro
 		}
 		if _, e := q.ProjectIssue.WithContext(ctx).
 			Where(q.ProjectIssue.ID.In(issueIDs...)).Delete(); e != nil {
-			return e
-		}
-		if _, e := q.IssueLabel.WithContext(ctx).
-			Where(q.IssueLabel.IssueID.In(issueIDs...)).Delete(); e != nil {
 			return e
 		}
 		if _, e := q.IssueLocalRepository.WithContext(ctx).

@@ -6,15 +6,19 @@ export {
   useCreateProjectIssue,
   useCreateWorkspace,
   useCreateWorkspaceProject,
+  useCreateWorkspaceType,
   useDeleteProjectIssue,
   useDeleteWorkspace,
   useDeleteWorkspaceProject,
+  useDeleteWorkspaceType,
   useProjectIssues,
   useUpdateProjectIssue,
   useUpdateWorkspace,
   useUpdateWorkspaceProject,
+  useUpdateWorkspaceType,
   useWorkspaceProjects,
   useWorkspaces,
+  useWorkspaceTypes,
 } from './queries';
 export { STATE_CATALOG, STATE_CODE_DEFAULT, STATE_MAP, STATE_ORDER } from './stateMeta';
 export type { StateCode, StateMeta } from './stateMeta';

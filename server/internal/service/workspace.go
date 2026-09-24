@@ -83,8 +83,8 @@ func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace
 }
 
 // Delete 物理删除 workspace（无 DB 外键），事务内级联清理其下全部数据，避免悬挂：
-// project（deleteProjectCascade：issue + label/仓库关联 + 项目↔仓库中间表）+ 其下 label（t_workspace_labels）。
-// label 属 workspace 维度（所有项目共享），其 issue 关联已随 project 级联清理，此处删 label 本体即可。
+// project（deleteProjectCascade：issue + 仓库关联 + 项目↔仓库中间表）+ 其下 type（t_workspace_types）。
+// type 属 workspace 维度（所有项目共享），issue 的 type_id 引用随 issue 行删除自然消失，此处删 type 本体即可。
 func (svc Workspace) Delete(req *types.WorkspaceDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
@@ -97,9 +97,9 @@ func (svc Workspace) Delete(req *types.WorkspaceDeleteRequest) error {
 		if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(req.ID)).Delete(); err != nil {
 			return err
 		}
-		// 级联删其下 label 本体（其 issue 关联随下方 project 级联清理）。
-		if _, e := q.WorkspaceLabel.WithContext(svc.Context).
-			Where(q.WorkspaceLabel.WorkspaceID.Eq(req.ID)).Delete(); e != nil {
+		// 级联删其下 type 本体（issue 的 type_id 引用随下方 project 级联连带清理，无需单独置空）。
+		if _, e := q.WorkspaceType.WithContext(svc.Context).
+			Where(q.WorkspaceType.WorkspaceID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
 		// 级联删其下 project（含 project 自身的全部级联）。

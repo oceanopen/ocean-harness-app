@@ -25,7 +25,7 @@ interface IssueSubTaskPanelProps {
 /**
  * IssueSubTaskPanel：开发工作台工具面板区的「子任务」tab 内容（T3.1，经 toolRegistry 挂载）。
  * 展示当前 issue 的子任务清单（parentId 指向该 issue 的子 issue，sortOrder 升序），
- * 复用共享 IssueCard 子卡样式（depth=1 轻量卡，徽章/日期/标签齐全，不传回调即纯展示——
+ * 复用共享 IssueCard 子卡样式（depth=1 轻量卡，徽章/日期/类型齐全，不传回调即纯展示——
  * 子任务与终端会话无映射，本期不可点），与项目事项管理/左树视觉交互一致。
  * 面板标题由 tab 头承载（「子任务」），本组件头部仅留完成进度 + 刷新按钮。
  *

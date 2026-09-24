@@ -40,19 +40,11 @@ func newWorkspace(db *gorm.DB, opts ...gen.DOOption) workspace {
 		RelationField: field.NewRelation("WorkspaceProjectList", "model.WorkspaceProject"),
 		ProjectIssueList: struct {
 			field.RelationField
-			IssueLabelList struct {
-				field.RelationField
-			}
 			IssueLocalRepositoryList struct {
 				field.RelationField
 			}
 		}{
 			RelationField: field.NewRelation("WorkspaceProjectList.ProjectIssueList", "model.ProjectIssue"),
-			IssueLabelList: struct {
-				field.RelationField
-			}{
-				RelationField: field.NewRelation("WorkspaceProjectList.ProjectIssueList.IssueLabelList", "model.IssueLabel"),
-			},
 			IssueLocalRepositoryList: struct {
 				field.RelationField
 			}{
@@ -66,10 +58,10 @@ func newWorkspace(db *gorm.DB, opts ...gen.DOOption) workspace {
 		},
 	}
 
-	_workspace.WorkspaceLabelList = workspaceHasManyWorkspaceLabelList{
+	_workspace.WorkspaceTypeList = workspaceHasManyWorkspaceTypeList{
 		db: db.Session(&gorm.Session{}),
 
-		RelationField: field.NewRelation("WorkspaceLabelList", "model.WorkspaceLabel"),
+		RelationField: field.NewRelation("WorkspaceTypeList", "model.WorkspaceType"),
 	}
 
 	_workspace.fillFieldMap()
@@ -89,7 +81,7 @@ type workspace struct {
 	UpdatedAt            field.Time
 	WorkspaceProjectList workspaceHasManyWorkspaceProjectList
 
-	WorkspaceLabelList workspaceHasManyWorkspaceLabelList
+	WorkspaceTypeList workspaceHasManyWorkspaceTypeList
 
 	fieldMap map[string]field.Expr
 }
@@ -152,15 +144,15 @@ func (w workspace) clone(db *gorm.DB) workspace {
 	w.workspaceDo.ReplaceConnPool(db.Statement.ConnPool)
 	w.WorkspaceProjectList.db = db.Session(&gorm.Session{Initialized: true})
 	w.WorkspaceProjectList.db.Statement.ConnPool = db.Statement.ConnPool
-	w.WorkspaceLabelList.db = db.Session(&gorm.Session{Initialized: true})
-	w.WorkspaceLabelList.db.Statement.ConnPool = db.Statement.ConnPool
+	w.WorkspaceTypeList.db = db.Session(&gorm.Session{Initialized: true})
+	w.WorkspaceTypeList.db.Statement.ConnPool = db.Statement.ConnPool
 	return w
 }
 
 func (w workspace) replaceDB(db *gorm.DB) workspace {
 	w.workspaceDo.ReplaceDB(db)
 	w.WorkspaceProjectList.db = db.Session(&gorm.Session{})
-	w.WorkspaceLabelList.db = db.Session(&gorm.Session{})
+	w.WorkspaceTypeList.db = db.Session(&gorm.Session{})
 	return w
 }
 
@@ -171,9 +163,6 @@ type workspaceHasManyWorkspaceProjectList struct {
 
 	ProjectIssueList struct {
 		field.RelationField
-		IssueLabelList struct {
-			field.RelationField
-		}
 		IssueLocalRepositoryList struct {
 			field.RelationField
 		}
@@ -258,13 +247,13 @@ func (a workspaceHasManyWorkspaceProjectListTx) Unscoped() *workspaceHasManyWork
 	return &a
 }
 
-type workspaceHasManyWorkspaceLabelList struct {
+type workspaceHasManyWorkspaceTypeList struct {
 	db *gorm.DB
 
 	field.RelationField
 }
 
-func (a workspaceHasManyWorkspaceLabelList) Where(conds ...field.Expr) *workspaceHasManyWorkspaceLabelList {
+func (a workspaceHasManyWorkspaceTypeList) Where(conds ...field.Expr) *workspaceHasManyWorkspaceTypeList {
 	if len(conds) == 0 {
 		return &a
 	}
@@ -277,32 +266,32 @@ func (a workspaceHasManyWorkspaceLabelList) Where(conds ...field.Expr) *workspac
 	return &a
 }
 
-func (a workspaceHasManyWorkspaceLabelList) WithContext(ctx context.Context) *workspaceHasManyWorkspaceLabelList {
+func (a workspaceHasManyWorkspaceTypeList) WithContext(ctx context.Context) *workspaceHasManyWorkspaceTypeList {
 	a.db = a.db.WithContext(ctx)
 	return &a
 }
 
-func (a workspaceHasManyWorkspaceLabelList) Session(session *gorm.Session) *workspaceHasManyWorkspaceLabelList {
+func (a workspaceHasManyWorkspaceTypeList) Session(session *gorm.Session) *workspaceHasManyWorkspaceTypeList {
 	a.db = a.db.Session(session)
 	return &a
 }
 
-func (a workspaceHasManyWorkspaceLabelList) Model(m *model.Workspace) *workspaceHasManyWorkspaceLabelListTx {
-	return &workspaceHasManyWorkspaceLabelListTx{a.db.Model(m).Association(a.Name())}
+func (a workspaceHasManyWorkspaceTypeList) Model(m *model.Workspace) *workspaceHasManyWorkspaceTypeListTx {
+	return &workspaceHasManyWorkspaceTypeListTx{a.db.Model(m).Association(a.Name())}
 }
 
-func (a workspaceHasManyWorkspaceLabelList) Unscoped() *workspaceHasManyWorkspaceLabelList {
+func (a workspaceHasManyWorkspaceTypeList) Unscoped() *workspaceHasManyWorkspaceTypeList {
 	a.db = a.db.Unscoped()
 	return &a
 }
 
-type workspaceHasManyWorkspaceLabelListTx struct{ tx *gorm.Association }
+type workspaceHasManyWorkspaceTypeListTx struct{ tx *gorm.Association }
 
-func (a workspaceHasManyWorkspaceLabelListTx) Find() (result []*model.WorkspaceLabel, err error) {
+func (a workspaceHasManyWorkspaceTypeListTx) Find() (result []*model.WorkspaceType, err error) {
 	return result, a.tx.Find(&result)
 }
 
-func (a workspaceHasManyWorkspaceLabelListTx) Append(values ...*model.WorkspaceLabel) (err error) {
+func (a workspaceHasManyWorkspaceTypeListTx) Append(values ...*model.WorkspaceType) (err error) {
 	targetValues := make([]interface{}, len(values))
 	for i, v := range values {
 		targetValues[i] = v
@@ -310,7 +299,7 @@ func (a workspaceHasManyWorkspaceLabelListTx) Append(values ...*model.WorkspaceL
 	return a.tx.Append(targetValues...)
 }
 
-func (a workspaceHasManyWorkspaceLabelListTx) Replace(values ...*model.WorkspaceLabel) (err error) {
+func (a workspaceHasManyWorkspaceTypeListTx) Replace(values ...*model.WorkspaceType) (err error) {
 	targetValues := make([]interface{}, len(values))
 	for i, v := range values {
 		targetValues[i] = v
@@ -318,7 +307,7 @@ func (a workspaceHasManyWorkspaceLabelListTx) Replace(values ...*model.Workspace
 	return a.tx.Replace(targetValues...)
 }
 
-func (a workspaceHasManyWorkspaceLabelListTx) Delete(values ...*model.WorkspaceLabel) (err error) {
+func (a workspaceHasManyWorkspaceTypeListTx) Delete(values ...*model.WorkspaceType) (err error) {
 	targetValues := make([]interface{}, len(values))
 	for i, v := range values {
 		targetValues[i] = v
@@ -326,15 +315,15 @@ func (a workspaceHasManyWorkspaceLabelListTx) Delete(values ...*model.WorkspaceL
 	return a.tx.Delete(targetValues...)
 }
 
-func (a workspaceHasManyWorkspaceLabelListTx) Clear() error {
+func (a workspaceHasManyWorkspaceTypeListTx) Clear() error {
 	return a.tx.Clear()
 }
 
-func (a workspaceHasManyWorkspaceLabelListTx) Count() int64 {
+func (a workspaceHasManyWorkspaceTypeListTx) Count() int64 {
 	return a.tx.Count()
 }
 
-func (a workspaceHasManyWorkspaceLabelListTx) Unscoped() *workspaceHasManyWorkspaceLabelListTx {
+func (a workspaceHasManyWorkspaceTypeListTx) Unscoped() *workspaceHasManyWorkspaceTypeListTx {
 	a.tx = a.tx.Unscoped()
 	return &a
 }

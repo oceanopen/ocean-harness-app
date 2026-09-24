@@ -1,5 +1,5 @@
 import type { StateCode } from '@src/state/tracker/stateMeta';
-import type { WorkspaceLabelModel } from './WorkspaceLabelService';
+import type { WorkspaceTypeModel } from './WorkspaceTypeService';
 import { request } from './http';
 
 export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
@@ -25,9 +25,10 @@ export interface ProjectIssueResponseData {
   targetDate: string;
   completedAt: string | null;
   isDraft: 'Y' | 'N';
+  typeId: number; // issue 类型 id（t_workspace_types 单值引用，0=未分类）
   createdAt: string;
   updatedAt: string;
-  labels: WorkspaceLabelModel[];
+  type: WorkspaceTypeModel | null; // 类型详情（typeId=0 或类型已删时为 null）
   repositoryBranchList: IssueRepositoryBranchModel[]; // 关联的仓库+分支列表（空数组=未关联）
 }
 
@@ -37,7 +38,7 @@ export interface ProjectIssueGetListRequest {
   orderBy?: string; // created_at/sort_order/priority，空则 sort_order
   stateCode?: StateCode;
   priority?: Priority;
-  labelId?: number;
+  typeId?: number; // >0 按类型筛选
   keyword?: string;
 }
 
@@ -53,7 +54,7 @@ export interface ProjectIssueCreateRequest {
   targetDate?: string;
   stateCode?: StateCode; // 空值 → 后端默认 BACKLOG
   parentId?: string; // 空串=顶级，非空=子任务（须与父同 project，仅一层）
-  labelIds?: number[];
+  typeId?: number; // issue 类型（0/不传=未分类）
   repositoryBranchList?: IssueRepositoryBranchModel[]; // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
 }
 
@@ -67,7 +68,7 @@ export interface ProjectIssueUpdateRequest {
   isDraft?: 'Y' | 'N';
   startDate?: string;
   targetDate?: string;
-  labelIds?: number[];
+  typeId?: number; // 不传=保留原值，传值（含 0）=覆写（0=未分类）
   repositoryBranchList?: IssueRepositoryBranchModel[]; // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
 }
 
@@ -84,7 +85,7 @@ export interface ProjectIssueMoveRequest {
 }
 
 export class ProjectIssueService {
-  // getList：返回指定项目的 issue 列表（含 labels）。
+  // getList：返回指定项目的 issue 列表（含类型）。
   static getList(req: ProjectIssueGetListRequest): Promise<ProjectIssueResponseData[]> {
     return request<ProjectIssueResponseData[]>('POST', '/api/tracker/projectIssue/getList', req);
   }

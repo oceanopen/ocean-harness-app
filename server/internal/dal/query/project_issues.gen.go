@@ -43,12 +43,7 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.IsDraft = field.NewField(tableName, "is_draft")
 	_projectIssue.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectIssue.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_projectIssue.IssueLabelList = projectIssueHasManyIssueLabelList{
-		db: db.Session(&gorm.Session{}),
-
-		RelationField: field.NewRelation("IssueLabelList", "model.IssueLabel"),
-	}
-
+	_projectIssue.TypeID = field.NewInt(tableName, "type_id")
 	_projectIssue.IssueLocalRepositoryList = projectIssueHasManyIssueLocalRepositoryList{
 		db: db.Session(&gorm.Session{}),
 
@@ -63,24 +58,23 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 type projectIssue struct {
 	projectIssueDo projectIssueDo
 
-	ALL            field.Asterisk
-	ID             field.String
-	ProjectID      field.Int
-	WorkspaceID    field.Int
-	Name           field.String
-	Description    field.String
-	StateCode      field.Field
-	Priority       field.Field
-	SortOrder      field.Float64
-	ParentID       field.String
-	StartDate      field.String
-	TargetDate     field.String
-	CompletedAt    field.Time
-	IsDraft        field.Field
-	CreatedAt      field.Time
-	UpdatedAt      field.Time
-	IssueLabelList projectIssueHasManyIssueLabelList
-
+	ALL                      field.Asterisk
+	ID                       field.String
+	ProjectID                field.Int
+	WorkspaceID              field.Int
+	Name                     field.String
+	Description              field.String
+	StateCode                field.Field
+	Priority                 field.Field
+	SortOrder                field.Float64
+	ParentID                 field.String
+	StartDate                field.String
+	TargetDate               field.String
+	CompletedAt              field.Time
+	IsDraft                  field.Field
+	CreatedAt                field.Time
+	UpdatedAt                field.Time
+	TypeID                   field.Int
 	IssueLocalRepositoryList projectIssueHasManyIssueLocalRepositoryList
 
 	fieldMap map[string]field.Expr
@@ -113,6 +107,7 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.IsDraft = field.NewField(table, "is_draft")
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")
+	p.TypeID = field.NewInt(table, "type_id")
 
 	p.fillFieldMap()
 
@@ -157,13 +152,12 @@ func (p *projectIssue) fillFieldMap() {
 	p.fieldMap["is_draft"] = p.IsDraft
 	p.fieldMap["created_at"] = p.CreatedAt
 	p.fieldMap["updated_at"] = p.UpdatedAt
+	p.fieldMap["type_id"] = p.TypeID
 
 }
 
 func (p projectIssue) clone(db *gorm.DB) projectIssue {
 	p.projectIssueDo.ReplaceConnPool(db.Statement.ConnPool)
-	p.IssueLabelList.db = db.Session(&gorm.Session{Initialized: true})
-	p.IssueLabelList.db.Statement.ConnPool = db.Statement.ConnPool
 	p.IssueLocalRepositoryList.db = db.Session(&gorm.Session{Initialized: true})
 	p.IssueLocalRepositoryList.db.Statement.ConnPool = db.Statement.ConnPool
 	return p
@@ -171,90 +165,8 @@ func (p projectIssue) clone(db *gorm.DB) projectIssue {
 
 func (p projectIssue) replaceDB(db *gorm.DB) projectIssue {
 	p.projectIssueDo.ReplaceDB(db)
-	p.IssueLabelList.db = db.Session(&gorm.Session{})
 	p.IssueLocalRepositoryList.db = db.Session(&gorm.Session{})
 	return p
-}
-
-type projectIssueHasManyIssueLabelList struct {
-	db *gorm.DB
-
-	field.RelationField
-}
-
-func (a projectIssueHasManyIssueLabelList) Where(conds ...field.Expr) *projectIssueHasManyIssueLabelList {
-	if len(conds) == 0 {
-		return &a
-	}
-
-	exprs := make([]clause.Expression, 0, len(conds))
-	for _, cond := range conds {
-		exprs = append(exprs, cond.BeCond().(clause.Expression))
-	}
-	a.db = a.db.Clauses(clause.Where{Exprs: exprs})
-	return &a
-}
-
-func (a projectIssueHasManyIssueLabelList) WithContext(ctx context.Context) *projectIssueHasManyIssueLabelList {
-	a.db = a.db.WithContext(ctx)
-	return &a
-}
-
-func (a projectIssueHasManyIssueLabelList) Session(session *gorm.Session) *projectIssueHasManyIssueLabelList {
-	a.db = a.db.Session(session)
-	return &a
-}
-
-func (a projectIssueHasManyIssueLabelList) Model(m *model.ProjectIssue) *projectIssueHasManyIssueLabelListTx {
-	return &projectIssueHasManyIssueLabelListTx{a.db.Model(m).Association(a.Name())}
-}
-
-func (a projectIssueHasManyIssueLabelList) Unscoped() *projectIssueHasManyIssueLabelList {
-	a.db = a.db.Unscoped()
-	return &a
-}
-
-type projectIssueHasManyIssueLabelListTx struct{ tx *gorm.Association }
-
-func (a projectIssueHasManyIssueLabelListTx) Find() (result []*model.IssueLabel, err error) {
-	return result, a.tx.Find(&result)
-}
-
-func (a projectIssueHasManyIssueLabelListTx) Append(values ...*model.IssueLabel) (err error) {
-	targetValues := make([]interface{}, len(values))
-	for i, v := range values {
-		targetValues[i] = v
-	}
-	return a.tx.Append(targetValues...)
-}
-
-func (a projectIssueHasManyIssueLabelListTx) Replace(values ...*model.IssueLabel) (err error) {
-	targetValues := make([]interface{}, len(values))
-	for i, v := range values {
-		targetValues[i] = v
-	}
-	return a.tx.Replace(targetValues...)
-}
-
-func (a projectIssueHasManyIssueLabelListTx) Delete(values ...*model.IssueLabel) (err error) {
-	targetValues := make([]interface{}, len(values))
-	for i, v := range values {
-		targetValues[i] = v
-	}
-	return a.tx.Delete(targetValues...)
-}
-
-func (a projectIssueHasManyIssueLabelListTx) Clear() error {
-	return a.tx.Clear()
-}
-
-func (a projectIssueHasManyIssueLabelListTx) Count() int64 {
-	return a.tx.Count()
-}
-
-func (a projectIssueHasManyIssueLabelListTx) Unscoped() *projectIssueHasManyIssueLabelListTx {
-	a.tx = a.tx.Unscoped()
-	return &a
 }
 
 type projectIssueHasManyIssueLocalRepositoryList struct {

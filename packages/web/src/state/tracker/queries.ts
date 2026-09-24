@@ -4,12 +4,15 @@ import type {
   WorkspaceCreateRequest,
   WorkspaceProjectCreateRequest,
   WorkspaceProjectUpdateRequest,
+  WorkspaceTypeCreateRequest,
+  WorkspaceTypeUpdateRequest,
   WorkspaceUpdateRequest,
 } from '@src/services';
 import {
   ProjectIssueService,
   WorkspaceProjectService,
   WorkspaceService,
+  WorkspaceTypeService,
 } from '@src/services';
 import { commands } from '@src/shared/bindings';
 import { logOnError } from '@src/shared/commands';
@@ -38,7 +41,16 @@ export function useWorkspaceProjects(workspaceId: number | null) {
   });
 }
 
-/** 指定项目的 projectIssue（含 labels）。projectId 为 null 时不查询（无选中时的无效请求守卫）。 */
+/** 指定工作空间下的全部类型。workspaceId 为 null 时不查询。 */
+export function useWorkspaceTypes(workspaceId: number | null) {
+  return useQuery({
+    queryKey: trackerKeys.workspaceTypes(workspaceId ?? 0),
+    queryFn: () => WorkspaceTypeService.getList({ workspaceId: workspaceId! }),
+    enabled: workspaceId != null,
+  });
+}
+
+/** 指定项目的 projectIssue（含类型）。projectId 为 null 时不查询（无选中时的无效请求守卫）。 */
 export function useProjectIssues(projectId: number | null) {
   return useQuery({
     queryKey: trackerKeys.projectIssues(projectId ?? 0),
@@ -108,6 +120,36 @@ export function useDeleteWorkspaceProject(workspaceId: number) {
         useTrackerStore.getState().selectWorkspaceProject(null);
       }
     },
+  });
+}
+
+// ─── 类型写操作（mutation）───
+// workspaceId 入参用于失效该工作空间的类型缓存（issue 抽屉与管理抽屉共享同一份列表）。
+
+/** 创建类型（workspaceId 用于失效该工作空间的类型缓存）。 */
+export function useCreateWorkspaceType(workspaceId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: WorkspaceTypeCreateRequest) => WorkspaceTypeService.create(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaceTypes(workspaceId) }),
+  });
+}
+
+/** 更新类型。 */
+export function useUpdateWorkspaceType(workspaceId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: WorkspaceTypeUpdateRequest) => WorkspaceTypeService.update(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaceTypes(workspaceId) }),
+  });
+}
+
+/** 删除类型（后端将引用该类型的 issue 置为未分类）。 */
+export function useDeleteWorkspaceType(workspaceId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => WorkspaceTypeService.delete({ id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaceTypes(workspaceId) }),
   });
 }
 
