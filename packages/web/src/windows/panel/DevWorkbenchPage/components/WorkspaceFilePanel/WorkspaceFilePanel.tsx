@@ -22,8 +22,8 @@ import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import {
   DEFAULT_EXPANDED_DIR,
-  tabFilePath,
   useExpandedDirs,
+  useFilePanelMode,
   usePreviewTabs,
   useWorkspaceFilesStore,
   useWorkspaceFileTree,
@@ -32,7 +32,7 @@ import {
 } from '@src/state/workspaceFiles';
 import { useSettingsNavigate } from '@src/windows/panel/useSettingsNavigate';
 import { useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import PanelToolbar from '../PanelToolbar';
 import { buildFileTree } from './buildFileTree';
 import { allDirsExpanded, buildGitChangesTree } from './buildGitChangesTree';
@@ -51,19 +51,16 @@ interface WorkspaceFilePanelProps {
   issueId: string;
 }
 
-/// 文件查看模式：all=全部文件（一次性全目录树）；git=Git 变更（仅未提交变更的文件，
-/// 点击打开 diff 预览 tab）。面板本地态（切工具 tab 重挂载回默认 all——模式是浏览意图，
-/// 不值得持久化）。
-type FilePanelMode = 'all' | 'git';
-
 /// WorkspaceFilePanel：开发工作台工具面板区的「文件」tab 内容（T5.1，经 toolRegistry
 /// 挂载）。双模式：全部文件（一次性全目录树）/ Git 变更（未提交变更文件树 + 状态徽标 +
-/// +N/-N 行数，点击打开 diff 预览）。头部模式切换 + 计数 + 刷新按钮（手动刷新口径——
-/// 无 watcher 无轮询，与子任务面板 T3.1 同决策）。点击文件行 → openPreviewTab → 终端
-/// 内容区浮层预览（浮层组件独立挂载，与本面板无耦合）。面板标题由 tab 头承载（「文件」）。
+/// +N/-N 行数）。头部模式切换 + 计数 + 刷新按钮（手动刷新口径——无 watcher 无轮询，与
+/// 子任务面板 T3.1 同决策）。点击文件行 → openPreviewTab（两模式统一，tab id = 文件路径）
+/// → 终端内容区浮层预览，tab 内容形态（文件内容/diff）由浮层按「面板模式 + 变更集」渲染
+/// 期派生。模式存域 store（按 issue 会话级，预览浮层同读；切工具 tab 重挂载不丢）。
 export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps) {
   const qc = useQueryClient();
-  const [mode, setMode] = useState<FilePanelMode>('all');
+  const mode = useFilePanelMode(issueId);
+  const setFilePanelMode = useWorkspaceFilesStore(s => s.setFilePanelMode);
   const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const configReady = useConfigReady(FILE_PANEL_CONFIG_KEYS);
   const { data, isLoading, error, isFetching, refetch } = useWorkspaceFileTree(issueId, baseDir);
@@ -89,15 +86,9 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
   const gitExpandedDirs = useMemo(() => allDirsExpanded(gitRoots), [gitRoots]);
   const gitMarks = useMemo(() => new Map(changeFiles.map(f => [f.path, f])), [changeFiles]);
 
-  // 行高亮口径随模式：openPaths/activePath 只取「与本模式同 kind」的 tab（diff tab id 带
-  // diff: 前缀，经 tabFilePath 还原真实路径后与树 path 对齐）。
-  const modeKind = mode === 'git' ? 'diff' : 'file';
-  const openPaths = useMemo(
-    () => new Set(tabs.filter(t => t.kind === modeKind).map(tabFilePath)),
-    [tabs, modeKind],
-  );
-  const activeTab = tabs.find(t => t.path === activeTabId);
-  const activePath = activeTab != null && activeTab.kind === modeKind ? tabFilePath(activeTab) : undefined;
+  // 行高亮：tab id = 文件路径（一文件一 tab，无形态前缀），两模式树高亮同源。
+  const openPaths = useMemo(() => new Set(tabs), [tabs]);
+  const activePath = activeTabId ?? undefined;
 
   const refresh = () => {
     if (mode === 'git') {
@@ -142,7 +133,7 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
             activePath={activePath}
             marks={gitMarks}
             onToggleDir={() => {}} // 目录已全展开，toggle 无操作（展开集是派生全集）
-            onOpenFile={path => openPreviewTab(issueId, path, 'diff')}
+            onOpenFile={path => openPreviewTab(issueId, path)}
           />
         ),
       }
@@ -168,45 +159,45 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 头部：模式切换（全部文件 / Git 变更）+ 计数 + 刷新（isFetching 旋转，IssueSubTaskPanel 同款） */}
+      {/* 头部：左计数；右模式切换（全部文件 / Git 变更）+ 刷新（isFetching 旋转，IssueSubTaskPanel 同款） */}
       <PanelToolbar
         left={(
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+          <Typography variant="caption" color="text.secondary" noWrap>
+            {mode === 'git'
+              ? (gitQuery.data != null ? `${changeFiles.length} 个变更` : '')
+              : (data != null ? `${fileCount} 个文件${data.truncated ? '（已截断）' : ''}` : '')}
+          </Typography>
+        )}
+        right={(
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <ToggleButtonGroup
               size="small"
               exclusive
               value={mode}
-              onChange={(_, v) => v != null && setMode(v)}
+              onChange={(_, v) => v != null && setFilePanelMode(issueId, v)}
             >
               <ToggleButton value="all" sx={{ py: 0.25, px: 1 }}>全部文件</ToggleButton>
               <ToggleButton value="git" sx={{ py: 0.25, px: 1 }}>Git 变更</ToggleButton>
             </ToggleButtonGroup>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {mode === 'git'
-                ? (gitQuery.data != null ? `${changeFiles.length} 个变更` : '')
-                : (data != null ? `${fileCount} 个文件${data.truncated ? '（已截断）' : ''}` : '')}
-            </Typography>
+            <IconButton
+              size="small"
+              onClick={refresh}
+              disabled={mode === 'git' ? gitQuery.isFetching : isFetching}
+              aria-label="刷新文件列表"
+              sx={{ color: 'text.secondary' }}
+            >
+              <AutorenewIcon
+                fontSize="small"
+                sx={{
+                  'animation': (mode === 'git' ? gitQuery.isFetching : isFetching) ? 'spin 0.8s linear infinite' : undefined,
+                  '@keyframes spin': {
+                    from: { transform: 'rotate(0deg)' },
+                    to: { transform: 'rotate(360deg)' },
+                  },
+                }}
+              />
+            </IconButton>
           </Box>
-        )}
-        right={(
-          <IconButton
-            size="small"
-            onClick={refresh}
-            disabled={mode === 'git' ? gitQuery.isFetching : isFetching}
-            aria-label="刷新文件列表"
-            sx={{ color: 'text.secondary' }}
-          >
-            <AutorenewIcon
-              fontSize="small"
-              sx={{
-                'animation': (mode === 'git' ? gitQuery.isFetching : isFetching) ? 'spin 0.8s linear infinite' : undefined,
-                '@keyframes spin': {
-                  from: { transform: 'rotate(0deg)' },
-                  to: { transform: 'rotate(360deg)' },
-                },
-              }}
-            />
-          </IconButton>
         )}
       />
 

@@ -1,15 +1,16 @@
-// workspaceFiles 域 client 状态：预览浮层 tabs（按 issue 隔离 + localStorage 持久化）与
-// 文件树展开目录集（按 issue 隔离、会话级不持久化）。
+// workspaceFiles 域 client 状态：预览浮层 tabs（按 issue 隔离 + localStorage 持久化）、
+// 文件树展开目录集与文件面板查看模式（按 issue 隔离、会话级不持久化）。
 //
 // 预览 tabs 持久化：与 toolTabs/terminalPanes 同心智（「一 issue 一工作环境」）——切 issue
 // 往返/重启后预览现场还原；文件内容不入持久化（query 缓存重取，绝不陈旧）。
-// 树展开态不持久化但入域 store：文件面板在 ToolPanelArea 中非激活即卸载，组件 local state
-// 会丢展开现场；域内存态是唯一不引入新范式的存放位。
+// 树展开态/面板模式不持久化但入域 store：文件面板在 ToolPanelArea 中非激活即卸载，组件
+// local state 会丢现场；面板模式还须被预览浮层（独立挂载）读取——tab 内容形态的渲染期
+// 派生依据（mode + 变更集 → 文件内容/diff），域内存态是唯一不引入新范式的存放位。
 //
 // store 形状：单 record（issueId → 成对视图），订阅/写回/持久化三处成对（克隆
 // workbenchTools/store.ts 骨架，含 hydration + subscribe 落盘 + useXxx 成对封装 hook）。
 
-import type { PreviewTabKind, PreviewTabsState } from './actions';
+import type { PreviewTabsState } from './actions';
 import { create } from 'zustand';
 import {
   closePreviewTab,
@@ -25,6 +26,9 @@ import {
 /// 不随持久化流转。
 export const DEFAULT_EXPANDED_DIR = 'repo';
 
+/// 文件面板查看模式：all=全部文件；git=Git 变更（未提交变更文件树）。
+export type FilePanelMode = 'all' | 'git';
+
 function seedDefaultExpanded(): Set<string> {
   return new Set([DEFAULT_EXPANDED_DIR]);
 }
@@ -35,19 +39,24 @@ interface WorkspaceFilesState {
   /// issueId → 展开目录 path 集（会话级，不持久化）。undefined = 该 issue 未 toggle 过
   /// （渲染层回落 DEFAULT_EXPANDED_DIR）。
   expandedDirsByIssue: Record<string, Set<string>>;
-  openPreviewTab: (issueId: string, path: string, kind?: PreviewTabKind) => void;
+  /// issueId → 文件面板查看模式（会话级，不持久化）。undefined = 该 issue 未切过
+  /// （渲染层回落 'all'）。
+  filePanelModeByIssue: Record<string, FilePanelMode>;
+  openPreviewTab: (issueId: string, path: string) => void;
   closePreviewTab: (issueId: string, path: string) => void;
   closeAllPreviewTabs: (issueId: string) => void;
   setActivePreviewTab: (issueId: string, path: string) => void;
   toggleDirExpanded: (issueId: string, dirPath: string) => void;
+  setFilePanelMode: (issueId: string, mode: FilePanelMode) => void;
 }
 
 export const useWorkspaceFilesStore = create<WorkspaceFilesState>()(set => ({
   previewTabsByIssue: {},
   expandedDirsByIssue: {},
-  openPreviewTab: (issueId, path, kind) => set((state) => {
+  filePanelModeByIssue: {},
+  openPreviewTab: (issueId, path) => set((state) => {
     const prev = state.previewTabsByIssue[issueId] ?? EMPTY_PREVIEW_TABS;
-    const next = openPreviewTab(prev, path, kind);
+    const next = openPreviewTab(prev, path);
     return next === prev ? state : { previewTabsByIssue: { ...state.previewTabsByIssue, [issueId]: next } };
   }),
   closePreviewTab: (issueId, path) => set((state) => {
@@ -80,6 +89,12 @@ export const useWorkspaceFilesStore = create<WorkspaceFilesState>()(set => ({
       next.add(dirPath);
     }
     return { expandedDirsByIssue: { ...state.expandedDirsByIssue, [issueId]: next } };
+  }),
+  setFilePanelMode: (issueId, mode) => set((state) => {
+    if (state.filePanelModeByIssue[issueId] === mode) {
+      return state;
+    }
+    return { filePanelModeByIssue: { ...state.filePanelModeByIssue, [issueId]: mode } };
   }),
 }));
 
@@ -123,4 +138,10 @@ export function usePreviewTabs(issueId: string | null): PreviewTabsState {
 /// 展开目录集订阅：undefined = 该 issue 未 toggle 过（消费方回落默认集 DEFAULT_EXPANDED_DIR）。
 export function useExpandedDirs(issueId: string | null): ReadonlySet<string> | undefined {
   return useWorkspaceFilesStore(s => (issueId != null ? s.expandedDirsByIssue[issueId] : undefined));
+}
+
+/// 文件面板查看模式订阅：undefined = 该 issue 未切过（消费方回落 'all'）。面板与预览浮层
+/// 双消费（浮层据此派生 tab 内容形态），issueId 为 null 恒 'all'。
+export function useFilePanelMode(issueId: string | null): FilePanelMode {
+  return useWorkspaceFilesStore(s => (issueId != null ? s.filePanelModeByIssue[issueId] : undefined)) ?? 'all';
 }

@@ -1,7 +1,8 @@
 import { Box, useTheme } from '@mui/material';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
-import { tabFilePath, usePreviewTabs, useWorkspaceFilesStore, workspaceFilesKeys } from '@src/state/workspaceFiles';
+import { useFilePanelMode, usePreviewTabs, useWorkspaceFilesStore, useWorkspaceGitChanges, workspaceFilesKeys } from '@src/state/workspaceFiles';
 import { useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import PreviewContent from './PreviewContent';
 import PreviewTabsBar from './PreviewTabsBar';
 
@@ -29,20 +30,26 @@ export default function FilePreviewOverlay({ issueId, baseDir }: FilePreviewOver
   const closeTab = useWorkspaceFilesStore(s => s.closePreviewTab);
   const closeAllTabs = useWorkspaceFilesStore(s => s.closeAllPreviewTabs);
   const { tabs, activeTabId } = usePreviewTabs(issueId);
+  // 面板模式与变更集（同 PreviewContent 派生口径）：刷新分流 + tab 栏变更标记共用。
+  const mode = useFilePanelMode(issueId);
+  const changesQuery = useWorkspaceGitChanges(mode === 'git' ? issueId : null, baseDir);
+  const changedPaths = useMemo(
+    () => new Set((mode === 'git' ? changesQuery.data?.files ?? [] : []).map(f => f.path)),
+    [mode, changesQuery.data],
+  );
 
   if (tabs.length === 0) {
     return null;
   }
 
-  // 刷新激活 tab：按 tab kind 分流 invalidate（file → 内容 query；diff → 变更内容对 query）——
-  // text 原位重取（SWR 语义，先显旧值后替换），image 经 dataUpdatedAt 版本令牌换 URL 强制重载。
-  const activeTab = tabs.find(t => t.path === activeTabId);
+  // 刷新激活 tab：按渲染期派生决策分流 invalidate（激活文件在变更集 → fileDiff query；
+  // 否则 content query）——text 原位重取（SWR 语义，先显旧值后替换），image 经 dataUpdatedAt
+  // 版本令牌换 URL 强制重载。
   const refreshActive = () => {
-    if (issueId != null && activeTab != null) {
-      const path = tabFilePath(activeTab);
-      const key = activeTab.kind === 'diff'
-        ? workspaceFilesKeys.fileDiff(issueId, path)
-        : workspaceFilesKeys.content(issueId, path);
+    if (issueId != null && activeTabId != null) {
+      const key = changedPaths.has(activeTabId)
+        ? workspaceFilesKeys.fileDiff(issueId, activeTabId)
+        : workspaceFilesKeys.content(issueId, activeTabId);
       void queryClient.invalidateQueries({ queryKey: key });
     }
   };
@@ -70,18 +77,19 @@ export default function FilePreviewOverlay({ issueId, baseDir }: FilePreviewOver
       <PreviewTabsBar
         tabs={tabs}
         activeTabId={activeTabId}
+        changedPaths={changedPaths}
         onSelect={path => issueId != null && setActiveTab(issueId, path)}
         onClose={path => issueId != null && closeTab(issueId, path)}
         onCloseAll={() => issueId != null && closeAllTabs(issueId)}
         onRefresh={refreshActive}
       />
-      {issueId != null && activeTab != null && (
+      {issueId != null && activeTabId != null && (
         <PreviewContent
           key={activeTabId}
           issueId={issueId}
           baseDir={baseDir}
-          path={tabFilePath(activeTab)}
-          kind={activeTab.kind}
+          path={activeTabId}
+          changedPaths={changedPaths}
         />
       )}
     </Box>

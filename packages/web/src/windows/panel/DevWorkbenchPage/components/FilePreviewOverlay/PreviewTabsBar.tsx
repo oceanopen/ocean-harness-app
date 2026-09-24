@@ -1,13 +1,14 @@
-import type { PreviewTab } from '@src/state/workspaceFiles';
 import { Autorenew as AutorenewIcon, Close as CloseIcon } from '@mui/icons-material';
 import { Box, IconButton, Tab, Tabs, Tooltip, Typography } from '@mui/material';
 import { basename } from '@src/shared/repoPath';
-import { tabFilePath } from '@src/state/workspaceFiles';
 import { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
 
 interface PreviewTabsBarProps {
-  tabs: PreviewTab[];
+  /// 打开的 tab 路径数组（tab id = 文件相对路径）。
+  tabs: string[];
   activeTabId: string | null;
+  /// Git 变更模式下的变更文件路径集（tab 文件名前加主色小点标记；空集 = 全部文件模式）。
+  changedPaths: ReadonlySet<string>;
   onSelect: (path: string) => void;
   onClose: (path: string) => void;
   /// 一键关闭全部（tab 栏右缘固定按钮——逐 tab 关闭太繁琐，halo 同款入口语义）。
@@ -21,7 +22,7 @@ interface PreviewTabsBarProps {
 /// label 取 basename、title 悬浮全路径；长文件名收缩出省略号（Typography flex+minWidth:0，
 /// 关闭钮 flexShrink:0 恒可见——flex 默认 min-width:auto 不收缩是省略号失效的根源）。
 /// 每 tab 带关闭按钮（stopPropagation 防误切）；右缘固定「关闭全部」。
-export default function PreviewTabsBar({ tabs, activeTabId, onSelect, onClose, onCloseAll, onRefresh }: PreviewTabsBarProps) {
+export default function PreviewTabsBar({ tabs, activeTabId, changedPaths, onSelect, onClose, onCloseAll, onRefresh }: PreviewTabsBarProps) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'stretch', flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}>
       <Tabs
@@ -31,22 +32,35 @@ export default function PreviewTabsBar({ tabs, activeTabId, onSelect, onClose, o
         scrollButtons={false}
         sx={{ flex: '1 1 auto', minWidth: 0, height: PANEL_TOOLBAR_HEIGHT, minHeight: PANEL_TOOLBAR_HEIGHT }}
       >
-        {tabs.map(tab => (
+        {tabs.map(path => (
           <Tab
-            key={tab.path}
-            value={tab.path}
-            title={tabFilePath(tab)}
+            key={path}
+            value={path}
+            title={path}
             label={(
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, maxWidth: '100%' }}>
+                {/* 变更小圆点常驻占位（visibility 而非条件渲染）：切模式时不出现/消失引起
+                    文件名宽度跳动；有变更才可见，与文件名间隔 4px（mr: 0.5）。 */}
+                <Box
+                  sx={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    bgcolor: 'primary.main',
+                    visibility: changedPaths.has(path) ? 'visible' : 'hidden',
+                    flexShrink: 0,
+                    mr: 0.5,
+                  }}
+                />
                 <Typography variant="caption" noWrap sx={{ flex: '1 1 auto', minWidth: 0 }}>
-                  {basename(tabFilePath(tab))}
+                  {basename(path)}
                 </Typography>
                 <IconButton
                   size="small"
-                  aria-label={`关闭 ${basename(tabFilePath(tab))}`}
+                  aria-label={`关闭 ${basename(path)}`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onClose(tab.path);
+                    onClose(path);
                   }}
                   sx={{ 'ml': 0.25, 'flexShrink': 0, 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
                 >

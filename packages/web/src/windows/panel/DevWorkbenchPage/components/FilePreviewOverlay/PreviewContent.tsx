@@ -1,5 +1,4 @@
 import type { IssueWorkspaceFileContentResponseData, IssueWorkspaceFileDiffResponseData } from '@src/services';
-import type { PreviewTabKind } from '@src/state/workspaceFiles';
 import type { ReactNode } from 'react';
 import {
   BrokenImageOutlined as BrokenImageOutlinedIcon,
@@ -18,24 +17,28 @@ import ViewerToolbar from '../fileViewer/ViewerToolbar';
 interface PreviewContentProps {
   issueId: string;
   baseDir: string;
-  /// 激活 tab 的真实文件相对路径（父层按 tab id 作 key，切 tab 即重挂载——query 缓存命中 +
+  /// 激活 tab 的文件相对路径（父层按 tab id 作 key，切 tab 即重挂载——query 缓存命中 +
   /// staleTime 0 静默重验，见 state/workspaceFiles/queries.ts）。
   path: string;
-  /// tab 内容形态：file=文件内容预览；diff=未提交变更 diff 预览。
-  kind: PreviewTabKind;
+  /// Git 变更模式下的变更文件路径集（父层 FilePreviewOverlay 派生，与 tab 栏小点/刷新分流
+  /// 同源；空集 = 全部文件模式或变更集未就绪）。
+  changedPaths: ReadonlySet<string>;
 }
 
-/// 预览内容区：按 kind 分流到 content / fileDiff 两条 query，各自四分支（错误/加载/信息态/
-/// 渲染态）。file 走双层分派——传输 kind（后端定夺：text/image/binary/tooLarge）× text 内
-/// 呈现细分（markdown/code，viewerKind 纯函数）；diff 走 DiffViewer（text）或信息态
-/// （binary/tooLarge）。容器 tabIndex=-1 于挂载时夺焦（焦点若留在背后 xterm，键盘输入会
-/// 打进不可见终端）；Escape 冒泡至浮层根处理。
-export default function PreviewContent({ issueId, baseDir, path, kind }: PreviewContentProps) {
+/// 预览内容区：tab 内容形态（文件内容 / 未提交变更 diff）为渲染期派生——激活文件在变更集
+/// （父层按「面板模式 + getGitChanges 变更集」派生的 changedPaths）时走 fileDiff query，
+/// 否则走 content query。变更集加载中 changedPaths 为空集，先保持文件内容渲染，到位后原位
+/// 切 diff（组件按 tab id 作 key，模式切换不重挂载）。file 链路双层分派——传输 kind（后端
+/// 定夺：text/image/binary/tooLarge）× text 内呈现细分（markdown/code，viewerKind 纯函数）；
+/// diff 走 DiffViewer（text）或信息态（binary/tooLarge）。容器 tabIndex=-1 于挂载时夺焦
+/// （焦点若留在背后 xterm，键盘输入会打进不可见终端）；Escape 冒泡至浮层根处理。
+export default function PreviewContent({ issueId, baseDir, path, changedPaths }: PreviewContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // 两条 query 按 kind 互斥启用（path 传 null 关闸），hook 顺序恒定不条件化。
-  const contentQuery = useWorkspaceFileContent(issueId, baseDir, kind === 'file' ? path : null);
-  const diffQuery = useWorkspaceFileDiff(issueId, baseDir, kind === 'diff' ? path : null);
-  const active = kind === 'diff' ? diffQuery : contentQuery;
+  const hasChange = changedPaths.has(path);
+  // 两条 query 按派生决策互斥启用（path 传 null 关闸），hook 顺序恒定不条件化。
+  const contentQuery = useWorkspaceFileContent(issueId, baseDir, hasChange ? null : path);
+  const diffQuery = useWorkspaceFileDiff(issueId, baseDir, hasChange ? path : null);
+  const active = hasChange ? diffQuery : contentQuery;
   const { data, dataUpdatedAt, error, isLoading, refetch } = active;
   // 挂载→内容就绪耗时观测（含传输与渲染提交；DEV 计时日志，每挂载记首份数据一次）。
   // t0 在 mount effect 里取（纯净性：渲染期不调 performance.now），切 tab 重挂载即重置。
@@ -71,7 +74,7 @@ export default function PreviewContent({ issueId, baseDir, path, kind }: Preview
                 severity="error"
                 action={<Button color="inherit" size="small" onClick={() => void refetch()}>重试</Button>}
               >
-                {kind === 'diff' ? '变更内容读取失败' : '文件读取失败'}：{error.message}
+                {hasChange ? '变更内容读取失败' : '文件读取失败'}：{error.message}
               </Alert>
             </Box>
           )
@@ -81,7 +84,7 @@ export default function PreviewContent({ issueId, baseDir, path, kind }: Preview
                 <CircularProgress size={20} />
               </Box>
             )
-          : kind === 'diff'
+          : hasChange
             ? renderDiffContent(data as IssueWorkspaceFileDiffResponseData, path)
             : renderContent(data as IssueWorkspaceFileContentResponseData, { issueId, baseDir, path, dataUpdatedAt })}
     </Box>
