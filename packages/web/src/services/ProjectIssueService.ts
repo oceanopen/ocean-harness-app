@@ -24,7 +24,6 @@ export interface ProjectIssueResponseData {
   startDate: string;
   targetDate: string;
   completedAt: string | null;
-  isDraft: 'Y' | 'N';
   typeId: number; // issue 类型 id（t_workspace_types 单值引用，0=未分类）
   createdAt: string;
   updatedAt: string;
@@ -49,7 +48,6 @@ export interface ProjectIssueCreateRequest {
   name: string;
   description?: string;
   priority?: Priority;
-  isDraft?: 'Y' | 'N';
   startDate?: string;
   targetDate?: string;
   stateCode?: StateCode; // 空值 → 后端默认 BACKLOG
@@ -65,7 +63,6 @@ export interface ProjectIssueUpdateRequest {
   description?: string;
   stateCode?: StateCode;
   priority?: Priority;
-  isDraft?: 'Y' | 'N';
   startDate?: string;
   targetDate?: string;
   typeId?: number; // 不传=保留原值，传值（含 0）=覆写（0=未分类）

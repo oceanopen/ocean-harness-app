@@ -7,7 +7,7 @@ import (
 
 // 每 action 一个独立 Request 类型。issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，
 // Create 时由 service 生成 uuid v7）；stateCode 为固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，新建默认 BACKLOG）；
-// sortOrder 由 service 自算（不入参）；priority/isDraft 为 typed 枚举（前端传，空值由 service 规范为 none/N）。
+// sortOrder 由 service 自算（不入参）；priority 为 typed 枚举（前端传，空值由 service 规范为 none）。
 
 // ProjectIssueGetListRequest 是 POST /api/tracker/projectIssue/getList 的入参。
 // 分组由前端对扁平列表自行分组，后端不接收；orderBy 不传则按 sort_order 升序（id 无数值序，按 id 排序请传 created_at）。
@@ -40,7 +40,6 @@ type ProjectIssueCreateRequest struct {
 	Name                 string                  `json:"name" binding:"required,max=255"`
 	Description          string                  `json:"description" binding:"omitempty"`
 	Priority             enums.Priority          `json:"priority"`
-	IsDraft              enums.YesNo             `json:"isDraft"`
 	StartDate            string                  `json:"startDate" binding:"omitempty"`
 	TargetDate           string                  `json:"targetDate" binding:"omitempty"`
 	StateCode            enums.StateCode         `json:"stateCode"`            // 空值 → 默认 BACKLOG
@@ -59,7 +58,6 @@ type ProjectIssueUpdateRequest struct {
 	Description          string                  `json:"description" binding:"omitempty"`
 	StateCode            enums.StateCode         `json:"stateCode"`
 	Priority             enums.Priority          `json:"priority"`
-	IsDraft              enums.YesNo             `json:"isDraft"`
 	StartDate            string                  `json:"startDate" binding:"omitempty"`
 	TargetDate           string                  `json:"targetDate" binding:"omitempty"`
 	TypeID               *int                    `json:"typeId"`               // nil=保留原值，0=置为未分类

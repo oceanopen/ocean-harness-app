@@ -24,7 +24,6 @@ func GenModelTracker() {
 		gen.FieldType("parent_id", "string"),
 		gen.FieldType("state_code", "enums.StateCode"),
 		gen.FieldType("priority", "enums.Priority"),
-		gen.FieldType("is_draft", "enums.YesNo"),
 		// completed_at 用 *time.Time 指针：未完成=nil（写 NULL）/ 完成=&time，便于 Save 统一处理可空语义。
 		gen.FieldType("completed_at", "*time.Time"),
 		gen.FieldRelate(field.HasMany, "IssueLocalRepositoryList", issueLocalRepository, &field.RelateConfig{

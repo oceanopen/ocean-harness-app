@@ -15,7 +15,7 @@
 --   - 普通索引：数据量较小，本期暂不建，后续按查询热点按 idx_{表名去t_}_{列名} 追加；
 --   - 【无 DB 外键约束】表间不建 FOREIGN KEY，跨表关联一律通过 SQL JOIN 或应用层组装查询；
 --     数据级联清理（如删 workspace 连带清其下 project/issue/type）由 service 层手动处理；
---   - typed 枚举列（state_code / is_draft / priority）用 TEXT NOT NULL 无默认值，
+--   - typed 枚举列（state_code / priority）用 TEXT NOT NULL 无默认值，
 --     由代码显式赋值（避免 DEFAULT '' 触发 gorm 零值省略、静默存空串，见记忆 tracker-enum-pattern）。
 
 -- t_workspaces：顶层容器（个人可建多个，如「个人 / 工作 / 开源」）。
@@ -63,7 +63,6 @@ CREATE TABLE t_project_issues (
     start_date          TEXT,
     target_date         TEXT,
     completed_at        DATETIME,
-    is_draft            TEXT     NOT NULL,
     created_at          DATETIME NOT NULL,
     updated_at          DATETIME NOT NULL
 );

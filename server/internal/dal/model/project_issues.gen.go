@@ -22,13 +22,12 @@ type ProjectIssue struct {
 	Priority                 enums.Priority          `gorm:"column:priority;type:TEXT;not null" json:"priority"`
 	SortOrder                float64                 `gorm:"column:sort_order;type:REAL;not null" json:"sortOrder"`
 	ParentID                 string                  `gorm:"column:parent_id;type:TEXT" json:"parentId"`
+	TypeID                   int                     `gorm:"column:type_id;type:INTEGER;not null" json:"typeId"`
 	StartDate                string                  `gorm:"column:start_date;type:TEXT" json:"startDate"`
 	TargetDate               string                  `gorm:"column:target_date;type:TEXT" json:"targetDate"`
 	CompletedAt              *time.Time              `gorm:"column:completed_at;type:DATETIME" json:"completedAt"`
-	IsDraft                  enums.YesNo             `gorm:"column:is_draft;type:TEXT;not null" json:"isDraft"`
 	CreatedAt                time.Time               `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt                time.Time               `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	TypeID                   int                     `gorm:"column:type_id;type:INTEGER;not null" json:"typeId"`
 	IssueLocalRepositoryList []*IssueLocalRepository `gorm:"foreignKey:IssueID;references:ID" json:"issueLocalRepositoryList,omitempty"`
 }
 

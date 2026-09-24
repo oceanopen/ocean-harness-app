@@ -81,7 +81,7 @@ func (svc ProjectIssue) GetInfo(req *types.ProjectIssueGetInfoRequest) (*types.P
 }
 
 // Create 新建 issue。stateCode 空值取默认 BACKLOG；sort_order 自算（同 project MAX+10000，首个 10000）；
-// priority/is_draft 空值规范为 none/N；typeId 单值直写（0=未分类）。事务内创建 issue + 同步仓库分支关联，
+// priority 空值规范为 none；typeId 单值直写（0=未分类）。事务内创建 issue + 同步仓库分支关联，
 // completed_at 默认 nil（未完成）。
 func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.ProjectIssueResponseData, error) {
 	var created *model.ProjectIssue
@@ -120,10 +120,6 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 		if priority == "" {
 			priority = enums.PRIORITY_NONE
 		}
-		isDraft := req.IsDraft
-		if isDraft == "" {
-			isDraft = enums.YES_NO_N
-		}
 
 		// stateCode 空值取默认；非法值报错。DONE 时同步写 completed_at（与 applyStateTransition 口径一致，
 		// 否则留下 state=DONE 但 completed_at=nil 的记录，会阻断父任务自动完成）。
@@ -156,7 +152,6 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			Priority:    priority,
 			SortOrder:   sortOrder,
 			ParentID:    parentID,
-			IsDraft:     isDraft,
 			TypeID:      req.TypeID,
 			StartDate:   req.StartDate,
 			TargetDate:  req.TargetDate,
@@ -199,12 +194,9 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 		issue.Description = req.Description
 		issue.StartDate = req.StartDate
 		issue.TargetDate = req.TargetDate
-		// priority/isDraft/stateCode 为 typed 枚举：空值保留原值（前端不传即不改，避免 Value() 校验空串报错）。
+		// priority/stateCode 为 typed 枚举：空值保留原值（前端不传即不改，避免 Value() 校验空串报错）。
 		if req.Priority != "" {
 			issue.Priority = req.Priority
-		}
-		if req.IsDraft != "" {
-			issue.IsDraft = req.IsDraft
 		}
 		// typeId 单值：nil=保留原值（MCP 部分更新），非 nil 覆写（0=未分类）。
 		if req.TypeID != nil {

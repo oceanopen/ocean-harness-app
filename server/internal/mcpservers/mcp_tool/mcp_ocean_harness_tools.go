@@ -187,7 +187,6 @@ func buildIssueUpdateRequest(cur *types.ProjectIssueResponseData, args *mcpdto.I
 		Description:          cur.Description,
 		StateCode:            args.StateCode, // 空 = 不变（service.applyStateTransition 对空 no-op）
 		Priority:             cur.Priority,
-		IsDraft:              cur.IsDraft,
 		StartDate:            cur.StartDate,
 		TargetDate:           cur.TargetDate,
 		TypeID:               &cur.TypeID, // MCP 不支持改类型，原样回填现值（nil 语义不适用）
@@ -224,7 +223,6 @@ func newIssueContent(data *types.ProjectIssueResponseData) mcpdto.IssueContent {
 		StateCode:            string(issue.StateCode),
 		Priority:             string(issue.Priority),
 		ParentID:             issue.ParentID,
-		IsDraft:              string(issue.IsDraft),
 		StartDate:            issue.StartDate,
 		TargetDate:           issue.TargetDate,
 		CompletedAt:          formatTime(issue.CompletedAt),

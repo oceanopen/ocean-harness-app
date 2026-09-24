@@ -56,7 +56,6 @@ type IssueContent struct {
 	StateCode            string                   `json:"stateCode" jsonschema:"状态：BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
 	Priority             string                   `json:"priority" jsonschema:"优先级：urgent/high/medium/low/none"`
 	ParentID             string                   `json:"parentId,omitempty" jsonschema:"父 issue 主键；留空表示顶级任务"`
-	IsDraft              string                   `json:"isDraft" jsonschema:"是否草稿：Y/N"`
 	StartDate            string                   `json:"startDate,omitempty" jsonschema:"开始日期（yyyy-mm-dd），留空表示未设置"`
 	TargetDate           string                   `json:"targetDate,omitempty" jsonschema:"目标日期（yyyy-mm-dd），留空表示未设置"`
 	CompletedAt          string                   `json:"completedAt,omitempty" jsonschema:"完成时间（RFC3339），留空表示未完成"`

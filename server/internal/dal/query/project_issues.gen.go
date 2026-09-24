@@ -37,13 +37,12 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.Priority = field.NewField(tableName, "priority")
 	_projectIssue.SortOrder = field.NewFloat64(tableName, "sort_order")
 	_projectIssue.ParentID = field.NewString(tableName, "parent_id")
+	_projectIssue.TypeID = field.NewInt(tableName, "type_id")
 	_projectIssue.StartDate = field.NewString(tableName, "start_date")
 	_projectIssue.TargetDate = field.NewString(tableName, "target_date")
 	_projectIssue.CompletedAt = field.NewTime(tableName, "completed_at")
-	_projectIssue.IsDraft = field.NewField(tableName, "is_draft")
 	_projectIssue.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectIssue.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_projectIssue.TypeID = field.NewInt(tableName, "type_id")
 	_projectIssue.IssueLocalRepositoryList = projectIssueHasManyIssueLocalRepositoryList{
 		db: db.Session(&gorm.Session{}),
 
@@ -68,13 +67,12 @@ type projectIssue struct {
 	Priority                 field.Field
 	SortOrder                field.Float64
 	ParentID                 field.String
+	TypeID                   field.Int
 	StartDate                field.String
 	TargetDate               field.String
 	CompletedAt              field.Time
-	IsDraft                  field.Field
 	CreatedAt                field.Time
 	UpdatedAt                field.Time
-	TypeID                   field.Int
 	IssueLocalRepositoryList projectIssueHasManyIssueLocalRepositoryList
 
 	fieldMap map[string]field.Expr
@@ -101,13 +99,12 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.Priority = field.NewField(table, "priority")
 	p.SortOrder = field.NewFloat64(table, "sort_order")
 	p.ParentID = field.NewString(table, "parent_id")
+	p.TypeID = field.NewInt(table, "type_id")
 	p.StartDate = field.NewString(table, "start_date")
 	p.TargetDate = field.NewString(table, "target_date")
 	p.CompletedAt = field.NewTime(table, "completed_at")
-	p.IsDraft = field.NewField(table, "is_draft")
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")
-	p.TypeID = field.NewInt(table, "type_id")
 
 	p.fillFieldMap()
 
@@ -136,7 +133,7 @@ func (p *projectIssue) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (p *projectIssue) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 17)
+	p.fieldMap = make(map[string]field.Expr, 16)
 	p.fieldMap["id"] = p.ID
 	p.fieldMap["project_id"] = p.ProjectID
 	p.fieldMap["workspace_id"] = p.WorkspaceID
@@ -146,13 +143,12 @@ func (p *projectIssue) fillFieldMap() {
 	p.fieldMap["priority"] = p.Priority
 	p.fieldMap["sort_order"] = p.SortOrder
 	p.fieldMap["parent_id"] = p.ParentID
+	p.fieldMap["type_id"] = p.TypeID
 	p.fieldMap["start_date"] = p.StartDate
 	p.fieldMap["target_date"] = p.TargetDate
 	p.fieldMap["completed_at"] = p.CompletedAt
-	p.fieldMap["is_draft"] = p.IsDraft
 	p.fieldMap["created_at"] = p.CreatedAt
 	p.fieldMap["updated_at"] = p.UpdatedAt
-	p.fieldMap["type_id"] = p.TypeID
 
 }
 
