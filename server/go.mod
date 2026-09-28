@@ -11,6 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/modelcontextprotocol/go-sdk v0.2.0
+	github.com/oceanopen/wecom-aibot-go-sdk v0.1.0
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/zap v1.28.0
@@ -39,6 +40,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/golang/protobuf v1.5.0 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect

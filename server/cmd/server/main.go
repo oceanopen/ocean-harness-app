@@ -22,6 +22,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ocean-harness/server/internal/bot"
+	"ocean-harness/server/internal/bot/wecom"
 	"ocean-harness/server/internal/config"
 	"ocean-harness/server/internal/global"
 	"ocean-harness/server/internal/initialize"
@@ -49,6 +51,12 @@ func main() {
 	// 5) 服务启动前打印完整环境变量信息（用 zap，文件 + 控制台都有）。
 	printRuntimeConfig(cfg)
 
+	// 5.5) bot 运行时装配：注册企微适配器工厂 + 拉起全部启用 bot（WS 长连接后台运行，
+	// 不阻塞 HTTP 启动；连接状态经 /api/imBot/getList 投影呈现）。
+	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, global.Logger)
+	global.BotSupervisor.Register(wecom.Factory{})
+	global.BotSupervisor.StartEnabled()
+
 	// 6) 组装路由（仅 /api/baseInfo/getServerRunInfo，无登录/鉴权）。
 	engine := router.SetupRouter()
 
@@ -60,6 +68,8 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 		<-sigCh
 		global.Logger.Info("http-server shutting down")
+		// 先断 bot 渠道连接 + 取消在途回合（杀 claude 子进程），再关 HTTP。
+		global.BotSupervisor.StopAll()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)

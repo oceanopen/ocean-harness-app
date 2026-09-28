@@ -102,7 +102,7 @@ func (api IssueWorkspace) FileContent(ctx *gin.Context) {
 }
 
 // GitChanges POST /api/issueWorkspace/getGitChanges：列出全部仓库的未提交变更
-//（暂存+工作区 vs HEAD + untracked，T5.1「Git 变更」模式）。
+// （暂存+工作区 vs HEAD + untracked，T5.1「Git 变更」模式）。
 func (api IssueWorkspace) GitChanges(ctx *gin.Context) {
 	req := &types.IssueWorkspaceGitChangesRequest{}
 	svc := service.IssueWorkspace{}
@@ -119,7 +119,7 @@ func (api IssueWorkspace) GitChanges(ctx *gin.Context) {
 }
 
 // FileDiff POST /api/issueWorkspace/getFileDiff：返回单文件未提交变更的前后内容对
-//（old=HEAD 版本 / new=工作区当前，前端 diff 视图消费）。
+// （old=HEAD 版本 / new=工作区当前，前端 diff 视图消费）。
 func (api IssueWorkspace) FileDiff(ctx *gin.Context) {
 	req := &types.IssueWorkspaceFileDiffRequest{}
 	svc := service.IssueWorkspace{}

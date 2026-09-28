@@ -1,6 +1,16 @@
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 
+export { ImBotService } from './ImBotService';
+export type {
+  ImBotAccessPolicy,
+  ImBotCreateRequest,
+  ImBotDeleteRequest,
+  ImBotModel,
+  ImBotRestartRequest,
+  ImBotUpdateRequest,
+} from './ImBotService';
+
 export { ISSUE_WORKSPACE_STEP_KEY, IssueWorkspaceService } from './IssueWorkspaceService';
 export type {
   IssueWorkspaceArchiveAction,

@@ -99,6 +99,15 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 
 **命名**：context 变量统一 `ctx`（不简写 `c`）；controller / service / model 同名分属不同包（`controller.Workspace` / `service.Workspace` / `model.Workspace`）。基类落 `internal/apis/`（`api.go` + `service.go`）。
 
+## imBot 域（IM 渠道数字人 bot）
+
+tracker 基线之后的第二个业务域，与 tracker 的差异在「**运行时**」：`/api/imBot/*` 只管 bot 配置 CRUD + 重启连接，真正的消息收发在 `internal/bot`（渠道无关核心：幂等/白名单/每会话串行队列/claude headless 回合/流式回复泵）+ `internal/bot/wecom` 等渠道适配器（实现核心的 `ChannelRuntime` 接口）。分层要点：
+
+- **DB 是配置 SSOT，运行时是投影**：service 写库成功后才调 `global.BotSupervisor`（`ApplyBot`=Stop→Start 无脑重启 / `StopBot`），失败仅日志、可经「重启连接」收敛。
+- **启动装配**：`cmd/server/main.go` 步骤 5.5 注册渠道工厂 + `StartEnabled()`；SIGTERM 先 `StopAll()`（断连接 + 杀在途 claude 子进程）再关 HTTP。
+- **channel 差异收窄在 credential JSON**（各适配器自行解释 shape，如 wecom `{"botId","secret"}`），新渠道 = 新增适配器包 + main 注册一行，表结构/API 不动。
+- **claude 引擎在核心层**：`driver_claude.go` spawn `claude -p --output-format stream-json`（stdin 传 prompt），会话多轮经 `--resume <sessionId>`（id 从 init 事件捕获后回写 `t_im_bot_conversations`），与 PTY 面板链路互不干扰。
+
 ## 配置：环境变量 + yaml 配置文件
 
 优先级：**环境变量 > yaml 配置文件**。环境变量名统一大写，沿用 `GO_SERVER_` 前缀。

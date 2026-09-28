@@ -1,0 +1,5 @@
+// imBots 域 query key 工厂（SSOT）。root 根用于整域失效（重启连接后/将来接 Tauri 事件时）。
+export const imBotsKeys = {
+  root: ['imBots'] as const,
+  list: () => [...imBotsKeys.root, 'list'] as const,
+} as const;

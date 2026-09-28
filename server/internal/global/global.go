@@ -5,6 +5,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"ocean-harness/server/internal/bot"
 	"ocean-harness/server/internal/config"
 )
 
@@ -18,4 +19,8 @@ var (
 	// SqliteDB 为 sqlite 的 gorm 句柄。命名带 Sqlite 前缀，
 	// 与未来可能引入的其他 DB（如远端 MySQL）区分。
 	SqliteDB *gorm.DB
+
+	// BotSupervisor 为 IM bot 运行时单例（main 装配：注册渠道工厂 + StartEnabled）。
+	// service 层经此做 create/update/delete 后的连接热更新。
+	BotSupervisor *bot.Supervisor
 )

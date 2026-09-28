@@ -97,6 +97,18 @@ func SetupRouter() *gin.Engine {
 			pluginGroup.POST("/update", controller.Plugin{}.Update)
 		}
 
+		// imBot 模块：IM 渠道数字人 bot 管理（action 风格，POST）。渠道无关命名（channel 差异
+		// 在 credential JSON 内）；写操作落库后经 supervisor 热更新连接，getList 合并运行态。
+		imBotGroup := apiGroup.Group("/imBot")
+		{
+			imBotGroup.POST("/getList", controller.ImBot{}.GetList)
+			imBotGroup.POST("/getInfo", controller.ImBot{}.GetInfo)
+			imBotGroup.POST("/create", controller.ImBot{}.Create)
+			imBotGroup.POST("/update", controller.ImBot{}.Update)
+			imBotGroup.POST("/delete", controller.ImBot{}.Delete)
+			imBotGroup.POST("/restart", controller.ImBot{}.Restart)
+		}
+
 		trackerGroup := apiGroup.Group("/tracker")
 		{
 			// workspace 模块：一律 POST（action 风格 getList/getInfo/create/update/delete）。

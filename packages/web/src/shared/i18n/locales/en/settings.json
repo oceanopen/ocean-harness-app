@@ -5,7 +5,8 @@
     "terminalConfig": "Terminal Config",
     "projectConfig": "Project Config",
     "userProfile": "User Profile",
-    "about": "About"
+    "about": "About",
+    "imBots": "IM Bots"
   },
   "common": {
     "button": {
