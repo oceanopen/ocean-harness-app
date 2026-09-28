@@ -173,6 +173,13 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		o.log.Error("bot markSeen 失败", zap.Error(err))
 	}
 
+	// 工作目录未配置（扫码接入先建 bot 后补配置的语义）：连接照常、回合不启动，
+	// 提示用户补配置——已 markSeen（消息已被处理），不算失败、不触发会话自愈。
+	if strings.TrimSpace(cfg.WorkspaceDir) == "" {
+		_ = job.reply.Flush("机器人尚未配置工作目录，请先在应用「设置 → IM 机器人」中完成配置，再重新发送消息。", true)
+		return
+	}
+
 	prevSessionID, err := o.store.SessionID(cfg.BotID, key)
 	if err != nil {
 		o.log.Error("bot 会话读取失败（按新会话处理）", zap.Error(err))

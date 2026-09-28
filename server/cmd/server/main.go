@@ -28,6 +28,7 @@ import (
 	"ocean-harness/server/internal/global"
 	"ocean-harness/server/internal/initialize"
 	"ocean-harness/server/internal/router"
+	"ocean-harness/server/internal/service"
 )
 
 func main() {
@@ -56,6 +57,8 @@ func main() {
 	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, global.Logger)
 	global.BotSupervisor.Register(wecom.Factory{})
 	global.BotSupervisor.StartEnabled()
+	// 扫码授权激活回调：凭据落库 + 拉连接（secret 仅经此路径入 sqlite，不回前端不进日志）。
+	wecom.SetProvisionActivator(service.ProvisionActivateBot)
 
 	// 6) 组装路由（仅 /api/baseInfo/getServerRunInfo，无登录/鉴权）。
 	engine := router.SetupRouter()

@@ -1,17 +1,20 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/bot"
+	"ocean-harness/server/internal/bot/wecom"
 	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
@@ -71,7 +74,7 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 		Name:         req.Name,
 		Channel:      enums.CHANNEL_WECOM,
 		Credential:   credentialJSON(req.BotId, req.Secret),
-		WorkspaceDir: req.WorkspaceDir,
+		WorkspaceDir: strings.TrimSpace(req.WorkspaceDir),
 		Model:        req.Model,
 		SystemPrompt: req.SystemPrompt,
 		AllowedTools: allowedToolsJSON(req.AllowedTools),
@@ -109,7 +112,7 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 
 	row.Name = req.Name
 	row.Credential = credentialJSON(req.BotId, secret)
-	row.WorkspaceDir = req.WorkspaceDir
+	row.WorkspaceDir = strings.TrimSpace(req.WorkspaceDir)
 	row.Model = req.Model
 	row.SystemPrompt = req.SystemPrompt
 	row.AllowedTools = allowedToolsJSON(req.AllowedTools)
@@ -174,6 +177,81 @@ func (svc ImBot) Restart(req *types.ImBotRestartRequest) error {
 	return global.BotSupervisor.ApplyBot(row)
 }
 
+// ---------- 扫码授权接入（provision） ----------
+
+// ProvisionBegin 开新扫码会话（返回二维码内容 + 轮询节奏；已有会话自动取消）。
+func (svc ImBot) ProvisionBegin() (*types.ImBotProvisionView, error) {
+	view, err := wecom.StartProvisioning()
+	if err != nil {
+		return nil, err
+	}
+	return provisionView(view), nil
+}
+
+// ProvisionPoll 惰性单飞轮询一次扫码结果；connected 时激活已完成（新 bot 已建并连接）。
+func (svc ImBot) ProvisionPoll(req *types.ImBotProvisionPollRequest) (*types.ImBotProvisionView, error) {
+	view, err := wecom.RegistrationStatus(req.AttemptID)
+	if err != nil {
+		return nil, err
+	}
+	return provisionView(view), nil
+}
+
+// ProvisionCancel 取消扫码会话。
+func (svc ImBot) ProvisionCancel(req *types.ImBotProvisionCancelRequest) error {
+	return wecom.CancelProvisioning(req.AttemptID)
+}
+
+// provisionView wecom.AttemptView → DTO（同构字段直拷， secrets 已在源头剥除）。
+func provisionView(v wecom.AttemptView) *types.ImBotProvisionView {
+	return &types.ImBotProvisionView{
+		AttemptID:      v.AttemptID,
+		State:          v.State,
+		QRContent:      v.QRContent,
+		ExpiresAt:      v.ExpiresAt,
+		PollIntervalMs: v.PollIntervalMs,
+		ErrCode:        v.ErrCode,
+		BotID:          v.BotID,
+	}
+}
+
+// ProvisionActivateBot 扫码授权成功的激活回调（main 装配注入 wecom.SetProvisionActivator，
+// 进程级函数——不依赖请求上下文，同 StartEnabled 口径）。botId 查重 → 建 bot 行
+// （enabled=Y、工作目录待配置、默认开放白名单、名称默认可后改）→ 拉起连接。
+func ProvisionActivateBot(remoteBotID, secret string) (int, error) {
+	if global.BotSupervisor == nil {
+		return 0, errors.New("bot 运行时未就绪")
+	}
+	q := query.Use(global.SqliteDB)
+	rows, err := q.ImBot.WithContext(context.Background()).Find()
+	if err != nil {
+		return 0, err
+	}
+	for _, row := range rows {
+		var cred types.ImBotCredential
+		if json.Unmarshal([]byte(row.Credential), &cred) == nil && cred.BotId == remoteBotID {
+			return 0, fmt.Errorf("该机器人已接入（%s），无需重复扫码", row.Name)
+		}
+	}
+	policy, _ := json.Marshal(types.ImBotAccessPolicy{Mode: bot.AccessModeOpen, AllowUsers: []string{}})
+	row := &model.ImBot{
+		Name:         "企业微信机器人",
+		Channel:      enums.CHANNEL_WECOM,
+		Credential:   credentialJSON(remoteBotID, secret),
+		WorkspaceDir: "",
+		AllowedTools: "[]",
+		AccessPolicy: string(policy),
+		Enabled:      enums.YES_NO_YES,
+	}
+	if err := q.ImBot.WithContext(context.Background()).Create(row); err != nil {
+		return 0, err
+	}
+	if err := global.BotSupervisor.ApplyBot(row); err != nil {
+		return 0, err
+	}
+	return row.ID, nil
+}
+
 // ---------- 内部工具 ----------
 
 // mustGet 按 id 取 bot 行（不存在给中文错误）。
@@ -231,10 +309,14 @@ func mergeRuntimeStatus(item *types.ImBotResponseData, row *model.ImBot, st bot.
 	item.ConnState = "stopped"
 }
 
-// validateWorkspaceDir 工作目录校验：绝对路径 + 可创建 + 可写（探针文件写入即删）。
+// validateWorkspaceDir 工作目录校验：空 = 未配置（合法，扫码接入先建 bot 后补配置的语义）；
+// 非空则要求绝对路径 + 可创建 + 可写（探针文件写入即删）。
 func (svc ImBot) validateWorkspaceDir(dir string) error {
+	if strings.TrimSpace(dir) == "" {
+		return nil
+	}
 	if !filepath.IsAbs(dir) {
-		return errors.New("工作目录必须为绝对路径")
+		return errors.New("工作目录必须为绝对路径，或留空待配置")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("工作目录无法创建: %w", err)

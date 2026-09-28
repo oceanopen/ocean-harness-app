@@ -107,6 +107,9 @@ func SetupRouter() *gin.Engine {
 			imBotGroup.POST("/update", controller.ImBot{}.Update)
 			imBotGroup.POST("/delete", controller.ImBot{}.Delete)
 			imBotGroup.POST("/restart", controller.ImBot{}.Restart)
+			imBotGroup.POST("/provisionBegin", controller.ImBot{}.ProvisionBegin)
+			imBotGroup.POST("/provisionPoll", controller.ImBot{}.ProvisionPoll)
+			imBotGroup.POST("/provisionCancel", controller.ImBot{}.ProvisionCancel)
 		}
 
 		trackerGroup := apiGroup.Group("/tracker")

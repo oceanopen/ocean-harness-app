@@ -1,4 +1,10 @@
-import type { ImBotCreateRequest, ImBotModel, ImBotUpdateRequest } from '@src/services';
+import type {
+  ImBotCreateRequest,
+  ImBotModel,
+  ImBotProvisionCancelRequest,
+  ImBotProvisionPollRequest,
+  ImBotUpdateRequest,
+} from '@src/services';
 import { ImBotService } from '@src/services';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { imBotsKeys } from './keys';
@@ -61,5 +67,36 @@ export function useRestartImBot() {
   return useMutation({
     mutationFn: (req: { id: number }) => ImBotService.restart(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: imBotsKeys.list() }),
+  });
+}
+
+// ─── 扫码授权接入（provision）───
+// 轮询节奏由组件按宿主下发的 pollIntervalMs 链式 setTimeout 驱动（协议节奏，非 TanStack
+// refetchInterval）；connected 即激活完成（服务端已建 bot 并连接），此处只负责失效列表缓存。
+
+/** 开新扫码会话（已有会话自动取消）。 */
+export function useProvisionBegin() {
+  return useMutation({
+    mutationFn: () => ImBotService.provisionBegin(),
+  });
+}
+
+/** 轮询一次扫码结果；connected 时失效列表（新 bot 已建）。 */
+export function useProvisionPoll() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: ImBotProvisionPollRequest) => ImBotService.provisionPoll(req),
+    onSuccess: (view) => {
+      if (view.state === 'connected') {
+        void qc.invalidateQueries({ queryKey: imBotsKeys.list() });
+      }
+    },
+  });
+}
+
+/** 取消扫码会话。 */
+export function useProvisionCancel() {
+  return useMutation({
+    mutationFn: (req: ImBotProvisionCancelRequest) => ImBotService.provisionCancel(req),
   });
 }

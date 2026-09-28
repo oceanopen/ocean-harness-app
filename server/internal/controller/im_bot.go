@@ -107,3 +107,50 @@ func (api ImBot) Restart(ctx *gin.Context) {
 	}
 	api.JsonOK(nil)
 }
+
+// ProvisionBegin POST /api/imBot/provisionBegin：开新扫码授权会话（返回二维码内容 + 轮询节奏）。
+func (api ImBot) ProvisionBegin(ctx *gin.Context) {
+	req := &types.ImBotProvisionBeginRequest{}
+	svc := service.ImBot{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.ProvisionBegin()
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}
+
+// ProvisionPoll POST /api/imBot/provisionPoll：轮询扫码结果（惰性单飞；connected 即激活完成）。
+func (api ImBot) ProvisionPoll(ctx *gin.Context) {
+	req := &types.ImBotProvisionPollRequest{}
+	svc := service.ImBot{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.ProvisionPoll(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}
+
+// ProvisionCancel POST /api/imBot/provisionCancel：取消扫码会话。
+func (api ImBot) ProvisionCancel(ctx *gin.Context) {
+	req := &types.ImBotProvisionCancelRequest{}
+	svc := service.ImBot{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	if err := svc.ProvisionCancel(req); err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(nil)
+}

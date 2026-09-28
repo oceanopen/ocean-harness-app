@@ -107,6 +107,12 @@ tracker 基线之后的第二个业务域，与 tracker 的差异在「**运行�
 - **启动装配**：`cmd/server/main.go` 步骤 5.5 注册渠道工厂 + `StartEnabled()`；SIGTERM 先 `StopAll()`（断连接 + 杀在途 claude 子进程）再关 HTTP。
 - **channel 差异收窄在 credential JSON**（各适配器自行解释 shape，如 wecom `{"botId","secret"}`），新渠道 = 新增适配器包 + main 注册一行，表结构/API 不动。
 - **claude 引擎在核心层**：`driver_claude.go` spawn `claude -p --output-format stream-json`（stdin 传 prompt），会话多轮经 `--resume <sessionId>`（id 从 init 事件捕获后回写 `t_im_bot_conversations`），与 PTY 面板链路互不干扰。
+- **扫码授权接入**：`/api/imBot/provisionBegin|provisionPoll|provisionCancel`——直连腾讯官方端点
+  （`work.weixin.qq.com/ai/qc/generate|query_result`，无中转服务），auth_url 强校验官方域防钓鱼；
+  attempt 状态机在 `internal/bot/wecom/provision.go`（pending→connecting→connected，5 分钟本地 TTL，
+  poll 惰性单飞）；success 凭据经 `ProvisionActivator` 回调（main 注入 `service.ProvisionActivateBot`）
+  直接落库并拉连接，**secret 不回传前端不进日志**。`workspace_dir` 可空（扫码先建 bot 后补配置），
+  未配置时对话回合回复补配提醒、不启动 claude。
 
 ## 配置：环境变量 + yaml 配置文件
 

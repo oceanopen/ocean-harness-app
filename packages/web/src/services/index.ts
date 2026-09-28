@@ -7,6 +7,10 @@ export type {
   ImBotCreateRequest,
   ImBotDeleteRequest,
   ImBotModel,
+  ImBotProvisionCancelRequest,
+  ImBotProvisionPollRequest,
+  ImBotProvisionState,
+  ImBotProvisionView,
   ImBotRestartRequest,
   ImBotUpdateRequest,
 } from './ImBotService';
