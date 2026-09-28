@@ -15,7 +15,8 @@ import (
 // SetupRouter 构造 gin engine：注册中间件与路由。
 //
 // 当前暴露 /api/baseInfo（系统信息）、/api/localRepository/*（本地仓库）、/api/issueWorkspace/*
-// （issue 运行工作空间初始化）、/api/tracker/*（tracker 业务域：workspace 等）与
+// （issue 运行工作空间初始化）、/api/pluginMarketplace/*（插件市场）与 /api/plugin/*
+// （插件安装操作）、/api/tracker/*（tracker 业务域：workspace 等）与
 // /mcp/streamableHttp/*（MCP 端点，供工作空间内 AI agent 调用），均无需登录/鉴权。
 // gin.SetMode 已在 config.MustLoad 中按环境变量完成。
 func SetupRouter() *gin.Engine {
@@ -71,6 +72,29 @@ func SetupRouter() *gin.Engine {
 			issueWorkspaceGroup.GET("/fileRaw", controller.IssueWorkspace{}.FileRaw)
 			issueWorkspaceGroup.POST("/getGitChanges", controller.IssueWorkspace{}.GitChanges)
 			issueWorkspaceGroup.POST("/getFileDiff", controller.IssueWorkspace{}.FileDiff)
+		}
+
+		// pluginMarketplace 模块：插件市场投影与注册表操作（action 风格，POST）。
+		// 无本地表：市场注册表与安装状态的 SSOT 恒为 claude 侧，实时投影（调 claude plugin CLI
+		// + 扫描市场清单）。与 localRepository 同为顶层资源，独立分组，不挂 tracker 下。
+		pluginMarketplaceGroup := apiGroup.Group("/pluginMarketplace")
+		{
+			pluginMarketplaceGroup.POST("/getList", controller.PluginMarketplace{}.GetList)
+			pluginMarketplaceGroup.POST("/add", controller.PluginMarketplace{}.Add)
+			pluginMarketplaceGroup.POST("/update", controller.PluginMarketplace{}.Update)
+			pluginMarketplaceGroup.POST("/remove", controller.PluginMarketplace{}.Remove)
+		}
+
+		// plugin 模块：按开发工具（cli）维度的插件安装操作（install/uninstall/enable/disable/
+		// update，action 风格 POST）。cli 字段为多 CLI 扩展口子（v1 仅 claude），写操作统一
+		// 返回最新列表投影，前端一次往返即完成刷新。
+		pluginGroup := apiGroup.Group("/plugin")
+		{
+			pluginGroup.POST("/install", controller.Plugin{}.Install)
+			pluginGroup.POST("/uninstall", controller.Plugin{}.Uninstall)
+			pluginGroup.POST("/enable", controller.Plugin{}.Enable)
+			pluginGroup.POST("/disable", controller.Plugin{}.Disable)
+			pluginGroup.POST("/update", controller.Plugin{}.Update)
 		}
 
 		trackerGroup := apiGroup.Group("/tracker")

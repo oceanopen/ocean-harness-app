@@ -39,6 +39,18 @@ export type {
   RepoSubDir,
 } from './LocalRepositoryService';
 
+export { PluginMarketplaceService } from './PluginMarketplaceService';
+export type {
+  MarketplacePluginModel,
+  PluginComponentsModel,
+  PluginMarketplaceAddRequest,
+  PluginMarketplaceListModel,
+  PluginMarketplaceModel,
+  PluginMarketplaceRemoveRequest,
+  PluginMarketplaceUpdateRequest,
+  PluginOperationRequest,
+} from './PluginMarketplaceService';
+
 export { ProjectIssueService } from './ProjectIssueService';
 export type {
   IssueRepositoryBranchModel,

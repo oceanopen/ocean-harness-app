@@ -3,6 +3,7 @@ import type { MenuKey } from './commandPalette/types';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DeveloperModeOutlinedIcon from '@mui/icons-material/DeveloperModeOutlined';
+import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
@@ -34,6 +35,7 @@ import ClaudeSessionsPage from './ClaudeSessionsPage/ClaudeSessionsPage';
 import CommandPaletteProvider from './commandPalette/CommandPaletteProvider';
 import CommandPaletteTrigger from './commandPalette/CommandPaletteTrigger';
 import DevWorkbenchPage from './DevWorkbenchPage/DevWorkbenchPage';
+import PluginMarketplacePage from './PluginMarketplacePage/PluginMarketplacePage';
 import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
 import { DEFAULT_MENU, MENU_PATHS, menuToPath, pathToMenu, TRACKER_WID_PARAM } from './routes';
 import ServerStatusIndicator from './ServerStatusIndicator';
@@ -129,16 +131,19 @@ function PanelApp() {
     };
   }, [goMenu]);
 
-  // 监听 panel:shown 事件：窗口从隐藏恢复时，仅当当前页面是本地仓库管理时触发刷新。
+  // 监听 panel:shown 事件：窗口从隐藏恢复时，仅当当前页面是本地仓库管理/插件市场时触发刷新
+  // （两页数据均为 go-server 实时投影，隐藏期间可能因外部命令行变化而过期）。
   // 用 ref 读当前路由，避免旧 activeMenu 闭包陈旧（后端先 emit navigate 再 emit shown，但 navigate 是异步路由跳转）。
-  const isRepositories = useMatch('/repositories') != null;
-  const isRepositoriesRef = useRef(isRepositories);
+  const isRepositories = useMatch(MENU_PATHS.repositories) != null;
+  const isPluginMarketplace = useMatch(MENU_PATHS.pluginMarketplace) != null;
+  const shownRefreshNeeded = isRepositories || isPluginMarketplace;
+  const shownRefreshNeededRef = useRef(shownRefreshNeeded);
   useEffect(() => {
-    isRepositoriesRef.current = isRepositories;
-  }, [isRepositories]);
+    shownRefreshNeededRef.current = shownRefreshNeeded;
+  }, [shownRefreshNeeded]);
   useEffect(() => {
     const unlisten = listen(EVENT_PANEL_SHOWN, () => {
-      if (isRepositoriesRef.current) {
+      if (shownRefreshNeededRef.current) {
         setRepoRefreshTrigger(prev => prev + 1);
       }
     });
@@ -151,6 +156,7 @@ function PanelApp() {
     { key: 'claudeSessions', label: t('panel:menu.claudeSessions'), icon: <SensorsOutlinedIcon /> },
     { key: 'serverStatus', label: t('panel:menu.serverStatus'), icon: <LanOutlinedIcon /> },
     { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
+    { key: 'pluginMarketplace', label: t('panel:menu.pluginMarketplace'), icon: <ExtensionOutlinedIcon /> },
     { key: 'tracker', label: t('panel:menu.tracker'), icon: <SpaceDashboardOutlinedIcon /> },
     { key: 'devWorkbench', label: t('panel:menu.devWorkbench'), icon: <DeveloperModeOutlinedIcon /> },
     { key: 'settings', label: t('settings:title'), icon: <SettingsOutlinedIcon /> },
@@ -307,6 +313,7 @@ function PanelApp() {
               <Route path={MENU_PATHS.claudeSessions} element={<ClaudeSessionsPage />} />
               <Route path={MENU_PATHS.serverStatus} element={<ServerStatusPage />} />
               <Route path={MENU_PATHS.repositories} element={<RepositoriesPage windowShownTrigger={repoRefreshTrigger} />} />
+              <Route path={MENU_PATHS.pluginMarketplace} element={<PluginMarketplacePage windowShownTrigger={repoRefreshTrigger} />} />
               <Route path={MENU_PATHS.tracker} element={<TrackerPage />} />
               <Route path={MENU_PATHS.devWorkbench} element={<DevWorkbenchPage />} />
               {/* settings 为嵌套页：splat 挂载，分区子路由由 SettingsPage 内层 Routes 消费。 */}

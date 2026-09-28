@@ -2,6 +2,7 @@
   "menu": {
     "claudeSessions": "Claude Sessions",
     "repositories": "Repository Management",
+    "pluginMarketplace": "Plugin Marketplace",
     "serverStatus": "Service Status",
     "tracker": "Project & Issue Management",
     "devWorkbench": "Dev Workbench"
@@ -30,6 +31,7 @@
     "nav": {
       "claudeSessions": "Go to Claude Sessions",
       "repositories": "Go to Repository Management",
+      "pluginMarketplace": "Go to Plugin Marketplace",
       "serverStatus": "Go to Service Status",
       "tracker": "Go to Project & Issue Management",
       "devWorkbench": "Go to Dev Workbench"

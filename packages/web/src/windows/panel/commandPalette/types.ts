@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 export type MenuKey
   = | 'claudeSessions'
     | 'repositories'
+    | 'pluginMarketplace'
     | 'serverStatus'
     | 'tracker'
     | 'devWorkbench'

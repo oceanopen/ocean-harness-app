@@ -2,6 +2,7 @@ import type { CommandConfig } from './types';
 import {
   DashboardOutlined as DashboardOutlinedIcon,
   DeveloperModeOutlined as DeveloperModeOutlinedIcon,
+  ExtensionOutlined as ExtensionOutlinedIcon,
   FolderOutlined as FolderOutlinedIcon,
   LanOutlined as LanOutlinedIcon,
   SensorsOutlined as SensorsOutlinedIcon,
@@ -33,6 +34,15 @@ export const commands: CommandConfig[] = [
     icon: <FolderOutlinedIcon />,
     keywords: ['repository', 'repo', '仓库'],
     action: ctx => ctx.navigate('repositories'),
+    closeOnSelect: true,
+  },
+  {
+    id: 'nav.pluginMarketplace',
+    group: 'navigation',
+    titleI18nKey: 'panel:commandPalette.nav.pluginMarketplace',
+    icon: <ExtensionOutlinedIcon />,
+    keywords: ['plugin', 'marketplace', '插件', '市场'],
+    action: ctx => ctx.navigate('pluginMarketplace'),
     closeOnSelect: true,
   },
   {

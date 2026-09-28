@@ -20,6 +20,7 @@ export const MENU_PATHS: Record<MenuKey, string> = {
   claudeSessions: '/claudeSessions',
   serverStatus: '/serverStatus',
   repositories: '/repositories',
+  pluginMarketplace: '/pluginMarketplace',
   tracker: '/tracker',
   devWorkbench: '/devWorkbench',
   settings: '/settings',
