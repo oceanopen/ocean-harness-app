@@ -85,7 +85,8 @@ function ProjectNode({ project }: { project: WorkspaceProjectModel }) {
   const emoji = project.emoji.trim();
   return (
     <>
-      <ListItemButton onClick={() => setOpen(o => !o)} sx={{ mx: 0.5, borderRadius: 1, pr: 1 }}>
+      {/* pl 0.5 覆写 MUI 默认 pl 16px：整列左缘留白收紧一档（项目名文字起于 32px）。 */}
+      <ListItemButton onClick={() => setOpen(o => !o)} sx={{ mx: 0.5, borderRadius: 1, pl: 0.5, pr: 1 }}>
         <ListItemIcon sx={{ minWidth: 'auto', justifyContent: 'center', mr: 0.5, color: 'text.secondary' }}>
           {open
             ? <KeyboardArrowDownRoundedIcon fontSize="small" />
@@ -101,7 +102,8 @@ function ProjectNode({ project }: { project: WorkspaceProjectModel }) {
 
 // dev issue 卡片：复用共享 IssueCard viewScene="devWorkbench"（无拖拽/无操作列/隐藏 id 尾 8 位/三行顶格左对齐，
 // onCardClick 选中 issue，选中态高亮边框）。
-// 外层 Box 提供层级缩进（左缘与 project 折叠头的项目名对齐，mx 0.5 + 箭头 20px + mr 0.5 = 28px）。
+// 外层 Box 提供层级缩进（ml 2 = 16px，卡缘居 project 折叠头箭头区间中点：折叠头 mx 0.5 +
+// pl 0.5 + 箭头 20px + mr 0.5，项目名文字起于 32px）。
 // 整卡 Tooltip 右侧展示完整名称（左缘元素约定 placement="right"）。点击选中/取消。
 function DevIssueRow({ issue, subtaskStats }: { issue: ProjectIssueResponseData; subtaskStats: SubtaskStats }) {
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
@@ -110,7 +112,7 @@ function DevIssueRow({ issue, subtaskStats }: { issue: ProjectIssueResponseData;
   const selected = selectedIssueId === issue.id;
 
   const card = (
-    <Box sx={{ mt: 1.5, ml: 3.5, mr: 1 }}>
+    <Box sx={{ mt: 1.5, ml: 2, mr: 1 }}>
       <IssueCard
         issue={issue}
         viewScene="devWorkbench"
