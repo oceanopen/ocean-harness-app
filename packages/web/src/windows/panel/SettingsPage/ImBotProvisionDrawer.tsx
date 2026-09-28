@@ -10,8 +10,7 @@ import {
   LinearProgress,
   Typography,
 } from '@mui/material';
-import { ImBotService } from '@src/services';
-import { useProvisionCancel } from '@src/state/imBots';
+import { useProvisionBegin, useProvisionCancel, useProvisionPoll } from '@src/state/imBots';
 import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
 
@@ -35,9 +34,13 @@ async function renderQr(content: string): Promise<string> {
 
 function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onRegenerate: () => void }) {
   const { open } = props;
+  const beginMutation = useProvisionBegin();
+  const pollMutation = useProvisionPoll();
   const cancelMutation = useProvisionCancel();
 
   // 回调经 ref 消费：父组件内联箭头每次渲染变化，若入 effect 依赖会使扫码流程随父渲染重启。
+  // begin/poll 走 state 层 mutation（connected 时失效列表缓存的副作用收口在 hook 内），
+  // mutateAsync 是 MutationObserver 构造期绑定的稳定引用，effect/定时器链可直接捕获。
   const onCloseRef = useRef(props.onClose);
   onCloseRef.current = props.onClose;
 
@@ -47,6 +50,16 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [qrError, setQrError] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+
+  // resetLocal 清抽屉本地态到「申请中」初值：handleClose 与 connected 收尾共用，防下次打开
+  // 短暂残留上一轮的二维码/错误态。
+  const resetLocal = () => {
+    setStarting(true);
+    setAttempt(null);
+    setBeginError('');
+    setQrDataUrl('');
+    setQrError(false);
+  };
 
   // 主流程：open 触发一次（begin → 起轮询链）；卸载/关闭清理全部定时器；
   // 关闭时若仍在进行中，异步通知服务端取消（fire-and-forget）。
@@ -64,20 +77,16 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
       }
     };
 
-    const finish = (view: ImBotProvisionView) => {
-      setAttempt(view);
-      stopPoll();
-    };
-
     const tick = async (attemptId: string, fallbackInterval: number) => {
       try {
-        const view = await ImBotService.provisionPoll({ attemptId });
+        const view = await pollMutation.mutateAsync({ attemptId });
         if (disposed) {
           return;
         }
         setAttempt(view);
         if (view.state === 'connected') {
-          finish(view);
+          stopPoll();
+          resetLocal(); // 本地态一并重置（列表缓存已由 poll hook 在 connected 时失效刷新）
           onCloseRef.current(); // 新 bot 已建并连接，收抽屉回列表
           return;
         }
@@ -96,7 +105,7 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
     // 状态重置在 handleClose（事件处理器）完成：本 effect 仅跑异步流程，无同步 setState。
     void (async () => {
       try {
-        const view = await ImBotService.provisionBegin();
+        const view = await beginMutation.mutateAsync();
         if (disposed) {
           return;
         }
@@ -143,11 +152,7 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
       cancelMutation.mutate({ attemptId: attempt.attemptId });
     }
     // 重置到「申请中」初态：下次打开由本组件 effect 直接进入异步流程（无同步 setState）。
-    setStarting(true);
-    setAttempt(null);
-    setBeginError('');
-    setQrDataUrl('');
-    setQrError(false);
+    resetLocal();
     onCloseRef.current();
   };
 

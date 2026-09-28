@@ -139,7 +139,7 @@ function ImBotCard(props: {
 
 /** IM 机器人设置分区页（两栏：渠道卡片 + 机器人卡片列表）。 */
 function ImBotsPage() {
-  const { data: bots = [], isLoading, refetch, isFetching } = useImBots();
+  const { data: bots = [], isLoading, refetch, isFetching, error } = useImBots();
   const deleteMutation = useDeleteImBot();
   const [channelKey, setChannelKey] = useState(CHANNELS[0].key);
   const [drawer, setDrawer] = useState<ImBotDrawerState>({ open: false, bot: null });
@@ -226,7 +226,12 @@ function ImBotsPage() {
           </Typography>
 
           {isLoading && <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>…</Typography>}
-          {!isLoading && channelBots.length === 0 && (
+          {!isLoading && error && (
+            <Typography sx={{ fontSize: 12, color: 'error.main' }}>
+              {`机器人列表加载失败：${error.message}（点右上角刷新重试）`}
+            </Typography>
+          )}
+          {!isLoading && !error && channelBots.length === 0 && (
             <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
               还没有机器人：推荐「扫码接入」（企业微信 App 授权自动创建），或「手动接入」填写后台凭据。
             </Typography>

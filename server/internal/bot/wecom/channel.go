@@ -68,9 +68,11 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	log := zap.L().With(zap.String("component", "bot.wecom"), zap.Int("botID", cfg.BotID))
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// 幂等防御：先停旧代连接（supervisor 常规路径已保证先 Stop，这里兜底）；断连在锁外完成
+	// （同 Stop，见 stopAndRelease 注释），终态窗口内旧代迟到回调经代际守卫全部忽略。
+	r.stopAndRelease()
+
 	r.mu.Lock()
-	// 幂等防御：先清旧连接资源（supervisor 常规路径已保证先 Stop，这里兜底）。
-	r.teardownLocked()
 	r.cfg = cfg
 	r.cancel = cancel
 	r.log = log
@@ -93,13 +95,14 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	r.client = client
 	r.mu.Unlock()
 
-	// 连接生命周期 → 状态投影。
-	client.OnAuthenticated = func() { r.setState("connected", "") }
-	client.OnReconnecting = func(int) { r.setState("connecting", "") }
-	client.OnDisconnected = func(reason string) { r.setState("disconnected", reason) }
+	// 连接生命周期 → 状态投影（闭包捕获本代 client，经代际守卫写入；旧代迟到的 SDK 回调
+	// 不污染新代状态）。
+	client.OnAuthenticated = func() { r.setStateForClient(client, "connected", "") }
+	client.OnReconnecting = func(int) { r.setStateForClient(client, "connecting", "") }
+	client.OnDisconnected = func(reason string) { r.setStateForClient(client, "disconnected", reason) }
 	// 被新连接踢下线：终态不重连（SDK 已置 started=false），恢复手段是 UI 重启连接。
 	client.OnDisconnectedEvent = func(*aibottypes.WsFrame[aibottypes.EventMessage]) {
-		r.setState("disconnected", "连接被其他会话接管（同一 botId/Secret 在别处建立了新连接）；如需在本机恢复请重启连接")
+		r.setStateForClient(client, "disconnected", "连接被其他会话接管（同一 botId/Secret 在别处建立了新连接）；如需在本机恢复请重启连接")
 	}
 	client.OnError = func(err error) { log.Warn("企微连接错误", zap.Error(err)) }
 
@@ -136,7 +139,7 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	go func() {
 		if err := client.Connect(ctx); err != nil {
 			// Connect 返回 = 认证失败重试耗尽或 ctx 取消；网络中断由回调驱动状态。
-			r.setState("disconnected", err.Error())
+			r.setStateForClient(client, "disconnected", err.Error())
 			log.Error("企微连接终止", zap.Error(err))
 		}
 	}()
@@ -144,33 +147,41 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 }
 
 // Stop 实现 bot.ChannelRuntime：断开连接 + 停处理通道（幂等）。
-func (r *channelRuntime) Stop() {
+func (r *channelRuntime) Stop() { r.stopAndRelease() }
+
+// stopAndRelease 停止当前代连接并释放资源（Stop / Start 防御路径共用）。锁内只做快照、
+// 字段置空与置终态，真正的断连必须在锁外：SDK 的 Disconnect 会在调用者 goroutine 上内联
+// 触发 OnDisconnected → setStateForClient，若此时仍持 r.mu 即不可重入自死锁——且死锁
+// goroutine 持有的 supervisor s.mu 会毒化全部 imBot 接口（getList 也随之永久挂起）。
+func (r *channelRuntime) stopAndRelease() {
 	r.mu.Lock()
-	r.teardownLocked()
+	cancel, client, stop := r.cancel, r.client, r.stopProc
+	r.cancel, r.client, r.stopProc = nil, nil, nil
 	r.state = "stopped"
 	r.mu.Unlock()
+	releaseGeneration(cancel, client, stop)
 }
 
-// teardownLocked 释放连接资源（须持 r.mu）。
-func (r *channelRuntime) teardownLocked() {
-	if r.cancel != nil {
-		r.cancel()
-		r.cancel = nil
+// releaseGeneration 锁外释放一代连接资源：取消 ctx → 断开 SDK 连接（内联回调经代际守卫
+// 看到 r.client 已置空/换代而忽略）→ 停入站消费 loop。
+func releaseGeneration(cancel context.CancelFunc, client *aibot.WsClient, stop chan struct{}) {
+	if cancel != nil {
+		cancel()
 	}
-	if r.client != nil {
-		r.client.Disconnect()
-		r.client = nil
+	if client != nil {
+		client.Disconnect()
 	}
-	if r.stopProc != nil {
-		close(r.stopProc)
-		r.stopProc = nil
+	if stop != nil {
+		close(stop)
 	}
 }
 
-// setState 回调驱动的状态写入（stopped 为终态，不被迟到的连接回调覆盖）。
-func (r *channelRuntime) setState(state, lastErr string) {
+// setStateForClient 回调驱动的状态写入，代际守卫：仅当 client 仍是当前代连接（r.client ==
+// client）时生效。停止/换代后 r.client 已置空，迟到的 SDK 回调（含 Disconnect 内联触发的
+// OnDisconnected）在此自然忽略——stopped 终态不被覆盖，且写入方永远拿得到锁。
+func (r *channelRuntime) setStateForClient(client *aibot.WsClient, state, lastErr string) {
 	r.mu.Lock()
-	if r.state != "stopped" {
+	if r.client == client {
 		r.state = state
 		r.lastErr = lastErr
 	}

@@ -75,6 +75,8 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
 
   const createMutation = useCreateImBot();
   const updateMutation = useUpdateImBot();
+  // saving 只驱动保存按钮 loading（防重复提交，且「正在保存」状态可见）；X/取消/遮罩在
+  // saving 中的禁用是既有交互，保持不动。
   const saving = createMutation.isPending || updateMutation.isPending;
 
   // 必填校验：名称/botId 恒必填；secret 仅创建必填（编辑留空 = 沿用）；工作目录可空 = 未配置。
@@ -271,7 +273,7 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
         {/* 底部操作栏 */}
         <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
           <Button onClick={onClose} color="inherit" disabled={saving}>取消</Button>
-          <Button onClick={handleSave} variant="contained" disabled={invalid || saving}>保存</Button>
+          <Button onClick={handleSave} variant="contained" loading={saving} disabled={invalid}>保存</Button>
         </Box>
       </Box>
     </Drawer>
