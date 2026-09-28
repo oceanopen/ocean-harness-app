@@ -2,7 +2,7 @@
   "name": "ocean-harness",
   "type": "module",
   "version": "0.2.1",
-  "private": true,
+  "private": false,
   "packageManager": "pnpm@10.18.3",
   "scripts": {
     "setup": "pnpm install && go -C server mod tidy",
