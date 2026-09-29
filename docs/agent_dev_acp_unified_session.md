@@ -1,15 +1,15 @@
 # ACP 统一会话与 IM 无缝交互——方案定稿与任务清单
 
-> 状态：方案定稿（技术决策 D1–D7 已定）；P1–P5 倾向已定，开工前经 **T0.0 拍板**确认
-> 日期：2026-09-29（同日整理为「方案 + 任务清单」结构）
+> 状态：方案定稿（技术决策 D1–D8 已定）；P1–P5 倾向已定，开工前经 **T0.0 拍板**确认
 > 范围：issue 执行模式扩展（ACP 第三模式）、workspace 级启动配置、bot 复用 ACP 会话、企微模板卡片交互
 > 参考：`~/MyFiles/Project/Gold-Band`（ACP runtime + IM 远程干预的已验证实现）
 >
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
 >
 > **状态回写规则（内置，无需人工提醒）**：任务实现完成后，执行方（开发 Agent）在总结阶段
-> 直接把对应任务状态改为 ✅ 并补带日期的「实施定稿」段落（记录方案变更/偏离），同步提交
-> ——不等用户单独指示。实施中若需偏离方案，先修订本文对应设计段落再动代码。
+> 直接把对应任务状态改为 ✅ 并补「实施定稿」段落（记录方案变更/偏离）——回写状态
+> 但不主动 git commit，提交动作必须经用户明确确认。实施中若需偏离方案，先修订本文对应
+> 设计段落再动代码。
 
 ---
 
@@ -96,6 +96,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 | D5 | 多 agent 中立，Claude 专属走能力协商 | 阶段 3 后 bot 天然 agent 中立，审批/选项卡交互层全复用 |
 | D6 | `launch_settings` 用 JSON 列而非多列 | mode + agentId + 后续 agent 配置持续扩展，避免反复迁移 |
 | D7 | issue↔session 绑定受控反转（原 `claude_session_ref` 链曾随 chat 视图删除） | ACP runtime 亲自持有会话后语义成立，实施定稿须明示（见 T1.5） |
+| D8 | Go ACP client 直接依赖 `github.com/BrokkAi/acp-go`（pin v0.11.0）+ sidecar 会话域薄适配层 | Apache-2.0 / 零传递依赖 / wire 类型由官方 JSON Schema 自动生成 / 有 tag 可钉 / 自带 runner 进程管理；自研收窄为 spawn、能力协商、入站回调适配三件事。风险隔离：会话域薄适配层 + 钉精确 tag + license 干净随时可 fork；Go 工具链随 T1.0 升 1.27 |
 
 ## 4. 待拍板决策点（P1–P5，T0.0 逐项确认）
 
@@ -109,8 +110,8 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 ## 5. 风险与开放问题
 
-1. **Go ACP client 自研工作量**：协议面小但工程细节多（超时、取消、进程组回收、崩溃恢复）；Gold-Band client.rs ≈1.1 万行中大头是其 runtime VM，协议本体远小于此，预计 Go 侧可控，但需以 T1.1 实施定稿收口；
-2. **adapter 版本演进**：官方 adapter 两周三版（Gold-Band pin 0.81.2 → 现 0.84.0），catalog pin 策略 + 升级验证流程在 T1.2/T1.3 定稿；
+1. **acp-go 依赖风险（D8）**：协议实现风险已由库消解（wire 类型由官方 JSON Schema 生成、进程管理 runner 现成），余下为供应链 churn——公开仓仅 3 周、发版快（v0.8→v0.11），协议 v2 演进期 breaking change 属预期内。缓解：钉精确 tag + 会话域薄适配层隔离（换库/fork 只动一层）+ Apache-2.0 随时可 fork；超时/取消/进程组回收/崩溃恢复仍以 T1.1 实施定稿逐项收口；
+2. **adapter 版本演进**：官方 adapter 两周三版（Gold-Band pin 0.81.2 → 现 0.84.0），catalog pin 策略 + 升级验证流程在 T1.2/T1.3 定稿；已知坑佐证：`claude-code-acp` 0.16.x 存在 MCP tool discovery 竞态（社区回钉 0.15.0），版本升级必须过 T1.4 握手回归；
 3. **终端模式与 ACP 模式并存边界**：同一 issue 切换模式时的会话接续（`claude --resume` 可跨形态接续同一 session id）——按 P3 倾向不入一期；
 4. **企微回调 5 秒窗口**：审批点击后更新原卡必须在 5 秒内完成，跨 sidecar 重启的边界场景在 T3.2 测试覆盖。
 
@@ -211,7 +212,8 @@ issue 主窗口
 ```
 
 - **ACP client 放 Go sidecar**（D1）：bot 复用是刚需且 orchestrator 就在 sidecar（Gold-Band 的 IM runtime 与 ACP 同进程同理）；workspace/issue/MCP/HTTP 全在 sidecar，panel 走现有 HTTP + SSE 拿事件流；放 Rust 则阶段 2 还要架一层 Rust→Go 桥，两次跨进程。
-- **实现定位：协议实现，不是库移植**——ACP 是线协议 + 公开 schema（agentclientprotocol.com），Go client 照 schema 实现十来个 JSON-RPC 方法，无 TS 代码可抄；ACP 官方 SDK 是 Rust crate，**无官方 Go SDK**，Go 侧本就自研。
+- **实现定位：库依赖 + 薄适配层（D8）**——wire 类型与 stdio JSON-RPC 帧由 `github.com/BrokkAi/acp-go` 承担（Apache-2.0、零传递依赖、类型由官方 JSON Schema 自动生成、自带 runner 进程管理）。Go 侧自研收窄为三件事：catalog 驱动的 adapter spawn 与进程组管理、`initialize` 能力协商分支、三个入站回调（`session/update` / `session/request_permission` / `elicitation/create`）到会话域的适配。最小入站面有实证：Gold-Band 仅处理这 3 个入站方法，`fs/*` 等其余一概回 -32601 也能跑通 claude-acp。
+- **参照物分层（license 意识）**：协议语义权威 = ACP 公开 schema + 官方 TS SDK `agentclientprotocol/sdk`（npm）；Go 实现备选 = `ironpark/acp-go`（MIT，同样要求 Go ≥1.27）；Gold-Band 仅行为语义与工程 checklist 参照（stderr 分类、会话路由背压、取消排水、doctor 握手流程）——**其代码 AGPL-3.0-only，禁止代码级移植**。
 - **第一天就按通用 adapter 写**（D5/D2）：client 只认 `command + args`，Claude 专属行为全部走 `initialize` 能力协商分支（如检测 `/_meta/claudeCode` 扩展），不进主干代码。
 - **spawn 策略表**（D3：官方 adapter 起步），catalog 中每个 agent 声明自己的启动方式，client 无感：
 
@@ -232,6 +234,20 @@ issue 主窗口
 - **Go 进程内 adapter 的触发条件**（满足任一再启动，届时沉没成本接近零）：① doctor 数据显示相当比例用户机器缺 node（原生安装器装 claude 的那批）；② 目标场景包含离线/内网环境；③ node 中间层出现真实痛点（启动延迟、僵尸进程、每会话多一个 node 进程的内存开销）。
 - **node 依赖**（D4）：不随 app 打包（包体 +几十 MB、三平台构建矩阵变重）；目标用户装 Claude Code，npm 安装路径必然带 node，原生安装器路径可能没有——不猜，doctor 探测，缺失时 UI 明确引导。
 
+#### T1.0 server Go 工具链升级（1.25.7 → 1.27）
+
+**状态**：⬜（执行时机：T1.1 开工前，经用户确认本地 go 环境就绪）
+
+**功能**：为 acp-go 依赖铺路——两候选库均要求 Go ≥1.27（BrokkAI 1.27.1 / ironpark 1.27.0）
+
+**技术方案**：`server/go.mod` go directive 升至 `1.27.1`；CI 已用 `go-version-file: server/go.mod` 锁版（`ci.yml` / `release-assets.yml`），改 go.mod 即自动同步，无需另改 workflow；`go build ./...` + `go vet ./...` 全量验证。环境事实：本机 go 为 gvm 管理的 1.25.12、`GOTOOLCHAIN=auto`，go.mod 声明 1.27.1 后可自动下载并切换工具链（build/vet 已实测通过）——届时无需单独安装新版 go
+
+**依赖**：无
+
+**决策关联**：D8
+
+---
+
 #### T1.1 Go ACP client 核心
 
 **状态**：⬜
@@ -239,12 +255,12 @@ issue 主窗口
 **功能**：sidecar 内通用 ACP client（JSON-RPC over stdio），可驱动任意 catalog 声明的 ACP agent
 
 **技术方案**：
-- 照 ACP 公开 schema 实现方法集：`initialize / session/new / session/prompt / session/request_permission / session/update / elicitation/*`
-- 通用 adapter：client 只认 catalog 声明的 `command + args`；Claude 专属行为走 `initialize` 能力协商分支，不进主干
+- 依赖 `github.com/BrokkAi/acp-go`（D8，pin v0.11.0）：wire 类型（官方 JSON Schema 生成）与 stdio JSON-RPC 帧由库承担；前置 T1.0（Go ≥1.27）
+- 薄适配层（自研部分）：方法集经库类型使用——`initialize / session/new / session/prompt / session/request_permission / session/update / elicitation/*`；catalog 驱动的 adapter spawn + 进程组回收；Claude 专属行为走 `initialize` 能力协商分支，不进主干
 - 工程细节清单（风险 §5.1，实施定稿逐项收口）：超时、取消、进程组回收、崩溃恢复
-- 行为语义参照 Gold-Band `src/acp/client.rs`、`src/acp/adapter.rs:52-180`（协议本体，非代码移植）
+- 行为语义参照 Gold-Band `src/acp/client.rs`、`src/acp/adapter.rs:52-180`（仅行为语义，AGPL-3.0 禁止代码移植）
 
-**依赖**：无
+**依赖**：T1.0
 
 **决策关联**：D1、D2、D5
 
@@ -497,4 +513,6 @@ issue 主窗口 ─────┘
 
 **本项目**：`server/internal/bot/`（`orchestrator.go:73-239` 回合编排、`driver_claude.go:26-103` headless spawn、`stream.go:36-140` 回复泵、`channel.go:17-44` 渠道契约、`bin.go:38-68` claude 探测、`supervisor.go:106-108` 装配）、`server/internal/bot/wecom/`（`channel.go:223-236` 消费循环、`reply.go:15-60` 流式回复、`inbound.go:33-46` 会话键）、`app/src/shared/app_config.rs:51` 配置表、`packages/web/src/shared/appConfig.ts:71-79` 启动 key SSOT、`EmbeddedTerminal.tsx:86-117/180-194` 消费与 spawn、`t_workspaces`（`workspaces.gen.go`）。
 
-**Gold-Band**：`src/app/intervention.rs:366-426,915-1030`（干预命令服务 + 权限选项映射）、`src/acp/adapter.rs:52-180`（通用 adapter + 能力协商）、`src/acp/client.rs:2673-2731`（doctor）、`src/acp/permission.rs / elicitation.rs`（pending 落盘等待）、`src/im/inbound.rs:192-261`（入站动作 + 幂等收敛）、`src/im/connectors/wecom.rs:612-1243`（vote_interaction 卡构造、终态更新）、`resources/agent-catalog.json` + `scripts/prepare-agent-catalog.mjs`（catalog pin）、`src-tauri/src/im_runtime.rs:1159-1246`（IM→命令服务汇合）。
+**Gold-Band**：`src/app/intervention.rs:366-426,915-1030`（干预命令服务 + 权限选项映射）、`src/acp/adapter.rs:52-180`（通用 adapter + 能力协商）、`src/acp/client.rs:2673-2731`（doctor）、`src/acp/permission.rs / elicitation.rs`（pending 落盘等待）、`src/im/inbound.rs:192-261`（入站动作 + 幂等收敛）、`src/im/connectors/wecom.rs:612-1243`（vote_interaction 卡构造、终态更新）、`resources/agent-catalog.json` + `scripts/prepare-agent-catalog.mjs`（catalog pin）、`src-tauri/src/im_runtime.rs:1159-1246`（IM→命令服务汇合）。**License：AGPL-3.0-only**（仅行为语义参照，禁止代码级移植）。
+
+**开源库选型（D8 依据）**：`github.com/BrokkAi/acp-go`（Apache-2.0，**选定**，pin v0.11.0，Go ≥1.27.1，零传递依赖，wire 类型由官方 JSON Schema 生成，含 runner 进程管理与 cookbook）、`github.com/ironpark/acp-go`（MIT 备选，Go ≥1.27，多 transport，无 tag 可钉）、官方 TS SDK `agentclientprotocol/sdk`（npm，协议语义权威参照）。
