@@ -5,7 +5,7 @@ import (
 )
 
 // 每 action 一个独立 Request 类型（不复用，便于各自演进与校验）。常规字段用 gin binding tag 校验。
-// 项目无短码（identifier）、允许重名（无业务唯一键），issue 用全局自增 id 标识；workspaceId 由前端导航上下文提供（无 FK 设计）。
+// 项目无短码（identifier）、允许重名（无业务唯一键），issue 用 TEXT uuid 主键（Create 时 service 生成 uuid v7）；workspaceId 由前端导航上下文提供（无 FK 设计）。
 
 // ProjectGetListRequest 是 POST /api/tracker/project/getList 的入参（按 workspaceId 查）。
 type ProjectGetListRequest struct {

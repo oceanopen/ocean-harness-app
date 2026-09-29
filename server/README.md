@@ -111,8 +111,8 @@ tracker 基线之后的第二个业务域，与 tracker 的差异在「**运行�
   （`work.weixin.qq.com/ai/qc/generate|query_result`，无中转服务），auth_url 强校验官方域防钓鱼；
   attempt 状态机在 `internal/bot/wecom/provision.go`（pending→connecting→connected，5 分钟本地 TTL，
   poll 惰性单飞）；success 凭据经 `ProvisionActivator` 回调（main 注入 `service.ProvisionActivateBot`）
-  直接落库并拉连接，**secret 不回传前端不进日志**。`workspace_dir` 可空（扫码先建 bot 后补配置），
-  未配置时对话回合回复补配提醒、不启动 claude。
+  直接落库并拉连接，**secret 不回传前端不进日志**。`workspace_id` 可为 0（未选工作空间，扫码先建 bot 后补选），
+  未选时对话回合回复补选提醒、不启动 claude。
 
 ## 配置：环境变量 + yaml 配置文件
 
@@ -242,8 +242,8 @@ import (
 
 q := query.Use(global.SqliteDB)
 // 建表后 id 自动回填；全部表物理删除（无 deleted_at）
-if err := q.Workspace.WithContext(ctx).Create(&model.Workspace{Name: "个人", Slug: "personal"}); err != nil { ... }
-ws, err := q.Workspace.WithContext(ctx).Where(q.Workspace.Slug.Eq("personal")).First()
+if err := q.Workspace.WithContext(ctx).Create(&model.Workspace{Name: "个人", Dir: "/path/to/dir"}); err != nil { ... }
+ws, err := q.Workspace.WithContext(ctx).Where(q.Workspace.Dir.Eq("/path/to/dir")).First()
 ```
 
 > nullable 列（`parent_id`/`completed_at`/`start_date`/`target_date` 等）未开 `FieldNullable`，按零值表「未设置」（id 自增从 1 起，0 即未设置；时间用 `IsZero()`）。清空（如 issue 流转出 completed 时 `completed_at`）由 service 层显式 `Update("completed_at", nil)` 处理。

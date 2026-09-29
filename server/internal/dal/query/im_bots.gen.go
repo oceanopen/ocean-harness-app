@@ -32,7 +32,7 @@ func newImBot(db *gorm.DB, opts ...gen.DOOption) imBot {
 	_imBot.Name = field.NewString(tableName, "name")
 	_imBot.Channel = field.NewField(tableName, "channel")
 	_imBot.Credential = field.NewString(tableName, "credential")
-	_imBot.WorkspaceDir = field.NewString(tableName, "workspace_dir")
+	_imBot.WorkspaceID = field.NewInt(tableName, "workspace_id")
 	_imBot.Model = field.NewString(tableName, "model")
 	_imBot.SystemPrompt = field.NewString(tableName, "system_prompt")
 	_imBot.AllowedTools = field.NewString(tableName, "allowed_tools")
@@ -55,7 +55,7 @@ type imBot struct {
 	Name         field.String
 	Channel      field.Field
 	Credential   field.String
-	WorkspaceDir field.String
+	WorkspaceID  field.Int
 	Model        field.String
 	SystemPrompt field.String
 	AllowedTools field.String
@@ -84,7 +84,7 @@ func (i *imBot) updateTableName(table string) *imBot {
 	i.Name = field.NewString(table, "name")
 	i.Channel = field.NewField(table, "channel")
 	i.Credential = field.NewString(table, "credential")
-	i.WorkspaceDir = field.NewString(table, "workspace_dir")
+	i.WorkspaceID = field.NewInt(table, "workspace_id")
 	i.Model = field.NewString(table, "model")
 	i.SystemPrompt = field.NewString(table, "system_prompt")
 	i.AllowedTools = field.NewString(table, "allowed_tools")
@@ -122,7 +122,7 @@ func (i *imBot) fillFieldMap() {
 	i.fieldMap["name"] = i.Name
 	i.fieldMap["channel"] = i.Channel
 	i.fieldMap["credential"] = i.Credential
-	i.fieldMap["workspace_dir"] = i.WorkspaceDir
+	i.fieldMap["workspace_id"] = i.WorkspaceID
 	i.fieldMap["model"] = i.Model
 	i.fieldMap["system_prompt"] = i.SystemPrompt
 	i.fieldMap["allowed_tools"] = i.AllowedTools

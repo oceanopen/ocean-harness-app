@@ -1,8 +1,9 @@
 import type { WorkspaceModel } from '@src/services';
-import { CloseOutlined as CloseOutlinedIcon } from '@mui/icons-material';
-import { Alert, Box, Button, IconButton, TextField, Typography } from '@mui/material';
+import { CloseOutlined as CloseOutlinedIcon, FolderOpen as FolderOpenIcon } from '@mui/icons-material';
+import { Alert, Box, Button, IconButton, InputAdornment, TextField, Typography } from '@mui/material';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -12,9 +13,6 @@ import { useTranslation } from 'react-i18next';
 //
 // 由父组件按需挂载（{open && <WorkspaceDrawer/>}）：每次打开都是全新 useState 初值，
 // 无需重置 effect；关闭即卸载。
-//
-// slug 派生（仅新建模式且用户未手动改过 slug）：name 变化 → slug = slugify(name)。
-// 用户手动编辑 slug 后置 slugTouched=true，停止派生；编辑模式初始即视为 touched（尊重既有 slug）。
 interface WorkspaceDrawerProps {
   onClose: () => void;
   onCreated: (ws: WorkspaceModel) => void;
@@ -25,44 +23,27 @@ interface WorkspaceDrawerProps {
 // 描述最大字数（与后端 binding max=500 对齐）。
 const DESCRIPTION_MAX = 500;
 
-// slug 规范化：小写 + 非 [a-z0-9] 序列折叠为单连字符 + 去首尾连字符。
-// 中文等非 ASCII 字符会被剔除，结果可能为空串（由 canSubmit 拦下，提示用户手填）。
-function slugify(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
 function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: WorkspaceDrawerProps) {
   const { t } = useTranslation();
   const isEdit = !!workspace;
   const createWs = useCreateWorkspace();
   const updateWs = useUpdateWorkspace();
   const [name, setName] = useState(workspace?.name ?? '');
-  const [slug, setSlug] = useState(workspace?.slug ?? '');
+  const [dir, setDir] = useState(workspace?.dir ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
-  // 编辑模式初始即视为已触碰：改 name 不应覆盖既有 slug。
-  const [slugTouched, setSlugTouched] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleNameChange = (value: string) => {
-    setName(value);
-    if (!slugTouched) {
-      setSlug(slugify(value));
+  const handleBrowse = async () => {
+    // directory: true 多选关闭，返回 string | null。
+    const selected = await openDialog({ directory: true, multiple: false });
+    if (typeof selected === 'string') {
+      setDir(selected);
+      setError(null);
     }
-    setError(null);
   };
 
-  const handleSlugChange = (value: string) => {
-    setSlug(value);
-    setSlugTouched(true);
-    setError(null);
-  };
-
-  const canSubmit = name.trim().length > 0 && slug.trim().length > 0 && !submitting;
+  const canSubmit = name.trim().length > 0 && dir.trim().length > 0 && !submitting;
 
   const handleConfirm = async () => {
     setSubmitting(true);
@@ -70,7 +51,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     try {
       const payload = {
         name: name.trim(),
-        slug: slug.trim(),
+        dir: dir.trim(),
         description: description.trim(),
       };
       if (isEdit && workspace) {
@@ -122,19 +103,37 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             label={t('tracker:workspace.add.name')}
             placeholder={t('tracker:workspace.add.namePlaceholder')}
             value={name}
-            onChange={e => handleNameChange(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setError(null);
+            }}
             fullWidth
             autoFocus
             disabled={submitting}
           />
           <TextField
-            label={t('tracker:workspace.add.slug')}
-            placeholder={t('tracker:workspace.add.slugPlaceholder')}
-            value={slug}
-            onChange={e => handleSlugChange(e.target.value)}
+            required
+            label={t('tracker:workspace.add.dir')}
+            placeholder={t('tracker:workspace.add.dirPlaceholder')}
+            value={dir}
+            onChange={(e) => {
+              setDir(e.target.value);
+              setError(null);
+            }}
             fullWidth
             disabled={submitting}
-            helperText={t('tracker:workspace.add.slugHint')}
+            helperText={t('tracker:workspace.add.dirHint')}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={handleBrowse} aria-label={t('tracker:workspace.add.dir')} disabled={submitting}>
+                      <FolderOpenIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
           />
           <TextField
             label={t('tracker:workspace.add.description')}

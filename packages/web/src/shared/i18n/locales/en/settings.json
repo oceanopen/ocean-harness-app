@@ -3,7 +3,6 @@
   "menu": {
     "appConfig": "App Settings",
     "terminalConfig": "Terminal Config",
-    "projectConfig": "Project Config",
     "userProfile": "User Profile",
     "about": "About"
   },
@@ -76,17 +75,6 @@
     },
     "unit": {
       "seconds": "s"
-    }
-  },
-  "project": {
-    "row": {
-      "workspaceBaseDir": "Workspace base directory"
-    },
-    "placeholder": {
-      "workspaceBaseDir": "Not set. Pick a directory to use as the workspace base directory"
-    },
-    "help": {
-      "workspaceBaseDir": "Task working directories live under this base (directory name = task ID). Both embedded and external terminals use it as the base"
     }
   },
   "userProfile": {

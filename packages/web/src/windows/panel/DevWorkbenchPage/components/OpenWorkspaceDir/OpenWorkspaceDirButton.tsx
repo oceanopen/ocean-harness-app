@@ -2,16 +2,14 @@ import type { WorkspaceOpenToolId } from './openTools';
 import { Check as CheckIcon, KeyboardArrowDown as KeyboardArrowDownIcon } from '@mui/icons-material';
 import { Box, IconButton, ListItemIcon, MenuItem, MenuList, Paper, Popper, Typography } from '@mui/material';
 import {
-  decodeWorkspaceBaseDir,
-  DEFAULT_WORKSPACE_BASE_DIR,
   setAppConfig,
-  WORKSPACE_BASE_DIR_KEY,
   WORKSPACE_OPEN_TOOL_KEY,
 } from '@src/shared/appConfig';
 import { currentPlatform } from '@src/shared/platform';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
+import { issueWorkspacePath } from '@src/windows/panel/DevWorkbenchPage/issueWorkspacePath';
 import { useEffect, useRef, useState } from 'react';
 import {
   decodeWorkspaceOpenTool,
@@ -26,17 +24,18 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-// 挂载前置配置集：默认工具 + 工作空间根目录。前者决定胶囊首帧图标（不闸门会先闪
-// 默认 vscode 图标再被真实值纠正——编码规则 1），后者虽仅在点击时消费，一并闸门
-// 可杜绝「配置未回填期点击误判 baseDir 未设置」。模块级常量保证引用稳定。
-const OPEN_TOOL_CONFIG_KEYS: readonly string[] = [WORKSPACE_OPEN_TOOL_KEY, WORKSPACE_BASE_DIR_KEY];
+// 挂载前置配置集：默认工具决定胶囊首帧图标（不闸门会先闪默认 vscode 图标再被真实值
+// 纠正——编码规则 1）。模块级常量保证引用稳定（useConfigReady 要求）。
+const OPEN_TOOL_CONFIG_KEYS: readonly string[] = [WORKSPACE_OPEN_TOOL_KEY];
 
 // 浮层关闭宽限（ms）：鼠标从胶囊移向浮层途中短暂离开放行，防闪烁。
 const FLYOUT_CLOSE_GRACE_MS = 150;
 
 interface OpenWorkspaceDirButtonProps {
-  /// 当前选中 issue id（打开目录 = {baseDir}/{issueId}，与 EmbeddedTerminal 的 cwd 派生同源）。
+  /// 当前选中 issue id（打开目录 = {workspaceDir}/{issueId}，与终端 cwd 派生同源）。
   issueId: string;
+  /// 当前工作空间的工作区目录（页面解析下传；null = 解析中，按钮禁用）。
+  workspaceDir: string | null;
 }
 
 /// OpenWorkspaceDirButton：开发工作台标题栏「打开工作区目录」胶囊分体按钮。
@@ -45,10 +44,9 @@ interface OpenWorkspaceDirButtonProps {
 /// 切默认 + 立即打开，两者串行：await 打开命令 settle 且成功后才写 config（deepseek-harness
 /// 同款语义）——图标随 useConfigValue 订阅切换、滞后于打开动作肉眼可感知；失败 toast
 /// 不污染默认值。工具目录/平台过滤/命令分发见 openTools.tsx。
-export default function OpenWorkspaceDirButton({ issueId }: OpenWorkspaceDirButtonProps) {
+export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWorkspaceDirButtonProps) {
   const { show: showToast, snack: toastSnack } = useToast();
   const configReady = useConfigReady(OPEN_TOOL_CONFIG_KEYS);
-  const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const configuredTool = useConfigValue(WORKSPACE_OPEN_TOOL_KEY, decodeWorkspaceOpenTool, DEFAULT_WORKSPACE_OPEN_TOOL);
 
   const tools = workspaceOpenToolsFor(currentPlatform);
@@ -96,16 +94,14 @@ export default function OpenWorkspaceDirButton({ issueId }: OpenWorkspaceDirButt
 
   // 串行打开：先 await 打开命令，settle 且成功才写默认工具配置（值变化才写，避免
   // 同值写入触发一次多余的 app-config-changed 广播）；失败 toast 且默认值不动。
-  // baseDir 未设置时引导去设置页（EmbeddedTerminal/WorkspaceFilePanel 同款文案口径）。
   const runOpen = async (toolId: WorkspaceOpenToolId) => {
     closeFlyout();
-    if (baseDir === '') {
-      showToast('请先在设置 → 项目配置中设置工作空间根目录', 'error');
+    if (workspaceDir == null) {
       return;
     }
     setOpening(true);
     try {
-      await openWorkspaceDir(toolId, `${baseDir}/${issueId}`);
+      await openWorkspaceDir(toolId, issueWorkspacePath(workspaceDir, issueId));
       if (toolId !== preferred) {
         void setAppConfig(WORKSPACE_OPEN_TOOL_KEY, toolId);
       }
@@ -116,7 +112,7 @@ export default function OpenWorkspaceDirButton({ issueId }: OpenWorkspaceDirButt
     }
   };
 
-  const disabled = !configReady || opening;
+  const disabled = !configReady || workspaceDir == null || opening;
 
   return (
     <>

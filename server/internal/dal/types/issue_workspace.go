@@ -35,20 +35,18 @@ const (
 )
 
 // IssueWorkspaceInitRequest 是 POST /api/issueWorkspace/init 的入参。
-// baseDir 即设置页的 workspace_base_dir（前端逐请求传入，Go 不持久化）；issueId 为 t_project_issues.id（uuid）。
+// 目录不入参，service 由 issueId 解析其所属工作空间的目录（后端 SSOT）；issueId 为 t_project_issues.id（uuid）。
 type IssueWorkspaceInitRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
-	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
 }
 
-// IssueWorkspaceStatusRequest 是 POST /api/issueWorkspace/status 的入参（读状态文件派生，不查库）。
+// IssueWorkspaceStatusRequest 是 POST /api/issueWorkspace/status 的入参（经 issueId 解析目录后读状态文件派生）。
 type IssueWorkspaceStatusRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
-	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
 }
 
 // 归档/取消动作（T3.2）：archive → issue 置 DONE；cancel → issue 置 CANCELLED。
-// 两者同为工程化确定性操作：删 {baseDir}/{issueId}/ 目录 + 流转 issue 状态（父子解耦，不级联子任务）。
+// 两者同为工程化确定性操作：删 {issueId}/ 目录 + 流转 issue 状态（父子解耦，不级联子任务）。
 const (
 	IW_ARCHIVE_ACTION_ARCHIVE = "archive"
 	IW_ARCHIVE_ACTION_CANCEL  = "cancel"
@@ -57,10 +55,9 @@ const (
 // IssueWorkspaceArchiveRequest 是 POST /api/issueWorkspace/archive 的入参。两段式契约：
 // force=false 仅做安全检查（未提交变更 + 未推送提交）返回警告不执行；force=true 跳过检查
 // 直接执行（前端二次确认后携带——「删目录前先关终端会话」由前端执行段前置 ptyShutdownIssue
-// 保证，Go 侧不触碰 PTY）。
+// 保证，Go 侧不触碰 PTY）。目录由 service 经 issueId 解析（同 init/status）。
 type IssueWorkspaceArchiveRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
-	BaseDir string `json:"baseDir" binding:"required"`                     // 须为绝对路径（service 层校验）
 	Action  string `json:"action" binding:"required,oneof=archive cancel"` // 归档 / 取消
 	Force   bool   `json:"force"`                                          // true = 跳过检查直接执行
 }
@@ -85,7 +82,7 @@ type IssueWorkspaceStatusResponseData struct {
 type IssueWorkspaceState struct {
 	Version   int                     `json:"version"`
 	IssueID   string                  `json:"issueId"`
-	BaseDir   string                  `json:"baseDir"`
+	BaseDir   string                  `json:"baseDir"` // 受理时由 issue 所属工作空间解析（执行阶段的落盘位置）
 	Status    IssueWorkspaceStatus    `json:"status"`
 	Steps     []*IssueWorkspaceStep   `json:"steps"`
 	Manifest  []IssueWorkspaceRepoRef `json:"manifest"`

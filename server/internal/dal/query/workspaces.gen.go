@@ -30,7 +30,7 @@ func newWorkspace(db *gorm.DB, opts ...gen.DOOption) workspace {
 	_workspace.ALL = field.NewAsterisk(tableName)
 	_workspace.ID = field.NewInt(tableName, "id")
 	_workspace.Name = field.NewString(tableName, "name")
-	_workspace.Slug = field.NewString(tableName, "slug")
+	_workspace.Dir = field.NewString(tableName, "dir")
 	_workspace.Description = field.NewString(tableName, "description")
 	_workspace.CreatedAt = field.NewTime(tableName, "created_at")
 	_workspace.UpdatedAt = field.NewTime(tableName, "updated_at")
@@ -75,7 +75,7 @@ type workspace struct {
 	ALL                  field.Asterisk
 	ID                   field.Int
 	Name                 field.String
-	Slug                 field.String
+	Dir                  field.String
 	Description          field.String
 	CreatedAt            field.Time
 	UpdatedAt            field.Time
@@ -100,7 +100,7 @@ func (w *workspace) updateTableName(table string) *workspace {
 	w.ALL = field.NewAsterisk(table)
 	w.ID = field.NewInt(table, "id")
 	w.Name = field.NewString(table, "name")
-	w.Slug = field.NewString(table, "slug")
+	w.Dir = field.NewString(table, "dir")
 	w.Description = field.NewString(table, "description")
 	w.CreatedAt = field.NewTime(table, "created_at")
 	w.UpdatedAt = field.NewTime(table, "updated_at")
@@ -133,7 +133,7 @@ func (w *workspace) fillFieldMap() {
 	w.fieldMap = make(map[string]field.Expr, 8)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["name"] = w.Name
-	w.fieldMap["slug"] = w.Slug
+	w.fieldMap["dir"] = w.Dir
 	w.fieldMap["description"] = w.Description
 	w.fieldMap["created_at"] = w.CreatedAt
 	w.fieldMap["updated_at"] = w.UpdatedAt

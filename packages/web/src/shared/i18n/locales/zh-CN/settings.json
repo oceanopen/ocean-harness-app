@@ -3,7 +3,6 @@
   "menu": {
     "appConfig": "应用设置",
     "terminalConfig": "终端配置",
-    "projectConfig": "项目配置",
     "userProfile": "个人中心",
     "about": "关于"
   },
@@ -76,17 +75,6 @@
     },
     "unit": {
       "seconds": "秒"
-    }
-  },
-  "project": {
-    "row": {
-      "workspaceBaseDir": "工作空间根目录"
-    },
-    "placeholder": {
-      "workspaceBaseDir": "未设置，选择目录后将作为工作空间根目录"
-    },
-    "help": {
-      "workspaceBaseDir": "任务的本地工作目录都在此根目录下（目录名 = 任务 ID）。嵌入式终端与外部终端打开均以此为基准"
     }
   },
   "userProfile": {

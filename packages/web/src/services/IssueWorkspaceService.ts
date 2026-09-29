@@ -69,16 +69,14 @@ export interface IssueWorkspaceStatusResponseData {
   state: IssueWorkspaceState | null;
 }
 
-// POST /api/issueWorkspace/init 的入参（baseDir 须为绝对路径，service 层校验）。
+// POST /api/issueWorkspace/init 的入参（目录由 service 经 issueId 解析所属工作空间）。
 export interface IssueWorkspaceInitRequest {
   issueId: string;
-  baseDir: string;
 }
 
 // POST /api/issueWorkspace/status 的入参。
 export interface IssueWorkspaceStatusRequest {
   issueId: string;
-  baseDir: string;
 }
 
 /** 归档/取消动作（T3.2）：archive → issue 置 DONE；cancel → issue 置 CANCELLED。 */
@@ -91,7 +89,6 @@ export type IssueWorkspaceArchiveAction = 'archive' | 'cancel';
  */
 export interface IssueWorkspaceArchiveRequest {
   issueId: string;
-  baseDir: string;
   action: IssueWorkspaceArchiveAction;
   force: boolean;
 }
@@ -118,11 +115,10 @@ export type IssueWorkspaceFileContentKind
 /** POST /api/issueWorkspace/getFileTree 的入参。 */
 export interface IssueWorkspaceFileTreeRequest {
   issueId: string;
-  baseDir: string;
 }
 
 /**
- * 文件树节点（扁平表成员）。path 为相对 {baseDir}/{issueId}/ 的正斜杠路径，前端直接
+ * 文件树节点（扁平表成员）。path 为相对任务工作目录的正斜杠路径，前端直接
  * 用作树 key 与 getFileContent 的 path 入参；目录 size 恒 0。
  */
 export interface IssueWorkspaceFileNode {
@@ -141,7 +137,6 @@ export interface IssueWorkspaceFileTreeResponseData {
 /** POST /api/issueWorkspace/getFileContent 的入参（path 即树节点 path）。 */
 export interface IssueWorkspaceFileContentRequest {
   issueId: string;
-  baseDir: string;
   path: string;
 }
 
@@ -167,7 +162,6 @@ export interface IssueWorkspaceGitChangeFile {
 /** POST /api/issueWorkspace/getGitChanges 的入参。 */
 export interface IssueWorkspaceGitChangesRequest {
   issueId: string;
-  baseDir: string;
 }
 
 /**
@@ -180,7 +174,6 @@ export interface IssueWorkspaceGitChangesResponseData {
 /** POST /api/issueWorkspace/getFileDiff 的入参（path 为 getGitChanges 的 file.path）。 */
 export interface IssueWorkspaceFileDiffRequest {
   issueId: string;
-  baseDir: string;
   path: string;
 }
 
@@ -236,8 +229,8 @@ export class IssueWorkspaceService {
 
   // fileRawUrl：图片原始字节直连 URL（<img src>，类静态资源；base 解析同 request）。
   // v 为缓存刷新参数（重验/重开时变化强制重新加载）。
-  static fileRawUrl(req: { issueId: string; baseDir: string; path: string; v?: string | number }): Promise<string> {
-    const query: Record<string, string> = { issueId: req.issueId, baseDir: req.baseDir, path: req.path };
+  static fileRawUrl(req: { issueId: string; path: string; v?: string | number }): Promise<string> {
+    const query: Record<string, string> = { issueId: req.issueId, path: req.path };
     if (req.v != null) {
       query.v = String(req.v);
     }

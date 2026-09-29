@@ -1,17 +1,15 @@
 import type { TerminalFontSize, TerminalScrollbackRows } from '@src/shared/appConfig';
 import type { SplitDirection } from '../TerminalPanes/types';
 import type { TerminalThemeId } from './terminalTheme';
-import { CreateNewFolderOutlined as CreateNewFolderOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
+import { CreateNewFolderOutlined as CreateNewFolderOutlinedIcon } from '@mui/icons-material';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
 import {
-  decodeWorkspaceBaseDir,
   DEFAULT_TERMINAL_CURSOR_BLINK,
   DEFAULT_TERMINAL_CURSOR_STYLE,
   DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_TERMINAL_LINE_HEIGHT,
   DEFAULT_TERMINAL_SCROLLBACK_ROWS,
   DEFAULT_TERMINAL_STARTUP_CODE_CLI,
-  DEFAULT_WORKSPACE_BASE_DIR,
   isYes,
   parseTerminalCursorStyle,
   parseTerminalFontSize,
@@ -25,14 +23,13 @@ import {
   TERMINAL_SCROLLBACK_ROWS_KEY,
   TERMINAL_STARTUP_CODE_CLI_KEY,
   TERMINAL_THEME_KEY,
-  WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
-import { useSettingsNavigate } from '@src/windows/panel/useSettingsNavigate';
+import { issueWorkspacePath } from '@src/windows/panel/DevWorkbenchPage/issueWorkspacePath';
 import { useCallback, useRef, useState } from 'react';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } from './terminalTheme';
 import TerminalView from './TerminalView';
@@ -94,14 +91,16 @@ const TERMINAL_MOUNT_CONFIG_KEYS: readonly string[] = [
 
 interface EmbeddedTerminalProps {
   issueId: string;
+  // 当前工作空间的工作区目录（页面经 issue.workspaceId 解析下传；null = 解析中）。
+  workspaceDir: string | null;
   // pane id：'main'（主 pane）| 8 位 uuid（附加 pane）。锚点统一 `issueId::<paneId>`。
   paneId?: string;
 }
 
 // EmbeddedTerminal：开发工作台右侧嵌入式终端容器（docs/embedded_terminal.md §3.8）。
-// 职责：读 workspace_base_dir 派生 cwd（`${base}/${issueId}`）、两个错误态
-// （根目录未设置 / 任务目录不存在——目录创建属 skills 集成，本期仅提示）、
-// 组装 TerminalView + usePtySession。父层以 issueId 为 key 挂载本组件，
+// 职责：由工作空间目录派生 cwd（`${dir}/${issueId}`）、错误态（任务目录不存在——
+// 目录创建属 skills 集成，本期仅提示）、组装 TerminalView + usePtySession。
+// 父层以 issueId 为 key 挂载本组件，
 // 切换 issue 即重挂载（unmount 仅断订阅，后端会话/ring 常驻，回切 reattach 重载）。
 //
 // 数据通路（函数式，两条单向线，无响应式层）：
@@ -110,10 +109,9 @@ interface EmbeddedTerminalProps {
 // writeDataRef 是全链唯一 ref 桥：Channel 数据可在任何时刻到达（含 StrictMode
 // 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下
 // 实测出现「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
-export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedTerminalProps) {
+export default function EmbeddedTerminal({ issueId, workspaceDir, paneId = 'main' }: EmbeddedTerminalProps) {
   const isMain = paneId === 'main';
   const { show: showToast, snack: toastSnack } = useToast();
-  const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const startupCodeCli = useConfigValue(
     TERMINAL_STARTUP_CODE_CLI_KEY,
     decodeStartupCodeCli,
@@ -177,7 +175,7 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     writeDataRef.current = write;
   }, []);
 
-  const cwd = baseDir ? `${baseDir}/${issueId}` : null;
+  const cwd = workspaceDir != null ? issueWorkspacePath(workspaceDir, issueId) : null;
   // 会话锚点派生：统一 `issueId::<paneId>`（main → `issueId::main`，split → `issueId::<uuid>`）。
   // 后端 store 对 key 透明，仅 pty_shutdown_issue 前缀扫描感知 `::`。
   const sessionId = `${issueId}::${paneId}`;
@@ -197,9 +195,6 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     directCommand: isMain && startupCodeCli !== 'none' ? startupCodeCli : null,
     onData: handleTerminalData,
   });
-
-  // 语义化深链：错误态引导用户去「项目配置」分区设置工作空间根目录（统一 hook 入口）。
-  const openSettings = useSettingsNavigate('projectConfig');
 
   // 一键创建工作目录（mkdir -p 语义），成功后自动重试终端初始化。
   const handleCreateDirectory = useCallback(() => {
@@ -270,14 +265,9 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     session.reopen();
   }, [session]);
 
-  // 错误态一：工作空间根目录未设置（配置为空串）——哑会话不发 spawn，引导去设置
+  // 工作空间目录解析中：哑会话（不发 spawn）+ 空占位，就绪后直接以实测尺寸 spawn。
   if (cwd == null) {
-    return (
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
-        <Typography variant="body2" color="text.secondary">请先在设置 → 项目配置中设置工作空间根目录</Typography>
-        <Button size="small" startIcon={<SettingsOutlinedIcon />} onClick={openSettings}>打开设置</Button>
-      </Box>
-    );
+    return <Box sx={{ height: '100%' }} />;
   }
 
   // 度量/编排配置未就绪：哑会话（不发 spawn）+ 空占位。一次性等待（本地 IPC，
@@ -287,8 +277,8 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
     return <Box sx={{ height: '100%' }} />;
   }
 
-  // 错误态二：spawn 失败（典型为任务目录不存在）。
-  // 三出口：创建目录（mkdir -p 后自动重试）/ 重试（目录已被外部建好）/ 打开设置（根目录配置错了）。
+  // 错误态：spawn 失败（典型为任务目录不存在）。
+  // 两出口：创建目录（mkdir -p 后自动重试）/ 重试（目录已被外部建好）。
   if (session.status === 'error') {
     return (
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
@@ -296,7 +286,6 @@ export default function EmbeddedTerminal({ issueId, paneId = 'main' }: EmbeddedT
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button size="small" startIcon={<CreateNewFolderOutlinedIcon />} onClick={handleCreateDirectory}>创建目录</Button>
           <Button size="small" onClick={reopenPlain}>重试</Button>
-          <Button size="small" startIcon={<SettingsOutlinedIcon />} onClick={openSettings}>打开设置</Button>
         </Box>
       </Box>
     );

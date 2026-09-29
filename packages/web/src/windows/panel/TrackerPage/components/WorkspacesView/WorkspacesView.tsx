@@ -6,7 +6,6 @@ import {
   CheckOutlined as CheckOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
-  TagOutlined as TagOutlinedIcon,
   WorkspacesOutlined as WorkspacesOutlinedIcon,
 } from '@mui/icons-material';
 import {
@@ -17,7 +16,6 @@ import {
   Card,
   CardContent,
   CardHeader,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -276,7 +274,7 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
 }
 
 // 单卡片：整卡可点击进入（onSelect）；Header 放类型管理/编辑/删除图标（stopPropagation 避免触发进入）；
-// Content 放 slug/描述/更新时间。height:100% + flex column 保证网格内同行卡片等高。
+// Content 放目录/描述/更新时间。height:100% + flex column 保证网格内同行卡片等高。
 interface WorkspaceCardProps {
   ws: WorkspaceModel;
   isActive: boolean;
@@ -294,7 +292,14 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete
     <Card
       variant="outlined"
       onClick={() => onSelect(ws)}
-      sx={{ height: '100%', display: 'flex', flexDirection: 'column', cursor: 'pointer' }}
+      sx={{
+        'height': '100%',
+        'display': 'flex',
+        'flexDirection': 'column',
+        'cursor': 'pointer',
+        // hover 阴影加深（elevation 4）+ 边框高亮主题色，Paper 自带过渡动画。
+        '&:hover': { boxShadow: 4, borderColor: 'primary.main' },
+      }}
     >
       <CardHeader
         title={(
@@ -348,10 +353,9 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete
       />
       <Divider />
       <CardContent sx={{ flex: 1 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
-          <TagOutlinedIcon sx={{ fontSize: 15, color: 'text.disabled' }} />
-          <Chip size="small" variant="outlined" label={ws.slug} sx={{ ...truncateSx, maxWidth: '100%' }} />
-        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1, ...truncateSx }} title={ws.dir}>
+          {`${t('tracker:workspace.card.dirLabel')}：${ws.dir}`}
+        </Typography>
         <Typography
           variant="body2"
           color={hasDescription ? 'text.secondary' : 'text.disabled'}

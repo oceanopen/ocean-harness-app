@@ -1,7 +1,7 @@
 package types
 
 // issueWorkspace 文件浏览（T5.1 本期：列表 + 内容预览）的 HTTP 入参/出参。
-// 文件系统即 SSOT——service 只读遍历 {baseDir}/{issueId}/，不查库、无 watcher（前端手动刷新）。
+// 目录经 issueId 由 service 从工作空间解析。文件系统即内容 SSOT——只读遍历，无 watcher（前端手动刷新）。
 //
 // 内容传输 kind 由后端定夺（前后端单一真相，下期 fileSave 编辑判定复用同一套）；
 // 文本内部细分（markdown/代码/纯文本）是前端呈现 concern，不经由本层。
@@ -19,7 +19,6 @@ const (
 // IssueWorkspaceFileTreeRequest 是 POST /api/issueWorkspace/getFileTree 的入参。
 type IssueWorkspaceFileTreeRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
-	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
 }
 
 // IssueWorkspaceFileNode 是文件树节点（扁平表成员，WalkDir 词法序）。Path 为相对
@@ -43,7 +42,6 @@ type IssueWorkspaceFileTreeResponseData struct {
 // Path 为相对 {baseDir}/{issueId}/ 的路径（getFileTree 返回的 node.path，service 层防穿越）。
 type IssueWorkspaceFileContentRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
-	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
 	Path    string `json:"path" binding:"required"`
 }
 
@@ -63,7 +61,6 @@ type IssueWorkspaceFileContentResponseData struct {
 // IssueWorkspaceGitChangesRequest 是 POST /api/issueWorkspace/getGitChanges 的入参。
 type IssueWorkspaceGitChangesRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
-	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
 }
 
 // IssueWorkspaceGitChangeFile 单个文件的未提交变更（多仓库扁平，Path 带 repo/{name}/ 前缀——
@@ -87,7 +84,6 @@ type IssueWorkspaceGitChangesResponseData struct {
 // Path 为 getGitChanges 返回的 file.path（repo/{name}/ 前缀的工作空间相对路径）。
 type IssueWorkspaceFileDiffRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
-	BaseDir string `json:"baseDir" binding:"required"` // 须为绝对路径（service 层校验）
 	Path    string `json:"path" binding:"required"`
 }
 

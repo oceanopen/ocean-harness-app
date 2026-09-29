@@ -1,7 +1,6 @@
 import {
   Autorenew as AutorenewIcon,
   FolderOutlined as FolderOutlinedIcon,
-  SettingsOutlined as SettingsOutlinedIcon,
 } from '@mui/icons-material';
 import {
   Alert,
@@ -14,13 +13,6 @@ import {
   Typography,
 } from '@mui/material';
 import {
-  decodeWorkspaceBaseDir,
-  DEFAULT_WORKSPACE_BASE_DIR,
-  WORKSPACE_BASE_DIR_KEY,
-} from '@src/shared/appConfig';
-import { useConfigReady } from '@src/shared/useConfigReady';
-import { useConfigValue } from '@src/shared/useConfigValue';
-import {
   DEFAULT_EXPANDED_DIR,
   useExpandedDirs,
   useFilePanelMode,
@@ -30,18 +22,12 @@ import {
   useWorkspaceGitChanges,
   workspaceFilesKeys,
 } from '@src/state/workspaceFiles';
-import { useSettingsNavigate } from '@src/windows/panel/useSettingsNavigate';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import PanelToolbar from '../PanelToolbar';
 import { buildFileTree } from './buildFileTree';
 import { allDirsExpanded, buildGitChangesTree } from './buildGitChangesTree';
 import FileTree from './FileTree';
-
-// baseDir 分支渲染（未设置引导 vs 文件树）的挂载前置闸门：useConfigValue 初值为同步
-// 默认值（空串 = 未设置），不闸门会先闪「请先设置」分支再被真实值纠正——每次纠正都是
-// 一次错误分支闪现（编码规则 1）。模块级常量保证引用稳定（useConfigReady 要求）。
-const FILE_PANEL_CONFIG_KEYS: readonly string[] = [WORKSPACE_BASE_DIR_KEY];
 
 /// 默认展开目录集（repo/——展开即直见各仓库名）。仅作「该 issue 从未 toggle 过」时的
 /// 渲染期回落，不随持久化流转（与 store.toggleDirExpanded 的基底一致）。
@@ -61,14 +47,9 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
   const qc = useQueryClient();
   const mode = useFilePanelMode(issueId);
   const setFilePanelMode = useWorkspaceFilesStore(s => s.setFilePanelMode);
-  const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
-  const configReady = useConfigReady(FILE_PANEL_CONFIG_KEYS);
-  const { data, isLoading, error, isFetching, refetch } = useWorkspaceFileTree(issueId, baseDir);
+  const { data, isLoading, error, isFetching, refetch } = useWorkspaceFileTree(issueId);
   // 变更列表仅 git 模式拉取（issueId 传 null 关闸，切回模式命中缓存 + staleTime 0 重验）。
-  const gitQuery = useWorkspaceGitChanges(mode === 'git' ? issueId : null, baseDir);
-
-  // 语义化深链：引导用户去「项目配置」分区设置工作空间根目录（统一 hook 入口，EmbeddedTerminal 同源）。
-  const openSettings = useSettingsNavigate('projectConfig');
+  const gitQuery = useWorkspaceGitChanges(mode === 'git' ? issueId : null);
 
   const toggleDirExpanded = useWorkspaceFilesStore(s => s.toggleDirExpanded);
   const openPreviewTab = useWorkspaceFilesStore(s => s.openPreviewTab);
@@ -99,21 +80,6 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
       void qc.invalidateQueries({ queryKey: workspaceFilesKeys.tree(issueId) });
     }
   };
-
-  // baseDir 配置未就绪：空占位（闸门理由见 FILE_PANEL_CONFIG_KEYS 注释）。
-  if (!configReady) {
-    return <Box sx={{ height: '100%' }} />;
-  }
-
-  // 错误态一：工作空间根目录未设置（配置为空串）——引导去设置（EmbeddedTerminal 同款）。
-  if (baseDir === '') {
-    return (
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
-        <Typography variant="body2" color="text.secondary">请先在设置 → 项目配置中设置工作空间根目录</Typography>
-        <Button size="small" startIcon={<SettingsOutlinedIcon />} onClick={openSettings}>打开设置</Button>
-      </Box>
-    );
-  }
 
   // 模式差异描述：内容区四分支骨架（错误/加载/空态/树）单份渲染（见 return），模式只换数据与文案。
   const view = mode === 'git'

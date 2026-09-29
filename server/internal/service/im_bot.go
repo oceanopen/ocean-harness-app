@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -28,13 +25,14 @@ type ImBot struct {
 	apis.Service
 }
 
-// GetList 返回全部 bot（id 倒序）+ 运行态合并。
+// GetList 返回全部 bot（id 倒序）+ 运行态合并 + 工作空间名。
 func (svc ImBot) GetList() ([]types.ImBotResponseData, error) {
 	q := query.Use(svc.Orm)
 	rows, err := q.ImBot.WithContext(svc.Context).Order(q.ImBot.ID.Desc()).Find()
 	if err != nil {
 		return nil, err
 	}
+	names := svc.workspaceNames()
 	statuses := map[int]bot.BotStatusView{}
 	if global.BotSupervisor != nil {
 		for _, st := range global.BotSupervisor.Statuses() {
@@ -44,6 +42,7 @@ func (svc ImBot) GetList() ([]types.ImBotResponseData, error) {
 	out := make([]types.ImBotResponseData, 0, len(rows))
 	for _, row := range rows {
 		item := types.ImBotResponseData{}.FromModel(row)
+		item.WorkspaceName = names[row.WorkspaceID]
 		// statuses 缺行（未运行）由 mergeRuntimeStatus 回落 stopped/row.LastError。
 		mergeRuntimeStatus(&item, row, statuses[row.ID])
 		out = append(out, item)
@@ -51,20 +50,21 @@ func (svc ImBot) GetList() ([]types.ImBotResponseData, error) {
 	return out, nil
 }
 
-// GetInfo 返回单个 bot（含运行态合并）。
+// GetInfo 返回单个 bot（含运行态合并 + 工作空间名）。
 func (svc ImBot) GetInfo(req *types.ImBotGetInfoRequest) (*types.ImBotResponseData, error) {
 	row, err := svc.mustGet(req.ID)
 	if err != nil {
 		return nil, err
 	}
 	item := types.ImBotResponseData{}.FromModel(row)
+	item.WorkspaceName = svc.workspaceNames()[row.WorkspaceID]
 	svc.mergeCurrentStatus(&item, row)
 	return &item, nil
 }
 
-// Create 新增 bot：校验（工作目录可写 / botId 查重）→ 落库 → 启用则拉起连接。
+// Create 新增 bot：校验（工作空间存在 / botId 查重）→ 落库 → 启用则拉起连接。
 func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData, error) {
-	if err := svc.validateWorkspaceDir(req.WorkspaceDir); err != nil {
+	if err := svc.ensureWorkspaceExists(req.WorkspaceId); err != nil {
 		return nil, err
 	}
 	if err := svc.ensureBotIdAvailable(req.BotId, 0); err != nil {
@@ -74,7 +74,7 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 		Name:         req.Name,
 		Channel:      enums.CHANNEL_WECOM,
 		Credential:   credentialJSON(req.BotId, req.Secret),
-		WorkspaceDir: strings.TrimSpace(req.WorkspaceDir),
+		WorkspaceID:  req.WorkspaceId,
 		Model:        req.Model,
 		SystemPrompt: req.SystemPrompt,
 		AllowedTools: allowedToolsJSON(req.AllowedTools),
@@ -97,7 +97,7 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	if err != nil {
 		return nil, err
 	}
-	if err := svc.validateWorkspaceDir(req.WorkspaceDir); err != nil {
+	if err := svc.ensureWorkspaceExists(req.WorkspaceId); err != nil {
 		return nil, err
 	}
 	if err := svc.ensureBotIdAvailable(req.BotId, req.ID); err != nil {
@@ -112,7 +112,7 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 
 	row.Name = req.Name
 	row.Credential = credentialJSON(req.BotId, secret)
-	row.WorkspaceDir = strings.TrimSpace(req.WorkspaceDir)
+	row.WorkspaceID = req.WorkspaceId
 	row.Model = req.Model
 	row.SystemPrompt = req.SystemPrompt
 	row.AllowedTools = allowedToolsJSON(req.AllowedTools)
@@ -124,7 +124,7 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	// 并发写入的 last_error 覆盖回旧值；map 更新恰好绕开该列的竞态（有意偏离基线，勿"纠正"）。
 	if _, err := q.ImBot.WithContext(svc.Context).Where(q.ImBot.ID.Eq(row.ID)).
 		Updates(map[string]any{
-			"name": row.Name, "credential": row.Credential, "workspace_dir": row.WorkspaceDir,
+			"name": row.Name, "credential": row.Credential, "workspace_id": row.WorkspaceID,
 			"model": row.Model, "system_prompt": row.SystemPrompt, "allowed_tools": row.AllowedTools,
 			"access_policy": row.AccessPolicy, "enabled": row.Enabled,
 		}); err != nil {
@@ -217,7 +217,7 @@ func provisionView(v wecom.AttemptView) *types.ImBotProvisionView {
 
 // ProvisionActivateBot 扫码授权成功的激活回调（main 装配注入 wecom.SetProvisionActivator，
 // 进程级函数——不依赖请求上下文，同 StartEnabled 口径）。botId 查重 → 建 bot 行
-// （enabled=Y、工作目录待配置、默认开放白名单、名称默认可后改）→ 拉起连接。
+// （enabled=Y、工作空间待补选、默认开放白名单、名称默认可后改）→ 拉起连接。
 func ProvisionActivateBot(remoteBotID, secret string) (int, error) {
 	if global.BotSupervisor == nil {
 		return 0, errors.New("bot 运行时未就绪")
@@ -238,7 +238,7 @@ func ProvisionActivateBot(remoteBotID, secret string) (int, error) {
 		Name:         "企业微信机器人",
 		Channel:      enums.CHANNEL_WECOM,
 		Credential:   credentialJSON(remoteBotID, secret),
-		WorkspaceDir: "",
+		WorkspaceID:  0,
 		AllowedTools: "[]",
 		AccessPolicy: string(policy),
 		Enabled:      enums.YES_NO_YES,
@@ -309,24 +309,30 @@ func mergeRuntimeStatus(item *types.ImBotResponseData, row *model.ImBot, st bot.
 	item.ConnState = "stopped"
 }
 
-// validateWorkspaceDir 工作目录校验：空 = 未配置（合法，扫码接入先建 bot 后补配置的语义）；
-// 非空则要求绝对路径 + 可创建 + 可写（探针文件写入即删）。
-func (svc ImBot) validateWorkspaceDir(dir string) error {
-	if strings.TrimSpace(dir) == "" {
-		return nil
+// ensureWorkspaceExists 工作空间存在性校验（bot 必选工作空间）。
+func (svc ImBot) ensureWorkspaceExists(id int) error {
+	q := query.Use(svc.Orm)
+	if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(id)).First(); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("工作空间不存在")
+		}
+		return err
 	}
-	if !filepath.IsAbs(dir) {
-		return errors.New("工作目录必须为绝对路径，或留空待配置")
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("工作目录无法创建: %w", err)
-	}
-	probe := filepath.Join(dir, ".imbot-write-probe")
-	if err := os.WriteFile(probe, []byte("probe"), 0o644); err != nil {
-		return fmt.Errorf("工作目录不可写: %w", err)
-	}
-	_ = os.Remove(probe)
 	return nil
+}
+
+// workspaceNames id → name 一次性映射（响应装配展示用）。
+func (svc ImBot) workspaceNames() map[int]string {
+	q := query.Use(svc.Orm)
+	rows, err := q.Workspace.WithContext(svc.Context).Find()
+	if err != nil {
+		return map[int]string{}
+	}
+	names := make(map[int]string, len(rows))
+	for _, row := range rows {
+		names[row.ID] = row.Name
+	}
+	return names
 }
 
 // ensureBotIdAvailable credential.botId 查重（JSON 列无法建唯一索引，service 层扫描校验；

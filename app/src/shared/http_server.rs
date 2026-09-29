@@ -12,7 +12,7 @@
 //   GO_SERVER_PORT（端口已彻底固化：dev=9000/build=9100，见下方端口契约常量注释）、
 //   GO_SERVER_LOG_DIR、GO_SERVER_SQLITE_DIR（均由 app_data_dir 派生，dev/build 自动隔离）、
 //   GO_SERVER_APP_DB（可选：Rust 自身 app_config 库路径，Go MCP workspace_status 只读
-//   workspace_base_dir 用；解析失败缺省注入，Go 侧按「未配置」降级）。
+//   github_pat 用；解析失败缺省注入，Go 侧按「未配置」降级）。
 //
 // IPC：前端「服务状态」页通过 http_server_status 查询运行态与地址，通过 set_http_server_enabled
 //   开关服务（调 start_server/stop_server）。setup 时默认自动启动（开关默认 ON）。
@@ -538,7 +538,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     state.set_port(port);
 
     // 解析 Rust 自身 app_config 库路径（app_data_dir/app.db，与 resolve_dirs/app_config::init 同口径）：
-    // Go MCP workspace_status 工具只读共享该库取 workspace_base_dir。解析失败不阻断启动
+    // Go MCP 工具只读共享该库（如 github_pat）。解析失败不阻断启动
     // （缺省注入时 Go 侧按「未配置」降级，HTTP 服务是旁路的原则同样适用于此处）。
     let app_db_path: Option<String> = app
         .path()

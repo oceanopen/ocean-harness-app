@@ -12,7 +12,8 @@ export interface ImBotModel {
   id: number;
   name: string;
   channel: string; // 渠道枚举（本期恒 'wecom'，后续 feishu 等扩展）
-  workspaceDir: string;
+  workspaceId: number; // 0 = 未选择（扫码接入待补选）
+  workspaceName: string; // 关联工作空间名（展示用）
   model: string; // claude --model；空 = CLI 默认
   systemPrompt: string; // 人设（--append-system-prompt）
   allowedTools: string[]; // --allowedTools；空数组 = 后端默认白名单
@@ -31,7 +32,7 @@ export interface ImBotCreateRequest {
   name: string;
   botId: string;
   secret: string;
-  workspaceDir: string;
+  workspaceId: number; // 必选工作空间（会话目录取其 dir）
   model?: string;
   systemPrompt?: string;
   allowedTools?: string[];
@@ -45,7 +46,7 @@ export interface ImBotUpdateRequest {
   name: string;
   botId: string;
   secret?: string;
-  workspaceDir: string;
+  workspaceId: number;
   model?: string;
   systemPrompt?: string;
   allowedTools?: string[];

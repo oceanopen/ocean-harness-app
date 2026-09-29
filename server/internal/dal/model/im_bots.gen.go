@@ -17,7 +17,7 @@ type ImBot struct {
 	Name         string        `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Channel      enums.Channel `gorm:"column:channel;type:TEXT;not null" json:"channel"`
 	Credential   string        `gorm:"column:credential;type:TEXT;not null;default:'{}'" json:"credential"`
-	WorkspaceDir string        `gorm:"column:workspace_dir;type:TEXT;not null" json:"workspaceDir"`
+	WorkspaceID  int           `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
 	Model        string        `gorm:"column:model;type:TEXT;not null;default:''" json:"model"`
 	SystemPrompt string        `gorm:"column:system_prompt;type:TEXT;not null;default:''" json:"systemPrompt"`
 	AllowedTools string        `gorm:"column:allowed_tools;type:TEXT;not null;default:'[]'" json:"allowedTools"`

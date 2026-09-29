@@ -9,8 +9,6 @@ import PreviewTabsBar from './PreviewTabsBar';
 interface FilePreviewOverlayProps {
   /// 当前选中 issue（浮层 tabs 按 issue 隔离；null = 未选中，恒空浮层）。
   issueId: string | null;
-  /// 工作空间根目录（config 订阅值由页面直传，不重复订阅）。
-  baseDir: string;
 }
 
 /// 工作空间文件预览浮层：铺满终端内容区（挂载于 DevWorkbenchPage 终端内容区 Box，其
@@ -23,7 +21,7 @@ interface FilePreviewOverlayProps {
 /// 工作台沉浸模式（全屏）下让位：Esc 直退全屏（页面级处理器），不关 tab。生命周期语义：
 /// 切 issue 浮层自动切到该 issue 的 tab 集（可能为空）；收工具面板/切工具 tab 不影响浮层
 /// （树面板只是入口，浮层独立于终端内容区）。
-export default function FilePreviewOverlay({ issueId, baseDir }: FilePreviewOverlayProps) {
+export default function FilePreviewOverlay({ issueId }: FilePreviewOverlayProps) {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const setActiveTab = useWorkspaceFilesStore(s => s.setActivePreviewTab);
@@ -32,7 +30,7 @@ export default function FilePreviewOverlay({ issueId, baseDir }: FilePreviewOver
   const { tabs, activeTabId } = usePreviewTabs(issueId);
   // 面板模式与变更集（同 PreviewContent 派生口径）：刷新分流 + tab 栏变更标记共用。
   const mode = useFilePanelMode(issueId);
-  const changesQuery = useWorkspaceGitChanges(mode === 'git' ? issueId : null, baseDir);
+  const changesQuery = useWorkspaceGitChanges(mode === 'git' ? issueId : null);
   const changedPaths = useMemo(
     () => new Set((mode === 'git' ? changesQuery.data?.files ?? [] : []).map(f => f.path)),
     [mode, changesQuery.data],
@@ -87,7 +85,6 @@ export default function FilePreviewOverlay({ issueId, baseDir }: FilePreviewOver
         <PreviewContent
           key={activeTabId}
           issueId={issueId}
-          baseDir={baseDir}
           path={activeTabId}
           changedPaths={changedPaths}
         />

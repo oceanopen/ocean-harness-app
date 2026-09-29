@@ -22,7 +22,6 @@ import {
 } from '@src/shared/appConfig';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useInitIssueWorkspace, useIssueWorkspaceStatus } from '@src/state/issueWorkspace';
-import { useSettingsNavigate } from '@src/windows/panel/useSettingsNavigate';
 import { useEffect, useRef, useState } from 'react';
 
 // 启动 CLI decode：parse 内含回落（非法/缺失 → none）。模块级保证引用稳定（useConfigValue 要求）。
@@ -76,8 +75,6 @@ function StepRow({
 
 interface WorkspaceInitGateProps {
   issueId: string;
-  /** 工作空间根目录（appConfig workspace_base_dir）；空串 = 未设置，面板引导去设置页。 */
-  baseDir: string;
   /** 工作空间就绪后渲染的内容（终端 split 树）。 */
   children: ReactNode;
 }
@@ -91,12 +88,10 @@ interface WorkspaceInitGateProps {
  * 右上角「清理终端并重新初始化」按钮（DevWorkbenchPage）与面板按钮共用 useInitIssueWorkspace——
  * 同一 query key 订阅，任一触发面板自动切换状态。
  */
-export default function WorkspaceInitGate({ issueId, baseDir, children }: WorkspaceInitGateProps) {
-  const { data: statusResp, isLoading, error, refetch } = useIssueWorkspaceStatus(issueId, baseDir);
+export default function WorkspaceInitGate({ issueId, children }: WorkspaceInitGateProps) {
+  const { data: statusResp, isLoading, error, refetch } = useIssueWorkspaceStatus(issueId);
   const initWorkspace = useInitIssueWorkspace();
   const startupCli = useConfigValue(TERMINAL_STARTUP_CODE_CLI_KEY, decodeStartupCodeCli, DEFAULT_TERMINAL_STARTUP_CODE_CLI);
-  // 深链入口统一走 useSettingsNavigate（设置页已并入 panel，纯前端导航）。
-  const openProjectConfigSettings = useSettingsNavigate('projectConfig');
   const serverStatus = statusResp?.serverStatus;
   const state = statusResp?.state;
 
@@ -123,18 +118,6 @@ export default function WorkspaceInitGate({ issueId, baseDir, children }: Worksp
     const timer = setTimeout(setTerminalTransition, 1200, false);
     return () => clearTimeout(timer);
   }, [terminalTransition]);
-
-  // baseDir 未设置：引导去设置页（同 EmbeddedTerminal 先例，不算步骤项）。
-  if (!baseDir) {
-    return (
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, p: 2 }}>
-        <Typography variant="body2" color="text.secondary">工作空间根目录未设置，无法初始化</Typography>
-        <Button variant="outlined" size="small" onClick={openProjectConfigSettings}>
-          前往设置
-        </Button>
-      </Box>
-    );
-  }
 
   // 就绪：渲染终端；过渡期浮层展示步骤清单（pointerEvents none，终端即刻可交互）。
   if (serverStatus === 'SUCCESS') {
@@ -215,7 +198,7 @@ export default function WorkspaceInitGate({ issueId, baseDir, children }: Worksp
         <Button
           variant="contained"
           disabled={initWorkspace.isPending}
-          onClick={() => initWorkspace.mutate({ issueId, baseDir })}
+          onClick={() => initWorkspace.mutate({ issueId })}
           sx={{ alignSelf: 'flex-start' }}
         >
           {initWorkspace.isPending ? '初始化中…' : failedFamily ? '重新初始化' : '初始化工作空间'}

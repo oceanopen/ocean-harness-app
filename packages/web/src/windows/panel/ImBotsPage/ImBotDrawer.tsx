@@ -17,14 +17,15 @@ import {
 } from '@mui/material';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCreateImBot, useUpdateImBot } from '@src/state/imBots';
+import { useWorkspaces } from '@src/state/tracker';
 import { useState } from 'react';
 import { IM_BOT_CHANNELS } from './imBotChannels';
 
 // IM bot 编辑抽屉（ResizableDrawer 右滑、左缘可拖宽，dsh-im 同款交互）。secret 明文回显（数据
 // 全本地）：默认 password 掩码、右侧小眼睛切换明文；保存留空 = 沿用原值、非空 = 覆盖，创建必填。
-// 工具白名单收敛为「执行权限」下拉——接口仍收 allowedTools，前端按选项转译（后续新场景在此
-// 追加选项即可）。渠道为表单首位的禁用下拉（新建 = 列表页当前渠道，编辑 = bot.channel）。
-// 文案约定：中文直出（仅菜单标题走 i18n，见 ImBotsPage 头注）。
+// 工作空间必选下拉（会话目录取其 dir）；工具白名单收敛为「执行权限」下拉——接口仍收
+// allowedTools，前端按选项转译（后续新场景在此追加选项即可）。渠道为表单首位的禁用下拉
+// （新建 = 列表页当前渠道，编辑 = bot.channel）。文案约定：中文直出（仅菜单标题走 i18n）。
 //
 // 由父组件按需挂载（{drawer && <ImBotDrawer/>}）：每次打开都是全新 useState 初值（首帧即终值，
 // 草稿含 secret 不残留），关闭即卸载。
@@ -58,12 +59,12 @@ function execPermissionFromAllowedTools(tools: string[]): string {
   return tools.length === 0 || tools.includes('Bash') ? 'execute' : 'readonly';
 }
 
-/** 表单 draft（secret/allowUsers 以文本态编辑，提交时拆分）。 */
+/** 表单 draft（secret/allowUsers 以文本态编辑，提交时拆分）。workspaceId 0 = 未选。 */
 interface ImBotDraft {
   name: string;
   botId: string;
   secret: string;
-  workspaceDir: string;
+  workspaceId: number;
   model: string;
   systemPrompt: string;
   execPermission: string;
@@ -77,7 +78,7 @@ function draftFromBot(bot: ImBotModel | null): ImBotDraft {
     name: bot?.name ?? '',
     botId: bot?.botId ?? '',
     secret: bot?.secret ?? '',
-    workspaceDir: bot?.workspaceDir ?? '',
+    workspaceId: bot?.workspaceId ?? 0,
     model: bot?.model ?? '',
     systemPrompt: bot?.systemPrompt ?? '',
     execPermission: execPermissionFromAllowedTools(bot?.allowedTools ?? []),
@@ -106,15 +107,17 @@ function ImBotDrawer(props: ImBotDrawerProps) {
 
   const createMutation = useCreateImBot();
   const updateMutation = useUpdateImBot();
+  const { data: workspaces = [] } = useWorkspaces();
   // saving 只驱动保存按钮 loading（防重复提交，且「正在保存」状态可见）；X/取消/遮罩在
   // saving 中的禁用是既有交互，保持不动。
   const saving = createMutation.isPending || updateMutation.isPending;
 
-  // 必填校验：名称/botId 恒必填；secret 仅创建必填（编辑清空 = 沿用原值）；工作目录可空 = 未配置。
+  // 必填校验：名称/botId 恒必填；secret 仅创建必填（编辑清空 = 沿用原值）；工作空间必选。
   const invalid
     = draft.name.trim() === ''
       || draft.botId.trim() === ''
-      || (!editing && draft.secret.trim() === '');
+      || (!editing && draft.secret.trim() === '')
+      || draft.workspaceId <= 0;
 
   const setField = <K extends keyof ImBotDraft>(key: K, value: ImBotDraft[K]) => {
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -129,7 +132,7 @@ function ImBotDrawer(props: ImBotDrawerProps) {
       name: draft.name.trim(),
       botId: draft.botId.trim(),
       secret: draft.secret.trim(),
-      workspaceDir: draft.workspaceDir.trim(),
+      workspaceId: draft.workspaceId,
       model: draft.model.trim(),
       systemPrompt: draft.systemPrompt,
       allowedTools: allowedToolsForExecPermission(draft.execPermission),
@@ -243,12 +246,21 @@ function ImBotDrawer(props: ImBotDrawerProps) {
           <TextField
             size="small"
             fullWidth
-            label="工作目录（可选）"
-            placeholder="/absolute/path/to/workspace"
-            value={draft.workspaceDir}
-            onChange={e => setField('workspaceDir', e.target.value)}
-            helperText={helpText('claude 会话的工作目录（绝对路径）；未配置时对话将收到补配提醒')}
-          />
+            required
+            select
+            label="工作空间"
+            value={draft.workspaceId}
+            onChange={e => setField('workspaceId', Number(e.target.value))}
+            helperText={helpText(
+              draft.workspaceId > 0
+                ? `会话目录取该工作空间的目录：${workspaces.find(ws => ws.id === draft.workspaceId)?.dir ?? ''}`
+                : '每个机器人绑定一个工作空间（会话目录取其工作区目录）',
+            )}
+          >
+            {workspaces.map(ws => (
+              <MenuItem key={ws.id} value={ws.id}>{ws.name}</MenuItem>
+            ))}
+          </TextField>
 
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField

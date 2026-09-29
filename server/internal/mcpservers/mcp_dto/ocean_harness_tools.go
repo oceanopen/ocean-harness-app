@@ -41,7 +41,7 @@ type IssueChildCreateArgs struct {
 	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"初始状态，留空默认 BACKLOG"`
 }
 
-// WorkspaceStatusArgs 是 workspace_status 的入参（baseDir 不入参，取应用设置）。
+// WorkspaceStatusArgs 是 workspace_status 的入参（目录经 issueId 由服务端解析，不入参）。
 type WorkspaceStatusArgs struct {
 	IssueID string `json:"issueId" jsonschema:"issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
 }

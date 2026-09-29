@@ -28,7 +28,7 @@ const iwRepoDirPrefix = "repo"
 // Path 带 repo/{name}/ 前缀，与 getFileTree 的 node.path 同构——前端复用同一套组树）。
 // 与文件树同名单的忽略段（node_modules 等）不进变更表：树里看不见的文件，这里也不出现。
 func (svc IssueWorkspace) GitChanges(req *types.IssueWorkspaceGitChangesRequest) (*types.IssueWorkspaceGitChangesResponseData, error) {
-	root, err := issueWorkspaceFileRoot(req.BaseDir, req.IssueID)
+	root, err := svc.issueWorkspaceRoot(req.IssueID)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (svc IssueWorkspace) GitChanges(req *types.IssueWorkspaceGitChangesRequest)
 // （NUL/非 UTF-8 → binary；超上限 → tooLarge）；删除态工作区文件不存在按空串处理
 // （EvalSymlinks 链要求存在，故不复用 issueWorkspaceFilePath，改用轻量段校验）。
 func (svc IssueWorkspace) FileDiff(req *types.IssueWorkspaceFileDiffRequest) (*types.IssueWorkspaceFileDiffResponseData, error) {
-	root, err := issueWorkspaceFileRoot(req.BaseDir, req.IssueID)
+	root, err := svc.issueWorkspaceRoot(req.IssueID)
 	if err != nil {
 		return nil, err
 	}

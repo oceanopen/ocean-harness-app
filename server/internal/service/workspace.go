@@ -1,14 +1,21 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
+	"ocean-harness/server/internal/global"
 )
 
 // Workspace 对应 /api/tracker/workspace 命名空间下的业务逻辑。
@@ -37,34 +44,26 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 	return ws, nil
 }
 
-// Create 创建 workspace（slug 查重后插入；物理删除时代 slug 已删即释放，无需恢复分支）。
+// Create 创建 workspace（目录校验后插入）。
 func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*model.Workspace, error) {
-	q := query.Use(svc.Orm)
-	wq := q.Workspace.WithContext(svc.Context)
-
-	if _, err := wq.Where(q.Workspace.Slug.Eq(req.Slug)).First(); err == nil {
-		return nil, errors.New("记录重复：slug 已存在")
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := validateWorkspaceDir(req.Dir); err != nil {
 		return nil, err
 	}
-
-	ws := &model.Workspace{Name: req.Name, Slug: req.Slug, Description: req.Description}
-	if e := wq.Create(ws); e != nil {
-		return nil, e
+	q := query.Use(svc.Orm)
+	ws := &model.Workspace{Name: req.Name, Dir: strings.TrimSpace(req.Dir), Description: req.Description}
+	if err := q.Workspace.WithContext(svc.Context).Create(ws); err != nil {
+		return nil, err
 	}
 	return ws, nil
 }
 
-// Update 更新 workspace：slug 唯一性校验（排除自身）后保存。
+// Update 更新 workspace：目录校验后保存；目录变更时热更新关联 bot 的连接。
 func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace, error) {
-	q := query.Use(svc.Orm)
-	wq := q.Workspace.WithContext(svc.Context)
-
-	if _, err := wq.Where(q.Workspace.Slug.Eq(req.Slug), q.Workspace.ID.Neq(req.ID)).First(); err == nil {
-		return nil, errors.New("记录重复：slug 已存在")
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := validateWorkspaceDir(req.Dir); err != nil {
 		return nil, err
 	}
+	q := query.Use(svc.Orm)
+	wq := q.Workspace.WithContext(svc.Context)
 
 	ws, err := wq.Where(q.Workspace.ID.Eq(req.ID)).First()
 	if err != nil {
@@ -74,19 +73,26 @@ func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace
 		return nil, err
 	}
 	ws.Name = req.Name
-	ws.Slug = req.Slug
+	oldDir := ws.Dir
+	ws.Dir = strings.TrimSpace(req.Dir)
 	ws.Description = req.Description
 	if e := wq.Save(ws); e != nil {
 		return nil, e
+	}
+	// 仅目录变更才热更新关联 bot（改名/改描述不动连接，避免踢断在途回合）。
+	if ws.Dir != oldDir {
+		reapplyBots(svc.Orm, svc.Logger, req.ID)
 	}
 	return ws, nil
 }
 
 // Delete 物理删除 workspace（无 DB 外键），事务内级联清理其下全部数据，避免悬挂：
-// project（deleteProjectCascade：issue + 仓库关联 + 项目↔仓库中间表）+ 其下 type（t_workspace_types）。
-// type 属 workspace 维度（所有项目共享），issue 的 type_id 引用随 issue 行删除自然消失，此处删 type 本体即可。
+// project（deleteProjectCascade：issue + 仓库关联 + 项目↔仓库中间表）+ 其下 type（t_workspace_types）
+// + 关联 bot 的 workspace_id 置空（bot 回到未选态）。type 属 workspace 维度（所有项目共享），
+// issue 的 type_id 引用随 issue 行删除自然消失，此处删 type 本体即可。
 func (svc Workspace) Delete(req *types.WorkspaceDeleteRequest) error {
-	return svc.Orm.Transaction(func(tx *gorm.DB) error {
+	var botIDs []int
+	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
 		if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(req.ID)).First(); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -113,6 +119,76 @@ func (svc Workspace) Delete(req *types.WorkspaceDeleteRequest) error {
 				return e
 			}
 		}
+		// 关联 bot 置空（回到未选态），事务后热更新其连接。
+		bots, be := q.ImBot.WithContext(svc.Context).Where(q.ImBot.WorkspaceID.Eq(req.ID)).Find()
+		if be != nil {
+			return be
+		}
+		for _, b := range bots {
+			botIDs = append(botIDs, b.ID)
+		}
+		if _, e := q.ImBot.WithContext(svc.Context).Where(q.ImBot.WorkspaceID.Eq(req.ID)).
+			UpdateSimple(q.ImBot.WorkspaceID.Value(0)); e != nil {
+			return e
+		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	reapplyBotIDs(svc.Orm, svc.Logger, botIDs...)
+	return nil
+}
+
+// validateWorkspaceDir 工作区目录校验：绝对路径 + 可创建 + 可写（探针文件写入即删）。
+func validateWorkspaceDir(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if !filepath.IsAbs(dir) {
+		return errors.New("工作区目录必须为绝对路径")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("工作区目录无法创建: %w", err)
+	}
+	probe := filepath.Join(dir, ".workspace-write-probe")
+	if err := os.WriteFile(probe, []byte("probe"), 0o644); err != nil {
+		return fmt.Errorf("工作区目录不可写: %w", err)
+	}
+	_ = os.Remove(probe)
+	return nil
+}
+
+// reapplyBots 目录变更后的 bot 连接热更新：重拉关联该工作空间的 bot 并 ApplyBot/StopBot。
+func reapplyBots(orm *gorm.DB, logger *zap.Logger, workspaceID int) {
+	q := query.Use(orm)
+	rows, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.WorkspaceID.Eq(workspaceID)).Find()
+	if err != nil {
+		return
+	}
+	ids := make([]int, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	reapplyBotIDs(orm, logger, ids...)
+}
+
+// reapplyBotIDs 按 id 重拉 bot 行并热更新连接（启用 → ApplyBot，停用 → StopBot）。
+// 失败仅日志（DB 已是 SSOT，运行时漂移可经重启连接/重启应用收敛）。
+func reapplyBotIDs(orm *gorm.DB, logger *zap.Logger, ids ...int) {
+	if global.BotSupervisor == nil || len(ids) == 0 {
+		return
+	}
+	q := query.Use(orm)
+	rows, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.In(ids...)).Find()
+	if err != nil {
+		return
+	}
+	for _, row := range rows {
+		if row.Enabled.IsYes() {
+			if err := global.BotSupervisor.ApplyBot(row); err != nil && logger != nil {
+				logger.Warn("bot 连接热更新失败（DB 已保存，可重启连接恢复）", zap.Int("botID", row.ID), zap.Error(err))
+			}
+		} else {
+			global.BotSupervisor.StopBot(row.ID)
+		}
+	}
 }

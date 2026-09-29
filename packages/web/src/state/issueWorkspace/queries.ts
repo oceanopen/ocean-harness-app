@@ -9,15 +9,14 @@ import { issueWorkspaceKeys } from './keys';
 // ─── 读取（query）───
 
 /**
- * 工作空间初始化状态（issueId 维度缓存）。baseDir 未设置（空串）时不查询——Go 侧要求
- * 绝对路径，先由 UI 引导设置。RUNNING 时 1s 轮询（全库首个 refetchInterval 用例），
- * 终态/未初始化自动停（返回 false），切 issue 换 key 天然重建。
+ * 工作空间初始化状态（issueId 维度缓存）。RUNNING 时 1s 轮询（全库首个 refetchInterval
+ * 用例），终态/未初始化自动停（返回 false），切 issue 换 key 天然重建。
  */
-export function useIssueWorkspaceStatus(issueId: string | null, baseDir: string) {
+export function useIssueWorkspaceStatus(issueId: string | null) {
   return useQuery({
     queryKey: issueWorkspaceKeys.status(issueId ?? ''),
-    queryFn: () => IssueWorkspaceService.status({ issueId: issueId!, baseDir }),
-    enabled: issueId != null && baseDir !== '',
+    queryFn: () => IssueWorkspaceService.status({ issueId: issueId! }),
+    enabled: issueId != null,
     refetchInterval: query => (query.state.data?.serverStatus === 'RUNNING' ? 1000 : false),
   });
 }
@@ -33,7 +32,7 @@ export function useIssueWorkspaceStatus(issueId: string | null, baseDir: string)
 export function useInitIssueWorkspace() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (req: { issueId: string; baseDir: string }) => {
+    mutationFn: async (req: { issueId: string }) => {
       const shutdown = await commands.ptyShutdownIssue(req.issueId);
       if (shutdown.status === 'error') {
         console.warn('[issueWorkspace] ptyShutdownIssue failed (ignore, session may not exist):', shutdown.error);
@@ -51,7 +50,6 @@ export function useInitIssueWorkspace() {
 export interface ArchiveIssueWorkspaceArgs {
   projectId: number;
   issueId: string;
-  baseDir: string;
   action: IssueWorkspaceArchiveAction;
   force?: boolean;
 }

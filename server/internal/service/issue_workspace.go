@@ -28,21 +28,14 @@ type IssueWorkspace struct {
 	apis.Service
 }
 
-// Init 受理 issue 工作空间初始化：校验 → 查关联仓库 → 准入控制（同 issue 执行中重复触发返回当前进度）
+// Init 受理 issue 工作空间初始化：解析目录 → 查关联仓库 → 准入控制（同 issue 执行中重复触发返回当前进度）
 // → 幂等短路（上次 SUCCESS 且关联未变）→ 增量合并状态文件并同步落盘（RUNNING）→ 后台串行执行。
-// baseDir 由前端逐请求传入（appConfig 的 workspace_base_dir，Go 不持久化）。
 func (svc IssueWorkspace) Init(req *types.IssueWorkspaceInitRequest) (*types.IssueWorkspaceStatusResponseData, error) {
-	if !filepath.IsAbs(req.BaseDir) {
-		return nil, errors.New("baseDir 须为绝对路径")
-	}
 	if !issueWorkspaceValidIssueID(req.IssueID) {
 		return nil, errors.New("issueId 非法")
 	}
-	q := query.Use(svc.Orm)
-	if _, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.IssueID)).First(); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("issue 不存在")
-		}
+	baseDir, err := svc.resolveIssueBaseDir(req.IssueID)
+	if err != nil {
 		return nil, err
 	}
 	repos, err := svc.findIssueRepos(req.IssueID)
@@ -52,11 +45,11 @@ func (svc IssueWorkspace) Init(req *types.IssueWorkspaceInitRequest) (*types.Iss
 
 	// 准入控制：同 issue 已有活跃写者 → 不重复触发，返回当前进度（前端继续轮询）。
 	if !issueWorkspaceAcquire(req.IssueID) {
-		return issueWorkspaceDeriveStatusResponse(req.BaseDir, req.IssueID)
+		return issueWorkspaceDeriveStatusResponse(baseDir, req.IssueID)
 	}
 	// 此处起持有写者名额：失败路径须显式归还；成功路径移交后台 goroutine（其 defer 归还）。
 
-	old, err := loadIssueWorkspaceState(req.BaseDir, req.IssueID)
+	old, err := loadIssueWorkspaceState(baseDir, req.IssueID)
 	if err != nil {
 		// 状态文件损坏（CORRUPTED）：按可重试语义覆盖重建，不阻断初始化。
 		svc.Logger.Warn("[issueWorkspace] state file corrupted, rebuilding", zap.String("issueId", req.IssueID), zap.Error(err))
@@ -71,7 +64,7 @@ func (svc IssueWorkspace) Init(req *types.IssueWorkspaceInitRequest) (*types.Iss
 		return &types.IssueWorkspaceStatusResponseData{ServerStatus: types.IW_STATUS_SUCCESS, State: old}, nil
 	}
 
-	state := issueWorkspaceMergeState(old, req.BaseDir, req.IssueID, repos)
+	state := issueWorkspaceMergeState(old, baseDir, req.IssueID, repos)
 	state.Status = types.IW_STATUS_RUNNING // 受理即执行中（后台任务即将启动）
 	if err := saveIssueWorkspaceState(state); err != nil {
 		issueWorkspaceRelease(req.IssueID)
@@ -91,15 +84,40 @@ func (svc IssueWorkspace) Init(req *types.IssueWorkspaceInitRequest) (*types.Iss
 	return &types.IssueWorkspaceStatusResponseData{ServerStatus: types.IW_STATUS_RUNNING, State: snapshot}, nil
 }
 
-// Status 查询初始化进度（读状态文件派生顶层结论，不查库）。
+// Status 查询初始化进度（经 issueId 解析目录后读状态文件派生顶层结论）。
 func (svc IssueWorkspace) Status(req *types.IssueWorkspaceStatusRequest) (*types.IssueWorkspaceStatusResponseData, error) {
-	if !filepath.IsAbs(req.BaseDir) {
-		return nil, errors.New("baseDir 须为绝对路径")
-	}
 	if !issueWorkspaceValidIssueID(req.IssueID) {
 		return nil, errors.New("issueId 非法")
 	}
-	return issueWorkspaceDeriveStatusResponse(req.BaseDir, req.IssueID)
+	baseDir, err := svc.resolveIssueBaseDir(req.IssueID)
+	if err != nil {
+		return nil, err
+	}
+	return issueWorkspaceDeriveStatusResponse(baseDir, req.IssueID)
+}
+
+// resolveIssueBaseDir 由 issueId 解析其所属工作空间的目录（issue → workspace_id → t_workspaces.dir）。
+// 目录是后端 SSOT（工作空间表），HTTP 入参不携带路径；顺带完成 issue 存在性校验。
+func (svc IssueWorkspace) resolveIssueBaseDir(issueID string) (string, error) {
+	q := query.Use(svc.Orm)
+	issue, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(issueID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("issue 不存在")
+		}
+		return "", err
+	}
+	ws, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(issue.WorkspaceID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("issue 所属工作空间不存在")
+		}
+		return "", err
+	}
+	if !filepath.IsAbs(ws.Dir) {
+		return "", errors.New("工作空间目录须为绝对路径")
+	}
+	return ws.Dir, nil
 }
 
 // issueWorkspaceValidIssueID 校验 issueId 可安全拼入文件路径（正常值为 uuid v7 文本）：

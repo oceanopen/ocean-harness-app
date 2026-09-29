@@ -394,7 +394,7 @@ export type PtySpawned = {
 };
 
 /**
- *  spawn 入参。cwd 由前端派生（`${workspace_base_dir}/${issueId}`），
+ *  spawn 入参。cwd 由前端派生（`${工作空间目录}/${issueId}`），
  *  目录不存在时本模块不创建（skills 集成职责），spawn 失败自然暴露。
  */
 export type SpawnOpts = {

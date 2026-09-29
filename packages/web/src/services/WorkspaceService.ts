@@ -3,7 +3,7 @@ import { request } from './http';
 export interface WorkspaceModel {
   id: number;
   name: string;
-  slug: string;
+  dir: string;
   description: string;
   createdAt: string;
   updatedAt: string;
@@ -15,7 +15,7 @@ export interface WorkspaceGetListRequest {}
 // POST /api/tracker/workspace/create 的入参。
 export interface WorkspaceCreateRequest {
   name: string;
-  slug: string;
+  dir: string;
   description?: string;
 }
 
@@ -23,7 +23,7 @@ export interface WorkspaceCreateRequest {
 export interface WorkspaceUpdateRequest {
   id: number;
   name: string;
-  slug: string;
+  dir: string;
   description?: string;
 }
 

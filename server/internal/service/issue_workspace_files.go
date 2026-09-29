@@ -13,7 +13,7 @@ import (
 )
 
 // 工作空间文件浏览（T5.1 本期：列表 + 预览）。方法挂在 IssueWorkspace 上（同包多文件分工
-// 惯例，见 issue_workspace.go 头注释）：只读访问 {baseDir}/{issueId}/，与 DB 无关。
+// 惯例，见 issue_workspace.go 头注释）：只读访问 {issueId}/（目录经 issueId 从 DB 解析）。
 //
 // 设计要点：
 //   - 一次性全树：忽略构建产物后典型工作空间为数千节点，本机单次遍历毫秒级；懒加载的
@@ -51,7 +51,7 @@ var issueWorkspaceImageMimes = map[string]string{
 // FileTree POST /api/issueWorkspace/getFileTree：一次性返回工作空间全部文件/目录的
 // 扁平节点表（WalkDir 词法序，父目录天然先于其内条目），前端纯函数组树。
 func (svc IssueWorkspace) FileTree(req *types.IssueWorkspaceFileTreeRequest) (*types.IssueWorkspaceFileTreeResponseData, error) {
-	root, err := issueWorkspaceFileRoot(req.BaseDir, req.IssueID)
+	root, err := svc.issueWorkspaceRoot(req.IssueID)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (svc IssueWorkspace) FileTree(req *types.IssueWorkspaceFileTreeRequest) (*t
 // 判定次序（先 stat 后 read，超大文件不产生读取 IO）：安全链 → Lstat regular → 扩展名
 // 图片分派（base64）→ 文本上限 → 整读嗅探（NUL / 非 UTF-8 → binary）→ text 全文。
 func (svc IssueWorkspace) FileContent(req *types.IssueWorkspaceFileContentRequest) (*types.IssueWorkspaceFileContentResponseData, error) {
-	root, err := issueWorkspaceFileRoot(req.BaseDir, req.IssueID)
+	root, err := svc.issueWorkspaceRoot(req.IssueID)
 	if err != nil {
 		return nil, err
 	}
@@ -155,10 +155,10 @@ func (svc IssueWorkspace) FileContent(req *types.IssueWorkspaceFileContentReques
 }
 
 // FileRaw GET /api/issueWorkspace/fileRaw：图片原始字节直连（<img src> 消费，类静态资源
-// 服务）。校验链与 getFileContent 完全一致（baseDir/issueId/rel 路径/忽略名单/symlink
+// 服务）。校验链与 getFileContent 完全一致（issueId/rel 路径/忽略名单/symlink
 // 解析断言）+ 扩展名白名单（仅图片——本端点为 <img> 服务，不做通用文件下载）。
-func (svc IssueWorkspace) FileRaw(baseDir, issueID, rel string) ([]byte, string, error) {
-	root, err := issueWorkspaceFileRoot(baseDir, issueID)
+func (svc IssueWorkspace) FileRaw(issueID, rel string) ([]byte, string, error) {
+	root, err := svc.issueWorkspaceRoot(issueID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -177,14 +177,15 @@ func (svc IssueWorkspace) FileRaw(baseDir, issueID, rel string) ([]byte, string,
 	return raw, mime, nil
 }
 
-// issueWorkspaceFileRoot 校验并拼接工作空间根目录 {baseDir}/{issueId}
-// （校验复用 issueWorkspace 域既有范式：绝对路径 + issueId 防穿越）。
-func issueWorkspaceFileRoot(baseDir, issueID string) (string, error) {
-	if !filepath.IsAbs(baseDir) {
-		return "", errors.New("baseDir 须为绝对路径")
-	}
+// issueWorkspaceRoot 服务入口统一换算：issueId → 工作空间目录 → {dir}/{issueId} 根
+//（目录经 resolveIssueBaseDir 校验为绝对路径，此处仅拼接）。
+func (svc IssueWorkspace) issueWorkspaceRoot(issueID string) (string, error) {
 	if !issueWorkspaceValidIssueID(issueID) {
 		return "", errors.New("issueId 非法")
+	}
+	baseDir, err := svc.resolveIssueBaseDir(issueID)
+	if err != nil {
+		return "", err
 	}
 	return filepath.Join(baseDir, issueID), nil
 }

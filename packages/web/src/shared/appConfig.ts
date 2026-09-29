@@ -67,8 +67,7 @@ export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
 // 嵌入式终端启动时自动运行的编程 CLI（PTY 直接 spawn，无 shell 中转）。
 // 值域：'none' = 不自动运行，开普通 shell（默认）；'claude' = 当前唯一支持项，
 // 未来扩 'codex' 等。后端 Rust 侧 SpawnOpts.direct_command 为通用 Option<String>，
-// 前端把枚举值映射为命令名，后端不读取本 key，故无需在 config.rs 加常量副本
-// （参照 workspace_base_dir 先例）。
+// 前端把枚举值映射为命令名，后端不读取本 key，故无需在 config.rs 加常量副本。
 export type TerminalStartupCodeCli = 'none' | 'claude';
 
 export const TERMINAL_STARTUP_CODE_CLI_KEY = 'terminal_startup_code_cli';
@@ -167,22 +166,11 @@ export const DEFAULT_PANEL_DEV_TOOL_AREA_COLLAPSED = YES_NO.YES;
 export const PANEL_DEV_TOOL_AREA_WIDTH_KEY = 'panel_dev_tool_area_width';
 export const DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH = 600;
 
-// 工作空间默认根目录（新建/导入项目类流程的目录选择起点）。空串 = 未设置，消费方自行兜底。
-// 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 panel_sidebar_collapsed 先例）。
-export const WORKSPACE_BASE_DIR_KEY = 'workspace_base_dir';
-export const DEFAULT_WORKSPACE_BASE_DIR = '';
-
-// 工作空间根目录 decode：缺失回落空串（= 未设置）。模块级导出保证引用稳定
-// （useConfigValue 依赖项要求），EmbeddedTerminal 与 DevWorkbenchPage（issueWorkspace 初始化）共用。
-export function decodeWorkspaceBaseDir(raw: string | null): string {
-  return raw ?? DEFAULT_WORKSPACE_BASE_DIR;
-}
-
 // 工作区目录默认打开工具（开发工作台标题栏胶囊按钮）。值域 = 五工具 id 全集
 // （finder/vscode/iterm2/terminal/windows-terminal），id 类型/默认值/decode/平台过滤
 // 全部随值域 SSOT 放 DevWorkbenchPage/components/OpenWorkspaceDir/openTools.tsx
 // （参照 TERMINAL_THEME_KEY 先例：值域同文件持有，appConfig 只留 key）。
-// 纯前端偏好，后端不读取（参照 workspace_base_dir 先例）。
+// 纯前端偏好，后端不读取（参照 panel_sidebar_collapsed 先例）。
 export const WORKSPACE_OPEN_TOOL_KEY = 'workspace_open_tool';
 
 // commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，

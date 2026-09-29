@@ -16,6 +16,7 @@ import {
 } from '@src/services';
 import { commands } from '@src/shared/bindings';
 import { logOnError } from '@src/shared/commands';
+import { imBotsKeys } from '@src/state/imBots/keys';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { trackerKeys } from './keys';
 import { useTrackerStore } from './store';
@@ -72,21 +73,27 @@ export function useCreateWorkspace() {
   });
 }
 
-/** 更新工作空间。 */
+/** 更新工作空间。同步失效 imBots 列表（bot 卡片展示空间名，且目录变更影响其运行）。 */
 export function useUpdateWorkspace() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: WorkspaceUpdateRequest) => WorkspaceService.update(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaces() }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: trackerKeys.workspaces() });
+      void qc.invalidateQueries({ queryKey: imBotsKeys.list() });
+    },
   });
 }
 
-/** 删除工作空间。 */
+/** 删除工作空间。同步失效 imBots 列表（后端置空关联 bot 的 workspace_id）。 */
 export function useDeleteWorkspace() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => WorkspaceService.delete({ id }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaces() }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: trackerKeys.workspaces() });
+      void qc.invalidateQueries({ queryKey: imBotsKeys.list() });
+    },
   });
 }
 

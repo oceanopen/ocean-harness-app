@@ -3,7 +3,7 @@
 // 与 terminal/ 域的边界：terminal/ 负责跳转/打开外部终端（iTerm2/Terminal.app），
 // 本域负责应用内 PTY 会话（spawn/写/resize/关闭/reattach）——会话锚点（store key）
 // 统一为 `issueId::<paneId>`（main → `issueId::main`，split → `issueId::<uuid>`），
-// cwd 为 `${workspace_base_dir}/${issueId}`（同一 issue 的全部 pane 同目录）。
+// cwd 为 `${工作空间目录}/${issueId}`（同一 issue 的全部 pane 同目录）。
 //
 // 子模块：
 //   claude_state    —— claude 运行态探测（进程树父链匹配，按钮置灰驱动）

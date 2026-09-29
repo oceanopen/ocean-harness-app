@@ -145,8 +145,8 @@ func (mt McpOceanHarnessTool) IssueChildUpdate(ctx context.Context, _ *mcp.Serve
 	return mcputil.McpOK(newIssueContent(data))
 }
 
-// WorkspaceStatus 查询 issue 工作空间初始化状态：baseDir 不入参，从 Rust 共享 app.db
-// 只读解析（应用设置页唯一真相），复用既有 IssueWorkspace.Status（读状态文件派生，不查库）。
+// WorkspaceStatus 查询 issue 工作空间初始化状态：目录由 service 经 issueId 从工作空间解析
+// （后端 SSOT），复用既有 IssueWorkspace.Status（读状态文件派生）。
 func (mt McpOceanHarnessTool) WorkspaceStatus(ctx context.Context, _ *mcp.ServerSession,
 	params *mcp.CallToolParamsFor[mcpdto.WorkspaceStatusArgs]) (*mcp.CallToolResultFor[mcpdto.WorkspaceStatusContent], error) {
 
@@ -154,13 +154,9 @@ func (mt McpOceanHarnessTool) WorkspaceStatus(ctx context.Context, _ *mcp.Server
 	if err := mt.MakeContext(ctx).Validate(&args).Errors; err != nil {
 		return mcputil.McpFail[mcpdto.WorkspaceStatusContent](err)
 	}
-	baseDir, err := mcputil.ReadWorkspaceBaseDir()
-	if err != nil {
-		return mcputil.McpFail[mcpdto.WorkspaceStatusContent](err)
-	}
 	wsSvc := service.IssueWorkspace{}
 	mt.MakeService(&wsSvc.Service)
-	data, err := wsSvc.Status(&types.IssueWorkspaceStatusRequest{IssueID: args.IssueID, BaseDir: baseDir})
+	data, err := wsSvc.Status(&types.IssueWorkspaceStatusRequest{IssueID: args.IssueID})
 	if err != nil {
 		return mcputil.McpFail[mcpdto.WorkspaceStatusContent](err)
 	}

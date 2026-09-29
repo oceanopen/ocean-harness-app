@@ -46,7 +46,7 @@ func (api Workspace) GetInfo(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Create POST /api/tracker/workspace/create：创建工作空间（slug 查重后插入）。
+// Create POST /api/tracker/workspace/create：创建工作空间（目录校验后插入）。
 func (api Workspace) Create(ctx *gin.Context) {
 	req := &types.WorkspaceCreateRequest{}
 	svc := service.Workspace{}

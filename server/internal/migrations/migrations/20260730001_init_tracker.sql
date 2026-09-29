@@ -1,7 +1,8 @@
 -- +goose Up
--- 工作空间 / 项目 / Issue / 本地仓库 管理：基线 7 张业务表（最终态，已合并历次增量迁移：
+-- 工作空间 / 项目 / Issue / 本地仓库 / IM bot 管理：基线 9 张业务表（最终态，已合并历次增量迁移：
 -- 20260804001 local_repositories、20260804002 项目↔仓库中间表、20260811001 local_repository.default_branch、
 -- issue 仓库+分支多选（曾为 issue 表两列/JSON 列，现独立关联表 t_issue_local_repositories）、
+-- 20260928001 init_im_bot（t_im_bots / t_im_bot_conversations）。
 -- 命名格式：YYYYMMDD + 三位序号 + _name.sql；启动时 goose 自动向前迁移（仅 Up，见 initialize/migrate.go）。
 --
 -- 约定：
@@ -19,15 +20,15 @@
 --     由代码显式赋值（避免 DEFAULT '' 触发 gorm 零值省略、静默存空串，见记忆 tracker-enum-pattern）。
 
 -- t_workspaces：顶层容器（个人可建多个，如「个人 / 工作 / 开源」）。
+-- dir：工作区目录（绝对路径，service 层校验可写；issue 运行目录与 IM bot 会话目录的根）。
 CREATE TABLE t_workspaces (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     name          TEXT     NOT NULL,
-    slug          TEXT     NOT NULL,
+    dir           TEXT     NOT NULL,
     description   TEXT     NOT NULL DEFAULT '',
     created_at    DATETIME NOT NULL,
     updated_at    DATETIME NOT NULL
 );
-CREATE UNIQUE INDEX udx_workspaces_slug ON t_workspaces (slug);
 
 -- t_workspace_projects：项目，所属 workspace。允许重名（个人场景靠 id 区分），无短码。
 CREATE TABLE t_workspace_projects (
@@ -122,3 +123,52 @@ CREATE TABLE t_issue_local_repositories (
 );
 CREATE UNIQUE INDEX udx_issue_local_repositories_iid_lrid
     ON t_issue_local_repositories (issue_id, local_repository_id);
+
+-- ===== IM 渠道数字人 bot 域（原 20260928001_init_im_bot.sql 并入） =====
+-- 域架构：internal/bot 为渠道无关核心（编排/幂等/白名单/prompt/claude 驱动/回复泵/生命周期），
+-- internal/bot/wecom 等渠道适配器实现核心的 ChannelRuntime 接口；本域表结构渠道无关——
+-- 渠道差异只体现在 channel 枚举与 credential JSON 的 shape（由各渠道适配器自行解释）。
+
+-- t_im_bots：IM 渠道数字人 bot 定义（每 bot 独立渠道凭据 + claude 编排配置 + 启停）。
+-- channel：渠道枚举（enums.Channel，本期 wecom）；credential：渠道特定凭据 JSON
+--（wecom: {"botId":"...","secret":"..."}）——botId 在 JSON 内无法建 DB 唯一索引，查重由 service
+-- 层在 create/update 时扫描校验；workspace_id：关联 t_workspaces（0 = 未选择，扫码接入先建
+-- bot 后补选；会话目录取工作空间 dir）；allowed_tools：JSON 字符串数组（claude --allowedTools 透传，
+-- 空数组 = 采用代码默认白名单）；access_policy：访问白名单 JSON
+-- {"mode":"open|allowlist","allowUsers":["userid",...]}，解析失败按 fail closed 拒绝（核心 access.go）；
+-- enabled：启停开关（公共映射 enums.YesNo："Y"/"N"，与 Rust 侧 app_config 同词汇），
+-- sidecar 启动时拉起全部 enabled='Y' 的 bot；
+-- last_error：最近一次连接终态错误（认证失败/被新连接踢下线），重启后仍可见，供前端状态灯展示。
+CREATE TABLE t_im_bots (
+    id            INTEGER  PRIMARY KEY AUTOINCREMENT,
+    name          TEXT     NOT NULL,
+    channel       TEXT     NOT NULL,
+    credential    TEXT     NOT NULL DEFAULT '{}',
+    workspace_id INTEGER  NOT NULL DEFAULT 0,
+    model         TEXT     NOT NULL DEFAULT '',
+    system_prompt TEXT     NOT NULL DEFAULT '',
+    allowed_tools TEXT     NOT NULL DEFAULT '[]',
+    access_policy TEXT     NOT NULL,
+    enabled       TEXT     NOT NULL,
+    last_error    TEXT     NOT NULL DEFAULT '',
+    created_at    DATETIME NOT NULL,
+    updated_at    DATETIME NOT NULL
+);
+
+-- t_im_bot_conversations：会话映射（多轮上下文的 SSOT 是 claude 自身会话存储，本表只存指针）。
+-- conversation_key：'single:<userid>' / 'group:<chatid>'（前缀自描述免 chat_type 列；
+-- 单聊一人一会话，群聊全群共享一个 claude 会话）；claude_session_id：最近一回合 system/init
+-- 捕获的 session id（--resume 锚，空 = 未开场）；seen_message_ids：近 100 条 msgid JSON 环形数组
+--（企微 WS 无补投，幂等仅防瞬时重推，跨重启仍有效）；last_message_at：最近一回合完成时间。
+CREATE TABLE t_im_bot_conversations (
+    id                INTEGER  PRIMARY KEY AUTOINCREMENT,
+    bot_id            INTEGER  NOT NULL,
+    conversation_key  TEXT     NOT NULL,
+    claude_session_id TEXT     NOT NULL DEFAULT '',
+    seen_message_ids  TEXT     NOT NULL DEFAULT '[]',
+    last_message_at   DATETIME,
+    created_at        DATETIME NOT NULL,
+    updated_at        DATETIME NOT NULL
+);
+CREATE UNIQUE INDEX udx_im_bot_conversations_bot_conversation
+    ON t_im_bot_conversations (bot_id, conversation_key);

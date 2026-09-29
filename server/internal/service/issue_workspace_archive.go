@@ -25,12 +25,9 @@ import (
 // 同域文件分工：入口/校验在本文件；并发准入见 issue_workspace_registry.go；状态文件
 // 读写见 issue_workspace_state.go；git 检查函数见 gitutil/status.go。
 
-// Archive 归档/取消 issue 工作空间。执行序：入参校验 → issue 存在性 → 并发防护（init
-// 进行中拒绝）→ force=false 安全检查 / force=true 删目录 + 事务流转状态（Move 范式）。
+// Archive 归档/取消 issue 工作空间。执行序：入参校验 → 解析目录（含 issue 存在性）→ 并发防护
+// （init 进行中拒绝）→ force=false 安全检查 / force=true 删目录 + 事务流转状态（Move 范式）。
 func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*types.IssueWorkspaceArchiveResponseData, error) {
-	if !filepath.IsAbs(req.BaseDir) {
-		return nil, errors.New("baseDir 须为绝对路径")
-	}
 	if !issueWorkspaceValidIssueID(req.IssueID) {
 		return nil, errors.New("issueId 非法")
 	}
@@ -43,11 +40,8 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 	default:
 		return nil, errors.New("action 须为 archive 或 cancel")
 	}
-	q := query.Use(svc.Orm)
-	if _, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.IssueID)).First(); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("issue 不存在")
-		}
+	baseDir, err := svc.resolveIssueBaseDir(req.IssueID)
+	if err != nil {
 		return nil, err
 	}
 	// 并发防护：后台 goroutine 正在写 {issueId}/ 目录（clone 等），此刻删除会与其竞争。
@@ -56,7 +50,7 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 	}
 
 	if !req.Force {
-		warnings, err := issueWorkspaceArchiveWarnings(req.BaseDir, req.IssueID)
+		warnings, err := issueWorkspaceArchiveWarnings(baseDir, req.IssueID)
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +59,7 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 
 	// 删目录（外部副作用不可回滚，置于事务前：失败即中止不流转状态；目录不存在返回 nil，
 	// 天然幂等——未初始化/重复归档均安全）。终端会话已由前端在调本段前 ptyShutdownIssue。
-	if err := os.RemoveAll(filepath.Join(req.BaseDir, req.IssueID)); err != nil {
+	if err := os.RemoveAll(filepath.Join(baseDir, req.IssueID)); err != nil {
 		return nil, fmt.Errorf("删除工作空间目录失败: %w", err)
 	}
 

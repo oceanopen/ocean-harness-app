@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -178,6 +179,7 @@ func (s *Supervisor) setLastError(botID int, msg string) {
 }
 
 // botRuntimeConfig t_im_bots 行 → 运行时装配参数（JSON 列在此解析，渠道凭据保持 JSON 透传）。
+// 会话目录取工作空间 dir（workspace_id 关联，0/行缺失 = 未选 → 空串）。
 func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) {
 	policy, err := ParseAccessPolicy(b.AccessPolicy)
 	if err != nil {
@@ -187,11 +189,21 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 	if err != nil {
 		return BotRuntimeConfig{}, fmt.Errorf("allowed_tools 解析失败: %w", err)
 	}
+	wsDir := ""
+	if b.WorkspaceID > 0 {
+		q := query.Use(s.db)
+		ws, err := q.Workspace.WithContext(context.Background()).Where(q.Workspace.ID.Eq(b.WorkspaceID)).First()
+		if err == nil {
+			wsDir = ws.Dir
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return BotRuntimeConfig{}, fmt.Errorf("工作空间读取失败: %w", err)
+		}
+	}
 	return BotRuntimeConfig{
 		BotID:        b.ID,
 		Channel:      b.Channel,
 		Credential:   b.Credential,
-		WorkspaceDir: b.WorkspaceDir,
+		WorkspaceDir: wsDir,
 		Model:        b.Model,
 		SystemPrompt: b.SystemPrompt,
 		AllowedTools: tools,

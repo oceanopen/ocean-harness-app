@@ -14,7 +14,7 @@ const TableNameWorkspace = "t_workspaces"
 type Workspace struct {
 	ID                   int                 `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
 	Name                 string              `gorm:"column:name;type:TEXT;not null" json:"name"`
-	Slug                 string              `gorm:"column:slug;type:TEXT;not null;uniqueIndex:udx_workspaces_slug,priority:1" json:"slug"`
+	Dir                  string              `gorm:"column:dir;type:TEXT;not null" json:"dir"`
 	Description          string              `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
 	CreatedAt            time.Time           `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt            time.Time           `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`

@@ -9,7 +9,6 @@ import { MENU_PATHS } from '../routes';
 export type SettingsSection
   = | 'appConfig'
     | 'terminalConfig'
-    | 'projectConfig'
     | 'userProfile'
     | 'about';
 
@@ -22,7 +21,6 @@ export const DEFAULT_SECTION: SettingsSection = 'appConfig';
 export const SECTION_PATHS: Record<SettingsSection, string> = {
   appConfig: 'appConfig',
   terminalConfig: 'terminalConfig',
-  projectConfig: 'projectConfig',
   userProfile: 'userProfile',
   about: 'about',
 };
@@ -49,7 +47,6 @@ export function pathToSection(pathname: string): SettingsSection {
 export const SECTION_MENUS: ReadonlyArray<{ key: SettingsSection; labelI18nKey: string }> = [
   { key: 'appConfig', labelI18nKey: 'settings:menu.appConfig' },
   { key: 'terminalConfig', labelI18nKey: 'settings:menu.terminalConfig' },
-  { key: 'projectConfig', labelI18nKey: 'settings:menu.projectConfig' },
   { key: 'userProfile', labelI18nKey: 'settings:menu.userProfile' },
   { key: 'about', labelI18nKey: 'settings:menu.about' },
 ];

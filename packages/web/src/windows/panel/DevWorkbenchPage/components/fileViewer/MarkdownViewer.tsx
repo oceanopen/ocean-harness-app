@@ -99,9 +99,8 @@ const proseSx: SxProps<Theme> = {
 
 interface MarkdownViewerProps {
   content: string;
-  /// 图片相对路径解析与 fileRaw URL 构造上下文（issueId + baseDir + 本文件相对路径）。
+  /// 图片相对路径解析与 fileRaw URL 构造上下文（issueId + 本文件相对路径）。
   issueId: string;
-  baseDir: string;
   path: string;
 }
 
@@ -280,7 +279,7 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
 /// 直连；外链经 plugin-shell 走系统浏览器（Tauri webview 内 target=_blank 不可靠，
 /// MarkdownEditor 同款处理）。头部 36px（ViewerToolbar 共享载体）：meta + 预览/源码切换
 /// + 复制；源码视图复用 CodeViewer（与代码文件预览同观感）。
-export default function MarkdownViewer({ content, issueId, baseDir, path }: MarkdownViewerProps) {
+export default function MarkdownViewer({ content, issueId, path }: MarkdownViewerProps) {
   const theme = useTheme();
   const dark = theme.palette.mode === 'dark';
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
@@ -309,7 +308,7 @@ export default function MarkdownViewer({ content, issueId, baseDir, path }: Mark
     if (rawBase == null) {
       return null;
     }
-    return `${rawBase}?issueId=${encodeURIComponent(issueId)}&baseDir=${encodeURIComponent(baseDir)}&path=${encodeURIComponent(relPath)}`;
+    return `${rawBase}?issueId=${encodeURIComponent(issueId)}&path=${encodeURIComponent(relPath)}`;
   };
 
   return (

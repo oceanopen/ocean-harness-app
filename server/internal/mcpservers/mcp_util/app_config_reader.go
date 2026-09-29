@@ -17,8 +17,7 @@ import (
 // 跨端 key 常量：对齐 Rust 侧 app_config KV 表（app/src/shared/app_config.rs，经
 // specta .constant() 单源导出到前端 bindings.ts）。Go 侧字符串常量、无生成机制，变更须两端同步。
 const (
-	appConfigWorkspaceBaseDirKey = "workspace_base_dir"
-	appConfigGithubPATKey        = "github_pat"
+	appConfigGithubPATKey = "github_pat"
 )
 
 // 环境类哨兵错误（可被调用方 errors.Is 判别后映射为各自面向用户的文案）。
@@ -57,26 +56,6 @@ func readAppConfigValue(key string) (string, error) {
 		return "", fmt.Errorf("读取 app_config 失败: %w", err)
 	}
 	return value, nil
-}
-
-// ReadWorkspaceBaseDir 只读 workspace 基目录，供 MCP workspace_status 类工具解析状态文件
-// 路径。未注入/缺文件/未设置/空白四态各有独立文案（app_config_reader_test.go 的契约）。
-func ReadWorkspaceBaseDir() (string, error) {
-	baseDir, err := readAppConfigValue(appConfigWorkspaceBaseDirKey)
-	switch {
-	case errors.Is(err, errAppDbNotInjected):
-		return "", errors.New("未配置 workspace 基目录（GO_SERVER_APP_DB 未注入）")
-	case errors.Is(err, errAppDbMissing):
-		return "", errors.New("未配置 workspace 基目录（app.db 不存在）")
-	case err != nil:
-		return "", fmt.Errorf("未配置 workspace 基目录（%s）", err)
-	case strings.TrimSpace(baseDir) == "":
-		if baseDir == "" {
-			return "", errors.New("未配置 workspace 基目录（设置页未设置）")
-		}
-		return "", errors.New("未配置 workspace 基目录（值为空）")
-	}
-	return baseDir, nil
 }
 
 // ReadGithubPAT 只读 GitHub Personal Access Token（设置 → 个人中心录入），供 github MCP

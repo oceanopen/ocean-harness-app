@@ -12,9 +12,10 @@ type WorkspaceGetInfoRequest struct {
 }
 
 // WorkspaceCreateRequest 是 POST /api/tracker/workspace/create 的入参。
+// dir 为工作区目录（须为绝对路径，service 层校验可创建可写）。
 type WorkspaceCreateRequest struct {
 	Name        string `json:"name" binding:"required,max=100"`
-	Slug        string `json:"slug" binding:"required,max=100"`
+	Dir         string `json:"dir" binding:"required"`
 	Description string `json:"description" binding:"omitempty,max=500"`
 }
 
@@ -22,7 +23,7 @@ type WorkspaceCreateRequest struct {
 type WorkspaceUpdateRequest struct {
 	ID          int    `json:"id" binding:"required"`
 	Name        string `json:"name" binding:"required,max=100"`
-	Slug        string `json:"slug" binding:"required,max=100"`
+	Dir         string `json:"dir" binding:"required"`
 	Description string `json:"description" binding:"omitempty,max=500"`
 }
 

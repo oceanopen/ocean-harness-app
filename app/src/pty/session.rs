@@ -228,7 +228,7 @@ pub fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, io: Arc<SessionIo>)
 pub struct PtySession {
     /// 会话锚点（store key，见 SpawnOpts.session_id）。
     pub session_id: String,
-    /// 工作目录（前端派生的 `${workspace_base_dir}/${issueId}`）。
+    /// 工作目录（前端派生的 `${工作空间目录}/${issueId}`）。
     pub cwd: String,
     /// PTY master 端：resize。
     pub master: Box<dyn MasterPty>,

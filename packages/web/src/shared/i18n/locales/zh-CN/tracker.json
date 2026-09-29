@@ -18,9 +18,9 @@
       "title": "新建工作空间",
       "name": "名称",
       "namePlaceholder": "请输入工作空间名称",
-      "slug": "标识（slug）",
-      "slugPlaceholder": "小写字母、数字、连字符",
-      "slugHint": "由名称自动生成，可手动修改",
+      "dir": "工作区目录",
+      "dirPlaceholder": "/absolute/path/to/workspace",
+      "dirHint": "issue 运行目录与 IM 机器人会话目录的根（绝对路径）",
       "description": "描述",
       "descriptionPlaceholder": "请输入描述（选填）",
       "confirm": "确定",
@@ -32,12 +32,12 @@
       "confirm": "保存"
     },
     "card": {
-      "slugLabel": "标识",
       "noDescription": "暂无描述",
       "updatedAtLabel": "更新于",
       "current": "当前工作空间",
       "edit": "编辑",
-      "delete": "删除"
+      "delete": "删除",
+      "dirLabel": "工作目录"
     },
     "delete": {
       "title": "删除工作空间",
@@ -204,7 +204,7 @@
     }
   },
   "workspaceType": {
-    "title": "工作空间类型管理",
+    "title": "工作空间任务类型管理",
     "name": "名称",
     "namePlaceholder": "输入类型名称",
     "color": "颜色",

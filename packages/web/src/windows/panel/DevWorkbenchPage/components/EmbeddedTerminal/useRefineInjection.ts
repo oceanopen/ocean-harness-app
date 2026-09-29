@@ -7,7 +7,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useEffect } from 'react';
 
 // 润色命令（T2.2 落地于 ocean-harness 插件；issueId 由 cwd basename 推导——终端
-// cwd 恒为 `${baseDir}/${issueId}`，命令无需携带参数，OCEAN_HARNESS_PORT 亦已由
+// cwd 恒为 `${工作空间目录}/${issueId}`，命令无需携带参数，OCEAN_HARNESS_PORT 亦已由
 // pty_spawn 注入）。
 const REFINE_COMMAND = '/ocean-harness:refine-issue';
 

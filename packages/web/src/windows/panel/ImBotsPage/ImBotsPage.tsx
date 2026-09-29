@@ -75,7 +75,7 @@ function ChannelCard(props: { channel: ImBotChannelMeta; total: number; online: 
   );
 }
 
-/** 右栏机器人满行卡片：名称 + 状态徽标 + 操作（重启/编辑/删除），下两行工作目录/访问策略。 */
+/** 右栏机器人满行卡片：名称 + 状态徽标 + 操作（重启/编辑/删除），下两行工作空间/访问策略。 */
 function ImBotCard(props: {
   bot: ImBotModel;
   onEdit: () => void;
@@ -92,8 +92,8 @@ function ImBotCard(props: {
         <Tooltip title={bot.lastError || undefined}>
           <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
         </Tooltip>
-        {!bot.workspaceDir && (
-          <Tooltip title="尚未配置工作目录，对话时将收到补配提醒">
+        {bot.workspaceId <= 0 && (
+          <Tooltip title="尚未选择工作空间，对话时将收到补选提醒">
             <Chip size="small" label="待配置" color="warning" variant="outlined" sx={{ fontSize: 12 }} />
           </Tooltip>
         )}
@@ -116,7 +116,7 @@ function ImBotCard(props: {
       </Box>
       <Box sx={{ px: 2, pb: 1.5, display: 'flex', gap: 3, alignItems: 'center' }}>
         <Typography sx={{ fontSize: 12, color: 'text.secondary', flex: 2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {bot.workspaceDir ? `工作目录：${bot.workspaceDir}` : '工作目录：未配置'}
+          {bot.workspaceId > 0 ? `工作空间：${bot.workspaceName || `#${bot.workspaceId}`}` : '工作空间：未选择'}
         </Typography>
         <Typography sx={{ fontSize: 12, color: 'text.secondary', flex: 1 }}>
           {bot.accessPolicy.mode === 'open'

@@ -26,11 +26,9 @@ import {
 } from '@mui/material';
 import ProjectIssueDrawer from '@src/components/projectIssueDrawer/ProjectIssueDrawer';
 import {
-  decodeWorkspaceBaseDir,
   DEFAULT_PANEL_DEV_TOOL_AREA_COLLAPSED,
   DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH,
   DEFAULT_PANEL_DEV_TREE_COLLAPSED,
-  DEFAULT_WORKSPACE_BASE_DIR,
   isYes,
   PANEL_DEV_TOOL_AREA_COLLAPSED_KEY,
   PANEL_DEV_TOOL_AREA_WIDTH_KEY,
@@ -38,7 +36,6 @@ import {
   parseYesNo,
   setAppConfig,
   toYesNo,
-  WORKSPACE_BASE_DIR_KEY,
 } from '@src/shared/appConfig';
 import { isMacOS, TRAFFIC_LIGHT_CLEARANCE } from '@src/shared/platform';
 import { useConfigReady } from '@src/shared/useConfigReady';
@@ -47,7 +44,7 @@ import { useToast } from '@src/shared/useToast';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useArchiveIssueWorkspace, useInitIssueWorkspace } from '@src/state/issueWorkspace';
 import { removeLayout } from '@src/state/terminalPanes';
-import { STATE_MAP, useProjectIssues, useWorkspaceProjects } from '@src/state/tracker';
+import { STATE_MAP, useProjectIssues, useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
 import { clearToolTabs } from '@src/state/workbenchTools';
 import { clearPreviewTabs, useWorkspaceFilesStore } from '@src/state/workspaceFiles';
 import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
@@ -147,8 +144,6 @@ export default function DevWorkbenchPage() {
     void setAppConfig(PANEL_DEV_TOOL_AREA_WIDTH_KEY, String(width));
   };
 
-  // 工作空间根目录（issueWorkspace 初始化闸门与右上角重新初始化按钮共用；空串 = 未设置）。
-  const baseDir = useConfigValue(WORKSPACE_BASE_DIR_KEY, decodeWorkspaceBaseDir, DEFAULT_WORKSPACE_BASE_DIR);
   const initWorkspace = useInitIssueWorkspace();
 
   // 归档/取消（T3.2）：⋯ 菜单入口 + 两段式确认（首确认 → 后端安全检查 → 警告态强确认）。
@@ -173,6 +168,11 @@ export default function DevWorkbenchPage() {
   const hasSelection = effIssueId != null && loadPid != null;
   const issue = issues.find(i => i.id === effIssueId);
   const stateMeta = issue ? STATE_MAP.get(issue.stateCode) : undefined;
+
+  // 当前 issue 所属工作空间的工作区目录（终端 cwd / 打开目录 / 重新初始化共用；
+  // issue 或工作空间列表加载中为 null，消费组件闸门等待）。
+  const { data: workspaces = [] } = useWorkspaces();
+  const workspaceDir = issue != null ? workspaces.find(ws => ws.id === issue.workspaceId)?.dir ?? null : null;
 
   // 抽屉所需 workspaceProject：issue 自带 workspaceId/projectId，按 workspace 查项目列表
   // （与左树 DevTaskTree 同 query key 共享缓存，命中即零请求）后按 id 反查实体——刻意不读
@@ -199,7 +199,7 @@ export default function DevWorkbenchPage() {
     }
     const { kind, warnings } = archiveConfirm;
     archiveWorkspace.mutate(
-      { projectId: loadPid, issueId: issue.id, baseDir, action: kind, force: warnings != null },
+      { projectId: loadPid, issueId: issue.id, action: kind, force: warnings != null },
       {
         onSuccess: (result) => {
           if (result.status === 'warnings') {
@@ -414,7 +414,7 @@ export default function DevWorkbenchPage() {
             <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
               {/* 打开工作区目录（胶囊分体按钮，OpenWorkspaceDir/ 特性目录）：左段图标 =
                   当前默认工具（点击即打开），hover/▼ 展开浮层切默认（串行：打开成功后才切）。 */}
-              {hasSelection && issue && <OpenWorkspaceDirButton issueId={issue.id} />}
+              {hasSelection && issue && <OpenWorkspaceDirButton issueId={issue.id} workspaceDir={workspaceDir} />}
               {/* 清理终端并重新初始化（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
                 与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。
                 图标用扫帚（CleaningServices）而非循环箭头，与子任务面板刷新按钮（Autorenew）区分。 */}
@@ -424,8 +424,8 @@ export default function DevWorkbenchPage() {
                     <IconButton
                       size="small"
                       aria-label="清理终端并重新初始化"
-                      disabled={initWorkspace.isPending || baseDir === ''}
-                      onClick={() => initWorkspace.mutate({ issueId: issue.id, baseDir })}
+                      disabled={initWorkspace.isPending}
+                      onClick={() => initWorkspace.mutate({ issueId: issue.id })}
                       sx={TITLEBAR_ICON_SX}
                     >
                       <CleaningServicesIcon />
@@ -497,9 +497,9 @@ export default function DevWorkbenchPage() {
                 ? (
                     // 初始化闸门（T1.5）：三段式引导面板占位终端列，工作空间 SUCCESS 才渲染终端；
                     // key 随 issue 切换重挂载（过渡态/轮询随 key 重建，互不串扰）。
-                    <WorkspaceInitGate key={issue.id} issueId={issue.id} baseDir={baseDir}>
+                    <WorkspaceInitGate key={issue.id} issueId={issue.id}>
                       <TerminalErrorBoundary key={issue.id}>
-                        <TerminalPaneRoot issueId={issue.id} />
+                        <TerminalPaneRoot issueId={issue.id} workspaceDir={workspaceDir} />
                       </TerminalErrorBoundary>
                     </WorkspaceInitGate>
                   )
@@ -516,7 +516,7 @@ export default function DevWorkbenchPage() {
                     )}
             {/* 工作空间文件预览浮层（T5.1 本期）：tabs 按 issue 隔离、非空才可见；与终端
                 内容为兄弟节点，absolute 定位不参与 flex 布局（会话后端常驻仅视觉遮盖）。 */}
-            {issue != null && <FilePreviewOverlay issueId={issue.id} baseDir={baseDir} />}
+            {issue != null && <FilePreviewOverlay issueId={issue.id} />}
           </Box>
         </Box>
         <ToolPanelArea

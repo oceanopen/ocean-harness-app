@@ -9,6 +9,8 @@ import PaneDivider from './PaneDivider';
 interface PaneLayoutProps {
   issueId: string;
   node: PaneLayoutNode;
+  // 当前工作空间的工作区目录（null = 解析中），透传至终端 cwd 派生。
+  workspaceDir: string | null;
 }
 
 // PaneLayout：布局树平铺渲染（docs/terminal_02_split_panes.md §3.4 平铺版）。
@@ -30,7 +32,7 @@ interface PaneLayoutProps {
 // 逐次累积、反向拖拽重排合并回退；上下分屏（纯高度变化）不触发；新 spawn 的
 // pane（零 resize）恒干净。应用侧已收敛到每次真实几何变化恰一次 SIGWINCH
 // （usePtySession 尺寸台账去重），无进一步优化空间。
-export default function PaneLayout({ issueId, node }: PaneLayoutProps) {
+export default function PaneLayout({ issueId, node, workspaceDir }: PaneLayoutProps) {
   const setRatio = useTerminalPanesStore(s => s.setRatio);
 
   // 渲染期 hydration（幂等）：store 无记录时从 localStorage 读回（F5 布局还原），
@@ -80,7 +82,7 @@ export default function PaneLayout({ issueId, node }: PaneLayoutProps) {
                 overflow: 'hidden',
               }}
             >
-              <EmbeddedTerminal issueId={issueId} paneId={pane.paneId} />
+              <EmbeddedTerminal issueId={issueId} paneId={pane.paneId} workspaceDir={workspaceDir} />
             </Box>
           ))}
           {geometry.dividers.map(divider => (
