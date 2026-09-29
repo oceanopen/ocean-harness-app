@@ -9,6 +9,7 @@ export type MenuKey
   = | 'claudeSessions'
     | 'repositories'
     | 'pluginMarketplace'
+    | 'imBots'
     | 'serverStatus'
     | 'tracker'
     | 'devWorkbench'

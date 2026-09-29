@@ -3,6 +3,7 @@
     "claudeSessions": "Claude Sessions",
     "repositories": "Repository Management",
     "pluginMarketplace": "Plugin Marketplace",
+    "imBots": "IM Bots",
     "serverStatus": "Service Status",
     "tracker": "Project & Issue Management",
     "devWorkbench": "Dev Workbench"
@@ -32,6 +33,7 @@
       "claudeSessions": "Go to Claude Sessions",
       "repositories": "Go to Repository Management",
       "pluginMarketplace": "Go to Plugin Marketplace",
+      "imBots": "Go to IM Bots",
       "serverStatus": "Go to Service Status",
       "tracker": "Go to Project & Issue Management",
       "devWorkbench": "Go to Dev Workbench"

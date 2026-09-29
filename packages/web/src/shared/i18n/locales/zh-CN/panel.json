@@ -3,6 +3,7 @@
     "claudeSessions": "Claude 会话监听",
     "repositories": "本地仓库管理",
     "pluginMarketplace": "插件市场",
+    "imBots": "IM 机器人",
     "serverStatus": "服务状态",
     "tracker": "项目事项管理",
     "devWorkbench": "开发工作台"
@@ -32,6 +33,7 @@
       "claudeSessions": "前往 Claude 会话监听",
       "repositories": "前往本地仓库管理",
       "pluginMarketplace": "前往插件市场",
+      "imBots": "前往 IM 机器人",
       "serverStatus": "前往服务状态",
       "tracker": "前往项目事项管理",
       "devWorkbench": "前往开发工作台"

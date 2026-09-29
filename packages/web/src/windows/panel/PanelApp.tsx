@@ -8,6 +8,7 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import SpaceDashboardOutlinedIcon from '@mui/icons-material/SpaceDashboardOutlined';
 import { Box, Breadcrumbs, IconButton, List, Typography, useTheme } from '@mui/material';
 import appIcon from '@src/assets/app-icon.svg';
@@ -35,6 +36,7 @@ import ClaudeSessionsPage from './ClaudeSessionsPage/ClaudeSessionsPage';
 import CommandPaletteProvider from './commandPalette/CommandPaletteProvider';
 import CommandPaletteTrigger from './commandPalette/CommandPaletteTrigger';
 import DevWorkbenchPage from './DevWorkbenchPage/DevWorkbenchPage';
+import ImBotsPage from './ImBotsPage/ImBotsPage';
 import PluginMarketplacePage from './PluginMarketplacePage/PluginMarketplacePage';
 import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
 import { DEFAULT_MENU, MENU_PATHS, menuToPath, pathToMenu, TRACKER_WID_PARAM } from './routes';
@@ -157,6 +159,7 @@ function PanelApp() {
     { key: 'serverStatus', label: t('panel:menu.serverStatus'), icon: <LanOutlinedIcon /> },
     { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
     { key: 'pluginMarketplace', label: t('panel:menu.pluginMarketplace'), icon: <ExtensionOutlinedIcon /> },
+    { key: 'imBots', label: t('panel:menu.imBots'), icon: <SmartToyOutlinedIcon /> },
     { key: 'tracker', label: t('panel:menu.tracker'), icon: <SpaceDashboardOutlinedIcon /> },
     { key: 'devWorkbench', label: t('panel:menu.devWorkbench'), icon: <DeveloperModeOutlinedIcon /> },
     { key: 'settings', label: t('settings:title'), icon: <SettingsOutlinedIcon /> },
@@ -314,6 +317,7 @@ function PanelApp() {
               <Route path={MENU_PATHS.serverStatus} element={<ServerStatusPage />} />
               <Route path={MENU_PATHS.repositories} element={<RepositoriesPage windowShownTrigger={repoRefreshTrigger} />} />
               <Route path={MENU_PATHS.pluginMarketplace} element={<PluginMarketplacePage windowShownTrigger={repoRefreshTrigger} />} />
+              <Route path={MENU_PATHS.imBots} element={<ImBotsPage />} />
               <Route path={MENU_PATHS.tracker} element={<TrackerPage />} />
               <Route path={MENU_PATHS.devWorkbench} element={<DevWorkbenchPage />} />
               {/* settings 为嵌套页：splat 挂载，分区子路由由 SettingsPage 内层 Routes 消费。 */}

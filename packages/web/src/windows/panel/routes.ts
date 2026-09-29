@@ -21,6 +21,7 @@ export const MENU_PATHS: Record<MenuKey, string> = {
   serverStatus: '/serverStatus',
   repositories: '/repositories',
   pluginMarketplace: '/pluginMarketplace',
+  imBots: '/imBots',
   tracker: '/tracker',
   devWorkbench: '/devWorkbench',
   settings: '/settings',

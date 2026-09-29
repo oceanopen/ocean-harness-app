@@ -7,6 +7,7 @@ import {
   LanOutlined as LanOutlinedIcon,
   SensorsOutlined as SensorsOutlinedIcon,
   SettingsOutlined as SettingsOutlinedIcon,
+  SmartToyOutlined as SmartToyOutlinedIcon,
   SpaceDashboardOutlined as SpaceDashboardOutlinedIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
   WorkspacesOutlined as WorkspacesOutlinedIcon,
@@ -43,6 +44,15 @@ export const commands: CommandConfig[] = [
     icon: <ExtensionOutlinedIcon />,
     keywords: ['plugin', 'marketplace', '插件', '市场'],
     action: ctx => ctx.navigate('pluginMarketplace'),
+    closeOnSelect: true,
+  },
+  {
+    id: 'nav.imBots',
+    group: 'navigation',
+    titleI18nKey: 'panel:commandPalette.nav.imBots',
+    icon: <SmartToyOutlinedIcon />,
+    keywords: ['im', 'bot', '机器人', '企微'],
+    action: ctx => ctx.navigate('imBots'),
     closeOnSelect: true,
   },
   {

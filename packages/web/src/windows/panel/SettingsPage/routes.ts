@@ -10,7 +10,6 @@ export type SettingsSection
   = | 'appConfig'
     | 'terminalConfig'
     | 'projectConfig'
-    | 'imBots'
     | 'userProfile'
     | 'about';
 
@@ -24,7 +23,6 @@ export const SECTION_PATHS: Record<SettingsSection, string> = {
   appConfig: 'appConfig',
   terminalConfig: 'terminalConfig',
   projectConfig: 'projectConfig',
-  imBots: 'imBots',
   userProfile: 'userProfile',
   about: 'about',
 };
@@ -52,7 +50,6 @@ export const SECTION_MENUS: ReadonlyArray<{ key: SettingsSection; labelI18nKey: 
   { key: 'appConfig', labelI18nKey: 'settings:menu.appConfig' },
   { key: 'terminalConfig', labelI18nKey: 'settings:menu.terminalConfig' },
   { key: 'projectConfig', labelI18nKey: 'settings:menu.projectConfig' },
-  { key: 'imBots', labelI18nKey: 'settings:menu.imBots' },
   { key: 'userProfile', labelI18nKey: 'settings:menu.userProfile' },
   { key: 'about', labelI18nKey: 'settings:menu.about' },
 ];

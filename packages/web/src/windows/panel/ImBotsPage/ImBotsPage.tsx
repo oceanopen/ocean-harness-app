@@ -23,9 +23,10 @@ import { IM_BOT_CHANNELS } from './imBotChannels';
 import ImBotDrawer from './ImBotDrawer';
 import ImBotProvisionDrawer from './ImBotProvisionDrawer';
 
-// IM 机器人设置分区：左栏渠道小卡片列表（本期仅企微，结构留飞书扩展）+ 右栏当前渠道机器人
-// 满行卡片列表，头部「扫码接入 / 手动接入」双入口（dsh-im 同款交互）。编辑/新增均右侧 Drawer。
-// 手动接入路径当前会话列表无 bot 的提示：凭据从企微后台复制。文案约定：仅菜单标题走 i18n。
+// IM 机器人顶层菜单页（/imBots，自 SettingsPage 分区迁出）：左栏渠道小卡片列表（本期仅企微，
+// 结构留飞书扩展）+ 右栏当前渠道机器人满行卡片列表，头部「扫码接入 / 手动接入」双入口
+// （dsh-im 同款交互）。编辑/新增均右侧 Drawer。手动接入路径当前会话列表无 bot 的提示：
+// 凭据从企微后台复制。文案约定：仅菜单标题走 i18n。
 
 /** 连接状态 → 徽标文案与色调。 */
 function stateChip(state: string): { label: string; color: 'success' | 'warning' | 'error' | 'default' } {
