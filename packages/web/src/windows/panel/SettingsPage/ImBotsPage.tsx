@@ -1,5 +1,5 @@
 import type { ImBotModel } from '@src/services';
-import type { ImBotDrawerState } from './ImBotDrawer';
+import type { ImBotChannelMeta } from './imBotChannels';
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import QrCode2OutlinedIcon from '@mui/icons-material/QrCode2Outlined';
@@ -19,22 +19,13 @@ import {
 } from '@mui/material';
 import { useDeleteImBot, useImBots, useRestartImBot } from '@src/state/imBots';
 import { useState } from 'react';
+import { IM_BOT_CHANNELS } from './imBotChannels';
 import ImBotDrawer from './ImBotDrawer';
 import ImBotProvisionDrawer from './ImBotProvisionDrawer';
 
 // IM 机器人设置分区：左栏渠道小卡片列表（本期仅企微，结构留飞书扩展）+ 右栏当前渠道机器人
 // 满行卡片列表，头部「扫码接入 / 手动接入」双入口（dsh-im 同款交互）。编辑/新增均右侧 Drawer。
 // 手动接入路径当前会话列表无 bot 的提示：凭据从企微后台复制。文案约定：仅菜单标题走 i18n。
-
-/** 渠道元数据（本期仅企微；飞书接入时追加一项即可）。 */
-interface ChannelMeta {
-  key: string;
-  label: string;
-}
-
-const CHANNELS: readonly ChannelMeta[] = [
-  { key: 'wecom', label: '企业微信' },
-];
 
 /** 连接状态 → 徽标文案与色调。 */
 function stateChip(state: string): { label: string; color: 'success' | 'warning' | 'error' | 'default' } {
@@ -51,7 +42,7 @@ function stateChip(state: string): { label: string; color: 'success' | 'warning'
 }
 
 /** 左栏渠道小卡片：图标 + 名称 + 在线 bot 数徽标，选中态高亮。 */
-function ChannelCard(props: { channel: ChannelMeta; total: number; online: number; selected: boolean; onSelect: () => void }) {
+function ChannelCard(props: { channel: ImBotChannelMeta; total: number; online: number; selected: boolean; onSelect: () => void }) {
   const { channel, total, online, selected, onSelect } = props;
   return (
     <Box
@@ -141,13 +132,13 @@ function ImBotCard(props: {
 function ImBotsPage() {
   const { data: bots = [], isLoading, refetch, isFetching, error } = useImBots();
   const deleteMutation = useDeleteImBot();
-  const [channelKey, setChannelKey] = useState(CHANNELS[0].key);
-  const [drawer, setDrawer] = useState<ImBotDrawerState>({ open: false, bot: null });
+  const [channelKey, setChannelKey] = useState(IM_BOT_CHANNELS[0].key);
+  const [drawer, setDrawer] = useState<{ bot: ImBotModel | null; channelKey: string } | null>(null);
   const [provisionOpen, setProvisionOpen] = useState(false);
   const [provisionKey, setProvisionKey] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<ImBotModel | null>(null);
 
-  const channel = CHANNELS.find(c => c.key === channelKey) ?? CHANNELS[0];
+  const channel = IM_BOT_CHANNELS.find(c => c.key === channelKey) ?? IM_BOT_CHANNELS[0];
   // 后端本期只有 wecom 渠道数据；按渠道过滤的结构位（飞书加入后自然生效）。
   const channelBots = bots.filter(bot => bot.channel === channel.key);
 
@@ -176,7 +167,7 @@ function ImBotsPage() {
         }}
       >
         <Typography sx={{ fontSize: 12, color: 'text.secondary', px: 1 }}>渠道</Typography>
-        {CHANNELS.map(ch => (
+        {IM_BOT_CHANNELS.map(ch => (
           <ChannelCard
             key={ch.key}
             channel={ch}
@@ -213,7 +204,7 @@ function ImBotsPage() {
             <Button
               variant="contained"
               startIcon={<AddOutlinedIcon sx={{ '& svg': { fontSize: 18 } }} />}
-              onClick={() => setDrawer({ open: true, bot: null })}
+              onClick={() => setDrawer({ bot: null, channelKey })}
             >
               手动接入
             </Button>
@@ -240,19 +231,21 @@ function ImBotsPage() {
             <ImBotCard
               key={bot.id}
               bot={bot}
-              onEdit={() => setDrawer({ open: true, bot })}
+              onEdit={() => setDrawer({ bot, channelKey })}
               onDeleteAsk={() => setDeleteTarget(bot)}
             />
           ))}
         </Box>
       </Box>
 
-      {/* 编辑/手动接入抽屉：key 随编辑对象变化重挂载（draft 首帧即终值） */}
-      <ImBotDrawer
-        key={drawer.bot?.id ?? 'create'}
-        state={drawer}
-        onClose={() => setDrawer(prev => ({ ...prev, open: false }))}
-      />
+      {/* 编辑/手动接入抽屉：按需挂载（每次打开全新草稿、首帧即终值，关闭即卸载不残留） */}
+      {drawer && (
+        <ImBotDrawer
+          bot={drawer.bot}
+          channelKey={drawer.channelKey}
+          onClose={() => setDrawer(null)}
+        />
+      )}
 
       {/* 扫码接入抽屉：key 重挂载即「重新生成二维码」（卸载清定时器，新 begin 自动取消旧会话） */}
       <ImBotProvisionDrawer

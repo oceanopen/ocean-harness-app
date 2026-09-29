@@ -14,7 +14,7 @@ type ImBot struct {
 	apis.Api
 }
 
-// GetList POST /api/imBot/getList：返回全部 bot（含脱敏凭据与运行态合并）。
+// GetList POST /api/imBot/getList：返回全部 bot（凭据明文回显 + 运行态合并，本地数据语义）。
 func (api ImBot) GetList(ctx *gin.Context) {
 	req := &types.ImBotGetListRequest{}
 	svc := service.ImBot{}

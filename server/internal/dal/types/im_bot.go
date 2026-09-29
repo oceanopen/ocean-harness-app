@@ -2,7 +2,6 @@ package types
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"ocean-harness/server/internal/dal/enums"
@@ -85,8 +84,9 @@ type ImBotProvisionCancelRequest struct {
 	AttemptID string `json:"attemptId" binding:"required"`
 }
 
-// ImBotProvisionView 扫码会话投影。剥除 scode 与 secret（凭据仅在服务端落库，绝不回传前端）；
-// qrContent 为腾讯授权页 URL（二维码内容，公开可回传，前端本地渲染二维码）。
+// ImBotProvisionView 扫码会话投影。剥除 scode 与 secret（凭据仅在服务端落库，provision 扫码
+// 链路不回传；落库后经 getList/getInfo 明文回显，见 ImBotResponseData.Secret）；qrContent 为
+// 腾讯授权页 URL（二维码内容，公开可回传，前端本地渲染二维码）。
 type ImBotProvisionView struct {
 	AttemptID      string `json:"attemptId"`
 	State          string `json:"state"` // pending | connecting | connected | failed | expired | cancelled
@@ -97,7 +97,7 @@ type ImBotProvisionView struct {
 	BotID          int    `json:"botId,omitempty"` // connected 后的新 bot 行 id
 }
 
-// ImBotResponseData bot 响应：JSON 列反序列化为结构 + credential 脱敏 + 运行态合并。
+// ImBotResponseData bot 响应：JSON 列反序列化为结构 + credential 明文回显 + 运行态合并。
 // 不嵌入 *model.ImBot（JSON 列为 string、enabled 为 YesNo），扁平呈现形态由 FromModel 装配。
 type ImBotResponseData struct {
 	ID           int               `json:"id"`
@@ -109,9 +109,8 @@ type ImBotResponseData struct {
 	AllowedTools []string          `json:"allowedTools"`
 	AccessPolicy ImBotAccessPolicy `json:"accessPolicy"`
 	Enabled      bool              `json:"enabled"`
-	// credential 脱敏投影：永不回传明文（尾 4 位 + 是否已设置；前端编辑留空 = 沿用原值）。
-	SecretMasked string `json:"secretMasked"`
-	HasSecret    bool   `json:"hasSecret"`
+	// credential 明文 secret：桌面应用数据全本地，编辑抽屉直接回显（前端默认掩码 + 显式切换明文）。
+	Secret string `json:"secret"`
 	// credential 内的 botId（企微后台颁发），表单回显用。
 	BotId string `json:"botId"`
 	// 运行态（supervisor 投影合并；未运行 = stopped，LastError 回落 DB 行 last_error）。
@@ -122,7 +121,8 @@ type ImBotResponseData struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// FromModel DO → 响应：JSON 列解析失败兜底零值（不阻塞列表加载）；secret 只出掩码。
+// FromModel DO → 响应：JSON 列解析失败兜底零值（不阻塞列表加载）；secret 明文回传（本地
+// 数据语义，编辑抽屉回显，前端自行掩码展示）。
 func (ImBotResponseData) FromModel(r *model.ImBot) ImBotResponseData {
 	out := ImBotResponseData{
 		ID:           r.ID,
@@ -145,14 +145,7 @@ func (ImBotResponseData) FromModel(r *model.ImBot) ImBotResponseData {
 		var cred ImBotCredential
 		if err := json.Unmarshal([]byte(r.Credential), &cred); err == nil {
 			out.BotId = cred.BotId
-			out.HasSecret = cred.Secret != ""
-			if n := len(cred.Secret); n > 0 {
-				if n <= 4 {
-					out.SecretMasked = "****"
-				} else {
-					out.SecretMasked = fmt.Sprintf("****%s", cred.Secret[n-4:])
-				}
-			}
+			out.Secret = cred.Secret
 		}
 	}
 	return out

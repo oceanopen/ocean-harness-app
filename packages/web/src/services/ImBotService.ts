@@ -1,7 +1,8 @@
 import { request } from './http';
 
 // ImBotModel：对齐后端 types.ImBotResponseData 的 JSON 形态（t_im_bots + 运行态合并）。
-// credential 永不出明文：secretMasked 尾 4 位掩码 + hasSecret；编辑时 secret 留空 = 沿用原值。
+// secret 为明文回传（桌面数据全本地，编辑抽屉回显用，前端默认掩码展示）；编辑保存时
+// secret 留空 = 沿用原值。
 export interface ImBotAccessPolicy {
   mode: 'open' | 'allowlist'; // open 全放行 / allowlist 白名单（fail closed）
   allowUsers: string[]; // 企微 userid
@@ -17,8 +18,7 @@ export interface ImBotModel {
   allowedTools: string[]; // --allowedTools；空数组 = 后端默认白名单
   accessPolicy: ImBotAccessPolicy;
   enabled: boolean;
-  secretMasked: string;
-  hasSecret: boolean;
+  secret: string; // 明文（本地数据语义，编辑抽屉回显；前端默认掩码 + 显式切换明文）
   botId: string;
   connState: string; // connecting | connected | disconnected | stopped
   lastError: string;
@@ -64,7 +64,8 @@ export interface ImBotRestartRequest {
 }
 
 // ─── 扫码授权接入（provision）───
-// 凭据安全语义：secret 仅在服务端落库，接口永不回传；qrContent 为腾讯授权页 URL（公开）。
+// 凭据安全语义：secret 仅在服务端落库，provision 扫码链路不回传；落库后经 getList/getInfo
+// 明文回显（本地数据语义，见 ImBotModel.secret）。qrContent 为腾讯授权页 URL（公开）。
 
 // 扫码会话状态（同后端状态机；无 scanned 中间态——腾讯协议不区分已扫码未确认）。
 export type ImBotProvisionState = 'pending' | 'connecting' | 'connected' | 'failed' | 'expired' | 'cancelled';

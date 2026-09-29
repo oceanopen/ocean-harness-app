@@ -1,36 +1,64 @@
 import type { ImBotAccessPolicy, ImBotModel } from '@src/services';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import {
   Alert,
   Box,
   Button,
-  Chip,
   Divider,
-  Drawer,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   MenuItem,
   Switch,
   TextField,
   Typography,
 } from '@mui/material';
+import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCreateImBot, useUpdateImBot } from '@src/state/imBots';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import { IM_BOT_CHANNELS } from './imBotChannels';
 
-// IM bot 编辑抽屉（MUI Drawer 右滑，dsh-im 同款交互）。敏感值不回显范式：secret 独立 draft
-// 态，留空 = 沿用原值、非空 = 覆盖；创建时必填。工作目录可空 = 未配置（对话时提醒补配，
-// 扫码接入先建 bot 后补配置的语义）。文案约定：中文直出（仅菜单标题走 i18n，见 ImBotsPage 头注）。
-
-/** 抽屉打开状态：bot 为 null = 新建（手动接入），非 null = 编辑该 bot。 */
-export interface ImBotDrawerState {
-  open: boolean;
-  bot: ImBotModel | null;
+// IM bot 编辑抽屉（ResizableDrawer 右滑、左缘可拖宽，dsh-im 同款交互）。secret 明文回显（数据
+// 全本地）：默认 password 掩码、右侧小眼睛切换明文；保存留空 = 沿用原值、非空 = 覆盖，创建必填。
+// 工具白名单收敛为「执行权限」下拉——接口仍收 allowedTools，前端按选项转译（后续新场景在此
+// 追加选项即可）。渠道为表单首位的禁用下拉（新建 = 列表页当前渠道，编辑 = bot.channel）。
+// 文案约定：中文直出（仅菜单标题走 i18n，见 ImBotsPage 头注）。
+//
+// 由父组件按需挂载（{drawer && <ImBotDrawer/>}）：每次打开都是全新 useState 初值（首帧即终值，
+// 草稿含 secret 不残留），关闭即卸载。
+interface ImBotDrawerProps {
+  bot: ImBotModel | null; // null = 新建（手动接入），非 null = 编辑该 bot
+  channelKey: string; // 新建时列表页当前选中渠道（编辑以 bot.channel 为准）
+  onClose: () => void;
 }
 
-/** 抽屉宽度（px，dsh-im 同量级侧栏抽屉）。 */
-const DRAWER_WIDTH = 480;
+/** 执行权限选项：普通下拉选项值（非 boolean），新场景在此追加并配 allowedTools 转译。 */
+interface ExecPermissionMeta {
+  value: string;
+  label: string;
+}
 
-/** 表单 draft（secret/白名单/工具以文本态编辑，提交时拆分）。 */
+const EXEC_PERMISSIONS: readonly ExecPermissionMeta[] = [
+  { value: 'execute', label: '可执行命令' },
+  { value: 'readonly', label: '不可执行命令' },
+];
+
+/** 不可执行命令时的工具白名单 = 代码默认白名单剔除 Bash（对齐 server bot.DefaultAllowedTools）。 */
+const TOOLS_WITHOUT_BASH = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'WebFetch', 'WebSearch', 'TodoWrite'];
+
+/** 执行权限 → allowedTools：可执行命令 = 空数组（后端默认白名单，含 Bash）。 */
+function allowedToolsForExecPermission(value: string): string[] {
+  return value === 'execute' ? [] : TOOLS_WITHOUT_BASH;
+}
+
+/** allowedTools → 执行权限初值：空数组（= 默认白名单含 Bash）或显式含 Bash = 可执行命令。 */
+function execPermissionFromAllowedTools(tools: string[]): string {
+  return tools.length === 0 || tools.includes('Bash') ? 'execute' : 'readonly';
+}
+
+/** 表单 draft（secret/allowUsers 以文本态编辑，提交时拆分）。 */
 interface ImBotDraft {
   name: string;
   botId: string;
@@ -38,7 +66,7 @@ interface ImBotDraft {
   workspaceDir: string;
   model: string;
   systemPrompt: string;
-  allowedToolsText: string;
+  execPermission: string;
   accessMode: ImBotAccessPolicy['mode'];
   allowUsersText: string;
   enabled: boolean;
@@ -48,11 +76,11 @@ function draftFromBot(bot: ImBotModel | null): ImBotDraft {
   return {
     name: bot?.name ?? '',
     botId: bot?.botId ?? '',
-    secret: '',
+    secret: bot?.secret ?? '',
     workspaceDir: bot?.workspaceDir ?? '',
     model: bot?.model ?? '',
     systemPrompt: bot?.systemPrompt ?? '',
-    allowedToolsText: bot?.allowedTools.join(', ') ?? '',
+    execPermission: execPermissionFromAllowedTools(bot?.allowedTools ?? []),
     accessMode: bot?.accessPolicy.mode ?? 'allowlist',
     allowUsersText: bot?.accessPolicy.allowUsers.join(', ') ?? '',
     enabled: bot?.enabled ?? true,
@@ -67,11 +95,14 @@ function splitList(text: string): string[] {
     .filter(item => item !== '');
 }
 
-function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
-  const { state, onClose } = props;
-  const editing = state.bot != null;
-  // draft 以初始值构造；切换编辑对象由父组件以 key 重挂载本组件（首帧即终值，无副作用重置）。
-  const [draft, setDraft] = useState<ImBotDraft>(() => draftFromBot(state.bot));
+function ImBotDrawer(props: ImBotDrawerProps) {
+  const { bot, channelKey, onClose } = props;
+  const editing = bot != null;
+  // 渠道展示值：编辑取 bot.channel，新建取列表页传入的当前渠道；禁用不可改。
+  const displayChannelKey = bot ? bot.channel : channelKey;
+  const [draft, setDraft] = useState<ImBotDraft>(() => draftFromBot(bot));
+  // secret 显隐：默认掩码（password），点小眼睛切换明文（数据全本地，明文展示无风险）。
+  const [showSecret, setShowSecret] = useState(false);
 
   const createMutation = useCreateImBot();
   const updateMutation = useUpdateImBot();
@@ -79,14 +110,11 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
   // saving 中的禁用是既有交互，保持不动。
   const saving = createMutation.isPending || updateMutation.isPending;
 
-  // 必填校验：名称/botId 恒必填；secret 仅创建必填（编辑留空 = 沿用）；工作目录可空 = 未配置。
-  const invalid = useMemo(
-    () =>
-      draft.name.trim() === ''
+  // 必填校验：名称/botId 恒必填；secret 仅创建必填（编辑清空 = 沿用原值）；工作目录可空 = 未配置。
+  const invalid
+    = draft.name.trim() === ''
       || draft.botId.trim() === ''
-      || (!editing && draft.secret.trim() === ''),
-    [draft, editing],
-  );
+      || (!editing && draft.secret.trim() === '');
 
   const setField = <K extends keyof ImBotDraft>(key: K, value: ImBotDraft[K]) => {
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -100,21 +128,22 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
     const shared = {
       name: draft.name.trim(),
       botId: draft.botId.trim(),
+      secret: draft.secret.trim(),
       workspaceDir: draft.workspaceDir.trim(),
       model: draft.model.trim(),
       systemPrompt: draft.systemPrompt,
-      allowedTools: splitList(draft.allowedToolsText),
+      allowedTools: allowedToolsForExecPermission(draft.execPermission),
       accessPolicy,
       enabled: draft.enabled,
     };
-    if (editing && state.bot) {
+    if (bot) {
       updateMutation.mutate(
-        { id: state.bot.id, ...shared, secret: draft.secret.trim() },
+        { id: bot.id, ...shared },
         { onSuccess: onClose },
       );
     } else {
       createMutation.mutate(
-        { ...shared, secret: draft.secret.trim() },
+        { ...shared },
         { onSuccess: onClose },
       );
     }
@@ -125,11 +154,11 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
   );
 
   return (
-    <Drawer
-      anchor="right"
-      open={state.open}
+    <ResizableDrawer
+      open
+      // saving 中禁止背景点击/Esc 关闭，避免半成品状态丢失。
       onClose={saving ? undefined : onClose}
-      sx={{ '& .MuiDrawer-paper': { width: DRAWER_WIDTH, maxWidth: '90vw' } }}
+      defaultWidthPct={40}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 标题栏 */}
@@ -137,9 +166,6 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
           <Typography sx={{ fontSize: 16, fontWeight: 600 }}>
             {editing ? '编辑机器人' : '手动接入机器人'}
           </Typography>
-          {editing && state.bot && (
-            <Chip size="small" label={state.bot.channel} variant="outlined" sx={{ fontSize: 12 }} />
-          )}
           <IconButton
             size="small"
             onClick={onClose}
@@ -152,37 +178,66 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
 
         {/* 表单区 */}
         <Box sx={{ flex: 1, overflow: 'auto', p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <TextField
-              size="small"
-              fullWidth
-              required
-              label="名称"
-              value={draft.name}
-              onChange={e => setField('name', e.target.value)}
-            />
-            <TextField
-              size="small"
-              fullWidth
-              required
-              label="Bot ID"
-              value={draft.botId}
-              onChange={e => setField('botId', e.target.value)}
-              helperText={helpText('企业微信后台「智能机器人」详情页的 botId')}
-            />
-          </Box>
+          <TextField
+            size="small"
+            fullWidth
+            select
+            disabled
+            label="渠道"
+            value={displayChannelKey}
+            helperText={helpText('渠道在创建时确定，不可更改')}
+          >
+            {IM_BOT_CHANNELS.map(ch => (
+              <MenuItem key={ch.key} value={ch.key}>{ch.label}</MenuItem>
+            ))}
+          </TextField>
 
           <TextField
             size="small"
             fullWidth
-            type="password"
+            required
+            label="名称"
+            value={draft.name}
+            onChange={e => setField('name', e.target.value)}
+          />
+
+          <TextField
+            size="small"
+            fullWidth
+            required
+            label="Bot ID"
+            value={draft.botId}
+            onChange={e => setField('botId', e.target.value)}
+            helperText={helpText('企业微信后台「智能机器人」详情页的 botId')}
+          />
+
+          <TextField
+            size="small"
+            fullWidth
+            type={showSecret ? 'text' : 'password'}
             autoComplete="off"
             required={!editing}
             label="Secret"
-            placeholder={editing ? '留空 = 沿用原值' : '企业微信后台颁发的 Secret'}
+            placeholder={editing ? '清空 = 沿用原值' : '企业微信后台颁发的 Secret'}
             value={draft.secret}
             onChange={e => setField('secret', e.target.value)}
-            helperText={helpText('保存后不回显；同一凭据全局仅允许一条活跃连接')}
+            slotProps={{
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      aria-label={showSecret ? '隐藏 Secret' : '显示 Secret'}
+                      onClick={() => setShowSecret(v => !v)}
+                      sx={{ '& svg': { fontSize: 18 } }}
+                    >
+                      {showSecret ? <VisibilityOffOutlinedIcon /> : <VisibilityOutlinedIcon />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              },
+            }}
+            helperText={helpText('默认掩码展示，点右侧图标切换明文；同一凭据全局仅允许一条活跃连接')}
           />
 
           <TextField
@@ -216,28 +271,21 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
             />
           </Box>
 
-          <TextField
-            size="small"
-            fullWidth
-            multiline
-            minRows={2}
-            label="人设提示词（可选）"
-            value={draft.systemPrompt}
-            onChange={e => setField('systemPrompt', e.target.value)}
-            helperText={helpText('注入为系统提示词，塑造机器人的角色与语气')}
-          />
-
           <Divider />
 
           <TextField
             size="small"
             fullWidth
-            label="工具白名单"
-            placeholder="逗号分隔，如 Read, Edit, Bash"
-            value={draft.allowedToolsText}
-            onChange={e => setField('allowedToolsText', e.target.value)}
-            helperText={helpText('留空 = 默认白名单（Read/Glob/Grep/Edit/Write/Bash/WebFetch/WebSearch/TodoWrite）')}
-          />
+            select
+            label="执行权限"
+            value={draft.execPermission}
+            onChange={e => setField('execPermission', e.target.value)}
+            helperText={helpText('不可执行命令 = 工具白名单剔除 Bash（仅保留读取/编辑/搜索类工具）')}
+          >
+            {EXEC_PERMISSIONS.map(p => (
+              <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>
+            ))}
+          </TextField>
 
           <TextField
             size="small"
@@ -263,6 +311,18 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
             />
           )}
 
+          <TextField
+            size="small"
+            fullWidth
+            multiline
+            minRows={5}
+            maxRows={10}
+            label="人设提示词（可选）"
+            value={draft.systemPrompt}
+            onChange={e => setField('systemPrompt', e.target.value)}
+            helperText={helpText('注入为系统提示词，塑造机器人的角色与语气')}
+          />
+
           {(createMutation.error || updateMutation.error) && (
             <Alert severity="error" sx={{ fontSize: 12 }}>
               {(createMutation.error ?? updateMutation.error)!.message}
@@ -276,7 +336,7 @@ function ImBotDrawer(props: { state: ImBotDrawerState; onClose: () => void }) {
           <Button onClick={handleSave} variant="contained" loading={saving} disabled={invalid}>保存</Button>
         </Box>
       </Box>
-    </Drawer>
+    </ResizableDrawer>
   );
 }
 
