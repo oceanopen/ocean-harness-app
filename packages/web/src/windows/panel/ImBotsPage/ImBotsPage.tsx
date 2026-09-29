@@ -4,6 +4,7 @@ import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import QrCode2OutlinedIcon from '@mui/icons-material/QrCode2Outlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
+import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
 import {
   Box,
   Button,
@@ -98,14 +99,15 @@ function ImBotCard(props: {
         )}
         <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
           <Tooltip title="重启连接">
-            {/* 停用不提供重启（重启 = 以落库配置拉起，停用态应先打开开关）；pending 禁用防双击并发重启 */}
+            {/* 停用不提供重启（重启 = 以落库配置拉起，停用态应先打开开关）；pending 禁用防双击并发重启。
+                图标用 RestartAlt 与右上角整体刷新（Refresh）区分——本按钮是销毁性重启，非读取刷新。 */}
             <IconButton
               size="small"
               disabled={!bot.enabled || restartMutation.isPending}
               onClick={() => restartMutation.mutate({ id: bot.id })}
               sx={{ '& svg': { fontSize: 18 } }}
             >
-              <RefreshOutlinedIcon />
+              <RestartAltOutlinedIcon />
             </IconButton>
           </Tooltip>
           <Button size="small" onClick={onEdit}>编辑</Button>

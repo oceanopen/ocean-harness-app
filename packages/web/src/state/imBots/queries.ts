@@ -11,14 +11,20 @@ import { imBotsKeys } from './keys';
 
 // ─── 读取（query）───
 // 手动刷新模型（对齐项目既定决策）：操作后由 mutation invalidate 自动刷新，页面提供手动
-// 刷新入口；不挂轮询——连接状态变化在两次操作之间仅靠手动刷新可见（Tauri 事件推送为后续增强，
-// imBotsKeys.root 已预留整域失效根）。
+// 刷新入口。唯一例外是 connecting 瞬态的临时轮询（见 useImBots）——restart 后服务端
+// connecting → connected 的迁移无推送通道，不轮询则「连接中」徽标滞留至下次手动刷新。
+// 其余状态变化在两次操作之间仍仅靠手动刷新可见（Tauri 事件推送为后续增强，imBotsKeys.root
+// 已预留整域失效根）。
 
 /** 全部 IM bot（含运行态投影）。 */
 export function useImBots() {
   return useQuery({
     queryKey: imBotsKeys.list(),
     queryFn: () => ImBotService.getList(),
+    // 瞬态回填：存在 connecting 态 bot 时临时轮询（数据条件驱动，非定时补发），全部进入
+    // 稳定态后自动停；窗口失焦不轮询（refetchIntervalInBackground 默认 false）。
+    refetchInterval: query =>
+      query.state.data?.some(bot => bot.connState === 'connecting') ? 2000 : false,
   });
 }
 
