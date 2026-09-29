@@ -145,16 +145,15 @@ export const commands = {
 	 *  issue 删除联动调用（模块 2 split 后一 issue 多 pane，防孤儿会话）。
 	 */
 	ptyShutdownIssue: (issueId: string) => typedError<null, string>(__TAURI_INVOKE("pty_shutdown_issue", { issueId })),
-	/**  列出全部会话快照（调试/后续状态栏用）。 */
+	/**  列出全部会话快照。 */
 	ptyListSessions: () => __TAURI_INVOKE<PtySessionInfo[]>("pty_list_sessions"),
 	/**  会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。 */
 	ptyExists: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_exists", { sessionId }),
 	/**
-	 *  本会话 shell 子进程树内是否跑着 claude（terminal_03 §3.2 按钮置灰驱动）。
+	 *  本会话 shell 子进程树内是否跑着 claude。
 	 *  进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端；
 	 *  前端事件 + 轮询混合驱动（useClaudeRunning）。
-	 *  注意：查询必须走 provider() 自持的 store（spawn 写入侧同一实例）——曾因
-	 *  app.manage 出另一恒空实例致 probe 恒 false（幽灵 manage 已删，见 state.rs）。
+	 *  查询必须走 provider() 自持的 store（与 spawn 写入侧同一实例）。
 	 */
 	ptyClaudeRunning: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_claude_running", { sessionId }),
 	/**
@@ -360,7 +359,7 @@ export type PtyReattached = {
 	scrollback: string,
 };
 
-/**  会话信息快照（pty_list_sessions 返回，调试/后续状态栏用）。 */
+/**  会话信息快照（pty_list_sessions 返回）。 */
 export type PtySessionInfo = {
 	/**  会话锚点（store key，见 SpawnOpts.session_id）。 */
 	sessionId: string,
@@ -410,12 +409,9 @@ export type SpawnOpts = {
 	/**  初始行数。 */
 	rows: number,
 	/**
-	 *  直接 spawn 命令（claude_orca T5.1，唯一自动执行路径）：整串命令，首
-	 *  token 为 CLI 名（如 "claude --model xxx" 的 "claude"）。
-	 *  在场时无 shell 中转——PTY 直接 exec CLI（注入 login PATH：GUI app env
-	 *  缺 nvm/volta 目录），CLI 退出即 pane 退出（无 shell 回落，走 exited
-	 *  UI；跑普通命令用附加 pane）。CLI 路径经 login shell 探测解析，失败
-	 *  回落普通裸 shell（warn log，用户可手动启动）。reattach/复用分支不重直启。
+	 *  直启命令（唯一自动执行路径）：在场时无 shell 中转，PTY 直接 exec CLI
+	 *  （注入 login PATH），CLI 退出即 pane 退出。CLI 路径经 login shell 探测，
+	 *  失败回落普通裸 shell。复用分支不重直启。
 	 */
 	directCommand?: string | null,
 };

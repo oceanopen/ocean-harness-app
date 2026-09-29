@@ -83,10 +83,6 @@ React 前端（多窗口 webview）─ IPC ─ Rust（Tauri shell）─ spawn/HT
 
 Gin + GORM + sqlite（纯 Go，无 CGO），分层规范/API 范式/配置优先级见 `server/README.md`（tracker 域接口范式是后续模块基线）。改表流程：改 `internal/migrations/migrations/*.sql` → `pnpm server:gorm:gen`（迁移 + 重新生成 DO 一气呵成）。内嵌 MCP Server（`/mcp/streamableHttp/oceanHarness`）供 Claude CLI Skill 读写 issue/子任务/工作空间。
 
-### 任务文档（`docs/`）
-
-`agent_dev_00_overview.md`（Agent 驱动开发流程技术方案）+ `agent_dev_01_tasks.md`（模块任务清单，进度 SSOT）。**状态回写规则（内置）**：执行任务清单中的任务并实现完成后，总结阶段直接把对应任务 `**状态**` 改为 ✅ 并补带日期的「实施定稿」段落（记录方案变更/偏离），不等用户指示。
-
 ## 编码规则
 
 ### 1. 执行时序固定优先（杜绝「先临时值、后纠正」）
