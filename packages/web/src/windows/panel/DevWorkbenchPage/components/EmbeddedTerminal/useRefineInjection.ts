@@ -22,7 +22,7 @@ const READY_TIMEOUT_MS = 30_000;
 // READY_TIMEOUT_MS 职责分离：本值管「闸门前放弃」，后者管「编排启动后 claude 起不来」。
 const REFINE_INTENT_EXPIRE_MS = 10 * 60_000;
 
-// 本会话 claude 进程探测（进程树真值）。失败按未运行处理（后续事件/超时兜底）。
+// 本会话 claude 进程探测（进程树真值）。失败按未运行处理。
 async function probeClaude(sessionId: string): Promise<boolean> {
   try {
     return await commands.ptyClaudeRunning(sessionId);

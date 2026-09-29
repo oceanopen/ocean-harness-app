@@ -1,7 +1,7 @@
 import { Autorenew as AutorenewIcon, Close as CloseIcon } from '@mui/icons-material';
 import { Box, IconButton, Tab, Tabs, Tooltip, Typography } from '@mui/material';
 import { basename } from '@src/shared/repoPath';
-import { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
+import { PANEL_TOOLBAR_HEIGHT } from '../../workbenchLayout';
 
 interface PreviewTabsBarProps {
   /// 打开的 tab 路径数组（tab id = 文件相对路径）。

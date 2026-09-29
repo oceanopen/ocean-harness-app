@@ -6,13 +6,12 @@ import { DEFAULT_GITHUB_PAT, getAppConfig, GITHUB_PAT_KEY, setAppConfig } from '
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// 个人中心（T4.1）：个人相关凭据/账号的统一归口，按「凭据卡片」组织——本期仅 GitHub
-// PAT 一张卡片（MCP github 工具调用 GitHub API 的认证凭据），后续第三方平台账号、
-// gitee 私有部署地址、各类 apikey 各自成卡片在此追加。
+// 个人中心：个人相关凭据/账号的统一归口，按「凭据卡片」组织（当前仅 GitHub PAT
+// ——MCP github 工具调用 GitHub API 的认证凭据）。
 //
 // 敏感值不回显：读取仅判断「已配置/未配置」，输入框独立 draft 态（留空 = 保持不变、
-// 非空 = 覆盖保存），保存后清空输入。Token 明文存于本地 app.db（与配置同一存储，
-// 单机单用户口径），UI 不回显以降低肩窥/截图泄露面。
+// 非空 = 覆盖保存），保存后清空输入。Token 明文存于本地 app.db（单机单用户口径），
+// UI 不回显以降低肩窥/截图泄露面。
 function UserProfilePage() {
   const { t } = useTranslation();
 

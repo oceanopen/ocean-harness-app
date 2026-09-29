@@ -1,9 +1,5 @@
-// PtyProvider：PTY 后端抽象（嵌入式终端，见 docs/embedded_terminal.md §3.1）。
-//
-// 本期只实现 LocalPtyProvider（本机 portable-pty）。trait 保留远程终端（SSH relay）
-// 的扩展位：命令层与前端组件只依赖本抽象，将来加 provider 时上层不动。
-//
-// 输出与退出事件不经 trait 方法返回，由实现侧通过 Channel/emit 回传前端（任务 2 接线）。
+// PtyProvider：PTY 后端抽象。当前唯一实现 LocalPtyProvider（本机 portable-pty）。
+// 输出与退出事件不经 trait 方法返回，由实现侧通过 Channel 回传前端。
 
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -26,17 +22,14 @@ pub struct SpawnOpts {
     pub cols: u16,
     /// 初始行数。
     pub rows: u16,
-    /// 直接 spawn 命令（claude_orca T5.1，唯一自动执行路径）：整串命令，首
-    /// token 为 CLI 名（如 "claude --model xxx" 的 "claude"）。
-    /// 在场时无 shell 中转——PTY 直接 exec CLI（注入 login PATH：GUI app env
-    /// 缺 nvm/volta 目录），CLI 退出即 pane 退出（无 shell 回落，走 exited
-    /// UI；跑普通命令用附加 pane）。CLI 路径经 login shell 探测解析，失败
-    /// 回落普通裸 shell（warn log，用户可手动启动）。reattach/复用分支不重直启。
+    /// 直启命令（唯一自动执行路径）：在场时无 shell 中转，PTY 直接 exec CLI
+    /// （注入 login PATH），CLI 退出即 pane 退出。CLI 路径经 login shell 探测，
+    /// 失败回落普通裸 shell。复用分支不重直启。
     #[serde(default)]
     pub direct_command: Option<String>,
 }
 
-/// 会话信息快照（pty_list_sessions 返回，调试/后续状态栏用）。
+/// 会话信息快照（pty_list_sessions 返回）。
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PtySessionInfo {
@@ -85,7 +78,7 @@ pub struct PtyReattached {
     pub scrollback: String,
 }
 
-/// PTY 后端抽象。本期仅 LocalPtyProvider；远程 provider（SSH）为后续扩展预留。
+/// PTY 后端抽象。当前唯一实现 LocalPtyProvider。
 pub trait PtyProvider: Send + Sync {
     /// 启动会话（幂等）：未退出会话复用并换装 listener；已退出会话移除重起（重开语义）。
     /// envs 为业务环境变量（仅在真正 spawn 新进程时注入，复用/reattach 分支无进程创建，

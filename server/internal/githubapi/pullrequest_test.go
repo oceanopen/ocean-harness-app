@@ -6,8 +6,7 @@ import (
 )
 
 // TestPullRequestWireFormat 用 GitHub REST v3 真实响应片段固定反序列化契约
-// （T4.1 审查修复：html_url 为 snake_case、head/base 为嵌套对象——tag 漂移曾致
-// 链接与分支名恒为空串）。
+// （html_url 为 snake_case、head/base 为嵌套对象）。
 func TestPullRequestWireFormat(t *testing.T) {
 	raw := `{
 		"number": 1347,

@@ -1,6 +1,6 @@
 // 开发工作台右侧工具注册表：右侧工具条（WorkbenchToolRail）图标与工具面板区
-// （ToolPanelArea）tab 内容的唯一扩展点——后续接入浏览器/文件目录等新工具 = 在
-// WORKBENCH_TOOLS 追加一项（icon/title/exclusive/render），rail 与 tab 自动出现。
+// （ToolPanelArea）tab 内容的唯一扩展点——新增工具在 WORKBENCH_TOOLS 追加一项
+// （icon/title/exclusive/render），rail 与 tab 自动出现。
 //
 // exclusive 语义：true = 同类工具全局单 tab（子任务列表/文件目录——内容单源）；false =
 // 可并存多实例 tab（浏览器——每次打开新开一页）。状态域 openTool 按此分派。

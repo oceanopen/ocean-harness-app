@@ -6,16 +6,11 @@ import { Close as CloseIcon } from '@mui/icons-material';
 import { Box, IconButton, Tab, Tabs, Typography, useTheme } from '@mui/material';
 import { useToolTabs, useWorkbenchToolsStore } from '@src/state/workbenchTools';
 import { useRef, useState } from 'react';
-import { WORKBENCH_TITLEBAR_HEIGHT } from '../../workbenchLayout';
+import { TERMINAL_MIN_WIDTH, TOOL_AREA_MIN_WIDTH, WORKBENCH_TITLEBAR_HEIGHT } from '../../workbenchLayout';
 import { toolDefById } from './toolRegistry';
 
-/// 面板区最小宽度（左边界拖拽下限；tab 头 + 列表内容的最小可读宽）。
-export const TOOL_AREA_MIN_WIDTH = 360;
-/// 终端区最小宽度（拖拽上限 = 容器宽 - 此值，保证终端不被挤死；与页面终端区 minWidth 一致）。
-export const TERMINAL_MIN_WIDTH = 320;
-
-// 拖拽上下文：起始指针坐标 + 起始宽度 + 容器宽（down 时实测，先测量后使用——max 需
-// 容器宽参与计算，见 PaneDivider 增量换算先例）。外部事件型数据 → ref。
+// 拖拽上下文：起始指针坐标 + 起始宽度 + 容器宽（down 时实测，先测量后使用）。
+// 外部事件型数据 → ref。
 interface DragContext {
   startClientX: number;
   startWidth: number;
@@ -45,10 +40,9 @@ interface ToolPanelAreaProps {
 /// 终端列标题栏同高对齐、底边线连通；可滚动 + 每 tab 关闭按钮）+ 当前激活
 /// 工具内容（注册表 render 分发）。宽度默认 600（config），左缘 4px 把手拖拽调整：
 /// pointer capture，down 实测容器宽 → move 内存态（transition 关）→ up 复位并一次落盘
-/// （时序参照 PaneDivider，无防抖）。空 tab 栏保持面板区展开（空态提示；后续版本 tab 栏
-/// 加 + 号下拉快捷添加）。非激活 tab 的内容组件不渲染——工具会话必须后端常驻（见
-/// toolRegistry 架构红线注释），视口卸载不销毁会话。tabs 读取走域级 useToolTabs
-/// （hydration + 响应式订阅成对封装，见 store.ts 注释）。
+/// （无防抖）。空 tab 栏保持面板区展开（空态提示）。非激活 tab 的内容组件不渲染——
+/// 工具会话必须后端常驻（见 toolRegistry 架构红线注释），视口卸载不销毁会话。
+/// tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
 export default function ToolPanelArea({ issue, projectId, hasSelection, visible, width, onWidthCommit, onEditIssue, onCreateSubIssue }: ToolPanelAreaProps) {
   const theme = useTheme();
   const closeTab = useWorkbenchToolsStore(s => s.closeTab);
@@ -56,7 +50,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
   const issueId = issue?.id ?? null;
   const { tabs, activeTabId } = useToolTabs(issueId);
 
-  // 遗留 tab 防御：注册表查不到 def（未来下线工具的残留记录）不渲染 tab 头/内容。
+  // 遗留 tab 防御：注册表查不到 def（已下线工具的残留记录）不渲染 tab 头/内容。
   // tab↔def 成对查一次（整个渲染周期唯一查表点）。
   const validEntries = tabs
     .map((tab): { tab: ToolTab; def: WorkbenchToolDef | undefined } => ({ tab, def: toolDefById(tab.toolId) }))
@@ -120,7 +114,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
         bgcolor: 'background.paper',
         display: 'flex',
         flexDirection: 'column',
-        // 手动开合过渡动画（同左右栏先例）；拖拽中关闭（逐帧宽度变化不是动画场景）。
+        // 手动开合过渡动画；拖拽中关闭（逐帧宽度变化不是动画场景）。
         transition: dragging
           ? 'none'
           : theme.transitions.create(['width'], {
@@ -203,7 +197,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
             : null}
       </Box>
 
-      {/* 左缘拖拽把手：4px 命中区 + hover/拖拽高亮（样式参照 PaneDivider）；仅展开态可拖 */}
+      {/* 左缘拖拽把手：4px 命中区 + hover/拖拽高亮；仅展开态可拖 */}
       {visible && (
         <Box
           onPointerDown={onHandlePointerDown}

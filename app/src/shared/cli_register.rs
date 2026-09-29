@@ -331,7 +331,7 @@ pub fn uninstall(_app: &AppHandle) -> Result<CliCommandStatus, String> {
     Err("CLI 命令注册仅支持 macOS".to_string())
 }
 
-// ---- IPC 命令（纯 fs 操作毫秒级完成，同步命令即可；osascript 提权交互已随免密设计移除） ----
+// ---- IPC 命令（纯 fs 操作毫秒级完成，同步命令即可） ----
 
 /// 查询 CLI 命令注册状态（四态 + 路径）。
 #[tauri::command]
@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn export_line_is_well_formed_shell() {
-        // 钉死精确值：曾因裸字符串终止符 `"#` 吞掉收尾引号，注入了未闭合的 shell 行。
+        // 钉死精确值（终止符 `"#` 会吞掉收尾引号，注入未闭合 shell 行）。
         assert_eq!(
             PATH_EXPORT_LINE,
             "export PATH=\"$HOME/.local/bin:$PATH\""

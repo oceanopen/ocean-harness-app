@@ -17,8 +17,7 @@ import (
 // queueCapacity 每会话排队上限（fail closed：满即拒，绝不静默积压）。
 const queueCapacity = 8
 
-// maxConcurrentTurns 全局同时在跑的 claude 回合上限（跨所有 bot/会话共享的资源护栏：
-// 每回合一个真实 claude 子进程）。个人场景常量足够；将来需按 bot 配置时提为表列是一步迁移。
+// maxConcurrentTurns 全局同时在跑的 claude 回合上限（每回合一个真实 claude 子进程）。
 const maxConcurrentTurns = 10
 
 // errQueueFull 会话队列已满。

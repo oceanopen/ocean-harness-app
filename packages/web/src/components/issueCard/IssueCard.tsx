@@ -48,7 +48,7 @@ export interface IssueCardDnd {
   snapshot?: DraggableStateSnapshot;
 }
 
-// 卡片消费场景（组件内部按场景控制样式与展示，后续个性化在此分支扩展，不逐一枚举 props）：
+// 卡片消费场景（组件内部按场景控制样式与展示，不逐一枚举 props）：
 // - tracker（默认）：项目事项管理列表/看板——拖拽标识 + 右侧操作列 + IN_PROGRESS 徽章可跳转工作台。
 // - devWorkbench：开发工作台左树/子任务面板——窄栏裁剪（隐藏拖拽标识）、无操作列，点击/选中由回调驱动（不传即纯展示）。
 export type IssueCardScene = 'tracker' | 'devWorkbench';
@@ -108,7 +108,7 @@ function IssueCard({
   // 看板模式（单一标记 kanban prop：顶级卡片由 KanbanColumn 传入、内联子卡片由父级透传；列表不传）。
   // 仅影响拖拽行为与拖拽标识颜色（看板顶级可拖、列表子任务可拖），三行布局双模式一致。
   const isKanban = kanban ?? false;
-  // devWorkbench 场景展示裁剪（后续工作台个性化在此扩展）。
+  // devWorkbench 场景展示裁剪。
   const isWorkbench = viewScene === 'devWorkbench';
 
   const hasChildren = depth === 0 && childIssues.length > 0;

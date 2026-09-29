@@ -98,7 +98,7 @@ function PetSessionTaskApp() {
   }, []);
 
   // 重新测量 Paper 实际内容高度并回调 fit_pet_session_task（set_size + 重新定位）。
-  // 可复用：ResizeObserver（内容尺寸变化）、refit 事件（show / 未来 pet 拖动跟随）均调用它。
+  // ResizeObserver（内容尺寸变化）与 refit 事件（show）均复用。
   const refit = useCallback(() => {
     const root = rootRef.current;
     if (!root) {
@@ -111,7 +111,6 @@ function PetSessionTaskApp() {
   }, []);
 
   // 监听后端 refit 请求（show_pet_session_task_window 在 show 后 emit_to）：重新测量并刷新位置。
-  // 统一可复用入口——未来 pet 拖动跟随等"尺寸不变却需重定位"的场景也可复用同一事件。
   useEffect(() => {
     const unlisten = listen(EVENT_PET_SESSION_TASK_REFIT, () => {
       // show / 重定位后立刻 reset：清掉 hide 残留的 hovered 并抵消紧随的合成 mouseenter，确保弹出即暗态。

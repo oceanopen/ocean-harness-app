@@ -56,7 +56,7 @@ export default function PaneLayout({ issueId, node, workspaceDir }: PaneLayoutPr
         prev != null && prev.width === width && prev.height === height ? prev : { width, height });
     };
     // 初测依赖 RO 首次 observe 的固有回调（不做 effect 内同步 setState——
-    // react/set-state-in-effect，参照 usePtySession attachKey 的渲染期范式注释）。
+    // react/set-state-in-effect）。
     const observer = new ResizeObserver(apply);
     observer.observe(container);
     return () => {

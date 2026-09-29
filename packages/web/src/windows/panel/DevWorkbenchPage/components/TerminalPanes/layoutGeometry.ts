@@ -1,12 +1,12 @@
-// 分屏布局树 → 平铺几何（纯函数，docs/terminal_02_split_panes.md §3.4 平铺版）。
+// 分屏布局树 → 平铺几何（纯函数）。
 //
 // 嵌套 flex 渲染在分屏时会因「同位置元素类型变化」触发 React 整树卸载重建存活
-// pane → ring 回放进失配几何 + 校正 resize 交错 → 左右分屏顶部空白（实测教训）。
+// pane → ring 回放进失配几何 + 校正 resize 交错 → 左右分屏顶部空白。
 // 平铺渲染要求「组件结构恒定、布局树只产出几何」：本模块把布局二叉树展开为
 // 一组 pane/divider 矩形（px、相对根容器），消费方按 key 平铺渲染。
 //
 // 独立模块而非组件文件导出：react-refresh/only-export-components 拦截组件文件
-// 导出非组件（terminalTheme.ts 先例）。
+// 导出非组件。
 
 import type { PaneLayoutNode, SplitDirection } from './types';
 

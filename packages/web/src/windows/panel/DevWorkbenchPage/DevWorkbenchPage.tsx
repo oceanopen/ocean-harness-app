@@ -56,10 +56,10 @@ import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBo
 import FilePreviewOverlay from './components/FilePreviewOverlay/FilePreviewOverlay';
 import OpenWorkspaceDirButton from './components/OpenWorkspaceDir/OpenWorkspaceDirButton';
 import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
-import ToolPanelArea, { TERMINAL_MIN_WIDTH, TOOL_AREA_MIN_WIDTH } from './components/WorkbenchTools/ToolPanelArea';
+import ToolPanelArea from './components/WorkbenchTools/ToolPanelArea';
 import WorkbenchToolRail from './components/WorkbenchTools/WorkbenchToolRail';
 import WorkspaceInitGate from './components/WorkspaceInitGate/WorkspaceInitGate';
-import { WORKBENCH_TITLEBAR_HEIGHT } from './workbenchLayout';
+import { TERMINAL_MIN_WIDTH, TOOL_AREA_MIN_WIDTH, WORKBENCH_TITLEBAR_HEIGHT } from './workbenchLayout';
 
 // 左栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
@@ -99,11 +99,11 @@ const PANEL_LAYOUT_CONFIG_KEYS: readonly string[] = [
 ];
 
 // DevWorkbenchPage：控制台「开发工作台」骨架页。
-// 左中右布局：左栏任务树（非终态顶级 issue，T3.3 放宽——BACKLOG/TODO/IN_PROGRESS 全生命周期）｜中栏 = 终端列（标题栏 + 终端区）+ 工具
-// 面板区（tab 化，ToolPanelArea，tab 头与标题栏同带对齐）｜最右常驻工具条（WorkbenchToolRail，
-// 顶部方格 = 面板区总开关，下方工具图标，注册表驱动扩展——后续浏览器/文件目录见
-// toolRegistry）。工具 tabs 按 issue 隔离（workbenchTools 域 + localStorage），面板区
-// 折叠/宽度走 config 持久化。
+// 左中右布局：左栏任务树（非终态顶级 issue——BACKLOG/TODO/IN_PROGRESS 全生命周期）｜
+// 中栏 = 终端列（标题栏 + 终端区）+ 工具面板区（tab 化，ToolPanelArea）｜最右常驻
+// 工具条（WorkbenchToolRail，顶部方格 = 面板区总开关，下方工具图标，注册表驱动扩展，
+// 见 toolRegistry）。工具 tabs 按 issue 隔离（workbenchTools 域 + localStorage），
+// 面板区折叠/宽度走 config 持久化。
 //
 // 路由接入（全 query 风格）：issue 选中由 URL 驱动——
 //   ?pid=<projectId>&iid=<issueId>   选中 issue（项目→issue，issue 靠 project 加载，故 pid 同在 URL）
@@ -121,7 +121,7 @@ export default function DevWorkbenchPage() {
   // 会话态存 devWorkbench store（见 store.ts 头注释）；退出路径 = 切换钮 / Esc / 切页卸载复位。
   const workbenchFullscreen = useDevWorkbenchStore(s => s.workbenchFullscreen);
   const setWorkbenchFullscreen = useDevWorkbenchStore(s => s.setWorkbenchFullscreen);
-  // 左栏 issue 任务树折叠态：订阅 config（跨重启持久化、多窗口同步，参照 PanelApp 侧边栏）。
+  // 左栏 issue 任务树折叠态：订阅 config（跨重启持久化、多窗口同步）。
   const issueTreeCollapsed = useConfigValue(PANEL_DEV_TREE_COLLAPSED_KEY, decodeDevTreeCollapsed, false);
   // 全屏下任务树恒隐藏：与用户折叠配置合成（只读不改写 config，退出全屏按原配置恢复）。
   // 该钮在全屏下语义转为「退出全屏」——全屏中点击折叠钮无可见反馈，语义让位更直觉。
@@ -175,14 +175,13 @@ export default function DevWorkbenchPage() {
   const workspaceDir = issue != null ? workspaces.find(ws => ws.id === issue.workspaceId)?.dir ?? null : null;
 
   // 抽屉所需 workspaceProject：issue 自带 workspaceId/projectId，按 workspace 查项目列表
-  // （与左树 DevTaskTree 同 query key 共享缓存，命中即零请求）后按 id 反查实体——刻意不读
-  // 任何快照，关联仓库随项目刷新保持新鲜（参照 TrackerPage 同款派生注释）。
+  // （与左树 DevTaskTree 同 query key 共享缓存，命中即零请求）后按 id 反查实体——
+  // 刻意不读任何快照，关联仓库随项目刷新保持新鲜。
   const { data: wsProjects = [] } = useWorkspaceProjects(issue?.workspaceId ?? null);
   const workspaceProject = issue != null ? wsProjects.find(p => p.id === issue.projectId) ?? null : null;
 
   // 删除/归档成功的本地痕迹清理（工具 tabs + 预览 tabs + 终端分屏布局，按 issueId 隔离的
-  // localStorage key，对任意 id 无副作用——删除非选中任务也须清，防积脏 key）。清理顺序即
-  // 不变量本身：归档与抽屉删除两条路径共享本函数，防后续调整只改一处。
+  // localStorage key，对任意 id 无副作用）。归档与抽屉删除两条路径共享本函数。
   const clearIssueLocalTraces = (issueId: string) => {
     clearToolTabs(issueId);
     clearPreviewTabs(issueId);
@@ -192,7 +191,7 @@ export default function DevWorkbenchPage() {
   // 提交归档/取消：首确认（warnings=null → force=false，后端干净则内部续发执行段）/
   // 警告态强确认（warnings 非空 → force=true 只走执行段）。成功后按序清理：该 issue 本地
   // 痕迹（clearIssueLocalTraces）→ 清选中 + 清 URL（URL→store 同步 effect 会从 iid 恢复
-  // 选中，双清才彻底，参照 DevIssueRow 取消选中）。
+  // 选中，双清才彻底）。
   const submitArchive = () => {
     if (archiveConfirm == null || issue == null || loadPid == null) {
       return;
@@ -334,7 +333,7 @@ export default function DevWorkbenchPage() {
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* 左栏：任务树（workspace→project→dev issue 三级，跨所有工作空间）。
-          恒渲染 + width 过渡动画折叠（参照 PanelApp 侧边栏），折叠到 0 后右栏占满整宽。
+          恒渲染 + width 过渡动画折叠，折叠到 0 后右栏占满整宽。
           沉浸模式（全屏）与用户折叠配置合成隐藏（treeHidden）——不改写 config，
           退出全屏按原配置恢复。 */}
       <Box
@@ -399,9 +398,9 @@ export default function DevWorkbenchPage() {
               />
             )}
             {hasSelection && issue && (
-              // 名称可点（link 样式，参照 TrackerPage 工作空间名同构写法）：默认标题字色，
-              // hover 转 primary（无下划线），点击打开 issue 编辑抽屉。不展示 id 尾 8 位
-              // （uuid 对用户无读义，任务身份由左树选中/抽屉详情承载）。
+              // 名称可点（link 样式）：默认标题字色，hover 转 primary（无下划线），
+              // 点击打开 issue 编辑抽屉。不展示 id 尾 8 位（uuid 对用户无读义，
+              // 任务身份由左树选中/抽屉详情承载）。
               <Typography
                 variant="subtitle1"
                 noWrap
@@ -514,7 +513,7 @@ export default function DevWorkbenchPage() {
                         <Typography variant="body2" color="text.secondary">任务不存在或已移出开发流程</Typography>
                       </Box>
                     )}
-            {/* 工作空间文件预览浮层（T5.1 本期）：tabs 按 issue 隔离、非空才可见；与终端
+            {/* 工作空间文件预览浮层：tabs 按 issue 隔离、非空才可见；与终端
                 内容为兄弟节点，absolute 定位不参与 flex 布局（会话后端常驻仅视觉遮盖）。 */}
             {issue != null && <FilePreviewOverlay issueId={issue.id} />}
           </Box>

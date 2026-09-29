@@ -55,11 +55,10 @@ export const useWorkbenchToolsStore = create<WorkbenchToolsState>()(set => ({
 }));
 
 /// hydration：store 无该 issue 记录时从 localStorage 读回写入（渲染期调用，同步）。
-/// 幂等——已有记录（本会话操作过）原样保留。返回 store 持有的引用（水合失败落
-/// EMPTY_TOOL_TABS 共享常量），消费方 selector 引用稳定契约依赖此约定。
-/// 注意：本函数只负责 hydration 副作用——响应式读取必须另走 useWorkbenchToolsStore
-/// selector（裸调 getState 不建立订阅，参照 terminalPanes：ensureLayout 管水合、
-/// TerminalPaneRoot selector 管响应）。
+/// 幂等——已有记录原样保留。返回 store 持有的引用（水合失败落 EMPTY_TOOL_TABS
+/// 共享常量），消费方 selector 引用稳定契约依赖此约定。
+/// 注意：本函数只负责 hydration 副作用，响应式读取必须另走 selector（裸调
+/// getState 不建立订阅）。
 export function ensureTabs(issueId: string): ToolTabsState {
   const existing = useWorkbenchToolsStore.getState().tabsByIssue[issueId];
   if (existing != null) {

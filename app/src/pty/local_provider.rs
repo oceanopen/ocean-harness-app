@@ -1,16 +1,13 @@
 // LocalPtyProvider：本机 PTY 后端（portable-pty）。
 //
-// spawn 细节（spike 实证，见 docs/embedded_terminal.md）：
+// spawn 细节：
 //   - shell 显式取 $SHELL 回退 /bin/zsh，加 -i（交互式）。不能用
-//     CommandBuilder::new_default_prog()——它在无 tty 的环境（测试/某些启动上下文）
-//     会永久挂起。
-//   - direct_command（claude_orca T5.1，唯一自动执行路径）：无 shell 中转，
-//     PTY 直接 exec CLI；解析失败回落普通裸 shell（warn log，用户可手动启动）。
-//     （chat 模式退役：shell_ready 注入中间层已删。）
+//     CommandBuilder::new_default_prog()——它在无 tty 的环境会永久挂起。
+//   - direct_command：无 shell 中转，PTY 直接 exec CLI；解析失败回落普通裸 shell。
 //   - cwd 不存在时 spawn_command 直接报错，由前端捕获展示「任务目录不存在」。
 //
-// spawn 即启动 reader 线程（session::spawn_reader_thread）：输出经 UTF-8 边界切分后
-// 推 listener Channel；EOF 置 exited + Exit 事件。重复 spawn 语义（§3.4/§5.2）：
+// spawn 即启动 reader 线程：输出经 UTF-8 边界切分后推 listener Channel；
+// EOF 置 exited + Exit 事件。重复 spawn 语义：
 //   - 未退出会话：复用，换装新 listener（webview 刷新后旧 Channel 失效）
 //   - 已退出会话：移除旧会话重起 shell（前端「重开」按钮路径）
 
@@ -25,8 +22,7 @@ use super::provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, Sp
 use super::session::{PtyEvent, PtySession, SessionIo, spawn_reader_thread};
 use super::state::PtySessionStore;
 
-/// 本机 PTY 后端。持有全局会话存储；provider 实例本身无状态，
-/// 保留 store 字段以便远程 provider 扩展时替换为连接级存储。
+/// 本机 PTY 后端。持有全局会话存储。
 pub struct LocalPtyProvider {
     pub store: PtySessionStore,
 }
@@ -38,8 +34,7 @@ impl LocalPtyProvider {
         }
     }
 
-    /// 会话存储访问（spawn 写入侧的同一实例）。命令查询走此处而非
-    /// State<PtySessionStore>（app.manage 的另一实例——曾致 probe 恒 not found）。
+    /// 会话存储访问（与 spawn 写入侧同一实例，命令查询统一走此处）。
     pub fn store(&self) -> &PtySessionStore {
         &self.store
     }

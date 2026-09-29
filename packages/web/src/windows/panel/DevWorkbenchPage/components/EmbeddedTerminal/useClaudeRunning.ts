@@ -52,7 +52,7 @@ export function useClaudeRunning(sessionId: string, status: PtySessionStatus): b
         }
       }).catch((e: unknown) => {
         // warn 级：探测持续失败必须可见（如命令未注册——dev 旧二进制），
-        // 曾因 debug 静默把环境问题伪装成功能 bug。
+        // debug 级静默会把环境问题伪装成功能 bug。
         console.warn('[useClaudeRunning] probe failed:', sessionId, e);
       });
     };

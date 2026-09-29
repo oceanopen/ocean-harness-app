@@ -1,12 +1,11 @@
-// workbenchTools 域纯函数与按 issue 持久化（参照 terminalPanes 范式）。
+// workbenchTools 域纯函数与按 issue 持久化。
 // 工具 tab 模型：互斥工具（子任务/文件目录）同类单 tab（tab id = toolId，单例语义）；
 // 并存工具（浏览器）每实例一个 tab（tab id = randomUUID 前 8 位，跨重启不撞）。
-// tabs/activeTab 按 issue 隔离（一 issue 一工作环境，与终端布局同心智）：
-// localStorage 按 issue 存 JSON，损坏/缺失回落空 tabs——工具面板均为纯展示派生，
-// 丢失仅 UI 回落重新手动打开，无副作用。
+// tabs/activeTab 按 issue 隔离：localStorage 按 issue 存 JSON，损坏/缺失回落空 tabs
+// （工具面板为纯展示派生，丢失仅 UI 回落重新手动打开）。
 
 /// 工具 tab：id 为 tab 标识（互斥工具 = toolId；并存工具 = 随机短 id），toolId 指向注册表项。
-/// 渲染层以注册表查 def，查不到的 toolId（未来下线的工具遗留 tab）过滤不渲染。
+/// 渲染层以注册表查 def，查不到的 toolId（已下线工具的遗留 tab）过滤不渲染。
 export interface ToolTab {
   id: string;
   toolId: string;
@@ -27,9 +26,8 @@ export function newToolTabId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
 
-/// 打开工具（rail 图标点击 / 未来 tab 栏 + 号）。互斥（exclusive=true）：同类 tab 已存在则
-/// 激活之（已是激活态则原样返回——重复点击无操作）；不存在则追加并激活。并存：总是追加
-/// 新实例并激活。面板区展开由调用方另行驱动（config SSOT），本函数只管 tabs。
+/// 打开工具。互斥（exclusive=true）：同类 tab 已存在则激活之（已是激活态则原样返回）；
+/// 不存在则追加并激活。并存：总是追加新实例并激活。面板区展开由调用方另行驱动，本函数只管 tabs。
 export function openToolTabs(state: ToolTabsState, toolId: string, exclusive: boolean): ToolTabsState {
   if (exclusive) {
     const existing = state.tabs.find(t => t.toolId === toolId);
@@ -43,8 +41,8 @@ export function openToolTabs(state: ToolTabsState, toolId: string, exclusive: bo
   return { tabs: [...state.tabs, tab], activeTabId: tab.id };
 }
 
-/// 关闭 tab：移除后若关的是激活 tab 则激活相邻（优先左侧兄弟，无则右侧，清空为 null——
-/// 面板区保持展开不联动收起，空 tab 栏由后续 + 号下拉补充）。tabId 不存在时原样返回。
+/// 关闭 tab：移除后若关的是激活 tab 则激活相邻（优先左侧兄弟，无则右侧，清空为 null）。
+/// tabId 不存在时原样返回。
 export function closeToolTab(state: ToolTabsState, tabId: string): ToolTabsState {
   const index = state.tabs.findIndex(t => t.id === tabId);
   if (index < 0) {
@@ -63,7 +61,7 @@ export function setActiveToolTab(state: ToolTabsState, tabId: string): ToolTabsS
   return state.activeTabId === tabId ? state : { tabs: state.tabs, activeTabId: tabId };
 }
 
-// ---------- 持久化（localStorage 按 issue，参照 terminalPanes） ----------
+// ---------- 持久化（localStorage 按 issue） ----------
 
 /// localStorage key：workbench_tool_tabs_<issueId>（对齐 terminal_pane_layout_ 命名）。
 function tabsKey(issueId: string): string {

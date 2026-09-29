@@ -24,10 +24,9 @@ export function useIssueWorkspaceStatus(issueId: string | null) {
 // ─── 写操作（mutation）───
 
 /**
- * 触发（重新）初始化：先清理该 issue 的全部 PTY 会话（重新初始化要求终端对象重建，
- * 会话可能本就不存在——清理失败仅告警不阻断），再调 init（幂等：已完成步骤/仓库跳过）。
- * 返回的受理态直接 setQueryData 就地更新缓存；文件树/内容整域失效（重新初始化后
- * 工作空间文件必变——跨域 invalidate 有 trackerKeys 先例）。
+ * 触发（重新）初始化：先清理该 issue 的全部 PTY 会话（会话可能本就不存在——
+ * 清理失败仅告警不阻断），再调 init（幂等：已完成步骤/仓库跳过）。
+ * 返回的受理态直接 setQueryData 就地更新缓存；文件树/内容整域失效。
  */
 export function useInitIssueWorkspace() {
   const qc = useQueryClient();

@@ -1,17 +1,12 @@
-// claude 运行态探测（terminal_03 §3.2）：判定某 PTY 会话的 shell 子进程树内
-// 是否跑着 claude（「启动 claude」按钮置灰驱动）。
+// claude 运行态探测：判定某 PTY 会话的 shell 子进程树内是否跑着 claude
+// （「启动 claude」按钮置灰驱动）。
 //
-// 手段：`~/.claude/sessions/<pid>.json`（sessions 域已有 discover::list_active，
-// 存活过滤后即当前全部 claude 进程）→ 沿 `ps -o ppid=` 逐级向上爬父链
-// （enrich.rs classify_terminal 的正向版：它从 claude 向上找宿主 app，此处从
-// claude 向上找本 app 的 PTY shell pid）→ 任一级 pid 命中目标会话的 shell pid
-// 即命中。进程树匹配精确到具体终端（多 pane 同 cwd 也能区分），非输出流启发式
-// （特征随版本变、清屏丢状态）。
+// 手段：`~/.claude/sessions/<pid>.json`（存活过滤即当前全部 claude 进程）→
+// 沿 `ps -o ppid=` 逐级向上爬父链 → 任一级 pid 命中目标会话的 shell pid 即命中。
+// 进程树匹配精确到具体终端（多 pane 同 cwd 也能区分）。
 //
 // 前端驱动（useClaudeRunning）：会话 active 即查 + EVENT_CLAUDE_SESSIONS_CHANGED
-// （watch 秒级，claude 启动写 json 即触发）+ 60s 轮询兜底退出恢复（Dead 会话
-// json 保留、watch 不触发，进程退出只能轮询感知）。
-// （chat 模式退役：claude_session_ref 定位链随 chat 视图删除。）
+// + 60s 轮询兜底退出恢复（Dead 会话 json 保留、watch 不触发，只能轮询感知）。
 
 use super::state::PtySessionStore;
 

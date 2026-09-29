@@ -12,10 +12,9 @@ interface FilePreviewOverlayProps {
 }
 
 /// 工作空间文件预览浮层：铺满终端内容区（挂载于 DevWorkbenchPage 终端内容区 Box，其
-/// 补了 position:relative）。浮层铁律（TerminalSearch 先例）：absolute inset 0 不挤压
-/// 布局——终端 DOM 尺寸不变，零 SIGWINCH 扰动，会话后端常驻仅视觉遮盖；zIndex 取
-/// theme.zIndex.mobileStepper 压过 xterm 内部层（其静态容器不建堆叠上下文，内部层直接
-/// 参与外层竞争）；实色背景完整接收 pointerEvents（防点击穿透被 xterm preventDefault 吞掉）。
+/// 补了 position:relative）。浮层铁律：absolute inset 0 不挤压布局——终端 DOM 尺寸不变，
+/// 零 SIGWINCH 扰动，会话后端常驻仅视觉遮盖；zIndex 取 theme.zIndex.mobileStepper
+/// 压过 xterm 内部层；实色背景完整接收 pointerEvents（防点击穿透被 xterm preventDefault 吞掉）。
 ///
 /// 显隐派生自 tabs 非空（无独立开关）；Escape 关激活 tab（关最后一个 = 浮层整体消失）——
 /// 工作台沉浸模式（全屏）下让位：Esc 直退全屏（页面级处理器），不关 tab。生命周期语义：

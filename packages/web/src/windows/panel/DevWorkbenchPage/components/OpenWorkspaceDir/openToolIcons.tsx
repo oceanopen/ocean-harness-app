@@ -18,7 +18,7 @@ function RawSvgIcon({ svg, size = 16 }: { svg: string } & ToolIconProps) {
   return (
     <span
       style={{ display: 'inline-flex', width: size, height: size }}
-      // eslint-disable-next-line react/dom-no-dangerously-set-innerhtml -- 注入项目内静态 SVG 字符串，非外部输入，无 XSS 风险（vscode.svg 同款先例）
+      // eslint-disable-next-line react/dom-no-dangerously-set-innerhtml -- 注入项目内静态 SVG 字符串，非外部输入，无 XSS 风险
       dangerouslySetInnerHTML={{ __html: svg }}
     />
   );

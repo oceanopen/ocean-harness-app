@@ -5,7 +5,7 @@
 //   terminal_app —— Terminal.app AppleScript（tty 精确匹配）
 //
 // dispatch 按 host_app 选择对应实现；Unknown 直接返回 UnsupportedHostApp。
-// 未来扩展 VSCode / IntelliJ 内嵌终端只需在 terminal/ 下加文件并在 dispatch 加分支。
+// 新增终端类型 = terminal/ 下加实现文件 + dispatch 加分支。
 
 pub mod iterm2;
 pub mod terminal_app;

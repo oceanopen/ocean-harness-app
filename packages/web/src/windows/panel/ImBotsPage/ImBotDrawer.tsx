@@ -21,11 +21,11 @@ import { useWorkspaces } from '@src/state/tracker';
 import { useState } from 'react';
 import { IM_BOT_CHANNELS } from './imBotChannels';
 
-// IM bot 编辑抽屉（ResizableDrawer 右滑、左缘可拖宽，dsh-im 同款交互）。secret 明文回显（数据
-// 全本地）：默认 password 掩码、右侧小眼睛切换明文；保存留空 = 沿用原值、非空 = 覆盖，创建必填。
+// IM bot 编辑抽屉（ResizableDrawer 右滑、左缘可拖宽）。secret 明文回显（数据全本地）：
+// 默认 password 掩码、右侧小眼睛切换明文；保存留空 = 沿用原值、非空 = 覆盖，创建必填。
 // 工作空间必选下拉（会话目录取其 dir）；工具白名单收敛为「执行权限」下拉——接口仍收
-// allowedTools，前端按选项转译（后续新场景在此追加选项即可）。渠道为表单首位的禁用下拉
-// （新建 = 列表页当前渠道，编辑 = bot.channel）。文案约定：中文直出（仅菜单标题走 i18n）。
+// allowedTools，前端按选项转译。渠道为表单首位的禁用下拉（新建 = 列表页当前渠道，
+// 编辑 = bot.channel）。文案约定：中文直出（仅菜单标题走 i18n）。
 //
 // 由父组件按需挂载（{drawer && <ImBotDrawer/>}）：每次打开都是全新 useState 初值（首帧即终值，
 // 草稿含 secret 不残留），关闭即卸载。

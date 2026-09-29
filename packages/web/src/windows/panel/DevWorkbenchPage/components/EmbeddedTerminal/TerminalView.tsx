@@ -21,7 +21,8 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { Terminal } from '@xterm/xterm';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import PanelToolbar, { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
+import { PANEL_TOOLBAR_HEIGHT } from '../../workbenchLayout';
+import PanelToolbar from '../PanelToolbar';
 import ClaudeIcon from './ClaudeIcon';
 import TerminalSearch from './TerminalSearch';
 import '@xterm/xterm/css/xterm.css';
@@ -169,10 +170,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
   // 复制/粘贴失败 toast（成功静默）
   const { show: showToast, snack: toastSnack } = useToast();
 
-  // 链接 activate 分流（terminal_03 §3.4）：URL 走 plugin-shell（window.open 被
-  // Tauri webview 拦截，MarkdownEditor 先例），路径走 Rust open_path（系统默认
-  // 应用）。useToast 的 show 是 useCallback([]) 稳定引用，本回调 deps 只挂它，
-  // 供构造 options.linkHandler（OSC 8 链接）与自建 provider（正则匹配）两路共用。
+  // 链接 activate 分流：URL 走 plugin-shell（window.open 被 Tauri webview 拦截），
+  // 路径走 Rust open_path（系统默认应用）。useToast 的 show 是 useCallback([]) 稳定引用，
+  // 本回调 deps 只挂它，供构造 options.linkHandler（OSC 8 链接）与自建 provider
+  // （正则匹配）两路共用。
   const activateLink = useCallback((text: string) => {
     if (/^https?:\/\//.test(text)) {
       openExternalUrl(text).catch((e: unknown) => {
@@ -251,7 +252,6 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
 
     // 2. fit + webgl + open。webgl 渲染器（高频输出性能）；上下文创建失败
     //    （远程桌面/老 GPU/重挂载竞态）抛错时回退 dom 渲染，不影响功能。
-    //    注：曾疑似 webgl 致渲染异常，后证实真凶是 state 桥（已改 ref），webgl 无罪。
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(container);
@@ -306,11 +306,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     terminal.focus();
     container.addEventListener('mousedown', focusTerminal);
 
-    // 5.5 链接点击（terminal_03 §3.4）：provideLinks 按行回调（行号 1-based 绝对值，
-    // 取行 -1），命中构造 ILink；activate 走组件体 activateLink（URL 走 plugin-shell
-    // ——window.open 被 Tauri webview 拦截，MarkdownEditor 先例；路径走 Rust
-    // open_path 系统默认应用）。OSC 8 超链接不经此 provider，由构造 options 的
-    // linkHandler 同路分流（见上注释）。
+    // 5.5 链接点击：provideLinks 按行回调（行号 1-based 绝对值，取行 -1），命中构造
+    // ILink；activate 走组件体 activateLink（URL 走 plugin-shell，路径走 Rust open_path
+    // 系统默认应用）。OSC 8 超链接不经此 provider，由构造 options 的 linkHandler
+    // 同路分流（见上注释）。
     const linkDisposable = terminal.registerLinkProvider({
       provideLinks(bufferLineNumber: number, callback: (links: ILink[] | undefined) => void) {
         const line = terminal.buffer.active.getLine(bufferLineNumber - 1);

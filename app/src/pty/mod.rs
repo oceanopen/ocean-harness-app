@@ -1,22 +1,17 @@
-// pty 域：嵌入式终端会话生命周期管理（docs/embedded_terminal.md）。
-//
-// 与 terminal/ 域的边界：terminal/ 负责跳转/打开外部终端（iTerm2/Terminal.app），
-// 本域负责应用内 PTY 会话（spawn/写/resize/关闭/reattach）——会话锚点（store key）
-// 统一为 `issueId::<paneId>`（main → `issueId::main`，split → `issueId::<uuid>`），
-// cwd 为 `${工作空间目录}/${issueId}`（同一 issue 的全部 pane 同目录）。
+// pty 域：应用内 PTY 会话（spawn/写/resize/关闭/reattach）。
+// terminal/ 域负责外部终端跳转，与本域边界互不重叠。
+// 会话锚点统一 `issueId::<paneId>`，cwd 为 `${工作空间目录}/${issueId}`。
 //
 // 子模块：
-//   claude_state    —— claude 运行态探测（进程树父链匹配，按钮置灰驱动）
-//   cli_bin         —— CLI 直启路径探测（login shell which + PATH harvest，T5.1）
-//   local_provider  —— LocalPtyProvider（portable-pty 本机实现，spawn 即起 reader 线程）
-//   provider        —— PtyProvider trait（远程 SSH 扩展预留）+ SpawnOpts/PtySpawned/PtySessionInfo
-//   session         —— PtySession + SessionIo（输出共享内核：listener Channel + exited）
+//   claude_state    —— claude 运行态探测（进程树父链匹配）
+//   cli_bin         —— CLI 直启路径探测（login shell which + PATH harvest）
+//   local_provider  —— LocalPtyProvider（portable-pty 本机实现）
+//   provider        —— PtyProvider trait + SpawnOpts/PtySpawned/PtySessionInfo
+//   session         —— PtySession + SessionIo（listener Channel + exited）
 //   state           —— PtySessionStore（Mutex<HashMap>，抗 webview 刷新常驻）
 //
-// 输出通道：pty_spawn 传 Channel<PtyEvent>（Data/Exit 单通道双分支，tauri-specta rc.25
-// 原生支持，已 spike 验证）。emit 备选（EVENT_PTY_*）未采用。
-// reattach 命令（exists/reattach + ring replay）在任务 3 接入。
-// （chat 模式退役：shell_ready 注入中间层已删，spawn 只剩裸 shell 与 direct 两条路径）
+// 输出通道：pty_spawn 传 Channel<PtyEvent>（Data/Exit 单通道双分支）。
+// spawn 两条路径：裸 shell / direct_command 直启 CLI。
 
 pub mod claude_state;
 pub mod cli_bin;
@@ -103,7 +98,7 @@ pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String> {
     provider().shutdown_issue(&issue_id).map(|_| ())
 }
 
-/// 列出全部会话快照（调试/后续状态栏用）。
+/// 列出全部会话快照。
 #[tauri::command]
 #[specta::specta]
 pub fn pty_list_sessions() -> Vec<PtySessionInfo> {
@@ -117,11 +112,10 @@ pub fn pty_exists(session_id: String) -> bool {
     provider().exists(&session_id)
 }
 
-/// 本会话 shell 子进程树内是否跑着 claude（terminal_03 §3.2 按钮置灰驱动）。
+/// 本会话 shell 子进程树内是否跑着 claude。
 /// 进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端；
 /// 前端事件 + 轮询混合驱动（useClaudeRunning）。
-/// 注意：查询必须走 provider() 自持的 store（spawn 写入侧同一实例）——曾因
-/// app.manage 出另一恒空实例致 probe 恒 false（幽灵 manage 已删，见 state.rs）。
+/// 查询必须走 provider() 自持的 store（与 spawn 写入侧同一实例）。
 #[tauri::command]
 #[specta::specta]
 pub fn pty_claude_running(session_id: String) -> bool {

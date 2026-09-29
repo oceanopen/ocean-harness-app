@@ -51,8 +51,7 @@ export interface LocalRepositoryRefreshRequest {
   id: number;
 }
 
-// POST /api/localRepository/getLocalBranches 的入参（列仓库本地分支）。
-// 仅本地分支（git branch）；远程分支能力后续按需扩展（getRemoteBranches）。
+// POST /api/localRepository/getLocalBranches 的入参（列仓库本地分支，git branch）。
 export interface LocalRepositoryGetLocalBranchesRequest {
   id: number;
 }

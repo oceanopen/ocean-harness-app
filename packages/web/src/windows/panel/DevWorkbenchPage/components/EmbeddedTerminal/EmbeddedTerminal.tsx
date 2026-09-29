@@ -97,9 +97,9 @@ interface EmbeddedTerminalProps {
   paneId?: string;
 }
 
-// EmbeddedTerminal：开发工作台右侧嵌入式终端容器（docs/embedded_terminal.md §3.8）。
+// EmbeddedTerminal：开发工作台右侧嵌入式终端容器。
 // 职责：由工作空间目录派生 cwd（`${dir}/${issueId}`）、错误态（任务目录不存在——
-// 目录创建属 skills 集成，本期仅提示）、组装 TerminalView + usePtySession。
+// 目录创建属 skills 集成，仅提示）、组装 TerminalView + usePtySession。
 // 父层以 issueId 为 key 挂载本组件，
 // 切换 issue 即重挂载（unmount 仅断订阅，后端会话/ring 常驻，回切 reattach 重载）。
 //

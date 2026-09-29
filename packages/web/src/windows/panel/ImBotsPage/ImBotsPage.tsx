@@ -24,10 +24,9 @@ import { IM_BOT_CHANNELS } from './imBotChannels';
 import ImBotDrawer from './ImBotDrawer';
 import ImBotProvisionDrawer from './ImBotProvisionDrawer';
 
-// IM 机器人顶层菜单页（/imBots，自 SettingsPage 分区迁出）：左栏渠道小卡片列表（本期仅企微，
-// 结构留飞书扩展）+ 右栏当前渠道机器人满行卡片列表，头部「扫码接入 / 手动接入」双入口
-// （dsh-im 同款交互）。编辑/新增均右侧 Drawer。手动接入路径当前会话列表无 bot 的提示：
-// 凭据从企微后台复制。文案约定：仅菜单标题走 i18n。
+// IM 机器人顶层菜单页（/imBots）：左栏渠道小卡片列表 + 右栏当前渠道机器人满行卡片列表，
+// 头部「扫码接入 / 手动接入」双入口。编辑/新增均右侧 Drawer。手动接入路径当前会话列表
+// 无 bot 的提示：凭据从企微后台复制。文案约定：仅菜单标题走 i18n。
 
 /** 连接状态 → 徽标文案与色调。 */
 function stateChip(state: string): { label: string; color: 'success' | 'warning' | 'error' | 'default' } {
@@ -142,7 +141,7 @@ function ImBotsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ImBotModel | null>(null);
 
   const channel = IM_BOT_CHANNELS.find(c => c.key === channelKey) ?? IM_BOT_CHANNELS[0];
-  // 后端本期只有 wecom 渠道数据；按渠道过滤的结构位（飞书加入后自然生效）。
+  // 按当前渠道过滤机器人列表。
   const channelBots = bots.filter(bot => bot.channel === channel.key);
 
   const handleDeleteConfirm = () => {

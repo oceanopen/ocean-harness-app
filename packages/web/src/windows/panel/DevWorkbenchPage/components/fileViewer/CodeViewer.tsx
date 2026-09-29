@@ -28,11 +28,9 @@ interface CodeViewerProps {
   scrollPastEnd?: boolean;
 }
 
-/// 只读代码查看器（CM6，扩展集与观感对齐 hello-halo 的 reader-first 配置）：行号/活动行/
-/// 代码折叠（▸/▾）/Cmd+F 搜索面板/选词高亮/括号匹配/滚动超底 + 移植主题（MUI palette
-/// 双模式）。只读态只挂 EditorState.readOnly（halo 同款）——刻意不加 editable(false)：后者
-/// 会连光标/焦点一起禁掉（点击无闪烁光标），readOnly 单独即可防编辑且保留光标与选中，
-/// 下期编辑（T5.1 后续）摘掉这一行即得编辑器（届时补 history/indentWithTab 键位）。
+/// 只读代码查看器（CM6）：行号/活动行/代码折叠（▸/▾）/Cmd+F 搜索面板/选词高亮/
+/// 括号匹配/滚动超底 + 移植主题（MUI palette 双模式）。只读态只挂 EditorState.readOnly
+/// ——刻意不加 editable(false)：后者会连光标/焦点一起禁掉（点击无闪烁光标）。
 /// mount 创建 / unmount destroy（StrictMode 双挂载安全）；content 变更（staleTime 0 重验
 /// 回填）dispatch 全量替换 doc；明暗变更走 Compartment 热切（不重建实例不丢滚动）。
 /// CM6 viewport 虚拟渲染，2MB 上限文本从容滚动。

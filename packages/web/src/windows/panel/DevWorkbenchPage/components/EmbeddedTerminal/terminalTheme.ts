@@ -1,7 +1,6 @@
-// 终端主题（terminal_05：用户自选暗色主题目录，不跟随 app 明暗）。
-// 色值来源 orca terminal-themes/popular-dark-core.ts（权威调色板照抄）。
-// 初版（terminal_03 收尾）的 Tango 明暗双主题（hello-halo 移植）已退役为
-// 本目录的参考来源；dimOpacity 渲染期消费（exited 置灰），不进 xterm options。
+// 终端主题（用户自选暗色主题目录，不跟随 app 明暗）。
+// 色值来源 orca terminal-themes/popular-dark-core.ts。
+// dimOpacity 渲染期消费（exited 置灰），不进 xterm options。
 // 独立文件：TerminalView.tsx 是 fast-refresh 组件文件，导出非组件会被
 // react-refresh/only-export-components 拦截。
 

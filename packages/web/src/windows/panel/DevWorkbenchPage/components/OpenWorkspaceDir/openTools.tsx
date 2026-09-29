@@ -24,7 +24,7 @@ export const WORKSPACE_OPEN_TOOL_IDS: readonly WorkspaceOpenToolId[] = [
   'windows-terminal',
 ];
 
-// 默认值（值域 SSOT 同文件持有，TERMINAL_THEME 先例同款——appConfig 只留 key）。
+// 默认值（值域 SSOT 同文件持有，appConfig 只留 key）。
 export const DEFAULT_WORKSPACE_OPEN_TOOL: WorkspaceOpenToolId = 'vscode';
 
 // 配置 decode：全集粗校验（含跨平台值），非法/缺失回退默认 vscode。

@@ -17,21 +17,15 @@ export {
   TERMINAL_POST_OPEN_COMMAND_KEY,
 } from './bindings';
 
-// GitHub Personal Access Token 默认值：空串 = 未配置（Go sidecar 的 github MCP 工具
-// 经 GO_SERVER_APP_DB 指向的 app.db 只读此 key；敏感值，设置页不回显明文——见
-// UserProfilePage）。
+// GitHub Personal Access Token 默认值：空串 = 未配置（敏感值，设置页不回显明文）。
 export const DEFAULT_GITHUB_PAT = '';
 
 // 本文件是前端配置项消费的统一出口。两类来源：
-// 1. 后端读取的 key（LANGUAGE_KEY / POLL_INTERVAL_SECS 族等）：SSOT 在
-//    app/src/shared/app_config.rs，经 tauri-specta .constant() 导出到
-//    bindings.ts，此处仅 re-export（Rust 单源，改值只动 Rust + gen:bindings）。
-// 2. 纯前端 key（appearance / terminal_font_size 等）：本文件定义即 SSOT，
-//    后端不读取，无镜像。
+// 1. 后端读取的 key：SSOT 在 app/src/shared/app_config.rs，经 .constant()
+//    导出到 bindings.ts，此处仅 re-export。
+// 2. 纯前端 key：本文件定义即 SSOT，后端不读取。
 
-// Y/N 布尔风格配置值。类型 YesNo 由后端 types.rs 的 enum 经 gen:bindings 自动生成，
-// 值常量仍本地定义（satisfies 关联后端类型）：后端 #[serde(rename)] 改动后，
-// 此处值若不一致会编译报错——与 .constant() 导出等价的编译期保障，维持不动。
+// Y/N 布尔风格配置值（satisfies 关联后端 YesNo 类型，值漂移编译报错）。
 export const YES_NO = {
   YES: 'Y',
   NO: 'N',
@@ -65,9 +59,7 @@ export const DEFAULT_LANGUAGE: Language = 'system';
 export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
 
 // 嵌入式终端启动时自动运行的编程 CLI（PTY 直接 spawn，无 shell 中转）。
-// 值域：'none' = 不自动运行，开普通 shell（默认）；'claude' = 当前唯一支持项，
-// 未来扩 'codex' 等。后端 Rust 侧 SpawnOpts.direct_command 为通用 Option<String>，
-// 前端把枚举值映射为命令名，后端不读取本 key，故无需在 config.rs 加常量副本。
+// 'none' = 开普通 shell（默认）；'claude' = 自动启动 claude。
 export type TerminalStartupCodeCli = 'none' | 'claude';
 
 export const TERMINAL_STARTUP_CODE_CLI_KEY = 'terminal_startup_code_cli';
@@ -78,10 +70,7 @@ export function parseTerminalStartupCodeCli(value: string | null): TerminalStart
   return value === 'claude' ? value : 'none';
 }
 
-// 嵌入式终端字号（terminal_03 §3.3）。离散选项语义：合法值 = 选项集内整数，
-// DB 脏值（非数字/越界/不在选项集如 15）一律回落默认 12（与 startup_code_cli
-// 枚举校验同范式，不用 poll_interval_secs 的连续 clamp）。
-// 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 startup_code_cli 先例）。
+// 嵌入式终端字号。离散选项：脏值一律回落默认 12。
 export const TERMINAL_FONT_SIZE_KEY = 'terminal_font_size';
 export const TERMINAL_FONT_SIZE_OPTIONS = [10, 11, 12, 13, 14, 15, 16] as const;
 export type TerminalFontSize = (typeof TERMINAL_FONT_SIZE_OPTIONS)[number];
@@ -94,9 +83,7 @@ export function parseTerminalFontSize(value: string | null): TerminalFontSize {
     : DEFAULT_TERMINAL_FONT_SIZE;
 }
 
-// 嵌入式终端回滚缓冲行数（terminal_04）。离散选项语义同字号：合法值 = 选项集内
-// 整数，DB 脏值回落默认 1000（= xterm 未显式配置时的默认值，保守起步）。
-// 纯前端偏好，后端不读取（Rust 侧 ring 容量独立，见 terminal_04 文档注意项）。
+// 嵌入式终端回滚缓冲行数。离散选项：脏值回落默认 1000。
 export const TERMINAL_SCROLLBACK_ROWS_KEY = 'terminal_scrollback_rows';
 export const TERMINAL_SCROLLBACK_ROWS_OPTIONS = [1000, 2000, 3000, 5000] as const;
 export type TerminalScrollbackRows = (typeof TERMINAL_SCROLLBACK_ROWS_OPTIONS)[number];
@@ -109,12 +96,10 @@ export function parseTerminalScrollbackRows(value: string | null): TerminalScrol
     : DEFAULT_TERMINAL_SCROLLBACK_ROWS;
 }
 
-// 终端主题 id（terminal_05：用户自选暗色主题，不跟随 app 明暗）。
-// 合法值 = terminalTheme.ts 的 TERMINAL_THEME_IDS；纯前端偏好。parse 放彼处
-// （依赖目录常量，同文件即值域 SSOT）。
+// 终端主题 id。合法值/parse 在 terminalTheme.ts（值域 SSOT 同文件）。
 export const TERMINAL_THEME_KEY = 'terminal_theme';
 
-// 终端光标样式（terminal_05）：'block' | 'bar' | 'underline'，默认 block。
+// 终端光标样式，默认 block。
 export type TerminalCursorStyle = 'block' | 'bar' | 'underline';
 export const TERMINAL_CURSOR_STYLE_KEY = 'terminal_cursor_style';
 export const DEFAULT_TERMINAL_CURSOR_STYLE: TerminalCursorStyle = 'block';
@@ -126,11 +111,11 @@ export function parseTerminalCursorStyle(value: string | null): TerminalCursorSt
     : DEFAULT_TERMINAL_CURSOR_STYLE;
 }
 
-// 终端光标闪烁开关（terminal_05）：YesNo，默认 YES（原 terminal_03 前写死 true）。
+// 终端光标闪烁开关：YesNo，默认 YES。
 export const TERMINAL_CURSOR_BLINK_KEY = 'terminal_cursor_blink';
 export const DEFAULT_TERMINAL_CURSOR_BLINK = YES_NO.YES;
 
-// 终端行高（terminal_05）：离散选项，默认 1（xterm 默认，紧凑）。
+// 终端行高：离散选项，默认 1。
 export const TERMINAL_LINE_HEIGHT_KEY = 'terminal_line_height';
 export const TERMINAL_LINE_HEIGHT_OPTIONS = [1, 1.1, 1.2, 1.3, 1.4, 1.5] as const;
 export type TerminalLineHeight = (typeof TERMINAL_LINE_HEIGHT_OPTIONS)[number];
@@ -146,31 +131,24 @@ export function parseTerminalLineHeight(value: string | null): TerminalLineHeigh
 // HTTP 本地服务端口已彻底固化（Rust 编译期常量：dev=9000/release=9100），无前端配置项；
 // 前端消费服务地址一律走 http_server_status 实时获取，不持有端口字面量。
 
-// panel 窗口侧边栏折叠状态。值用 YesNo，缺失视为 NO（默认展开）。
-// 纯前端偏好，后端不读取，故无需在 config.rs 加常量副本（参照 appearance 先例）。
+// panel 窗口侧边栏折叠状态：YesNo，缺失视为 NO（默认展开）。
 export const PANEL_SIDEBAR_COLLAPSED_KEY = 'panel_sidebar_collapsed';
 export const DEFAULT_PANEL_SIDEBAR_COLLAPSED = YES_NO.NO;
 
-// 开发工作台左栏 issue 任务树折叠状态。值用 YesNo，缺失视为 NO（默认展开）。
-// 同为纯前端偏好（参照 panel_sidebar_collapsed 先例）。
+// 开发工作台左栏 issue 任务树折叠状态：YesNo，缺失视为 NO（默认展开）。
 export const PANEL_DEV_TREE_COLLAPSED_KEY = 'panel_dev_tree_collapsed';
 export const DEFAULT_PANEL_DEV_TREE_COLLAPSED = YES_NO.NO;
 
-// 开发工作台右侧工具面板区折叠状态（右侧工具条顶部方格开关）。值用 YesNo，缺失视为 YES
-// （默认收起——面板区初启无 tab，手动展开）。同为纯前端偏好（参照 panel_dev_tree_collapsed 先例）。
+// 开发工作台右侧工具面板区折叠状态：YesNo，缺失视为 YES（默认收起）。
 export const PANEL_DEV_TOOL_AREA_COLLAPSED_KEY = 'panel_dev_tool_area_collapsed';
 export const DEFAULT_PANEL_DEV_TOOL_AREA_COLLAPSED = YES_NO.YES;
 
-// 开发工作台工具面板区宽度（左边界拖拽调整，px）。值为数字字符串，缺失/非法由消费方
-// decode 回落默认（回落语义同 parseTerminalFontSize 数值先例）。
+// 开发工作台工具面板区宽度（px）。值为数字字符串，脏值由消费方 decode 回落默认。
 export const PANEL_DEV_TOOL_AREA_WIDTH_KEY = 'panel_dev_tool_area_width';
 export const DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH = 600;
 
-// 工作区目录默认打开工具（开发工作台标题栏胶囊按钮）。值域 = 五工具 id 全集
-// （finder/vscode/iterm2/terminal/windows-terminal），id 类型/默认值/decode/平台过滤
-// 全部随值域 SSOT 放 DevWorkbenchPage/components/OpenWorkspaceDir/openTools.tsx
-// （参照 TERMINAL_THEME_KEY 先例：值域同文件持有，appConfig 只留 key）。
-// 纯前端偏好，后端不读取（参照 panel_sidebar_collapsed 先例）。
+// 工作区目录默认打开工具（开发工作台标题栏胶囊按钮）。
+// 值域/默认值/decode 在 OpenWorkspaceDir/openTools.tsx。
 export const WORKSPACE_OPEN_TOOL_KEY = 'workspace_open_tool';
 
 // commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，

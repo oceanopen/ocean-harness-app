@@ -1,5 +1,4 @@
-// git remote URL 解析 + PR compare URL 构造（纯函数，SSOT）。
-// D3（生成 PR）用 buildCompareUrl 打开 GitHub/GitLab 风格 compare 页；未来真 PR 创建可复用 parseRemoteUrl。
+// git remote URL 解析 + PR compare URL 构造（纯函数）。
 
 /** 解析 git remote URL（SSH/HTTPS）为 host + ownerRepo。无法解析返回 null。 */
 // SSH:   git@github.com:org/repo.git   → { host: 'github.com', ownerRepo: 'org/repo' }

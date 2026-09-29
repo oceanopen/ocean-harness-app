@@ -23,8 +23,7 @@ type WorkspaceTypeCreateRequest struct {
 	Description string `json:"description" binding:"omitempty,max=500"`
 }
 
-// WorkspaceTypeUpdateRequest 是 POST /api/tracker/workspaceType/update 的入参。
-// 不变更 workspaceId / sortOrder（sortOrder 后续按需加 reorder 接口维护）。
+// WorkspaceTypeUpdateRequest 是 POST /api/tracker/workspaceType/update 的入参（不变更 workspaceId/sortOrder）。
 type WorkspaceTypeUpdateRequest struct {
 	ID          int    `json:"id" binding:"required"`
 	Name        string `json:"name" binding:"required,max=100"`

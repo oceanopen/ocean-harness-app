@@ -49,15 +49,14 @@ export function setActivePreviewTab(state: PreviewTabsState, path: string): Prev
   return state.activeTabId === path ? state : { tabs: state.tabs, activeTabId: path };
 }
 
-// ---------- 持久化（localStorage 按 issue，参照 workbenchTools） ----------
+// ---------- 持久化（localStorage 按 issue） ----------
 
 /// localStorage key：workbench_preview_tabs_<issueId>。
 function tabsKey(issueId: string): string {
   return `workbench_preview_tabs_${issueId}`;
 }
 
-/// 持久化 entry 的原样形态：当前为 string（tab id）；历史模型曾为 `{ path, kind? }` 对象
-/// （kind 已废弃），读回时兼容解包。
+/// 持久化 entry 兼容解包：string（tab id）或遗留 `{ path, kind? }` 对象取 path。
 function entryPathOf(entry: unknown): string | null {
   if (typeof entry === 'string') {
     return entry.length > 0 ? entry : null;

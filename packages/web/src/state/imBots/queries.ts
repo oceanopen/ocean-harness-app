@@ -10,11 +10,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { imBotsKeys } from './keys';
 
 // ─── 读取（query）───
-// 手动刷新模型（对齐项目既定决策）：操作后由 mutation invalidate 自动刷新，页面提供手动
-// 刷新入口。唯一例外是 connecting 瞬态的临时轮询（见 useImBots）——restart 后服务端
-// connecting → connected 的迁移无推送通道，不轮询则「连接中」徽标滞留至下次手动刷新。
-// 其余状态变化在两次操作之间仍仅靠手动刷新可见（Tauri 事件推送为后续增强，imBotsKeys.root
-// 已预留整域失效根）。
+// 手动刷新模型：操作后由 mutation invalidate 自动刷新，页面提供手动刷新入口。
+// 唯一例外是 connecting 瞬态的临时轮询（见 useImBots）——restart 后 connecting →
+// connected 迁移无推送通道，不轮询则「连接中」徽标滞留。
 
 /** 全部 IM bot（含运行态投影）。 */
 export function useImBots() {

@@ -56,9 +56,8 @@ export default function IssueSubTaskPanel({ projectId, issueId, onEditIssue, onC
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 头部：完成进度 + 新增子任务 + 刷新按钮（标题「子任务」由外层 tab 头承载；isFetching
-          旋转，参照 ProjectIssueList 刷新先例）。统一样式走 PanelToolbar（与终端 pane 工具栏
-          同高同内边距）。 */}
+      {/* 头部：完成进度 + 新增子任务 + 刷新按钮（标题「子任务」由外层 tab 头承载；
+          isFetching 旋转）。统一样式走 PanelToolbar。 */}
       <PanelToolbar
         left={subTasks.length > 0
           ? (

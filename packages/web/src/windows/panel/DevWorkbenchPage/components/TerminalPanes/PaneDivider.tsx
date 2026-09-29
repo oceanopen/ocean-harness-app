@@ -11,8 +11,8 @@ interface PaneDividerProps {
   onRatioChange: (ratio: number) => void;
 }
 
-// 拖拽上下文：起始指针坐标 + 起始比例（几何 props 给出，平铺版不再读 DOM 兄弟
-// 实测）。外部事件型数据 → ref（§5.2 前端范式，参照 ResizableDrawer）。
+// 拖拽上下文：起始指针坐标 + 起始比例（几何 props 给出，平铺版不再读 DOM 兄弟实测）。
+// 外部事件型数据 → ref。
 interface DragContext {
   startClientX: number;
   startClientY: number;

@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 import { alpha, ListItemButton, ListItemIcon, ListItemText, Tooltip, useTheme } from '@mui/material';
 
-// 左侧菜单项按钮：panel 侧栏菜单与设置页分区菜单的共享组件（原两处逐字重复的
-// ListItemButton 选中态样式收敛于此）。样式差异由 scene 单参数内部分支，不枚举样式 props；
-// 仅数据（selected/icon/label）与回调（onClick）保留为 props——对齐 IssueCard 的 viewScene 先例。
+// 左侧菜单项按钮：panel 侧栏菜单与设置页分区菜单的共享组件。
+// 样式差异由 scene 单参数内部分支，不枚举样式 props；
+// 仅数据（selected/icon/label）与回调（onClick）保留为 props。
 
 // 消费场景：
 // - panelSidebar：panel 侧栏菜单（支持折叠态 icon-only + Tooltip，折叠态由 collapsed 数据 prop 驱动）

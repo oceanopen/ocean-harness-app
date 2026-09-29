@@ -6,7 +6,7 @@ import {
 } from '@mui/icons-material';
 import { Box, IconButton, InputBase, Typography, useTheme } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
-import { PANEL_TOOLBAR_HEIGHT } from '../PanelToolbar';
+import { PANEL_TOOLBAR_HEIGHT } from '../../workbenchLayout';
 
 interface TerminalSearchProps {
   // TerminalView mount effect 建立的 SearchAddon 实例（本地 ref 桥直读）

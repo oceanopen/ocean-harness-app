@@ -9,12 +9,10 @@ import { getAppConfig } from './appConfig';
  * SIGWINCH 重绘伪影；布局场景中是首帧默认态 → 动画收起的翻转）。
  *
  * 语义要点：
- * - 一次性：true 后不回退。本 hook 只回答「持久化值是否已读到」，不追踪值
- *   变化——后续配置变化仍走 useConfigValue 的事件热更新路径。
- * - 失败放行：任一 key 读取失败也置 true——闸门卡死（组件永远不挂载）比
- *   回落默认值更糟。
- * - keys 需稳定引用（模块级常量）：数组直接进 deps，调用方每次渲染新建数组
- *   会导致 effect 反复重跑。
+ * - 一次性：true 后不回退。只回答「持久化值是否已读到」，值变化走 useConfigValue。
+ * - 失败放行：任一 key 读取失败也置 true——闸门卡死比回落默认值更糟。
+ * - keys 需稳定引用（模块级常量）：数组直接进 deps，每次渲染新建数组会导致
+ *   effect 反复重跑。
  */
 export function useConfigReady(keys: readonly string[]): boolean {
   const [ready, setReady] = useState(false);
