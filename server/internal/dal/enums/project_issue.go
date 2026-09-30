@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-// 本文件定义 issue 状态体系的固定常量：StateCode 类型枚举（t_project_issues.state_code）+
-// 展示元数据目录 StateCatalog。状态为扁平模型（无 state_group/子状态层级、无 state_id、无 sortorder）——
+// 本文件定义 issue 域的枚举与固定常量：状态（StateCode + 展示元数据目录 StateCatalog）
+// 与优先级（Priority）。状态为扁平模型（无 state_group/子状态层级、无 state_id、无 sortorder）——
 // 固定 5 个状态，顺序即 StateCatalog 数组序。数据层不国际化——name/色由 Go 直出中文，前端原样展示。
 
 // StateCode issue 状态枚举（t_project_issues.state_code）。
@@ -64,4 +64,30 @@ func FindStateMeta(code StateCode) (StateMeta, bool) {
 		}
 	}
 	return StateMeta{}, false
+}
+
+// Priority issue 优先级枚举（t_project_issues.priority）。取值 urgent/high/medium/low/none。
+type Priority string
+
+const (
+	PRIORITY_URGENT Priority = "urgent"
+	PRIORITY_HIGH   Priority = "high"
+	PRIORITY_MEDIUM Priority = "medium"
+	PRIORITY_LOW    Priority = "low"
+	PRIORITY_NONE   Priority = "none"
+)
+
+// Value 实现 driver.Valuer：写库时校验合法值并返回底层 string；非法值返回错误，由 gorm 在 INSERT/UPDATE 时触发。
+func (p Priority) Value() (driver.Value, error) {
+	switch p {
+	case
+		PRIORITY_URGENT,
+		PRIORITY_HIGH,
+		PRIORITY_MEDIUM,
+		PRIORITY_LOW,
+		PRIORITY_NONE:
+		return string(p), nil
+	default:
+		return nil, fmt.Errorf("invalid Priority: %v", p)
+	}
 }
