@@ -245,9 +245,9 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 #### T0.4 issue 级 launch_settings 覆盖
 
-**状态**：⬜
+**状态**：✅
 
-**功能**：issue 可按需覆盖 workspace 级启动设置（P1 / P6 拍板终态：整个 launch_settings——mode / agentCode / permissionMode——均可 issue 级调整）
+**功能**：issue 可按需覆盖 workspace 级启动设置（P1 / P6 拍板终态：整个 launch_settings——mode / agentCode / autoCommand / permissionMode——均可 issue 级调整）
 
 **技术方案**：
 - `t_issues` 加 `launch_settings` JSON 列（同构 workspace，D6），改表走既有约定（编辑原迁移 + `pnpm server:gorm:gen`）
@@ -258,6 +258,13 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 **依赖**：T0.3
 
 **决策关联**：P1、P6
+
+**实施定稿**：
+- 列形态同构 workspace（`launch_settings TEXT NOT NULL DEFAULT ''`，空串 = 未覆盖）
+- 响应装配：`ProjectIssueResponseData` 加浅层同名字段 `LaunchSettings *WorkspaceLaunchSettings`（Go json 浅深度胜出，遮蔽嵌入 DO 的 string 形态），装配收口在 assembleWithType 一处；MCP `buildIssueUpdateRequest` 回填 cur.LaunchSettings 避免全量更新清掉覆盖
+- 字段级合并：`shared/launchSettings.ts` 的 `mergeLaunchSettings(base, override)`（issue 显式键覆盖 workspace，mode 显式 'none' 是有效覆盖值 ≠ 未覆盖）；terminal/acp 两个 Agent 选项常量与展示名映射同文件收编（WorkspaceDrawer / 抽屉 / 工作台三处共用）
+- 覆盖 UI 落 **issue 编辑抽屉**（非原方案的 issue 主窗口模式切换——主窗口入口随 T1.6 一并评估）：模式下拉首项「跟随工作空间」（未覆盖，空串走 MUI displayEmpty + shrink 双配置）+ 四档按档展开 Agent 下拉；「跟随」提交不传 launchSettings（清除覆盖）
+- 消费端：DevWorkbenchPage 以合并值派生 startupCli / 启动分流 / 浮层开关；issue 或 workspaces 任一未就绪即空占位等待（TerminalLaunchFlow 不挂载），挂载即终值
 
 ---
 

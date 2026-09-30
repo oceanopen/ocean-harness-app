@@ -35,17 +35,18 @@ type IssueRepositoryBranch struct {
 // stateCode 空值取默认 BACKLOG；sortOrder 不传（后端自算同 project MAX+10000）。
 // parentId 非空时创建为子任务（后端校验父存在 + 同 project + 仅一层）；id 由后端生成 uuid。
 type ProjectIssueCreateRequest struct {
-	ProjectID            int                     `json:"projectId" binding:"required"`
-	WorkspaceID          int                     `json:"workspaceId" binding:"required"`
-	Name                 string                  `json:"name" binding:"required,max=255"`
-	Description          string                  `json:"description" binding:"omitempty"`
-	Priority             enums.Priority          `json:"priority"`
-	StartDate            string                  `json:"startDate" binding:"omitempty"`
-	TargetDate           string                  `json:"targetDate" binding:"omitempty"`
-	StateCode            enums.StateCode         `json:"stateCode"`            // 空值 → 默认 BACKLOG
-	ParentID             string                  `json:"parentId"`             // ""=顶级，非空=子任务（须与父同 project，仅一层）
-	TypeID               int                     `json:"typeId"`               // issue 类型（t_workspace_types 单值引用，0=未分类；必选默认由前端保证）
-	RepositoryBranchList []IssueRepositoryBranch `json:"repositoryBranchList"` // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
+	ProjectID            int                      `json:"projectId" binding:"required"`
+	WorkspaceID          int                      `json:"workspaceId" binding:"required"`
+	Name                 string                   `json:"name" binding:"required,max=255"`
+	Description          string                   `json:"description" binding:"omitempty"`
+	Priority             enums.Priority           `json:"priority"`
+	StartDate            string                   `json:"startDate" binding:"omitempty"`
+	TargetDate           string                   `json:"targetDate" binding:"omitempty"`
+	StateCode            enums.StateCode          `json:"stateCode"`                          // 空值 → 默认 BACKLOG
+	ParentID             string                   `json:"parentId"`                           // ""=顶级，非空=子任务（须与父同 project，仅一层）
+	TypeID               int                      `json:"typeId"`                             // issue 类型（t_workspace_types 单值引用，0=未分类；必选默认由前端保证）
+	RepositoryBranchList []IssueRepositoryBranch  `json:"repositoryBranchList"`               // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
+	LaunchSettings       *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"` // 启动设置覆盖（nil = 未覆盖，消费端回落 workspace）
 }
 
 // ProjectIssueUpdateRequest 是 POST /api/tracker/projectIssue/update 的入参。
@@ -53,15 +54,16 @@ type ProjectIssueCreateRequest struct {
 // typeId 为 *int：nil=保留原值（MCP 部分更新回填现值），非 nil 覆写（0=未分类）。
 // 不变更 projectId/workspaceId/sortOrder（sortOrder 后续拖拽迭代维护）。
 type ProjectIssueUpdateRequest struct {
-	ID                   string                  `json:"id" binding:"required"`
-	Name                 string                  `json:"name" binding:"required,max=255"`
-	Description          string                  `json:"description" binding:"omitempty"`
-	StateCode            enums.StateCode         `json:"stateCode"`
-	Priority             enums.Priority          `json:"priority"`
-	StartDate            string                  `json:"startDate" binding:"omitempty"`
-	TargetDate           string                  `json:"targetDate" binding:"omitempty"`
-	TypeID               *int                    `json:"typeId"`               // nil=保留原值，0=置为未分类
-	RepositoryBranchList []IssueRepositoryBranch `json:"repositoryBranchList"` // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
+	ID                   string                   `json:"id" binding:"required"`
+	Name                 string                   `json:"name" binding:"required,max=255"`
+	Description          string                   `json:"description" binding:"omitempty"`
+	StateCode            enums.StateCode          `json:"stateCode"`
+	Priority             enums.Priority           `json:"priority"`
+	StartDate            string                   `json:"startDate" binding:"omitempty"`
+	TargetDate           string                   `json:"targetDate" binding:"omitempty"`
+	TypeID               *int                     `json:"typeId"`                             // nil=保留原值，0=置为未分类
+	RepositoryBranchList []IssueRepositoryBranch  `json:"repositoryBranchList"`               // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
+	LaunchSettings       *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"` // 启动设置覆盖（nil = 清除覆盖，消费端回落 workspace）
 }
 
 // ProjectIssueMoveRequest 是 POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）。
@@ -86,4 +88,7 @@ type ProjectIssueResponseData struct {
 	*model.ProjectIssue
 	Type                 *model.WorkspaceType    `json:"type"`
 	RepositoryBranchList []IssueRepositoryBranch `json:"repositoryBranchList"`
+	// 启动设置覆盖：浅层同名字段遮蔽嵌入 DO 的 launch_settings string（Go json 浅深度
+	// 胜出），输出解析后的结构（nil = 未覆盖，消费端回落 workspace）。
+	LaunchSettings *WorkspaceLaunchSettings `json:"launchSettings"`
 }

@@ -18,6 +18,7 @@ type ProjectIssue struct {
 	WorkspaceID              int                     `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
 	Name                     string                  `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Description              string                  `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
+	LaunchSettings           string                  `gorm:"column:launch_settings;type:TEXT;not null;default:''" json:"launchSettings"`
 	StateCode                enums.StateCode         `gorm:"column:state_code;type:TEXT;not null" json:"stateCode"`
 	Priority                 enums.Priority          `gorm:"column:priority;type:TEXT;not null" json:"priority"`
 	SortOrder                float64                 `gorm:"column:sort_order;type:REAL;not null" json:"sortOrder"`

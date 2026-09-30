@@ -69,18 +69,26 @@ type WorkspaceResponseData struct {
 // FromModel DO → 响应：launch_settings 解析失败兜底 nil（不阻塞列表加载）。
 func (WorkspaceResponseData) FromModel(r *model.Workspace) WorkspaceResponseData {
 	out := WorkspaceResponseData{
-		ID:          r.ID,
-		Name:        r.Name,
-		Dir:         r.Dir,
-		Description: r.Description,
-		CreatedAt:   r.CreatedAt,
-		UpdatedAt:   r.UpdatedAt,
-	}
-	if r.LaunchSettings != "" {
-		var ls WorkspaceLaunchSettings
-		if err := json.Unmarshal([]byte(r.LaunchSettings), &ls); err == nil {
-			out.LaunchSettings = &ls
-		}
+		ID:             r.ID,
+		Name:           r.Name,
+		Dir:            r.Dir,
+		Description:    r.Description,
+		LaunchSettings: ParseLaunchSettings(r.LaunchSettings),
+		CreatedAt:      r.CreatedAt,
+		UpdatedAt:      r.UpdatedAt,
 	}
 	return out
+}
+
+// ParseLaunchSettings 解析 launch_settings JSON 列文本；空串/损坏返回 nil（未配置语义，
+// 消费端按字段级合并回落）。workspace 与 project_issue 两域共用。
+func ParseLaunchSettings(raw string) *WorkspaceLaunchSettings {
+	if raw == "" {
+		return nil
+	}
+	var ls WorkspaceLaunchSettings
+	if err := json.Unmarshal([]byte(raw), &ls); err != nil {
+		return nil
+	}
+	return &ls
 }

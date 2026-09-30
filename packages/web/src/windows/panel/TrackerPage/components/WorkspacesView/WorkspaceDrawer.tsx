@@ -1,6 +1,7 @@
 import type { WorkspaceLaunchSettings, WorkspaceModel } from '@src/services';
 import { CloseOutlined as CloseOutlinedIcon, FolderOpen as FolderOpenIcon } from '@mui/icons-material';
 import { Alert, Box, Button, Divider, IconButton, InputAdornment, MenuItem, TextField, Typography } from '@mui/material';
+import { TERMINAL_AGENT_OPTIONS } from '@src/shared/launchSettings';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -12,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 // 不传则为新建模式，行为不变。
 // 底部「启动设置」区块（launch_settings）：workspace 单源，无全局回落。启动模式四档——
 // none（默认，就绪后出启动方式选择面板）/ 自动打开终端（裸 shell，Agent 经工具条自选）/
-// 终端 - 自动启动（「终端启动 Agent」下拉 = autoCommand）/ ACP 会话（「ACP Agent」=
+// 终端 - 自动启动（「终端 Agent」下拉 = autoCommand）/ ACP 会话（「ACP Agent」=
 // agentCode + 执行模式）。新增文案中文直出（仅本文件既有字段走 i18n）。
 //
 // 由父组件按需挂载（{open && <WorkspaceDrawer/>}）：每次打开都是全新 useState 初值，
@@ -26,11 +27,6 @@ interface WorkspaceDrawerProps {
 
 // 描述最大字数（与后端 binding max=500 对齐）。
 const DESCRIPTION_MAX = 500;
-
-/** 一期终端启动 Agent 选项（launch_settings.autoCommand，仅 terminal-auto 档消费；新 CLI 直启在此扩展）。 */
-const TERMINAL_AGENT_OPTIONS = [
-  { value: 'claude', label: 'Claude Code' },
-] as const;
 
 /** 一期 agent 目录未落地前的固定四选项（T1.2 落地后切换数据源）。 */
 const AGENT_CODE_OPTIONS = [
@@ -212,7 +208,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
           {launchMode === 'terminal-auto' && (
             <TextField
               select
-              label="终端启动 Agent"
+              label="终端 Agent"
               value={autoCommand}
               onChange={(e) => {
                 setAutoCommand(e.target.value as NonNullable<WorkspaceLaunchSettings['autoCommand']>);
@@ -231,7 +227,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             <>
               <TextField
                 select
-                label="Agent"
+                label="ACP Agent"
                 value={agentCode}
                 onChange={(e) => {
                   setAgentCode(e.target.value as NonNullable<WorkspaceLaunchSettings['agentCode']>);

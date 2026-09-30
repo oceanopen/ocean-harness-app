@@ -1,4 +1,5 @@
 import type { StateCode } from '@src/state/tracker/stateMeta';
+import type { WorkspaceLaunchSettings } from './WorkspaceService';
 import type { WorkspaceTypeModel } from './WorkspaceTypeService';
 import { request } from './http';
 
@@ -29,6 +30,7 @@ export interface ProjectIssueResponseData {
   updatedAt: string;
   type: WorkspaceTypeModel | null; // 类型详情（typeId=0 或类型已删时为 null）
   repositoryBranchList: IssueRepositoryBranchModel[]; // 关联的仓库+分支列表（空数组=未关联）
+  launchSettings?: WorkspaceLaunchSettings; // 启动设置覆盖（undefined = 未覆盖，字段级回落 workspace）
 }
 
 // POST /api/tracker/projectIssue/getList 的入参。
@@ -54,6 +56,7 @@ export interface ProjectIssueCreateRequest {
   parentId?: string; // 空串=顶级，非空=子任务（须与父同 project，仅一层）
   typeId?: number; // issue 类型（0/不传=未分类）
   repositoryBranchList?: IssueRepositoryBranchModel[]; // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
+  launchSettings?: WorkspaceLaunchSettings; // 启动设置覆盖（不传 = 未覆盖）
 }
 
 // POST /api/tracker/projectIssue/update 的入参。
@@ -67,6 +70,7 @@ export interface ProjectIssueUpdateRequest {
   targetDate?: string;
   typeId?: number; // 不传=保留原值，传值（含 0）=覆写（0=未分类）
   repositoryBranchList?: IssueRepositoryBranchModel[]; // 全量覆盖关联的仓库+分支列表（逐项校验仓库归属）
+  launchSettings?: WorkspaceLaunchSettings; // 启动设置覆盖（不传 = 清除覆盖，字段级回落 workspace）
 }
 
 // POST /api/tracker/projectIssue/delete 的入参。

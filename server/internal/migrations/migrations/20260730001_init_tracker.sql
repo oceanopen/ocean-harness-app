@@ -28,12 +28,15 @@ CREATE TABLE t_workspace_projects (
 
 -- t_project_issues：issue 工作项，所属 project。id 为 TEXT uuid（任务目录名）；
 -- state_code/priority 为代码赋值枚举，DONE 时写 completed_at；type_id 引用 t_workspace_types（0=未分类）。
+-- launch_settings 为启动设置覆盖 JSON 文本（shape 同 t_workspaces.launch_settings），
+-- 空串 = 未覆盖 → 消费端按字段级合并回落 workspace 级。
 CREATE TABLE t_project_issues (
     id                  TEXT PRIMARY KEY,
     project_id          INTEGER  NOT NULL,
     workspace_id        INTEGER  NOT NULL,
     name                TEXT     NOT NULL,
     description         TEXT     NOT NULL DEFAULT '',
+    launch_settings     TEXT     NOT NULL DEFAULT '',
     state_code          TEXT     NOT NULL,
     priority            TEXT     NOT NULL,
     sort_order          REAL     NOT NULL DEFAULT 0,

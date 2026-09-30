@@ -143,19 +143,20 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 		}
 
 		created = &model.ProjectIssue{
-			ID:          uuid.Must(uuid.NewV7()).String(),
-			ProjectID:   req.ProjectID,
-			WorkspaceID: req.WorkspaceID,
-			Name:        req.Name,
-			Description: req.Description,
-			StateCode:   stateCode,
-			Priority:    priority,
-			SortOrder:   sortOrder,
-			ParentID:    parentID,
-			TypeID:      req.TypeID,
-			StartDate:   req.StartDate,
-			TargetDate:  req.TargetDate,
-			CompletedAt: completedAt,
+			ID:             uuid.Must(uuid.NewV7()).String(),
+			ProjectID:      req.ProjectID,
+			WorkspaceID:    req.WorkspaceID,
+			Name:           req.Name,
+			Description:    req.Description,
+			LaunchSettings: launchSettingsJSON(req.LaunchSettings),
+			StateCode:      stateCode,
+			Priority:       priority,
+			SortOrder:      sortOrder,
+			ParentID:       parentID,
+			TypeID:         req.TypeID,
+			StartDate:      req.StartDate,
+			TargetDate:     req.TargetDate,
+			CompletedAt:    completedAt,
 		}
 		if ce := q.ProjectIssue.WithContext(svc.Context).Create(created); ce != nil {
 			return ce
@@ -192,6 +193,7 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 
 		issue.Name = req.Name
 		issue.Description = req.Description
+		issue.LaunchSettings = launchSettingsJSON(req.LaunchSettings)
 		issue.StartDate = req.StartDate
 		issue.TargetDate = req.TargetDate
 		// priority/stateCode 为 typed 枚举：空值保留原值（前端不传即不改，避免 Value() 校验空串报错）。
@@ -427,6 +429,7 @@ func (svc ProjectIssue) assembleWithType(issues []*model.ProjectIssue) ([]*types
 			ProjectIssue:         i,
 			Type:                 typeMap[i.TypeID], // map 取不到为 nil（未分类/类型已删）
 			RepositoryBranchList: repoBranchList,
+			LaunchSettings:       types.ParseLaunchSettings(i.LaunchSettings),
 		})
 	}
 	return result, nil

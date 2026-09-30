@@ -187,6 +187,7 @@ func buildIssueUpdateRequest(cur *types.ProjectIssueResponseData, args *mcpdto.I
 		TargetDate:           cur.TargetDate,
 		TypeID:               &cur.TypeID, // MCP 不支持改类型，原样回填现值（nil 语义不适用）
 		RepositoryBranchList: cur.RepositoryBranchList,
+		LaunchSettings:       cur.LaunchSettings, // MCP 不支持改启动设置，原样回填（nil=未覆盖）避免被全量更新清掉
 	}
 	if args.Name != "" {
 		req.Name = args.Name

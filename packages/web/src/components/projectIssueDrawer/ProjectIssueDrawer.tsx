@@ -1,4 +1,4 @@
-import type { IssueRepositoryBranchModel, Priority, ProjectIssueResponseData, WorkspaceProjectModel, WorkspaceTypeModel } from '@src/services';
+import type { IssueRepositoryBranchModel, Priority, ProjectIssueResponseData, WorkspaceLaunchSettings, WorkspaceProjectModel, WorkspaceTypeModel } from '@src/services';
 import type { StateCode } from '@src/state/tracker';
 import { AutoFixHighOutlined as AutoFixHighOutlinedIcon, CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import {
@@ -8,12 +8,15 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   IconButton,
+  MenuItem,
   TextField,
   Typography,
 } from '@mui/material';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import { ACP_AGENT_OPTIONS, TERMINAL_AGENT_OPTIONS } from '@src/shared/launchSettings';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
@@ -31,6 +34,12 @@ import ProjectStateSelect from './ProjectStateSelect';
 import TypeSelect from './TypeSelect';
 import WorkspaceTypeManagerDrawer from './WorkspaceTypeManagerDrawer';
 import 'dayjs/locale/zh-cn';
+
+/**
+ * 启动模式覆盖草稿值：'' = 跟随工作空间（未覆盖），其余对齐 WorkspaceLaunchSettings.mode。
+ * 空串走 MUI displayEmpty + inputLabel.shrink 双配置（见下拉处注释）。
+ */
+type LaunchModeOverride = '' | NonNullable<WorkspaceLaunchSettings['mode']>;
 
 interface ProjectIssueDrawerProps {
   mode: 'create' | 'edit';
@@ -87,6 +96,19 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   }, [allReposQuery.data, workspaceProject.localRepositoryIds]);
   const [repoBranchRowsOverride, setRepoBranchRowsOverride] = useState<IssueRepositoryBranchModel[] | null>(
     mode === 'edit' ? (projectIssue?.repositoryBranchList ?? []) : null,
+  );
+  // 启动设置覆盖（仅 edit）：'' = 跟随工作空间（未覆盖），字段级回落；覆盖档按档带附加字段。
+  const [launchModeOverride, setLaunchModeOverride] = useState<'' | NonNullable<WorkspaceLaunchSettings['mode']>>(
+    projectIssue?.launchSettings?.mode ?? '',
+  );
+  const [launchAutoCommand, setLaunchAutoCommand] = useState<NonNullable<WorkspaceLaunchSettings['autoCommand']>>(
+    projectIssue?.launchSettings?.autoCommand ?? 'claude',
+  );
+  const [launchAgentCode, setLaunchAgentCode] = useState<NonNullable<WorkspaceLaunchSettings['agentCode']>>(
+    projectIssue?.launchSettings?.agentCode ?? 'claude-acp',
+  );
+  const [launchPermissionMode, setLaunchPermissionMode] = useState<NonNullable<WorkspaceLaunchSettings['permissionMode']>>(
+    projectIssue?.launchSettings?.permissionMode ?? 'acceptEdits',
   );
   const repoBranchRows = repoBranchRowsOverride ?? defaultRepoBranchRows;
   // 用户是否已手动操作过类型（create 默认选中「需求」仅作用于未触碰时，避免覆盖用户显式选的「未分类」）。
@@ -211,6 +233,15 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
         onCreated?.(created);
         onClose();
       } else if (mode === 'edit') {
+        // 启动设置覆盖：''（跟随工作空间）= 不传（清除覆盖）；覆盖档按档带附加字段。
+        const launchSettings: WorkspaceLaunchSettings | undefined
+          = launchModeOverride === ''
+            ? undefined
+            : launchModeOverride === 'acp'
+              ? { mode: launchModeOverride, agentCode: launchAgentCode, permissionMode: launchPermissionMode }
+              : launchModeOverride === 'terminal-auto'
+                ? { mode: launchModeOverride, autoCommand: launchAutoCommand }
+                : { mode: launchModeOverride };
         const updated = await updateProjectIssue.mutateAsync({
           id: projectIssue!.id,
           name: name.trim(),
@@ -221,6 +252,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           targetDate,
           typeId: currentType?.id ?? 0,
           repositoryBranchList: repoBranchRows,
+          launchSettings,
         });
         onUpdated?.(updated);
         onClose();
@@ -359,14 +391,95 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
             onChange={handleRepoBranchRowsChange}
             disabled={submitting || deleting}
           />
+
+          {/* 启动设置覆盖（launch_settings，仅 edit 回显/编辑）：未覆盖键字段级回落工作空间。
+          新增文案中文直出（本抽屉既有字段走 i18n）。 */}
+          {mode === 'edit' && (
+            <>
+              <Divider />
+              <TextField
+                select
+                label="启动模式"
+                value={launchModeOverride}
+                onChange={(e) => {
+                  setLaunchModeOverride(e.target.value as LaunchModeOverride);
+                }}
+                fullWidth
+                disabled={submitting || deleting}
+                // 空串（跟随工作空间）是有效选项：displayEmpty 渲染选中项文本；
+                // InputBase 的 filled 判定不含空串，label 需显式常驻收缩，否则与内容重影。
+                slotProps={{
+                  select: { displayEmpty: true },
+                  inputLabel: { shrink: true },
+                }}
+                helperText="跟随工作空间 = 未覆盖，沿用工作空间启动设置；覆盖仅对本 issue 生效"
+              >
+                <MenuItem value="">跟随工作空间</MenuItem>
+                <MenuItem value="none">不执行任何操作</MenuItem>
+                <MenuItem value="terminal-manual">自动打开终端</MenuItem>
+                <MenuItem value="terminal-auto">终端 - 自动启动 Agent</MenuItem>
+                <MenuItem value="acp">ACP 方式启动 Agent</MenuItem>
+              </TextField>
+              {launchModeOverride === 'terminal-auto' && (
+                <TextField
+                  select
+                  label="终端 Agent"
+                  value={launchAutoCommand}
+                  onChange={(e) => {
+                    setLaunchAutoCommand(e.target.value as NonNullable<WorkspaceLaunchSettings['autoCommand']>);
+                  }}
+                  fullWidth
+                  disabled={submitting || deleting}
+                  helperText="选中 issue 打开主终端时直接运行的 CLI Agent（无 shell 中转）"
+                >
+                  {TERMINAL_AGENT_OPTIONS.map(opt => (
+                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                  ))}
+                </TextField>
+              )}
+              {launchModeOverride === 'acp' && (
+                <>
+                  <TextField
+                    select
+                    label="ACP Agent"
+                    value={launchAgentCode}
+                    onChange={(e) => {
+                      setLaunchAgentCode(e.target.value as NonNullable<WorkspaceLaunchSettings['agentCode']>);
+                    }}
+                    fullWidth
+                    disabled={submitting || deleting}
+                    helperText="issue 主窗口 ACP 会话驱动的编码 agent（一期固定四项）"
+                  >
+                    {ACP_AGENT_OPTIONS.map(opt => (
+                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    select
+                    label="执行模式"
+                    value={launchPermissionMode}
+                    onChange={(e) => {
+                      setLaunchPermissionMode(e.target.value as NonNullable<WorkspaceLaunchSettings['permissionMode']>);
+                    }}
+                    fullWidth
+                    disabled={submitting || deleting}
+                    helperText="需要审批 = 敏感操作推送审批卡人工确认；自动放行 = 免审批直接执行"
+                  >
+                    <MenuItem value="acceptEdits">需要审批</MenuItem>
+                    <MenuItem value="bypassPermissions">自动放行</MenuItem>
+                  </TextField>
+                </>
+              )}
+            </>
+          )}
           {/* 元信息（仅 edit） */}
           {mode === 'edit' && projectIssue && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 1 }}>
-              <Typography variant="caption" color="text.disabled">
+              <Typography variant="caption" color="text.disabled" sx={{ opacity: 0.6 }}>
                 {t('tracker:projectIssue.detail.createdAt')} {formatDate(projectIssue.createdAt, 'YYYY-MM-DD HH:mm')}
               </Typography>
               {projectIssue.completedAt && (
-                <Typography variant="caption" color="text.disabled">
+                <Typography variant="caption" color="text.disabled" sx={{ opacity: 0.6 }}>
                   {t('tracker:projectIssue.detail.completedAt')} {formatDate(projectIssue.completedAt, 'YYYY-MM-DD HH:mm')}
                 </Typography>
               )}

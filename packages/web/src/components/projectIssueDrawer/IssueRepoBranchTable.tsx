@@ -85,7 +85,7 @@ function IssueRepoBranchTable({
           <TableRow>
             <TableCell sx={{ width: '40%' }}>仓库</TableCell>
             <TableCell>分支</TableCell>
-            <TableCell sx={{ width: 56 }} aria-label="操作">操作</TableCell>
+            <TableCell sx={{ width: 56, px: 1, whiteSpace: 'nowrap' }} aria-label="操作">操作</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -178,7 +178,7 @@ function RepoBranchRow({ row, repoOptions, disabled, onRepoChange, onBranchChang
           )}
         />
       </TableCell>
-      <TableCell sx={{ py: 1 }}>
+      <TableCell sx={{ py: 1, px: 1, whiteSpace: 'nowrap' }}>
         <IconButton size="small" onClick={onRemove} disabled={disabled} aria-label="删除">
           <DeleteOutlinedIcon fontSize="small" />
         </IconButton>
