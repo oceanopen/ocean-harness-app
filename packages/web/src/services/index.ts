@@ -91,6 +91,7 @@ export type {
   WorkspaceCreateRequest,
   WorkspaceDeleteRequest,
   WorkspaceGetListRequest,
+  WorkspaceLaunchSettings,
   WorkspaceModel,
   WorkspaceUpdateRequest,
 } from './WorkspaceService';

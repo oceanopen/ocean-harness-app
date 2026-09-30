@@ -1,6 +1,6 @@
-import type { WorkspaceModel } from '@src/services';
+import type { WorkspaceLaunchSettings, WorkspaceModel } from '@src/services';
 import { CloseOutlined as CloseOutlinedIcon, FolderOpen as FolderOpenIcon } from '@mui/icons-material';
-import { Alert, Box, Button, IconButton, InputAdornment, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Divider, IconButton, InputAdornment, MenuItem, TextField, Typography } from '@mui/material';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -10,6 +10,9 @@ import { useTranslation } from 'react-i18next';
 // 新建/编辑工作空间抽屉。
 // 传入 workspace 时为编辑模式：标题改为"编辑工作空间"、ID 只读展示、字段反显、提交调用 update；
 // 不传则为新建模式，行为不变。
+// 底部「启动设置」区块（launch_settings）：启动模式首项「跟随全局」= 未配置（后端落空串，
+// 消费端回落全局 key）；ACP 会话模式展开 Agent 与执行模式下拉。新增文案中文直出（仅本文件
+// 既有字段走 i18n）。
 //
 // 由父组件按需挂载（{open && <WorkspaceDrawer/>}）：每次打开都是全新 useState 初值，
 // 无需重置 effect；关闭即卸载。
@@ -23,6 +26,17 @@ interface WorkspaceDrawerProps {
 // 描述最大字数（与后端 binding max=500 对齐）。
 const DESCRIPTION_MAX = 500;
 
+/** 启动模式草稿值：'' = 跟随全局（未配置回落），其余对齐 WorkspaceLaunchSettings.mode。 */
+type LaunchModeDraft = WorkspaceLaunchSettings['mode'] | '';
+
+/** 一期 agent 目录未落地前的固定四选项（T1.2 落地后切换数据源）。 */
+const AGENT_CODE_OPTIONS = [
+  { value: 'claude-acp', label: 'Claude Code' },
+  { value: 'codex', label: 'Codex' },
+  { value: 'opencode', label: 'OpenCode' },
+  { value: 'pi', label: 'Pi' },
+] as const;
+
 function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: WorkspaceDrawerProps) {
   const { t } = useTranslation();
   const isEdit = !!workspace;
@@ -31,6 +45,13 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
   const [name, setName] = useState(workspace?.name ?? '');
   const [dir, setDir] = useState(workspace?.dir ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
+  const [launchMode, setLaunchMode] = useState<LaunchModeDraft>(workspace?.launchSettings?.mode ?? '');
+  const [agentCode, setAgentCode] = useState<NonNullable<WorkspaceLaunchSettings['agentCode']>>(
+    workspace?.launchSettings?.agentCode ?? 'claude-acp',
+  );
+  const [permissionMode, setPermissionMode] = useState<NonNullable<WorkspaceLaunchSettings['permissionMode']>>(
+    workspace?.launchSettings?.permissionMode ?? 'acceptEdits',
+  );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,10 +70,19 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     setSubmitting(true);
     setError(null);
     try {
+      // 跟随全局（'' 空值）= 不传 launchSettings（后端落空串，消费端回落链生效）；
+      // 终端模式只带 mode；ACP 会话带 agentCode + permissionMode（autoCommand 一期固定不出框）。
+      const launchSettings: WorkspaceLaunchSettings | undefined
+        = launchMode === ''
+          ? undefined
+          : launchMode === 'acp'
+            ? { mode: launchMode, agentCode, permissionMode }
+            : { mode: launchMode };
       const payload = {
         name: name.trim(),
         dir: dir.trim(),
         description: description.trim(),
+        launchSettings,
       };
       if (isEdit && workspace) {
         const updated = await updateWs.mutateAsync({ id: workspace.id, ...payload });
@@ -151,6 +181,67 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             slotProps={{ htmlInput: { maxLength: DESCRIPTION_MAX } }}
             helperText={`${description.length} / ${DESCRIPTION_MAX}`}
           />
+
+          {/* 启动设置（launch_settings）：未配置回落全局 key，存量行为不突变。 */}
+          <Divider />
+          <TextField
+            select
+            label="启动模式"
+            value={launchMode}
+            onChange={(e) => {
+              setLaunchMode(e.target.value as LaunchModeDraft);
+              setError(null);
+            }}
+            fullWidth
+            disabled={submitting}
+            // 空串（跟随全局）是有效选项：displayEmpty 让选中项文本正常渲染；
+            // InputBase 的 filled 判定不含空串，label 需显式常驻收缩，否则与内容重影。
+            slotProps={{
+              select: { displayEmpty: true },
+              inputLabel: { shrink: true },
+            }}
+            helperText="未设置时跟随全局启动配置；ACP 会话在 issue 主窗口以对话视图运行"
+          >
+            <MenuItem value="">跟随全局</MenuItem>
+            <MenuItem value="terminal-manual">终端 - 手动启动</MenuItem>
+            <MenuItem value="terminal-auto">终端 - 自动启动</MenuItem>
+            <MenuItem value="acp">ACP 会话</MenuItem>
+          </TextField>
+          {launchMode === 'acp' && (
+            <>
+              <TextField
+                select
+                label="Agent"
+                value={agentCode}
+                onChange={(e) => {
+                  setAgentCode(e.target.value as NonNullable<WorkspaceLaunchSettings['agentCode']>);
+                  setError(null);
+                }}
+                fullWidth
+                disabled={submitting}
+                helperText="ACP 会话驱动的编码 agent（一期固定四项，agent 目录就绪后自动扩展）"
+              >
+                {AGENT_CODE_OPTIONS.map(opt => (
+                  <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                select
+                label="执行模式"
+                value={permissionMode}
+                onChange={(e) => {
+                  setPermissionMode(e.target.value as NonNullable<WorkspaceLaunchSettings['permissionMode']>);
+                  setError(null);
+                }}
+                fullWidth
+                disabled={submitting}
+                helperText="需要审批 = 敏感操作推送审批卡人工确认；自动放行 = 免审批直接执行"
+              >
+                <MenuItem value="acceptEdits">需要审批</MenuItem>
+                <MenuItem value="bypassPermissions">自动放行</MenuItem>
+              </TextField>
+            </>
+          )}
           {error && <Alert severity="error">{error}</Alert>}
         </Box>
 

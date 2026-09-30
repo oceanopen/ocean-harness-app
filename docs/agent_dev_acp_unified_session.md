@@ -212,7 +212,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 #### T0.2 WorkspaceDrawer 启动设置表单
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：workspace 编辑抽屉增加「启动设置」区块
 
@@ -222,6 +222,8 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 - 空值 = 跟随全局回落（不强制填写），存量用户行为不突变
 
 **依赖**：T0.1
+
+**实施定稿**：启动模式下拉首项「跟随全局」即空值位（`value=''`，提交时不传 launchSettings，后端落空串）；MUI 对空串选项需显式双配置——`select.displayEmpty`（空值是有效选项，选中项文本正常渲染）+ `inputLabel.shrink`（InputBase 的 filled 判定不含空串，label 显式常驻收缩，否则与内容重影）；ACP 会话展开 Agent（默认 claude-acp）与执行模式（默认需要审批=acceptEdits）两下拉，切回终端模式不丢草稿；autoCommand 一期不出输入框（固定 claude，消费端以 mode 判断）；新增文案中文直出不加 i18n key（对齐 ImBotDrawer 约定，i18n 维持既有页面维度）；`services/index.ts` barrel 补导出 `WorkspaceLaunchSettings`
 
 #### T0.3 消费端接入 workspace 级值
 
