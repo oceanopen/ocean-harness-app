@@ -45,9 +45,9 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	if strings.TrimSpace(req.SystemPrompt) != "" {
 		args = append(args, "--append-system-prompt", req.SystemPrompt)
 	}
-	if len(req.AllowedTools) > 0 {
-		args = append(args, "--allowedTools", strings.Join(req.AllowedTools, ","))
-	}
+	// 工具白名单恒用默认集（P6：bot 级「执行权限」配置已废弃，权限表达上移 workspace 级
+	// launch_settings.permissionMode，ACP 模式接管审批语义；headless 路径安全周界不变）。
+	args = append(args, "--allowedTools", strings.Join(DefaultAllowedTools(), ","))
 
 	cmd := exec.CommandContext(ctx, resolved.Bin, args...)
 	cmd.Dir = req.WorkspaceDir

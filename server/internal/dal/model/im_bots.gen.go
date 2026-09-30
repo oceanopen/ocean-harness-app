@@ -20,7 +20,6 @@ type ImBot struct {
 	WorkspaceID  int           `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
 	Model        string        `gorm:"column:model;type:TEXT;not null;default:''" json:"model"`
 	SystemPrompt string        `gorm:"column:system_prompt;type:TEXT;not null;default:''" json:"systemPrompt"`
-	AllowedTools string        `gorm:"column:allowed_tools;type:TEXT;not null;default:'[]'" json:"allowedTools"`
 	AccessPolicy string        `gorm:"column:access_policy;type:TEXT;not null" json:"accessPolicy"`
 	Enabled      enums.YesNo   `gorm:"column:enabled;type:TEXT;not null" json:"enabled"`
 	LastError    string        `gorm:"column:last_error;type:TEXT;not null;default:''" json:"lastError"`

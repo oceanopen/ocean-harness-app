@@ -16,6 +16,7 @@ type Workspace struct {
 	Name                 string              `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Dir                  string              `gorm:"column:dir;type:TEXT;not null" json:"dir"`
 	Description          string              `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
+	LaunchSettings       string              `gorm:"column:launch_settings;type:TEXT;not null;default:''" json:"launchSettings"`
 	CreatedAt            time.Time           `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt            time.Time           `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 	WorkspaceProjectList []*WorkspaceProject `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceProjectList,omitempty"`

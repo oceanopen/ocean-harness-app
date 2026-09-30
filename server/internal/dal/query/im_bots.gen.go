@@ -35,7 +35,6 @@ func newImBot(db *gorm.DB, opts ...gen.DOOption) imBot {
 	_imBot.WorkspaceID = field.NewInt(tableName, "workspace_id")
 	_imBot.Model = field.NewString(tableName, "model")
 	_imBot.SystemPrompt = field.NewString(tableName, "system_prompt")
-	_imBot.AllowedTools = field.NewString(tableName, "allowed_tools")
 	_imBot.AccessPolicy = field.NewString(tableName, "access_policy")
 	_imBot.Enabled = field.NewField(tableName, "enabled")
 	_imBot.LastError = field.NewString(tableName, "last_error")
@@ -58,7 +57,6 @@ type imBot struct {
 	WorkspaceID  field.Int
 	Model        field.String
 	SystemPrompt field.String
-	AllowedTools field.String
 	AccessPolicy field.String
 	Enabled      field.Field
 	LastError    field.String
@@ -87,7 +85,6 @@ func (i *imBot) updateTableName(table string) *imBot {
 	i.WorkspaceID = field.NewInt(table, "workspace_id")
 	i.Model = field.NewString(table, "model")
 	i.SystemPrompt = field.NewString(table, "system_prompt")
-	i.AllowedTools = field.NewString(table, "allowed_tools")
 	i.AccessPolicy = field.NewString(table, "access_policy")
 	i.Enabled = field.NewField(table, "enabled")
 	i.LastError = field.NewString(table, "last_error")
@@ -117,7 +114,7 @@ func (i *imBot) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (i *imBot) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 13)
+	i.fieldMap = make(map[string]field.Expr, 12)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["name"] = i.Name
 	i.fieldMap["channel"] = i.Channel
@@ -125,7 +122,6 @@ func (i *imBot) fillFieldMap() {
 	i.fieldMap["workspace_id"] = i.WorkspaceID
 	i.fieldMap["model"] = i.Model
 	i.fieldMap["system_prompt"] = i.SystemPrompt
-	i.fieldMap["allowed_tools"] = i.AllowedTools
 	i.fieldMap["access_policy"] = i.AccessPolicy
 	i.fieldMap["enabled"] = i.Enabled
 	i.fieldMap["last_error"] = i.LastError

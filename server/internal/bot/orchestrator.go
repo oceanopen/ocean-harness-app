@@ -202,7 +202,6 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		Prompt:       prompt,
 		Model:        cfg.Model,
 		SystemPrompt: ComposeSystemPrompt(cfg.SystemPrompt),
-		AllowedTools: cfg.AllowedTools,
 		Port:         cfg.Port,
 	})
 	if err != nil {

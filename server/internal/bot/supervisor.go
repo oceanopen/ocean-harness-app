@@ -185,10 +185,6 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 	if err != nil {
 		return BotRuntimeConfig{}, fmt.Errorf("access_policy 解析失败: %w", err)
 	}
-	tools, err := ParseAllowedTools(b.AllowedTools)
-	if err != nil {
-		return BotRuntimeConfig{}, fmt.Errorf("allowed_tools 解析失败: %w", err)
-	}
 	wsDir := ""
 	if b.WorkspaceID > 0 {
 		q := query.Use(s.db)
@@ -206,7 +202,6 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 		WorkspaceDir: wsDir,
 		Model:        b.Model,
 		SystemPrompt: b.SystemPrompt,
-		AllowedTools: tools,
 		AccessPolicy: policy,
 		Port:         s.port,
 	}, nil

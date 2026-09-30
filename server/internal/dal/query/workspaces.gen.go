@@ -32,6 +32,7 @@ func newWorkspace(db *gorm.DB, opts ...gen.DOOption) workspace {
 	_workspace.Name = field.NewString(tableName, "name")
 	_workspace.Dir = field.NewString(tableName, "dir")
 	_workspace.Description = field.NewString(tableName, "description")
+	_workspace.LaunchSettings = field.NewString(tableName, "launch_settings")
 	_workspace.CreatedAt = field.NewTime(tableName, "created_at")
 	_workspace.UpdatedAt = field.NewTime(tableName, "updated_at")
 	_workspace.WorkspaceProjectList = workspaceHasManyWorkspaceProjectList{
@@ -77,6 +78,7 @@ type workspace struct {
 	Name                 field.String
 	Dir                  field.String
 	Description          field.String
+	LaunchSettings       field.String
 	CreatedAt            field.Time
 	UpdatedAt            field.Time
 	WorkspaceProjectList workspaceHasManyWorkspaceProjectList
@@ -102,6 +104,7 @@ func (w *workspace) updateTableName(table string) *workspace {
 	w.Name = field.NewString(table, "name")
 	w.Dir = field.NewString(table, "dir")
 	w.Description = field.NewString(table, "description")
+	w.LaunchSettings = field.NewString(table, "launch_settings")
 	w.CreatedAt = field.NewTime(table, "created_at")
 	w.UpdatedAt = field.NewTime(table, "updated_at")
 
@@ -130,11 +133,12 @@ func (w *workspace) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (w *workspace) fillFieldMap() {
-	w.fieldMap = make(map[string]field.Expr, 8)
+	w.fieldMap = make(map[string]field.Expr, 9)
 	w.fieldMap["id"] = w.ID
 	w.fieldMap["name"] = w.Name
 	w.fieldMap["dir"] = w.Dir
 	w.fieldMap["description"] = w.Description
+	w.fieldMap["launch_settings"] = w.LaunchSettings
 	w.fieldMap["created_at"] = w.CreatedAt
 	w.fieldMap["updated_at"] = w.UpdatedAt
 

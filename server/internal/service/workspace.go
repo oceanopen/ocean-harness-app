@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -19,20 +20,29 @@ import (
 )
 
 // Workspace 对应 /api/tracker/workspace 命名空间下的业务逻辑。
-// 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger；方法只收 req、用 svc.Orm、返原始 model。
+// 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger；方法只收 req、用 svc.Orm、
+// 返回 WorkspaceResponseData（launch_settings JSON 列装配为结构，对齐 im_bot 域响应范式）。
 type Workspace struct {
 	apis.Service
 }
 
 // GetList 返回全部 workspace，按 id 倒序（新建在前）。
-func (svc Workspace) GetList(req *types.WorkspaceGetListRequest) ([]*model.Workspace, error) {
+func (svc Workspace) GetList(req *types.WorkspaceGetListRequest) ([]types.WorkspaceResponseData, error) {
 	_ = req // 当前无筛选条件，预留
 	q := query.Use(svc.Orm)
-	return q.Workspace.WithContext(svc.Context).Order(q.Workspace.ID.Desc()).Find()
+	rows, err := q.Workspace.WithContext(svc.Context).Order(q.Workspace.ID.Desc()).Find()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]types.WorkspaceResponseData, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, types.WorkspaceResponseData{}.FromModel(row))
+	}
+	return out, nil
 }
 
 // GetInfo 按 id 返回单个 workspace。
-func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspace, error) {
+func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*types.WorkspaceResponseData, error) {
 	q := query.Use(svc.Orm)
 	ws, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(req.ID)).First()
 	if err != nil {
@@ -41,24 +51,31 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 		}
 		return nil, err
 	}
-	return ws, nil
+	item := types.WorkspaceResponseData{}.FromModel(ws)
+	return &item, nil
 }
 
 // Create 创建 workspace（目录校验后插入）。
-func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*model.Workspace, error) {
+func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*types.WorkspaceResponseData, error) {
 	if err := validateWorkspaceDir(req.Dir); err != nil {
 		return nil, err
 	}
 	q := query.Use(svc.Orm)
-	ws := &model.Workspace{Name: req.Name, Dir: strings.TrimSpace(req.Dir), Description: req.Description}
+	ws := &model.Workspace{
+		Name:           req.Name,
+		Dir:            strings.TrimSpace(req.Dir),
+		Description:    req.Description,
+		LaunchSettings: launchSettingsJSON(req.LaunchSettings),
+	}
 	if err := q.Workspace.WithContext(svc.Context).Create(ws); err != nil {
 		return nil, err
 	}
-	return ws, nil
+	item := types.WorkspaceResponseData{}.FromModel(ws)
+	return &item, nil
 }
 
 // Update 更新 workspace：目录校验后保存；目录变更时热更新关联 bot 的连接。
-func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace, error) {
+func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*types.WorkspaceResponseData, error) {
 	if err := validateWorkspaceDir(req.Dir); err != nil {
 		return nil, err
 	}
@@ -76,14 +93,25 @@ func (svc Workspace) Update(req *types.WorkspaceUpdateRequest) (*model.Workspace
 	oldDir := ws.Dir
 	ws.Dir = strings.TrimSpace(req.Dir)
 	ws.Description = req.Description
+	ws.LaunchSettings = launchSettingsJSON(req.LaunchSettings)
 	if e := wq.Save(ws); e != nil {
 		return nil, e
 	}
-	// 仅目录变更才热更新关联 bot（改名/改描述不动连接，避免踢断在途回合）。
+	// 仅目录变更才热更新关联 bot（改名/改描述/改启动设置不动连接，避免踢断在途回合）。
 	if ws.Dir != oldDir {
 		reapplyBots(svc.Orm, svc.Logger, req.ID)
 	}
-	return ws, nil
+	item := types.WorkspaceResponseData{}.FromModel(ws)
+	return &item, nil
+}
+
+// launchSettingsJSON 启动设置序列化（nil → 空串 = 未配置，消费端回落全局）。
+func launchSettingsJSON(ls *types.WorkspaceLaunchSettings) string {
+	if ls == nil {
+		return ""
+	}
+	b, _ := json.Marshal(ls)
+	return string(b)
 }
 
 // Delete 物理删除 workspace（无 DB 外键），事务内级联清理其下全部数据，避免悬挂：

@@ -23,8 +23,8 @@ import { IM_BOT_CHANNELS } from './imBotChannels';
 
 // IM bot 编辑抽屉（ResizableDrawer 右滑、左缘可拖宽）。secret 明文回显（数据全本地）：
 // 默认 password 掩码、右侧小眼睛切换明文；保存留空 = 沿用原值、非空 = 覆盖，创建必填。
-// 工作空间必选下拉（会话目录取其 dir）；工具白名单收敛为「执行权限」下拉——接口仍收
-// allowedTools，前端按选项转译。渠道为表单首位的禁用下拉（新建 = 列表页当前渠道，
+// 工作空间必选下拉（会话目录取其 dir）；工具白名单恒为后端默认集（bot 级执行权限配置已
+// 废弃，权限表达走工作空间启动设置）。渠道为表单首位的禁用下拉（新建 = 列表页当前渠道，
 // 编辑 = bot.channel）。文案约定：中文直出（仅菜单标题走 i18n）。
 //
 // 由父组件按需挂载（{drawer && <ImBotDrawer/>}）：每次打开都是全新 useState 初值（首帧即终值，
@@ -35,30 +35,6 @@ interface ImBotDrawerProps {
   onClose: () => void;
 }
 
-/** 执行权限选项：普通下拉选项值（非 boolean），新场景在此追加并配 allowedTools 转译。 */
-interface ExecPermissionMeta {
-  value: string;
-  label: string;
-}
-
-const EXEC_PERMISSIONS: readonly ExecPermissionMeta[] = [
-  { value: 'execute', label: '可执行命令' },
-  { value: 'readonly', label: '不可执行命令' },
-];
-
-/** 不可执行命令时的工具白名单 = 代码默认白名单剔除 Bash（对齐 server bot.DefaultAllowedTools）。 */
-const TOOLS_WITHOUT_BASH = ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'WebFetch', 'WebSearch', 'TodoWrite'];
-
-/** 执行权限 → allowedTools：可执行命令 = 空数组（后端默认白名单，含 Bash）。 */
-function allowedToolsForExecPermission(value: string): string[] {
-  return value === 'execute' ? [] : TOOLS_WITHOUT_BASH;
-}
-
-/** allowedTools → 执行权限初值：空数组（= 默认白名单含 Bash）或显式含 Bash = 可执行命令。 */
-function execPermissionFromAllowedTools(tools: string[]): string {
-  return tools.length === 0 || tools.includes('Bash') ? 'execute' : 'readonly';
-}
-
 /** 表单 draft（secret/allowUsers 以文本态编辑，提交时拆分）。workspaceId 0 = 未选。 */
 interface ImBotDraft {
   name: string;
@@ -67,7 +43,6 @@ interface ImBotDraft {
   workspaceId: number;
   model: string;
   systemPrompt: string;
-  execPermission: string;
   accessMode: ImBotAccessPolicy['mode'];
   allowUsersText: string;
   enabled: boolean;
@@ -81,7 +56,6 @@ function draftFromBot(bot: ImBotModel | null): ImBotDraft {
     workspaceId: bot?.workspaceId ?? 0,
     model: bot?.model ?? '',
     systemPrompt: bot?.systemPrompt ?? '',
-    execPermission: execPermissionFromAllowedTools(bot?.allowedTools ?? []),
     accessMode: bot?.accessPolicy.mode ?? 'allowlist',
     allowUsersText: bot?.accessPolicy.allowUsers.join(', ') ?? '',
     enabled: bot?.enabled ?? true,
@@ -135,7 +109,6 @@ function ImBotDrawer(props: ImBotDrawerProps) {
       workspaceId: draft.workspaceId,
       model: draft.model.trim(),
       systemPrompt: draft.systemPrompt,
-      allowedTools: allowedToolsForExecPermission(draft.execPermission),
       accessPolicy,
       enabled: draft.enabled,
     };
@@ -284,20 +257,6 @@ function ImBotDrawer(props: ImBotDrawerProps) {
           </Box>
 
           <Divider />
-
-          <TextField
-            size="small"
-            fullWidth
-            select
-            label="执行权限"
-            value={draft.execPermission}
-            onChange={e => setField('execPermission', e.target.value)}
-            helperText={helpText('不可执行命令 = 工具白名单剔除 Bash（仅保留读取/编辑/搜索类工具）')}
-          >
-            {EXEC_PERMISSIONS.map(p => (
-              <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>
-            ))}
-          </TextField>
 
           <TextField
             size="small"

@@ -11,9 +11,9 @@ import (
 	"ocean-harness/server/internal/dal/enums"
 )
 
-// DefaultAllowedTools 默认工具白名单（--allowedTools）：开发类任务需要 Bash 执行力，
-// 安全周界是访问白名单 + 专属工作目录 + acceptEdits（headless 下 Bash 危险命令仍走 claude
-// 自身 permission 判定而非自动放行）。按 bot 可收紧（如纯问答 bot 删 Bash）。
+// DefaultAllowedTools headless 驱动恒用的工具白名单（--allowedTools）：开发类任务需要 Bash
+// 执行力，安全周界是访问白名单 + 专属工作目录 + acceptEdits（headless 下 Bash 危险命令仍走
+// claude 自身 permission 判定而非自动放行）。
 func DefaultAllowedTools() []string {
 	return []string{"Read", "Glob", "Grep", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "TodoWrite"}
 }
@@ -25,20 +25,6 @@ func ParseAccessPolicy(raw string) (AccessPolicy, error) {
 		return AccessPolicy{}, err
 	}
 	return p, nil
-}
-
-// ParseAllowedTools 解析 allowed_tools JSON 列；空/[] 视为采用默认白名单。
-func ParseAllowedTools(raw string) ([]string, error) {
-	var tools []string
-	if raw != "" {
-		if err := json.Unmarshal([]byte(raw), &tools); err != nil {
-			return nil, err
-		}
-	}
-	if len(tools) == 0 {
-		return DefaultAllowedTools(), nil
-	}
-	return tools, nil
 }
 
 // ChatType 聊天类型（决定会话粒度与白名单拒绝语义：direct 拒绝回提示、group 拒绝静默）。
@@ -113,7 +99,6 @@ type BotRuntimeConfig struct {
 	WorkspaceDir string
 	Model        string // claude --model；空 = CLI 默认
 	SystemPrompt string // 人设；组装见 prompt.go ComposeSystemPrompt
-	AllowedTools []string
 	AccessPolicy AccessPolicy
 	Port         int // sidecar HTTP 端口，driver 注入 claude 子进程 OCEAN_HARNESS_PORT
 }
@@ -125,7 +110,6 @@ type TurnRequest struct {
 	Prompt       string // prompt.go 组装后的最终 user prompt
 	Model        string
 	SystemPrompt string // ComposeSystemPrompt 产物
-	AllowedTools []string
 	Port         int
 }
 

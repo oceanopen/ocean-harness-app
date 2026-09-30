@@ -41,7 +41,6 @@ type ImBotCreateRequest struct {
 	WorkspaceId  int               `json:"workspaceId" binding:"required"` // 必选工作空间（会话目录取其 dir）
 	Model        string            `json:"model" binding:"omitempty"`
 	SystemPrompt string            `json:"systemPrompt" binding:"omitempty,max=8000"`
-	AllowedTools []string          `json:"allowedTools"`
 	AccessPolicy ImBotAccessPolicy `json:"accessPolicy" binding:"required"`
 	Enabled      bool              `json:"enabled"`
 }
@@ -55,7 +54,6 @@ type ImBotUpdateRequest struct {
 	WorkspaceId  int               `json:"workspaceId" binding:"required"`
 	Model        string            `json:"model" binding:"omitempty"`
 	SystemPrompt string            `json:"systemPrompt" binding:"omitempty,max=8000"`
-	AllowedTools []string          `json:"allowedTools"`
 	AccessPolicy ImBotAccessPolicy `json:"accessPolicy" binding:"required"`
 	Enabled      bool              `json:"enabled"`
 }
@@ -107,7 +105,6 @@ type ImBotResponseData struct {
 	WorkspaceName string            `json:"workspaceName"` // 关联工作空间名（service 合并装配）
 	Model         string            `json:"model"`
 	SystemPrompt  string            `json:"systemPrompt"`
-	AllowedTools  []string          `json:"allowedTools"`
 	AccessPolicy  ImBotAccessPolicy `json:"accessPolicy"`
 	Enabled       bool              `json:"enabled"`
 	// credential 明文 secret：桌面应用数据全本地，编辑抽屉直接回显（前端默认掩码 + 显式切换明文）。
@@ -132,14 +129,9 @@ func (ImBotResponseData) FromModel(r *model.ImBot) ImBotResponseData {
 		WorkspaceId:  r.WorkspaceID,
 		Model:        r.Model,
 		SystemPrompt: r.SystemPrompt,
-		AllowedTools: []string{},
 		Enabled:      r.Enabled.IsYes(),
 		CreatedAt:    r.CreatedAt,
 		UpdatedAt:    r.UpdatedAt,
-	}
-	_ = json.Unmarshal([]byte(r.AllowedTools), &out.AllowedTools) // 失败保留空数组
-	if out.AllowedTools == nil {
-		out.AllowedTools = []string{}
 	}
 	_ = json.Unmarshal([]byte(r.AccessPolicy), &out.AccessPolicy)
 	if r.Credential != "" {

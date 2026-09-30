@@ -16,7 +16,6 @@ export interface ImBotModel {
   workspaceName: string; // 关联工作空间名（展示用）
   model: string; // claude --model；空 = CLI 默认
   systemPrompt: string; // 人设（--append-system-prompt）
-  allowedTools: string[]; // --allowedTools；空数组 = 后端默认白名单
   accessPolicy: ImBotAccessPolicy;
   enabled: boolean;
   secret: string; // 明文（本地数据语义，编辑抽屉回显；前端默认掩码 + 显式切换明文）
@@ -35,7 +34,6 @@ export interface ImBotCreateRequest {
   workspaceId: number; // 必选工作空间（会话目录取其 dir）
   model?: string;
   systemPrompt?: string;
-  allowedTools?: string[];
   accessPolicy: ImBotAccessPolicy;
   enabled?: boolean;
 }
@@ -49,7 +47,6 @@ export interface ImBotUpdateRequest {
   workspaceId: number;
   model?: string;
   systemPrompt?: string;
-  allowedTools?: string[];
   accessPolicy: ImBotAccessPolicy;
   enabled?: boolean;
 }

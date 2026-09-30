@@ -4,13 +4,15 @@
 -- 枚举列 TEXT NOT NULL 无默认值（代码显式赋值）；索引命名 idx_/udx_{表名去t_}_{列名}。
 
 -- t_workspaces：工作空间（个人可建多个）；dir 为绝对路径，是 issue 任务目录与 bot 会话目录的根。
+-- launch_settings 为启动设置 JSON 文本（shape 见 dal/types/workspace.go），空串 = 未配置 → 消费端回落全局。
 CREATE TABLE t_workspaces (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    name          TEXT     NOT NULL,
-    dir           TEXT     NOT NULL,
-    description   TEXT     NOT NULL DEFAULT '',
-    created_at    DATETIME NOT NULL,
-    updated_at    DATETIME NOT NULL
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT     NOT NULL,
+    dir             TEXT     NOT NULL,
+    description     TEXT     NOT NULL DEFAULT '',
+    launch_settings TEXT     NOT NULL DEFAULT '',
+    created_at      DATETIME NOT NULL,
+    updated_at      DATETIME NOT NULL
 );
 
 -- t_workspace_projects：项目，所属 workspace；允许重名，靠 id 区分。
@@ -97,7 +99,7 @@ CREATE UNIQUE INDEX udx_issue_local_repositories_iid_lrid
     ON t_issue_local_repositories (issue_id, local_repository_id);
 
 -- t_im_bots：IM 数字人 bot 定义（渠道凭据 + claude 编排配置 + 启停）。
--- credential/access_policy/allowed_tools 为 JSON 文本，shape 见 dal/types/im_bot.go；
+-- credential/access_policy 为 JSON 文本，shape 见 dal/types/im_bot.go；
 -- workspace_id 关联 t_workspaces（0=未选择）；enabled='Y' 的 bot 随 sidecar 启动拉起。
 CREATE TABLE t_im_bots (
     id            INTEGER  PRIMARY KEY AUTOINCREMENT,
@@ -107,7 +109,6 @@ CREATE TABLE t_im_bots (
     workspace_id INTEGER  NOT NULL DEFAULT 0,
     model         TEXT     NOT NULL DEFAULT '',
     system_prompt TEXT     NOT NULL DEFAULT '',
-    allowed_tools TEXT     NOT NULL DEFAULT '[]',
     access_policy TEXT     NOT NULL,
     enabled       TEXT     NOT NULL,
     last_error    TEXT     NOT NULL DEFAULT '',

@@ -77,7 +77,6 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 		WorkspaceID:  req.WorkspaceId,
 		Model:        req.Model,
 		SystemPrompt: req.SystemPrompt,
-		AllowedTools: allowedToolsJSON(req.AllowedTools),
 		AccessPolicy: accessPolicyJSON(req.AccessPolicy),
 		Enabled:      enabledYesNo(req.Enabled),
 	}
@@ -115,7 +114,6 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	row.WorkspaceID = req.WorkspaceId
 	row.Model = req.Model
 	row.SystemPrompt = req.SystemPrompt
-	row.AllowedTools = allowedToolsJSON(req.AllowedTools)
 	row.AccessPolicy = accessPolicyJSON(req.AccessPolicy)
 	row.Enabled = enabledYesNo(req.Enabled)
 
@@ -125,7 +123,7 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	if _, err := q.ImBot.WithContext(svc.Context).Where(q.ImBot.ID.Eq(row.ID)).
 		Updates(map[string]any{
 			"name": row.Name, "credential": row.Credential, "workspace_id": row.WorkspaceID,
-			"model": row.Model, "system_prompt": row.SystemPrompt, "allowed_tools": row.AllowedTools,
+			"model": row.Model, "system_prompt": row.SystemPrompt,
 			"access_policy": row.AccessPolicy, "enabled": row.Enabled,
 		}); err != nil {
 		return nil, err
@@ -239,7 +237,6 @@ func ProvisionActivateBot(remoteBotID, secret string) (int, error) {
 		Channel:      enums.CHANNEL_WECOM,
 		Credential:   credentialJSON(remoteBotID, secret),
 		WorkspaceID:  0,
-		AllowedTools: "[]",
 		AccessPolicy: string(policy),
 		Enabled:      enums.YES_NO_YES,
 	}
@@ -358,15 +355,6 @@ func (svc ImBot) ensureBotIdAvailable(botId string, excludeID int) error {
 // credentialJSON 组装 credential JSON（shape SSOT：types.ImBotCredential）。
 func credentialJSON(botId, secret string) string {
 	b, _ := json.Marshal(types.ImBotCredential{BotId: botId, Secret: secret})
-	return string(b)
-}
-
-// allowedToolsJSON 工具白名单序列化（nil → "[]" = 采用代码默认白名单）。
-func allowedToolsJSON(tools []string) string {
-	if tools == nil {
-		tools = []string{}
-	}
-	b, _ := json.Marshal(tools)
 	return string(b)
 }
 

@@ -90,7 +90,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 ```
 阶段 0（T0.0–T0.3）：workspace 级 launch_settings
   t_workspaces 加 JSON 列 + Drawer 表单 + 消费链改造
-  语义升级：mode 枚举（terminal-manual / terminal-auto / acp）+ agentId
+  语义升级：mode 枚举（terminal-manual / terminal-auto / acp）+ agentCode
   ACP 权限：permissionMode（需要审批 / 自动，P6）
 
 阶段 1（T1.1–T1.7）：Go sidecar 通用 ACP client + issue 主窗口 ACP 模式
@@ -123,7 +123,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 | D3 | adapter 官方 npx 起步，Go 自研条件触发 | 协议追赶跑步机归官方；自研留触发条件（node 缺失率 / 离线 / 中间层痛点），届时 driver 积累可复用 |
 | D4 | 不随 app 打包 node；doctor 探测 + UI 引导 | 包体与构建矩阵代价不值；npm 装 claude 的用户机器必带 node |
 | D5 | 多 agent 中立，Claude 专属走能力协商 | 阶段 3 后 bot 天然 agent 中立，审批/选项卡交互层全复用 |
-| D6 | `launch_settings` 用 JSON 列而非多列 | mode + agentId + 后续 agent 配置持续扩展，避免反复迁移 |
+| D6 | `launch_settings` 用 JSON 列而非多列 | mode + agentCode + 后续 agent 配置持续扩展，避免反复迁移 |
 | D7 | issue↔session 绑定受控反转（原 `claude_session_ref` 链曾随 chat 视图删除） | ACP runtime 亲自持有会话后语义成立，实施定稿须明示（见 T1.5） |
 | D8 | Go ACP client 直接依赖 `github.com/BrokkAi/acp-go`（pin v0.11.0）+ sidecar 会话域薄适配层 | Apache-2.0 / 零传递依赖 / wire 类型由官方 JSON Schema 自动生成 / 有 tag 可钉 / 自带 runner 进程管理；自研收窄为 spawn、能力协商、入站回调适配三件事。风险隔离：会话域薄适配层 + 钉精确 tag + license 干净随时可 fork；Go 工具链随 T1.0 升 1.27 |
 
@@ -131,7 +131,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 | # | 问题 | 拍板结果 |
 |---|---|---|
-| P1 | ACP 模式粒度：per-issue 配置 vs 全局默认 + issue 可覆盖 | **per-issue**——workspace 级设默认，issue 按需自行调整（覆盖范围为整个 launch_settings：mode / agentId / permissionMode）；阶段 0 先落 workspace 层，issue 级覆盖为补充任务 T0.4 |
+| P1 | ACP 模式粒度：per-issue 配置 vs 全局默认 + issue 可覆盖 | **per-issue**——workspace 级设默认，issue 按需自行调整（覆盖范围为整个 launch_settings：mode / agentCode / permissionMode）；阶段 0 先落 workspace 层，issue 级覆盖为补充任务 T0.4 |
 | P2 | bot↔issue 映射：显式绑定 + IM 内切换（如 `#issue-42 帮我…`） vs 自动挂 workspace 当前活跃 issue | **显式绑定 + IM 内切换** |
 | P3 | 终端模式 ↔ ACP 模式跨模式会话接续（`--resume` 捞回）是否纳入一期 | **不入一期**——纯 ACP 会话先行，跨模式接续为后续增强 |
 | P4 | agent 范围：一期 catalog 只放 claude-acp vs 直接全量 | 一期 catalog 启用 **claude、codex、opencode、pi** 四个 agent；通用架构（单一 adapter + catalog）不变，doctor 探测与 agent 选择面随之扩大 |
@@ -173,12 +173,12 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 - 现状：「应用嵌入终端 - 启动设置」是全局 appConfig 单值 `terminal_startup_code_cli`（`'none' | 'claude'`，默认 `none`，存 `app.db` 的 `app_config` 表，`app/src/shared/app_config.rs:51`，SSOT 在 `packages/web/src/shared/appConfig.ts:71-79`）；消费端两处——`EmbeddedTerminal.tsx:86-117`（仅主 pane 直启，分屏 pane 恒裸 shell）与 `WorkspaceInitGate.tsx:94`（引导文案）；`t_workspaces` 仅 `name / dir / description` 三列，无配置承载。
 - **取值优先级**：`workspace.launch_settings`（新）→ 全局 `terminal_startup_code_cli`（过渡回落）→ 默认 `none`；终态再叠 issue 级覆盖（issue → workspace → 全局，P1 拍板，T0.4 补充）。
-- JSON 列而非多列 = D6（即将承载 mode + agentId + 后续 agent 级配置，避免反复迁移）：
+- JSON 列而非多列 = D6（即将承载 mode + agentCode + 后续 agent 级配置，避免反复迁移）：
 
 ```json
 {
   "mode": "terminal-manual | terminal-auto | acp",
-  "agentId": "claude-acp",
+  "agentCode": "claude-acp",
   "autoCommand": "claude",
   "permissionMode": "acceptEdits | bypassPermissions"
 }
@@ -186,11 +186,11 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 - `permissionMode`（P6）：仅 ACP 模式消费——经 `session/set_mode` 下发（T1.5），一期 UI 两档映射（需要审批=acceptEdits / 自动=bypassPermissions）；终端模式两档忽略该字段
 - 改表约定：直接编辑原迁移文件、不新建 goose 迁移、不考虑历史数据（本项目既有约定），改完跑 `pnpm server:gorm:gen`。
-- **本阶段是阶段 2 的前置**：bot 发起会话（T2.1/T2.3）将直接读同一份 workspace 级 launch_settings（含 `permissionMode`，桌面/bot 双入口共用权限语义，P6）；`agentId` 字段与阶段 1 catalog（T1.2）耦合，故与阶段 1 排在一起做。
+- **本阶段是阶段 2 的前置**：bot 发起会话（T2.1/T2.3）将直接读同一份 workspace 级 launch_settings（含 `permissionMode`，桌面/bot 双入口共用权限语义，P6）；`agentCode` 字段与阶段 1 catalog（T1.2）耦合，故与阶段 1 排在一起做。
 
 #### T0.1 `t_workspaces` 新增 launch_settings 列（数据链路）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：workspace 级启动配置的存储与后端读写链路
 
@@ -203,6 +203,13 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 **决策关联**：D6；P1（issue 级若再覆盖一层，影响读取优先级链的最终形态，拍板后修订）；P6（`permissionMode` 字段随 launch_settings 落库）
 
+**实施定稿**：
+- 列形态 `launch_settings TEXT NOT NULL DEFAULT ''`——空串（而非 NULL）= 未配置 → 消费端回落链（NOT NULL 列 + 空串哨兵，对齐 `sub_dir_list` 空串跳过解析范式）
+- 响应形态偏离方案原样：GetList/GetInfo/Create/Update 从「DO model 直出」改为 `WorkspaceResponseData` + `FromModel`（launch_settings 反序列化为结构，空串/损坏 → nil）——对齐 im_bot 域 JSON 列响应范式，避免 string 形态漏给前端
+- 请求侧 `LaunchSettings *WorkspaceLaunchSettings` 指针可空（nil = 未配置/清空），DTO 透传不校验取值域（mode/agentCode/permissionMode 枚举由前端表单约定）
+- `agentCode` 定型为枚举：Go 侧 `enums.AgentCode`（dal/enums/workspace.go，四常量；launch_settings JSON 内部枚举无独立写库路径故无 Valuer，值域校验经 DTO binding oneof）+ TS 字面量联合；T1.2 catalog 落地后取值域 SSOT 移交 catalog、oneof 同步放宽（保持「加 agent = 加条目零代码」）
+- 前端 `WorkspaceService.ts` 同步补 `WorkspaceLaunchSettings` 类型与字段（对象直传）；与 T2.0 同批实施，表变更一次完成
+
 #### T0.2 WorkspaceDrawer 启动设置表单
 
 **状态**：⬜
@@ -211,7 +218,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 **技术方案**：
 - `WorkspaceService.ts` 模型/请求字段补 `launchSettings`
-- `WorkspaceDrawer.tsx` 表单区块：mode 三选一（终端手动 / 终端自动 / ACP）+ ACP 模式下 agentId 选择（一期四选项 claude-acp / codex / opencode / pi，P4 拍板；catalog 未就绪前先以常量占位，T1.2 落地后切换数据源）+ ACP 模式下执行模式两选一（需要审批=acceptEdits / 自动=bypassPermissions，写 `permissionMode`，P6 拍板）
+- `WorkspaceDrawer.tsx` 表单区块：mode 三选一（终端手动 / 终端自动 / ACP）+ ACP 模式下 agentCode 选择（一期四选项 claude-acp / codex / opencode / pi，P4 拍板；catalog 未就绪前先以常量占位，T1.2 落地后切换数据源）+ ACP 模式下执行模式两选一（需要审批=acceptEdits / 自动=bypassPermissions，写 `permissionMode`，P6 拍板）
 - 空值 = 跟随全局回落（不强制填写），存量用户行为不突变
 
 **依赖**：T0.1
@@ -235,7 +242,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 **状态**：⬜
 
-**功能**：issue 可按需覆盖 workspace 级启动设置（P1 / P6 拍板终态：整个 launch_settings——mode / agentId / permissionMode——均可 issue 级调整）
+**功能**：issue 可按需覆盖 workspace 级启动设置（P1 / P6 拍板终态：整个 launch_settings——mode / agentCode / permissionMode——均可 issue 级调整）
 
 **技术方案**：
 - `t_issues` 加 `launch_settings` JSON 列（同构 workspace，D6），改表走既有约定（编辑原迁移 + `pnpm server:gorm:gen`）
@@ -372,7 +379,7 @@ issue 主窗口
 **技术方案**：
 - 会话域：ACP session 的创建/复用/回收；issue → ACP session 绑定关系落库
 - 事件流经 sidecar HTTP/SSE 推 panel（`session/update` / `request_permission` / `elicitation` 事件）
-- 消费 workspace `launch_settings.agentId`（T0.1 链路）决定拉起哪个 agent
+- 消费 workspace `launch_settings.agentCode`（T0.1 链路）决定拉起哪个 agent
 - 权限模式（P6）：会话创建后按 launch_settings `permissionMode`（workspace 设默认、issue 可按需修改，T0.4）经 `session/set_mode` 下发，值对 agent 上报的 mode 目录校验（防硬编码失效）；一期两档「需要审批」（acceptEdits）/「自动」（bypassPermissions）
 - 并发基线：单会话内回合串行（跨入口回合锁在 T2.2 升级）
 - **D7 受控反转**：issue↔session 绑定是对当初随 chat 视图删除 `claude_session_ref` 决策的受控反转（`app/src/pty/claude_state.rs` 注释），不是回退——实施定稿须明示此点
@@ -429,7 +436,7 @@ issue 主窗口 ─────┘
 
 #### T2.0 bot 执行权限配置项清理
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：按 P6 彻底废弃 bot 级「执行权限」配置——allowedTools 全链路移除，headless 驱动恒用默认白名单
 
@@ -442,6 +449,8 @@ issue 主窗口 ─────┘
 **依赖**：无（独立可交付，可提前于阶段 2 其余任务实施）
 
 **决策关联**：P6
+
+**实施定稿**：与 T0.1 同批实施（表变更一次完成：t_workspaces 加列 + t_im_bots 删列同一次迁移编辑 + gorm:gen 重生成）。`--allowedTools` argv 从条件拼装改为恒拼 `DefaultAllowedTools()`（白名单不可再按 bot 收紧）；`gen_model_im_bot.go` 的 JSON 列约定注释同步去掉 allowed_tools。dev 库按改表约定删除重建（goose 不重放已应用迁移）。
 
 #### T2.1 bot ACP driver
 
