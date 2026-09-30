@@ -1,15 +1,16 @@
 # ACP 统一会话与 IM 无缝交互——方案定稿与任务清单
 
-> 状态：方案定稿（技术决策 D1–D8 已定；P1–P6 已于 2026-09-30 **T0.0 拍板**，结果见 §4）
+> 状态：方案定稿（技术决策 D1–D8 已定；P1–P6 已经 **T0.0 拍板**，结果见 §4）
 > 范围：issue 执行模式扩展（ACP 第三模式）、workspace 级启动配置、bot 复用 ACP 会话、企微模板卡片交互
 > 参考：`~/MyFiles/Project/Gold-Band`（ACP runtime + IM 远程干预的已验证实现）
 >
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
 >
 > **状态回写规则（内置，无需人工提醒）**：任务实现完成后，执行方（开发 Agent）在总结阶段
-> 直接把对应任务状态改为 ✅ 并补「实施定稿」段落（记录方案变更/偏离）——回写状态
-> 但不主动 git commit，提交动作必须经用户明确确认。实施中若需偏离方案，先修订本文对应
-> 设计段落再动代码。
+> 直接把对应任务状态改为 ✅ 并补「实施定稿」段落（只记实施终态与相对方案的偏离，作为
+> 当前事实；不写日期、不写「何时补充/修订了什么」的演变叙述——变更历史归 git）——回写
+> 状态但不主动 git commit，提交动作必须经用户明确确认。实施中若需偏离方案，先修订本文
+> 对应设计段落再动代码。
 
 ---
 
@@ -69,7 +70,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 | 免审批手段 | 无 | `autoAccept`（client 代点第一个 allow 选项）+ `permissionMode=bypassPermissions`（agent 免问） |
 | 权限模式 | argv 硬编码 acceptEdits | settings `permissions.defaultMode` 兜底 + 会话级 `session/set_mode`（值须对 agent 上报 mode 目录校验） |
 
-**照搬「剔除白名单」会漏水**（被剔除的工具反而弹成审批卡、用户一点即放行），故 P6 拍板（T0.0）：ACP 模式下废弃 bot 级白名单语义，权限表达上移 ACP 原生 mode（`launch_settings.permissionMode`，workspace 设默认、issue 可按需修改）。行为变化提示：现状 headless bot 实际零弹窗（9 工具全在白名单 + acceptEdits），ACP 化「需要审批」档后 Bash 等非编辑操作会弹审批卡——这正是 ACP 模式的核心价值（IM 审批）；要现状式无打扰选「自动」档，或靠 allow_always（「允许并记住」）逐步收敛弹窗频率。
+**照搬「剔除白名单」会漏水**（被剔除的工具反而弹成审批卡、用户一点即放行），故 P6 拍板（T0.0）：废弃 bot 级白名单语义——**含终端模式 headless 路径**，「执行权限」配置项与 allowedTools 全链路移除（清理任务 T2.0），权限表达上移 ACP 原生 mode（`launch_settings.permissionMode`，workspace 设默认、issue 可按需修改）。行为变化提示：现状 headless bot 实际零弹窗（9 工具全在白名单 + acceptEdits），ACP 化「需要审批」档后 Bash 等非编辑操作会弹审批卡——这正是 ACP 模式的核心价值（IM 审批）；要现状式无打扰选「自动」档，或靠 allow_always（「允许并记住」）逐步收敛弹窗频率；清理后 readonly bot 恒用默认白名单（Bash 恒在）。
 
 **Gold-Band 借鉴**（行为语义参照，AGPL 禁代码移植）：
 
@@ -99,7 +100,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
   ├─ issue 主窗口 ACP 视图（底部任务描述入口，回车触发 session/prompt）
   └─ 事件流经 sidecar HTTP/SSE 到 panel
 
-阶段 2（T2.1–T2.4）：bot 复用 ACP 会话
+阶段 2（T2.0–T2.4）：bot 复用 ACP 会话
   ├─ bot 会话锚定 issue 的 ACP session（per-session 跨入口回合锁）
   ├─ bot↔issue 显式绑定 / IM 内切换
   └─ 企微/桌面双入口审批收敛（first-writer-wins）
@@ -128,14 +129,14 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 ## 4. 决策点（P1–P6，已于 T0.0 拍板）
 
-| # | 问题 | 拍板结果（2026-09-30） |
+| # | 问题 | 拍板结果 |
 |---|---|---|
-| P1 | ACP 模式粒度：per-issue 配置 vs 全局默认 + issue 可覆盖 | 与倾向一致：**per-issue**——workspace 级设默认，issue 按需自行调整（覆盖范围为整个 launch_settings：mode / agentId / permissionMode）；阶段 0 先落 workspace 层，issue 级覆盖为补充任务 T0.4 |
-| P2 | bot↔issue 映射：显式绑定 + IM 内切换（如 `#issue-42 帮我…`） vs 自动挂 workspace 当前活跃 issue | 与倾向一致：**显式绑定 + IM 内切换** |
-| P3 | 终端模式 ↔ ACP 模式跨模式会话接续（`--resume` 捞回）是否纳入一期 | 与倾向一致：**不入一期**，纯 ACP 会话先行，跨模式接续为后续增强 |
-| P4 | agent 范围：一期 catalog 只放 claude-acp vs 直接全量 | **偏离倾向**：一期 catalog 启用 **claude、codex、opencode、pi** 四个 agent（原倾向只放 claude-acp）；通用架构（单一 adapter + catalog）不变，doctor 探测与 agent 选择面随之扩大 |
-| P5 | claude 二进制哲学：adapter 包自带 CLI vs 沿用本机探测链 | 与倾向一致：**本机 `resolveClaudeBin` 注入 `CLAUDE_CODE_EXECUTABLE` + adapter vendored 安装（T1.3 既定）**。拍板过程勘误：原「adapter 包自带 CLI（Gold-Band 默认）」表述不准——Gold-Band 实为**零分发**（app 不带 node/adapter/claude 任何二进制，catalog 编译进二进制，运行时 `npx -y` 现场拉起，SDK 平台包自带 claude 由 npm 在用户机按平台解析、use_local_claude 默认关） |
-| P6 | ACP 模式权限表达：bot 级「执行权限」开关（allowedTools 白名单）是否废弃，改用 ACP 原生权限模式 | 定稿：**废弃**——权限上移 `launch_settings.permissionMode`（一期 UI 两档：需要审批=acceptEdits / 自动=bypassPermissions，经 `session/set_mode` 下发 + agent mode 目录校验），桌面与 bot 共用；bot 级开关仅在终端模式 workspace（headless 驱动）下继续生效；细化：permissionMode 同样 workspace 设默认、issue 可按需修改（与 P1 同形态，调研依据见 §1.4） |
+| P1 | ACP 模式粒度：per-issue 配置 vs 全局默认 + issue 可覆盖 | **per-issue**——workspace 级设默认，issue 按需自行调整（覆盖范围为整个 launch_settings：mode / agentId / permissionMode）；阶段 0 先落 workspace 层，issue 级覆盖为补充任务 T0.4 |
+| P2 | bot↔issue 映射：显式绑定 + IM 内切换（如 `#issue-42 帮我…`） vs 自动挂 workspace 当前活跃 issue | **显式绑定 + IM 内切换** |
+| P3 | 终端模式 ↔ ACP 模式跨模式会话接续（`--resume` 捞回）是否纳入一期 | **不入一期**——纯 ACP 会话先行，跨模式接续为后续增强 |
+| P4 | agent 范围：一期 catalog 只放 claude-acp vs 直接全量 | 一期 catalog 启用 **claude、codex、opencode、pi** 四个 agent；通用架构（单一 adapter + catalog）不变，doctor 探测与 agent 选择面随之扩大 |
+| P5 | claude 二进制哲学：adapter 包自带 CLI vs 沿用本机探测链 | **本机 `resolveClaudeBin` 注入 `CLAUDE_CODE_EXECUTABLE` + adapter vendored 安装（T1.3）**。Gold-Band 为零分发路线（app 不带 node/adapter/claude 任何二进制，catalog 编译进二进制，运行时 `npx -y` 现场拉起，SDK 平台包自带 claude 由 npm 在用户机按平台解析、use_local_claude 默认关）——本项目不采用 |
+| P6 | ACP 模式权限表达：bot 级「执行权限」开关（allowedTools 白名单）是否废弃，改用 ACP 原生权限模式 | **彻底废弃**（含终端模式 headless 路径）——权限上移 `launch_settings.permissionMode`（一期 UI 两档：需要审批=acceptEdits / 自动=bypassPermissions，经 `session/set_mode` 下发 + agent mode 目录校验），桌面与 bot 共用；permissionMode 同样 workspace 设默认、issue 可按需修改（与 P1 同形态）；「执行权限」配置项连同 allowedTools 全链路移除（清理任务 T2.0），headless 驱动恒用默认白名单（调研依据见 §1.4） |
 
 ## 5. 风险与开放问题
 
@@ -162,7 +163,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 **依赖**：无（一切开发任务的前置；阶段 0/1 中不依赖拍板结果的部分可先行）
 
-**实施定稿（2026-09-30）**：P1–P6 逐项拍板完成。P2 / P3 / P5 与倾向一致；P1 确认 per-issue 终态（读取优先级链 issue → workspace → 全局回落，issue 级覆盖落为新增任务 T0.4，permissionMode 一并 issue 可调）；P4 偏离倾向——一期 catalog 启用 claude / codex / opencode / pi 四 agent，spawn 策略表与 T0.2 / T1.2 / T1.3 / T1.4 已同步修订；P5 拍板过程修正原表述（Gold-Band 实为零分发 + 运行时 npx，非「CLI 随 app 分发」，勘误记入 §4），拍板结果仍为本机 claude + vendored adapter。本任务为纯决策任务，无代码交付物。
+**实施定稿**：P1–P6 拍板结果即 §4 表；受影响任务已按结果就地修订（P1 → 新增 T0.4；P4 → spawn 策略表 / T0.2 / T1.2 / T1.3 / T1.4；P6 → 阶段 0 permissionMode / T2.0 / T2.1）。纯决策任务，无代码交付物。
 
 ---
 
@@ -326,7 +327,7 @@ issue 主窗口
 **技术方案**：
 - 结构照 Gold-Band：官方 ACP registry 的离线 pin 快照 + 刷新脚本，运行时不在线拉取；落在 sidecar 内嵌资源
 - 每条目声明 spawn 策略与启动参数（`npx-adapter` / `native-acp`；`in-process-go` 仅预留枚举）
-- 一期启用 claude / codex / opencode / pi 四条目（P4 拍板，偏离原倾向「只放 claude-acp」），catalog/doctor 的 UI 面板仍砍到最小；native 三家的具体启动命令以 registry 快照为准，不在本文硬编码
+- 一期启用 claude / codex / opencode / pi 四条目（P4 拍板），catalog/doctor 的 UI 面板仍砍到最小；native 三家的具体启动命令以 registry 快照为准，不在本文硬编码
 - adapter 版本 pin 进 catalog（参考 0.8x 线），升级走刷新脚本统一升 + 验证流程定稿（风险 §5.2）
 
 **依赖**：无
@@ -426,6 +427,22 @@ issue 主窗口 ─────┘
 - bot↔issue 映射现状：`single:<userid>` / `group:<chatid>` 会话键绑 workspace（`server/internal/bot/wecom/inbound.go:33-46`）。
 - 双入口审批收敛：first-writer-wins + CAS，后点方收到「已在另一端处理」（照 Gold-Band `inbound.rs:239-261` 幂等收敛）。
 
+#### T2.0 bot 执行权限配置项清理
+
+**状态**：⬜
+
+**功能**：按 P6 彻底废弃 bot 级「执行权限」配置——allowedTools 全链路移除，headless 驱动恒用默认白名单
+
+**技术方案**：
+- 前端：`ImBotDrawer.tsx` 删「执行权限」下拉及 `EXEC_PERMISSIONS` / `TOOLS_WITHOUT_BASH` / 双向转译函数；`ImBotService.ts` 请求模型删 `allowedTools` 字段
+- 改表：`t_im_bots.allowed_tools` 列移除（直接编辑原迁移文件 + `pnpm server:gorm:gen`，既有改表约定）
+- server：`types.go` 删 `ParseAllowedTools` / `BotRuntimeConfig.AllowedTools` / `TurnRequest.AllowedTools`（`DefaultAllowedTools` 保留为 headless 恒用白名单）；supervisor 装配、service/DTO、orchestrator 的 TurnRequest 组装、`driver_claude.go` 的 `--allowedTools` argv 拼装同步清理
+- 行为变化：现有 readonly bot 恢复 Bash（默认白名单），「访问模式」准入层不受影响
+
+**依赖**：无（独立可交付，可提前于阶段 2 其余任务实施）
+
+**决策关联**：P6
+
 #### T2.1 bot ACP driver
 
 **状态**：⬜
@@ -436,7 +453,7 @@ issue 主窗口 ─────┘
 - 实现 `server/internal/bot/driver.go` 接口，经 T1.5 会话域取 ACP session
 - 渠道无关核心（orchestrator、回复合成）零改动
 - headless spawn 路径（`driver_claude.go`）保留：workspace 未配 ACP 模式时 bot 走现状，两驱动并存
-- 权限面分叉（P6）：ACP driver 不消费 bot 级 `allowed_tools`——ACP 会话权限由 workspace `permissionMode` 统一表达（T1.5 下发）；headless 驱动继续消费 bot 级白名单。ImBotDrawer「执行权限」项在 workspace 为 ACP 模式时弱化并提示「由工作空间启动设置决定」（避免配置了不生效的假开关）
+- 权限面（P6）：ACP driver 不消费 bot 级 `allowed_tools`——ACP 会话权限由 launch_settings `permissionMode` 统一表达（T1.5 下发）；bot 级「执行权限」配置项彻底废弃（含终端模式），headless 驱动恒用默认白名单，全链路清理见 T2.0
 
 **依赖**：T1.5
 
