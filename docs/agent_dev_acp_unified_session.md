@@ -172,19 +172,20 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 **设计要点**：
 
 - 现状：「应用嵌入终端 - 启动设置」是全局 appConfig 单值 `terminal_startup_code_cli`（`'none' | 'claude'`，默认 `none`，存 `app.db` 的 `app_config` 表，`app/src/shared/app_config.rs:51`，SSOT 在 `packages/web/src/shared/appConfig.ts:71-79`）；消费端两处——`EmbeddedTerminal.tsx:86-117`（仅主 pane 直启，分屏 pane 恒裸 shell）与 `WorkspaceInitGate.tsx:94`（引导文案）；`t_workspaces` 仅 `name / dir / description` 三列，无配置承载。
-- **取值优先级**：`workspace.launch_settings`（新）→ 全局 `terminal_startup_code_cli`（过渡回落）→ 默认 `none`；终态再叠 issue 级覆盖（issue → workspace → 全局，P1 拍板，T0.4 补充）。
+- **取值语义**：workspace 启动设置单源，无全局回落——全局 `terminal_startup_code_cli` key 已删除（设置页「启动设置」分区同步移除）；mode 未配置 / `terminal-manual` / `acp` 终端侧均不自动启动，`terminal-auto` = 主 pane 直接 spawn claude；issue 级覆盖（T0.4）叠加时未覆盖键回落 workspace。
 - JSON 列而非多列 = D6（即将承载 mode + agentCode + 后续 agent 级配置，避免反复迁移）：
 
 ```json
 {
-  "mode": "terminal-manual | terminal-auto | acp",
+  "mode": "none | terminal-manual | terminal-auto | acp",
   "agentCode": "claude-acp",
   "autoCommand": "claude",
   "permissionMode": "acceptEdits | bypassPermissions"
 }
 ```
 
-- `permissionMode`（P6）：仅 ACP 模式消费——经 `session/set_mode` 下发（T1.5），一期 UI 两档映射（需要审批=acceptEdits / 自动=bypassPermissions）；终端模式两档忽略该字段
+- 启动模式四档语义（T0.3 定稿）：`none`（默认——issue 就绪后**不进入任何会话**，出「选择启动方式」面板，用户临场三选一再启动；选择仅本次有效，不回写配置不记忆）/ `terminal-manual`（**自动打开终端**：直接进入裸 shell，不自动拉起 Agent，经终端工具条自行选择）/ `terminal-auto`（选中 issue 打开主终端时直接 spawn 所选 Agent）/ `acp`（issue 主窗口 ACP 会话）。`autoCommand` 仅 terminal-auto 档消费（一期 claude，新 CLI 直启在此扩展）；ACP Agent = `agentCode`（catalog 条目）
+- `permissionMode`（P6）：仅 ACP 模式消费——经 `session/set_mode` 下发（T1.5），一期 UI 两档映射（需要审批=acceptEdits / 自动=bypassPermissions）；终端模式忽略该字段
 - 改表约定：直接编辑原迁移文件、不新建 goose 迁移、不考虑历史数据（本项目既有约定），改完跑 `pnpm server:gorm:gen`。
 - **本阶段是阶段 2 的前置**：bot 发起会话（T2.1/T2.3）将直接读同一份 workspace 级 launch_settings（含 `permissionMode`，桌面/bot 双入口共用权限语义，P6）；`agentCode` 字段与阶段 1 catalog（T1.2）耦合，故与阶段 1 排在一起做。
 
@@ -204,7 +205,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 **决策关联**：D6；P1（issue 级若再覆盖一层，影响读取优先级链的最终形态，拍板后修订）；P6（`permissionMode` 字段随 launch_settings 落库）
 
 **实施定稿**：
-- 列形态 `launch_settings TEXT NOT NULL DEFAULT ''`——空串（而非 NULL）= 未配置 → 消费端回落链（NOT NULL 列 + 空串哨兵，对齐 `sub_dir_list` 空串跳过解析范式）
+- 列形态 `launch_settings TEXT NOT NULL DEFAULT ''`——空串（而非 NULL）= 未配置 → 消费端按未配置处理（NOT NULL 列 + 空串哨兵，对齐 `sub_dir_list` 空串跳过解析范式）
 - 响应形态偏离方案原样：GetList/GetInfo/Create/Update 从「DO model 直出」改为 `WorkspaceResponseData` + `FromModel`（launch_settings 反序列化为结构，空串/损坏 → nil）——对齐 im_bot 域 JSON 列响应范式，避免 string 形态漏给前端
 - 请求侧 `LaunchSettings *WorkspaceLaunchSettings` 指针可空（nil = 未配置/清空），DTO 透传不校验取值域（mode/agentCode/permissionMode 枚举由前端表单约定）
 - `agentCode` 定型为枚举：Go 侧 `enums.AgentCode`（dal/enums/workspace.go，四常量；launch_settings JSON 内部枚举无独立写库路径故无 Valuer，值域校验经 DTO binding oneof）+ TS 字面量联合；T1.2 catalog 落地后取值域 SSOT 移交 catalog、oneof 同步放宽（保持「加 agent = 加条目零代码」）
@@ -223,22 +224,24 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 **依赖**：T0.1
 
-**实施定稿**：启动模式下拉首项「跟随全局」即空值位（`value=''`，提交时不传 launchSettings，后端落空串）；MUI 对空串选项需显式双配置——`select.displayEmpty`（空值是有效选项，选中项文本正常渲染）+ `inputLabel.shrink`（InputBase 的 filled 判定不含空串，label 显式常驻收缩，否则与内容重影）；ACP 会话展开 Agent（默认 claude-acp）与执行模式（默认需要审批=acceptEdits）两下拉，切回终端模式不丢草稿；autoCommand 一期不出输入框（固定 claude，消费端以 mode 判断）；新增文案中文直出不加 i18n key（对齐 ImBotDrawer 约定，i18n 维持既有页面维度）；`services/index.ts` barrel 补导出 `WorkspaceLaunchSettings`
+**实施定稿**：启动模式下拉首项「不自动启动」即空值位（`value=''`，提交时不传 launchSettings，后端落空串；空值语义 = 未配置，行为同手动）；MUI 对空串选项需显式双配置——`select.displayEmpty`（空值是有效选项，选中项文本正常渲染）+ `inputLabel.shrink`（InputBase 的 filled 判定不含空串，label 显式常驻收缩，否则与内容重影）；ACP 会话展开 Agent（默认 claude-acp）与执行模式（默认需要审批=acceptEdits）两下拉，切回终端模式不丢草稿；autoCommand 一期不出输入框（固定 claude，消费端以 mode 判断）；新增文案中文直出不加 i18n key（对齐 ImBotDrawer 约定，i18n 维持既有页面维度）；`services/index.ts` barrel 补导出 `WorkspaceLaunchSettings`
 
 #### T0.3 消费端接入 workspace 级值
 
-**状态**：⬜
+**状态**：✅
 
-**功能**：终端启动行为改由 workspace 级配置驱动，全局 key 降级为回落值
+**功能**：终端启动行为改由 workspace 级配置单源驱动（无全局回落）
 
 **技术方案**：
-- 取值优先级落地：`launch_settings.mode`（`terminal-manual` ≈ 现 `none`、`terminal-auto` ≈ 现 `claude`）→ 全局 `terminal_startup_code_cli` → 不启动
-- `EmbeddedTerminal.tsx`（现 86–117 行全局 key hook）改为接收父层解析好的终值——**保住「就绪闸门 → fit 实测 → 以实测尺寸 spawn」时序不破**，workspace 值未就绪时闸门不放行（编码规则 1）
-- `WorkspaceInitGate.tsx`（现 94 行）引导文案同步改
+- 终端直启值由 workspace 启动设置单源派生：`terminal-auto` = 主 pane 直接 spawn claude，手动 / acp / 未配置 = 不自动启动
+- `EmbeddedTerminal.tsx` 删全局 key hook，改接收父层（DevWorkbenchPage）解析下传的 `startupCli`——**保住「就绪闸门 → fit 实测 → 以实测尺寸 spawn」时序不破**，解析中经 enabled 闸门哑会话等待（编码规则 1）
+- `WorkspaceInitGate.tsx` 删内部 hook 改 prop，步骤③文案按直启值区分
 - `acp` 模式本阶段无消费端（T1.6 落地），选中时终端侧按「不自动启动」处理
 - 分屏 pane 行为维持现状（仅主 pane 受启动设置影响）
 
 **依赖**：T0.1、T0.2
+
+**实施定稿**：用户拍板取消回落链——全局 `terminal_startup_code_cli` key（appConfig 类型/常量/parse、设置页「启动设置」分区、i18n 死键）全删，workspace 单源。启动模式四档（语义见阶段 0 设计要点），none 档经新增 `LaunchModePicker.tsx` 的 `TerminalLaunchFlow` 分流容器实现延迟决策（key 随 issue 挂载，临场选择态随 key 重置）。派生：DevWorkbenchPage 模块级 `terminalStartupCli(mode, autoCommand)` 纯函数（仅 auto → autoCommand ?? 'claude'，其余 null）；`startupCli: string | null` 照 `workspaceDir` null 语义范式透传——null = 明确不直启（正常渲染裸 shell），「启动配置解析中」的等待在父层消化（workspacesPending 时 TerminalLaunchFlow 不挂载、空占位），EmbeddedTerminal 挂载即终值、`enabled: configReady`（directCommand 参与 attachKey 无中途变化路径）；度量配置闸门 keys 缩为字号/行高两项。WorkspaceInitGate 仅文案消费 + 过渡浮层开关 `terminalTransitionEnabled`（children 为终端才播，none 档面板不叠浮层）；EmbeddedTerminal connecting 态叠「正在启动终端中…」蒙层（TerminalView 保持挂载跑 fit，纯视觉 pointer-events none）
 
 #### T0.4 issue 级 launch_settings 覆盖
 

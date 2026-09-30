@@ -1,5 +1,5 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { Iterm2SplitDirection, TerminalCursorStyle, TerminalFontSize, TerminalLineHeight, TerminalScrollbackRows, TerminalStartupCodeCli } from '@src/shared/appConfig';
+import type { Iterm2SplitDirection, TerminalCursorStyle, TerminalFontSize, TerminalLineHeight, TerminalScrollbackRows } from '@src/shared/appConfig';
 import type { YesNo } from '@src/shared/bindings';
 import type { TerminalThemeId } from '@src/windows/panel/DevWorkbenchPage/components/EmbeddedTerminal/terminalTheme';
 import CallSplitOutlinedIcon from '@mui/icons-material/CallSplitOutlined';
@@ -31,7 +31,6 @@ import {
   DEFAULT_TERMINAL_LINE_HEIGHT,
   DEFAULT_TERMINAL_POST_OPEN_COMMAND,
   DEFAULT_TERMINAL_SCROLLBACK_ROWS,
-  DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   getAppConfig,
   ITERM2_SPLIT_DIRECTION_KEY,
   MAX_POLL_INTERVAL_SECS,
@@ -40,7 +39,6 @@ import {
   parseTerminalFontSize,
   parseTerminalLineHeight,
   parseTerminalScrollbackRows,
-  parseTerminalStartupCodeCli,
   parseYesNo,
   POLL_INTERVAL_SECS_KEY,
   setAppConfig,
@@ -54,11 +52,10 @@ import {
   TERMINAL_POST_OPEN_COMMAND_KEY,
   TERMINAL_SCROLLBACK_ROWS_KEY,
   TERMINAL_SCROLLBACK_ROWS_OPTIONS,
-  TERMINAL_STARTUP_CODE_CLI_KEY,
   TERMINAL_THEME_KEY,
   YES_NO,
 } from '@src/shared/appConfig';
-import { iterm2SplitDirectionOptions, terminalStartupCodeCliOptions } from '@src/shared/settingOption';
+import { iterm2SplitDirectionOptions } from '@src/shared/settingOption';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId, TERMINAL_THEME_IDS } from '@src/windows/panel/DevWorkbenchPage/components/EmbeddedTerminal/terminalTheme';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -104,7 +101,8 @@ function themeDisplayName(id: TerminalThemeId, t: (key: string) => string): stri
 }
 
 // 终端配置（合并页）：编程工具终端监听（原 MonitorConfigPage 三行）+ 应用嵌入终端
-// （启动自动运行 CLI / 字体大小）。draft/saved/dirty 页级一套，五配置共管。
+// （外观与度量）。draft/saved/dirty 页级一套，多配置共管。终端启动行为不在全局配置——
+// 由各工作空间的启动设置（launch_settings）驱动。
 function TerminalConfigPage() {
   const { t } = useTranslation();
 
@@ -114,8 +112,6 @@ function TerminalConfigPage() {
   const [draftSplitDirection, setDraftSplitDirection] = useState<Iterm2SplitDirection>(DEFAULT_ITERM2_SPLIT_DIRECTION);
   const [savedTerminalPostOpenCommand, setSavedTerminalPostOpenCommand] = useState<string>(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
   const [draftTerminalPostOpenCommand, setDraftTerminalPostOpenCommand] = useState<string>(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
-  const [savedStartupCli, setSavedStartupCli] = useState<TerminalStartupCodeCli>(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
-  const [draftStartupCli, setDraftStartupCli] = useState<TerminalStartupCodeCli>(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
   const [savedFontSize, setSavedFontSize] = useState<TerminalFontSize>(DEFAULT_TERMINAL_FONT_SIZE);
   const [draftFontSize, setDraftFontSize] = useState<TerminalFontSize>(DEFAULT_TERMINAL_FONT_SIZE);
   const [savedScrollbackRows, setSavedScrollbackRows] = useState<TerminalScrollbackRows>(DEFAULT_TERMINAL_SCROLLBACK_ROWS);
@@ -134,14 +130,13 @@ function TerminalConfigPage() {
       getAppConfig(POLL_INTERVAL_SECS_KEY),
       getAppConfig(ITERM2_SPLIT_DIRECTION_KEY),
       getAppConfig(TERMINAL_POST_OPEN_COMMAND_KEY),
-      getAppConfig(TERMINAL_STARTUP_CODE_CLI_KEY),
       getAppConfig(TERMINAL_FONT_SIZE_KEY),
       getAppConfig(TERMINAL_SCROLLBACK_ROWS_KEY),
       getAppConfig(TERMINAL_THEME_KEY),
       getAppConfig(TERMINAL_CURSOR_STYLE_KEY),
       getAppConfig(TERMINAL_CURSOR_BLINK_KEY),
       getAppConfig(TERMINAL_LINE_HEIGHT_KEY),
-    ]).then(([interval, splitDirection, terminalPostOpenCommand, startupCli, fontSize, scrollbackRows, themeId, cursorStyle, cursorBlink, lineHeight]) => {
+    ]).then(([interval, splitDirection, terminalPostOpenCommand, fontSize, scrollbackRows, themeId, cursorStyle, cursorBlink, lineHeight]) => {
       const parsed = interval != null ? Number.parseInt(interval, 10) : Number.NaN;
       if (Number.isFinite(parsed)) {
         // DB 可能存越界或非 step 倍数（直接改 DB / 旧脏数据），clamp 到合法范围。
@@ -157,9 +152,6 @@ function TerminalConfigPage() {
         setSavedTerminalPostOpenCommand(terminalPostOpenCommand);
         setDraftTerminalPostOpenCommand(terminalPostOpenCommand);
       }
-      const cli = parseTerminalStartupCodeCli(startupCli);
-      setSavedStartupCli(cli);
-      setDraftStartupCli(cli);
       const size = parseTerminalFontSize(fontSize);
       setSavedFontSize(size);
       setDraftFontSize(size);
@@ -184,7 +176,6 @@ function TerminalConfigPage() {
   const dirty = draftInterval !== savedInterval
     || draftSplitDirection !== savedSplitDirection
     || draftTerminalPostOpenCommand !== savedTerminalPostOpenCommand
-    || draftStartupCli !== savedStartupCli
     || draftFontSize !== savedFontSize
     || draftScrollbackRows !== savedScrollbackRows
     || draftThemeId !== savedThemeId
@@ -196,7 +187,6 @@ function TerminalConfigPage() {
     setDraftInterval(DEFAULT_POLL_INTERVAL_SECS);
     setDraftSplitDirection(DEFAULT_ITERM2_SPLIT_DIRECTION);
     setDraftTerminalPostOpenCommand(DEFAULT_TERMINAL_POST_OPEN_COMMAND);
-    setDraftStartupCli(DEFAULT_TERMINAL_STARTUP_CODE_CLI);
     setDraftFontSize(DEFAULT_TERMINAL_FONT_SIZE);
     setDraftScrollbackRows(DEFAULT_TERMINAL_SCROLLBACK_ROWS);
     setDraftThemeId(DEFAULT_TERMINAL_THEME_ID);
@@ -208,7 +198,6 @@ function TerminalConfigPage() {
     setDraftInterval(savedInterval);
     setDraftSplitDirection(savedSplitDirection);
     setDraftTerminalPostOpenCommand(savedTerminalPostOpenCommand);
-    setDraftStartupCli(savedStartupCli);
     setDraftFontSize(savedFontSize);
     setDraftScrollbackRows(savedScrollbackRows);
     setDraftThemeId(savedThemeId);
@@ -221,7 +210,6 @@ function TerminalConfigPage() {
       setAppConfig(POLL_INTERVAL_SECS_KEY, String(draftInterval)),
       setAppConfig(ITERM2_SPLIT_DIRECTION_KEY, draftSplitDirection),
       setAppConfig(TERMINAL_POST_OPEN_COMMAND_KEY, draftTerminalPostOpenCommand),
-      setAppConfig(TERMINAL_STARTUP_CODE_CLI_KEY, draftStartupCli),
       setAppConfig(TERMINAL_FONT_SIZE_KEY, String(draftFontSize)),
       setAppConfig(TERMINAL_SCROLLBACK_ROWS_KEY, String(draftScrollbackRows)),
       setAppConfig(TERMINAL_THEME_KEY, draftThemeId),
@@ -232,7 +220,6 @@ function TerminalConfigPage() {
     setSavedInterval(draftInterval);
     setSavedSplitDirection(draftSplitDirection);
     setSavedTerminalPostOpenCommand(draftTerminalPostOpenCommand);
-    setSavedStartupCli(draftStartupCli);
     setSavedFontSize(draftFontSize);
     setSavedScrollbackRows(draftScrollbackRows);
     setSavedThemeId(draftThemeId);
@@ -352,52 +339,6 @@ function TerminalConfigPage() {
                 sx={{ width: 300, flexShrink: 0 }}
               />
             </Box>
-
-          </SectionCard>
-
-          <SectionCard
-            header={(
-              <SectionHeader
-                icon={<TerminalOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
-                label={t('settings:terminal.section.startupSettings')}
-              />
-            )}
-          >
-            {/* 启动自动运行：标签左、下拉右（与其他下拉行同构）。选「claude」时
-                主终端 PTY 直接 spawn CLI（无 shell 中转），选「不自动运行」开普通 shell。 */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                px: 2,
-                pt: 3,
-                pb: 1.5,
-                gap: 2,
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <TerminalOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-                <Typography>{t('settings:terminal.row.startupCodeCli')}</Typography>
-              </Box>
-              <Box>
-                <FormControl size="small" sx={{ minWidth: 180 }}>
-                  <Select
-                    value={draftStartupCli}
-                    onChange={(e: SelectChangeEvent<TerminalStartupCodeCli>) => {
-                      setDraftStartupCli(parseTerminalStartupCodeCli(e.target.value));
-                    }}
-                  >
-                    {terminalStartupCodeCliOptions.map(opt => (
-                      <MenuItem key={opt.value} value={opt.value}>
-                        {t(opt.labelKey)}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Box>
-            </Box>
-            <FormHelperText sx={{ px: 2, pb: 1.5 }}>{t('settings:terminal.help.startupCodeCli')}</FormHelperText>
 
           </SectionCard>
 

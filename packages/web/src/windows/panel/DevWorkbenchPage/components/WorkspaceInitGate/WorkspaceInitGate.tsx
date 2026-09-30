@@ -1,5 +1,4 @@
 import type { IssueWorkspaceState, IssueWorkspaceStatus, IssueWorkspaceStep } from '@src/services';
-import type { TerminalStartupCodeCli } from '@src/shared/appConfig';
 import type { ReactNode } from 'react';
 import {
   Cancel as CancelIcon,
@@ -15,19 +14,8 @@ import {
   Typography,
 } from '@mui/material';
 import { ISSUE_WORKSPACE_STEP_KEY } from '@src/services';
-import {
-  DEFAULT_TERMINAL_STARTUP_CODE_CLI,
-  parseTerminalStartupCodeCli,
-  TERMINAL_STARTUP_CODE_CLI_KEY,
-} from '@src/shared/appConfig';
-import { useConfigValue } from '@src/shared/useConfigValue';
 import { useInitIssueWorkspace, useIssueWorkspaceStatus } from '@src/state/issueWorkspace';
 import { useEffect, useRef, useState } from 'react';
-
-// 启动 CLI decode：parse 内含回落（非法/缺失 → none）。模块级保证引用稳定（useConfigValue 要求）。
-function decodeStartupCodeCli(raw: string | null): TerminalStartupCodeCli {
-  return parseTerminalStartupCodeCli(raw);
-}
 
 // 可重试终态的提示文案（FAILED 的原因在 state.error，另行展示）。
 const RETRY_HINTS: Record<string, string> = {
@@ -75,6 +63,12 @@ function StepRow({
 
 interface WorkspaceInitGateProps {
   issueId: string;
+  // 终端直启值（DevWorkbenchPage 从 workspace 启动设置解析下传；null = 解析中或不
+  // 自动启动），仅驱动步骤③文案（非 null → 「启动 Claude 终端」），无时序影响。
+  startupCli: string | null;
+  // 过渡浮层开关（SUCCESS 瞬间步骤清单浮层 1.2s）：仅 children 为终端时播放——none 档
+  // children 是「选择启动方式」面板，浮层叠上成重影且步骤③语义不成立，故父层关掉。
+  terminalTransitionEnabled: boolean;
   /** 工作空间就绪后渲染的内容（终端 split 树）。 */
   children: ReactNode;
 }
@@ -88,10 +82,9 @@ interface WorkspaceInitGateProps {
  * 右上角「清理终端并重新初始化」按钮（DevWorkbenchPage）与面板按钮共用 useInitIssueWorkspace——
  * 同一 query key 订阅，任一触发面板自动切换状态。
  */
-export default function WorkspaceInitGate({ issueId, children }: WorkspaceInitGateProps) {
+export default function WorkspaceInitGate({ issueId, startupCli, terminalTransitionEnabled, children }: WorkspaceInitGateProps) {
   const { data: statusResp, isLoading, error, refetch } = useIssueWorkspaceStatus(issueId);
   const initWorkspace = useInitIssueWorkspace();
-  const startupCli = useConfigValue(TERMINAL_STARTUP_CODE_CLI_KEY, decodeStartupCodeCli, DEFAULT_TERMINAL_STARTUP_CODE_CLI);
   const serverStatus = statusResp?.serverStatus;
   const state = statusResp?.state;
 
@@ -105,7 +98,10 @@ export default function WorkspaceInitGate({ issueId, children }: WorkspaceInitGa
     const prev = prevStatusRef.current;
     prevStatusRef.current = serverStatus;
     if (serverStatus === 'SUCCESS' && prev !== undefined) {
-      setTerminalTransition(true); // 仅「已观察过非 SUCCESS 后到达 SUCCESS」播放
+      // 仅「已观察过非 SUCCESS 后到达 SUCCESS」且 children 为终端时播放（开关见 props 注释）。
+      if (terminalTransitionEnabled) {
+        setTerminalTransition(true);
+      }
     } else if (serverStatus !== 'SUCCESS') {
       setTerminalTransition(false);
     }
@@ -220,8 +216,8 @@ function PanelShell({ children }: { children: ReactNode }) {
   );
 }
 
-function terminalStepTitle(startupCli: TerminalStartupCodeCli): string {
-  return startupCli !== 'none' ? '启动 Claude 终端' : '启动终端';
+function terminalStepTitle(startupCli: string | null): string {
+  return startupCli != null ? '启动 Claude 终端' : '启动终端';
 }
 
 /**

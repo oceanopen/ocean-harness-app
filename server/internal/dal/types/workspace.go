@@ -21,17 +21,17 @@ type WorkspaceGetInfoRequest struct {
 
 // WorkspaceLaunchSettings 启动设置（t_workspaces.launch_settings JSON 的请求/响应形态，
 // shape SSOT）。mode/agentCode/permissionMode 的取值域由前端枚举约定（一期 UI 见方案文档
-// T0.2），后端透传不校验；空对象/空串 = 未配置 → 消费端回落全局 key。
+// T0.2/T0.3），后端透传不校验；空对象/空串 = 未配置，消费端等同 none（不做任何启动动作）。
 type WorkspaceLaunchSettings struct {
-	Mode           string          `json:"mode,omitempty"` // terminal-manual | terminal-auto | acp
-	AgentCode      enums.AgentCode `json:"agentCode,omitempty" binding:"omitempty,oneof=claude-acp codex opencode pi"`
-	AutoCommand    string          `json:"autoCommand,omitempty"`    // terminal-auto 启动命令（默认 claude）
+	Mode           string          `json:"mode,omitempty"`           // none | terminal-manual | terminal-auto | acp（未配置等同 none：出启动方式选择面板；manual=自动打开终端）
+	AgentCode      enums.AgentCode `json:"agentCode,omitempty"`      // ACP 会话 agent（catalog 条目）
+	AutoCommand    string          `json:"autoCommand,omitempty"`    // 终端启动 Agent（仅 terminal-auto：主终端直接启动；manual 档经终端工具条自选；一期 claude）
 	PermissionMode string          `json:"permissionMode,omitempty"` // ACP 执行模式：acceptEdits | bypassPermissions
 }
 
 // WorkspaceCreateRequest 是 POST /api/tracker/workspace/create 的入参。
 // dir 为工作区目录（须为绝对路径，service 层校验可创建可写）。
-// launchSettings 指针可空 = 不配置（消费端走回落链）。
+// launchSettings 指针可空 = 不配置（消费端等同 none）。
 type WorkspaceCreateRequest struct {
 	Name           string                   `json:"name" binding:"required,max=100"`
 	Dir            string                   `json:"dir" binding:"required"`
@@ -40,7 +40,7 @@ type WorkspaceCreateRequest struct {
 }
 
 // WorkspaceUpdateRequest 是 POST /api/tracker/workspace/update 的入参。
-// launchSettings 为 nil = 清空配置（回落全局）；空对象同视为未配置。
+// launchSettings 为 nil = 清空配置（等同 none）；空对象同视为未配置。
 type WorkspaceUpdateRequest struct {
 	ID             int                      `json:"id" binding:"required"`
 	Name           string                   `json:"name" binding:"required,max=100"`

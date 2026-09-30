@@ -10,9 +10,10 @@ import { useTranslation } from 'react-i18next';
 // 新建/编辑工作空间抽屉。
 // 传入 workspace 时为编辑模式：标题改为"编辑工作空间"、ID 只读展示、字段反显、提交调用 update；
 // 不传则为新建模式，行为不变。
-// 底部「启动设置」区块（launch_settings）：启动模式首项「跟随全局」= 未配置（后端落空串，
-// 消费端回落全局 key）；ACP 会话模式展开 Agent 与执行模式下拉。新增文案中文直出（仅本文件
-// 既有字段走 i18n）。
+// 底部「启动设置」区块（launch_settings）：workspace 单源，无全局回落。启动模式四档——
+// none（默认，就绪后出启动方式选择面板）/ 自动打开终端（裸 shell，Agent 经工具条自选）/
+// 终端 - 自动启动（「终端启动 Agent」下拉 = autoCommand）/ ACP 会话（「ACP Agent」=
+// agentCode + 执行模式）。新增文案中文直出（仅本文件既有字段走 i18n）。
 //
 // 由父组件按需挂载（{open && <WorkspaceDrawer/>}）：每次打开都是全新 useState 初值，
 // 无需重置 effect；关闭即卸载。
@@ -26,8 +27,10 @@ interface WorkspaceDrawerProps {
 // 描述最大字数（与后端 binding max=500 对齐）。
 const DESCRIPTION_MAX = 500;
 
-/** 启动模式草稿值：'' = 跟随全局（未配置回落），其余对齐 WorkspaceLaunchSettings.mode。 */
-type LaunchModeDraft = WorkspaceLaunchSettings['mode'] | '';
+/** 一期终端启动 Agent 选项（launch_settings.autoCommand，仅 terminal-auto 档消费；新 CLI 直启在此扩展）。 */
+const TERMINAL_AGENT_OPTIONS = [
+  { value: 'claude', label: 'Claude Code' },
+] as const;
 
 /** 一期 agent 目录未落地前的固定四选项（T1.2 落地后切换数据源）。 */
 const AGENT_CODE_OPTIONS = [
@@ -45,7 +48,12 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
   const [name, setName] = useState(workspace?.name ?? '');
   const [dir, setDir] = useState(workspace?.dir ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
-  const [launchMode, setLaunchMode] = useState<LaunchModeDraft>(workspace?.launchSettings?.mode ?? '');
+  const [launchMode, setLaunchMode] = useState<NonNullable<WorkspaceLaunchSettings['mode']>>(
+    workspace?.launchSettings?.mode ?? 'none',
+  );
+  const [autoCommand, setAutoCommand] = useState<NonNullable<WorkspaceLaunchSettings['autoCommand']>>(
+    workspace?.launchSettings?.autoCommand ?? 'claude',
+  );
   const [agentCode, setAgentCode] = useState<NonNullable<WorkspaceLaunchSettings['agentCode']>>(
     workspace?.launchSettings?.agentCode ?? 'claude-acp',
   );
@@ -70,13 +78,13 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     setSubmitting(true);
     setError(null);
     try {
-      // 跟随全局（'' 空值）= 不传 launchSettings（后端落空串，消费端回落链生效）；
-      // 终端模式只带 mode；ACP 会话带 agentCode + permissionMode（autoCommand 一期固定不出框）。
-      const launchSettings: WorkspaceLaunchSettings | undefined
-        = launchMode === ''
-          ? undefined
-          : launchMode === 'acp'
-            ? { mode: launchMode, agentCode, permissionMode }
+      // none / 手动档只带 mode（手动 = 自动打开终端，不自动拉起 Agent，经终端工具条
+      // 自行选择）；自动档带 autoCommand（直启目标）；ACP 会话带 agentCode + permissionMode。
+      const launchSettings: WorkspaceLaunchSettings
+        = launchMode === 'acp'
+          ? { mode: launchMode, agentCode, permissionMode }
+          : launchMode === 'terminal-auto'
+            ? { mode: launchMode, autoCommand }
             : { mode: launchMode };
       const payload = {
         name: name.trim(),
@@ -182,31 +190,43 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             helperText={`${description.length} / ${DESCRIPTION_MAX}`}
           />
 
-          {/* 启动设置（launch_settings）：未配置回落全局 key，存量行为不突变。 */}
+          {/* 启动设置（launch_settings）：workspace 单源，无全局回落；未配置等同手动。 */}
           <Divider />
           <TextField
             select
             label="启动模式"
             value={launchMode}
             onChange={(e) => {
-              setLaunchMode(e.target.value as LaunchModeDraft);
+              setLaunchMode(e.target.value as NonNullable<WorkspaceLaunchSettings['mode']>);
               setError(null);
             }}
             fullWidth
             disabled={submitting}
-            // 空串（跟随全局）是有效选项：displayEmpty 让选中项文本正常渲染；
-            // InputBase 的 filled 判定不含空串，label 需显式常驻收缩，否则与内容重影。
-            slotProps={{
-              select: { displayEmpty: true },
-              inputLabel: { shrink: true },
-            }}
-            helperText="未设置时跟随全局启动配置；ACP 会话在 issue 主窗口以对话视图运行"
+            helperText="不执行任何操作 = issue 就绪后不进入任何会话，出启动方式选择面板；自动打开终端 = 直接进入裸 shell 终端（Agent 经终端工具条自行选择）；终端 - 自动启动 = 直接进入终端并拉起所选 Agent；ACP 会话在 issue 主窗口以对话视图运行"
           >
-            <MenuItem value="">跟随全局</MenuItem>
-            <MenuItem value="terminal-manual">终端 - 手动启动</MenuItem>
-            <MenuItem value="terminal-auto">终端 - 自动启动</MenuItem>
-            <MenuItem value="acp">ACP 会话</MenuItem>
+            <MenuItem value="none">不执行任何操作</MenuItem>
+            <MenuItem value="terminal-manual">自动打开终端</MenuItem>
+            <MenuItem value="terminal-auto">终端 - 自动启动 Agent</MenuItem>
+            <MenuItem value="acp">ACP 方式启动 Agent</MenuItem>
           </TextField>
+          {launchMode === 'terminal-auto' && (
+            <TextField
+              select
+              label="终端启动 Agent"
+              value={autoCommand}
+              onChange={(e) => {
+                setAutoCommand(e.target.value as NonNullable<WorkspaceLaunchSettings['autoCommand']>);
+                setError(null);
+              }}
+              fullWidth
+              disabled={submitting}
+              helperText="选中 issue 打开主终端时直接运行的 CLI Agent（无 shell 中转）"
+            >
+              {TERMINAL_AGENT_OPTIONS.map(opt => (
+                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
+              ))}
+            </TextField>
+          )}
           {launchMode === 'acp' && (
             <>
               <TextField

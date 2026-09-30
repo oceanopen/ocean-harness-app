@@ -2,26 +2,23 @@ import type { TerminalFontSize, TerminalScrollbackRows } from '@src/shared/appCo
 import type { SplitDirection } from '../TerminalPanes/types';
 import type { TerminalThemeId } from './terminalTheme';
 import { CreateNewFolderOutlined as CreateNewFolderOutlinedIcon } from '@mui/icons-material';
-import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
 import {
   DEFAULT_TERMINAL_CURSOR_BLINK,
   DEFAULT_TERMINAL_CURSOR_STYLE,
   DEFAULT_TERMINAL_FONT_SIZE,
   DEFAULT_TERMINAL_LINE_HEIGHT,
   DEFAULT_TERMINAL_SCROLLBACK_ROWS,
-  DEFAULT_TERMINAL_STARTUP_CODE_CLI,
   isYes,
   parseTerminalCursorStyle,
   parseTerminalFontSize,
   parseTerminalLineHeight,
   parseTerminalScrollbackRows,
-  parseTerminalStartupCodeCli,
   TERMINAL_CURSOR_BLINK_KEY,
   TERMINAL_CURSOR_STYLE_KEY,
   TERMINAL_FONT_SIZE_KEY,
   TERMINAL_LINE_HEIGHT_KEY,
   TERMINAL_SCROLLBACK_ROWS_KEY,
-  TERMINAL_STARTUP_CODE_CLI_KEY,
   TERMINAL_THEME_KEY,
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
@@ -36,12 +33,6 @@ import TerminalView from './TerminalView';
 import { useClaudeRunning } from './useClaudeRunning';
 import { usePtySession } from './usePtySession';
 import { useRefineInjection } from './useRefineInjection';
-
-// 启动自动运行 CLI decode：parse 内含回落（非法/缺失 → none），直接转发。
-// 模块级保证引用稳定（useConfigValue 要求）。
-function decodeStartupCodeCli(raw: string | null): string {
-  return parseTerminalStartupCodeCli(raw);
-}
 
 // 终端字号 decode：非法/不在选项集回落 12（terminal_03 §3.3）。模块级保证引用稳定。
 function decodeTerminalFontSize(raw: string | null): TerminalFontSize {
@@ -78,13 +69,13 @@ function decodeYesNo(raw: string | null): boolean {
 const INITIAL_COLS = 80;
 const INITIAL_ROWS = 24;
 
-// 终端挂载前置配置集：这三个 key 决定字符度量（fontSize/lineHeight → fit 结果
-// 与 spawn 尺寸）与编排行为（startup CLI → directCommand / attachKey）。就绪前
-// 挂载会走「默认值 → 异步到达纠正」路径——二次 refit 与 attachKey 变化重复编
-// 排，每次纠正都是一次打在已绘制提示符上的 SIGWINCH 重绘伪影（% 残迹根因）。
+// 终端挂载前置配置集：这两个 key 决定字符度量（fontSize/lineHeight → fit 结果
+// 与 spawn 尺寸）。就绪前挂载会走「默认值 → 异步到达纠正」路径——二次 refit 与
+// 几何失配重复 resize，每次纠正都是一次打在已绘制提示符上的 SIGWINCH 重绘伪影。
+// 启动直启值（startupCli）不在此列：T0.3 起由父层从 workspace 启动设置解析下传
+// （null = 解析中），经 props 闸门与 enabled 双闸保证首值即终值，不走全局配置闸门。
 // 模块级常量保证引用稳定（useConfigReady 依赖项要求）。
 const TERMINAL_MOUNT_CONFIG_KEYS: readonly string[] = [
-  TERMINAL_STARTUP_CODE_CLI_KEY,
   TERMINAL_FONT_SIZE_KEY,
   TERMINAL_LINE_HEIGHT_KEY,
 ];
@@ -93,6 +84,9 @@ interface EmbeddedTerminalProps {
   issueId: string;
   // 当前工作空间的工作区目录（页面经 issue.workspaceId 解析下传；null = 解析中）。
   workspaceDir: string | null;
+  // 终端直启值（DevWorkbenchPage 从 workspace 启动设置解析下传；非 null = 主 pane
+  // 直接启动该命令；null = 解析中或不自动启动）。解析中经 enabled 闸门哑会话等待。
+  startupCli: string | null;
   // pane id：'main'（主 pane）| 8 位 uuid（附加 pane）。锚点统一 `issueId::<paneId>`。
   paneId?: string;
 }
@@ -109,14 +103,9 @@ interface EmbeddedTerminalProps {
 // writeDataRef 是全链唯一 ref 桥：Channel 数据可在任何时刻到达（含 StrictMode
 // 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下
 // 实测出现「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
-export default function EmbeddedTerminal({ issueId, workspaceDir, paneId = 'main' }: EmbeddedTerminalProps) {
+export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, paneId = 'main' }: EmbeddedTerminalProps) {
   const isMain = paneId === 'main';
   const { show: showToast, snack: toastSnack } = useToast();
-  const startupCodeCli = useConfigValue(
-    TERMINAL_STARTUP_CODE_CLI_KEY,
-    decodeStartupCodeCli,
-    DEFAULT_TERMINAL_STARTUP_CODE_CLI,
-  );
   // 字号（terminal_03 §3.3）：每 pane 各自订阅，设置保存事件驱动全量 pane 生效。
   const fontSize = useConfigValue(
     TERMINAL_FONT_SIZE_KEY,
@@ -180,19 +169,22 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, paneId = 'main
   // 后端 store 对 key 透明，仅 pty_shutdown_issue 前缀扫描感知 `::`。
   const sessionId = `${issueId}::${paneId}`;
 
-  // hooks 顶层无条件调用（React 规则）；cwd=null 时 usePtySession 返回哑会话（不发 spawn，
-  // status 恒 'connecting'），下方引导分支先于 spinner 渲染，不会闪错态。
+  // hooks 顶层无条件调用（React 规则）；cwd=null（目录解析中）时 usePtySession 返回
+  // 哑会话（不发 spawn，status 恒 'connecting'），下方引导分支先于 spinner 渲染，不会
+  // 闪错态。startupCli 不参与 enabled：null = 明确不直启（none 档临场选择后/手动/ACP 档），
+  // 正常 spawn 裸 shell；「列表解析中」的等待语义在父层消化（TerminalLaunchFlow 不挂载），
+  // 挂载即终值，directCommand（attachKey 成分）无中途变化路径。
   const session = usePtySession({
     sessionId,
     cwd,
     enabled: configReady,
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS,
-    // CLI 直启（claude_orca T5.1，唯一自动执行路径）：主 pane + 配置非 none
-    // （当前取值集 none/claude）→ PTY 直接 spawn CLI，无 shell 中转；附加 pane
-    // 恒 null（裸 shell——用户分屏通常是要手动跑命令）。直启失败（CLI 未安装
-    // 等）由 Rust 侧回落普通 shell（warn log），用户可手动启动。
-    directCommand: isMain && startupCodeCli !== 'none' ? startupCodeCli : null,
+    // CLI 直启（唯一自动执行路径）：主 pane + workspace 启动设置为终端 - 自动启动
+    // → PTY 直接 spawn 所选 Agent，无 shell 中转；附加 pane / 其余档位恒 null（裸
+    // shell）。直启失败（CLI 未安装等）由 Rust 侧回落普通 shell（warn log），用户可
+    // 手动启动。
+    directCommand: isMain ? startupCli : null,
     onData: handleTerminalData,
   });
 
@@ -265,12 +257,14 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, paneId = 'main
     session.reopen();
   }, [session]);
 
-  // 工作空间目录解析中：哑会话（不发 spawn）+ 空占位，就绪后直接以实测尺寸 spawn。
+  // 工作空间目录解析中：哑会话（不发 spawn）+ 空占位，就绪后一次性以终值编排。
+  // startupCli 的 null 是「明确不直启」（none 临场选择后/手动/ACP 档）而非解析中——
+  // 正常渲染终端（裸 shell）；解析中的等待语义在父层（TerminalLaunchFlow 不挂载）。
   if (cwd == null) {
     return <Box sx={{ height: '100%' }} />;
   }
 
-  // 度量/编排配置未就绪：哑会话（不发 spawn）+ 空占位。一次性等待（本地 IPC，
+  // 度量配置未就绪：哑会话（不发 spawn）+ 空占位。一次性等待（本地 IPC，
   // ~ms 级），就绪后 TerminalView 以真实字号首帧 fit、spawn 用实测尺寸——避免
   // 「默认值挂载 → 配置到达 refit」的二次 resize（SIGWINCH 伪影）。
   if (!configReady) {
@@ -305,8 +299,10 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, paneId = 'main
   // 明暗）。id 变化 → 新对象 → TerminalView 主题 effect 运行时赋值（热切换）。
   const terminalTheme = buildTerminalTheme(themeId);
 
+  // 相对定位容器：connecting 态在终端之上叠加载蒙层（TerminalView 必须保持挂载
+  // 跑 fit 实测——spawn 尺寸链路不动，蒙层纯视觉且 pointer-events none 不拦交互）。
   return (
-    <>
+    <Box sx={{ position: 'relative', height: '100%' }}>
       <TerminalView
         theme={terminalTheme}
         fontSize={fontSize}
@@ -325,6 +321,23 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, paneId = 'main
         onWriteReady={handleWriteReady}
         onSplitPane={handleSplit}
       />
+      {/* 编排中（exists→reattach→spawn 途中）加载蒙层：盖住 xterm 首帧前的黑屏间隙。 */}
+      {session.status === 'connecting' && (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1.5,
+            pointerEvents: 'none',
+          }}
+        >
+          <CircularProgress size={18} />
+          <Typography variant="body2" color="text.secondary">正在启动终端中…</Typography>
+        </Box>
+      )}
       {/* main 关闭二次确认（附加 pane 无此弹窗） */}
       <Dialog open={confirmCloseOpen} onClose={() => setConfirmCloseOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>关闭终端</DialogTitle>
@@ -339,6 +352,6 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, paneId = 'main
         </DialogActions>
       </Dialog>
       {toastSnack}
-    </>
+    </Box>
   );
 }

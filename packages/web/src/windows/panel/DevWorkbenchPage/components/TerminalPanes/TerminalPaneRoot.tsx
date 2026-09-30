@@ -6,6 +6,8 @@ interface TerminalPaneRootProps {
   issueId: string;
   // 当前工作空间的工作区目录（null = 解析中），透传至各 pane 终端的 cwd 派生。
   workspaceDir: string | null;
+  // 终端直启值（'claude' 等命令串 | null；null = 解析中或不自动启动），透传至各 pane 的 directCommand。
+  startupCli: string | null;
 }
 
 // TerminalPaneRoot：终端区 split 树容器（docs/terminal_02_split_panes.md §3.4）。
@@ -14,12 +16,12 @@ interface TerminalPaneRootProps {
 // 工具栏的按钮承担（EmbeddedTerminal props 闭包自识别目标 pane）：分割 =
 // handleSplit（splitPane，左右/上下分屏）；关闭 = handleClose（附加 pane
 // ptyShutdown+树剪枝 / main 二次确认）。
-export default function TerminalPaneRoot({ issueId, workspaceDir }: TerminalPaneRootProps) {
+export default function TerminalPaneRoot({ issueId, workspaceDir, startupCli }: TerminalPaneRootProps) {
   const layout = useTerminalPanesStore(s => layoutFor(s.layouts[issueId]));
 
   return (
     <Box sx={{ height: '100%', overflow: 'hidden' }}>
-      <PaneLayout issueId={issueId} node={layout} workspaceDir={workspaceDir} />
+      <PaneLayout issueId={issueId} node={layout} workspaceDir={workspaceDir} startupCli={startupCli} />
     </Box>
   );
 }

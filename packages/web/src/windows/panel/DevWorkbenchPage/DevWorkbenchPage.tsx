@@ -54,8 +54,8 @@ import { useSearchParams } from 'react-router-dom';
 import DevTaskTree from './components/DevTaskTree/DevTaskTree';
 import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBoundary';
 import FilePreviewOverlay from './components/FilePreviewOverlay/FilePreviewOverlay';
+import { TerminalLaunchFlow } from './components/LaunchModePicker';
 import OpenWorkspaceDirButton from './components/OpenWorkspaceDir/OpenWorkspaceDirButton';
-import TerminalPaneRoot from './components/TerminalPanes/TerminalPaneRoot';
 import ToolPanelArea from './components/WorkbenchTools/ToolPanelArea';
 import WorkbenchToolRail from './components/WorkbenchTools/WorkbenchToolRail';
 import WorkspaceInitGate from './components/WorkspaceInitGate/WorkspaceInitGate';
@@ -80,6 +80,38 @@ function decodeToolAreaWidth(raw: string | null): number {
     return DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH;
   }
   return parsed;
+}
+
+/**
+ * workspace 启动模式 → 终端直启值（T0.3，workspace 启动设置单源，无全局回落）：
+ * 仅 terminal-auto 直启（值为所选终端启动 Agent）；none / 手动 / acp（终端侧消费端 T1.6
+ * 前不自动启动）/ 未配置 = null（裸 shell）。入参为字面量联合直写（shared 侧无
+ * WorkspaceLaunchSettings 依赖）。
+ */
+function terminalStartupCli(
+  mode: 'none' | 'terminal-manual' | 'terminal-auto' | 'acp' | undefined,
+  autoCommand: string | undefined,
+): string | null {
+  return mode === 'terminal-auto' ? autoCommand ?? 'claude' : null;
+}
+
+/** 终端启动 Agent 展示名（选择面板/后续 UI 文案用；一期仅 claude）。 */
+function terminalAgentLabel(autoCommand: string | undefined): string {
+  return autoCommand === 'claude' || autoCommand == null ? 'Claude Code' : autoCommand;
+}
+
+/** ACP Agent 展示名（catalog 枚举码 → 产品名）。 */
+function acpAgentLabel(code: 'claude-acp' | 'codex' | 'opencode' | 'pi' | undefined): string {
+  switch (code) {
+    case 'codex':
+      return 'Codex';
+    case 'opencode':
+      return 'OpenCode';
+    case 'pi':
+      return 'Pi';
+    default:
+      return 'Claude Code';
+  }
 }
 
 // 标题栏 IconButton 统一 sx：text.secondary 色调 + icon 尺寸 16px（与终端工具栏
@@ -169,10 +201,17 @@ export default function DevWorkbenchPage() {
   const issue = issues.find(i => i.id === effIssueId);
   const stateMeta = issue ? STATE_MAP.get(issue.stateCode) : undefined;
 
-  // 当前 issue 所属工作空间的工作区目录（终端 cwd / 打开目录 / 重新初始化共用；
+  // 当前 issue 所属工作空间（终端 cwd / 启动值 / 打开目录 / 重新初始化共用；
   // issue 或工作空间列表加载中为 null，消费组件闸门等待）。
-  const { data: workspaces = [] } = useWorkspaces();
-  const workspaceDir = issue != null ? workspaces.find(ws => ws.id === issue.workspaceId)?.dir ?? null : null;
+  const { data: workspaces = [], isPending: workspacesPending } = useWorkspaces();
+  const workspace = issue != null ? workspaces.find(ws => ws.id === issue.workspaceId) ?? null : null;
+  const workspaceDir = workspace?.dir ?? null;
+  // 终端直启终值（T0.3，workspace 启动设置单源）：terminal-auto = 主 pane 直接启动所选
+  // Agent（autoCommand）；null = 不自动启动（none/手动/acp/未配置）或解析中（列表未就绪，
+  // 消费端闸门等待，保证 directCommand 首值即终值）。
+  const startupCli: string | null = workspacesPending
+    ? null
+    : terminalStartupCli(workspace?.launchSettings?.mode, workspace?.launchSettings?.autoCommand);
 
   // 抽屉所需 workspaceProject：issue 自带 workspaceId/projectId，按 workspace 查项目列表
   // （与左树 DevTaskTree 同 query key 共享缓存，命中即零请求）后按 id 反查实体——
@@ -496,9 +535,30 @@ export default function DevWorkbenchPage() {
                 ? (
                     // 初始化闸门（T1.5）：三段式引导面板占位终端列，工作空间 SUCCESS 才渲染终端；
                     // key 随 issue 切换重挂载（过渡态/轮询随 key 重建，互不串扰）。
-                    <WorkspaceInitGate key={issue.id} issueId={issue.id}>
+                    <WorkspaceInitGate
+                      key={issue.id}
+                      issueId={issue.id}
+                      startupCli={startupCli}
+                      // 过渡浮层仅 children 为终端时播放：none 档（含解析中）children 是启动方式
+                      // 选择面板，浮层叠上成重影且步骤③语义不成立。
+                      terminalTransitionEnabled={!workspacesPending && (workspace?.launchSettings?.mode ?? 'none') !== 'none'}
+                    >
                       <TerminalErrorBoundary key={issue.id}>
-                        <TerminalPaneRoot issueId={issue.id} workspaceDir={workspaceDir} />
+                        {/* 启动配置解析中不挂载启动分流（空占位等待）——挂载即终值，
+                        directCommand/启动语义无中途变化路径（编码规则 1）。 */}
+                        {workspacesPending
+                          ? <Box sx={{ height: '100%' }} />
+                          : (
+                              <TerminalLaunchFlow
+                                key={issue.id}
+                                issueId={issue.id}
+                                workspaceDir={workspaceDir}
+                                launchMode={workspace?.launchSettings?.mode ?? 'none'}
+                                autoCommand={workspace?.launchSettings?.autoCommand}
+                                terminalAgentLabel={terminalAgentLabel(workspace?.launchSettings?.autoCommand)}
+                                acpAgentLabel={acpAgentLabel(workspace?.launchSettings?.agentCode)}
+                              />
+                            )}
                       </TerminalErrorBoundary>
                     </WorkspaceInitGate>
                   )

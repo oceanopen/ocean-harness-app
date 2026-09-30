@@ -29,14 +29,12 @@
   "terminal": {
     "section": {
       "monitorListen": "Coding tool terminal monitoring",
-      "startupSettings": "Embedded terminal - Startup settings",
       "styleSettings": "Embedded terminal - Style settings"
     },
     "row": {
       "pollInterval": "Fallback poll interval",
       "iterm2SplitDirection": "iTerm2 split direction",
       "terminalPostOpenCommand": "Run after opening terminal",
-      "startupCodeCli": "Auto-run on main terminal start",
       "fontSize": "Font size",
       "scrollbackRows": "Scrollback lines",
       "theme": "Terminal theme",
@@ -48,8 +46,6 @@
       "splitHorizontal": "Horizontal (top-bottom)",
       "splitVertical": "Vertical (left-right)",
       "splitNone": "No split",
-      "startupCodeCliNone": "None",
-      "startupCodeCliClaude": "Claude",
       "cursorBlinkOn": "Blinking",
       "cursorBlinkOff": "Steady",
       "cursorStyle": {
@@ -70,7 +66,6 @@
     "help": {
       "pollInterval": "Instant updates come from the file watcher; this only drives stale-session cleanup and acts as a backstop when the watcher misses events.",
       "terminalPostOpenCommand": "Executed automatically after cd-ing into the repo. Leave empty to only cd. e.g. add_proxy or ./bootstrap.sh; join multiple commands with &&, e.g. add_proxy && npm run dev.",
-      "startupCodeCli": "Directly launch the selected coding CLI (e.g. claude) in the embedded terminal when opening a task, with no shell in between. \"None\" opens a plain shell",
       "scrollbackRows": "How many lines of history output you can scroll back through in the terminal. Applies immediately after saving. Larger values allow more history at higher memory cost"
     },
     "unit": {

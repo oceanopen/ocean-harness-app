@@ -58,18 +58,6 @@ export const DEFAULT_LANGUAGE: Language = 'system';
 // 类型与默认值均为字面量联合，默认值从 Rust 单源 re-export（as const 兼容）。
 export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
 
-// 嵌入式终端启动时自动运行的编程 CLI（PTY 直接 spawn，无 shell 中转）。
-// 'none' = 开普通 shell（默认）；'claude' = 自动启动 claude。
-export type TerminalStartupCodeCli = 'none' | 'claude';
-
-export const TERMINAL_STARTUP_CODE_CLI_KEY = 'terminal_startup_code_cli';
-export const DEFAULT_TERMINAL_STARTUP_CODE_CLI: TerminalStartupCodeCli = 'none';
-
-export function parseTerminalStartupCodeCli(value: string | null): TerminalStartupCodeCli {
-  // '' 是旧存储值，归一为 'none'（MUI Select 无法匹配空字符串为选中值）
-  return value === 'claude' ? value : 'none';
-}
-
 // 嵌入式终端字号。离散选项：脏值一律回落默认 12。
 export const TERMINAL_FONT_SIZE_KEY = 'terminal_font_size';
 export const TERMINAL_FONT_SIZE_OPTIONS = [10, 11, 12, 13, 14, 15, 16] as const;
