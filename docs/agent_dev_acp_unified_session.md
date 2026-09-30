@@ -306,7 +306,7 @@ issue 主窗口
 
 #### T1.0 server Go 工具链升级（1.25.7 → 1.27）
 
-**状态**：⬜（执行时机：T1.1 开工前，经用户确认本地 go 环境就绪）
+**状态**：✅
 
 **功能**：为 acp-go 依赖铺路——两候选库均要求 Go ≥1.27（BrokkAI 1.27.1 / ironpark 1.27.0）
 
@@ -315,6 +315,8 @@ issue 主窗口
 **依赖**：无
 
 **决策关联**：D8
+
+**实施定稿**：升级前经 `GOTOOLCHAIN=go1.27.1 go version` 实测确认本地可自动下载并切换 1.27.1 工具链（用户要求先验证再改）；go.mod 仅 go directive 一行变更（mod tidy 零额外变更），切换后 build / vet / internal 全量 test 回归通过
 
 ---
 

@@ -1,6 +1,6 @@
 module ocean-harness/server
 
-go 1.25.7
+go 1.27.1
 
 require (
 	github.com/bytedance/go-tagexpr/v2 v2.9.11
