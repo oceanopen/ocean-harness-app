@@ -125,7 +125,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 | D5 | 多 agent 中立，Claude 专属走能力协商 | 阶段 3 后 bot 天然 agent 中立，审批/选项卡交互层全复用 |
 | D6 | `launch_settings` 用 JSON 列而非多列 | mode + agentCode + 后续 agent 配置持续扩展，避免反复迁移 |
 | D7 | issue↔session 绑定受控反转（原 `claude_session_ref` 链曾随 chat 视图删除） | ACP runtime 亲自持有会话后语义成立，实施定稿须明示（见 T1.5） |
-| D8 | Go ACP client 直接依赖 `github.com/BrokkAi/acp-go`（pin v0.11.0）+ sidecar 会话域薄适配层 | Apache-2.0 / 零传递依赖 / wire 类型由官方 JSON Schema 自动生成 / 有 tag 可钉 / 自带 runner 进程管理；自研收窄为 spawn、能力协商、入站回调适配三件事。风险隔离：会话域薄适配层 + 钉精确 tag + license 干净随时可 fork；Go 工具链随 T1.0 升 1.27 |
+| D8 | Go ACP client 直接依赖 `github.com/BrokkAi/acp-go`（pin v0.11.0）+ sidecar 会话域薄适配层 | Apache-2.0 / 零传递依赖 / wire 类型由官方 JSON Schema 自动生成 / 有 tag 可钉 / 自带 runner 进程管理；自研收窄为 spawn、能力协商、入站回调适配三件事。风险隔离：会话域薄适配层 + 钉精确 tag + license 干净随时可 fork；Go 工具链随 T1.0 升 1.27。选型对比终态：`coder/acp-go-sdk` 外部生态最大（Docker/Pomerium/Plural 等约 74 个 module 集成）但维护冻结（schema 停更、落后上游数版、issue/PR 无人处理、elicitation 标 UNSTABLE）；`ironpark/acp-go` 方法覆盖最全、协议追踪最新，但仓库无 tag 可钉且为个人项目；`beyond5959/acp-adapter` 为 agent 侧 adapter 非 client 库、claude 桥权限应答 no-op，排除。acp-go 胜出依据见附录四库对比终态与风险 §5.1 |
 
 ## 4. 决策点（P1–P6，已于 T0.0 拍板）
 
@@ -134,13 +134,13 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 | P1 | ACP 模式粒度：per-issue 配置 vs 全局默认 + issue 可覆盖 | **per-issue**——workspace 级设默认，issue 按需自行调整（覆盖范围为整个 launch_settings：mode / agentCode / permissionMode）；阶段 0 先落 workspace 层，issue 级覆盖为补充任务 T0.4 |
 | P2 | bot↔issue 映射：显式绑定 + IM 内切换（如 `#issue-42 帮我…`） vs 自动挂 workspace 当前活跃 issue | **显式绑定 + IM 内切换** |
 | P3 | 终端模式 ↔ ACP 模式跨模式会话接续（`--resume` 捞回）是否纳入一期 | **不入一期**——纯 ACP 会话先行，跨模式接续为后续增强 |
-| P4 | agent 范围：一期 catalog 只放 claude-acp vs 直接全量 | 一期 catalog 启用 **claude、codex、opencode、pi** 四个 agent；通用架构（单一 adapter + catalog）不变，doctor 探测与 agent 选择面随之扩大 |
+| P4 | agent 范围：一期 catalog 只放 claude-acp vs 直接全量 | **一期只落 claude**——catalog 仅启用 claude-acp 条目；通用架构（单一 adapter + catalog）不变，codex / opencode / pi 留条目模板与 spawn 策略口子（扩展 = 加条目），doctor 探测与 agent 选择面随一期收窄 |
 | P5 | claude 二进制哲学：adapter 包自带 CLI vs 沿用本机探测链 | **本机 `resolveClaudeBin` 注入 `CLAUDE_CODE_EXECUTABLE` + adapter vendored 安装（T1.3）**。Gold-Band 为零分发路线（app 不带 node/adapter/claude 任何二进制，catalog 编译进二进制，运行时 `npx -y` 现场拉起，SDK 平台包自带 claude 由 npm 在用户机按平台解析、use_local_claude 默认关）——本项目不采用 |
 | P6 | ACP 模式权限表达：bot 级「执行权限」开关（allowedTools 白名单）是否废弃，改用 ACP 原生权限模式 | **彻底废弃**（含终端模式 headless 路径）——权限上移 `launch_settings.permissionMode`（一期 UI 两档：需要审批=acceptEdits / 自动=bypassPermissions，经 `session/set_mode` 下发 + agent mode 目录校验），桌面与 bot 共用；permissionMode 同样 workspace 设默认、issue 可按需修改（与 P1 同形态）；「执行权限」配置项连同 allowedTools 全链路移除（清理任务 T2.0），headless 驱动恒用默认白名单（调研依据见 §1.4） |
 
 ## 5. 风险与开放问题
 
-1. **acp-go 依赖风险（D8）**：协议实现风险已由库消解（wire 类型由官方 JSON Schema 生成、进程管理 runner 现成），余下为供应链 churn——公开仓仅 3 周、发版快（v0.8→v0.11），协议 v2 演进期 breaking change 属预期内。缓解：钉精确 tag + 会话域薄适配层隔离（换库/fork 只动一层）+ Apache-2.0 随时可 fork；超时/取消/进程组回收/崩溃恢复仍以 T1.1 实施定稿逐项收口；
+1. **acp-go 依赖风险（D8）**：协议实现风险已由库消解（wire 类型由官方 JSON Schema 生成、进程管理 runner 现成），余下为供应链 churn——公开仓尚新、单人维护、零外部消费者、发版快（v0.8→v0.11），协议 v2 演进期 breaking change 属预期内。对冲事实：Brokk 公司 8 个仓库自治 bot 生产依赖该库（brokk-town monorepo 全部 go.mod 在用），作者响应快（issue 当天修复发版），v1 稳定面 schema pin 策略明文（跟随 Rust SDK，不裸追 schema 仓库）。缓解：钉精确 tag + 会话域薄适配层隔离（换库/fork 只动一层）+ Apache-2.0 随时可 fork；本项目生产路径锚定根包 v1 稳定门面（`SetMode`、prompt 阻塞至终态语义），v2 draft 面不进主干；超时/取消/进程组回收/崩溃恢复仍以 T1.1 实施定稿逐项收口；
 2. **adapter 版本演进**：官方 adapter 两周三版（Gold-Band pin 0.81.2 → 现 0.84.0），catalog pin 策略 + 升级验证流程在 T1.2/T1.3 定稿；已知坑佐证：`claude-code-acp` 0.16.x 存在 MCP tool discovery 竞态（社区回钉 0.15.0），版本升级必须过 T1.4 握手回归；
 3. **终端模式与 ACP 模式并存边界**：同一 issue 切换模式时的会话接续（`claude --resume` 可跨形态接续同一 session id）——按 P3 拍板不入一期；
 4. **企微回调 5 秒窗口**：审批点击后更新原卡必须在 5 秒内完成，跨 sidecar 重启的边界场景在 T3.2 测试覆盖。
@@ -219,7 +219,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 
 **技术方案**：
 - `WorkspaceService.ts` 模型/请求字段补 `launchSettings`
-- `WorkspaceDrawer.tsx` 表单区块：mode 三选一（终端手动 / 终端自动 / ACP）+ ACP 模式下 agentCode 选择（一期四选项 claude-acp / codex / opencode / pi，P4 拍板；catalog 未就绪前先以常量占位，T1.2 落地后切换数据源）+ ACP 模式下执行模式两选一（需要审批=acceptEdits / 自动=bypassPermissions，写 `permissionMode`，P6 拍板）
+- `WorkspaceDrawer.tsx` 表单区块：mode 三选一（终端手动 / 终端自动 / ACP）+ ACP 模式下 agentCode 选择（选项常量占位含四个 agent，P4 收窄后一期仅 claude-acp 有效，T1.2 落地后切换 catalog 数据源并收窄选项面）+ ACP 模式下执行模式两选一（需要审批=acceptEdits / 自动=bypassPermissions，写 `permissionMode`，P6 拍板）
 - 空值 = 跟随全局回落（不强制填写），存量用户行为不突变
 
 **依赖**：T0.1
@@ -289,8 +289,8 @@ issue 主窗口
 
 | 策略 | 适用 | 启动形态 |
 |---|---|---|
-| `npx-adapter` | claude（P4 启用之一） | catalog 原始形态 `npx -y @agentclientprotocol/claude-agent-acp@<pin>`；实际 spawn 指向受管目录 vendored 入口（T1.3 一次性安装） |
-| `native-acp` | codex / opencode / pi（P4 启用） | 直连各自 CLI，零 adapter；条目命令以 registry 离线快照为准（Gold-Band catalog 的「PATH 可执行文件」模板同构） |
+| `npx-adapter` | claude（一期唯一启用） | catalog 原始形态 `npx -y @agentclientprotocol/claude-agent-acp@<pin>`；实际 spawn 指向受管目录 vendored 入口（T1.3 一次性安装）；包名以 T1.1 实测为准（`@zed-industries/claude-code-acp`） |
+| `native-acp` | codex / opencode / pi（预留，随 P4 扩展启用） | 直连各自 CLI，零 adapter；条目命令以 registry 离线快照为准（Gold-Band catalog 的「PATH 可执行文件」模板同构） |
 | `in-process-go` | **预留，不实现** | Go 进程内实现 ACP agent 角色（`driver_claude.go` 的 stream-json 积累可复用） |
 
 - 为什么官方 adapter 起步而不是直接 Go 自研——成本分布：
@@ -322,7 +322,7 @@ issue 主窗口
 
 #### T1.1 Go ACP client 核心
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：sidecar 内通用 ACP client（JSON-RPC over stdio），可驱动任意 catalog 声明的 ACP agent
 
@@ -339,6 +339,16 @@ issue 主窗口
 
 **验收**：以 catalog 条目拉起 claude-acp adapter，完成 initialize → session/new → 一轮 prompt → session/update 收流 → 进程正常回收
 
+**实施定稿**：
+- 包落 `server/internal/acp/`，一域一文件：`launch.go`（进程层：SpawnConfig/AgentProcess/进程组回收/stderr 分类与 64KiB tail）、`interact.go`（PendingPermission/PendingElicitation 挂起态，CAS-once 应答）、`session.go`（sessionRuntime：回合互斥/软硬取消/事件入队）、`client.go`（AgentClient：握手/建会话/入站路由/收敛）、`mode.go`（SetPermissionMode 下发）、`events.go`（事件类型与背压契约）、`stderr.go`（三分类 + 环形 tail）、`process_unix.go`/`process_windows.go`（平台隔离）；测试三层——`fakeagent/` 真 stdio 脚本化假 agent（TestMain 现场编译）+ 单元/链路集成 + 环境变量门控的真握手用例
+- T1.1 只认 `SpawnConfig`（catalog 是 T1.2 的翻译层），验收以 SpawnConfig 直拉真 adapter 完成：`@zed-industries/claude-code-acp` 0.16.1 实测跑通 initialize → session/new → prompt → update 收流 → 进程回收——spawn 表原记 `@agentclientprotocol/claude-agent-acp` 有误，T1.2 catalog pin 以实测包名为准
+- 能力协商面：不广告 fs/terminal（未广告方法库回 -32601）；广告 configOptions（set_mode 新轨）与 elicitation form（url 不广告）；`HasClaudeCodeExtension` 探测 initialize 响应 `_meta.claudeCode` 供 T1.3/T1.5 claude 专属分支——0.16.1 adapter 不上报该 _meta，分支休眠属预期
+- **CancellablePermissions 未采用**：库的 ctx→cancelled 自动应答包装不覆盖本项目语义组合——取消须先结算未决交互（取消赢过用户迟到应答）、wait 须把 ctx 取消译为 cancelled outcome 且 handler 恒返回 nil error（库把 handler error 转 -32800 拆连接）；自研 `pending.wait` 逐条满足
+- 取消与超时收口（§5.1 清单）：软取消 = `session/cancel` + 立即结算未决交互，10s 预算内等 agent 回 cancelled 终态，超时硬取消（拆回合 ctx、以错误返回）；库对 session/cancel 以 -32800 终止在途请求，归一为干净 cancelled 终态；握手/建会话 60s、关会话 10s，prompt 与交互应答不设超时（回合时长与用户决策时长不可预估，由 ctx 与取消语义驱动）
+- 锁序红线：不得持 stateMu 发起网络调用——通知回写跑在连接读循环 goroutine 且需同一把锁，持锁等响应会互锁；`SetPermissionMode` 走「快照送验 → 确认后合并」；`sessionValue()` 对 Modes 浅拷贝出私有副本（CurrentModeID 是唯一回写字段，隔离库经快照指针的就地写与消费方读的竞争；AvailableModes 目录创建后只读可共享）
+- 收敛序单点 `converge()`（Close 与进程死亡监听共用、并发各步幂等）：逐会话结算未决交互 → conn.Close（join 全部入站 handler）→ 进程组回收（WaitDelay 5s 收口孙进程管道）→ 逐会话终结哨兵；`Err()` 以 closedByCaller 标记区分主动收尾（nil）与意外死亡（stderr 摘要证据面）；事件通道不关闭，以 Terminated 哨兵终结，满则阻塞、收敛期经 closing 通道逃生防 join 死锁
+- elicitation 路由：`CreateElicitationRequest` 顶层无 sessionId，会话归属解析自 `Form.Session.SessionID`；url 模式/请求级回 -32602（TODO(T1.7)）；库 typed `ElicitationFormMode` 缺 requestedSchema 字段（上游生成缺口），带 sessionId 的 form 载荷线上解码不受影响
+
 #### T1.2 agent catalog（离线 pin）
 
 **状态**：⬜
@@ -348,7 +358,7 @@ issue 主窗口
 **技术方案**：
 - 结构照 Gold-Band：官方 ACP registry 的离线 pin 快照 + 刷新脚本，运行时不在线拉取；落在 sidecar 内嵌资源
 - 每条目声明 spawn 策略与启动参数（`npx-adapter` / `native-acp`；`in-process-go` 仅预留枚举）
-- 一期启用 claude / codex / opencode / pi 四条目（P4 拍板），catalog/doctor 的 UI 面板仍砍到最小；native 三家的具体启动命令以 registry 快照为准，不在本文硬编码
+- 一期只落 claude-acp 条目（P4 收窄：codex / opencode / pi 留条目模板与 spawn 策略口子，扩展 = 补条目 + registry 快照，不在本文硬编码）；catalog/doctor 的 UI 面板仍砍到最小
 - adapter 版本 pin 进 catalog（参考 0.8x 线），升级走刷新脚本统一升 + 验证流程定稿（风险 §5.2）
 
 **依赖**：无
@@ -376,7 +386,7 @@ issue 主窗口
 **功能**：agent 可用性判据 = 真实握手跑通；结果供 UI 引导与（阶段 3）bot 徽标消费
 
 **技术方案**：
-- 四项探测：claude 可用（`resolveClaudeBin`）、node/npx 可用（版本下限跟随 catalog pin 的 adapter engines 要求——当前 0.84.0 为 ≥22）、adapter 包就绪（vendored 入口存在）、native agent CLI 可用（codex / opencode / pi 各自 PATH 解析，P4——探测思路复用 `bin.go` 的 login shell 兜底）
+- 四项探测：claude 可用（`resolveClaudeBin`）、node/npx 可用（版本下限跟随 catalog pin 的 adapter engines 要求——当前 0.84.0 为 ≥22）、adapter 包就绪（vendored 入口存在）、native agent CLI 可用（codex / opencode / pi 各自 PATH 解析——随 P4 扩展启用，一期仅 claude 时跳过；探测思路复用 `bin.go` 的 login shell 兜底）
 - 握手判据：真拉起子进程跑 `initialize → setup_session → available_commands` 再清理，跑得通才 healthy（照 Gold-Band `src/acp/client.rs:2673-2731`）
 - node 缺失时 UI 明确引导：「ACP 模式需要 Node.js ≥20，或切换终端模式」，不运行时报错
 
@@ -393,6 +403,7 @@ issue 主窗口
 **技术方案**：
 - 会话域：ACP session 的创建/复用/回收；issue → ACP session 绑定关系落库
 - 事件流经 sidecar HTTP/SSE 推 panel（`session/update` / `request_permission` / `elicitation` 事件）
+- SSE hub 背压策略：关键事件（Permission / Elicitation / Terminated / 回合终态）不丢弃不合并；高频 delta（agent/thought message chunk）允许合帧；快照类（usage / plan / available_commands）以最新替换——internal/acp 事件通道为阻塞背压契约（满则拖住连接层读循环），hub 侧必须消化消费速率差
 - 消费 workspace `launch_settings.agentCode`（T0.1 链路）决定拉起哪个 agent
 - 权限模式（P6）：会话创建后按 launch_settings `permissionMode`（workspace 设默认、issue 可按需修改，T0.4）经 `session/set_mode` 下发，值对 agent 上报的 mode 目录校验（防硬编码失效）；一期两档「需要审批」（acceptEdits）/「自动」（bypassPermissions）
 - 并发基线：单会话内回合串行（跨入口回合锁在 T2.2 升级）
@@ -612,6 +623,8 @@ issue 主窗口 ─────┘
 
 **Gold-Band**：`src/app/intervention.rs:366-426,915-1030`（干预命令服务 + 权限选项映射）、`src/acp/adapter.rs:52-180`（通用 adapter + 能力协商）、`src/acp/client.rs:2673-2731`（doctor）、`src/acp/permission.rs / elicitation.rs`（pending 落盘等待）、`src/im/inbound.rs:192-261`（入站动作 + 幂等收敛）、`src/im/connectors/wecom.rs:612-1243`（vote_interaction 卡构造、终态更新）、`resources/agent-catalog.json` + `scripts/prepare-agent-catalog.mjs`（catalog pin）、`src-tauri/src/im_runtime.rs:1159-1246`（IM→命令服务汇合）。**License：AGPL-3.0-only**（仅行为语义参照，禁止代码级移植）。
 
-**开源库选型（D8 依据）**：`github.com/BrokkAi/acp-go`（Apache-2.0，**选定**，pin v0.11.0，Go ≥1.27.1，零传递依赖，wire 类型由官方 JSON Schema 生成，含 runner 进程管理与 cookbook）、`github.com/ironpark/acp-go`（MIT 备选，Go ≥1.27，多 transport，无 tag 可钉）、官方 TS SDK `agentclientprotocol/sdk`（npm，协议语义权威参照）。
+**开源库选型（D8 依据，四库对比终态）**：`github.com/BrokkAi/acp-go`（Apache-2.0，**选定**，pin v0.11.0，Go ≥1.27.1，零传递依赖，wire 类型由官方 JSON Schema 生成 + parity/fuzz/真 agent integration 测试矩阵（矩阵含 `npx claude-agent-acp` 与 codex-acp），含 runner 进程管理与 cookbook；Brokk 公司仓库自治 bot 集群生产自用）、`github.com/coder/acp-go-sdk`（Apache-2.0，外部生态最大——Docker/Pomerium/Plural 等约 74 个 module 集成，连接层含通知-响应屏障等高质量细节，零依赖；维护冻结，schema 停更落后上游，issue/PR 无人处理，elicitation 标 UNSTABLE，无主动 Close 原语）、`github.com/ironpark/acp-go`（MIT，方法覆盖最全、协议追踪最新，acp1/acp2 双包 + HTTP/WebSocket draft + v2→v1 回落 router；无 tag 可钉，个人项目）、`github.com/beyond5959/acp-adapter`（MIT，agent 侧可执行 adapter 非 client 库，claude 桥权限应答 no-op、tool_call 不上报、停更，排除）、官方 TS SDK `agentclientprotocol/sdk`（npm，协议语义权威参照）。
+
+**参考集成项目（阶段 2/3 审批卡/表单卡同构参照）**：`pomerium/agentops`（client 侧把 `session/request_permission` 渲染为 Slack Block Kit 交互卡并路由回 ACP 会话——企微审批卡同构）、`docker/docker-agent`（agent 侧 elicitation 桥与能力协商矩阵）。
 
 **权限语义调研（P6 / §1.4 依据）**：本项目 `packages/web/src/windows/panel/ImBotsPage/ImBotDrawer.tsx:44-60`（执行权限两档 ↔ allowedTools 转译）、`server/internal/bot/types.go:17-42`（白名单 SSOT 与空值语义）、`server/internal/bot/driver_claude.go:32-50`（argv 拼装）；Gold-Band `src/acp/permission.rs:107-307`（pending/response 落盘与 first-writer-wins 预约）、`src/app/intervention.rs:915-1100`（选项归类与 requires_desktop 安全过滤）、`src/acp/client.rs:4927-4977`（mode 经 set_config_option 下发）、`src/acp/adapter.rs:58-113`（disallowedTools deny-list 注入）；官方 `github.com/agentclientprotocol/claude-agent-acp`（src/acp-agent.ts：`_meta.claudeCode.options` 透传面与 permissionMode 排除、src/permissions/*：mode 目录与 allow_always 持久化、Node ≥22、两仓库合并事实）、ACP 协议文档 `docs/protocol/v1/tool-calls.mdx`（`RequestPermissionOutcome` / `PermissionOptionKind`）、`BrokkAi/acp-go`（agent/host.go `Permissions` interface、v2/permissions.go `CancellablePermissions`）。

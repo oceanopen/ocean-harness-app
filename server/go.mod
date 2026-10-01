@@ -3,6 +3,7 @@ module ocean-harness/server
 go 1.27.1
 
 require (
+	github.com/BrokkAi/acp-go v0.11.0
 	github.com/bytedance/go-tagexpr/v2 v2.9.11
 	github.com/gin-contrib/cors v1.7.7
 	github.com/gin-gonic/gin v1.12.0
