@@ -21,6 +21,7 @@
     "server:release": "TAURI_RUN_MODE=build node scripts/build-server.mjs",
     "server:fmt": "gofmt -l -w server",
     "server:gorm:gen": "go -C server run ./cmd/gormgen -config=config/settings.dev.yaml",
+    "server:catalog:refresh": "node scripts/prepare-agent-catalog.mjs",
     "gen:bindings": "cargo run --manifest-path app/Cargo.toml --features gen-bindings --bin export_bindings",
     "gen:app:icons": "tauri icon packages/web/src/assets/app-icon.svg && rm -rf app/icons/android && rm -rf app/icons/ios && cp app/icons/icon.png packages/web/src/assets/app-icon.png && cp packages/web/src/assets/app-icon.svg packages/web/public/favicon.svg",
     "verify:bindings": "pnpm gen:bindings && git ls-files --error-unmatch packages/web/src/shared/bindings.ts && git diff --exit-code packages/web/src/shared/bindings.ts",

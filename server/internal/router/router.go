@@ -16,8 +16,9 @@ import (
 //
 // 当前暴露 /api/baseInfo（系统信息）、/api/localRepository/*（本地仓库）、/api/issueWorkspace/*
 // （issue 运行工作空间初始化）、/api/pluginMarketplace/*（插件市场）与 /api/plugin/*
-// （插件安装操作）、/api/tracker/*（tracker 业务域：workspace 等）与
-// /mcp/streamableHttp/*（MCP 端点，供工作空间内 AI agent 调用），均无需登录/鉴权。
+// （插件安装操作）、/api/agentCatalog/*（ACP agent 目录投影）、/api/tracker/*
+// （tracker 业务域：workspace 等）与 /mcp/streamableHttp/*（MCP 端点，供工作空间内
+// AI agent 调用），均无需登录/鉴权。
 // gin.SetMode 已在 config.MustLoad 中按环境变量完成。
 func SetupRouter() *gin.Engine {
 	r := gin.New()
@@ -83,6 +84,14 @@ func SetupRouter() *gin.Engine {
 			pluginMarketplaceGroup.POST("/add", controller.PluginMarketplace{}.Add)
 			pluginMarketplaceGroup.POST("/update", controller.PluginMarketplace{}.Update)
 			pluginMarketplaceGroup.POST("/remove", controller.PluginMarketplace{}.Remove)
+		}
+
+		// agentCatalog 模块：ACP agent 目录只读投影（action 风格，POST）。
+		// 无本地表：SSOT 为 sidecar 内嵌离线快照（internal/agentcatalog）；
+		// 前端下拉可选面 = enabled 条目（launch_settings.agentCode 值域 SSOT，T1.2）。
+		agentCatalogGroup := apiGroup.Group("/agentCatalog")
+		{
+			agentCatalogGroup.POST("/getList", controller.AgentCatalog{}.GetList)
 		}
 
 		// plugin 模块：按开发工具（cli）维度的插件安装操作（install/uninstall/enable/disable/

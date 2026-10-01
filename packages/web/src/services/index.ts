@@ -1,3 +1,6 @@
+export { AgentCatalogService } from './AgentCatalogService';
+export type { AgentCatalogEntry, AgentCatalogGetListRequest } from './AgentCatalogService';
+
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 

@@ -1,8 +1,10 @@
 import type { WorkspaceLaunchSettings, WorkspaceModel } from '@src/services';
+import type { AgentCode } from '@src/shared/agentCode';
 import { CloseOutlined as CloseOutlinedIcon, FolderOpen as FolderOpenIcon } from '@mui/icons-material';
-import { Alert, Box, Button, Divider, IconButton, InputAdornment, MenuItem, TextField, Typography } from '@mui/material';
-import { TERMINAL_AGENT_OPTIONS } from '@src/shared/launchSettings';
+import { Alert, Box, Button, IconButton, InputAdornment, TextField, Typography } from '@mui/material';
+import LaunchSettingsFields from '@src/shared/LaunchSettingsFields';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
+import { useEffectiveAcpAgentCode } from '@src/state/agentCatalog';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useState } from 'react';
@@ -28,14 +30,6 @@ interface WorkspaceDrawerProps {
 // 描述最大字数（与后端 binding max=500 对齐）。
 const DESCRIPTION_MAX = 500;
 
-/** 一期 agent 目录未落地前的固定四选项（T1.2 落地后切换数据源）。 */
-const AGENT_CODE_OPTIONS = [
-  { value: 'claude-acp', label: 'Claude Code' },
-  { value: 'codex', label: 'Codex' },
-  { value: 'opencode', label: 'OpenCode' },
-  { value: 'pi', label: 'Pi' },
-] as const;
-
 function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: WorkspaceDrawerProps) {
   const { t } = useTranslation();
   const isEdit = !!workspace;
@@ -50,9 +44,9 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
   const [autoCommand, setAutoCommand] = useState<NonNullable<WorkspaceLaunchSettings['autoCommand']>>(
     workspace?.launchSettings?.autoCommand ?? 'claude',
   );
-  const [agentCode, setAgentCode] = useState<NonNullable<WorkspaceLaunchSettings['agentCode']>>(
-    workspace?.launchSettings?.agentCode ?? 'claude-acp',
-  );
+  // ACP Agent 选中态：undefined = 未显式选择（派生首个 enabled），遗留值不静默改写。
+  const [agentCode, setAgentCode] = useState<AgentCode | undefined>(workspace?.launchSettings?.agentCode);
+  const effectiveAgentCode = useEffectiveAcpAgentCode(agentCode);
   const [permissionMode, setPermissionMode] = useState<NonNullable<WorkspaceLaunchSettings['permissionMode']>>(
     workspace?.launchSettings?.permissionMode ?? 'acceptEdits',
   );
@@ -75,10 +69,11 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     setError(null);
     try {
       // none / 手动档只带 mode（手动 = 自动打开终端，不自动拉起 Agent，经终端工具条
-      // 自行选择）；自动档带 autoCommand（直启目标）；ACP 会话带 agentCode + permissionMode。
+      // 自行选择）；自动档带 autoCommand（直启目标）；ACP 会话带 agentCode（= 目录
+      // 条目 code，未显式选择时为派生默认）+ permissionMode。
       const launchSettings: WorkspaceLaunchSettings
         = launchMode === 'acp'
-          ? { mode: launchMode, agentCode, permissionMode }
+          ? { mode: launchMode, agentCode: effectiveAgentCode, permissionMode }
           : launchMode === 'terminal-auto'
             ? { mode: launchMode, autoCommand }
             : { mode: launchMode };
@@ -187,77 +182,26 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
           />
 
           {/* 启动设置（launch_settings）：workspace 单源，无全局回落；未配置等同手动。 */}
-          <Divider />
-          <TextField
-            select
-            label="启动模式"
-            value={launchMode}
-            onChange={(e) => {
-              setLaunchMode(e.target.value as NonNullable<WorkspaceLaunchSettings['mode']>);
+          <LaunchSettingsFields
+            mode={launchMode}
+            onModeChange={(m) => {
+              setLaunchMode(m as NonNullable<WorkspaceLaunchSettings['mode']>);
               setError(null);
             }}
-            fullWidth
+            autoCommand={autoCommand}
+            onAutoCommandChange={(v) => {
+              setAutoCommand(v);
+              setError(null);
+            }}
+            agentCode={agentCode}
+            onAgentCodeChange={(code) => {
+              setAgentCode(code);
+              setError(null);
+            }}
+            permissionMode={permissionMode}
+            onPermissionModeChange={setPermissionMode}
             disabled={submitting}
-            helperText="不执行任何操作 = issue 就绪后不进入任何会话，出启动方式选择面板；自动打开终端 = 直接进入裸 shell 终端（Agent 经终端工具条自行选择）；终端 - 自动启动 = 直接进入终端并拉起所选 Agent；ACP 会话在 issue 主窗口以对话视图运行"
-          >
-            <MenuItem value="none">不执行任何操作</MenuItem>
-            <MenuItem value="terminal-manual">自动打开终端</MenuItem>
-            <MenuItem value="terminal-auto">终端 - 自动启动 Agent</MenuItem>
-            <MenuItem value="acp">ACP 方式启动 Agent</MenuItem>
-          </TextField>
-          {launchMode === 'terminal-auto' && (
-            <TextField
-              select
-              label="终端 Agent"
-              value={autoCommand}
-              onChange={(e) => {
-                setAutoCommand(e.target.value as NonNullable<WorkspaceLaunchSettings['autoCommand']>);
-                setError(null);
-              }}
-              fullWidth
-              disabled={submitting}
-              helperText="选中 issue 打开主终端时直接运行的 CLI Agent（无 shell 中转）"
-            >
-              {TERMINAL_AGENT_OPTIONS.map(opt => (
-                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-              ))}
-            </TextField>
-          )}
-          {launchMode === 'acp' && (
-            <>
-              <TextField
-                select
-                label="ACP Agent"
-                value={agentCode}
-                onChange={(e) => {
-                  setAgentCode(e.target.value as NonNullable<WorkspaceLaunchSettings['agentCode']>);
-                  setError(null);
-                }}
-                fullWidth
-                disabled={submitting}
-                helperText="ACP 会话驱动的编码 agent（一期固定四项，agent 目录就绪后自动扩展）"
-              >
-                {AGENT_CODE_OPTIONS.map(opt => (
-                  <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                ))}
-              </TextField>
-              <TextField
-                select
-                label="执行模式"
-                value={permissionMode}
-                onChange={(e) => {
-                  setPermissionMode(e.target.value as NonNullable<WorkspaceLaunchSettings['permissionMode']>);
-                  setError(null);
-                }}
-                fullWidth
-                disabled={submitting}
-                helperText="需要审批 = 敏感操作推送审批卡人工确认；自动放行 = 免审批直接执行"
-              >
-                <MenuItem value="acceptEdits">需要审批</MenuItem>
-                <MenuItem value="bypassPermissions">自动放行</MenuItem>
-              </TextField>
-            </>
-          )}
+          />
           {error && <Alert severity="error">{error}</Alert>}
         </Box>
 

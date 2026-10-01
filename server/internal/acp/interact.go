@@ -86,6 +86,10 @@ func (p *PendingPermission) cancel() error {
 	return p.settle(cancelledPermissionOutcome())
 }
 
+// Cancel 导出的取消途径：消费方（真握手测试的防御收敛、T1.7 桌面审批弹窗的关闭动作）
+// 放弃决策时以 cancelled 结算。已 resolved 返回 ErrAlreadyResolved。
+func (p *PendingPermission) Cancel() error { return p.cancel() }
+
 func (p *PendingPermission) settle(outcome schema.RequestPermissionOutcome) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

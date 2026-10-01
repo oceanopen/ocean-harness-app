@@ -351,7 +351,7 @@ issue 主窗口
 
 #### T1.2 agent catalog（离线 pin）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：agent 目录数据源与刷新脚本，一期只启用 claude-acp
 
@@ -360,6 +360,15 @@ issue 主窗口
 - 每条目声明 spawn 策略与启动参数（`npx-adapter` / `native-acp`；`in-process-go` 仅预留枚举）
 - 一期只落 claude-acp 条目（P4 收窄：codex / opencode / pi 留条目模板与 spawn 策略口子，扩展 = 补条目 + registry 快照，不在本文硬编码）；catalog/doctor 的 UI 面板仍砍到最小
 - adapter 版本 pin 进 catalog（参考 0.8x 线），升级走刷新脚本统一升 + 验证流程定稿（风险 §5.2）
+
+**实施定稿**：
+- 刷新脚本 `scripts/prepare-agent-catalog.mjs`（`pnpm server:catalog:refresh`）：从官方 ACP registry 取 agent 定义，逐条目查 npm 实际版本，pin `@zed-industries/claude-code-acp` 0.84.0（T1.1 实测 0.16.x lineage 的继任版本线）产出 `server/internal/agentcatalog/agent-catalog.json`；registry 原始快照同落 `acp-registry.snapshot.json` 溯源；以 SOURCE_DATE_EPOCH 固定时间戳，重复运行产物一致（幂等可 diff）。升级流程 = 重跑脚本 → `go test` 过内嵌产物断言 → T1.4 握手回归
+- 条目显式落 `code` 字段（= id，即 launch_settings.agentCode 取值）；`nodeMinVersion` 一期 22（node:child_process 直拉 npx 需较新 node，T1.4 doctor 消费，空 = 不校验）
+- `agentcatalog` 包：go:embed 内嵌 + `Load` 进程级单例；parse 校验结构版本 / 条目非空 / id+code 唯一非空 / strategy 枚举 / enabled 条目 command 非空，宁失败不静默；查表单一路径 `GetAgentCatalogInfoByCode`（匹配条目 code）；`Entry.SpawnConfig(cwd)` 翻译条目为 acp.SpawnConfig（npx-adapter / native-acp 现同为 argv 直拼，差异留给 T1.3 vendored 入口改写；in-process-go 预留枚举翻译报错）；claude 专属注入（可执行文件 / login PATH）由调用方追加，catalog 层不感知（D5）
+- `enums.AgentCode` 定型为开放命名 string 类型（非闭合字面量联合）：常量仅在代码出现分支判断时补充（一期仅 `AGENT_CODE_CLAUDE_ACP`）；合法取值域 SSOT = catalog enabled 条目 code，扩展新 agent 不改映射；原四常量闭合枚举（dal/enums/workspace.go）删除；消费端查记录一律走 `GetAgentCatalogInfoByCode`
+- HTTP 面 `POST /api/agentCatalog/getList`（chain controller + 标准包裹），投影含 code/label/version/strategy/enabled/nodeMinVersion；前端 `state/agentCatalog` 查询域（keys/queries/barrel）消费，`shared/agentCode.ts` 类型映射对齐；下拉可选面 = enabled 条目投影（顺序即 catalog 顺序），原 `AGENT_CODE_OPTIONS` 常量删除
+- `LaunchSettingsFields` 受控组件：启动设置字段组（启动模式 + terminal-auto 档「终端 Agent」+ acp 档「ACP Agent / 执行模式」）两抽屉共用——WorkspaceDrawer（workspace 单源）与 ProjectIssueDrawer（issue 覆盖档加「跟随工作空间」displayEmpty 首项 + 字段级回落），差异仅 `showFollowOption`；agentCode 选中态以 '' = 未显式选择，渲染期派生首个 enabled 条目（`useEffectiveAcpAgentCode`，编码规则 1，无 effect 回填）；目录升级后的遗留值以禁用项显式呈现、保存不静默改写；issue 覆盖的提交草稿渲染期派生一次，dirty 比较与提交共用同一派生（修 dirty 漏检）
+- 真握手测试改走 catalog：`handshake_real_test.go` 以 `GetAgentCatalogInfoByCode(string(enums.AGENT_CODE_CLAUDE_ACP))` 取条目翻译 SpawnConfig 拉起真 adapter；测试落外部测试包 `acp_test` 避免与 acp 包循环依赖
 
 **依赖**：无
 

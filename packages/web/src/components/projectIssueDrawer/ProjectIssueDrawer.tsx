@@ -1,4 +1,5 @@
 import type { IssueRepositoryBranchModel, Priority, ProjectIssueResponseData, WorkspaceLaunchSettings, WorkspaceProjectModel, WorkspaceTypeModel } from '@src/services';
+import type { AgentCode } from '@src/shared/agentCode';
 import type { StateCode } from '@src/state/tracker';
 import { AutoFixHighOutlined as AutoFixHighOutlinedIcon, CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
 import {
@@ -8,18 +9,17 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
-  MenuItem,
   TextField,
   Typography,
 } from '@mui/material';
 import { DatePicker, LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { ACP_AGENT_OPTIONS, TERMINAL_AGENT_OPTIONS } from '@src/shared/launchSettings';
+import LaunchSettingsFields from '@src/shared/LaunchSettingsFields';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
+import { useEffectiveAcpAgentCode } from '@src/state/agentCatalog';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useLocalRepositories } from '@src/state/localRepositories';
 import { STATE_CODE_DEFAULT, useCreateProjectIssue, useDeleteProjectIssue, useUpdateProjectIssue, useWorkspaceTypes } from '@src/state/tracker';
@@ -34,12 +34,6 @@ import ProjectStateSelect from './ProjectStateSelect';
 import TypeSelect from './TypeSelect';
 import WorkspaceTypeManagerDrawer from './WorkspaceTypeManagerDrawer';
 import 'dayjs/locale/zh-cn';
-
-/**
- * 启动模式覆盖草稿值：'' = 跟随工作空间（未覆盖），其余对齐 WorkspaceLaunchSettings.mode。
- * 空串走 MUI displayEmpty + inputLabel.shrink 双配置（见下拉处注释）。
- */
-type LaunchModeOverride = '' | NonNullable<WorkspaceLaunchSettings['mode']>;
 
 interface ProjectIssueDrawerProps {
   mode: 'create' | 'edit';
@@ -104,12 +98,23 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const [launchAutoCommand, setLaunchAutoCommand] = useState<NonNullable<WorkspaceLaunchSettings['autoCommand']>>(
     projectIssue?.launchSettings?.autoCommand ?? 'claude',
   );
-  const [launchAgentCode, setLaunchAgentCode] = useState<NonNullable<WorkspaceLaunchSettings['agentCode']>>(
-    projectIssue?.launchSettings?.agentCode ?? 'claude-acp',
+  // ACP Agent 覆盖选中态：undefined = 未覆盖（派生首个 enabled），遗留值不静默改写。
+  const [launchAgentCode, setLaunchAgentCode] = useState<AgentCode | undefined>(
+    projectIssue?.launchSettings?.agentCode,
   );
+  const effectiveLaunchAgentCode = useEffectiveAcpAgentCode(launchAgentCode);
   const [launchPermissionMode, setLaunchPermissionMode] = useState<NonNullable<WorkspaceLaunchSettings['permissionMode']>>(
     projectIssue?.launchSettings?.permissionMode ?? 'acceptEdits',
   );
+  // 覆盖后的启动设置草稿（'' = 未覆盖 → undefined，对齐「省略 = 未覆盖」契约）；dirty 与提交共用。
+  const draftLaunchSettings: WorkspaceLaunchSettings | undefined
+    = launchModeOverride === ''
+      ? undefined
+      : launchModeOverride === 'acp'
+        ? { mode: launchModeOverride, agentCode: effectiveLaunchAgentCode, permissionMode: launchPermissionMode }
+        : launchModeOverride === 'terminal-auto'
+          ? { mode: launchModeOverride, autoCommand: launchAutoCommand }
+          : { mode: launchModeOverride };
   const repoBranchRows = repoBranchRowsOverride ?? defaultRepoBranchRows;
   // 用户是否已手动操作过类型（create 默认选中「需求」仅作用于未触碰时，避免覆盖用户显式选的「未分类」）。
   const [typeTouched, setTypeTouched] = useState(false);
@@ -156,6 +161,16 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
       || row.repositoryBranch !== orig[i].repositoryBranch);
   })();
 
+  // 启动设置覆盖是否相对原值变化（逐键比较，undefined 归一空串）。
+  const launchSettingsDirty = (() => {
+    const orig = projectIssue?.launchSettings;
+    const val = (v: string | undefined) => v ?? '';
+    return val(orig?.mode) !== val(draftLaunchSettings?.mode)
+      || val(orig?.agentCode) !== val(draftLaunchSettings?.agentCode)
+      || val(orig?.autoCommand) !== val(draftLaunchSettings?.autoCommand)
+      || val(orig?.permissionMode) !== val(draftLaunchSettings?.permissionMode);
+  })();
+
   const dirty = mode === 'edit' && !!projectIssue && (
     name !== projectIssue.name
     || description !== projectIssue.description
@@ -165,6 +180,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     || targetDate !== projectIssue.targetDate
     || repoBranchDirty
     || typeDirty
+    || launchSettingsDirty
   );
 
   // 存在未选仓库的行（空行）时不可保存（后端也会校验报错，前端先行禁用）。
@@ -233,15 +249,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
         onCreated?.(created);
         onClose();
       } else if (mode === 'edit') {
-        // 启动设置覆盖：''（跟随工作空间）= 不传（清除覆盖）；覆盖档按档带附加字段。
-        const launchSettings: WorkspaceLaunchSettings | undefined
-          = launchModeOverride === ''
-            ? undefined
-            : launchModeOverride === 'acp'
-              ? { mode: launchModeOverride, agentCode: launchAgentCode, permissionMode: launchPermissionMode }
-              : launchModeOverride === 'terminal-auto'
-                ? { mode: launchModeOverride, autoCommand: launchAutoCommand }
-                : { mode: launchModeOverride };
         const updated = await updateProjectIssue.mutateAsync({
           id: projectIssue!.id,
           name: name.trim(),
@@ -252,7 +259,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           targetDate,
           typeId: currentType?.id ?? 0,
           repositoryBranchList: repoBranchRows,
-          launchSettings,
+          launchSettings: draftLaunchSettings,
         });
         onUpdated?.(updated);
         onClose();
@@ -392,85 +399,20 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
             disabled={submitting || deleting}
           />
 
-          {/* 启动设置覆盖（launch_settings，仅 edit 回显/编辑）：未覆盖键字段级回落工作空间。
-          新增文案中文直出（本抽屉既有字段走 i18n）。 */}
+          {/* 启动设置覆盖（launch_settings，仅 edit 回显/编辑）：未覆盖键字段级回落工作空间。 */}
           {mode === 'edit' && (
-            <>
-              <Divider />
-              <TextField
-                select
-                label="启动模式"
-                value={launchModeOverride}
-                onChange={(e) => {
-                  setLaunchModeOverride(e.target.value as LaunchModeOverride);
-                }}
-                fullWidth
-                disabled={submitting || deleting}
-                // 空串（跟随工作空间）是有效选项：displayEmpty 渲染选中项文本；
-                // InputBase 的 filled 判定不含空串，label 需显式常驻收缩，否则与内容重影。
-                slotProps={{
-                  select: { displayEmpty: true },
-                  inputLabel: { shrink: true },
-                }}
-                helperText="跟随工作空间 = 未覆盖，沿用工作空间启动设置；覆盖仅对本 issue 生效"
-              >
-                <MenuItem value="">跟随工作空间</MenuItem>
-                <MenuItem value="none">不执行任何操作</MenuItem>
-                <MenuItem value="terminal-manual">自动打开终端</MenuItem>
-                <MenuItem value="terminal-auto">终端 - 自动启动 Agent</MenuItem>
-                <MenuItem value="acp">ACP 方式启动 Agent</MenuItem>
-              </TextField>
-              {launchModeOverride === 'terminal-auto' && (
-                <TextField
-                  select
-                  label="终端 Agent"
-                  value={launchAutoCommand}
-                  onChange={(e) => {
-                    setLaunchAutoCommand(e.target.value as NonNullable<WorkspaceLaunchSettings['autoCommand']>);
-                  }}
-                  fullWidth
-                  disabled={submitting || deleting}
-                  helperText="选中 issue 打开主终端时直接运行的 CLI Agent（无 shell 中转）"
-                >
-                  {TERMINAL_AGENT_OPTIONS.map(opt => (
-                    <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                  ))}
-                </TextField>
-              )}
-              {launchModeOverride === 'acp' && (
-                <>
-                  <TextField
-                    select
-                    label="ACP Agent"
-                    value={launchAgentCode}
-                    onChange={(e) => {
-                      setLaunchAgentCode(e.target.value as NonNullable<WorkspaceLaunchSettings['agentCode']>);
-                    }}
-                    fullWidth
-                    disabled={submitting || deleting}
-                    helperText="issue 主窗口 ACP 会话驱动的编码 agent（一期固定四项）"
-                  >
-                    {ACP_AGENT_OPTIONS.map(opt => (
-                      <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                    ))}
-                  </TextField>
-                  <TextField
-                    select
-                    label="执行模式"
-                    value={launchPermissionMode}
-                    onChange={(e) => {
-                      setLaunchPermissionMode(e.target.value as NonNullable<WorkspaceLaunchSettings['permissionMode']>);
-                    }}
-                    fullWidth
-                    disabled={submitting || deleting}
-                    helperText="需要审批 = 敏感操作推送审批卡人工确认；自动放行 = 免审批直接执行"
-                  >
-                    <MenuItem value="acceptEdits">需要审批</MenuItem>
-                    <MenuItem value="bypassPermissions">自动放行</MenuItem>
-                  </TextField>
-                </>
-              )}
-            </>
+            <LaunchSettingsFields
+              mode={launchModeOverride}
+              onModeChange={setLaunchModeOverride}
+              autoCommand={launchAutoCommand}
+              onAutoCommandChange={setLaunchAutoCommand}
+              agentCode={launchAgentCode}
+              onAgentCodeChange={setLaunchAgentCode}
+              permissionMode={launchPermissionMode}
+              onPermissionModeChange={setLaunchPermissionMode}
+              disabled={submitting || deleting}
+              showFollowOption
+            />
           )}
           {/* 元信息（仅 edit） */}
           {mode === 'edit' && projectIssue && (

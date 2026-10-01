@@ -1,16 +1,9 @@
-import type { WorkspaceLaunchSettings } from '@src/services';
+import type { AgentCatalogEntry, WorkspaceLaunchSettings } from '@src/services';
+import type { AgentCode } from '@src/shared/agentCode';
 
 /** 一期终端启动 Agent 选项（launch_settings.autoCommand，terminal-auto 档消费；新 CLI 直启在此扩展）。 */
 export const TERMINAL_AGENT_OPTIONS = [
   { value: 'claude', label: 'Claude Code' },
-] as const;
-
-/** 一期 ACP 会话 Agent 选项（launch_settings.agentCode；T1.2 catalog 落地后切换数据源）。 */
-export const ACP_AGENT_OPTIONS = [
-  { value: 'claude-acp', label: 'Claude Code' },
-  { value: 'codex', label: 'Codex' },
-  { value: 'opencode', label: 'OpenCode' },
-  { value: 'pi', label: 'Pi' },
 ] as const;
 
 /** 终端启动 Agent 展示名（autoCommand → 产品名；未知值原样展示）。 */
@@ -21,18 +14,12 @@ export function terminalAgentLabel(autoCommand: string | undefined): string {
   return autoCommand;
 }
 
-/** ACP 会话 Agent 展示名（agentCode 枚举码 → 产品名）。 */
-export function acpAgentLabel(code: NonNullable<WorkspaceLaunchSettings['agentCode']> | undefined): string {
-  switch (code) {
-    case 'codex':
-      return 'Codex';
-    case 'opencode':
-      return 'OpenCode';
-    case 'pi':
-      return 'Pi';
-    default:
-      return 'Claude Code';
+/** ACP 会话 Agent 展示名（agentCode → 条目 label；未配置取首个 enabled，遗留值原样展示）。 */
+export function acpAgentLabel(entries: AgentCatalogEntry[] | undefined, code: AgentCode | undefined): string {
+  if (code != null && code !== '') {
+    return entries?.find(entry => entry.code === code)?.label ?? code;
   }
+  return entries?.find(entry => entry.enabled)?.label ?? 'Claude Code';
 }
 
 /**

@@ -20,11 +20,10 @@ type WorkspaceGetInfoRequest struct {
 }
 
 // WorkspaceLaunchSettings 启动设置（t_workspaces.launch_settings JSON 的请求/响应形态，
-// shape SSOT）。mode/agentCode/permissionMode 的取值域由前端枚举约定（一期 UI 见方案文档
-// T0.2/T0.3），后端透传不校验；空对象/空串 = 未配置，消费端等同 none（不做任何启动动作）。
+// shape SSOT）。后端透传不校验取值域。空对象/空串 = 未配置，消费端等同 none。
 type WorkspaceLaunchSettings struct {
 	Mode           string          `json:"mode,omitempty"`           // none | terminal-manual | terminal-auto | acp（未配置等同 none：出启动方式选择面板；manual=自动打开终端）
-	AgentCode      enums.AgentCode `json:"agentCode,omitempty"`      // ACP 会话 agent（catalog 条目）
+	AgentCode      enums.AgentCode `json:"agentCode,omitempty"`      // ACP 会话 agent
 	AutoCommand    string          `json:"autoCommand,omitempty"`    // 终端启动 Agent（仅 terminal-auto：主终端直接启动；manual 档经终端工具条自选；一期 claude）
 	PermissionMode string          `json:"permissionMode,omitempty"` // ACP 执行模式：acceptEdits | bypassPermissions
 }

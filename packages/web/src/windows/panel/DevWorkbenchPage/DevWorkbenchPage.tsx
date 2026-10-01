@@ -42,6 +42,7 @@ import { isMacOS, TRAFFIC_LIGHT_CLEARANCE } from '@src/shared/platform';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
+import { useAgentCatalog } from '@src/state/agentCatalog';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useArchiveIssueWorkspace, useInitIssueWorkspace } from '@src/state/issueWorkspace';
 import { removeLayout } from '@src/state/terminalPanes';
@@ -185,10 +186,11 @@ export default function DevWorkbenchPage() {
   const workspace = issue != null ? workspaces.find(ws => ws.id === issue.workspaceId) ?? null : null;
   const workspaceDir = workspace?.dir ?? null;
   // 生效启动设置（T0.4）：issue 覆盖字段级合并 workspace，未覆盖键回落。合并值驱动
-  // 终端直启派生与启动分流；issue/workspaces 任一解析中时 startupCli=null（消费端闸门
-  // 等待，保证 directCommand 首值即终值）。
+  // 终端直启派生与启动分流；issue/workspaces/catalog 任一解析中时 startupCli=null
+  // （消费端闸门等待，保证 directCommand/Agent 展示名首值即终值——编码规则 1）。
   const effLaunch = mergeLaunchSettings(workspace?.launchSettings, issue?.launchSettings);
-  const launchResolved = !workspacesPending && issue != null && workspace != null;
+  const { data: agentCatalog = [], isPending: agentCatalogPending } = useAgentCatalog();
+  const launchResolved = !workspacesPending && !agentCatalogPending && issue != null && workspace != null;
   const startupCli: string | null = launchResolved
     ? terminalStartupCli(effLaunch?.mode, effLaunch?.autoCommand)
     : null;
@@ -536,7 +538,7 @@ export default function DevWorkbenchPage() {
                                 launchMode={effLaunch?.mode ?? 'none'}
                                 autoCommand={effLaunch?.autoCommand}
                                 terminalAgentLabel={terminalAgentLabel(effLaunch?.autoCommand)}
-                                acpAgentLabel={acpAgentLabel(effLaunch?.agentCode)}
+                                acpAgentLabel={acpAgentLabel(agentCatalog, effLaunch?.agentCode)}
                               />
                             )}
                       </TerminalErrorBoundary>

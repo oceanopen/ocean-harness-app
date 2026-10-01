@@ -31,7 +31,7 @@ const (
 )
 
 // SpawnConfig 描述一次 ACP agent 子进程拉起参数。client 只认本结构，不感知 agent：
-// TODO(T1.2): catalog 条目（spawn 策略 + command/args + pin 版本）翻译为本结构后驱动；
+// catalog 条目经 agentcatalog.Entry.SpawnConfig 翻译为本结构后驱动（T1.2）；
 // TODO(T1.3): claude 路径一致性（resolveClaudeBin → CLAUDE_CODE_EXECUTABLE）经 Env 注入，
 // login PATH 亦由调用方按探测结果经 Env["PATH"] 覆盖（nvm 等 GUI 缺失路径场景）。
 type SpawnConfig struct {
