@@ -1,4 +1,4 @@
-// Package buildinfo 持有 CLI 二进制的编译期注入信息。唯一写入方是 scripts/build-server.mjs
+// Package buildinfo 持有 CLI 二进制的编译期注入信息。唯一写入方是 scripts/build-server.ts
 // 的 -ldflags -X（TAURI_RUN_MODE=dev|build 决定取值）；绕过脚本直接 go build 时保留源码默认值，
 // 此时可用 OCEAN_HARNESS_PORT 环境变量在运行期纠正目标服务（见 internal/cli/port.go）。
 package buildinfo

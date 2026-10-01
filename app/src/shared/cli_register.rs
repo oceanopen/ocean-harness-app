@@ -54,7 +54,7 @@ fn link_path() -> Result<PathBuf, String> {
 
 /// 本 app 的 cli 二进制路径：随包 sidecar 与主程序同目录，命名 = {identifier}-cli_bin
 /// （tauri externalBin 约定：打包去 triple 后缀进 Contents/MacOS/，dev 下 tauri-build
-/// 拷到 target/debug/<同名>；与 go_server_bin 同一命名规则，见 scripts/build-server.mjs）。
+/// 拷到 target/debug/<同名>；与 go_server_bin 同一命名规则，见 scripts/build-server.ts）。
 fn cli_bin_path(app: &AppHandle) -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| format!("获取当前可执行文件路径失败: {e}"))?;
     let dir = exe

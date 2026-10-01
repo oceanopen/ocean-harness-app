@@ -20,7 +20,7 @@ import (
 )
 
 // Vendoring（T1.3）：adapter 依赖在构建期 npm install 随应用打包（资源源，
-// scripts/prepare-acp-adapters.mjs 产出），运行期按需复制进受管目录后以
+// scripts/prepare-acp-adapters.ts 产出），运行期按需复制进受管目录后以
 // `node <vendored 入口>` 拉起——运行时零 npm / registry 依赖（公司网络约束），
 // 版本由 catalog pin 在构建期锁定。两目录布局同构，均 <root>/<id>/<version>/：
 //
@@ -166,7 +166,7 @@ func nodeBinFromDirs(dirs []string) (string, error) {
 	return "", errors.New("未找到可执行 node")
 }
 
-// adapterPkgName 从条目 spawn args 还原 npm 包名（scripts/prepare-acp-adapters.mjs 同款
+// adapterPkgName 从条目 spawn args 还原 npm 包名（scripts/prepare-acp-adapters.ts 同款
 // 规则：最后一个非 flag 参数为安装 spec，去掉 @版本尾缀）。条目形如 ["-y", "@scope/pkg@1.2.3"]。
 func adapterPkgName(args []string) (string, error) {
 	spec := ""

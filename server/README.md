@@ -159,7 +159,7 @@ ocean-harness-cli completion zsh               # shell 补全脚本（bash/zsh/f
 
 - **输出契约**：stdout 纯 JSON、换行 + 2 空格缩进格式化（`SetEscapeHTML(false)` + `SetIndent`，仍是合法 JSON 可 jq/管道消费），stderr 纯中文文案；**退出码** `0` 成功 / `1` 工具业务错误（服务端 IsError）/ `2` 用法或连接错误。
 - **端口**：编译期常量（test 模式 9000 / release 9100，`internal/cli/port.go` 与 Rust 同源）；优先级 `--port` flag > `OCEAN_HARNESS_PORT` env > 编译期默认（典型用途：`--port 9200` 或 `OCEAN_HARNESS_PORT=9200` 指向 air 自测服务联调）。
-- **构建**：由 `scripts/build-server.mjs` 与 server 二进制同批构建（`-ldflags -X` 注入 `internal/buildinfo.Mode/Version`，Version 取根 `package.json`）；tauri `externalBin` 名 `{identifier}-cli_bin-{triple}`，打包进 app 随主程序签名。
+- **构建**：由 `scripts/build-server.ts` 与 server 二进制同批构建（`-ldflags -X` 注入 `internal/buildinfo.Mode/Version`，Version 取根 `package.json`）；tauri `externalBin` 名 `{identifier}-cli_bin-{triple}`，打包进 app 随主程序签名。
 - **会话管理**：每次命令独立 `WithSession`（新建 MCP 会话 → 调用 → `Close()` 下发 DELETE），不在服务端残留会话。
 
 - `GET /api/baseInfo/getServerRunInfo` → `{ code, msg, data: { sysInfo: { hostname, goVersion, os, arch }, serverInfo: { mode, address, logDir, sqliteDir } } }`
@@ -208,7 +208,7 @@ pnpm server:test   # 构建 dev 二进制（原 server:dev）
 pnpm tauri:dev     # Rust 拉起 sidecar 并打开客户端，端口 9000
 ```
 
-> 依赖为纯 Go（sqlite 用 `glebarez/sqlite`，无 CGO），构建脚本 `scripts/build-server.mjs` 显式 `CGO_ENABLED=0`，支持 CI 跨平台交叉编译。
+> 依赖为纯 Go（sqlite 用 `glebarez/sqlite`，无 CGO），构建脚本 `scripts/build-server.ts` 显式 `CGO_ENABLED=0`，支持 CI 跨平台交叉编译。
 
 ## gorm/gen 代码生成（DO 层）
 

@@ -1,6 +1,6 @@
 // Package agentcatalog ACP agent 目录（离线 pin 快照）。
 //
-// agent-catalog.json 由 scripts/prepare-agent-catalog.mjs 从官方 ACP registry 生成
+// agent-catalog.json 由 scripts/prepare-agent-catalog.ts 从官方 ACP registry 生成
 // （pnpm server:catalog:refresh，registry 原始快照同写入库），编译期 go:embed 内嵌
 // sidecar，运行时不在线拉取。取值域 SSOT：launch_settings.agentCode 的合法取值 =
 // 本目录 enabled 条目的 id（HTTP 面经 /api/agentCatalog/getList 投影给前端）。

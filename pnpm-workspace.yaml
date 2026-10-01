@@ -13,6 +13,7 @@ packages:
 # 依赖版本 SSOT：全仓依赖一律在此登记版本、包内以 "catalog:" 引用
 # （eslint pnpm/json-enforce-catalog 规则兜底校验），杜绝各包版本漂移。
 catalog:
+  '@agentclientprotocol/claude-agent-acp': 0.84.0
   '@antfu/eslint-config': ^9.0.0
   '@codemirror/commands': ^6.11.0
   '@codemirror/lang-cpp': ^6.0.3

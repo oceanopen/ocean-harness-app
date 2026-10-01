@@ -37,5 +37,5 @@ server/temp/
 
 app/binaries
 
-# ACP adapter vendoring staging（构建产物，prepare-acp-adapters.mjs 生成；node_modules 已由全局规则忽略）
+# ACP adapter vendoring staging（构建产物，prepare-acp-adapters.ts 生成；node_modules 已由全局规则忽略）
 app/resources/acp-adapters/

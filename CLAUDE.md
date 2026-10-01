@@ -19,7 +19,7 @@ ocean-harness-app/
 ├── server/               # Go sidecar（原 src-server，module ocean-harness/server）
 ├── plugins/              # Claude Code 插件（ocean-harness-plugin；根 .claude-plugin/marketplace.json 自成 marketplace 分发）
 ├── docs/                 # 临时开发文档（agent_dev_*.md，非 workspace 包，与 packages/docs 无关）
-└── scripts/              # 根编排辅助脚本（build-server.mjs）
+└── scripts/              # 根编排辅助脚本（build-server.ts）
 ```
 
 - `app/`、`server/`、`plugins/`、`docs/` 游离于 pnpm workspace 之外（非 Node 包/纯文档），由根脚本 `go -C server` / `cargo --manifest-path app/Cargo.toml` 编排；后续 `cli/`、`bot/` 等新 Node 包落 `packages/` 下即被 `packages/*` glob 自动收编。

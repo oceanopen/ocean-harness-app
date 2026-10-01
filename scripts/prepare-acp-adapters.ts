@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * prepare-acp-adapters.mjs — 构建期安装 ACP adapter 到 Tauri resources staging
+ * prepare-acp-adapters.ts — 构建期安装 ACP adapter 到 Tauri resources staging
  *
  * 读内嵌 agent catalog（SSOT）的 enabled + npx-adapter 条目，npm install（--omit=dev）
  * 到 app/resources/acp-adapters/<id>/<version>/，随 bundle.resources 打进应用。运行期
@@ -13,22 +13,30 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+
+/** agent catalog 条目（本脚本只消费这些字段）。 */
+interface CatalogEntry {
+  id: string;
+  args: string[];
+  enabled?: boolean;
+  strategy?: string;
+}
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const CATALOG_PATH = resolve(repoRoot, 'server/internal/agentcatalog/agent-catalog.json');
 const STAGING_ROOT = resolve(repoRoot, 'app/resources/acp-adapters');
 
-function fail(message) {
+function fail(message: string): never {
   console.error(`prepare-acp-adapters: ${message}`);
   process.exit(1);
 }
 
 /** 从 catalog 条目 args 取包 spec（非 flag 项，形如 @scope/pkg@1.2.3）。 */
-function adapterSpec(entry) {
+function adapterSpec(entry: CatalogEntry): string {
   const spec = entry.args.filter(item => !item.startsWith('-')).pop();
   if (!spec) {
     fail(`catalog 条目 ${entry.id} 无 npx 包 spec（args: ${JSON.stringify(entry.args)}）`);
@@ -37,7 +45,7 @@ function adapterSpec(entry) {
 }
 
 /** staging 是否已就绪（目标包 package.json 存在且 version 匹配）。 */
-function stagingReady(dir, pkg, version) {
+function stagingReady(dir: string, pkg: string, version: string): boolean {
   const pkgJsonPath = resolve(dir, 'node_modules', ...pkg.split('/'), 'package.json');
   if (!existsSync(pkgJsonPath)) {
     return false;
@@ -49,9 +57,11 @@ function stagingReady(dir, pkg, version) {
   }
 }
 
-/** 清理同 id 下历史中断残留的 .<version>.tmp-* 临时目录（与运行期 EnsureVendored 的
- * 同名卫生规则对齐；当前 pid 的临时目录在本函数之后才创建，不受误伤）。 */
-function cleanStaleTmp(idDir) {
+/**
+ * 清理同 id 下历史中断残留的 .<version>.tmp-* 临时目录（与运行期 EnsureVendored 的
+ * 同名卫生规则对齐；当前 pid 的临时目录在本函数之后才创建，不受误伤）。
+ */
+function cleanStaleTmp(idDir: string): void {
   if (!existsSync(idDir)) {
     return;
   }
@@ -62,7 +72,7 @@ function cleanStaleTmp(idDir) {
   }
 }
 
-const catalog = JSON.parse(readFileSync(CATALOG_PATH, 'utf8'));
+const catalog = JSON.parse(readFileSync(CATALOG_PATH, 'utf8')) as { agents?: CatalogEntry[] };
 const entries = (catalog.agents ?? []).filter(
   entry => entry.enabled && entry.strategy === 'npx-adapter',
 );
@@ -103,7 +113,7 @@ for (const entry of entries) {
     });
   } catch (err) {
     rmSync(tmpDir, { recursive: true, force: true });
-    fail(`npm install ${spec} 失败: ${err.message}`);
+    fail(`npm install ${spec} 失败: ${err instanceof Error ? err.message : String(err)}`);
   }
   if (!stagingReady(tmpDir, pkg, version)) {
     rmSync(tmpDir, { recursive: true, force: true });

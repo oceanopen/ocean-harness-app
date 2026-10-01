@@ -47,7 +47,7 @@ const targetGOOS = process.env.GOOS ?? hostGOOS;
 const targetGOARCH = process.env.GOARCH ?? hostGOARCH;
 
 // GOOS/GOARCH → Rust target triple（与 CI matrix args 的 --target 一致）。
-function targetTriple(goos, goarch) {
+function targetTriple(goos: string, goarch: string): string {
   const arch = goarch === 'arm64' ? 'aarch64' : goarch === 'amd64' ? 'x86_64' : goarch;
   if (goos === 'darwin') {
     return `${arch}-apple-darwin`;
@@ -61,7 +61,7 @@ function targetTriple(goos, goarch) {
   throw new Error(`unsupported GOOS: ${goos} (GOARCH: ${goarch})`);
 }
 
-function exeSuffixFor(goos) {
+function exeSuffixFor(goos: string): string {
   return goos === 'windows' ? '.exe' : '';
 }
 
@@ -81,11 +81,11 @@ if (runMode !== 'dev' && runMode !== 'build') {
 // build 模式额外读 build.local.conf（本地发布构建的 overlay，identifier 不同步则运行期
 // sidecar 名解析失败），为它多产一套同名产物；CI 走主 conf，多余产物留在 binaries/ 不入包。
 const confPath = resolve(repoRoot, runMode === 'dev' ? 'app/tauri.dev.conf.json' : 'app/tauri.conf.json');
-const identifier = JSON.parse(readFileSync(confPath, 'utf8')).identifier;
+const identifier = (JSON.parse(readFileSync(confPath, 'utf8')) as { identifier: string }).identifier;
 const identifiers = [identifier];
 if (runMode === 'build') {
   const localConf = resolve(repoRoot, 'app/tauri.build.local.conf.json');
-  identifiers.push(JSON.parse(readFileSync(localConf, 'utf8')).identifier);
+  identifiers.push((JSON.parse(readFileSync(localConf, 'utf8')) as { identifier: string }).identifier);
 }
 
 // 全新克隆下 binaries/ 可能不存在，递归创建兜底（go build -o 不会自动建父目录）。
@@ -111,7 +111,7 @@ for (const id of identifiers) {
 // build→release 9100，见 server/internal/buildinfo 与 internal/cli/port.go），Version 取根
 // package.json（bumpp release 流的 SSOT）供 ocean-harness version 自报。
 // 绕过本脚本直接 go build ./cmd/cli 会得到默认值，此时用 OCEAN_HARNESS_PORT env 运行期纠正。
-const pkgVersion = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')).version;
+const pkgVersion = (JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as { version: string }).version;
 const cliMode = runMode === 'dev' ? 'test' : 'release';
 const cliLdflags
   = `-X ocean-harness/server/internal/buildinfo.Mode=${cliMode} `

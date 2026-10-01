@@ -13,7 +13,7 @@ import (
 
 // 端口约定（与 app/src/shared/http_server.rs 的 HTTP_SERVER_PORT_TEST/RELEASE 同源，勿单方修改）：
 // dev 构建（Mode=test）默认 9000、正式构建（Mode=release）默认 9100。
-// 编译期注入见 scripts/build-server.mjs 的 -ldflags -X。
+// 编译期注入见 scripts/build-server.ts 的 -ldflags -X。
 const (
 	portTest    = 9000
 	portRelease = 9100
