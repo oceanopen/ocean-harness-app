@@ -6,7 +6,7 @@ package acp_test
 import (
 	"context"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,14 +18,18 @@ import (
 	"ocean-harness/server/internal/dal/enums"
 )
 
-// TestRealHandshake 一次性真握手验收（T1.1 验收 + T1.2 升级验证流程收口）：拉起真实
-// claude ACP adapter 完成 initialize → session/new → session/prompt 一轮完整链路。
+// TestRealHandshake 一次性真握手验收（T1.1 验收 + T1.2/T1.3 升级验证流程收口）：按
+// 生产拉起链路跑通 initialize → session/new → session/prompt——catalog 条目 →
+// EnsureVendored 受管安装 → VendoredSpawnConfig（node <vendored 入口>）→
+// ClaudeEnvOverrides（CLAUDE_CODE_EXECUTABLE + login PATH）→ 真握手。
 // 需要真实凭据与网络，不进常规测试轮次：
 //
+//	pnpm server:acp:vendor   # 资源源缺失时本用例前置报错
 //	OCEAN_ACP_REAL_HANDSHAKE=1 go test ./internal/acp -run TestRealHandshake -v
 //
-// 缺省命令 = 内嵌 agent catalog 的 claude-acp 条目翻译结果——catalog pin 升级后跑本
-// 用例即完成验证（改 pin → pnpm server:catalog:refresh → 本用例 → 提交）。可经
+// catalog pin 升级后跑本用例即完成验证（改 pin → pnpm server:catalog:refresh →
+// pnpm server:acp:vendor → 本用例 → 提交）。资源源可经 OCEAN_ACP_RESOURCES_DIR 覆盖
+// （缺省仓库内 app/resources/acp-adapters）；受管根缺省用一次性临时目录；可经
 // OCEAN_ACP_REAL_COMMAND 覆盖拉起命令（空格分隔 argv）。
 func TestRealHandshake(t *testing.T) {
 	if os.Getenv("OCEAN_ACP_REAL_HANDSHAKE") != "1" {
@@ -35,15 +39,30 @@ func TestRealHandshake(t *testing.T) {
 	if !ok {
 		t.Fatal("catalog 缺映射条目 claude-acp")
 	}
-	cfg, err := entry.SpawnConfig(t.TempDir())
+	srcRoot := os.Getenv("OCEAN_ACP_RESOURCES_DIR")
+	if srcRoot == "" {
+		srcRoot = filepath.Join("..", "..", "..", "app", "resources", "acp-adapters")
+		if _, err := os.Stat(srcRoot); err != nil {
+			t.Fatalf("vendored 资源源缺失（先跑 pnpm server:acp:vendor）: %v", err)
+		}
+	}
+	dstRoot := os.Getenv("OCEAN_ACP_ADAPTERS_DIR")
+	if dstRoot == "" {
+		dstRoot = t.TempDir()
+	}
+	installDir, err := agentcatalog.EnsureVendored(entry, srcRoot, dstRoot)
 	if err != nil {
-		t.Fatalf("catalog 条目翻译: %v", err)
+		t.Fatalf("vendored 受管安装: %v", err)
+	}
+	cfg, err := entry.VendoredSpawnConfig(installDir, t.TempDir())
+	if err != nil {
+		t.Fatalf("vendored 入口翻译: %v", err)
+	}
+	if cfg.Env, err = acp.ClaudeEnvOverrides(cfg.Env); err != nil {
+		t.Fatalf("claude 路径一致性注入: %v", err)
 	}
 	if custom := os.Getenv("OCEAN_ACP_REAL_COMMAND"); custom != "" {
 		cfg.Command = strings.Fields(custom)
-	}
-	if _, err := exec.LookPath("claude"); err != nil {
-		t.Fatalf("本机未探测到 claude 可执行文件（真握手前置条件）: %v", err)
 	}
 
 	ctx := context.Background()

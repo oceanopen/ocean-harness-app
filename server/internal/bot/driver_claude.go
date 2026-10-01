@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"ocean-harness/server/internal/clibin"
 )
 
 // claudeDriver ClaudeDriver 的 headless 实现：每回合 spawn `claude -p`（stream-json 事件流），
@@ -24,7 +26,7 @@ func NewClaudeDriver() ClaudeDriver { return claudeDriver{} }
 
 // RunTurn 实现见 driver.go 契约。prompt 经 stdin 传入（不经 argv：免转义/长度限制）。
 func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
-	resolved, err := resolveClaudeBin()
+	resolved, err := clibin.Resolve()
 	if err != nil {
 		return nil, err
 	}

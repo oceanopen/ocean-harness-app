@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../packages/web/dist",
     "devUrl": "http://localhost:7102",
-    "beforeDevCommand": "pnpm server:test && pnpm web:dev",
-    "beforeBuildCommand": "pnpm server:release && pnpm web:build"
+    "beforeDevCommand": "pnpm server:acp:vendor && pnpm server:test && pnpm web:dev",
+    "beforeBuildCommand": "pnpm server:acp:vendor && pnpm server:release && pnpm web:build"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -41,6 +41,7 @@
     "shortDescription": "Ocean Harness Desktop App",
     "longDescription": "Ocean Harness Desktop App",
     "externalBin": ["binaries/com.ocean.harness-go_server_bin", "binaries/com.ocean.harness-cli_bin"],
+    "resources": ["resources/acp-adapters"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

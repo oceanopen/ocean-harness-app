@@ -8,13 +8,12 @@ package marketplace
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"ocean-harness/server/internal/clibin"
 )
 
 // CLI 超时口径：add/update 涉及 git clone（受网络影响）放宽；其余为本地操作。
@@ -23,33 +22,19 @@ const (
 	timeoutLocal = 60 * time.Second
 )
 
-// claudePathFallbacks 是 GUI 拉起的 sidecar 缺失 shell PATH 时的兜底探测路径
-// （macOS GUI 进程默认 PATH 不含 /usr/local/bin 等前缀）。LookPath 命中则不进入本列表；
-// 覆盖 brew（Intel/Apple Silicon）安装布局。
-var claudePathFallbacks = []string{"/usr/local/bin/claude", "/opt/homebrew/bin/claude"}
-
-// ResolveClaudeBin 解析 claude 可执行文件路径：先 PATH（LookPath），失败后依次探测
-// 常见安装位置（fallback 列表 + ~/.claude/local/claude——官方本地安装脚本布局）。
-// 全部失败返回中文错误并列出已尝试位置，便于用户自查安装形态。
+// ResolveClaudeBin 解析 claude 可执行文件路径（clibin 三级探测链 SSOT，带成功缓存）。
 func ResolveClaudeBin() (string, error) {
-	if p, err := exec.LookPath("claude"); err == nil {
-		return p, nil
+	resolved, err := clibin.Resolve()
+	if err != nil {
+		return "", err
 	}
-	probes := append([]string{}, claudePathFallbacks...)
-	if home, err := os.UserHomeDir(); err == nil {
-		probes = append(probes, filepath.Join(home, ".claude", "local", "claude"))
-	}
-	for _, p := range probes {
-		if info, err := os.Stat(p); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return p, nil
-		}
-	}
-	return "", errors.New("未找到 claude 命令：请先安装 Claude Code CLI（已尝试 PATH 与 " + strings.Join(probes, "、") + "）")
+	return resolved.Bin, nil
 }
 
 // run 执行 `claude <args...>`：context 超时兜底、分离捕获 stdout/stderr。
 // 非零退出返回中文错误（附 stderr 摘要）；成功返回原始 stdout（JSON 交由调用方解析）。
-// 每次调用现查二进制路径（LookPath 为微秒级），保证安装形态变化后无需重启即生效。
+// 二进制路径经 clibin 进程级成功缓存：首次解析成功后固定，claude 换安装位置需重启
+// sidecar 生效（失败不缓存，从无到有装上 CLI 无需重启）。
 func run(timeout time.Duration, args ...string) (string, error) {
 	bin, err := ResolveClaudeBin()
 	if err != nil {

@@ -9,7 +9,12 @@
 #   port       HTTP 监听端口（本地自测用 9200，与 tauri 客户端的 9000 隔离，互不影响）
 #   logDir     日志目录（相对 server；运行时转绝对路径并自动创建）
 #   sqliteDir  sqlite 数据目录（相对 server；运行时转绝对路径并自动创建）
+#   acpResourcesDir  ACP vendoring 资源源目录（相对 server；仅转绝对路径不建目录，缺失
+#                    时 ACP 拉起期报未配置；dev 指向仓库内 staging 模拟 Rust 注入）
+#   acpAdaptersDir   vendored 受管安装根（相对 server；EnsureVendored 运行期自建）
 mode: debug
 port: 9200
 logDir: temp/logs
 sqliteDir: temp/db
+acpResourcesDir: ../app/resources/acp-adapters
+acpAdaptersDir: temp/acp-adapters

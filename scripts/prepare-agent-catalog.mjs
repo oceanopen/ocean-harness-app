@@ -11,7 +11,8 @@
  *   node scripts/prepare-agent-catalog.mjs --offline               # 离线：读快照重建
  *   node scripts/prepare-agent-catalog.mjs --pin @scope/pkg@1.2.3  # 覆盖 pin（同步在线校验）
  *
- * 升级验证流程（风险 §5.2）：改 pin → 跑本脚本 → OCEAN_ACP_REAL_HANDSHAKE=1
+ * 升级验证流程（风险 §5.2）：`pnpm up <pkg>@<新版> --save-exact`（版本住 root
+ * package.json devDependencies）→ 跑本脚本 → OCEAN_ACP_REAL_HANDSHAKE=1
  * go test ./internal/acp -run TestRealHandshake（缺省命令即 catalog 条目）→ 提交。
  * 扩展 agent：BUILTIN_AGENT_IDS 与 PROJECT_OVERRIDES 各加一条目 + 补 registry 快照，
  * 代码零改动（native-acp 条目无需 pin）。
@@ -25,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = resolve(repoRoot, 'server/internal/agentcatalog');
+const rootPkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
 const CATALOG_PATH = resolve(OUT_DIR, 'agent-catalog.json');
 const SNAPSHOT_PATH = resolve(OUT_DIR, 'acp-registry.snapshot.json');
 const ACP_REGISTRY_URL = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json';
@@ -35,12 +37,13 @@ const NPM_TIMEOUT_MS = 30_000;
 const BUILTIN_AGENT_IDS = ['claude-acp'];
 
 /**
- * pin 表：pkg@精确版本（拒绝 range/latest）。包名+版本二元组整体声明——不跟随
- * registry 的包名迁移，以本项目真握手验证结论为准（0.84.0 实测跑通）。
+ * pin 包名表：id → npm 包名（版本不住这里——住 root package.json devDependencies，
+ * 本地升级 `pnpm up <pkg>@<新版> --save-exact` 即改）。包名不跟随 registry 的包名迁移，
+ * 以本项目真握手验证结论为准；版本须为精确版本（拒绝 range/latest，脚本强校验）。
  * native-acp 条目（直连 CLI）不进此表。
  */
 const ADAPTER_PINS = {
-  'claude-acp': '@agentclientprotocol/claude-agent-acp@0.84.0',
+  'claude-acp': '@agentclientprotocol/claude-agent-acp',
 };
 
 /**
@@ -140,7 +143,20 @@ async function main() {
       fail(`白名单条目 ${id} 缺 PROJECT_OVERRIDES（label/strategy/enabled 必填）`);
     }
 
-    const pinSpec = pinOverride && ADAPTER_PINS[id] !== undefined ? pinOverride : ADAPTER_PINS[id];
+    // pin spec 组装：默认 = pin 包名表 + root package.json 的精确版本；--pin 以完整
+    // spec 覆盖（临时测试用，仍过精确版本校验）。
+    let pinSpec;
+    if (ADAPTER_PINS[id] !== undefined) {
+      if (pinOverride) {
+        pinSpec = pinOverride;
+      } else {
+        const version = rootPkg.devDependencies?.[ADAPTER_PINS[id]];
+        if (!version) {
+          fail(`root package.json devDependencies 缺 ${ADAPTER_PINS[id]} 精确版本（升级：pnpm up ${ADAPTER_PINS[id]}@<新版> --save-exact）`);
+        }
+        pinSpec = `${ADAPTER_PINS[id]}@${version}`;
+      }
+    }
     const dist = resolveNpxDistribution(registryEntry);
     let command = '';
     let cmdArgs = [];

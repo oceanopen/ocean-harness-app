@@ -7,7 +7,8 @@
 //     为环境变量缺失的字段提供默认值；flag 为空（生产环境，Rust 不传该 flag）则不读
 //     任何文件，纯走环境变量，与改造前行为完全一致。
 //
-// 校验：mode 仅允许 gin debug/release/test；port ∈ [1,65535]；两个目录转绝对路径并 MkdirAll。
+// 校验：mode 仅允许 gin debug/release/test；port ∈ [1,65535]；log/sqlite 目录转绝对路径并
+// MkdirAll；app.db 与 ACP 两目录为可选（缺失不报错，仅消费方调用期报未配置，仅转绝对路径）。
 package config
 
 import (
@@ -30,16 +31,23 @@ const (
 	EnvLogDir    = "GO_SERVER_LOG_DIR"    // 日志目录（绝对路径）
 	EnvSqliteDir = "GO_SERVER_SQLITE_DIR" // sqlite 数据目录（绝对路径）
 	EnvAppDb     = "GO_SERVER_APP_DB"     // Rust 侧 app.db 路径（app_config KV 表，Go 只读；可选）
+
+	// ACP vendoring（T1.3）：资源源 = 应用内置 staging（Rust resource 目录派生），
+	// 受管目标 = vendored 安装根。两者均可选：缺失不阻断启动，ACP 拉起期报未配置。
+	EnvAcpResourcesDir = "GO_SERVER_ACP_RESOURCES_DIR"
+	EnvAcpAdaptersDir  = "GO_SERVER_ACP_ADAPTERS_DIR"
 )
 
 // settingsFile 是 yaml 配置文件的结构（字段名采用 camelCase 对齐配置文件）。
 // 仅作为环境变量缺失时的默认值来源，不对外暴露。
 type settingsFile struct {
-	Mode      string `yaml:"mode"`      // gin 运行模式：debug / release / test
-	Port      int    `yaml:"port"`      // HTTP 监听端口
-	LogDir    string `yaml:"logDir"`    // 日志目录（相对 server，运行时转绝对路径）
-	SqliteDir string `yaml:"sqliteDir"` // sqlite 数据目录（相对 server，运行时转绝对路径）
-	AppDb     string `yaml:"appDb"`     // Rust 侧 app.db 路径（可选；本地 air 自测模拟注入用）
+	Mode            string `yaml:"mode"`            // gin 运行模式：debug / release / test
+	Port            int    `yaml:"port"`            // HTTP 监听端口
+	LogDir          string `yaml:"logDir"`          // 日志目录（相对 server，运行时转绝对路径）
+	SqliteDir       string `yaml:"sqliteDir"`       // sqlite 数据目录（相对 server，运行时转绝对路径）
+	AppDb           string `yaml:"appDb"`           // Rust 侧 app.db 路径（可选；本地 air 自测模拟注入用）
+	AcpResourcesDir string `yaml:"acpResourcesDir"` // 内置 ACP adapter 资源源目录（可选；air 自测模拟注入用）
+	AcpAdaptersDir  string `yaml:"acpAdaptersDir"`  // vendored 受管目标根（可选；air 自测模拟注入用）
 }
 
 // Config 是合并后的服务运行配置。
@@ -49,13 +57,16 @@ type Config struct {
 	LogDir    string // 日志目录（绝对路径）
 	SqliteDir string // sqlite 数据目录（绝对路径）
 	AppDbPath string // Rust 侧 app.db 路径（可选：空 = 依赖它的 MCP 工具〔workspace_status / github〕调用期报未配置，不影响启动）
+
+	AcpResourcesDir string // 内置 ACP adapter 资源源目录（可选：空 = vendoring 调用期报未配置）
+	AcpAdaptersDir  string // vendored 受管目标根（可选：空同上；安装时由消费方 MkdirAll）
 }
 
 // MustLoadConfig 读取并校验配置。优先级：环境变量 > 配置文件（-config 指定，可选）。
 //
 // -config flag 为空时不读文件，纯环境变量模式（生产环境）。任一必填字段最终缺失或非法
 // 即 log.Fatalf 终止启动。校验项：mode 仅允许 gin 三种模式并同步 gin.SetMode；
-// port ∈ [1,65535]；两个目录转绝对路径并 MkdirAll。
+// port ∈ [1,65535]；log/sqlite 目录转绝对路径并 MkdirAll。
 func MustLoadConfig() *Config {
 	// 解析 -config flag（默认空：不读配置文件，纯环境变量模式）。
 	configPath := flag.String("config", "", "配置文件路径（yaml）；为空则仅从环境变量加载")
@@ -81,6 +92,9 @@ func MustLoadConfig() *Config {
 	// appDb 为可选字段（Rust spawn 注入；本地 air 自测可经 yaml 模拟）：缺失不报错，
 	// 仅 MCP workspace_status 工具调用期报「未配置」。文件归 Rust 所有，Go 只读、不 MkdirAll。
 	appDb := firstNonEmpty(os.Getenv(EnvAppDb), sf.AppDb)
+	// ACP vendoring 两目录同为可选（T1.3）：缺失仅 ACP 拉起期报错，不阻断启动。
+	acpResourcesDir := firstNonEmpty(os.Getenv(EnvAcpResourcesDir), sf.AcpResourcesDir)
+	acpAdaptersDir := firstNonEmpty(os.Getenv(EnvAcpAdaptersDir), sf.AcpAdaptersDir)
 
 	// 3) 必填校验：mode / 两个目录均不可为空（env 与文件都未提供即缺失）。
 	if mode == "" {
@@ -135,12 +149,26 @@ func MustLoadConfig() *Config {
 		log.Fatalf("[config] %s=%q invalid: %v", EnvSqliteDir, sqliteDir, err)
 	}
 
+	// 7) ACP 两目录仅转绝对路径、不 MkdirAll：资源源是打包只读内容（Rust resource 派生），
+	// 受管根由 EnsureVendored 安装时自建，创建时机均归消费方。
+	acpResourcesAbs, err := ensureAbs(acpResourcesDir)
+	if err != nil {
+		log.Fatalf("[config] %s=%q invalid: %v", EnvAcpResourcesDir, acpResourcesDir, err)
+	}
+	acpAdaptersAbs, err := ensureAbs(acpAdaptersDir)
+	if err != nil {
+		log.Fatalf("[config] %s=%q invalid: %v", EnvAcpAdaptersDir, acpAdaptersDir, err)
+	}
+
 	return &Config{
 		Mode:      mode,
 		Port:      port,
 		LogDir:    logDirAbs,
 		SqliteDir: sqliteDirAbs,
 		AppDbPath: appDb,
+
+		AcpResourcesDir: acpResourcesAbs,
+		AcpAdaptersDir:  acpAdaptersAbs,
 	}
 }
 
@@ -156,12 +184,25 @@ func firstNonEmpty(vals ...string) string {
 
 // ensureDir 将目录转为绝对路径并确保其存在（MkdirAll，已存在不报错）。
 func ensureDir(dir string) (string, error) {
-	abs, err := filepath.Abs(dir)
+	abs, err := ensureAbs(dir)
 	if err != nil {
-		return "", fmt.Errorf("resolve absolute path: %w", err)
+		return "", err
 	}
 	if err := os.MkdirAll(abs, 0o755); err != nil {
 		return "", fmt.Errorf("mkdir: %w", err)
+	}
+	return abs, nil
+}
+
+// ensureAbs 仅将路径转为绝对路径（不 MkdirAll）；空值原样返回（= 未配置）。
+// 用于「存在性归消费方保证」的目录：config 只负责路径规范化，不代建。
+func ensureAbs(p string) (string, error) {
+	if p == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", fmt.Errorf("resolve absolute path: %w", err)
 	}
 	return abs, nil
 }

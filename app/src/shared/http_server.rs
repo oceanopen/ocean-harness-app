@@ -12,7 +12,12 @@
 //   GO_SERVER_PORT（端口已彻底固化：dev=9000/build=9100，见下方端口契约常量注释）、
 //   GO_SERVER_LOG_DIR、GO_SERVER_SQLITE_DIR（均由 app_data_dir 派生，dev/build 自动隔离）、
 //   GO_SERVER_APP_DB（可选：Rust 自身 app_config 库路径，Go MCP workspace_status 只读
-//   github_pat 用；解析失败缺省注入，Go 侧按「未配置」降级）。
+//   github_pat 用；解析失败缺省注入，Go 侧按「未配置」降级）、
+//   GO_SERVER_ACP_RESOURCES_DIR（可选：内置 ACP adapter 资源源目录——dev 以 crate 目录
+//   为基准的 app/resources/acp-adapters〔Resource 基准在 dev 是 exe 目录，见下方解析处〕，
+//   release 为打包资源；缺失〔未跑 vendor 脚本〕不注入，Go 侧报未配置降级）、
+//   GO_SERVER_ACP_ADAPTERS_DIR（vendored 受管目标根 = app_data_dir/acp-adapters，
+//   目录由 Go EnsureVendored 自建，Rust 不 MkdirAll）。
 //
 // IPC：前端「服务状态」页通过 http_server_status 查询运行态与地址，通过 set_http_server_enabled
 //   开关服务（调 start_server/stop_server）。setup 时默认自动启动（开关默认 ON）。
@@ -41,6 +46,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicU32, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use tauri::path::BaseDirectory;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
@@ -546,6 +552,30 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         .ok()
         .map(|dir| dir.join("app.db").to_string_lossy().into_owned());
 
+    // ACP vendoring 两目录（T1.3）：resources 源目录缺失时降级不注入（Go 侧报未配置）；
+    // 受管目标根 Go 自建，Rust 不 MkdirAll（对齐 app_db 的旁路原则）。
+    // Resource 基准全平台是 exe 目录（dev 下 bundle.resources 不复制进 target），dev
+    // 分支改以 crate 目录为基准指向仓库内 staging，release 恒为打包资源目录。
+    let acp_resources_dir: Option<String> = if tauri::is_dev() {
+        Some(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/acp-adapters")
+                .to_string_lossy()
+                .into_owned(),
+        )
+    } else {
+        app.path()
+            .resolve("resources/acp-adapters", BaseDirectory::Resource)
+            .ok()
+            .map(|dir| dir.to_string_lossy().into_owned())
+    }
+    .filter(|dir| std::path::Path::new(dir).is_dir());
+    let acp_adapters_dir: Option<String> = app.path().app_data_dir().ok().map(|dir| {
+        dir.join("acp-adapters")
+            .to_string_lossy()
+            .into_owned()
+    });
+
     // sidecar 名复用当前 identifier（dev/build 各自的 conf 决定），自动区分环境。
     let sidecar_name = format!("{}-go_server_bin", app.config().identifier);
     let mut sidecar_cmd = app
@@ -558,6 +588,12 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         .env("GO_SERVER_SQLITE_DIR", &state.sqlite_dir);
     if let Some(db_path) = &app_db_path {
         sidecar_cmd = sidecar_cmd.env("GO_SERVER_APP_DB", db_path);
+    }
+    if let Some(dir) = &acp_resources_dir {
+        sidecar_cmd = sidecar_cmd.env("GO_SERVER_ACP_RESOURCES_DIR", dir);
+    }
+    if let Some(dir) = &acp_adapters_dir {
+        sidecar_cmd = sidecar_cmd.env("GO_SERVER_ACP_ADAPTERS_DIR", dir);
     }
     let (mut rx, child) = sidecar_cmd
         .spawn()

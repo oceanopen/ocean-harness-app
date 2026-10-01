@@ -289,7 +289,7 @@ issue 主窗口
 
 | 策略 | 适用 | 启动形态 |
 |---|---|---|
-| `npx-adapter` | claude（一期唯一启用） | catalog 原始形态 `npx -y @agentclientprotocol/claude-agent-acp@<pin>`；实际 spawn 指向受管目录 vendored 入口（T1.3 一次性安装）；包名以 T1.1 实测为准（`@zed-industries/claude-code-acp`） |
+| `npx-adapter` | claude（一期唯一启用） | catalog 原始形态 `npx -y @agentclientprotocol/claude-agent-acp@<pin>`；实际 spawn 指向受管目录 vendored 入口（T1.3 一次性安装）；包名+版本二元组整体 pin，不跟随 registry 包名迁移，以本项目真握手验证结论为准 |
 | `native-acp` | codex / opencode / pi（预留，随 P4 扩展启用） | 直连各自 CLI，零 adapter；条目命令以 registry 离线快照为准（Gold-Band catalog 的「PATH 可执行文件」模板同构） |
 | `in-process-go` | **预留，不实现** | Go 进程内实现 ACP agent 角色（`driver_claude.go` 的 stream-json 积累可复用） |
 
@@ -362,7 +362,7 @@ issue 主窗口
 - adapter 版本 pin 进 catalog（参考 0.8x 线），升级走刷新脚本统一升 + 验证流程定稿（风险 §5.2）
 
 **实施定稿**：
-- 刷新脚本 `scripts/prepare-agent-catalog.mjs`（`pnpm server:catalog:refresh`）：从官方 ACP registry 取 agent 定义，逐条目查 npm 实际版本，pin `@zed-industries/claude-code-acp` 0.84.0（T1.1 实测 0.16.x lineage 的继任版本线）产出 `server/internal/agentcatalog/agent-catalog.json`；registry 原始快照同落 `acp-registry.snapshot.json` 溯源；以 SOURCE_DATE_EPOCH 固定时间戳，重复运行产物一致（幂等可 diff）。升级流程 = 重跑脚本 → `go test` 过内嵌产物断言 → T1.4 握手回归
+- 刷新脚本 `scripts/prepare-agent-catalog.mjs`（`pnpm server:catalog:refresh`）：从官方 ACP registry 取 agent 定义，逐条目查 npm 校验 pin 存在并取 engines.node，pin `@agentclientprotocol/claude-agent-acp`（registry 包名已由 `@zed-industries/claude-code-acp` 迁移至此，真握手实测定名；包名拍板于脚本 pin 包名表，版本住 root package.json devDependencies 精确版本，T1.3 起本地 `pnpm up --save-exact` 升级，当前 0.84.0）产出 `server/internal/agentcatalog/agent-catalog.json`；registry 原始快照同落 `acp-registry.snapshot.json` 溯源；以 SOURCE_DATE_EPOCH 固定时间戳，重复运行产物一致（幂等可 diff）。升级流程 = 重跑脚本 → `go test` 过内嵌产物断言 → T1.4 握手回归
 - 条目显式落 `code` 字段（= id，即 launch_settings.agentCode 取值）；`nodeMinVersion` 一期 22（node:child_process 直拉 npx 需较新 node，T1.4 doctor 消费，空 = 不校验）
 - `agentcatalog` 包：go:embed 内嵌 + `Load` 进程级单例；parse 校验结构版本 / 条目非空 / id+code 唯一非空 / strategy 枚举 / enabled 条目 command 非空，宁失败不静默；查表单一路径 `GetAgentCatalogInfoByCode`（匹配条目 code）；`Entry.SpawnConfig(cwd)` 翻译条目为 acp.SpawnConfig（npx-adapter / native-acp 现同为 argv 直拼，差异留给 T1.3 vendored 入口改写；in-process-go 预留枚举翻译报错）；claude 专属注入（可执行文件 / login PATH）由调用方追加，catalog 层不感知（D5）
 - `enums.AgentCode` 定型为开放命名 string 类型（非闭合字面量联合）：常量仅在代码出现分支判断时补充（一期仅 `AGENT_CODE_CLAUDE_ACP`）；合法取值域 SSOT = catalog enabled 条目 code，扩展新 agent 不改映射；原四常量闭合枚举（dal/enums/workspace.go）删除；消费端查记录一律走 `GetAgentCatalogInfoByCode`
@@ -376,7 +376,7 @@ issue 主窗口
 
 #### T1.3 adapter vendoring 与 claude 路径一致性
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：压掉官方方案的网络不确定性，并保证 ACP 模式与终端模式用同一个本机 claude
 
@@ -388,6 +388,13 @@ issue 主窗口
 
 **决策关联**：D3、P5
 
+**实施定稿**：
+- 载体与安装链（公司网络约束：运行时零 npm / registry 依赖）——构建期 `pnpm server:acp:vendor`（`scripts/prepare-acp-adapters.mjs`）按 catalog pin 逐条目 `npm install --omit=dev` 落 `app/resources/acp-adapters/<id>/<version>/`（幂等：安装后校验 node_modules 内 package.json 版本命中即跳过；临时目录 + rename 原子落地，npm 中断不产生以目标名存在的半成品），tauri `beforeDevCommand` / `beforeBuildCommand` 前置执行，`bundle.resources` 随应用打包（`.gitignore` 排除产物）；运行期 `agentcatalog.EnsureVendored` 在受管根 `app_data_dir/acp-adapters/` 按需复制安装：marker（`.ocean-vendored`，内容 = 版本）幂等命中复用，半成品/漂移整树重制，版本切换后清理同 id 旧版本（受管目录恒只保留当前 pin），临时目录 + rename 原子落地，symlink 原样重建（npm `.bin` 相对链两端布局同构即有效）、权限位显式补齐
+- 目录注入：Rust `http_server.rs` 派生 `GO_SERVER_ACP_RESOURCES_DIR`——`Resource` 基准全平台是 exe 目录（dev 下 bundle.resources 不复制进 target），dev 经 `tauri::is_dev` 分支以 crate 目录为基准指向仓库内 staging、release 解析至打包资源，缺失不注入；`app_data_dir` 派生 `GO_SERVER_ACP_ADAPTERS_DIR`（受管根由 Go 自建，Rust 不预创建）；config 侧两目录均为可选字段（缺失不阻断启动，EnsureVendored 调用期报未配置；air 自测可经 yaml 模拟注入）
+- spawn 翻译：`Entry.VendoredSpawnConfig` 读 vendored 包 package.json 的 bin 字段（npm 字符串 / map 双形态，map 多键取与包名尾段同名键）→ argv `node <vendored 入口>`；node 经 `resolveNodeBin` 落成绝对路径（LookPath → `clibin.LoginPath` 的 login PATH 逐目录兜底——exec 对相对 argv[0] 按 sidecar 自身 PATH 查找，spawn env 覆盖不影响查找，GUI 拉起场景 PATH 常缺 nvm/volta）；spec→包名还原与构建脚本同规则（args 尾部非 flag 参数去 @版本尾缀）；native-acp 条目不走 vendoring（SpawnConfig 直连），vendored 系 API 对其显式报错防误用
+- claude 路径一致性：bot / marketplace 的 claude 探测收敛为中立包 `internal/clibin`（LookPath → 静态回落 → login shell 哨兵探测三级链 + 成功进程级缓存，单一 SSOT，bot driver 与 marketplace 共用）；acp 侧 `ClaudeEnvOverrides` 由消费方拼装注入（client 本体不感知 claude，D5）：`CLAUDE_CODE_EXECUTABLE` = clibin 解析结果——spike 实证 0.84.0 adapter 的 `claudeCliPath()` 以该 env 为最高优先级直传 SDK `pathToClaudeCodeExecutable`，缺省回落 SDK 自带原生二进制（与终端模式的 claude 是两个二进制，版本漂移），本注入即一致性闸门，login PATH 为兜底；`PATH` = login shell PATH 全量覆盖（对齐 bot turnEnv 惯例，GUI 拉起场景 claude 派生的工具子进程同享一致环境）
+- 验证：真握手测试升级为生产链路验收（EnsureVendored → VendoredSpawnConfig → ClaudeEnvOverrides → 真握手，0.84.0 实测跑通 initialize → session/new → prompt → 收流 → 回收），升级 = `pnpm up @agentclientprotocol/claude-agent-acp@<新版> --save-exact`（adapter 版本决策住 root package.json devDependencies 精确版本，包名迁移仍走脚本 pin 包名表 + 真握手）→ `pnpm server:catalog:refresh` → `pnpm server:acp:vendor` → 本用例 → 提交；vendored 安装层单元测试覆盖命中 / 资源缺失 / 半成品重制 / 版本切换清理 / symlink+权限位 / bin 双形态 / node 路径解析
+
 #### T1.4 doctor 握手探测
 
 **状态**：⬜
@@ -395,7 +402,7 @@ issue 主窗口
 **功能**：agent 可用性判据 = 真实握手跑通；结果供 UI 引导与（阶段 3）bot 徽标消费
 
 **技术方案**：
-- 四项探测：claude 可用（`resolveClaudeBin`）、node/npx 可用（版本下限跟随 catalog pin 的 adapter engines 要求——当前 0.84.0 为 ≥22）、adapter 包就绪（vendored 入口存在）、native agent CLI 可用（codex / opencode / pi 各自 PATH 解析——随 P4 扩展启用，一期仅 claude 时跳过；探测思路复用 `bin.go` 的 login shell 兜底）
+- 四项探测：claude 可用（`clibin.Resolve`）、node/npx 可用（版本下限跟随 catalog pin 的 adapter engines 要求——当前 0.84.0 为 ≥22）、adapter 包就绪（vendored 入口存在）、native agent CLI 可用（codex / opencode / pi 各自 PATH 解析——随 P4 扩展启用，一期仅 claude 时跳过；探测思路复用 clibin 的 login shell 兜底）
 - 握手判据：真拉起子进程跑 `initialize → setup_session → available_commands` 再清理，跑得通才 healthy（照 Gold-Band `src/acp/client.rs:2673-2731`）
 - node 缺失时 UI 明确引导：「ACP 模式需要 Node.js ≥20，或切换终端模式」，不运行时报错
 

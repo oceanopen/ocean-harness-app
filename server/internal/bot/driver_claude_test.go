@@ -91,43 +91,6 @@ func TestParseClaudeLine(t *testing.T) {
 	})
 }
 
-func TestParseClaudeProbe(t *testing.T) {
-	t.Run("正常形态（rc 噪声不误判）", func(t *testing.T) {
-		out := strings.Join([]string{
-			"welcome from rc",
-			"/usr/bin/python3: No module named pyenv",
-			probeSentinelOpen,
-			"/Users/x/.nvm/versions/node/v22/bin/claude",
-			probeSentinelClose,
-			"HOME=/Users/x",
-			"PATH=/a:/b",
-			"PATH=/x:/usr/bin",
-			"",
-		}, "\n")
-		got := parseClaudeProbe(out)
-		if got == nil || got.Bin != "/Users/x/.nvm/versions/node/v22/bin/claude" || got.LoginPath != "/x:/usr/bin" {
-			t.Fatalf("got %+v", got)
-		}
-	})
-	t.Run("builtin（非 / 开头）判失败", func(t *testing.T) {
-		out := probeSentinelOpen + "\necho\n" + probeSentinelClose + "\nPATH=/usr/bin\n"
-		if got := parseClaudeProbe(out); got != nil {
-			t.Fatalf("got %+v", got)
-		}
-	})
-	t.Run("哨兵缺失裸路径不采信", func(t *testing.T) {
-		if got := parseClaudeProbe("/opt/homebrew/bin/claude\nPATH=/usr/bin\n"); got != nil {
-			t.Fatalf("got %+v", got)
-		}
-	})
-	t.Run("缺 PATH 行判失败", func(t *testing.T) {
-		out := probeSentinelOpen + "\n/bin/cat\n" + probeSentinelClose + "\n"
-		if got := parseClaudeProbe(out); got != nil {
-			t.Fatalf("got %+v", got)
-		}
-	})
-}
-
 func TestTurnEnv(t *testing.T) {
 	t.Setenv("PATH", "/gui/bin")
 	t.Setenv("OCEAN_HARNESS_PORT", "9999")

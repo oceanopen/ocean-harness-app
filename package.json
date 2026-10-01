@@ -22,12 +22,14 @@
     "server:fmt": "gofmt -l -w server",
     "server:gorm:gen": "go -C server run ./cmd/gormgen -config=config/settings.dev.yaml",
     "server:catalog:refresh": "node scripts/prepare-agent-catalog.mjs",
+    "server:acp:vendor": "node scripts/prepare-acp-adapters.mjs",
     "gen:bindings": "cargo run --manifest-path app/Cargo.toml --features gen-bindings --bin export_bindings",
     "gen:app:icons": "tauri icon packages/web/src/assets/app-icon.svg && rm -rf app/icons/android && rm -rf app/icons/ios && cp app/icons/icon.png packages/web/src/assets/app-icon.png && cp packages/web/src/assets/app-icon.svg packages/web/public/favicon.svg",
     "verify:bindings": "pnpm gen:bindings && git ls-files --error-unmatch packages/web/src/shared/bindings.ts && git diff --exit-code packages/web/src/shared/bindings.ts",
     "release": "bumpp"
   },
   "devDependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.84.0",
     "@antfu/eslint-config": "catalog:",
     "@eslint-react/eslint-plugin": "catalog:",
     "@tauri-apps/cli": "catalog:",
