@@ -8,6 +8,7 @@
 //	late-permission  prompt 立即 end_turn，300ms 后再发起 request_permission（无活动回合路径）
 //	elicitation      prompt 中发起 elicitation/create（form 线上格式），把结果回显进 message chunk
 //	slow-cancel      持续推送 chunk 直至收到 session/cancel，以 cancelled 终止
+//	doctor-happy     session/new 响应后 200ms 推送 available_commands（T1.4 doctor 握手门槛）
 package main
 
 import (
@@ -29,6 +30,7 @@ const (
 	scriptLatePermission = "late-permission"
 	scriptElicitation    = "elicitation"
 	scriptSlowCancel     = "slow-cancel"
+	scriptDoctorHappy    = "doctor-happy"
 )
 
 // fakeAgent 全脚本共用的 agent 骨架：广告三档权限模式目录，SetMode 就地回写并补发
@@ -45,7 +47,7 @@ func main() {
 	}
 	if _, ok := map[string]bool{
 		scriptHappy: true, scriptPermission: true, scriptLatePermission: true,
-		scriptElicitation: true, scriptSlowCancel: true,
+		scriptElicitation: true, scriptSlowCancel: true, scriptDoctorHappy: true,
 	}[os.Args[1]]; !ok {
 		fmt.Fprintf(os.Stderr, "fakeagent: 未知脚本 %q\n", os.Args[1])
 		os.Exit(2)
@@ -61,9 +63,25 @@ func (a *fakeAgent) Initialize(_ context.Context, _ agent.Client, _ schema.Initi
 	return schema.InitializeResponse{ProtocolVersion: 1, AgentCapabilities: &schema.AgentCapabilities{}}, nil
 }
 
-func (a *fakeAgent) NewSession(_ context.Context, _ agent.Client, _ schema.NewSessionRequest) (schema.NewSessionResponse, error) {
+func (a *fakeAgent) NewSession(_ context.Context, client agent.Client, _ schema.NewSessionRequest) (schema.NewSessionResponse, error) {
+	id := schema.SessionId("fake-" + strconv.Itoa(int(time.Now().UnixNano())))
+	// doctor-happy：响应落 wire 后再推送 available_commands——客户端在处理完 session/new
+	// 响应才注册会话运行时，早于响应的推送会被当作早期帧丢弃（session.go 收帧过滤）。
+	if os.Args[1] == scriptDoctorHappy {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			_ = client.Notify(context.Background(), schema.SessionUpdateMethodName, schema.SessionNotification{
+				SessionID: id,
+				Update: schema.SessionUpdate{AvailableCommandsUpdate: &schema.AvailableCommandsUpdate{
+					AvailableCommands: []schema.AvailableCommand{
+						{Name: "create_plan", Description: "创建实现计划"},
+					},
+				}},
+			})
+		}()
+	}
 	return schema.NewSessionResponse{
-		SessionID: schema.SessionId("fake-" + strconv.Itoa(int(time.Now().UnixNano()))),
+		SessionID: id,
 		Modes: &schema.SessionModeState{
 			AvailableModes: []schema.SessionMode{
 				{ID: "default", Name: "Default"},

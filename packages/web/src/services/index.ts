@@ -4,6 +4,15 @@ export type { AgentCatalogEntry, AgentCatalogGetListRequest } from './AgentCatal
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 
+export { DoctorService } from './DoctorService';
+export type {
+  DoctorCheckRequest,
+  DoctorCheckResponseData,
+  DoctorEntryState,
+  DoctorGetInfoRequest,
+  DoctorStatus,
+} from './DoctorService';
+
 export { ImBotService } from './ImBotService';
 export type {
   ImBotAccessPolicy,

@@ -22,6 +22,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ocean-harness/server/internal/acpdoctor"
+	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/bot"
 	"ocean-harness/server/internal/bot/wecom"
 	"ocean-harness/server/internal/config"
@@ -52,6 +54,11 @@ func main() {
 	// 5) 服务启动前打印完整环境变量信息（用 zap，文件 + 控制台都有）。
 	printRuntimeConfig(cfg)
 
+	// 5.4) vendoring 两目录注入 agentcatalog（进程级一次）：bot driver / marketplace 的
+	// vendored 自带 claude 一步式解析（ResolveVendoredClaudeBin）消费；agentcatalog 不
+	// 反向依赖 config/global，由组装根在拉起 bot 前装配。
+	agentcatalog.SetVendoredDirs(cfg.AcpResourcesDir, cfg.AcpAdaptersDir)
+
 	// 5.5) bot 运行时装配：注册企微适配器工厂 + 拉起全部启用 bot（WS 长连接后台运行，
 	// 不阻塞 HTTP 启动；连接状态经 /api/imBot/getList 投影呈现）。
 	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, global.Logger)
@@ -59,6 +66,14 @@ func main() {
 	global.BotSupervisor.StartEnabled()
 	// 扫码授权激活回调：凭据落库 + 拉连接（secret 仅经此路径入 sqlite，不回前端不进日志）。
 	wecom.SetProvisionActivator(service.ProvisionActivateBot)
+
+	// 5.6) doctor 启动后台探测：对全部 enabled agent 条目串行跑真实握手，把结论填进
+	// 进程内缓存（重启即回到 unknown 由其重填）。非阻塞，不延迟 HTTP 监听；结论经
+	// /api/doctor/getInfo 投影供前端引导。
+	acpdoctor.RunStartupProbe(acpdoctor.Dirs{
+		Resources: cfg.AcpResourcesDir,
+		Adapters:  cfg.AcpAdaptersDir,
+	}, global.Logger)
 
 	// 6) 组装路由（仅 /api/baseInfo/getServerRunInfo，无登录/鉴权）。
 	engine := router.SetupRouter()

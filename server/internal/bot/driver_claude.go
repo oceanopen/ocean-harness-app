@@ -13,7 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/clibin"
+	"ocean-harness/server/internal/dal/enums"
 )
 
 // claudeDriver ClaudeDriver 的 headless 实现：每回合 spawn `claude -p`（stream-json 事件流），
@@ -24,9 +26,16 @@ type claudeDriver struct{}
 // NewClaudeDriver 构造 claude 引擎。
 func NewClaudeDriver() ClaudeDriver { return claudeDriver{} }
 
+// claudeRuntimeBin 解析 vendored 自带 claude（P5 定稿终态：全链路 SSOT，clibin 三级
+// 探测链已退役）：vendoring 两目录由 main 启动期注入 agentcatalog（本包不依赖
+// global——global → bot 依赖方向不可逆），成功进程级缓存在 agentcatalog 内。
+func claudeRuntimeBin() (string, error) {
+	return agentcatalog.ResolveVendoredClaudeBin(string(enums.AGENT_CODE_CLAUDE_ACP))
+}
+
 // RunTurn 实现见 driver.go 契约。prompt 经 stdin 传入（不经 argv：免转义/长度限制）。
 func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
-	resolved, err := clibin.Resolve()
+	bin, err := claudeRuntimeBin()
 	if err != nil {
 		return nil, err
 	}
@@ -51,9 +60,12 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	// launch_settings.permissionMode，ACP 模式接管审批语义；headless 路径安全周界不变）。
 	args = append(args, "--allowedTools", strings.Join(DefaultAllowedTools(), ","))
 
-	cmd := exec.CommandContext(ctx, resolved.Bin, args...)
+	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = req.WorkspaceDir
-	cmd.Env = turnEnv(resolved.LoginPath, req.Port)
+	// login PATH best-effort（探测失败保留原 PATH）：vendored 自带 claude 为原生二进制
+	// 不依赖 node，但 claude 派生的工具子进程（Bash 工具跑 npm 等）仍需要用户环境。
+	loginPath, _ := clibin.LoginPath()
+	cmd.Env = turnEnv(loginPath, req.Port)
 	// WaitDelay 收口孙进程管道：ctx 取消只 kill claude 主进程，其工具子进程若仍持有
 	// stdout 写端，管道不关则 Wait 永久阻塞（语义同 marketplace/cli.go 的 run）。
 	cmd.WaitDelay = 5 * time.Second
@@ -105,8 +117,8 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 }
 
 // turnEnv 组装 claude 子进程 env：继承 sidecar env + OCEAN_HARNESS_PORT（插件/CLI 工具链
-// 用）。PATH 仅在探测到 login PATH 时替换（nvm 等安装形态；login PATH 是父集、brew 自包含
-// 二进制注入无害）——第 1/2 级探测命中时保留原 PATH，否则子进程丢系统路径、Bash 工具全废。
+// 用）。PATH 仅在拿到 login PATH 时替换（nvm 等安装形态；login PATH 是父集、brew 自包含
+// 二进制注入无害）——探测失败保留原 PATH，否则子进程丢系统路径、Bash 工具全废。
 func turnEnv(loginPath string, port int) []string {
 	env := os.Environ()
 	filtered := env[:0:0]

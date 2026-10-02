@@ -14,8 +14,9 @@
 //   GO_SERVER_APP_DB（可选：Rust 自身 app_config 库路径，Go MCP workspace_status 只读
 //   github_pat 用；解析失败缺省注入，Go 侧按「未配置」降级）、
 //   GO_SERVER_ACP_RESOURCES_DIR（可选：内置 ACP adapter 资源源目录——dev 以 crate 目录
-//   为基准的 app/resources/acp-adapters〔Resource 基准在 dev 是 exe 目录，见下方解析处〕，
-//   release 为打包资源；缺失〔未跑 vendor 脚本〕不注入，Go 侧报未配置降级）、
+//   为基准的 app/resources/acp-adapters〔见下方解析处〕，release 为打包资源（Resource
+//   基准按平台解析，macOS = Contents/Resources）；缺失〔未跑 vendor 脚本〕不注入，Go
+//   侧报未配置降级）、
 //   GO_SERVER_ACP_ADAPTERS_DIR（vendored 受管目标根 = app_data_dir/acp-adapters，
 //   目录由 Go EnsureVendored 自建，Rust 不 MkdirAll）。
 //
@@ -554,8 +555,9 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
 
     // ACP vendoring 两目录（T1.3）：resources 源目录缺失时降级不注入（Go 侧报未配置）；
     // 受管目标根 Go 自建，Rust 不 MkdirAll（对齐 app_db 的旁路原则）。
-    // Resource 基准全平台是 exe 目录（dev 下 bundle.resources 不复制进 target），dev
-    // 分支改以 crate 目录为基准指向仓库内 staging，release 恒为打包资源目录。
+    // Resource 基准按平台解析（macOS = .app/Contents/Resources、Windows = exe 目录，
+    // 均含打包资源；dev 下 bundle.resources 不复制进 target），dev 分支改以 crate
+    // 目录为基准指向仓库内 staging，release 恒为打包资源目录。
     let acp_resources_dir: Option<String> = if tauri::is_dev() {
         Some(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

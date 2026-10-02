@@ -22,9 +22,10 @@ pub struct SpawnOpts {
     pub cols: u16,
     /// 初始行数。
     pub rows: u16,
-    /// 直启命令（唯一自动执行路径）：在场时无 shell 中转，PTY 直接 exec CLI
-    /// （注入 login PATH），CLI 退出即 pane 退出。CLI 路径经 login shell 探测，
-    /// 失败回落普通裸 shell。复用分支不重直启。
+    /// 直启命令（唯一自动执行路径）：在场时无 shell 中转，PTY 直接 exec CLI，
+    /// CLI 退出即 pane 退出。CLI 路径经 cli_bin::resolve_direct_bin 解析（P5
+    /// 终态：token 白名单 → vendored 自带 claude，login PATH 仅 best-effort
+    /// 注入），解析失败回落普通裸 shell。复用分支不重直启。
     #[serde(default)]
     pub direct_command: Option<String>,
 }

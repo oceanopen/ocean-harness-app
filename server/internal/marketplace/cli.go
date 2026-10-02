@@ -13,7 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"ocean-harness/server/internal/clibin"
+	"ocean-harness/server/internal/agentcatalog"
+	"ocean-harness/server/internal/dal/enums"
 )
 
 // CLI 超时口径：add/update 涉及 git clone（受网络影响）放宽；其余为本地操作。
@@ -22,19 +23,16 @@ const (
 	timeoutLocal = 60 * time.Second
 )
 
-// ResolveClaudeBin 解析 claude 可执行文件路径（clibin 三级探测链 SSOT，带成功缓存）。
+// ResolveClaudeBin 解析 claude 可执行文件路径（P5 定稿终态：vendored 自带 claude，
+// 全链路 SSOT；vendoring 两目录由 main 启动期注入 agentcatalog，成功进程级缓存）。
 func ResolveClaudeBin() (string, error) {
-	resolved, err := clibin.Resolve()
-	if err != nil {
-		return "", err
-	}
-	return resolved.Bin, nil
+	return agentcatalog.ResolveVendoredClaudeBin(string(enums.AGENT_CODE_CLAUDE_ACP))
 }
 
 // run 执行 `claude <args...>`：context 超时兜底、分离捕获 stdout/stderr。
 // 非零退出返回中文错误（附 stderr 摘要）；成功返回原始 stdout（JSON 交由调用方解析）。
-// 二进制路径经 clibin 进程级成功缓存：首次解析成功后固定，claude 换安装位置需重启
-// sidecar 生效（失败不缓存，从无到有装上 CLI 无需重启）。
+// 二进制路径经 agentcatalog 进程级成功缓存：首次解析成功后固定，vendored 版本切换
+// 需重启 sidecar 生效（失败不缓存，安装修复后无需重启）。
 func run(timeout time.Duration, args ...string) (string, error) {
 	bin, err := ResolveClaudeBin()
 	if err != nil {

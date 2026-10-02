@@ -16,9 +16,9 @@ import (
 //
 // 当前暴露 /api/baseInfo（系统信息）、/api/localRepository/*（本地仓库）、/api/issueWorkspace/*
 // （issue 运行工作空间初始化）、/api/pluginMarketplace/*（插件市场）与 /api/plugin/*
-// （插件安装操作）、/api/agentCatalog/*（ACP agent 目录投影）、/api/tracker/*
-// （tracker 业务域：workspace 等）与 /mcp/streamableHttp/*（MCP 端点，供工作空间内
-// AI agent 调用），均无需登录/鉴权。
+// （插件安装操作）、/api/agentCatalog/*（ACP agent 目录投影）、/api/doctor/*（ACP agent
+// doctor 探测）、/api/tracker/*（tracker 业务域：workspace 等）与 /mcp/streamableHttp/*
+// （MCP 端点，供工作空间内 AI agent 调用），均无需登录/鉴权。
 // gin.SetMode 已在 config.MustLoad 中按环境变量完成。
 func SetupRouter() *gin.Engine {
 	r := gin.New()
@@ -92,6 +92,14 @@ func SetupRouter() *gin.Engine {
 		agentCatalogGroup := apiGroup.Group("/agentCatalog")
 		{
 			agentCatalogGroup.POST("/getList", controller.AgentCatalog{}.GetList)
+		}
+
+		// doctor 模块：ACP agent doctor 探测（action 风格，POST）。check 异步受理真实握手
+		// 探测（在跑单飞 join），getInfo 轮询读四态快照；SSOT 为 acpdoctor 进程内缓存（T1.4）。
+		doctorGroup := apiGroup.Group("/doctor")
+		{
+			doctorGroup.POST("/check", controller.Doctor{}.Check)
+			doctorGroup.POST("/getInfo", controller.Doctor{}.GetInfo)
 		}
 
 		// plugin 模块：按开发工具（cli）维度的插件安装操作（install/uninstall/enable/disable/

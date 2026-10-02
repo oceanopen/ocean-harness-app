@@ -105,7 +105,7 @@ func (e Entry) VendoredSpawnConfig(installDir, cwd string) (acp.SpawnConfig, err
 	if e.Strategy != StrategyNpxAdapter {
 		return acp.SpawnConfig{}, fmt.Errorf("agent %q 策略 %s 无 vendored 入口形态", e.ID, e.Strategy)
 	}
-	nodeBin, err := resolveNodeBin()
+	nodeBin, err := ResolveNodeBin()
 	if err != nil {
 		return acp.SpawnConfig{}, fmt.Errorf("agent %q %w", e.ID, err)
 	}
@@ -129,11 +129,12 @@ func (e Entry) VendoredSpawnConfig(installDir, cwd string) (acp.SpawnConfig, err
 	}, nil
 }
 
-// resolveNodeBin 解析 node 可执行文件绝对路径：exec.Command 对相对 argv[0] 按 sidecar
-// 自身 PATH 查找，SpawnConfig.Env 的覆盖不影响查找——GUI 拉起的 sidecar PATH 又常缺
-// nvm/volta 目录（claude 同源问题），故 LookPath 失败后沿 login PATH 逐目录兜底。落成
-// 绝对路径后，拉起不受 spawn env 的 PATH 覆盖影响。
-func resolveNodeBin() (string, error) {
+// ResolveNodeBin 解析 node 可执行文件绝对路径（vendored spawn 翻译与 T1.4 doctor 探测
+// 共用，单一 SSOT）：exec.Command 对相对 argv[0] 按 sidecar 自身 PATH 查找，
+// SpawnConfig.Env 的覆盖不影响查找——GUI 拉起的 sidecar PATH 又常缺 nvm/volta 目录
+// （claude 同源问题），故 LookPath 失败后沿 login PATH 逐目录兜底。落成绝对路径后，
+// 拉起不受 spawn env 的 PATH 覆盖影响。
+func ResolveNodeBin() (string, error) {
 	if p, err := exec.LookPath("node"); err == nil {
 		return p, nil
 	}

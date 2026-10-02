@@ -65,27 +65,29 @@ impl LocalPtyProvider {
         }
         cmd.cwd(&opts.cwd);
 
-        // direct_command 分支（T5.1，唯一自动执行路径）：CLI 直启——整体替换
-        // cmd（重建 CommandBuilder），无 shell 中转。解析失败（CLI 不在场/
-        // builtin/alias/token 非法）回落普通裸 shell（上方已构造好），用户可
-        // 手动启动。
+        // direct_command 分支（T5.1，唯一自动执行路径；P5 终态：token=claude 走
+        // vendored 自带二进制）：直启——整体替换 cmd（重建 CommandBuilder），无
+        // shell 中转。解析失败（token 不在白名单 / vendored 资源缺失）回落普通
+        // 裸 shell（上方已构造好），用户可手动启动。
         if let Some(direct) = &opts.direct_command {
             let token = direct.split_whitespace().next().unwrap_or("");
-            match cli_bin::resolve_cli_bin(token) {
+            match cli_bin::resolve_direct_bin(token) {
                 Some((bin, login_path)) => {
-                    // 首 token（CLI 名）由绝对路径顶替；余参原样透传
+                    // 首 token（CLI 名）由 vendored 绝对路径顶替；余参原样透传
                     //（含 flag 形态，如 --model xxx）。
                     cmd = CommandBuilder::new(&bin);
                     for arg in direct.split_whitespace().skip(1) {
                         cmd.arg(arg);
                     }
-                    // GUI app env 缺 nvm/volta 目录（claude 常装在那里）：注入
-                    // login PATH，node shebang CLI 才能找到 node；brew 自包含
-                    // 二进制不依赖，注入无害。
-                    cmd.env("PATH", &login_path);
+                    // login PATH best-effort 注入（None = 探测失败，保留 app 继承
+                    // PATH）：vendored claude 为原生二进制不依赖 node，注入只服务
+                    // 其派生的工具子进程（Bash 工具跑 npm 等）。
+                    if let Some(path) = &login_path {
+                        cmd.env("PATH", path);
+                    }
                     cmd.cwd(&opts.cwd);
                     log::info!(
-                        "[pty] direct spawn session_id={} bin={}",
+                        "[pty] direct spawn session_id={} token={token} bin={}",
                         opts.session_id,
                         bin
                     );
@@ -548,13 +550,54 @@ mod tests {
         provider.shutdown("b::main").unwrap();
     }
 
-    // ---------- direct_command 直启分支（T5.1）----------
+    // ---------- direct_command 直启分支（T5.1；P5 终态 vendored claude）----------
 
-    /// direct 冒烟：`env` 直启（外部二进制，打印 env 即退）——ring 出现
-    /// env 输出（PATH 等基础变量恒在场），随后会话自然退出（CLI 退出即
-    /// pane 退出语义，无 shell 回落）。
+    /// direct 冒烟（vendored 链路）：TEST_RESOURCES_ROOT 注入临时 fake staging
+    ///（内含当前平台二进制形态的 stub 脚本），token=claude 直启执行 stub——ring
+    /// 出现标记，随后会话自然退出（CLI 退出即 pane 退出语义，无 shell 回落）。
+    /// 测试结束复位注入与缓存（进程级状态不跨测试漂移）。
     #[test]
-    fn direct_spawn_runs_and_exits() {
+    fn direct_spawn_runs_vendored_claude_and_exits() {
+        if std::env::consts::OS == "windows" {
+            // stub 脚本形态（#!/bin/sh）不适用于 Windows，跳过。
+            return;
+        }
+        // fake staging：<root>/claude-acp/0.84.0/node_modules/@anthropic-ai/
+        // claude-agent-sdk-<triple>/<bin>（布局同真实 vendored 安装）。
+        let Some(triple) = cli_bin::platform_triple() else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!(
+            "pty-vendored-staging-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let stub = root
+            .join("claude-acp")
+            .join("0.84.0")
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join(format!("claude-agent-sdk-{triple}"))
+            .join(cli_bin::claude_bin_name());
+        std::fs::create_dir_all(stub.parent().unwrap()).unwrap();
+        std::fs::write(&stub, "#!/bin/sh\necho VENDORED_DIRECT_OK\n").unwrap();
+        // `use` 是编译期声明，函数内运行时 Windows 早退守不住它——cfg 门控到 unix，
+        // Windows target 下测试构建不再编译失败（该路径在 Windows 下本不可达）。
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // 直启解析带进程级成功缓存：先清缓存 + 注入测试 staging 根（cfg(test) 静态，
+        // 不触进程 env——并行测试下 set_var 与其它测试的 env 读取存在数据竞争）。
+        *cli_bin::DIRECT_BIN_CACHE
+            .lock()
+            .expect("cli_bin direct bin cache mutex poisoned") = None;
+        *cli_bin::TEST_RESOURCES_ROOT
+            .lock()
+            .expect("cli_bin test resources root mutex poisoned") = Some(root.clone());
+
         let provider = LocalPtyProvider::new();
         let tmp = std::env::temp_dir().join("pty-direct-spawn-test");
         std::fs::create_dir_all(&tmp).unwrap();
@@ -565,30 +608,30 @@ mod tests {
             cwd: tmp.to_string_lossy().into_owned(),
             cols: 80,
             rows: 24,
-            direct_command: Some("env".to_string()),
+            direct_command: Some("claude".to_string()),
         };
         provider
             .spawn(opts, Channel::new(|_| Ok(())), &[])
             .unwrap();
 
-        // ring：env 打印出基础变量（PATH 恒在场，即直启命令已被执行）。
+        // ring：stub 打印标记（直启命令已被执行，且走的是 vendored 解析路径）。
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut ring = String::new();
         while Instant::now() < deadline {
             ring = provider
                 .with_session(&session_id, &mut |s| s.io.snapshot())
                 .unwrap();
-            if ring.contains("PATH=") {
+            if ring.contains("VENDORED_DIRECT_OK") {
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
         assert!(
-            ring.contains("PATH="),
-            "direct spawn 未执行（ring 无 env 输出）: {ring}"
+            ring.contains("VENDORED_DIRECT_OK"),
+            "direct spawn 未执行（ring 无 stub 输出）: {ring}"
         );
 
-        // env 打印完即退：reader EOF → exited 置位（list 快照可见；会话留 store）。
+        // stub 打印完即退：reader EOF → exited 置位（list 快照可见；会话留 store）。
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut exited = false;
         while Instant::now() < deadline {
@@ -608,13 +651,21 @@ mod tests {
             "direct spawn 的 CLI 退出应置位会话 exited"
         );
 
+        // 收尾：复位测试注入与缓存（防御性，进程级状态不跨测试漂移）。
+        *cli_bin::TEST_RESOURCES_ROOT
+            .lock()
+            .expect("cli_bin test resources root mutex poisoned") = None;
+        *cli_bin::DIRECT_BIN_CACHE
+            .lock()
+            .expect("cli_bin direct bin cache mutex poisoned") = None;
         provider.shutdown(&session_id).unwrap();
         let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// direct 回落：token 为 builtin（echo——`command -v` 返回名字而非路径，
-    /// 不可直启）→ 回落普通裸 shell：命令不执行（ring 无输出标记）且会话
-    /// 存活（交互 shell 等输入；direct 成功路径的 CLI 早已退出）。
+    /// direct 回落：token 不在白名单（echo）→ 回落普通裸 shell：命令不执行
+    ///（ring 无输出标记）且会话存活（交互 shell 等输入；direct 成功路径的
+    /// CLI 早已退出）。
     #[test]
     fn direct_spawn_fallback_to_plain_shell() {
         let provider = LocalPtyProvider::new();
@@ -640,7 +691,7 @@ mod tests {
             .unwrap();
         assert!(
             !ring.contains("WE_DIRECT_FALLBACK_OK"),
-            "builtin 回落不应执行命令，ring: {ring}"
+            "白名单外 token 回落不应执行命令，ring: {ring}"
         );
         let info = provider
             .list()

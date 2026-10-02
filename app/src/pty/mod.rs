@@ -4,7 +4,7 @@
 //
 // 子模块：
 //   claude_state    —— claude 运行态探测（进程树父链匹配）
-//   cli_bin         —— CLI 直启路径探测（login shell which + PATH harvest）
+//   cli_bin         —— 直启二进制解析（vendored 自带 claude 定位 + login PATH 收割）
 //   local_provider  —— LocalPtyProvider（portable-pty 本机实现）
 //   provider        —— PtyProvider trait + SpawnOpts/PtySpawned/PtySessionInfo
 //   session         —— PtySession + SessionIo（listener Channel + exited）
@@ -48,6 +48,9 @@ pub fn pty_spawn(
     opts: SpawnOpts,
     on_event: tauri::ipc::Channel<PtyEvent>,
 ) -> Result<PtySpawned, String> {
+    // vendored 资源源基准装配期解析一次（幂等；release 走 BaseDirectory::Resource，
+    // macOS 打包资源在 .app/Contents/Resources，不可由 exe 路径拼接）。
+    cli_bin::ensure_resources_base(&app);
     let http_port = app
         .state::<crate::shared::http_server::HttpServerState>()
         .port

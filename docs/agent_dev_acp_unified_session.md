@@ -135,7 +135,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 | P2 | bot↔issue 映射：显式绑定 + IM 内切换（如 `#issue-42 帮我…`） vs 自动挂 workspace 当前活跃 issue | **显式绑定 + IM 内切换** |
 | P3 | 终端模式 ↔ ACP 模式跨模式会话接续（`--resume` 捞回）是否纳入一期 | **不入一期**——纯 ACP 会话先行，跨模式接续为后续增强 |
 | P4 | agent 范围：一期 catalog 只放 claude-acp vs 直接全量 | **一期只落 claude**——catalog 仅启用 claude-acp 条目；通用架构（单一 adapter + catalog）不变，codex / opencode / pi 留条目模板与 spawn 策略口子（扩展 = 加条目），doctor 探测与 agent 选择面随一期收窄 |
-| P5 | claude 二进制哲学：adapter 包自带 CLI vs 沿用本机探测链 | **本机 `resolveClaudeBin` 注入 `CLAUDE_CODE_EXECUTABLE` + adapter vendored 安装（T1.3）**。Gold-Band 为零分发路线（app 不带 node/adapter/claude 任何二进制，catalog 编译进二进制，运行时 `npx -y` 现场拉起，SDK 平台包自带 claude 由 npm 在用户机按平台解析、use_local_claude 默认关）——本项目不采用 |
+| P5 | claude 二进制哲学：adapter 包自带 CLI vs 沿用本机探测链 | **vendored 自带 claude 全链路 SSOT**：终端直启 / ACP / bot headless / marketplace 统一消费 adapter vendored 安装内包的 SDK 平台原生 claude 二进制（`CLAUDE_CODE_EXECUTABLE` 显式注入 vendored 绝对路径），claude 路径探测链退役；终端手动路径（裸 shell 敲 `claude` / 手动按钮）保留本机 claude（shell 自解析 = 用户手敲语义）。代价（拍板接受）：claude 版本随 adapter pin 走、app 内 claude 升级能力随 app 发版；已知限制见 §5.6。Gold-Band 零分发路线（app 不带 node/adapter/claude 任何二进制，运行时 `npx -y` 现场拉起、SDK 平台包由 npm 在用户机按平台解析）不采用——本项目以 vendoring 压网络不确定性（T1.3），SDK 自带二进制由「恒不使用的死重」转为统一运行时 |
 | P6 | ACP 模式权限表达：bot 级「执行权限」开关（allowedTools 白名单）是否废弃，改用 ACP 原生权限模式 | **彻底废弃**（含终端模式 headless 路径）——权限上移 `launch_settings.permissionMode`（一期 UI 两档：需要审批=acceptEdits / 自动=bypassPermissions，经 `session/set_mode` 下发 + agent mode 目录校验），桌面与 bot 共用；permissionMode 同样 workspace 设默认、issue 可按需修改（与 P1 同形态）；「执行权限」配置项连同 allowedTools 全链路移除（清理任务 T2.0），headless 驱动恒用默认白名单（调研依据见 §1.4） |
 
 ## 5. 风险与开放问题
@@ -145,6 +145,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 3. **终端模式与 ACP 模式并存边界**：同一 issue 切换模式时的会话接续（`claude --resume` 可跨形态接续同一 session id）——按 P3 拍板不入一期；
 4. **企微回调 5 秒窗口**：审批点击后更新原卡必须在 5 秒内完成，跨 sidecar 重启的边界场景在 T3.2 测试覆盖。
 5. **bypassPermissions 的运行时开启路径（P6 新增关注）**：ACP 模式下权限模式可经 `session/set_mode` 运行时变更（headless 时代 argv 定死、不存在该路径），IM 端若不过滤即构成远程提权面。缓解：T2.4/T3.2 IM 安全过滤（bypass 类动作仅桌面可操作）+ mode 值对 agent 上报目录校验；autoAccept（client 代点放行）记为后续增强、一期不提供。
+6. **vendored 自带 claude 的版本主权（P5 定稿终态引入）**：claude 二进制版本随 adapter pin 走（如 0.84.0 → SDK 0.3.284 → claude 2.1.284），app 终端内的 claude 升级能力随 app 发版；升级动作与 adapter 升级同流程（升 pin → refresh → vendor → 真握手回归）。已知限制：从未安装过 claude 的机器无法在应用内完成首次 OAuth 登录（终端手动路径无本机 claude 可敲，vendored 二进制登录需交互式 TUI）——「受管登录会话」（PTY 直启 vendored claude 供登录）记为后续增强，现阶段 doctor `-32000` 文案引导。
 
 ---
 
@@ -184,7 +185,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 }
 ```
 
-- 启动模式四档语义（T0.3 定稿）：`none`（默认——issue 就绪后**不进入任何会话**，出「选择启动方式」面板，用户临场三选一再启动；选择仅本次有效，不回写配置不记忆）/ `terminal-manual`（**自动打开终端**：直接进入裸 shell，不自动拉起 Agent，经终端工具条自行选择）/ `terminal-auto`（选中 issue 打开主终端时直接 spawn 所选 Agent）/ `acp`（issue 主窗口 ACP 会话）。`autoCommand` 仅 terminal-auto 档消费（一期 claude，新 CLI 直启在此扩展）；ACP Agent = `agentCode`（catalog 条目）
+- 启动模式四档语义（T0.3 定稿）：`none`（默认——issue 就绪后**不进入任何会话**，出「选择启动方式」面板，用户临场三选一再启动；选择仅本次有效，不回写配置不记忆）/ `terminal-manual`（**自动打开终端**：直接进入裸 shell，不自动拉起 Agent，经终端工具条自行选择）/ `terminal-auto`（选中 issue 打开主终端时直接 spawn 所选 Agent）/ `acp`（issue 主窗口 ACP 会话）。`autoCommand` 仅 terminal-auto 档消费（一期 claude = vendored 自带二进制，Rust 直启按 token 解析 vendored 绝对路径；新 CLI 直启在此扩展）；ACP Agent = `agentCode`（catalog 条目）
 - `permissionMode`（P6）：仅 ACP 模式消费——经 `session/set_mode` 下发（T1.5），一期 UI 两档映射（需要审批=acceptEdits / 自动=bypassPermissions）；终端模式忽略该字段
 - 改表约定：直接编辑原迁移文件、不新建 goose 迁移、不考虑历史数据（本项目既有约定），改完跑 `pnpm server:gorm:gen`。
 - **本阶段是阶段 2 的前置**：bot 发起会话（T2.1/T2.3）将直接读同一份 workspace 级 launch_settings（含 `permissionMode`，桌面/bot 双入口共用权限语义，P6）；`agentCode` 字段与阶段 1 catalog（T1.2）耦合，故与阶段 1 排在一起做。
@@ -297,7 +298,7 @@ issue 主窗口
 
 | | 官方 npx adapter | Go 进程内 adapter |
 |---|---|---|
-| 环境成本 | 需 node + npx（见 T1.4） | 零新增 |
+| 环境成本 | 需 node（adapter 经 vendoring 随包分发，无 npx，见 T1.3/T1.4） | 零新增 |
 | 协议维护 | **零**（claude CLI 协议演进由官方 adapter 团队追，两周三版的跑步机不归我们） | **全扛**（企微 SDK 转义 Go 划算是因为企微协议三年不变；claude 控制协议是反例） |
 | 供应链维护 | 版本 pin + 升级验证（catalog 锁版本，刷新脚本统一升） | 无 |
 
@@ -382,7 +383,7 @@ issue 主窗口
 
 **技术方案**：
 - Vendoring：首次在受管目录（如 `~/.ocean-harness/acp-adapters/`）`npm install` 固定版本，之后 spawn 指向 vendored 入口——「每次 npx 拉包」变「一次性安装」，离线可用，升级走自己的版本策略（仅覆盖 `npx-adapter` 策略即 claude；codex / opencode / pi 走 native CLI 直连，无需 vendoring）
-- claude 路径一致性：沿用现有 `resolveClaudeBin` 三级探测链（`server/internal/bot/bin.go:38-68`）结果，经 adapter 的可执行文件指定口子（`CLAUDE_CODE_EXECUTABLE` 类环境变量）传入——ACP 模式与终端模式共享同一份 claude，不出现两套 CLI 版本漂移
+- claude 路径一致性：vendored 安装内包的 SDK 平台原生 claude 二进制（`node_modules/@anthropic-ai/claude-agent-sdk-<平台triple>/claude`）为全链路 SSOT，经 `CLAUDE_CODE_EXECUTABLE` 显式注入 adapter——终端直启（Rust 直读打包 resources）/ ACP / bot headless / marketplace 消费同一份二进制，零版本漂移、零 claude 探测失败面；终端手动路径保留本机 claude（shell 自解析）。clibin 收窄为 login shell PATH 解析（node 等运行时兜底），claude 三级探测链退役
 
 **依赖**：T1.2
 
@@ -390,25 +391,34 @@ issue 主窗口
 
 **实施定稿**：
 - 载体与安装链（公司网络约束：运行时零 npm / registry 依赖）——构建期 `pnpm server:acp:vendor`（`scripts/prepare-acp-adapters.ts`）按 catalog pin 逐条目 `npm install --omit=dev` 落 `app/resources/acp-adapters/<id>/<version>/`（幂等：安装后校验 node_modules 内 package.json 版本命中即跳过；临时目录 + rename 原子落地，npm 中断不产生以目标名存在的半成品），tauri `beforeDevCommand` / `beforeBuildCommand` 前置执行，`bundle.resources` 随应用打包（`.gitignore` 排除产物）；运行期 `agentcatalog.EnsureVendored` 在受管根 `app_data_dir/acp-adapters/` 按需复制安装：marker（`.ocean-vendored`，内容 = 版本）幂等命中复用，半成品/漂移整树重制，版本切换后清理同 id 旧版本（受管目录恒只保留当前 pin），临时目录 + rename 原子落地，symlink 原样重建（npm `.bin` 相对链两端布局同构即有效）、权限位显式补齐
-- 目录注入：Rust `http_server.rs` 派生 `GO_SERVER_ACP_RESOURCES_DIR`——`Resource` 基准全平台是 exe 目录（dev 下 bundle.resources 不复制进 target），dev 经 `tauri::is_dev` 分支以 crate 目录为基准指向仓库内 staging、release 解析至打包资源，缺失不注入；`app_data_dir` 派生 `GO_SERVER_ACP_ADAPTERS_DIR`（受管根由 Go 自建，Rust 不预创建）；config 侧两目录均为可选字段（缺失不阻断启动，EnsureVendored 调用期报未配置；air 自测可经 yaml 模拟注入）
+- 目录注入：Rust `http_server.rs` 派生 `GO_SERVER_ACP_RESOURCES_DIR`——`Resource` 基准按平台解析（macOS = `.app/Contents/Resources`、Windows = exe 目录，均含打包资源；dev 下 bundle.resources 不复制进 target），dev 经 `tauri::is_dev` 分支以 crate 目录为基准指向仓库内 staging、release 解析至打包资源，缺失不注入；终端直启侧同口径（`pty::cli_bin::ensure_resources_base` 装配期经 AppHandle 解析一次，不以 exe 路径拼接）；`app_data_dir` 派生 `GO_SERVER_ACP_ADAPTERS_DIR`（受管根由 Go 自建，Rust 不预创建）；config 侧两目录均为可选字段（缺失不阻断启动，EnsureVendored 调用期报未配置；air 自测可经 yaml 模拟注入）
 - spawn 翻译：`Entry.VendoredSpawnConfig` 读 vendored 包 package.json 的 bin 字段（npm 字符串 / map 双形态，map 多键取与包名尾段同名键）→ argv `node <vendored 入口>`；node 经 `resolveNodeBin` 落成绝对路径（LookPath → `clibin.LoginPath` 的 login PATH 逐目录兜底——exec 对相对 argv[0] 按 sidecar 自身 PATH 查找，spawn env 覆盖不影响查找，GUI 拉起场景 PATH 常缺 nvm/volta）；spec→包名还原与构建脚本同规则（args 尾部非 flag 参数去 @版本尾缀）；native-acp 条目不走 vendoring（SpawnConfig 直连），vendored 系 API 对其显式报错防误用
-- claude 路径一致性：bot / marketplace 的 claude 探测收敛为中立包 `internal/clibin`（LookPath → 静态回落 → login shell 哨兵探测三级链 + 成功进程级缓存，单一 SSOT，bot driver 与 marketplace 共用）；acp 侧 `ClaudeEnvOverrides` 由消费方拼装注入（client 本体不感知 claude，D5）：`CLAUDE_CODE_EXECUTABLE` = clibin 解析结果——spike 实证 0.84.0 adapter 的 `claudeCliPath()` 以该 env 为最高优先级直传 SDK `pathToClaudeCodeExecutable`，缺省回落 SDK 自带原生二进制（与终端模式的 claude 是两个二进制，版本漂移），本注入即一致性闸门，login PATH 为兜底；`PATH` = login shell PATH 全量覆盖（对齐 bot turnEnv 惯例，GUI 拉起场景 claude 派生的工具子进程同享一致环境）
+- claude 路径一致性（P5 定稿终态：vendored 自带 claude 全链路 SSOT）：`agentcatalog.VendoredClaudeBin` 按平台 triple（GOOS/GOARCH 映射，Windows 取 `claude.exe`）定位 vendored 安装内包的 SDK 平台原生 claude 二进制并校验存在性；`agentcatalog.ResolveVendoredClaudeBin` 一步式封装（catalog 条目 → EnsureVendored → 二进制解析，成功进程级缓存）供 bot driver 与 marketplace 共用，vendoring 两目录由 main 启动期经 `agentcatalog.SetVendoredDirs` 注入（agentcatalog 不反向依赖 config/global——`global → bot` 依赖方向不可逆，bot/marketplace 不得 import global；doctor 分步编排与真握手测试仍走显式目录传参不经此缓存）；acp 侧 `ClaudeEnvOverrides(base, claudeBin)` 由消费方拼装注入（client 本体不感知 claude，D5）：`CLAUDE_CODE_EXECUTABLE` = vendored 二进制绝对路径——spike 实证 adapter 的 `claudeCliPath()` 以该 env 为最高优先级直传 SDK `pathToClaudeCodeExecutable`；`PATH` = login shell PATH 全量覆盖（best-effort，对齐 bot turnEnv 惯例，GUI 拉起场景 claude 派生的工具子进程同享一致环境）。Rust 直启侧不依赖 Go 受管副本：直读打包 resources（dev = 仓库 staging，release = 打包资源目录，同 http_server 资源基准），版本目录 semver 取最高；解析失败回落裸 shell。终端手动路径保留本机 claude（shell 自解析）
 - 验证：真握手测试升级为生产链路验收（EnsureVendored → VendoredSpawnConfig → ClaudeEnvOverrides → 真握手，0.84.0 实测跑通 initialize → session/new → prompt → 收流 → 回收），升级 = `pnpm up @agentclientprotocol/claude-agent-acp@<新版> --save-exact`（adapter 版本决策住 root package.json devDependencies 精确版本，包名迁移仍走脚本 pin 包名表 + 真握手）→ `pnpm server:catalog:refresh` → `pnpm server:acp:vendor` → 本用例 → 提交；vendored 安装层单元测试覆盖命中 / 资源缺失 / 半成品重制 / 版本切换清理 / symlink+权限位 / bin 双形态 / node 路径解析
 
 #### T1.4 doctor 握手探测
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：agent 可用性判据 = 真实握手跑通；结果供 UI 引导与（阶段 3）bot 徽标消费
 
 **技术方案**：
-- 四项探测：claude 可用（`clibin.Resolve`）、node/npx 可用（版本下限跟随 catalog pin 的 adapter engines 要求——当前 0.84.0 为 ≥22）、adapter 包就绪（vendored 入口存在）、native agent CLI 可用（codex / opencode / pi 各自 PATH 解析——随 P4 扩展启用，一期仅 claude 时跳过；探测思路复用 clibin 的 login shell 兜底）
-- 握手判据：真拉起子进程跑 `initialize → setup_session → available_commands` 再清理，跑得通才 healthy（照 Gold-Band `src/acp/client.rs:2673-2731`）
-- node 缺失时 UI 明确引导：「ACP 模式需要 Node.js ≥20，或切换终端模式」，不运行时报错
+- 三项探测：node 可用且版本达下限（spawn 直查 vendored node，不经 npx；下限 = catalog `nodeMinVersion`，当前 22）、vendored 安装就绪且内包 claude 二进制存在（`EnsureVendored` + `VendoredClaudeBin`，P5 定稿终态：claude 消费 vendored 自带二进制，无独立本机探测项）、native agent CLI 可用（codex / opencode / pi 各自 PATH 解析——随 P4 扩展启用，一期仅 claude 时跳过）
+- 握手判据：真拉起子进程跑 `initialize → session/new → available_commands`（agent 主动推送，硬门槛等待）再清理，跑得通才 healthy（照 Gold-Band `src/acp/client.rs:2673-2731`）
+- node 缺失/版本过低时 UI 明确引导（后端生成文案，版本号动态取 catalog `nodeMinVersion`）：「node 版本过低（vX.Y.Z）：ACP 模式需要 Node.js ≥22，或切换终端模式」，不运行时报错
 
 **依赖**：T1.1、T1.3
 
 **决策关联**：D4
+
+**实施定稿**：
+- 探测链（新包 `internal/acpdoctor`，依赖 acp + agentcatalog——login PATH 由 acp 内部经 clibin 消费，本包不直接依赖 clibin；维持 agentcatalog → acp 单向不被破坏）：策略门槛（一期仅 npx-adapter）→ node 解析（`agentcatalog.ResolveNodeBin`，与 vendored spawn 同一 SSOT）+ `node --version` 实测 + `nodeMinVersion` 主版本比较 → `EnsureVendored` + `VendoredClaudeBin`（失败落 StageClaude）+ `VendoredSpawnConfig` + `ClaudeEnvOverrides(cfg.Env, claudeBin)`（与生产拉起零差异：「能探测通过」即「能按生产链路拉起」）→ 真握手 → 整组回收；探测会话 cwd 用一次性临时目录；单条目总预算 90s 硬截断必出结论，命令推送等待窗口 10s
+- 结论四态：healthy / unhealthy / unknown（unknown = 从未探测 ≠ 失败）+ checking（受理在跑的派生态，由 in-flight 集合在 Snapshot 推导，不入缓存）；进程内缓存随 sidecar——重启即 unknown，由启动后台探测重填（main 启动序列 5.6 步 `RunStartupProbe`，串行逐条目，非阻塞不延迟 HTTP 监听）
+- API 面异步受理 + 轮询（探测典型 3–10s 且不固定，同步接口会长时间挂住请求）：POST `/api/doctor/check` 受理即返回受理清单 + 受理时刻快照（空 agentCode = 全部 enabled 条目；在跑条目单飞 join 不重跑），POST `/api/doctor/getInfo` 全量四态快照；前端 `state/doctor` 域 `useDoctorReports` 条件轮询（存在 checking/unknown 时 1s，全落定自动停），`useDoctorCheck` 受理后整域失效
+- 失败原因由后端生成用户可读中文（前端直显）：node 过低提示携带实测版本与 catalog 下限；`initialize`/`session/new` 的 −32000 特判为「claude 未登录」引导；unhealthy 附失败 stage（claude/node/vendored/spawn/initialize/session/commands）与进程异常退出的 stderr 证据摘要
+- UI 消费（一期最小内联，`LaunchModePicker`）：ACP 选项保持置灰，提示随四态派生（checking/unknown/快照未就绪 → 「正在检测 ACP 运行环境…」；healthy → T1.6 上线预告；unhealthy → 后端原因直显），行尾附「重新检测」按钮（受理期按钮 loading，与探测异步解耦，收敛经轮询自动呈现）；阶段 3 bot 徽标待接
+- 协议勘误定稿：available_commands 是 agent 在 session/new 后主动推送的 `session/update`（非客户端请求型方法，客户端无从拉取），doctor 以硬门槛等待其到达；握手序列为 initialize → session/new → available_commands（原方案笔误 setup_session）；healthy 附带 CommandCount（推送的命令数，握手附带收益）。已知限制：推送若早于 acp 客户端的会话注册会被当早期帧丢弃（acp 层 TODO(T1.5) 早到帧缓冲），doctor 表现为 commands 阶段超时——真实 agent 推送在 CLI 往返后（百毫秒级）大概率避开，且可经手动重新检测重试，T1.5 落地后彻底消除
+- 测试：fakeagent 增 doctor-happy 脚本（session/new 响应落 wire 后 200ms 推送——客户端处理完响应才注册会话运行时，早于响应的推送被当早期帧丢弃）；单测覆盖版本解析/下限校验/−32000 映射/等待窗口四路径/策略门槛，编排测试以 `probeFunc` 替换点覆盖受理单飞（gate channel 确定性挂起，不依赖时序）/四态快照/启动探测填充；握手集成经真实 stdio 三路径（doctor-happy healthy / 无推送落败 commands / 拉不起落败 spawn）；生产链路全真用例双门槛 gating（`OCEAN_ACP_REAL_HANDSHAKE=1` + vendoring 两目录注入），实机实测 healthy（0.84.0 真握手跑通）
 
 #### T1.5 sidecar ACP 会话域与事件流
 
@@ -635,7 +645,7 @@ issue 主窗口 ─────┘
 
 ## 附：调研引用索引（关键代码位置）
 
-**本项目**：`server/internal/bot/`（`orchestrator.go:73-239` 回合编排、`driver_claude.go:26-103` headless spawn、`stream.go:36-140` 回复泵、`channel.go:17-44` 渠道契约、`bin.go:38-68` claude 探测、`supervisor.go:106-108` 装配）、`server/internal/bot/wecom/`（`channel.go:223-236` 消费循环、`reply.go:15-60` 流式回复、`inbound.go:33-46` 会话键）、`app/src/shared/app_config.rs:51` 配置表、`packages/web/src/shared/appConfig.ts:71-79` 启动 key SSOT、`EmbeddedTerminal.tsx:86-117/180-194` 消费与 spawn、`t_workspaces`（`workspaces.gen.go`）。
+**本项目**：`server/internal/bot/`（`orchestrator.go:73-239` 回合编排、`driver_claude.go:26-103` headless spawn、`stream.go:36-140` 回复泵、`channel.go:17-44` 渠道契约、claude 二进制 = vendored 自带（`agentcatalog/claudebin.go`）、`supervisor.go:106-108` 装配）、`server/internal/bot/wecom/`（`channel.go:223-236` 消费循环、`reply.go:15-60` 流式回复、`inbound.go:33-46` 会话键）、`app/src/shared/app_config.rs:51` 配置表、`packages/web/src/shared/appConfig.ts:71-79` 启动 key SSOT、`EmbeddedTerminal.tsx:86-117/180-194` 消费与 spawn、`t_workspaces`（`workspaces.gen.go`）。
 
 **Gold-Band**：`src/app/intervention.rs:366-426,915-1030`（干预命令服务 + 权限选项映射）、`src/acp/adapter.rs:52-180`（通用 adapter + 能力协商）、`src/acp/client.rs:2673-2731`（doctor）、`src/acp/permission.rs / elicitation.rs`（pending 落盘等待）、`src/im/inbound.rs:192-261`（入站动作 + 幂等收敛）、`src/im/connectors/wecom.rs:612-1243`（vote_interaction 卡构造、终态更新）、`resources/agent-catalog.json` + `scripts/prepare-agent-catalog.ts`（catalog pin）、`src-tauri/src/im_runtime.rs:1159-1246`（IM→命令服务汇合）。**License：AGPL-3.0-only**（仅行为语义参照，禁止代码级移植）。
 
