@@ -49,14 +49,39 @@ export interface AcpConversationEntry {
   toolCall?: AcpToolCallView;
 }
 
-// 挂起交互投影（view.go PendingView）。options/toolCall/request 的 wire 明细本期只读
-// 提示条不消费，unknown 透传；TODO(T1.7)：审批弹窗/表单面板按 ACP wire 细化。
+// 权限选项 kind（ACP wire schema.PermissionOptionKind 透传取值域）：决定审批按钮的
+// 色彩与轻重（allow 绿/reject 红、*_always 实心=附带「记住」语义）。
+export type AcpPermissionOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
+
+// 权限选项（view.go PendingView.Options 条目，schema.PermissionOption 透传）。
+export interface AcpPermissionOption {
+  optionId: string;
+  name: string;
+  kind: AcpPermissionOptionKind;
+}
+
+// elicitation 全保真 wire（view.go PendingView.Request，acp.ElicitationWire 透传）。
+// acp-go 生成模型把 spec 的 requestedSchema/url 丢弃（上游生成缺陷），后端在入站链
+// 拦截原始参数自行解码补齐（server/internal/acp/elicitation.go），此结构即其投影。
+export interface AcpElicitationWire {
+  mode?: string; // form | url | 未知形态（前端按 form 表单 / message+跳过 兜底二分）
+  message?: string;
+  sessionId?: string;
+  toolCallId?: string;
+  requestId?: string;
+  requestedSchema?: unknown; // 表单 JSON Schema（适配器子集，渲染计划见 elicitationForm.ts）
+  url?: string;
+  elicitationId?: string;
+}
+
+// 挂起交互投影（view.go PendingView）：字段按 kind 取舍——permission 用 options/toolCall，
+// elicitation 用 request。
 export interface AcpPendingView {
   pendingId: number;
   kind: 'permission' | 'elicitation';
-  options?: unknown[];
-  toolCall?: unknown;
-  request?: unknown;
+  options?: AcpPermissionOption[];
+  toolCall?: AcpToolCallView;
+  request?: AcpElicitationWire;
 }
 
 // 会话视图快照——/api/acpSession 响应与 SSE snapshot 帧的 shape（view.go ViewSnapshot）。
@@ -134,7 +159,7 @@ export interface AcpSessionCancelRequest {
   issueId: string;
 }
 
-// POST /api/acpSession/respondPermission：应答挂起权限审批（UI 交互 TODO(T1.7)）。
+// POST /api/acpSession/respondPermission：应答挂起权限审批。
 export interface AcpSessionRespondPermissionRequest {
   issueId: string;
   pendingId: number;
@@ -142,7 +167,7 @@ export interface AcpSessionRespondPermissionRequest {
 }
 
 // POST /api/acpSession/respondElicitation：应答挂起 elicitation（action 三态；content 仅
-// accept 时有意义，键值对透传 ACP wire。UI 交互 TODO(T1.7)）。
+// accept 时有意义，键值对透传 ACP wire）。
 export interface AcpSessionRespondElicitationRequest {
   issueId: string;
   pendingId: number;

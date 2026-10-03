@@ -1,4 +1,4 @@
-import type { AcpSessionCancelRequest, AcpSessionEnsureRequest, AcpSessionPromptRequest, AcpViewSnapshot } from '@src/services';
+import type { AcpSessionCancelRequest, AcpSessionEnsureRequest, AcpSessionPromptRequest, AcpSessionRespondElicitationRequest, AcpSessionRespondPermissionRequest, AcpViewSnapshot } from '@src/services';
 import { AcpSessionService } from '@src/services';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { acpSessionKeys } from './keys';
@@ -36,5 +36,22 @@ export function usePromptAcpSession() {
 export function useCancelAcpSession() {
   return useMutation({
     mutationFn: (req: AcpSessionCancelRequest) => AcpSessionService.cancel(req),
+  });
+}
+
+/**
+ * 应答挂起权限审批：成功后本地不动缓存——卡片移除由 SSE pendingClosed 帧驱动（后端
+ * 应答成功才发帧，失败时挂起原样保留，前端无乐观删除的回滚问题）。
+ */
+export function useRespondAcpPermission() {
+  return useMutation({
+    mutationFn: (req: AcpSessionRespondPermissionRequest) => AcpSessionService.respondPermission(req),
+  });
+}
+
+/** 应答挂起 elicitation（accept 带 content / decline / cancel），缓存策略同上。 */
+export function useRespondAcpElicitation() {
+  return useMutation({
+    mutationFn: (req: AcpSessionRespondElicitationRequest) => AcpSessionService.respondElicitation(req),
   });
 }

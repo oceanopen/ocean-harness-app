@@ -379,6 +379,106 @@ func TestRespondPermissionFlow(t *testing.T) {
 	}
 }
 
+func TestRespondElicitationFlow(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "elicitation", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "要一个输入"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	opened := waitFrame(t, frames, "pendingOpened", func(f Frame) bool { return f.Type == FramePendingOpened })
+	// 投影全保真：wire 经拦截层到快照，requestedSchema 不被上游生成模型丢弃。
+	if opened.Pending == nil || opened.Pending.Kind != "elicitation" || opened.Pending.Request == nil {
+		t.Fatalf("pendingOpened 应带 elicitation wire 投影，got %+v", opened.Pending)
+	}
+	wire := opened.Pending.Request
+	if wire.Mode != "form" || wire.Message != "请选择一个选项" || wire.SessionID == "" {
+		t.Fatalf("wire 投影字段不符，got %+v", wire)
+	}
+	if !strings.Contains(string(wire.RequestedSchema), `"choice"`) {
+		t.Fatalf("requestedSchema 应全保真透传，got %s", wire.RequestedSchema)
+	}
+	pendingID := opened.Pending.PendingID
+	// accept 带内容应答 → pendingClosed → 内容回显条目 + 回合终态（并发到达，双谓词合流）。
+	if err := mgr.RespondElicitation(issueID, pendingID, "accept", map[string]any{"choice": "b"}); err != nil {
+		t.Fatalf("RespondElicitation: %v", err)
+	}
+	closed := waitFrame(t, frames, "pendingClosed", func(f Frame) bool {
+		return f.Type == FramePendingClosed && f.PendingID == pendingID
+	})
+	if closed.PendingID != pendingID {
+		t.Fatalf("pendingClosed 应带 pendingId，got %d", closed.PendingID)
+	}
+	var sawEcho, sawEnd bool
+	deadline := time.After(20 * time.Second)
+	for !sawEcho || !sawEnd {
+		select {
+		case frame, ok := <-frames:
+			if !ok {
+				t.Fatal("帧通道关闭，等待内容回显/回合终态")
+			}
+			if frame.Type == FrameEntry && frame.Entry != nil && strings.Contains(frame.Entry.Text, "elicitation:accept:choice=b") {
+				sawEcho = true
+			}
+			if frame.Type == FrameTurnEnded && frame.Turn.StopReason == string(schema.StopReasonEndTurn) {
+				sawEnd = true
+			}
+		case <-deadline:
+			t.Fatalf("等待内容回显/回合终态超时（sawEcho=%v sawEnd=%v）", sawEcho, sawEnd)
+		}
+	}
+	if pendings := mgr.Get(issueID).Pendings; len(pendings) != 0 {
+		t.Fatalf("应答后挂起应清空，got %+v", pendings)
+	}
+	// 非法 action 拒绝（服务入口已 oneof 校验，此处覆盖 manager 直调路径）。
+	if err := mgr.RespondElicitation(issueID, pendingID, "bogus", nil); err == nil {
+		t.Fatal("非法 action 应拒绝")
+	}
+}
+
+// kind 错配拒绝：跨类型应答在摘除前拒绝（nil 槽位不 panic、不消耗挂起），双向覆盖。
+func TestRespondKindMismatch(t *testing.T) {
+	mgrP, _, issueP, framesP, _ := newManagerWithIssue(t, "permission", nil)
+	if _, err := mgrP.Ensure(context.Background(), issueP); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, framesP, "ready", statusFrameIs(StatusReady))
+	if err := mgrP.Prompt(issueP, "需要权限"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	openedP := waitFrame(t, framesP, "pendingOpened", func(f Frame) bool { return f.Type == FramePendingOpened })
+	if openedP.Pending == nil {
+		t.Fatal("pendingOpened 应带投影")
+	}
+	if err := mgrP.RespondElicitation(issueP, openedP.Pending.PendingID, "accept", nil); err == nil {
+		t.Fatal("elicitation 应答打 permission 挂起应拒绝")
+	}
+	if pendings := mgrP.Get(issueP).Pendings; len(pendings) != 1 {
+		t.Fatalf("错配应答不应消耗挂起，got %+v", pendings)
+	}
+
+	mgrE, _, issueE, framesE, _ := newManagerWithIssue(t, "elicitation", nil)
+	if _, err := mgrE.Ensure(context.Background(), issueE); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, framesE, "ready", statusFrameIs(StatusReady))
+	if err := mgrE.Prompt(issueE, "要一个输入"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	openedE := waitFrame(t, framesE, "pendingOpened", func(f Frame) bool { return f.Type == FramePendingOpened })
+	if openedE.Pending == nil {
+		t.Fatal("pendingOpened 应带投影")
+	}
+	if err := mgrE.RespondPermission(issueE, openedE.Pending.PendingID, "allow"); err == nil {
+		t.Fatal("permission 应答打 elicitation 挂起应拒绝")
+	}
+	if pendings := mgrE.Get(issueE).Pendings; len(pendings) != 1 {
+		t.Fatalf("错配应答不应消耗挂起，got %+v", pendings)
+	}
+}
+
 func TestDiscardCascade(t *testing.T) {
 	mgr, db, issueID, frames, _ := newManagerWithIssue(t, "happy", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID); err != nil {

@@ -6,7 +6,8 @@
 //	happy            两段 agent_message_chunk 后 end_turn
 //	permission       prompt 中发起 request_permission，把结果回显进 message chunk
 //	late-permission  prompt 立即 end_turn，300ms 后再发起 request_permission（无活动回合路径）
-//	elicitation      prompt 中发起 elicitation/create（form 线上格式），把结果回显进 message chunk
+//	elicitation      prompt 中发起 elicitation/create（线上扁平格式直发，含 requestedSchema），
+//	                 把结果回显进 message chunk
 //	slow-cancel      持续推送 chunk 直至收到 session/cancel，以 cancelled 终止
 //	doctor-happy     session/new 响应后 200ms 推送 available_commands（T1.4 doctor 握手门槛）
 //	early-push       session/new 响应前抢跑推送 chunk（早到帧缓冲回放路径）+ prompt 补推一段
@@ -16,7 +17,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -183,8 +183,8 @@ func (a *fakeAgent) Prompt(ctx context.Context, client agent.Client, request sch
 		return schema.PromptResponse{StopReason: schema.StopReasonEndTurn}, nil
 
 	case scriptElicitation:
-		response, err := client.CreateElicitation(ctx, formElicitation(request.SessionID))
-		if err != nil {
+		var response schema.CreateElicitationResponse
+		if err := client.Call(ctx, schema.ElicitationCreateMethodName, elicitationParams(request.SessionID), &response); err != nil {
 			return schema.PromptResponse{}, err
 		}
 		echo := "elicitation:decline"
@@ -238,30 +238,22 @@ func permissionOptions() []schema.PermissionOption {
 	}
 }
 
-// formElicitation 构造 form 模式 elicitation 的线上格式。经 raw map 走扩展通道：
-// 本 pin 的 typed ElicitationFormMode 不含 requestedSchema 字段（上游生成缺口），
-// 但带 sessionId 的 form 载荷在客户端 typed 解码路径上可正常命中 Session scope。
-func formElicitation(sessionID schema.SessionId) (request schema.CreateElicitationRequest) {
-	raw, err := json.Marshal(map[string]any{
+// elicitationParams 构造 form 模式 elicitation 的线上扁平格式（真适配器 wire 形态：
+// mode/sessionId/message/requestedSchema 平铺）。经 agent.Client.Call 扩展通道直发——
+// typed client.CreateElicitation 会被 acp-go 生成模型丢掉 requestedSchema（上游生成
+// 缺口，见客户端 elicitation.go 补偿），fixture 必须走 raw 才能覆盖投影全保真链路。
+func elicitationParams(sessionID schema.SessionId) map[string]any {
+	return map[string]any{
+		"mode":      "form",
 		"sessionId": string(sessionID),
 		"message":   "请选择一个选项",
-		"mode":      "form",
-		"form": map[string]any{
-			"sessionId": string(sessionID),
-			"requestedSchema": map[string]any{
-				"type": "object",
-				"properties": map[string]any{
-					"choice": map[string]any{"type": "string", "title": "选项"},
-				},
-				"required": []string{"choice"},
+		"requestedSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"choice": map[string]any{"type": "string", "title": "选项"},
 			},
 		},
-	})
-	if err != nil {
-		return request
 	}
-	_ = json.Unmarshal(raw, &request)
-	return request
 }
 
 func strPtr(s string) *string { return &s }

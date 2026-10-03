@@ -88,13 +88,16 @@ func Launch(ctx context.Context, cfg SpawnConfig, log *zap.Logger) (*AgentClient
 	// 返回 error 会终止整条连接）。
 	sessionUpdates := acpgo.SessionUpdates(c.onUpdate)
 	notifications := acpgo.Notifications(func(method string, raw json.RawMessage) error {
-		// TODO(T1.7): elicitation/complete（表单流式更新通知）在此补充分发。
+		// TODO(T1.7+): elicitation/complete（url 模式完成通知）——一期未广告 url 能力不会到达。
 		if err := sessionUpdates(method, raw); err != nil {
 			c.log.Warn("ACP session/update 解码失败，已丢弃", zap.String("method", method), zap.Error(err))
 		}
 		return nil
 	})
-	c.conn = acpgo.Connect(proc.stdout, proc.stdin, agent.HandleClientHost(nil, nil, c, c), notifications)
+	// 入站请求链外包 elicitation wire 拦截（acp-go 生成模型丢 requestedSchema/url 的补偿，
+	// 见 elicitation.go）。
+	onRequest := elicitationWireInterceptor(c.log, agent.HandleClientHost(nil, nil, c, c))
+	c.conn = acpgo.Connect(proc.stdout, proc.stdin, onRequest, notifications)
 	go c.awaitProcessExit()
 	return c, nil
 }
@@ -363,19 +366,24 @@ func (c *AgentClient) RequestPermission(ctx context.Context, request schema.Requ
 	return runtime.handlePermission(ctx, request)
 }
 
-// CreateElicitation 实现 agent.Elicitation：按会话路由（elicitation 顶层无 sessionId，
-// 会话归属在 form 的 session scope 内，经 elicitationSessionID 解析）。
+// CreateElicitation 实现 agent.Elicitation：按会话路由。会话归属解析 wire 优先（拦截层
+// 全保真解码；url 模式归属 typed 路径不覆盖——elicitationSessionID 只认 form scope），
+// typed form scope 回退（拦截未命中/解析失败路径）；两者皆无（请求级 elicitation）不
+// 支持，拒绝 -32602。
 func (c *AgentClient) CreateElicitation(ctx context.Context, request schema.CreateElicitationRequest) (schema.CreateElicitationResponse, error) {
+	wire := elicitationWireFromContext(ctx)
 	sessionID, ok := elicitationSessionID(request)
+	if !ok && wire != nil && wire.SessionID != "" {
+		sessionID, ok = schema.SessionId(wire.SessionID), true
+	}
 	if !ok {
-		// TODO(T1.7): url 模式 / 请求级（无会话归属）elicitation 的路由与 UI 呈现。
 		return schema.CreateElicitationResponse{}, &acpgo.RPCError{Code: -32602, Message: "unknown sessionId"}
 	}
 	runtime, ok := c.lookupSession(sessionID)
 	if !ok {
 		return schema.CreateElicitationResponse{}, &acpgo.RPCError{Code: -32602, Message: "unknown sessionId"}
 	}
-	return runtime.handleElicitation(ctx, request)
+	return runtime.handleElicitation(ctx, request, wire)
 }
 
 func (c *AgentClient) lookupSession(id acpgo.SessionID) (*sessionRuntime, bool) {

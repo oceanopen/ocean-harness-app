@@ -77,7 +77,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 - **零 allowedTools**：全库无任何工具白名单/预批准机制，权限请求一律运行时交互审批；唯一注入是 deny-list（`session/new` 强制 `disallowedTools` 追加 Monitor）——deny 而非 allow 的哲学
 - **autoAccept 会话级开关**：开启后 client 自动选第一个 allow 选项即时应答（读会话快照 override，中途开启立即生效）——「不想被打扰」的表达方式；本项目记为后续增强，一期不提供（见 §5 风险 5）
 - **permissionMode 会话级下发**：经 `session/set_config_option`（configId="mode"）下发，值必须对 agent 上报的 mode 目录校验（防硬编码失效）
-- **IM 安全过滤**：危险权限动作（bypass 类、未知 kind 等）IM 端只保留「安全拒绝」、开启/放行必须回桌面（`intervention.rs` requires_desktop 判定）——本项目 T2.4/T3.2 收录
+- **IM 安全过滤（参考方向，非本项目拍板）**：Gold-Band `intervention.rs` requires_desktop 判定——危险权限动作（bypass 类、未知 kind 等）IM 端只保留「安全拒绝」、开启/放行必须回桌面。bot 与桌面 App 是等价客户端、无依赖关系，是否按此过滤 T2.4 再议（T3.2 同向收录）
 
 **术语校准**：权限应答枚举实为 `RequestPermissionOutcome`（`{outcome:"cancelled"}` | `{outcome:"selected", optionId}`）；`updateTo` / `SessionPermissionUpdateOutcome` **不是 ACP 协议字段**（`updatedPermissions` 是 Claude Agent SDK 字段，adapter 内部消化）；allow_always 的记忆范围协议不定义、由 agent 落地——claude-agent-acp 落地为 SDK `PermissionUpdate`（destination: session / localSettings / userSettings / projectSettings，选「允许并记住」即持久生效）。
 
@@ -348,7 +348,7 @@ issue 主窗口
 - 取消与超时收口（§5.1 清单）：软取消 = `session/cancel` + 立即结算未决交互，10s 预算内等 agent 回 cancelled 终态，超时硬取消（拆回合 ctx、以错误返回）；库对 session/cancel 以 -32800 终止在途请求，归一为干净 cancelled 终态；握手/建会话 60s、关会话 10s，prompt 与交互应答不设超时（回合时长与用户决策时长不可预估，由 ctx 与取消语义驱动）
 - 锁序红线：不得持 stateMu 发起网络调用——通知回写跑在连接读循环 goroutine 且需同一把锁，持锁等响应会互锁；`SetPermissionMode` 走「快照送验 → 确认后合并」；`sessionValue()` 对 Modes 浅拷贝出私有副本（CurrentModeID 是唯一回写字段，隔离库经快照指针的就地写与消费方读的竞争；AvailableModes 目录创建后只读可共享）
 - 收敛序单点 `converge()`（Close 与进程死亡监听共用、并发各步幂等）：逐会话结算未决交互 → conn.Close（join 全部入站 handler）→ 进程组回收（WaitDelay 5s 收口孙进程管道）→ 逐会话终结哨兵；`Err()` 以 closedByCaller 标记区分主动收尾（nil）与意外死亡（stderr 摘要证据面）；事件通道不关闭，以 Terminated 哨兵终结，满则阻塞、收敛期经 closing 通道逃生防 join 死锁
-- elicitation 路由：`CreateElicitationRequest` 顶层无 sessionId，会话归属解析自 `Form.Session.SessionID`；url 模式/请求级回 -32602（TODO(T1.7)）；库 typed `ElicitationFormMode` 缺 requestedSchema 字段（上游生成缺口），带 sessionId 的 form 载荷线上解码不受影响
+- elicitation 路由：`CreateElicitationRequest` 顶层无 sessionId，typed 侧会话归属解析自 `Form.Session.SessionID`；请求级 scope 回 -32602；库 typed `ElicitationFormMode` 丢 requestedSchema/url/elicitationId 字段（上游生成缺口）——带 sessionId 的 form/url 载荷经 T1.7 入站拦截层原始参数解码补齐（见其定稿），typed 侧路由不受影响
 
 #### T1.2 agent catalog（离线 pin）
 
@@ -454,7 +454,7 @@ issue 主窗口
 
 #### T1.6 issue 主窗口 ACP 视图
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：issue 主窗口新增 ACP 模式（第三执行模式）：会话视图 + 底部任务描述输入框
 
@@ -464,11 +464,18 @@ issue 主窗口
 - 底部输入框回车 → `session/prompt`（经 T1.5 会话域）
 - 服务地址从 Rust `http_server_status` 命令获取，不硬编码端口；SSE 订阅遵循现有前端服务范式
 
+**实施定稿**：
+- state 域 `state/acpSession/`（一域一目录约定）：SSE 增量帧经 `applyFrame` 纯归约写入 TanStack Query 缓存（view key 即 SSOT），读查询零 refetch、推送驱动；`useAcpSessionEvents` 订阅随挂载建断，断线 EventSource 自愈重连取新快照；服务地址经 Rust `http_server_status` 注入（`services/AcpSessionService`），不硬编码端口
+- `AcpSessionView` 挂载即幂等 ensure（ref 防重入）+ 按 snapshot.status 分支渲染（starting 全屏进度 / failed+terminated 原因与重启 / idle+ready 会话视图），全程无「先临时值后纠正」路径（编码规则 1）
+- `MessageList` 四类条目渲染（user 高亮块 / agentMessage markdown / agentThought 淡化 / toolCall 折叠卡 `ToolCallItem`——标题行+状态徽章+可折叠 pretty JSON 载荷）+ 贴底实测滚动策略（onScroll 实时测距 48px 阈值判定贴底，仅贴底态 entries 更新才归位，上翻查阅不被打断）
+- `PromptComposer` Enter 发送 / Shift+Enter 换行；回合态输入禁用、发送钮切「停止」（软取消，受理期按钮 loading 可见）；发送失败 toast 保留输入
+- 公共 TS 依赖版本（typescript/vite/vitest/@types/node）迁 `pnpm-workspace.yaml` catalog，包内以 `catalog:` 引用
+
 **依赖**：T1.5、T0.3
 
 #### T1.7 桌面侧审批与选择交互
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：`session/request_permission` 与 `elicitation/*` 在桌面侧呈现为弹窗/面板——阶段 1 即获得审批能力，不等 bot
 
@@ -477,6 +484,11 @@ issue 主窗口
 - elicitation → 表单/选择面板
 - 交互结果经 T1.5 会话域回写 ACP 会话
 - 阶段 2 T2.4 在此之上做双入口收敛
+
+**实施定稿**：
+- **上游缺陷补偿**：acp-go 生成模型把 spec 中 `ElicitationFormMode` 的 `requestedSchema`/`url`/`elicitationId` 字段丢弃（v0.11/v0.12 同病，schema.json 有而生成类型无），form 载荷线上解码静默失真且上游无修复。补偿：acp 包入站 Handler 链装配 `elicitationWireInterceptor`（`Connect` 前包装），对 `elicitation/create` 原始参数宽松解码出全保真 `ElicitationWire`，经 ctx value 透传 `CreateElicitation` → 挂起登记 → `PendingView.Request`（`WireFromRequest` 作生成模型可得字段的降级投影兜底）；fakeagent 演示链改走 `client.Call` 原生通道发扁平 form wire（绕开 typed 丢失面），manager 集成测试 `TestRespondElicitationFlow` 全链证明 requestedSchema 落到视图
+- **呈现形态（用户拍板）**：不弹窗，落 MessageList 与输入区之间的**固定挂起区**平铺 `PendingCard`，全部应答后整区消失；permission 卡复用 `ToolCallItem` 呈现工具详情，选项按 kind 分色按钮组（allow 绿/reject 红、`*_always` 实心+「记住」标识）；elicitation 卡 message + **适配器子集渲染器**（`renderElicitationPlan`：string+oneOf→radio、array+items.anyOf→checkbox、string/number/boolean→text/number/switch，越界形态降级 unknown 只读不参与应答；空值跳过语义——accept 缺字段即跳过、switch 仅 true 下发）；url/未知模式兜底 message+跳过（url 的 accept 语义是「站外已完成」，应用内不支撑）
+- 应答经 T1.5 六端点 respondPermission/respondElicitation；应答成功不动缓存——卡片移除由 SSE pendingClosed 帧驱动（无乐观删除回滚面）；应答中整卡禁用+所点按钮 loading（等待态可见优先）；纯函数层 `elicitationForm.ts` 单测覆盖 adapter 真实形态样本
 
 **依赖**：T1.5、T1.6
 

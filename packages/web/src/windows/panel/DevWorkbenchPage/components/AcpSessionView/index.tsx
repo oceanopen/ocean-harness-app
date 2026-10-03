@@ -1,16 +1,17 @@
 import type { AcpViewSnapshot } from '@src/services';
-import { Alert, Box, Button, CircularProgress, Typography } from '@mui/material';
+import { Box, Button, CircularProgress, Typography } from '@mui/material';
 import { useAcpSessionEvents, useAcpSessionView, useEnsureAcpSession } from '@src/state/acpSession';
 import { useEffect, useRef } from 'react';
 import MessageList from './MessageList';
+import PendingCard from './PendingCard';
 import PromptComposer from './PromptComposer';
 
 /**
  * AcpSessionView：issue 主窗口 ACP 模式的会话视图（TerminalLaunchFlow acp 分支渲染，
  * 与终端树完全同位）。编排时序（编码规则 1）：挂载即幂等受理 ensure（starting/ready
  * join 返现状，failed/terminated 重建）→ SSE 订阅建连首帧全量快照 → 视图按快照 status
- * 分支渲染，全程无「先临时值后纠正」路径。挂起审批/表单本期只读提示（应答交互
- * TODO(T1.7)：桌面侧审批弹窗/表单面板）。
+ * 分支渲染，全程无「先临时值后纠正」路径。挂起审批/表单在 MessageList 与输入区之间的
+ * 固定挂起区平铺 PendingCard 应答（卡片移除由 SSE pendingClosed 帧驱动）。
  */
 export default function AcpSessionView({ issueId }: { issueId: string }) {
   const ensure = useEnsureAcpSession();
@@ -80,14 +81,16 @@ function StatusBranch({ issueId, snapshot, onRestart, ensurePending }: {
     case 'ready':
       return (
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-          {snapshot.pendings.length > 0 && (
-            // 挂起只读提示（拍板：T1.6 不做应答交互，避免 acceptEdits 档下回合静默挂起
-            // 无解释；审批弹窗/表单面板 TODO(T1.7)）。
-            <Alert severity="warning" sx={{ borderRadius: 0, flexShrink: 0 }}>
-              Agent 正在等待你的应答：{snapshot.pendings.length} 项审批/表单挂起，回合暂停中（审批交互将在后续版本提供）
-            </Alert>
-          )}
           <MessageList entries={snapshot.entries} />
+          {snapshot.pendings.length > 0 && (
+            // 固定挂起区（MessageList 与输入区之间）：pending 逐项平铺卡片，全部应答
+            // 后（pendings 清空）整区消失。
+            <Box sx={{ flexShrink: 0, p: 1, display: 'flex', flexDirection: 'column', gap: 1, borderTop: 1, borderColor: 'divider' }}>
+              {snapshot.pendings.map(pending => (
+                <PendingCard key={pending.pendingId} issueId={issueId} pending={pending} />
+              ))}
+            </Box>
+          )}
           <PromptComposer issueId={issueId} turnActive={snapshot.turnActive} />
         </Box>
       );

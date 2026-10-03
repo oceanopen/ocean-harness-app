@@ -310,6 +310,15 @@ func TestElicitationAccept(t *testing.T) {
 	if pending.Request().Message != "请选择一个选项" {
 		t.Fatalf("请求文案不符，got %q", pending.Request().Message)
 	}
+	// 拦截层端到端：typed 模型不承载的 requestedSchema 必须经 wire 投影保真到达
+	//（fakeagent 以线上扁平格式直发，客户端 typed 解码会丢该字段）。
+	wire := pending.Wire()
+	if wire == nil || wire.Mode != "form" || wire.Message != "请选择一个选项" || wire.SessionID == "" {
+		t.Fatalf("wire 投影应携带拦截层解析结果，got %+v", wire)
+	}
+	if !strings.Contains(string(wire.RequestedSchema), `"choice"`) {
+		t.Fatalf("requestedSchema 应全保真透传，got %s", wire.RequestedSchema)
+	}
 	if err := pending.Respond(acpgo.AcceptElicitation(map[string]schema.ElicitationContentValue{"choice": "b"})); err != nil {
 		t.Fatalf("Respond(accept): %v", err)
 	}

@@ -126,6 +126,7 @@ type PendingElicitation struct {
 	id        pendingID
 	sessionID acpgo.SessionID
 	request   schema.CreateElicitationRequest
+	wire      *ElicitationWire // 全保真 wire 投影（nil = 拦截未命中，视图侧降级构造）
 
 	mu       sync.Mutex
 	resolved bool
@@ -133,12 +134,16 @@ type PendingElicitation struct {
 	response schema.CreateElicitationResponse
 }
 
-func newPendingElicitation(id pendingID, request schema.CreateElicitationRequest) *PendingElicitation {
+func newPendingElicitation(id pendingID, request schema.CreateElicitationRequest, wire *ElicitationWire) *PendingElicitation {
 	sessionID, _ := elicitationSessionID(request)
+	if sessionID == "" && wire != nil {
+		sessionID = schema.SessionId(wire.SessionID)
+	}
 	return &PendingElicitation{
 		id:        id,
 		sessionID: acpgo.SessionID(sessionID),
 		request:   request,
+		wire:      wire,
 		decided:   make(chan struct{}),
 	}
 }
@@ -149,8 +154,12 @@ func (p *PendingElicitation) ID() pendingID { return p.id }
 // SessionID 归属会话。
 func (p *PendingElicitation) SessionID() acpgo.SessionID { return p.sessionID }
 
-// Request 原始请求（表单 schema / URL / 消息文案，UI 展示用）。
+// Request 原始 typed 请求（应答通道不经过它——Respond 直达；UI 投影用 Wire()，
+// typed 模型已被上游丢弃 requestedSchema/url）。
 func (p *PendingElicitation) Request() schema.CreateElicitationRequest { return p.request }
+
+// Wire 全保真 wire 投影（表单 schema / URL / 消息文案，nil 时视图侧以 WireFromRequest 降级）。
+func (p *PendingElicitation) Wire() *ElicitationWire { return p.wire }
 
 // Respond 以完整应答结算（CAS once；构造见 acpgo.AcceptElicitation 等）。
 func (p *PendingElicitation) Respond(response schema.CreateElicitationResponse) error {

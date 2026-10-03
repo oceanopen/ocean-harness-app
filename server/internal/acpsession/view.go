@@ -24,10 +24,10 @@ const (
 
 // 会话记录条目的 kind 取值域。
 const (
-	entryKindUser        = "user"
+	entryKindUser         = "user"
 	entryKindAgentMessage = "agentMessage"
 	entryKindAgentThought = "agentThought"
-	entryKindToolCall    = "toolCall"
+	entryKindToolCall     = "toolCall"
 )
 
 // ConversationEntry 会话记录条目（四类：用户消息 / agent 消息 / agent 思考 / 工具调用）。
@@ -54,15 +54,15 @@ type ToolCallView struct {
 
 // PendingView 挂起交互投影（permission / elicitation 二选一，字段按 kind 取舍）。
 type PendingView struct {
-	PendingID uint64                           `json:"pendingId"`
-	Kind      string                           `json:"kind"` // permission | elicitation
-	Options   []schema.PermissionOption        `json:"options,omitempty"`  // permission 专用
-	ToolCall  *schema.ToolCallUpdate           `json:"toolCall,omitempty"` // permission 专用：审批详情
-	Request   *schema.CreateElicitationRequest `json:"request,omitempty"`  // elicitation 专用
+	PendingID uint64                    `json:"pendingId"`
+	Kind      string                    `json:"kind"`               // permission | elicitation
+	Options   []schema.PermissionOption `json:"options,omitempty"`  // permission 专用
+	ToolCall  *schema.ToolCallUpdate    `json:"toolCall,omitempty"` // permission 专用：审批详情
+	Request   *acp.ElicitationWire      `json:"request,omitempty"`  // elicitation 专用：全保真 wire（acp-go 生成模型丢 requestedSchema/url，见 acp/elicitation.go）
 }
 
 // ViewSnapshot 会话视图快照——/api/acpSession 响应与 SSE snapshot 帧的 shape SSOT
-//（前端按此镜像 TS 类型）。嵌套的 ACP wire 结构原样透传不转译。
+// （前端按此镜像 TS 类型）。嵌套的 ACP wire 结构原样透传不转译。
 type ViewSnapshot struct {
 	Status            SessionStatus             `json:"status"`
 	AgentCode         string                    `json:"agentCode,omitempty"`
@@ -110,7 +110,7 @@ type sessionView struct {
 	// pendings 挂起交互注册表（acp 层无枚举 API，视图侧自登记；应答/结算后摘除）。
 	pendings []pendingSlot
 
-	turn       int  // 回合序号（entryId 命名空间：t<turn>-user / t<turn>-agent / ...）
+	turn       int // 回合序号（entryId 命名空间：t<turn>-user / t<turn>-agent / ...）
 	turnActive bool
 	stopReason string
 }
@@ -197,11 +197,14 @@ func (v *sessionView) applyEvent(event *acp.SessionEvent) []Frame {
 		}, &pendingSlot{permission: event.Permission})
 	}
 	if event.Elicitation != nil {
-		request := event.Elicitation.Request()
+		wire := event.Elicitation.Wire()
+		if wire == nil {
+			wire = acp.WireFromRequest(event.Elicitation.Request())
+		}
 		return v.registerPendingLocked(PendingView{
 			PendingID: uint64(event.Elicitation.ID()),
 			Kind:      "elicitation",
-			Request:   &request,
+			Request:   wire,
 		}, &pendingSlot{elicitation: event.Elicitation})
 	}
 	return nil
@@ -349,10 +352,10 @@ func (v *sessionView) registerPendingLocked(view PendingView, slot *pendingSlot)
 	return []Frame{{Type: FramePendingOpened, Pending: &view}}
 }
 
-// respondPermission 以 optionId 应答挂起权限审批（校验选项 → 摘除 → CAS 应答 →
-// pendingClosed 帧）。未知选项在摘除前拒绝（不消耗挂起——摘除后应答失败会让前后端挂起
-// 视图与 agent 等待态三方失同步）；pendingId 未知 / 已应答错误原样透传，HTTP 面语义与
-// acp 层一致。
+// respondPermission 以 optionId 应答挂起权限审批（kind 校验 → 校验选项 → 摘除 → CAS
+// 应答 → pendingClosed 帧）。kind 错配/未知选项在摘除前拒绝（不消耗挂起——摘除后应答
+// 失败会让前后端挂起视图与 agent 等待态三方失同步）；pendingId 未知 / 已应答错误原样
+// 透传，HTTP 面语义与 acp 层一致。
 func (v *sessionView) respondPermission(pendingID uint64, optionID string) ([]Frame, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -361,6 +364,9 @@ func (v *sessionView) respondPermission(pendingID uint64, optionID string) ([]Fr
 		return nil, fmt.Errorf("挂起审批不存在或已关闭: %d", pendingID)
 	}
 	slot := v.pendings[idx]
+	if slot.permission == nil {
+		return nil, fmt.Errorf("挂起 %d 不是权限审批", pendingID)
+	}
 	if !hasPermissionOption(slot.view.Options, optionID) {
 		return nil, fmt.Errorf("未知审批选项: %s", optionID)
 	}
@@ -373,7 +379,7 @@ func (v *sessionView) respondPermission(pendingID uint64, optionID string) ([]Fr
 }
 
 // respondElicitation 以完整三态应答挂起 elicitation（构造见 acpgo.AcceptElicitation 等；
-// 应答失败回填挂起，语义同 respondPermission）。
+// kind 错配在摘除前拒绝，应答失败回填挂起，语义同 respondPermission）。
 func (v *sessionView) respondElicitation(pendingID uint64, response schema.CreateElicitationResponse) ([]Frame, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -382,6 +388,9 @@ func (v *sessionView) respondElicitation(pendingID uint64, response schema.Creat
 		return nil, fmt.Errorf("挂起表单不存在或已关闭: %d", pendingID)
 	}
 	slot := v.pendings[idx]
+	if slot.elicitation == nil {
+		return nil, fmt.Errorf("挂起 %d 不是表单", pendingID)
+	}
 	v.pendings = append(v.pendings[:idx], v.pendings[idx+1:]...)
 	if err := slot.elicitation.Respond(response); err != nil {
 		v.pendings = append(v.pendings, slot)

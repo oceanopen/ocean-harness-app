@@ -6,9 +6,15 @@ settings:
 
 catalogs:
   default:
+    '@agentclientprotocol/claude-agent-acp':
+      specifier: 0.84.0
+      version: 0.84.0
     '@antfu/eslint-config':
       specifier: ^9.0.0
       version: 9.0.0
+    '@anthropic-ai/claude-agent-sdk':
+      specifier: 0.3.284
+      version: 0.3.284
     '@codemirror/commands':
       specifier: ^6.11.0
       version: 6.11.0
@@ -255,13 +261,13 @@ importers:
   .:
     devDependencies:
       '@agentclientprotocol/claude-agent-acp':
-        specifier: 0.84.0
+        specifier: 'catalog:'
         version: 0.84.0(@anthropic-ai/sdk@0.131.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))
       '@antfu/eslint-config':
         specifier: 'catalog:'
         version: 9.0.0(@eslint-react/eslint-plugin@5.8.17(eslint@10.4.1(jiti@2.7.0))(typescript@6.0.3))(@typescript-eslint/rule-tester@8.61.0(eslint@10.4.1(jiti@2.7.0))(typescript@6.0.3))(@typescript-eslint/typescript-estree@8.61.0(typescript@6.0.3))(@typescript-eslint/utils@8.61.0(eslint@10.4.1(jiti@2.7.0))(typescript@6.0.3))(@vue/compiler-sfc@3.5.40)(eslint-plugin-format@1.5.0(eslint@10.4.1(jiti@2.7.0)))(eslint-plugin-react-refresh@0.5.2(eslint@10.4.1(jiti@2.7.0)))(eslint@10.4.1(jiti@2.7.0))(typescript@6.0.3)(vitest@4.1.11(@types/node@24.13.1)(vite@8.0.16(@types/node@24.13.1)(jiti@2.7.0)(yaml@2.9.0)))
       '@anthropic-ai/claude-agent-sdk':
-        specifier: 0.3.284
+        specifier: 'catalog:'
         version: 0.3.284(@anthropic-ai/sdk@0.131.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.31.0(zod@4.6.5))(zod@4.6.5)
       '@eslint-react/eslint-plugin':
         specifier: 'catalog:'
@@ -5613,7 +5619,7 @@ snapshots:
       eslint: 10.4.1(jiti@2.7.0)
       ts-pattern: 5.9.0
       typescript: 6.0.3
-      zod: 4.4.3
+      zod: 4.6.5
     transitivePeerDependencies:
       - supports-color
 

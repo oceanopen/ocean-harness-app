@@ -262,9 +262,10 @@ func (r *sessionRuntime) registerPermission(request schema.RequestPermissionRequ
 	return p
 }
 
-// handleElicitation 连接层 onRequest 的 elicitation 分支（与权限同构）。
-func (r *sessionRuntime) handleElicitation(ctx context.Context, request schema.CreateElicitationRequest) (schema.CreateElicitationResponse, error) {
-	pending := r.registerElicitation(request)
+// handleElicitation 连接层 onRequest 的 elicitation 分支（与权限同构；wire 为拦截层
+// 全保真解码产物，可为 nil——投影侧降级）。
+func (r *sessionRuntime) handleElicitation(ctx context.Context, request schema.CreateElicitationRequest, wire *ElicitationWire) (schema.CreateElicitationResponse, error) {
+	pending := r.registerElicitation(request, wire)
 	if pending == nil {
 		return acpgo.DeclineElicitation(), nil
 	}
@@ -273,13 +274,13 @@ func (r *sessionRuntime) handleElicitation(ctx context.Context, request schema.C
 	return response, nil
 }
 
-func (r *sessionRuntime) registerElicitation(request schema.CreateElicitationRequest) *PendingElicitation {
+func (r *sessionRuntime) registerElicitation(request schema.CreateElicitationRequest, wire *ElicitationWire) *PendingElicitation {
 	r.turnMu.Lock()
 	defer r.turnMu.Unlock()
 	if r.turnCancel == nil {
 		return nil
 	}
-	p := newPendingElicitation(r.client.nextPendingID(), request)
+	p := newPendingElicitation(r.client.nextPendingID(), request, wire)
 	r.elicPendings = append(r.elicPendings, p)
 	return p
 }
