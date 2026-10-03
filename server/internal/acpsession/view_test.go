@@ -225,6 +225,6 @@ func TestViewSetReadyAndSnapshot(t *testing.T) {
 	}
 }
 
-func kindPtr(k schema.ToolKind) *schema.ToolKind         { return &k }
+func kindPtr(k schema.ToolKind) *schema.ToolKind               { return &k }
 func statusPtr(s schema.ToolCallStatus) *schema.ToolCallStatus { return &s }
-func strPtr(s string) *string                            { return &s }
+func strPtr(s string) *string                                  { return &s }

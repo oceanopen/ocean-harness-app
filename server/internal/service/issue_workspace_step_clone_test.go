@@ -50,11 +50,11 @@ func newCloneState(t *testing.T, repos ...*types.IssueWorkspaceRepoState) (*type
 		}
 	}
 	return &types.IssueWorkspaceState{
-			Version: issueWorkspaceStateVersion, IssueID: issueID, BaseDir: baseDir,
-		}, &types.IssueWorkspaceStep{
-			Key: types.IW_STEP_KEY_CLONE_REPOS, Title: "Clone 仓库与分支",
-			Status: types.IW_STATUS_RUNNING, Repos: repos,
-		}
+		Version: issueWorkspaceStateVersion, IssueID: issueID, BaseDir: baseDir,
+	}, &types.IssueWorkspaceStep{
+		Key: types.IW_STEP_KEY_CLONE_REPOS, Title: "Clone 仓库与分支",
+		Status: types.IW_STATUS_RUNNING, Repos: repos,
+	}
 }
 
 func TestIssueWorkspaceRunCloneRepos(t *testing.T) {

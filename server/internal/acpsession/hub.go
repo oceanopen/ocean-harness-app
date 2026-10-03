@@ -16,22 +16,22 @@ const subscriberBuffer = 256
 type FrameType string
 
 const (
-	FrameSnapshot        FrameType = "snapshot"         // 建连首帧：当前 ViewSnapshot
-	FrameSessionStatus   FrameType = "sessionStatus"    // 会话状态迁移（starting/ready/failed）
-	FrameEntry           FrameType = "entry"            // 会话记录条目 upsert（覆写式）
-	FramePlanUpdated     FrameType = "planUpdated"      // 快照类：最新替换
-	FrameUsageUpdated    FrameType = "usageUpdated"     // 快照类：最新替换
-	FrameCommandsUpdated FrameType = "commandsUpdated"  // 快照类：最新替换
-	FrameModeUpdated     FrameType = "modeUpdated"      // 快照类：最新替换
-	FramePendingOpened   FrameType = "pendingOpened"    // 挂起审批/表单开启
-	FramePendingClosed   FrameType = "pendingClosed"    // 挂起关闭（应答/结算）
-	FrameTurnStarted     FrameType = "turnStarted"      // 回合受理
-	FrameTurnEnded       FrameType = "turnEnded"        // 回合终态（stopReason/错误）
-	FrameTerminated      FrameType = "terminated"       // 会话终结（终态帧，订阅端收到即可断开）
+	FrameSnapshot        FrameType = "snapshot"        // 建连首帧：当前 ViewSnapshot
+	FrameSessionStatus   FrameType = "sessionStatus"   // 会话状态迁移（starting/ready/failed）
+	FrameEntry           FrameType = "entry"           // 会话记录条目 upsert（覆写式）
+	FramePlanUpdated     FrameType = "planUpdated"     // 快照类：最新替换
+	FrameUsageUpdated    FrameType = "usageUpdated"    // 快照类：最新替换
+	FrameCommandsUpdated FrameType = "commandsUpdated" // 快照类：最新替换
+	FrameModeUpdated     FrameType = "modeUpdated"     // 快照类：最新替换
+	FramePendingOpened   FrameType = "pendingOpened"   // 挂起审批/表单开启
+	FramePendingClosed   FrameType = "pendingClosed"   // 挂起关闭（应答/结算）
+	FrameTurnStarted     FrameType = "turnStarted"     // 回合受理
+	FrameTurnEnded       FrameType = "turnEnded"       // 回合终态（stopReason/错误）
+	FrameTerminated      FrameType = "terminated"      // 会话终结（终态帧，订阅端收到即可断开）
 )
 
 // Frame SSE 帧信封：seq 按 issue 单调递增（前端检测 gap 即重连取快照），type 判别载荷
-//（至多一个非零载荷字段，与 Type 对应）。JSON 序列化即 wire 形态。
+// （至多一个非零载荷字段，与 Type 对应）。JSON 序列化即 wire 形态。
 type Frame struct {
 	Seq     uint64    `json:"seq"`
 	IssueID string    `json:"issueId"`

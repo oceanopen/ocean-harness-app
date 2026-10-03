@@ -178,7 +178,7 @@ func (svc IssueWorkspace) FileRaw(issueID, rel string) ([]byte, string, error) {
 }
 
 // issueWorkspaceRoot 服务入口统一换算：issueId → 工作空间目录 → {dir}/{issueId} 根
-//（目录经 resolveIssueBaseDir 校验为绝对路径，此处仅拼接）。
+// （目录经 resolveIssueBaseDir 校验为绝对路径，此处仅拼接）。
 func (svc IssueWorkspace) issueWorkspaceRoot(issueID string) (string, error) {
 	if !issueWorkspaceValidIssueID(issueID) {
 		return "", errors.New("issueId 非法")

@@ -22,17 +22,17 @@ const launchModeAcp = "acp"
 
 // SessionConfig 会话创建所需配置（Ensure 受理时解析一次，spawn 链全程只读消费）。
 type SessionConfig struct {
-	IssueID      string
-	WorkspaceDir string // 工作空间根目录（绝对路径，校验见 resolveSessionConfig）
-	Cwd          string // 会话工作目录 = <WorkspaceDir>/<issueId>（与终端 cwd 同口径，见 issue_workspace_state.go）
-	AgentCode    string // 已回落（空配置回落首个 enabled catalog 条目）
+	IssueID        string
+	WorkspaceDir   string // 工作空间根目录（绝对路径，校验见 resolveSessionConfig）
+	Cwd            string // 会话工作目录 = <WorkspaceDir>/<issueId>（与终端 cwd 同口径，见 issue_workspace_state.go）
+	AgentCode      string // 已回落（空配置回落首个 enabled catalog 条目）
 	PermissionMode acp.PermissionMode
 }
 
 // mergeLaunchSettings 字段级合并（Go 版，语义对齐前端 packages/web/src/shared/launchSettings.ts）：
 // override 显式配置过的键（非空串）覆盖 base，未配置键回落 base；mode 显式 "none" 亦为
 // 有效覆盖值（「明说不要」≠「未配置」，故以非空串判显式而非按取值域）。任一侧可为 nil
-//（= JSON 列空串/损坏的未配置语义，见 types.ParseLaunchSettings）。
+// （= JSON 列空串/损坏的未配置语义，见 types.ParseLaunchSettings）。
 func mergeLaunchSettings(base, override *types.WorkspaceLaunchSettings) *types.WorkspaceLaunchSettings {
 	if base == nil && override == nil {
 		return nil
@@ -59,7 +59,7 @@ func mergeLaunchSettings(base, override *types.WorkspaceLaunchSettings) *types.W
 }
 
 // resolveSessionConfig 由 issueId 解析会话配置：路径安全校验 → issue/workspace 存在性
-//（resolveIssueBaseDir 同款查询链）→ launch_settings 字段级合并（issue 覆盖 workspace）→
+// （resolveIssueBaseDir 同款查询链）→ launch_settings 字段级合并（issue 覆盖 workspace）→
 // mode 门禁（非 acp 拒绝）→ agentCode / permissionMode 回落与校验 → cwd 兜底建目录。
 // DB 只读 + 目录兜底创建；同步调用（Ensure 受理期），校验失败立即反馈 HTTP 调用方。
 func resolveSessionConfig(ctx context.Context, db *gorm.DB, issueID string) (SessionConfig, error) {

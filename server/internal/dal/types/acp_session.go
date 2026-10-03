@@ -25,7 +25,7 @@ type AcpSessionCancelRequest struct {
 }
 
 // AcpSessionRespondPermissionRequest 是 POST /api/acpSession/respondPermission 的入参
-//（pendingId 为会话域本地序号，自 1 起）。
+// （pendingId 为会话域本地序号，自 1 起）。
 type AcpSessionRespondPermissionRequest struct {
 	IssueID   string `json:"issueId" binding:"required"`
 	PendingID uint64 `json:"pendingId" binding:"required"`
@@ -33,7 +33,7 @@ type AcpSessionRespondPermissionRequest struct {
 }
 
 // AcpSessionRespondElicitationRequest 是 POST /api/acpSession/respondElicitation 的入参
-//（action 三态；content 仅 accept 时有意义，键值对透传 ACP wire）。
+// （action 三态；content 仅 accept 时有意义，键值对透传 ACP wire）。
 type AcpSessionRespondElicitationRequest struct {
 	IssueID   string         `json:"issueId" binding:"required"`
 	PendingID uint64         `json:"pendingId" binding:"required"`
