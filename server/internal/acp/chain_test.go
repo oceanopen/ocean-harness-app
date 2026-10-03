@@ -41,11 +41,16 @@ func TestMain(m *testing.M) {
 
 // launchFake 拉起指定脚本的假 agent 并完成 握手 + 建会话 全链路。
 func launchFake(t *testing.T, script string) (*AgentClient, *Session) {
+	return launchFakeLog(t, script, zap.NewNop())
+}
+
+// launchFakeLog launchFake 的可注入 logger 变体（退出日志分级断言用 observer logger）。
+func launchFakeLog(t *testing.T, script string, log *zap.Logger) (*AgentClient, *Session) {
 	t.Helper()
 	client, err := Launch(context.Background(), SpawnConfig{
 		Command: []string{fakeAgentBin, script},
 		Cwd:     t.TempDir(),
-	}, zap.NewNop())
+	}, log)
 	if err != nil {
 		t.Fatalf("Launch(%s): %v", script, err)
 	}

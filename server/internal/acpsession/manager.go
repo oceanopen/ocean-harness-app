@@ -179,7 +179,9 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, log *zap.Logger) (*acp.Agen
 	if spawn.Env, err = acp.ClaudeEnvOverrides(spawn.Env, claudeBin); err != nil {
 		return nil, nil, err
 	}
-	client, err := acp.Launch(context.Background(), spawn, log)
+	// purpose=issue-session：生产会话流量标记——acp 包下游日志（握手/stderr/进程退出）
+	// 随此 logger 自动携带，与 doctor 探测流量（doctor-probe）可辨识。
+	client, err := acp.Launch(context.Background(), spawn, log.With(zap.String("purpose", "issue-session")))
 	if err != nil {
 		return nil, nil, fmt.Errorf("拉起 agent 进程失败: %w", err)
 	}

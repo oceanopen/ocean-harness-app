@@ -59,12 +59,40 @@ func RequestCheck(agentCode string, dirs Dirs, log *zap.Logger) ([]string, error
 
 // RunStartupProbe 启动后台全量探测（非阻塞）：串行逐条目跑完再受理下一条——避免并发
 // spawn 多个 node 子进程。由 main 启动期装配；与手动受理共用同一 schedule（单飞互斥）。
+// 开始/结束各落一条 INFO（结束行同步全部结论）：夹在中间的握手/建会话/进程回收日志
+// 由此可辨识为探测流量（purpose 字段见 withProbePurpose）。
 func RunStartupProbe(dirs Dirs, log *zap.Logger) {
 	go func() {
-		for _, entry := range agentcatalog.Enabled() {
-			<-schedule(entry, dirs, log)
+		entries := agentcatalog.Enabled()
+		codes := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			codes = append(codes, entry.Code)
 		}
+		probeLog := withProbePurpose(log)
+		probeLog.Info("ACP doctor 启动探测开始", zap.Strings("agentCodes", codes))
+		conclusions := make([]Report, 0, len(entries))
+		for _, entry := range entries {
+			<-schedule(entry, dirs, log)
+			if report, ok := reportOf(entry.Code); ok {
+				conclusions = append(conclusions, report)
+			}
+		}
+		probeLog.Info("ACP doctor 启动探测结束", zap.Any("conclusions", conclusions))
 	}()
+}
+
+// withProbePurpose 给 logger 打上探测流量标记（purpose=doctor-probe）：acp 包下游日志
+// （握手/stderr/进程退出）随注入 logger 自动携带，与生产会话流量（issue-session）可辨识。
+func withProbePurpose(log *zap.Logger) *zap.Logger {
+	return log.With(zap.String("purpose", "doctor-probe"))
+}
+
+// reportOf 读单条目已缓存结论（schedule 收尾先写缓存后关 done，等待方醒来必读到本次结论）。
+func reportOf(code string) (Report, bool) {
+	stateMu.RLock()
+	defer stateMu.RUnlock()
+	report, ok := reports[code]
+	return report, ok
 }
 
 // Snapshot 返回全部 enabled 条目的四态视图（catalog 顺序）。checking 由 inflight 推导：
@@ -110,7 +138,7 @@ func schedule(entry agentcatalog.Entry, dirs Dirs, log *zap.Logger) <-chan struc
 	go func() {
 		// 探测不横跨调用方 ctx（异步受理模型下后台走完全程），取消语义由
 		// CheckEntry 内的总预算（probeBudget）驱动。
-		report := probeFunc(context.Background(), entry, dirs, log)
+		report := probeFunc(context.Background(), entry, dirs, withProbePurpose(log))
 		stateMu.Lock()
 		reports[entry.Code] = report
 		delete(inflight, entry.Code)

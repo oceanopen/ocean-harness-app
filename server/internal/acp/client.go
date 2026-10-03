@@ -297,7 +297,9 @@ func (c *AgentClient) converge() {
 }
 
 // awaitProcessExit 进程死亡监听：EOF 后读循环自停，此处补齐与 Close 相同的收敛序
-// （不含主动收尾标记——这不是调用方收的账），并落因日志。
+// （不含主动收尾标记——这不是调用方收的账），并落因日志：主动收尾（closedByCaller，
+// doctor 探测回收、StopAll 等设计内死亡）降为 DEBUG——与 Err() 的「主动收尾非异常」
+// 判别同哲学；意外死亡保持 WARN（崩溃/被杀仍是需要暴露的异常）。
 func (c *AgentClient) awaitProcessExit() {
 	<-c.proc.Done()
 	c.markClosing()
@@ -305,6 +307,11 @@ func (c *AgentClient) awaitProcessExit() {
 	fields := []zap.Field{zap.Error(c.proc.WaitErr())}
 	if detail := c.proc.exitDetail(); detail != "" {
 		fields = append(fields, zap.String("stderr", detail))
+	}
+	if c.closedByCaller.Load() {
+		fields = append(fields, zap.Bool("closedByCaller", true))
+		c.log.Debug("ACP agent 进程退出", fields...)
+		return
 	}
 	c.log.Warn("ACP agent 进程退出", fields...)
 }
