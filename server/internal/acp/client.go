@@ -26,6 +26,13 @@ const (
 	initializeTimeout   = 60 * time.Second
 	newSessionTimeout   = 60 * time.Second
 	closeSessionTimeout = 10 * time.Second
+
+	// 早到帧缓冲：session/new 响应前 agent 抢跑推送的 update 按 sessionId 暂存，
+	// NewSession 注册会话后按序回放（available_commands 等早期推送不再被丢弃）。
+	// TTL 内未注册即整体过期；单会话容量上限丢最旧（正常 agent 早期推送量级极小，
+	// 上限仅防异常 agent 撑内存）。
+	earlyFrameTTL = 5 * time.Second
+	earlyFrameCap = 64
 )
 
 // AgentClient 一个 ACP agent 子进程 + 其协议连接的宿主句柄。一个进程可承载多个
@@ -46,8 +53,15 @@ type AgentClient struct {
 
 	sessMu   sync.Mutex
 	sessions map[acpgo.SessionID]*sessionRuntime
+	early    map[acpgo.SessionID][]earlyFrame // 早到帧缓冲（sessMu 内读写；注册时摘除回放）
 
 	pendingSeq atomic.Uint64
+}
+
+// earlyFrame 早于会话注册到达的 update（带到达时刻供 TTL 过期判定）。
+type earlyFrame struct {
+	update acpgo.Update
+	at     time.Time
 }
 
 // Launch 拉起 agent 子进程并装配 ACP 连接（进程组 + stderr 分类 + 入站路由）。
@@ -65,6 +79,7 @@ func Launch(ctx context.Context, cfg SpawnConfig, log *zap.Logger) (*AgentClient
 		log:      log,
 		closing:  make(chan struct{}),
 		sessions: make(map[acpgo.SessionID]*sessionRuntime),
+		early:    make(map[acpgo.SessionID][]earlyFrame),
 	}
 
 	// 入站装配（必须先于 Connect——agent 在任何流量前就要能应答）：
@@ -185,7 +200,13 @@ func (c *AgentClient) NewSession(ctx context.Context, params NewSessionParams) (
 		return nil, fmt.Errorf("ACP sessionId 冲突: %s", session.SessionID)
 	}
 	c.sessions[session.SessionID] = runtime
+	early := c.early[session.SessionID]
+	delete(c.early, session.SessionID)
 	c.sessMu.Unlock()
+	// 回放早到帧（锁外：dispatchUpdate 入队可能因通道满阻塞，不得拖住 sessMu 的路由）。
+	for _, frame := range early {
+		runtime.dispatchUpdate(frame.update)
+	}
 	return &Session{runtime: runtime}, nil
 }
 
@@ -300,20 +321,37 @@ func (c *AgentClient) snapshotSessions() []*sessionRuntime {
 }
 
 // onUpdate session/update 分发：按 update.SessionID 路由到会话事件通道（锁内完成
-// 查找 + 入队，与 removeSession 的「先摘除后终结」顺序配对，杜绝已终结会话的迟到入队）。
+// 查找 + 入队，与 removeSession 的「先摘除后终结」顺序配对，杜绝已终结会话的迟到入队）；
+// 未注册会话的早到帧（session/new 响应前 agent 抢跑推送）进缓冲，注册后回放。
 func (c *AgentClient) onUpdate(update acpgo.Update) error {
 	c.sessMu.Lock()
 	runtime, ok := c.sessions[update.SessionID]
 	if ok {
 		runtime.dispatchUpdate(update)
+	} else {
+		c.bufferEarlyFrame(update)
 	}
 	c.sessMu.Unlock()
 	if !ok {
-		// 早到帧（session/new 响应前 agent 抢跑推送）丢弃。
-		// TODO(T1.5): 会话域可在此挂早到帧缓冲（Gold-Band 5s TTL 有界回放），一期无需。
-		c.log.Debug("ACP update 早于会话注册，丢弃", zap.String("sessionId", string(update.SessionID)))
+		c.log.Debug("ACP update 早于会话注册，已入早到帧缓冲", zap.String("sessionId", string(update.SessionID)))
 	}
 	return nil
+}
+
+// bufferEarlyFrame 早到帧入缓冲（须持 sessMu 调用）：惰性过期清理（整会话最后帧超
+// TTL 即丢弃）+ 单会话容量上限丢最旧。
+func (c *AgentClient) bufferEarlyFrame(update acpgo.Update) {
+	now := time.Now()
+	for id, frames := range c.early {
+		if now.Sub(frames[len(frames)-1].at) > earlyFrameTTL {
+			delete(c.early, id)
+		}
+	}
+	frames := append(c.early[update.SessionID], earlyFrame{update: update, at: now})
+	if len(frames) > earlyFrameCap {
+		frames = frames[len(frames)-earlyFrameCap:]
+	}
+	c.early[update.SessionID] = frames
 }
 
 // RequestPermission 实现 agent.Permissions：按 sessionId 路由到会话运行时。

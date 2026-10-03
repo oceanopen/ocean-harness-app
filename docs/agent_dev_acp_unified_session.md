@@ -422,7 +422,7 @@ issue 主窗口
 
 #### T1.5 sidecar ACP 会话域与事件流
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：sidecar 持有并管理 ACP session 生命周期，issue↔session 绑定，事件流推 panel
 
@@ -438,6 +438,19 @@ issue 主窗口
 **依赖**：T1.1、T0.1
 
 **决策关联**：D1、D7；P3（跨模式 `--resume` 接续不入一期）；P6（permissionMode 经 set_mode 下发）
+
+**实施定稿**：
+- **D7 受控反转明示**：`t_issue_acp_sessions` 绑定表是对「随 chat 视图删除 `claude_session_ref`」的受控反转而非回退——彼时删除成立的前提是 sidecar 不持有会话、绑定无语义承载点；本域由 sidecar 亲自持有 ACP 会话生命周期后，issue↔session 绑定重新成为必要状态，故以独立表重新落绑定（不复用旧列名/旧结构），两决策各自在其前提下属实
+- 分层装配：新包 `server/internal/acpsession`（依赖 acp + agentcatalog + dal，单向）；main 启动序列 5.7 步 `NewManager` 装配 `global.AcpSessions`（启动即清扫全部运行时锚——sidecar 重启后旧锚失效，无 resume 语义 P3 同向）；service/controller 层仅受理转发；`types` 只放 Request DTO，响应 shape SSOT 是 `acpsession.ViewSnapshot`（前端按此镜像 TS，不二次镜像进 types）
+- 绑定锚点（D7 承载）：`t_issue_acp_sessions`（issueId 唯一锚 + agent_code + acp_session_id + last_error），`BindingStore` 四操作——GetOrCreate（受理建行）/ SaveReady（落锚清错）/ SaveError（落因清锚，update-only 不复活已删行）/ Delete（issue 删除级联）；错误证据 `last_error` 跨重启可见（对齐 bot 域）
+- 进程模型：per-issue 独立 AgentClient 进程（用户选定：会话失败互不牵连，进程退出即会话终结）；生产拉起链 `spawnAgentSession` 与 acpdoctor.CheckEntry 逐段同源（catalog → EnsureVendored → VendoredClaudeBin → VendoredSpawnConfig → ClaudeEnvOverrides → Launch → Initialize → NewSession → SetPermissionMode），「探测通过」与「生产拉起」同一条链；握手步 -32000 特判 claude 未登录引导（与 doctor 同文案语义，常量两域各自维护）
+- 受理模型（对齐 issueWorkspace init 与 acpdoctor 的异步受理惯例）：`Ensure` 同步解析配置（校验失败立即反馈）→ starting/ready join 返现状 / failed-terminated 删旧重建 → 建锚行失败回滚 entry → 广播 starting → 后台 spawn 链（分钟级上限不占 HTTP 请求），前端经 SSE 或 getInfo 轮询跟进
+- launch_settings 解析（`resolveSessionConfig`）：workspace 基线 + issue 覆盖的逐字段合并（override 空串键回落，mode 显式 "none" 是有效覆盖值）；mode 非 acp 拒绝；回落链 agentCode → 首个 enabled catalog 条目、permissionMode → acceptEdits、cwd → `<ws.Dir>/<issueId>`（兜底建目录）；issueId 合法性前置校验（拒空/穿越/分隔符，与 service 层 issueWorkspace 校验同语义）；两档 permissionMode 字面值在解析层校验，agent mode 目录匹配在 acp 层 `SetPermissionMode` 内建校验（legacy 预检 + configOptions 库校验，错误中文列出可用值）
+- 会话视图（`sessionView`）：后端积累投影（用户选定：建连即全量快照，前端不重放 delta）——chunk 按 `(kind, 回合)` 聚合条目、工具调用按 toolCallId 覆写 upsert（部分更新指针字段合并、孤儿 update 先到建空壳）、快照类（plan/usage/commands/modes）最新替换；`ViewSnapshot` 即 `/api/acpSession/getInfo` 响应与 SSE snapshot 帧的 shape SSOT
+- SSE 事件流：`GET /api/acpSession/events?issueId=` 长连；帧信封 `{seq 按 issue 单调, issueId, type}` 12 帧型（snapshot/sessionStatus/entry/planUpdated/usageUpdated/commandsUpdated/modeUpdated/pendingOpened/pendingClosed/turnStarted/turnEnded/terminated）；订阅在 hub 锁内生成快照首帧（seq 连续无缝隙）；单订户 256 帧缓冲，溢出即断开订阅（HTTP 连接不断，EventSource 自动重连取新快照），pump 永不阻塞于慢客户端（保住 acp 事件通道背压契约）
+- 回合串行与挂起交互：视图侧 `beginTurn` 前置闸门（活动回合拒绝，与 acp.ErrTurnActive 同语义）；权限/表单挂起由视图登记 pendingID 注册表（acp 层无枚举 API），`RespondPermission` 对未知 optionId 前置校验不消耗挂起（摘除后应答失败的残余竞态回填，杜绝前后端挂起视图与 agent 等待态三方失同步）；回合终态 `endTurn` 对齐 acp settlePendings 补发 pendingClosed（未决挂起随回合收尾清空）；**帧序注记**：内容帧经 pump 广播、回合终态帧经收尾 goroutine 广播，二者并发——`turnEnded` 可能先于该回合内容帧到达订阅端，entry 帧整体覆写语义 + 快照兜底下无顺序假设，前端不得依赖帧序因果
+- HTTP 面：`/api/acpSession/` 六 POST（ensure / getInfo / prompt / cancel / respondPermission / respondElicitation，`{code,msg,data}` 包裹）+ GET events（SSE）；issue 删除级联 `Discard`（删 entry + 删锚行，ready 态经 client.Close 交 pump 哨兵路径广播终态，其余状态补发「会话已删除」）；SIGTERM 顺序 BotSupervisor.StopAll → AcpSessions.StopAll（含 hub.closeAll 断 SSE 长连）→ HTTP Shutdown（SSE 不断会拖住 Shutdown）
+- 测试：merge/resolve 纯函数、view 十二变体消费与聚合/合并/终态、hub 快照首帧与 seq 连续/issue 隔离/慢订户断开（分批投递——锁内瞬时广播下健康订户同样触溢出，这是语义而非缺陷）/退订关停、manager 集成以 `spawnFunc` 替换点拉起真实 fakeagent（TestMain 现场编译，复用 acp 包脚本 happy/permission/slow-cancel/crash）覆盖全链受理→回合→落锚、spawn 失败落因与重试重建、进程意外死亡落「异常退出」证据、审批应答全链、回合闸门与软取消、Discard 级联、BindingStore 生命周期（临时 sqlite AutoMigrate）；`-race` 连跑通过
 
 #### T1.6 issue 主窗口 ACP 视图
 

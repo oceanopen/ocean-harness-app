@@ -5,6 +5,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/bot"
 	"ocean-harness/server/internal/config"
 )
@@ -23,4 +24,8 @@ var (
 	// BotSupervisor 为 IM bot 运行时单例（main 装配：注册渠道工厂 + StartEnabled）。
 	// service 层经此做 create/update/delete 后的连接热更新。
 	BotSupervisor *bot.Supervisor
+
+	// AcpSessions 为 ACP 会话域运行时单例（main 装配：启动清扫锚点 + SIGTERM StopAll）。
+	// service 层经此做会话受理/操作/订阅（T1.5）；issue 删除经此级联 Discard。
+	AcpSessions *acpsession.Manager
 )

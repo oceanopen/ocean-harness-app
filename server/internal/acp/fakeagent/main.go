@@ -9,6 +9,9 @@
 //	elicitation      prompt 中发起 elicitation/create（form 线上格式），把结果回显进 message chunk
 //	slow-cancel      持续推送 chunk 直至收到 session/cancel，以 cancelled 终止
 //	doctor-happy     session/new 响应后 200ms 推送 available_commands（T1.4 doctor 握手门槛）
+//	early-push       session/new 响应前抢跑推送 chunk（早到帧缓冲回放路径）+ prompt 补推一段
+//	crash            session/new 响应后 200ms 整进程退出 1（意外死亡路径：EOF → 收敛序 →
+//	                 消费方收到 Terminated 哨兵且 Err() 携带异常退出证据）
 package main
 
 import (
@@ -31,6 +34,8 @@ const (
 	scriptElicitation    = "elicitation"
 	scriptSlowCancel     = "slow-cancel"
 	scriptDoctorHappy    = "doctor-happy"
+	scriptEarlyPush      = "early-push"
+	scriptCrash          = "crash"
 )
 
 // fakeAgent 全脚本共用的 agent 骨架：广告三档权限模式目录，SetMode 就地回写并补发
@@ -48,6 +53,7 @@ func main() {
 	if _, ok := map[string]bool{
 		scriptHappy: true, scriptPermission: true, scriptLatePermission: true,
 		scriptElicitation: true, scriptSlowCancel: true, scriptDoctorHappy: true,
+		scriptEarlyPush: true, scriptCrash: true,
 	}[os.Args[1]]; !ok {
 		fmt.Fprintf(os.Stderr, "fakeagent: 未知脚本 %q\n", os.Args[1])
 		os.Exit(2)
@@ -78,6 +84,23 @@ func (a *fakeAgent) NewSession(_ context.Context, client agent.Client, _ schema.
 					},
 				}},
 			})
+		}()
+	}
+	// early-push：响应落 wire 前同步抢跑推送——通知帧先于 session/new 响应到达客户端，
+	// 命中「早于会话注册」路径（客户端缓冲后于 NewSession 返回时回放）。
+	if os.Args[1] == scriptEarlyPush {
+		_ = client.Notify(context.Background(), schema.SessionUpdateMethodName, schema.SessionNotification{
+			SessionID: id,
+			Update: schema.SessionUpdate{AgentMessageChunk: &schema.ContentChunk{
+				Content: schema.ContentBlock{Text: &schema.TextContent{Text: "early"}},
+			}},
+		})
+	}
+	// crash：响应落 wire 后整进程退出（客户端 EOF → 收敛序 → Terminated 哨兵 + Err 证据）。
+	if os.Args[1] == scriptCrash {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			os.Exit(1)
 		}()
 	}
 	return schema.NewSessionResponse{
@@ -192,6 +215,12 @@ func (a *fakeAgent) Prompt(ctx context.Context, client agent.Client, request sch
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
+
+	case scriptEarlyPush:
+		if err := a.chunk(updates, request.SessionID, "late"); err != nil {
+			return schema.PromptResponse{}, err
+		}
+		return schema.PromptResponse{StopReason: schema.StopReasonEndTurn}, nil
 	}
 	return schema.PromptResponse{StopReason: schema.StopReasonEndTurn}, nil
 }

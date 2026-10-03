@@ -19,6 +19,7 @@ var (
 	Q                      = new(Query)
 	ImBot                  *imBot
 	ImBotConversation      *imBotConversation
+	IssueAcpSession        *issueAcpSession
 	IssueLocalRepository   *issueLocalRepository
 	LocalRepository        *localRepository
 	ProjectIssue           *projectIssue
@@ -32,6 +33,7 @@ func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	*Q = *Use(db, opts...)
 	ImBot = &Q.ImBot
 	ImBotConversation = &Q.ImBotConversation
+	IssueAcpSession = &Q.IssueAcpSession
 	IssueLocalRepository = &Q.IssueLocalRepository
 	LocalRepository = &Q.LocalRepository
 	ProjectIssue = &Q.ProjectIssue
@@ -46,6 +48,7 @@ func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 		db:                     db,
 		ImBot:                  newImBot(db, opts...),
 		ImBotConversation:      newImBotConversation(db, opts...),
+		IssueAcpSession:        newIssueAcpSession(db, opts...),
 		IssueLocalRepository:   newIssueLocalRepository(db, opts...),
 		LocalRepository:        newLocalRepository(db, opts...),
 		ProjectIssue:           newProjectIssue(db, opts...),
@@ -61,6 +64,7 @@ type Query struct {
 
 	ImBot                  imBot
 	ImBotConversation      imBotConversation
+	IssueAcpSession        issueAcpSession
 	IssueLocalRepository   issueLocalRepository
 	LocalRepository        localRepository
 	ProjectIssue           projectIssue
@@ -79,6 +83,7 @@ func (q *Query) clone(db *gorm.DB) *Query {
 		db:                     db,
 		ImBot:                  q.ImBot.clone(db),
 		ImBotConversation:      q.ImBotConversation.clone(db),
+		IssueAcpSession:        q.IssueAcpSession.clone(db),
 		IssueLocalRepository:   q.IssueLocalRepository.clone(db),
 		LocalRepository:        q.LocalRepository.clone(db),
 		ProjectIssue:           q.ProjectIssue.clone(db),
@@ -102,6 +107,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 		db:                     db,
 		ImBot:                  q.ImBot.replaceDB(db),
 		ImBotConversation:      q.ImBotConversation.replaceDB(db),
+		IssueAcpSession:        q.IssueAcpSession.replaceDB(db),
 		IssueLocalRepository:   q.IssueLocalRepository.replaceDB(db),
 		LocalRepository:        q.LocalRepository.replaceDB(db),
 		ProjectIssue:           q.ProjectIssue.replaceDB(db),
@@ -115,6 +121,7 @@ func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 type queryCtx struct {
 	ImBot                  IImBotDo
 	ImBotConversation      IImBotConversationDo
+	IssueAcpSession        IIssueAcpSessionDo
 	IssueLocalRepository   IIssueLocalRepositoryDo
 	LocalRepository        ILocalRepositoryDo
 	ProjectIssue           IProjectIssueDo
@@ -128,6 +135,7 @@ func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
 		ImBot:                  q.ImBot.WithContext(ctx),
 		ImBotConversation:      q.ImBotConversation.WithContext(ctx),
+		IssueAcpSession:        q.IssueAcpSession.WithContext(ctx),
 		IssueLocalRepository:   q.IssueLocalRepository.WithContext(ctx),
 		LocalRepository:        q.LocalRepository.WithContext(ctx),
 		ProjectIssue:           q.ProjectIssue.WithContext(ctx),

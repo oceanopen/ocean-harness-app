@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acpdoctor"
+	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/bot"
 	"ocean-harness/server/internal/bot/wecom"
@@ -75,6 +76,18 @@ func main() {
 		Adapters:  cfg.AcpAdaptersDir,
 	}, global.Logger)
 
+	// 5.7) ACP 会话域装配（T1.5）：启动清扫运行时锚（无 resume 语义，重启后旧锚全部失效
+	// 归零），随后经 global.AcpSessions 承接 issue 级会话生命周期（ensure/prompt/respond/
+	// discard）与 SSE 事件流；vendored 目录语义与 doctor 探测同源。
+	acpSessions, err := acpsession.NewManager(global.SqliteDB, acpsession.Dirs{
+		Resources: cfg.AcpResourcesDir,
+		Adapters:  cfg.AcpAdaptersDir,
+	}, global.Logger)
+	if err != nil {
+		global.Logger.Fatal("acp-session manager init failed", zap.Error(err))
+	}
+	global.AcpSessions = acpSessions
+
 	// 6) 组装路由（仅 /api/baseInfo/getServerRunInfo，无登录/鉴权）。
 	engine := router.SetupRouter()
 
@@ -86,8 +99,10 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 		<-sigCh
 		global.Logger.Info("http-server shutting down")
-		// 先断 bot 渠道连接 + 取消在途回合（杀 claude 子进程），再关 HTTP。
+		// 先断 bot 渠道连接 + 取消在途回合（杀 claude 子进程），再收敛 ACP 会话（关全部
+		// agent 进程 + 关停 SSE 订阅——不先断，SSE 长连会拖住下面的 Shutdown），再关 HTTP。
 		global.BotSupervisor.StopAll()
+		global.AcpSessions.StopAll()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(ctx)

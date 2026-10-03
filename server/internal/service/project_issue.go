@@ -12,6 +12,7 @@ import (
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
+	"ocean-harness/server/internal/global"
 )
 
 // ProjectIssue 对应 /api/tracker/projectIssue 命名空间下的业务逻辑。
@@ -338,8 +339,11 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 
 // Delete 物理删除 issue（无 DB 外键），事务内级联：删其 t_issue_local_repositories
 // 关联与子任务（+ 子任务的仓库分支关联），避免悬挂（type_id 为单值列，无独立关联可清）。
+// 事务成功后进程内级联 ACP 会话域：关活会话 + 删绑定锚点行（D7 受控反转的删除面；放
+// 事务外因会话收敛是进程内操作，不参与 DB 事务，服务未装配（工具进程）时跳过）。
 func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
-	return svc.Orm.Transaction(func(tx *gorm.DB) error {
+	deletedIDs := []string{req.ID}
+	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
 		if _, e := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.ID)).First(); e != nil {
 			if errors.Is(e, gorm.ErrRecordNotFound) {
@@ -369,9 +373,19 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 			if _, e := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.In(childIDs...)).Delete(); e != nil {
 				return e
 			}
+			deletedIDs = append(deletedIDs, childIDs...)
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if global.AcpSessions != nil {
+		for _, issueID := range deletedIDs {
+			global.AcpSessions.Discard(issueID)
+		}
+	}
+	return nil
 }
 
 // assembleWithType 批量组装 issue 的类型与关联仓库+分支列表（3 次查询避免 N+1）：

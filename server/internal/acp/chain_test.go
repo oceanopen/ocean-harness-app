@@ -412,3 +412,16 @@ func TestNewSessionMetaPassthrough(t *testing.T) {
 		t.Fatal("sessionId 不应为空")
 	}
 }
+
+func TestEarlyFrameReplay(t *testing.T) {
+	client, session := launchFake(t, "early-push")
+	// session/new 响应前抢跑推送的 chunk 经早到帧缓冲回放：首个事件即 early（不再丢弃）
+	if text := waitForChunk(t, session.Events(), "early"); text != "early" {
+		t.Fatalf("早到帧应最先回放，got %q", text)
+	}
+	// 回放不影响后续 wire 顺序：prompt 推进正常
+	if _, err := client.PromptText(context.Background(), session, "继续"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	waitForChunk(t, session.Events(), "late")
+}

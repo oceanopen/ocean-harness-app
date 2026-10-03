@@ -102,6 +102,20 @@ func SetupRouter() *gin.Engine {
 			doctorGroup.POST("/getInfo", controller.Doctor{}.GetInfo)
 		}
 
+		// acpSession 模块：ACP 会话域（action 风格，POST；events 为 GET SSE）。会话生命周期
+		// 与事件流的 SSOT 为 global.AcpSessions（T1.5）：ensure 幂等受理建会话，prompt/cancel/
+		// respond* 会话操作，getInfo 轮询读会话视图快照，events 订阅增量事件流（建连即快照）。
+		acpSessionGroup := apiGroup.Group("/acpSession")
+		{
+			acpSessionGroup.POST("/ensure", controller.AcpSession{}.Ensure)
+			acpSessionGroup.POST("/getInfo", controller.AcpSession{}.GetInfo)
+			acpSessionGroup.POST("/prompt", controller.AcpSession{}.Prompt)
+			acpSessionGroup.POST("/cancel", controller.AcpSession{}.Cancel)
+			acpSessionGroup.POST("/respondPermission", controller.AcpSession{}.RespondPermission)
+			acpSessionGroup.POST("/respondElicitation", controller.AcpSession{}.RespondElicitation)
+			acpSessionGroup.GET("/events", controller.AcpSession{}.Events)
+		}
+
 		// plugin 模块：按开发工具（cli）维度的插件安装操作（install/uninstall/enable/disable/
 		// update，action 风格 POST）。cli 字段为多 CLI 扩展口子（v1 仅 claude），写操作统一
 		// 返回最新列表投影，前端一次往返即完成刷新。

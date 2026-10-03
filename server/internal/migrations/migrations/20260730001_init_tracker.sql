@@ -1,5 +1,5 @@
 -- +goose Up
--- 全量基线：工作空间 / 项目 / Issue / 本地仓库 / IM bot 域 9 张业务表。
+-- 全量基线：工作空间 / 项目 / Issue / 本地仓库 / IM bot 域 / ACP 会话域 10 张业务表。
 -- 约定：t_ 前缀；无 DB 外键（级联清理由 service 层处理）；全表物理删除；
 -- 枚举列 TEXT NOT NULL 无默认值（代码显式赋值）；索引命名 idx_/udx_{表名去t_}_{列名}。
 
@@ -133,3 +133,18 @@ CREATE TABLE t_im_bot_conversations (
 );
 CREATE UNIQUE INDEX udx_im_bot_conversations_bot_conversation
     ON t_im_bot_conversations (bot_id, conversation_key);
+
+-- t_issue_acp_sessions：issue ↔ ACP 会话绑定锚点（D7 受控反转：sidecar 亲自持有 ACP 会话后，
+-- 绑定语义成立；一 issue 至多一个活跃会话）。acp_session_id 为运行时锚（空 = 无活跃会话；
+-- 无 resume 语义，sidecar 重启后由会话域启动清扫归零）；agent_code 记创建会话时的实际取值；
+-- last_error 跨重启可见（对齐 t_im_bots.last_error）。
+CREATE TABLE t_issue_acp_sessions (
+    id             INTEGER  PRIMARY KEY AUTOINCREMENT,
+    issue_id       TEXT     NOT NULL,
+    agent_code     TEXT     NOT NULL DEFAULT '',
+    acp_session_id TEXT     NOT NULL DEFAULT '',
+    last_error     TEXT     NOT NULL DEFAULT '',
+    created_at     DATETIME NOT NULL,
+    updated_at     DATETIME NOT NULL
+);
+CREATE UNIQUE INDEX udx_issue_acp_sessions_issue_id ON t_issue_acp_sessions (issue_id);
