@@ -14,7 +14,8 @@
  *
  * staging package.json 两类明文依赖（否则 claude 版本不可见）：packageManager 取根
  * package.json SSOT 注入；claude SDK 安装后回写实际落地版本，并与根 devDependencies
- * 的声明做防漂移断言（不一致 fail，提示同步后重跑）。
+ * 的声明做防漂移断言（catalog: 引用时解析 pnpm-workspace.yaml catalog 段 SSOT；
+ * 不一致 fail，提示同步后重跑）。
  *
  * 幂等：目标已存在且包版本匹配则跳过（秒回），新版本自动新增目录；安装走「临时目录 +
  * rename」原子落地（安装中断不产生以目标名存在的半成品，bundle.resources 不打包残缺品）。
@@ -61,13 +62,53 @@ function packageManagerSpec(): string {
   return pm;
 }
 
-/** 根 devDependencies 对 claude SDK 的声明版本（防漂移断言基准）。 */
-function rootClaudeSdkPin(): string {
+/** claude SDK 防漂移断言基准：version 为解析后的精确版本；fromCatalog 标记取自 workspace catalog 段（漂移提示分流用）。 */
+interface SdkPin {
+  version: string;
+  fromCatalog: boolean;
+}
+
+const WORKSPACE_YAML = resolve(repoRoot, 'pnpm-workspace.yaml');
+
+/** pnpm-workspace.yaml 顶层 catalog: 段内指定包的声明版本（单/双引号与裸值、行尾注释均兼容；段结束/缺失返回 null）。 */
+function catalogVersionOf(pkg: string): string | null {
+  const escaped = pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`^\\s+['"]?${escaped}['"]?:\\s*(['"]?)(.+?)\\1\\s*(?:#.*)?$`);
+  let inCatalog = false;
+  for (const line of readFileSync(WORKSPACE_YAML, 'utf8').split('\n')) {
+    if (!inCatalog) {
+      inCatalog = /^catalog:\s*(?:#.*)?$/.test(line);
+      continue;
+    }
+    if (/^\S/.test(line)) {
+      break; // 下一个顶层 key：catalog 段结束（后续缩进行属其他段，禁止误匹配）
+    }
+    const matched = line.match(pattern);
+    if (matched) {
+      return matched[2];
+    }
+  }
+  return null;
+}
+
+/** 根 devDependencies 对 claude SDK 的声明版本（防漂移断言基准）；catalog: 协议引用时版本 SSOT 在 pnpm-workspace.yaml catalog 段，就地解析。 */
+function rootClaudeSdkPin(): SdkPin {
   const pin = rootPkg.devDependencies?.[CLAUDE_SDK_PKG];
   if (!pin) {
-    fail(`根 package.json devDependencies 缺 ${CLAUDE_SDK_PKG} 精确声明（升级 adapter 时同步：pnpm up ${CLAUDE_SDK_PKG}@<实际版本> --save-exact）`);
+    fail(`根 package.json devDependencies 缺 ${CLAUDE_SDK_PKG} 声明（catalog: 引用或字面精确版本均可；升级 adapter 时与其实际依赖同步）`);
   }
-  return pin;
+  if (!pin.startsWith('catalog:')) {
+    return { version: pin, fromCatalog: false };
+  }
+  // TODO(named-catalog): catalog:<name> 指向 pnpm-workspace.yaml catalogs.<name> 命名段，当前不支持；用到时在此扩展对应段解析。
+  if (pin !== 'catalog:') {
+    fail(`暂不支持 named catalog 引用（${CLAUDE_SDK_PKG}@${pin}），防漂移基准无法解析——改回 catalog: 或字面精确版本`);
+  }
+  const version = catalogVersionOf(CLAUDE_SDK_PKG);
+  if (!version) {
+    fail(`根 devDependencies 声明 ${CLAUDE_SDK_PKG}@catalog: 但 pnpm-workspace.yaml 顶层 catalog 段无此条目——补精确版本条目或改回字面声明`);
+  }
+  return { version, fromCatalog: true };
 }
 
 /** 从 catalog 条目 args 取包 spec（非 flag 项，形如 @scope/pkg@1.2.3）。 */
@@ -186,12 +227,15 @@ for (const entry of entries) {
     rmSync(tmpDir, { recursive: true, force: true });
     fail(`安装树内未发现 ${CLAUDE_SDK_PKG}（adapter ${spec} 未携带 claude SDK？复核 catalog pin 与本脚本假设）`);
   }
-  if (sdkActual !== sdkPin) {
+  if (sdkActual !== sdkPin.version) {
     rmSync(tmpDir, { recursive: true, force: true });
     fail(
-      `claude SDK 版本漂移：根 devDependencies 声明 ${CLAUDE_SDK_PKG}@${sdkPin}，`
-      + `adapter ${spec} 实际依赖 ${sdkActual}。同步根声明后重跑：`
-      + `pnpm up ${CLAUDE_SDK_PKG}@${sdkActual} --save-exact`,
+      sdkPin.fromCatalog
+        ? `claude SDK 版本漂移：pnpm-workspace.yaml catalog 声明 ${CLAUDE_SDK_PKG}@${sdkPin.version}（根 devDependencies 引用 catalog:），`
+        + `adapter ${spec} 实际依赖 ${sdkActual}。同步 catalog 条目为 ${sdkActual} 后重跑 pnpm server:acp:vendor`
+        : `claude SDK 版本漂移：根 devDependencies 声明 ${CLAUDE_SDK_PKG}@${sdkPin.version}，`
+          + `adapter ${spec} 实际依赖 ${sdkActual}。同步根声明后重跑：`
+          + `pnpm up ${CLAUDE_SDK_PKG}@${sdkActual} --save-exact`,
     );
   }
 

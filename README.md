@@ -69,15 +69,18 @@ ocean-harness-cli completion zsh                     # shell 补全脚本（bash
 
 ## ACP adapter 升级（claude vendoring）
 
-claude 的 vendored 安装（`pnpm server:acp:vendor` 生成 staging，随应用打包）由根 `package.json` devDependencies 的两个精确版本声明锁定：`@agentclientprotocol/claude-agent-acp`（adapter 本体）与 `@anthropic-ai/claude-agent-sdk`（adapter 所依赖的 claude SDK，须与 adapter 实际依赖保持一致）。升级 adapter 时两者必须同步：
+claude 的 vendored 安装（`pnpm server:acp:vendor` 生成 staging，随应用打包）由根 `package.json` devDependencies 的两个 `catalog:` 引用锁定，版本 SSOT 在 `pnpm-workspace.yaml` 顶层 `catalog:` 段：`@agentclientprotocol/claude-agent-acp`（adapter 本体）与 `@anthropic-ai/claude-agent-sdk`（adapter 所依赖的 claude SDK，须与 adapter 实际依赖保持一致）。升级 adapter 时两者必须同步：
 
 ```bash
-pnpm up @agentclientprotocol/claude-agent-acp@<新版> --save-exact
+# 编辑 pnpm-workspace.yaml catalog 段两行（保持精确版本；SDK 与新版 adapter 实际依赖一致）：
+#   '@agentclientprotocol/claude-agent-acp': <新版>
+#   '@anthropic-ai/claude-agent-sdk': <新版对应的 claude SDK 版本>
+pnpm install
 pnpm server:catalog:refresh
 pnpm server:acp:vendor
 ```
 
-vendor 脚本安装完成后会校验根声明的 claude SDK 版本与 adapter 实际依赖是否一致，不一致直接失败并打印准确的同步命令（`pnpm up @anthropic-ai/claude-agent-sdk@<实际版本> --save-exact`），按提示执行后重跑 `pnpm server:acp:vendor` 即可——忘记同步不会静默通过。升级后建议跑真握手验证：`OCEAN_ACP_REAL_HANDSHAKE=1 go -C server test ./internal/acp/ -run TestRealHandshake`。当前 claude 版本看 staging 明文清单：`app/resources/acp-adapters/claude-acp/<版本>/package.json`。
+vendor 脚本安装完成后会校验 catalog 声明的 claude SDK 版本与 adapter 实际依赖是否一致，不一致直接失败并给出准确的同步指引（把 `pnpm-workspace.yaml` catalog 条目改为实际版本后重跑 `pnpm server:acp:vendor`）——忘记同步不会静默通过。升级后建议跑真握手验证：`OCEAN_ACP_REAL_HANDSHAKE=1 go -C server test ./internal/acp/ -run TestRealHandshake`。当前 claude 版本看 staging 明文清单：`app/resources/acp-adapters/claude-acp/<版本>/package.json`。
 
 ## 设计
 

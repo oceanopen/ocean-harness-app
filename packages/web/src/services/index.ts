@@ -1,3 +1,26 @@
+export { AcpSessionService } from './AcpSessionService';
+export type {
+  AcpConversationEntry,
+  AcpConversationEntryKind,
+  AcpFrame,
+  AcpFrameType,
+  AcpPendingView,
+  AcpSessionCancelRequest,
+  AcpSessionEnsureRequest,
+  AcpSessionFrameStatus,
+  AcpSessionMode,
+  AcpSessionPromptRequest,
+  AcpSessionRespondElicitationRequest,
+  AcpSessionRespondPermissionRequest,
+  AcpSessionStatus,
+  AcpToolCallStatus,
+  AcpToolCallView,
+  AcpViewSnapshot,
+  AcpWireAvailableCommand,
+  AcpWirePlan,
+  AcpWireUsage,
+} from './AcpSessionService';
+
 export { AgentCatalogService } from './AgentCatalogService';
 export type { AgentCatalogEntry, AgentCatalogGetListRequest } from './AgentCatalogService';
 

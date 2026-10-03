@@ -4,10 +4,11 @@ import { Box, Button, Typography } from '@mui/material';
 import { AGENT_CODE } from '@src/shared/agentCode';
 import { useDoctorCheck, useDoctorEntry } from '@src/state/doctor';
 import { useState } from 'react';
+import AcpSessionView from './AcpSessionView';
 import TerminalPaneRoot from './TerminalPanes/TerminalPaneRoot';
 
 /** 临场启动方式（none 档 issue 就绪后的三选一；仅本次有效，不回写 workspace 配置）。 */
-type PickedLaunch = 'terminal-auto' | 'terminal-manual';
+type PickedLaunch = 'terminal-auto' | 'terminal-manual' | 'acp';
 
 interface LaunchModePickerProps {
   /** 终端启动 Agent 展示名（来自 workspace autoCommand 解析，一期 Claude Code）。 */
@@ -18,13 +19,14 @@ interface LaunchModePickerProps {
 }
 
 /**
- * ACP 选项的置灰提示（T1.4 doctor 四态派生）：检测中/未探测 → 检测进行时；healthy →
- * T1.6 上线预告；unhealthy → 后端生成的用户可读原因直显（node 过低/未登录等）。
+ * ACP 选项的置灰提示（T1.4 doctor 四态派生）：检测中/未探测 → 检测进行时；unhealthy →
+ * 后端生成的用户可读原因直显（node 过低/未登录等）；healthy 时选项解除置灰，本函数
+ * 不再被消费（LaunchOption 可点时展示 description）。
  */
 function acpDoctorHint(entry: DoctorEntryState | undefined): string {
   switch (entry?.status) {
     case 'healthy':
-      return 'ACP 会话视图即将上线';
+      return 'ACP 会话视图可用';
     case 'unhealthy':
       return entry.reason ?? 'ACP 运行环境不可用';
     default: // checking / unknown / 快照未就绪：一律按检测进行时呈现（轮询驱动收敛）
@@ -61,9 +63,9 @@ export default function LaunchModePicker({ terminalAgentLabel, acpAgentLabel, on
       <LaunchOption
         title={`ACP 方式启动 ${acpAgentLabel}`}
         description="issue 主窗口以 ACP 会话视图运行"
-        disabled
+        disabled={doctorEntry?.status !== 'healthy'}
         disabledHint={acpDoctorHint(doctorEntry)}
-        onClick={() => {}}
+        onClick={() => onPick('acp')}
         footer={(
           // 重新检测：受理单条目探测（在跑则 join），受理期间按钮 loading（受理与
           // 探测异步解耦，收敛经四态轮询自动呈现）。
@@ -144,10 +146,10 @@ interface TerminalLaunchFlowProps {
 
 /**
  * TerminalLaunchFlow：issue 就绪后的启动分流容器（key 随 issue 挂载——临场选择态随
- * key 重置，无需 effect）。none 先出选择面板，选择后渲染终端树（自动档带直启值、
- * 手动档裸 shell）；terminal-manual 直接裸 shell 终端（工具栏按钮拉起）；terminal-auto
- * 直接直启；acp 一期终端侧按不自动启动处理（T1.6 接管为 ACP 会话视图）。
- * startupCli 按「配置/临场选择」最终值派生。
+ * key 重置，无需 effect）。none 先出选择面板，选择后渲染对应视图（自动档带直启值的
+ * 终端树、手动档裸 shell、acp 档 ACP 会话视图）；terminal-manual 直接裸 shell 终端
+ * （工具栏按钮拉起）；terminal-auto 直接直启；acp（配置或临场选择）渲染 ACP 会话视图
+ * （T1.6）。startupCli 按「配置/临场选择」最终值派生（仅终端自动档非 null）。
  */
 export function TerminalLaunchFlow({
   issueId,
@@ -172,6 +174,9 @@ export function TerminalLaunchFlow({
         onPick={setPicked}
       />
     );
+  }
+  if (mode === 'acp' || picked === 'acp') {
+    return <AcpSessionView issueId={issueId} />;
   }
   return <TerminalPaneRoot issueId={issueId} workspaceDir={workspaceDir} startupCli={startupCli} />;
 }

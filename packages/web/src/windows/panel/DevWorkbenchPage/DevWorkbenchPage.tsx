@@ -191,6 +191,10 @@ export default function DevWorkbenchPage() {
   const effLaunch = mergeLaunchSettings(workspace?.launchSettings, issue?.launchSettings);
   const { data: agentCatalog = [], isPending: agentCatalogPending } = useAgentCatalog();
   const launchResolved = !workspacesPending && !agentCatalogPending && issue != null && workspace != null;
+  // 过渡浮层开关：仅配置模式为终端档时播放——none 档（含解析中）children 是启动方式
+  // 选择面板、acp 档 children 是 ACP 会话视图，均无「启动终端」语义，浮层叠上成重影。
+  const terminalTransitionEnabled = !workspacesPending
+    && (effLaunch?.mode === 'terminal-manual' || effLaunch?.mode === 'terminal-auto');
   const startupCli: string | null = launchResolved
     ? terminalStartupCli(effLaunch?.mode, effLaunch?.autoCommand)
     : null;
@@ -521,9 +525,8 @@ export default function DevWorkbenchPage() {
                       key={issue.id}
                       issueId={issue.id}
                       startupCli={startupCli}
-                      // 过渡浮层仅 children 为终端时播放：none 档（含解析中）children 是启动方式
-                      // 选择面板，浮层叠上成重影且步骤③语义不成立。
-                      terminalTransitionEnabled={!workspacesPending && (effLaunch?.mode ?? 'none') !== 'none'}
+                      // 过渡浮层仅 children 为终端时播放（开关派生见上方 terminalTransitionEnabled）。
+                      terminalTransitionEnabled={terminalTransitionEnabled}
                     >
                       <TerminalErrorBoundary key={issue.id}>
                         {/* 启动配置解析中（issue/workspaces 任一未就绪）不挂载启动分流（空占位

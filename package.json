@@ -32,9 +32,9 @@
     "release": "bumpp"
   },
   "devDependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.84.0",
-    "@anthropic-ai/claude-agent-sdk": "0.3.284",
+    "@agentclientprotocol/claude-agent-acp": "catalog:",
     "@antfu/eslint-config": "catalog:",
+    "@anthropic-ai/claude-agent-sdk": "catalog:",
     "@eslint-react/eslint-plugin": "catalog:",
     "@tauri-apps/cli": "catalog:",
     "@types/node": "catalog:",
