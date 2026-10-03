@@ -19,7 +19,7 @@ import (
 	"ocean-harness/server/internal/acp"
 )
 
-// Vendoring（T1.3）：adapter 依赖在构建期 npm install 随应用打包（资源源，
+// Vendoring（T1.3）：adapter 依赖在构建期 pnpm 安装随应用打包（资源源，
 // scripts/prepare-acp-adapters.ts 产出），运行期按需复制进受管目录后以
 // `node <vendored 入口>` 拉起——运行时零 npm / registry 依赖（公司网络约束），
 // 版本由 catalog pin 在构建期锁定。两目录布局同构，均 <root>/<id>/<version>/：

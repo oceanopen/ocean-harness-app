@@ -382,7 +382,7 @@ issue 主窗口
 **功能**：压掉官方方案的网络不确定性，并保证 ACP 模式与终端模式用同一个本机 claude
 
 **技术方案**：
-- Vendoring：首次在受管目录（如 `~/.ocean-harness/acp-adapters/`）`npm install` 固定版本，之后 spawn 指向 vendored 入口——「每次 npx 拉包」变「一次性安装」，离线可用，升级走自己的版本策略（仅覆盖 `npx-adapter` 策略即 claude；codex / opencode / pi 走 native CLI 直连，无需 vendoring）
+- Vendoring：首次在受管目录（如 `~/.ocean-harness/acp-adapters/`）pnpm 安装固定版本，之后 spawn 指向 vendored 入口——「每次 npx 拉包」变「一次性安装」，离线可用，升级走自己的版本策略（仅覆盖 `npx-adapter` 策略即 claude；codex / opencode / pi 走 native CLI 直连，无需 vendoring）
 - claude 路径一致性：vendored 安装内包的 SDK 平台原生 claude 二进制（`node_modules/@anthropic-ai/claude-agent-sdk-<平台triple>/claude`）为全链路 SSOT，经 `CLAUDE_CODE_EXECUTABLE` 显式注入 adapter——终端直启（Rust 直读打包 resources）/ ACP / bot headless / marketplace 消费同一份二进制，零版本漂移、零 claude 探测失败面；终端手动路径保留本机 claude（shell 自解析）。clibin 收窄为 login shell PATH 解析（node 等运行时兜底），claude 三级探测链退役
 
 **依赖**：T1.2

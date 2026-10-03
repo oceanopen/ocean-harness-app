@@ -1,6 +1,6 @@
 // claude 二进制定位（P5 定稿终态：vendored 自带 claude 全链路 SSOT）。adapter
 // vendored 安装内包的 Claude Agent SDK 以 optionalDependencies 形式携带平台原生
-// claude 二进制（@anthropic-ai/claude-agent-sdk-<平台triple>，构建期 npm 按构建机
+// claude 二进制（@anthropic-ai/claude-agent-sdk-<平台triple>，构建期 vendoring 按构建机
 // 平台装入其一，CI 按平台构建各自就位），本包按运行时平台定位并校验存在性，作为
 // 终端直启 / ACP / bot headless / marketplace 统一消费的 claude 可执行文件——
 // claude 路径探测链退役；终端手动路径保留本机 claude（shell 自解析）。
