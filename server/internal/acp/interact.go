@@ -22,9 +22,10 @@ func elicitationSessionID(request schema.CreateElicitationRequest) (schema.Sessi
 	return "", false
 }
 
-// ErrAlreadyResolved 交互已被应答或已结算后的重复应答（CAS once 拒绝；
-// TODO(T2.4): 桌面/Terminal 双入口审批收敛在其上扩展——first-writer-wins 即本 CAS
-// 的跨入口投影）。
+// ErrAlreadyResolved 交互已被应答或已结算后的重复应答（CAS once 拒绝）。双入口审批收敛
+// （T2.4）不在本层扩展：跨入口 first-writer-wins 即本 CAS 的投影，判别语义（谁、以何
+// 选项处理）由 acpsession 视图层的 closed-history 与 ErrPendingAlreadyHandled 承载——
+// 本层无入口概念，只保证「后到 CAS 必拒」。
 var ErrAlreadyResolved = errors.New("ACP 交互已应答或已结算")
 
 // ErrUnknownOption 应答的 optionId 不在请求自带的 Options 里（协议约束：只能从

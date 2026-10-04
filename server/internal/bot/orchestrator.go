@@ -35,11 +35,13 @@ type turnJob struct {
 	reply ReplyStream
 }
 
-// Orchestrator 编排核心：入站受理（白名单/占位帧）→ 每会话串行队列 → prompt → claude 回合 →
-// 回复泵 → 会话持久化。无渠道知识；HandleInbound 由适配器回调（supervisor 装配）。
+// Orchestrator 编排核心：入站受理（白名单/快路径/占位帧）→ 每会话串行队列 → prompt →
+// claude 回合 → 回复泵 → 会话持久化。无渠道知识；HandleInbound 由适配器回调
+// （supervisor 装配）。gate 为审批数字快路径的可选依赖（T2.4；nil = 关闭）。
 type Orchestrator struct {
 	store  *ConversationStore
 	driver ClaudeDriver
+	gate   pendingGate
 	log    *zap.Logger
 
 	ctx    context.Context // 生命周期 ctx：Stop 级联取消全部在途回合（杀 claude 子进程）
@@ -51,12 +53,13 @@ type Orchestrator struct {
 	closed bool
 }
 
-// NewOrchestrator 构造编排器。
-func NewOrchestrator(store *ConversationStore, driver ClaudeDriver, log *zap.Logger) *Orchestrator {
+// NewOrchestrator 构造编排器。gate 可为 nil（无 ACP 会话域的装配与既有测试）。
+func NewOrchestrator(store *ConversationStore, driver ClaudeDriver, gate pendingGate, log *zap.Logger) *Orchestrator {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Orchestrator{
 		store:  store,
 		driver: driver,
+		gate:   gate,
 		log:    log,
 		ctx:    ctx,
 		cancel: cancel,
@@ -66,7 +69,8 @@ func NewOrchestrator(store *ConversationStore, driver ClaudeDriver, log *zap.Log
 }
 
 // HandleInbound 入站唯一入口（适配器回调 goroutine 上执行，须快进快出）。
-// 固定时序：白名单判定 → （拒绝：direct 回提示帧 / group 静默）→ 受理开流发占位帧 → 入队。
+// 固定时序：白名单判定 → （拒绝：direct 回提示帧 / group 静默）→ 受理开流 → 审批数字
+// 快路径（命中即终帧收口，不入队）→ 占位帧 → 入队。
 // openStream 由适配器提供（闭包持有渠道连接），核心决定是否/何时调用——策略拒绝与群聊
 // 静默不产生任何流。
 func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, openStream func() (ReplyStream, error)) {
@@ -88,6 +92,28 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 	if err != nil {
 		o.log.Error("bot 开启回复流失败", zap.Int("botID", cfg.BotID), zap.Error(err))
 		return
+	}
+	// 审批数字快路径（T2.4）：审批应答消息入队会排在被 pending 挂起的回合之后死锁，
+	// 必须在占位帧之前拦截；命中即该消息的终帧（不入队、不占并发槽），未命中落回主路径。
+	// 幂等前置到判定之前——快路径产生变更性动作（RespondPermission CAS）却不入队，错过
+	// runTurn 的权威幂等复查；渠道重投同 msgid 的数字消息不得二次应答（重放窗口内新开
+	// 挂起会被误答）。未命中消息的幂等仍由 runTurn 复查收口（此处 HasSeen 结果弃用）。
+	if o.gate != nil {
+		seen, err := o.store.HasSeen(cfg.BotID, msg.ConversationKey, msg.MessageID)
+		if err != nil {
+			o.log.Error("bot 幂等查询失败（放行快路径）", zap.Error(err))
+		}
+		if seen {
+			_ = rs.Flush("该消息已处理过，重复推送已忽略。", true)
+			return
+		}
+		if text, handled := o.gate.TryRespondPending(cfg, msg); handled {
+			if err := o.store.MarkSeen(cfg.BotID, msg.ConversationKey, msg.MessageID); err != nil {
+				o.log.Error("bot markSeen 失败", zap.Error(err))
+			}
+			_ = rs.Flush(text, true)
+			return
+		}
 	}
 	if err := rs.Flush("正在思考…", false); err != nil {
 		o.log.Warn("bot 占位帧发送失败（继续回合）", zap.Error(err))

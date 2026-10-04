@@ -376,13 +376,14 @@ func (m *Manager) Cancel(issueID string) error {
 	return nil
 }
 
-// RespondPermission 以 optionId 应答挂起权限审批（CAS once 语义透传）。
-func (m *Manager) RespondPermission(issueID string, pendingID uint64, optionID string) error {
+// RespondPermission 以 optionId 应答挂起权限审批（CAS once 语义透传）。source 标记
+// 应答入口（PendingSourcePanel/Bot，T2.4 双入口收敛的 closed-history 登记维度）。
+func (m *Manager) RespondPermission(issueID string, pendingID uint64, optionID, source string) error {
 	entry, err := m.readyEntry(issueID)
 	if err != nil {
 		return err
 	}
-	frames, err := entry.view.respondPermission(pendingID, optionID)
+	frames, err := entry.view.respondPermission(pendingID, optionID, source)
 	if err != nil {
 		return err
 	}
@@ -391,8 +392,9 @@ func (m *Manager) RespondPermission(issueID string, pendingID uint64, optionID s
 }
 
 // RespondElicitation 应答挂起 elicitation（三态：accept 带 content / decline / cancel；
-// content 键值对透传 ACP wire——schema.ElicitationContentValue 为 any 别名）。
-func (m *Manager) RespondElicitation(issueID string, pendingID uint64, action string, content map[string]any) error {
+// content 键值对透传 ACP wire——schema.ElicitationContentValue 为 any 别名）。source
+// 标记应答入口（同 RespondPermission）。
+func (m *Manager) RespondElicitation(issueID string, pendingID uint64, action string, content map[string]any, source string) error {
 	entry, err := m.readyEntry(issueID)
 	if err != nil {
 		return err
@@ -412,7 +414,7 @@ func (m *Manager) RespondElicitation(issueID string, pendingID uint64, action st
 	default:
 		return fmt.Errorf("elicitation 应答 action %q 非法（可选 accept / decline / cancel）", action)
 	}
-	frames, err := entry.view.respondElicitation(pendingID, response)
+	frames, err := entry.view.respondElicitation(pendingID, action, response, source)
 	if err != nil {
 		return err
 	}

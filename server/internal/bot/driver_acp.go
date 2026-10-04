@@ -13,12 +13,16 @@ import (
 // 真实 Manager 与 agent 进程。Ensure 为受理式（同步返回现状快照，spawn 链后台进行），
 // 就绪等待与回合输出均由本驱动按帧驱动收集。回合受理走 PromptQueued 排队语义（T2.2
 // 跨入口回合锁）——活动回合中 FIFO 等位、回合空隙自动开跑，与桌面 prompt 入口互斥且
-// 有序（桌面即时受理不经队列，用户优先）。
+// 有序（桌面即时受理不经队列，用户优先）。Get/RespondPermission 供审批数字快路径
+// （T2.4，pending_gate.go）读写挂起审批——与桌面 respondPermission HTTP 面同一 Manager
+// 入口，first-writer-wins 由 acpsession 收敛语义层保证。
 type acpSessions interface {
 	Ensure(ctx context.Context, issueID, pickedLaunchMode string) (acpsession.ViewSnapshot, error)
 	Subscribe(issueID string) (<-chan acpsession.Frame, func())
 	PromptQueued(ctx context.Context, issueID, text string) error
 	Cancel(issueID string) error
+	Get(issueID string) acpsession.ViewSnapshot
+	RespondPermission(issueID string, pendingID uint64, optionID, source string) error
 }
 
 // 编译期断言：Manager 满足消费面。
@@ -153,6 +157,7 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID string, fram
 
 	seenTools := map[string]bool{}
 	var text string
+	var openPendings []acpsession.PendingView // 回合内开放挂起（状态行编号与摘除追踪）
 	armed := false
 	notify := ctx.Done()
 
@@ -199,6 +204,34 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID string, fram
 						seenTools[tc.ToolCallID] = true
 						events <- TurnEvent{Type: TurnToolUse, ToolName: toolDisplayName(tc)}
 					}
+				}
+			case acpsession.FramePendingOpened:
+				// 审批挂起呈现（T2.4 回合内文本交互）：permission 出编号状态行（编号与
+				// 数字快路径同源于视图注册序——快路径按 Get 快照序应答，本处按帧到达序
+				// 展示，二者同源恒一致）；elicitation 指回桌面（应答面随 T3.3）。混合挂起
+				// 合并展示——表单提示附尾，审批的数字应答指引不被覆写。
+				if !armed || frame.Pending == nil {
+					continue
+				}
+				openPendings = append(openPendings, *frame.Pending)
+				perms, hasElicit := splitPendings(openPendings)
+				if len(perms) > 0 {
+					status := formatPermissionPendingStatus(permissionChoices(perms))
+					if hasElicit {
+						status += "\n" + elicitationPendingText
+					}
+					events <- TurnEvent{Type: TurnStatus, Status: status}
+				} else {
+					events <- TurnEvent{Type: TurnStatus, Status: elicitationPendingText}
+				}
+			case acpsession.FramePendingClosed:
+				// 已见挂起的关闭：状态行切「已处理，继续执行…」（未见过的关闭不打扰——
+				// armed 窗口外的历史关闭帧）。
+				if !armed {
+					continue
+				}
+				if noun, ok := dropClosedPending(&openPendings, frame.PendingID); ok {
+					events <- TurnEvent{Type: TurnStatus, Status: "✅ " + noun + "已处理，继续执行…"}
 				}
 			case acpsession.FrameTurnEnded:
 				emitTurnDone(events, frame.Turn, text)

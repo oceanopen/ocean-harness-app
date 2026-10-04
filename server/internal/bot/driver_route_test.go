@@ -125,8 +125,7 @@ func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
 		ids = append(ids, mk(tc.settings))
 	}
 
-	r := newDriverRoute(db, nil) // 解析不触达会话域，nil sessions 安全
-	route := r.(driverRoute)
+	route := newDriverRoute(db, nil) // 解析不触达会话域，nil sessions 安全
 	for i, tc := range cases {
 		got, err := route.resolve(0, ids[i], "single:u1")
 		if err != nil || got != tc.want {
@@ -178,7 +177,7 @@ func TestDriverRouteBindingResolution(t *testing.T) {
 	const convKey = "single:u1"
 	// resolve 收敛装配样板：各子测试共享 botID/convKey，仅 db 与 wsID 变化。
 	resolve := func(db *gorm.DB, wsID int) (routeTarget, error) {
-		return newDriverRoute(db, nil).(driverRoute).resolve(botID, wsID, convKey)
+		return newDriverRoute(db, nil).resolve(botID, wsID, convKey)
 	}
 
 	t.Run("有效绑定回填 IssueID", func(t *testing.T) {

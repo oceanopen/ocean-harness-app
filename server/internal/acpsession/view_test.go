@@ -2,6 +2,8 @@ package acpsession
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	acpgo "github.com/BrokkAi/acp-go"
@@ -202,6 +204,57 @@ func TestViewTerminatedIdempotent(t *testing.T) {
 	snap := view.snapshot()
 	if snap.Status != StatusTerminated || snap.Error != "进程退出" {
 		t.Fatalf("终态与原因应落快照，got %+v", snap)
+	}
+}
+
+// closed-history 环形上限与登记/查询语义（T2.4）。
+func TestViewClosedHistoryRing(t *testing.T) {
+	view := newSessionView()
+	for id := uint64(1); id <= closedHistoryCap+8; id++ {
+		view.recordClosedLocked(id, closedPending{source: PendingSourceBot, label: "允许"})
+	}
+	if len(view.closed) != closedHistoryCap || len(view.closedOrder) != closedHistoryCap {
+		t.Fatalf("closed-history 应封顶 %d，got %d/%d", closedHistoryCap, len(view.closed), len(view.closedOrder))
+	}
+	if _, ok := view.closed[1]; ok {
+		t.Fatal("最旧记录应被逐出")
+	}
+	if _, ok := view.closed[closedHistoryCap+8]; !ok {
+		t.Fatal("最新记录应在环内")
+	}
+	// 同 ID 重复登记只覆写详情，不重排队序。
+	view.recordClosedLocked(closedHistoryCap+8, closedPending{settled: true})
+	if info, ok := view.closed[closedHistoryCap+8]; !ok || !info.settled || info.source != "" {
+		t.Fatalf("重复登记应覆写详情，got %+v ok=%v", info, ok)
+	}
+	if len(view.closedOrder) != closedHistoryCap {
+		t.Fatalf("重复登记不应扩序，got %d", len(view.closedOrder))
+	}
+}
+
+// 收敛文案与选项标签 SSOT（桌面哨兵文案与 IM 状态行共用的取值域）。
+func TestPendingConvergenceLabels(t *testing.T) {
+	cases := []struct{ kind, name, want string }{
+		{"allow_once", "Allow", "允许"},
+		{"allow_always", "Allow always", "允许并记住"},
+		{"reject_once", "Reject", "拒绝"},
+		{"reject_always", "Always reject", "始终拒绝"},
+		{"custom_kind", "自定义", "自定义"},
+	}
+	for _, c := range cases {
+		if got := PermissionOptionLabel(c.kind, c.name); got != c.want {
+			t.Fatalf("PermissionOptionLabel(%q) = %q, want %q", c.kind, got, c.want)
+		}
+	}
+	err := &PendingAlreadyHandledError{Kind: "审批", Source: PendingSourcePanel, Label: "允许"}
+	if msg := err.Error(); msg != "该审批已由桌面端应答（允许）" || !errors.Is(err, ErrPendingAlreadyHandled) {
+		t.Fatalf("后到方哨兵文案/判别不符，got %q", msg)
+	}
+	if msg := (&PendingAlreadyHandledError{Kind: "表单", Settled: true}).Error(); msg != "该表单已随回合结束自动结算" {
+		t.Fatalf("结算文案不符，got %q", msg)
+	}
+	if msg := (&PendingAlreadyHandledError{Kind: "审批", Source: "weird", Label: "x"}).Error(); !strings.Contains(msg, "另一端") {
+		t.Fatalf("未知入口应中性兜底，got %q", msg)
 	}
 }
 

@@ -86,6 +86,11 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 			currentText = ""
 			statusText = "🔧 正在执行 " + ev.ToolName + " …"
 			mu.Unlock()
+		case TurnStatus:
+			mu.Lock()
+			currentText = ""
+			statusText = ev.Status
+			mu.Unlock()
 		case TurnDone:
 			mu.Lock()
 			isError = ev.IsError

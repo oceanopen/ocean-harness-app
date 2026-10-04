@@ -51,19 +51,24 @@ func effectiveACPMode(workspaceMode, issueMode string) bool {
 type driverRoute struct {
 	headless ClaudeDriver
 	acp      ClaudeDriver
+	// sessions 会话域消费面（审批快路径 Get/RespondPermission 消费；与 acp 引擎同源）。
+	sessions acpSessions
 	// resolve 一步判定路由目标：读绑定 + issue 存在性/归属校验 + 两级 launch_settings
 	// mode 合并。读库失败 fail closed 同步报错（不静默回落 headless——配置读不出时
 	// 「以为没配 ACP」是危险默认）；挂空绑定（issue 已删/换工作空间）降级为未绑定。
 	resolve func(botID, workspaceID int, conversationKey string) (routeTarget, error)
 }
 
-// newDriverRoute 装配路由驱动。绑定行纯读不建行（行由编排器受理路径 GetOrCreate 保证
-// 在场；路由层不为查询副作用负责）。绑定校验按 (issue.id, workspace_id) 双键——挂在其他
-// workspace 的 issue 上的绑定等同未绑定（降级交引导文案，不报错不阻断）。
-func newDriverRoute(db *gorm.DB, sessions acpSessions) ClaudeDriver {
-	return driverRoute{
+// newDriverRoute 装配路由驱动（返回具体类型：编排器同时把它当 ClaudeDriver 与
+// pendingGate 两个角色装配——TryRespondPending 见 pending_gate.go）。绑定行纯读不建行
+// （行由编排器受理路径 GetOrCreate 保证在场；路由层不为查询副作用负责）。绑定校验按
+// (issue.id, workspace_id) 双键——挂在其他 workspace 的 issue 上的绑定等同未绑定（降级
+// 交引导文案，不报错不阻断）。
+func newDriverRoute(db *gorm.DB, sessions acpSessions) *driverRoute {
+	return &driverRoute{
 		headless: NewClaudeDriver(),
 		acp:      NewAcpDriver(sessions),
+		sessions: sessions,
 		resolve: func(botID, workspaceID int, conversationKey string) (routeTarget, error) {
 			if workspaceID <= 0 {
 				return routeTarget{}, nil // 未选工作空间已被编排器门禁拦截，此处兜底 headless
@@ -123,7 +128,7 @@ func newDriverRoute(db *gorm.DB, sessions acpSessions) ClaudeDriver {
 // RunTurn 实现见 driver.go 契约：一步解析路由目标后转发对应引擎，IssueID 在此回填
 // （TurnRequest 为值拷贝）；ACP 引擎的同步失败包 turnNotAcceptedError 标记（回合未发生，
 // 编排器不清会话锚点）。
-func (r driverRoute) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
+func (r *driverRoute) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
 	target, err := r.resolve(req.BotID, req.WorkspaceID, req.ConversationKey)
 	if err != nil {
 		return nil, turnNotAcceptedError{fmt.Errorf("读取工作空间启动配置失败: %w", err)}

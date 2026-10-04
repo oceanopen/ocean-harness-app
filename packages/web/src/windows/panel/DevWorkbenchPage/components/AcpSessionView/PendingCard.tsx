@@ -26,11 +26,17 @@ function CardShell({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-/** 应答错误行（重复应答/已结算等——挂起不久将由 pendingClosed 帧移除，只提示不阻断）。 */
+/**
+ * 应答结果行：收敛哨兵文案（该审批已/该表单已——另一端先答或随回合结算，T2.4）中性
+ * 呈现（无失败前缀、warning 色），其余维持失败红前缀文案。前缀契约 SSOT 是服务端
+ * acpsession 的 PendingAlreadyHandledError.Error() 文案模板（view.go，双侧已声明），
+ * 服务端改模板需双端同步。挂起不久将由 pendingClosed 帧移除，只提示不阻断。
+ */
 function RespondError({ message }: { message: string }) {
+  const converged = message.startsWith('该审批已') || message.startsWith('该表单已');
   return (
-    <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75 }}>
-      应答失败：{message}
+    <Typography variant="caption" color={converged ? 'warning.main' : 'error'} sx={{ display: 'block', mt: 0.75 }}>
+      {converged ? message : `应答失败：${message}`}
     </Typography>
   );
 }

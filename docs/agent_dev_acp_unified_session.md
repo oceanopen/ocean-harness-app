@@ -77,7 +77,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 - **零 allowedTools**：全库无任何工具白名单/预批准机制，权限请求一律运行时交互审批；唯一注入是 deny-list（`session/new` 强制 `disallowedTools` 追加 Monitor）——deny 而非 allow 的哲学
 - **autoAccept 会话级开关**：开启后 client 自动选第一个 allow 选项即时应答（读会话快照 override，中途开启立即生效）——「不想被打扰」的表达方式；本项目记为后续增强，一期不提供（见 §5 风险 5）
 - **permissionMode 会话级下发**：经 `session/set_config_option`（configId="mode"）下发，值必须对 agent 上报的 mode 目录校验（防硬编码失效）
-- **IM 安全过滤（参考方向，非本项目拍板）**：Gold-Band `intervention.rs` requires_desktop 判定——危险权限动作（bypass 类、未知 kind 等）IM 端只保留「安全拒绝」、开启/放行必须回桌面。bot 与桌面 App 是等价客户端、无依赖关系，是否按此过滤 T2.4 再议（T3.2 同向收录）
+- **IM 安全过滤（参考方向，T2.4 已拍板不采纳）**：Gold-Band `intervention.rs` requires_desktop 判定——危险权限动作（bypass 类、未知 kind 等）IM 端只保留「安全拒绝」、开启/放行必须回桌面。本项目拍板 bot 与桌面 App 是等价客户端、无依赖关系，IM 不做此过滤（可见可答全部选项），安全周界 = 访问白名单 + 专属工作目录（见 §5 风险 5）
 
 **术语校准**：权限应答枚举实为 `RequestPermissionOutcome`（`{outcome:"cancelled"}` | `{outcome:"selected", optionId}`）；`updateTo` / `SessionPermissionUpdateOutcome` **不是 ACP 协议字段**（`updatedPermissions` 是 Claude Agent SDK 字段，adapter 内部消化）；allow_always 的记忆范围协议不定义、由 agent 落地——claude-agent-acp 落地为 SDK `PermissionUpdate`（destination: session / localSettings / userSettings / projectSettings，选「允许并记住」即持久生效）。
 
@@ -144,7 +144,7 @@ Gold-Band 的「工作台 + bot 无缝切换」不在 bot 侧，而在桌面架�
 2. **adapter 版本演进**：官方 adapter 两周三版（Gold-Band pin 0.81.2 → 现 0.84.0），catalog pin 策略 + 升级验证流程在 T1.2/T1.3 定稿；已知坑佐证：`claude-code-acp` 0.16.x 存在 MCP tool discovery 竞态（社区回钉 0.15.0），版本升级必须过 T1.4 握手回归；
 3. **终端模式与 ACP 模式并存边界**：同一 issue 切换模式时的会话接续（`claude --resume` 可跨形态接续同一 session id）——按 P3 拍板不入一期；
 4. **企微回调 5 秒窗口**：审批点击后更新原卡必须在 5 秒内完成，跨 sidecar 重启的边界场景在 T3.2 测试覆盖。
-5. **bypassPermissions 的运行时开启路径（P6 新增关注）**：ACP 模式下权限模式可经 `session/set_mode` 运行时变更（headless 时代 argv 定死、不存在该路径），IM 端若不过滤即构成远程提权面。缓解：T2.4/T3.2 IM 安全过滤（bypass 类动作仅桌面可操作）+ mode 值对 agent 上报目录校验；autoAccept（client 代点放行）记为后续增强、一期不提供。
+5. **bypassPermissions 的运行时开启路径（P6 新增关注）**：ACP 模式下权限模式可经 `session/set_mode` 运行时变更（headless 时代 argv 定死、不存在该路径），IM 端若不过滤即构成远程提权面。拍板（T2.4）：bot 与桌面等价客户端，不做 IM 端动作过滤，周界收敛为访问白名单 + 专属工作目录 + mode 值对 agent 上报目录校验；autoAccept（client 代点放行）记为后续增强、一期不提供。
 6. **vendored 自带 claude 的版本主权（P5 定稿终态引入）**：claude 二进制版本随 adapter pin 走（如 0.84.0 → SDK 0.3.284 → claude 2.1.284），app 终端内的 claude 升级能力随 app 发版；升级动作与 adapter 升级同流程（升 pin → refresh → vendor → 真握手回归）。已知限制：从未安装过 claude 的机器无法在应用内完成首次 OAuth 登录（终端手动路径无本机 claude 可敲，vendored 二进制登录需交互式 TUI）——「受管登录会话」（PTY 直启 vendored claude 供登录）记为后续增强，现阶段 doctor `-32000` 文案引导。
 
 ---
@@ -598,16 +598,27 @@ issue 主窗口 ─────┘
 
 #### T2.4 双入口审批收敛
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：企微 / 桌面双入口审批 first-writer-wins
 
 **技术方案**：
 - CAS + first-writer-wins：谁先点谁生效，后点方收到「已在另一端处理」
 - 审批 pending 状态由 T1.5 会话域持有，两入口读同一份状态
-- IM 安全过滤（Gold-Band `intervention.rs` requires_desktop 同款语义）：bypass 类危险授权动作在 IM 端只保留「安全拒绝」类动作，开启/放行必须回桌面操作——防 `session/set_mode(bypassPermissions)` 被远程开启（依据见 §1.4）
+- IM 安全过滤（Gold-Band `intervention.rs` requires_desktop 同款语义）：bypass 类危险授权动作在 IM 端只保留「安全拒绝」类动作，开启/放行必须回桌面操作——防 `session/set_mode(bypassPermissions)` 被远程开启（依据见 §1.4）【已被实施定稿②取代——等价客户端不过滤】
 
 **依赖**：T2.2、T1.7
+
+**实施定稿**：
+- **三项拍板**：① IM 入口形态 = 回合内文本交互——pendingOpened 帧出编号状态行、IM 回复纯数字即应答，卡片化随 T3.2；② IM 安全过滤 = 等价客户端不过滤——bot 与桌面 App 契约层等价无依赖，IM 可见可答全部选项（含 allow_always），安全周界 = 访问白名单 + 专属工作目录（§1.4 参考方向不采纳，§5 风险 5 同步收敛）；③ 范围只做 permission——收敛语义（closed-history + 哨兵 + source）对 elicitation 同样生效，IM 表单应答交互随 T3.3
+- **收敛语义层落 acpsession view（方案 A：编排器内快路径）**：数据面 first-writer-wins（view.mu 串行 + 槽位摘除 + acp 层 CAS-once）T1.7 已成立，T2.4 补投影与判别——**closed-history**（per-view 环形 32 条，跨回合持续、Ensure 重建重置；已应答记 {source, label}、回合终态残余记 {settled}，同 id 重注册覆写详情不重排序）+ **哨兵错误** `ErrPendingAlreadyHandled` / `PendingAlreadyHandledError`（Error() 即用户可读文案：「该审批已由桌面端/IM 应答（允许）」「该表单已随回合结束自动结算」，Unwrap 落 sentinel 供 errors.Is；前端按「该审批已/该表单已」前缀识别）
+- **source 与 label SSOT**：source（panel/bot）为服务内部维度——HTTP 面恒 panel、快路径恒 bot，不进客户端 DTO；`acpsession.PermissionOptionLabel(kind, name)`（允许/允许并记住/拒绝/始终拒绝，未知 kind 回落原始 name）为选项中文标签唯一出口，桌面哨兵文案与 IM 状态行共用
+- **CAS 残余分支**：应答与回合取消/结束竞态以 `errors.Is(err, acp.ErrAlreadyResolved)` 判别（不吞其他错误形态）——命中则槽位回填保留（endTurn 仍向订阅者 flush pendingClosed，摘除回填否则桌面卡片滞留）+ 记 settled + 回 settled 哨兵；其余应答错误回填挂起后原样透传（视图与 agent 侧均仍开放，可重试）。respondPermission/respondElicitation 为 `respondPending` 骨架 + 闭包差异步的同构收口
+- **IM 数字快路径（`pending_gate.go`，编排器可选依赖 pendingGate、driverRoute 实现）**：HandleInbound 在 openStream 成功后、占位帧之前拦截——每会话串行队列的 worker 正阻塞在挂起审批的上一回合，应答消息排队即死锁，必须入队前应答；命中即 Flush(text, true) 终帧，不入队不占并发槽。**幂等前置到判定之前**（快路径产生变更性动作却不入队，错过 runTurn 的权威幂等复查）：HasSeen 拦截渠道重投、命中即 MarkSeen。受理条件 = 纯数字（半角；全角/溢出按越界处理）+ 路由命中 ACP 绑定 + Get 快照就绪且存在 permission 挂起；**编号不变式**：permissionChoices 跨挂起全局扁平展开为编号 SSOT（应答与展示共用同一展开），Get 快照序与 pendingOpened 帧到达序同源于视图注册序（单写者追加）恒一致；已关闭挂起实时摘除保证剩余编号与快照一致；越界回目录提示；只有表单挂起时指回桌面；miss 五情形（非数字 / 非 ACP 会话 / 路由读库失败 fail closed 交回合路径报错 / 无任何挂起即数字是普通正文 / 会话未就绪——agent 死亡后视图残留挂起不可应答，交主路径重建）落回主路径
+- **回合内呈现（TurnStatus 事件）**：pendingOpened → 状态行覆写（清 currentText，同 TurnToolUse 泵语义）；pendingClosed → 「✅ 审批/表单已处理，继续执行…」；elicitation 挂起 → 指回桌面文案；混合挂起（审批 + 表单）合并展示——表单提示附尾，审批的数字应答指引不被覆写
+- **桌面侧中性呈现**：PendingCard 应答结果行对「该审批已/该表单已」前缀文案去「应答失败：」前缀、warning 色非失败红（挂起随 pendingClosed 帧移除，只提示不阻断）；前缀契约 SSOT 双侧注释声明（服务端 PendingAlreadyHandledError.Error() 模板 ↔ 前端前缀识别），改模板需双端同步
+- **已知限制**：桌面发起回合的挂起不主动通知 IM（bot 无回合外订阅，事件化推送随 T3.4）；无 DB 变更；TryRespondPending 不带 ctx（同步内存快照读 + RespondPermission 不吃 ctx，方案中的 ctx 形参属预留未落地）；collectTurn 首帧快照不回填 openPendings（pendingOpened 恰落受理与重订订阅之间的窗口——与 armed 同款生产不可达窗口，编号错位由越界回目录自纠错）；零选项 permission 挂起回空目录提示（协议正常不产生）
+- 验证：build / vet / bot+acpsession 全量 `-race` / web:build 通过；`view_test.go` 覆盖环形史（容量驱逐/同 id 覆写不重排序）与标签文案表；`manager_test.go` 覆盖双应答判别（谁答的 + 答了啥）/ 回合结算后应答 settled 哨兵 / late-responder 判别；`pending_gate_test.go` 覆盖数字应答 / 已处理透传 / 越界回目录 / 只有表单指回桌面 / 五情形 miss / 纯数字解析表（含溢出）/ 重投幂等（gate 恰判定一次 + 已处理终帧）；`orchestrator_test.go` 覆盖快路径命中（无占位帧无回合）/ 未命中走主路径 / nil 依赖关闭；`driver_acp_test.go` 覆盖审批/表单状态行、混合挂起合并展示与多挂起全局编号
 
 ---
 
@@ -652,7 +663,7 @@ issue 主窗口 ─────┘
 - 选项映射 allow_once / allow_always / reject → 中文选项，默认选第一项
 - 点击后 `UpdateTemplateCard` 置灰终态（5 秒窗口内），与桌面侧按 T2.4 first-writer-wins 收敛
 - 遵守企微协议参数照抄清单（阶段 3 设计要点）
-- IM 侧仅暴露安全动作：bypass 类危险授权动作 IM 端过滤（与 T2.4 安全过滤一致），仅桌面可操作
+- IM 侧不过滤动作（T2.4 拍板②：bot 与桌面等价客户端）：卡片呈现与桌面同一选项全集（含 allow_always），安全周界 = 访问白名单 + 专属工作目录（见 §5 风险 5）
 
 **依赖**：T3.1、T2.4
 

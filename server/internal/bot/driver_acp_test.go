@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BrokkAi/acp-go/schema"
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acpsession"
@@ -35,10 +36,20 @@ type fakeSessions struct {
 	pending []acpsession.Frame
 	subs    []*fakeSub
 
+	respondErr   error // RespondPermission 注入错误（nil = 应答成功）
+	respondCalls []respondCall
+
 	ensureCalls int
 	promptTexts []string
 	cancelCalls int
 	subscribes  int
+}
+
+// respondCall RespondPermission 调用留痕（审批快路径断言用）。
+type respondCall struct {
+	pendingID uint64
+	optionID  string
+	source    string
 }
 
 // fakeSub 单次订阅的通道与关闭态（RunTurn 两段订阅各自独立退订）。
@@ -104,6 +115,21 @@ func (f *fakeSessions) Cancel(_ string) error {
 	return nil
 }
 
+// Get 快照直读（审批快路径消费；测试以 snap 字段装填挂起投影）。
+func (f *fakeSessions) Get(_ string) acpsession.ViewSnapshot {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.snap
+}
+
+// RespondPermission 应答留痕 + 注入错误（审批快路径消费）。
+func (f *fakeSessions) RespondPermission(_ string, pendingID uint64, optionID, source string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.respondCalls = append(f.respondCalls, respondCall{pendingID: pendingID, optionID: optionID, source: source})
+	return f.respondErr
+}
+
 // push 投递脚本帧：订阅建立前入 pending（Subscribe 灌入，时序无关）；有订阅则推最新
 // 订阅通道（缓冲远大于脚本帧数，满即阻塞为测试编写错误）。
 func (f *fakeSessions) push(t *testing.T, frame acpsession.Frame) {
@@ -145,6 +171,12 @@ func (f *fakeSessions) stats() (ensureCalls, cancelCalls, subscribes int, prompt
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.ensureCalls, f.cancelCalls, f.subscribes, append([]string(nil), f.promptTexts...)
+}
+
+func (f *fakeSessions) responds() []respondCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]respondCall(nil), f.respondCalls...)
 }
 
 // boundDriver 测试构造：引擎是纯执行者（T2.3 起目标 issue 由路由层经 TurnRequest.IssueID
@@ -650,5 +682,139 @@ func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
 	_, err = driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-bot-acp", Prompt: "hi"})
 	if err == nil || !strings.Contains(err.Error(), "启动失败") {
 		t.Fatalf("空 vendored 目录下 spawn 链失败应同步报「启动失败」: %v", err)
+	}
+}
+
+// pendingOpenedFrame / pendingClosedFrame 挂起帧脚本辅助（审批选项复用 pending_gate_test
+// 的 permOptions——同包共享，不另造轮子）。
+func pendingOpenedFrame(p acpsession.PendingView) acpsession.Frame {
+	return acpsession.Frame{Type: acpsession.FramePendingOpened, Pending: &p}
+}
+
+func pendingClosedFrame(pendingID uint64) acpsession.Frame {
+	return acpsession.Frame{Type: acpsession.FramePendingClosed, PendingID: pendingID}
+}
+
+// TestAcpDriverPendingStatusLine 审批挂起的回合内呈现（T2.4）：pendingOpened 出编号状态行
+// （文案与数字快路径同源），pendingClosed 切「已处理，继续执行…」，随后正文与终态不受扰。
+func TestAcpDriverPendingStatusLine(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	title := "Bash: echo hi"
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, pendingOpenedFrame(acpsession.PendingView{
+		PendingID: 7, Kind: "permission", Options: permOptions(),
+		ToolCall: &schema.ToolCallUpdate{ToolCallID: "tc-7", Title: &title},
+	}))
+	sessions.push(t, pendingClosedFrame(7))
+	sessions.push(t, agentTextFrame("t1-agentMessage", "审批后的回复"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	wantStatus := "⏳ Agent 请求审批，回复数字应答：\n1. 允许（Bash: echo hi）\n2. 拒绝（Bash: echo hi）"
+	ev := recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != wantStatus {
+		t.Fatalf("审批状态行不符: %+v", ev)
+	}
+	ev = recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != "✅ 审批已处理，继续执行…" {
+		t.Fatalf("审批处理状态行不符: %+v", ev)
+	}
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.Result != "审批后的回复" {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// TestAcpDriverElicitationPendingStatus 表单挂起呈现：指回桌面（应答面随 T3.3），关闭帧
+// 同步状态行。
+func TestAcpDriverElicitationPendingStatus(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, pendingOpenedFrame(acpsession.PendingView{PendingID: 9, Kind: "elicitation"}))
+	sessions.push(t, pendingClosedFrame(9))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	ev := recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != elicitationPendingText {
+		t.Fatalf("表单挂起状态行不符: %+v", ev)
+	}
+	ev = recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != "✅ 表单已处理，继续执行…" {
+		t.Fatalf("表单处理状态行不符: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// TestAcpDriverMixedPendingStatus 混合挂起：审批打开后表单再开，状态行合并展示——审批的
+// 数字应答指引不被表单提示覆写。
+func TestAcpDriverMixedPendingStatus(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, pendingOpenedFrame(acpsession.PendingView{PendingID: 3, Kind: "permission", Options: permOptions()}))
+	sessions.push(t, pendingOpenedFrame(acpsession.PendingView{PendingID: 4, Kind: "elicitation"}))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	ev := recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != "⏳ Agent 请求审批，回复数字应答：\n1. 允许\n2. 拒绝" {
+		t.Fatalf("首挂起状态行不符: %+v", ev)
+	}
+	want := "⏳ Agent 请求审批，回复数字应答：\n1. 允许\n2. 拒绝\n" + elicitationPendingText
+	ev = recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != want {
+		t.Fatalf("混合挂起应合并展示（审批指引不覆写）: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// TestAcpDriverMultiPendingNumbering 多挂起编号：跨挂起全局顺序（第二挂起选项编号续接），
+// 关闭一挂起后重编（与快路径 Get 快照剩余序一致）。
+func TestAcpDriverMultiPendingNumbering(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, pendingOpenedFrame(acpsession.PendingView{PendingID: 1, Kind: "permission", Options: permOptions()}))
+	sessions.push(t, pendingOpenedFrame(acpsession.PendingView{PendingID: 2, Kind: "permission", Options: permOptions()}))
+	sessions.push(t, pendingClosedFrame(1))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	// 第二挂起打开后：全局四选项（1-4，无工具标题——该挂起无 ToolCall）。
+	ev := recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != "⏳ Agent 请求审批，回复数字应答：\n1. 允许\n2. 拒绝" {
+		t.Fatalf("首挂起状态行不符: %+v", ev)
+	}
+	ev = recvEvent(t, events)
+	want := "⏳ Agent 请求审批，回复数字应答：\n1. 允许\n2. 拒绝\n3. 允许\n4. 拒绝"
+	if ev.Type != TurnStatus || ev.Status != want {
+		t.Fatalf("双挂起全局编号不符: %+v", ev)
+	}
+	// 关闭首挂起后状态行只提示「已处理」（重编目录留给下一次 opened；终态随回合收敛）。
+	ev = recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != "✅ 审批已处理，继续执行…" {
+		t.Fatalf("关闭状态行不符: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
+		t.Fatalf("终态事件不符: %+v", done)
 	}
 }

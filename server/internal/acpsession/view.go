@@ -2,6 +2,7 @@ package acpsession
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -61,6 +62,21 @@ type PendingView struct {
 	Request   *acp.ElicitationWire      `json:"request,omitempty"`  // elicitation 专用：全保真 wire（acp-go 生成模型丢 requestedSchema/url，见 acp/elicitation.go）
 }
 
+// ToolTitle 挂起审批的工具呈现标题（Title 优先，Name 兜底，无则空）——投影出口同 label
+// SSOT：bot 域经此取值，不引 acp-go（依赖面口径见 bot/driver_acp.go）。
+func (p PendingView) ToolTitle() string {
+	if p.ToolCall == nil {
+		return ""
+	}
+	if p.ToolCall.Title != nil && *p.ToolCall.Title != "" {
+		return *p.ToolCall.Title
+	}
+	if p.ToolCall.Name != nil && *p.ToolCall.Name != "" {
+		return *p.ToolCall.Name
+	}
+	return ""
+}
+
 // ViewSnapshot 会话视图快照——/api/acpSession 响应与 SSE snapshot 帧的 shape SSOT
 // （前端按此镜像 TS 类型）。嵌套的 ACP wire 结构原样透传不转译。
 type ViewSnapshot struct {
@@ -87,6 +103,103 @@ type pendingSlot struct {
 	elicitation *acp.PendingElicitation
 }
 
+// 应答入口标识（T2.4 双入口审批收敛）：closed-history 登记与后到方文案的来源维度。
+// HTTP 桌面面恒 panel（service 层收口硬编码），bot IM 快路径传 bot；source 是服务端
+// 内部追踪字段，不进任何 client DTO。
+const (
+	PendingSourcePanel = "panel" // 桌面 issue 主窗口（HTTP 应答面）
+	PendingSourceBot   = "bot"   // IM bot（企微回合内数字快路径）
+)
+
+// ErrPendingAlreadyHandled 挂起已被一端应答或已随回合结算（T2.4 first-writer-wins 的
+// 后到方判别哨兵）：acp 层 ErrAlreadyResolved 只说明「CAS 拒绝」，本哨兵补齐「谁、以何
+// 选项处理」的收敛语义。消费方 errors.Is 判别，文案（*PendingAlreadyHandledError）用户
+// 可读直出。
+var ErrPendingAlreadyHandled = errors.New("ACP 挂起已处理")
+
+// PendingAlreadyHandledError 后到方应答已处理挂起的用户可读错误：Error() 即展示文案
+// （「该审批已由桌面端应答（允许）」/「该表单已随回合结束自动结算」），Unwrap 到哨兵
+// 供 errors.Is 判别（文案零前缀污染，前端可按「该审批已/该表单已」前缀识别中性呈现）。
+type PendingAlreadyHandledError struct {
+	Kind    string // 展示名词：审批 | 表单
+	Source  string // 应答入口（panel/bot；结算路径为空）
+	Label   string // 应答选项/动作的展示标签
+	Settled bool   // true = 随回合结束/取消自动结算（非人为应答）
+}
+
+func (e *PendingAlreadyHandledError) Error() string {
+	if e.Settled {
+		return fmt.Sprintf("该%s已随回合结束自动结算", e.Kind)
+	}
+	return fmt.Sprintf("该%s已由%s应答（%s）", e.Kind, pendingSourceLabel(e.Source), e.Label)
+}
+
+func (e *PendingAlreadyHandledError) Unwrap() error { return ErrPendingAlreadyHandled }
+
+// pendingSourceLabel 应答入口展示名（panel=桌面端 / bot=IM；未知值中性兜底「另一端」）。
+func pendingSourceLabel(source string) string {
+	switch source {
+	case PendingSourcePanel:
+		return "桌面端"
+	case PendingSourceBot:
+		return "IM"
+	}
+	return "另一端"
+}
+
+// closedHistoryCap closed-history 环形上限（近期已关闭挂起的收敛记录窗口）。
+const closedHistoryCap = 32
+
+// closedPending 已关闭挂起的收敛记录（closed-history 条目，T2.4）：应答成功登记
+// {source, label}；回合收尾/自动结算登记 {settled}。后到方应答命中历史即回判别哨兵，
+// 未命中（pendingID 写错/超窗出环）才回落「不存在或已关闭」。
+type closedPending struct {
+	source  string // 应答入口；空 = 非人为应答
+	label   string // 应答选项/动作展示标签
+	settled bool   // true = 回合收尾/取消自动结算
+}
+
+// PermissionOptionLabel 审批选项展示标签（label SSOT，桌面哨兵文案与 IM 状态行共用）：
+// kind → 中文（allow_once=允许 / allow_always=允许并记住 / reject_once=拒绝 /
+// reject_always=始终拒绝），未知 kind 回落 agent 原始 name。
+func PermissionOptionLabel(kind, name string) string {
+	switch schema.PermissionOptionKind(kind) {
+	case schema.PermissionOptionKindAllowOnce:
+		return "允许"
+	case schema.PermissionOptionKindAllowAlways:
+		return "允许并记住"
+	case schema.PermissionOptionKindRejectOnce:
+		return "拒绝"
+	case schema.PermissionOptionKindRejectAlways:
+		return "始终拒绝"
+	}
+	return name
+}
+
+// findPermissionOption 按 optionId 查审批选项目录（应答预检与标签取值共用一次查找；
+// 不存在返回 ok=false）。
+func findPermissionOption(options []schema.PermissionOption, optionID string) (schema.PermissionOption, bool) {
+	for i := range options {
+		if string(options[i].OptionID) == optionID {
+			return options[i], true
+		}
+	}
+	return schema.PermissionOption{}, false
+}
+
+// elicitationActionLabel elicitation 三态应答动作的展示标签。
+func elicitationActionLabel(action string) string {
+	switch action {
+	case "accept":
+		return "接受"
+	case "decline":
+		return "拒绝"
+	case "cancel":
+		return "取消"
+	}
+	return action
+}
+
 // sessionView 单会话的积累投影：manager 是唯一写者（受理/收尾编排 + pump 按 wire 顺序
 // 喂入），读经 snapshot。快照类字段（plan/usage/commands/modes）最新替换；条目覆写式
 // upsert。回合两端帧由本视图合成（StopReason 只从 acp Prompt 返回值可见的 gap 补齐）。
@@ -110,13 +223,20 @@ type sessionView struct {
 	// pendings 挂起交互注册表（acp 层无枚举 API，视图侧自登记；应答/结算后摘除）。
 	pendings []pendingSlot
 
+	// closed 已关闭挂起的收敛记录（pendingID → 详情 + closedOrder FIFO 序，环形上限
+	// closedHistoryCap，跨回合常驻——回合结束后抵达的迟到应答仍可判别；Ensure 重建随
+	// 新视图重置）。后到方应答命中历史回 ErrPendingAlreadyHandled 判别哨兵，未命中才
+	// 回落「不存在或已关闭」。
+	closed      map[uint64]closedPending
+	closedOrder []uint64
+
 	turn       int // 回合序号（entryId 命名空间：t<turn>-user / t<turn>-agent / ...）
 	turnActive bool
 	stopReason string
 }
 
 func newSessionView() *sessionView {
-	return &sessionView{entryIndex: map[string]int{}}
+	return &sessionView{entryIndex: map[string]int{}, closed: map[uint64]closedPending{}}
 }
 
 // setStarting 受理即置态（agentCode/permissionMode 预填，前端受理反馈可见实际取值）。
@@ -352,51 +472,104 @@ func (v *sessionView) registerPendingLocked(view PendingView, slot *pendingSlot)
 	return []Frame{{Type: FramePendingOpened, Pending: &view}}
 }
 
-// respondPermission 以 optionId 应答挂起权限审批（kind 校验 → 校验选项 → 摘除 → CAS
-// 应答 → pendingClosed 帧）。kind 错配/未知选项在摘除前拒绝（不消耗挂起——摘除后应答
-// 失败会让前后端挂起视图与 agent 等待态三方失同步）；pendingId 未知 / 已应答错误原样
-// 透传，HTTP 面语义与 acp 层一致。
-func (v *sessionView) respondPermission(pendingID uint64, optionID string) ([]Frame, error) {
+// respondPending 收敛应答骨架（permission/elicitation 共用，差异经 precheck/respond
+// 闭包传入）。固定时序：定位挂起 → closed-history 判别哨兵 → precheck（kind 错配/非法
+// 选项在摘除前拒绝——摘除后应答失败会让前后端挂起视图与 agent 等待态三方失同步）→
+// 摘除 → CAS 应答 → 登记 closed-history → pendingClosed 帧。CAS 被拒（errors.Is 判
+// acp.ErrAlreadyResolved：回合收尾/取消竞态先结算）回填槽位 + 登记 settled + 回 settled
+// 哨兵——回填维持 endTurn 兜底补发 pendingClosed 的原语义（订阅端不挂死在已消失的审批
+// 上）；其余应答错误回填后原样透传（挂起在视图与 agent 侧均仍开放，可重试）。
+// pendingId 命中 closed-history 回 ErrPendingAlreadyHandled 判别哨兵（T2.4 双入口
+// first-writer-wins：另一端已应答/已随回合结算），未命中才是「不存在或已关闭」。
+func (v *sessionView) respondPending(pendingID uint64, noun, source string, precheck func(slot pendingSlot) error, respond func(slot pendingSlot) (string, error)) ([]Frame, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	idx := pendingIndexOfLocked(v.pendings, pendingID)
 	if idx < 0 {
-		return nil, fmt.Errorf("挂起审批不存在或已关闭: %d", pendingID)
+		if err := v.alreadyClosedLocked(noun, pendingID); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("挂起%s不存在或已关闭: %d", noun, pendingID)
 	}
 	slot := v.pendings[idx]
-	if slot.permission == nil {
-		return nil, fmt.Errorf("挂起 %d 不是权限审批", pendingID)
-	}
-	if !hasPermissionOption(slot.view.Options, optionID) {
-		return nil, fmt.Errorf("未知审批选项: %s", optionID)
-	}
-	v.pendings = append(v.pendings[:idx], v.pendings[idx+1:]...)
-	if err := slot.permission.Respond(optionID); err != nil {
-		v.pendings = append(v.pendings, slot) // 摘除后应答仍失败（CAS 残余竞态）：回填不丢交互
+	if err := precheck(slot); err != nil {
 		return nil, err
 	}
+	v.pendings = append(v.pendings[:idx], v.pendings[idx+1:]...)
+	label, err := respond(slot)
+	if err != nil {
+		v.pendings = append(v.pendings, slot)
+		if errors.Is(err, acp.ErrAlreadyResolved) {
+			v.recordClosedLocked(pendingID, closedPending{settled: true})
+			return nil, &PendingAlreadyHandledError{Kind: noun, Settled: true}
+		}
+		return nil, err
+	}
+	v.recordClosedLocked(pendingID, closedPending{source: source, label: label})
 	return []Frame{pendingClosedFrame(pendingID)}, nil
 }
 
+// respondPermission 以 optionId 应答挂起权限审批（差异步：句柄预检 + 选项预检与标签
+// 取值共用一次目录查找）。
+func (v *sessionView) respondPermission(pendingID uint64, optionID, source string) ([]Frame, error) {
+	var pick schema.PermissionOption
+	return v.respondPending(pendingID, "审批", source,
+		func(slot pendingSlot) error {
+			if slot.permission == nil {
+				return fmt.Errorf("挂起 %d 不是权限审批", pendingID)
+			}
+			var ok bool
+			if pick, ok = findPermissionOption(slot.view.Options, optionID); !ok {
+				return fmt.Errorf("未知审批选项: %s", optionID)
+			}
+			return nil
+		},
+		func(slot pendingSlot) (string, error) {
+			if err := slot.permission.Respond(optionID); err != nil {
+				return "", err
+			}
+			return PermissionOptionLabel(string(pick.Kind), pick.Name), nil
+		},
+	)
+}
+
 // respondElicitation 以完整三态应答挂起 elicitation（构造见 acpgo.AcceptElicitation 等；
-// kind 错配在摘除前拒绝，应答失败回填挂起，语义同 respondPermission）。
-func (v *sessionView) respondElicitation(pendingID uint64, response schema.CreateElicitationResponse) ([]Frame, error) {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	idx := pendingIndexOfLocked(v.pendings, pendingID)
-	if idx < 0 {
-		return nil, fmt.Errorf("挂起表单不存在或已关闭: %d", pendingID)
+// 差异步仅句柄预检，应答标签取动作三态）。
+func (v *sessionView) respondElicitation(pendingID uint64, action string, response schema.CreateElicitationResponse, source string) ([]Frame, error) {
+	return v.respondPending(pendingID, "表单", source,
+		func(slot pendingSlot) error {
+			if slot.elicitation == nil {
+				return fmt.Errorf("挂起 %d 不是表单", pendingID)
+			}
+			return nil
+		},
+		func(slot pendingSlot) (string, error) {
+			return elicitationActionLabel(action), slot.elicitation.Respond(response)
+		},
+	)
+}
+
+// alreadyClosedLocked 已关闭挂起的判别错误构造（历史未命中返回 nil——回落「不存在或已
+// 关闭」原语义）。
+func (v *sessionView) alreadyClosedLocked(kind string, pendingID uint64) error {
+	info, ok := v.closed[pendingID]
+	if !ok {
+		return nil
 	}
-	slot := v.pendings[idx]
-	if slot.elicitation == nil {
-		return nil, fmt.Errorf("挂起 %d 不是表单", pendingID)
+	return &PendingAlreadyHandledError{Kind: kind, Source: info.source, Label: info.label, Settled: info.settled}
+}
+
+// recordClosedLocked 登记已关闭挂起（环形上限：超限逐出最旧；同 ID 重复登记只覆写详情
+// 不重排队序）。
+func (v *sessionView) recordClosedLocked(pendingID uint64, info closedPending) {
+	if _, exists := v.closed[pendingID]; !exists {
+		v.closedOrder = append(v.closedOrder, pendingID)
+		if len(v.closedOrder) > closedHistoryCap {
+			delete(v.closed, v.closedOrder[0])
+			v.closedOrder = v.closedOrder[1:]
+		}
 	}
-	v.pendings = append(v.pendings[:idx], v.pendings[idx+1:]...)
-	if err := slot.elicitation.Respond(response); err != nil {
-		v.pendings = append(v.pendings, slot)
-		return nil, err
-	}
-	return []Frame{pendingClosedFrame(pendingID)}, nil
+	v.closed[pendingID] = info
 }
 
 // pendingIndexOfLocked 按 pendingId 定位挂起槽位（不存在返回 -1）。
@@ -407,16 +580,6 @@ func pendingIndexOfLocked(pendings []pendingSlot, pendingID uint64) int {
 		}
 	}
 	return -1
-}
-
-// hasPermissionOption optionId 是否在挂起审批的选项目录内。
-func hasPermissionOption(options []schema.PermissionOption, optionID string) bool {
-	for i := range options {
-		if string(options[i].OptionID) == optionID {
-			return true
-		}
-	}
-	return false
 }
 
 // beginTurn 受理一轮回合：用户消息条目 + turnStarted 合成。已有活动回合拒绝（单会话
@@ -440,7 +603,8 @@ func (v *sessionView) beginTurn(text string) ([]Frame, error) {
 
 // endTurn 回合终态：turnEnded 合成（stopReason / 错误）+ 未决交互对齐清空（acp 侧
 // settlePendings 已结算但无事件通道通知，视图补发 pendingClosed——其余订阅端不挂死在
-// 已消失的审批上）。
+// 已消失的审批上）。残余挂起登记 closed-history（settled）——回合结束后抵达的迟到
+// 应答可判别（T2.4）。
 func (v *sessionView) endTurn(stop string, errText string) []Frame {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -451,6 +615,7 @@ func (v *sessionView) endTurn(stop string, errText string) []Frame {
 	v.stopReason = stop
 	frames := []Frame{turnFrame(FrameTurnEnded, false, stop, errText)}
 	for i := range v.pendings {
+		v.recordClosedLocked(v.pendings[i].view.PendingID, closedPending{settled: true})
 		frames = append(frames, pendingClosedFrame(v.pendings[i].view.PendingID))
 	}
 	v.pendings = nil

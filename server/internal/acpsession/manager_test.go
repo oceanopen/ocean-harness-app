@@ -342,14 +342,15 @@ func TestRespondPermissionFlow(t *testing.T) {
 		t.Fatalf("挂起应入快照，got %+v", pendings)
 	}
 	// 未知 optionId 拒绝且不消耗挂起（agent 侧仍等待）。
-	if err := mgr.RespondPermission(issueID, pendingID, "bogus"); err == nil {
+	if err := mgr.RespondPermission(issueID, pendingID, "bogus", PendingSourcePanel); err == nil {
 		t.Fatal("未知 optionId 应拒绝")
 	}
 	if pendings := mgr.Get(issueID).Pendings; len(pendings) != 1 {
 		t.Fatalf("未知选项不应消耗挂起，got %+v", pendings)
 	}
-	// 合法应答 → pendingClosed → 回合 end_turn 收敛 + 决策回显条目。
-	if err := mgr.RespondPermission(issueID, pendingID, "allow"); err != nil {
+	// 合法应答 → pendingClosed → 回合 end_turn 收敛 + 决策回显条目。source=bot 模拟
+	// IM 快路径先到（first-writer-wins 先手方）。
+	if err := mgr.RespondPermission(issueID, pendingID, "allow", PendingSourceBot); err != nil {
 		t.Fatalf("RespondPermission: %v", err)
 	}
 	closed := waitFrame(t, frames, "pendingClosed", func(f Frame) bool {
@@ -381,9 +382,19 @@ func TestRespondPermissionFlow(t *testing.T) {
 	if pendings := mgr.Get(issueID).Pendings; len(pendings) != 0 {
 		t.Fatalf("应答后挂起应清空，got %+v", pendings)
 	}
-	// 重复应答：已摘除 → 未知挂起错误。
-	if err := mgr.RespondPermission(issueID, pendingID, "allow"); err == nil {
-		t.Fatal("已应答的挂起应拒绝重复应答")
+	// 重复应答（后到方，source=panel）：命中 closed-history 回判别哨兵，文案带先手方
+	// 入口与选项（T2.4 收敛语义——「已在另一端处理」而非笼统的「不存在」）。
+	err := mgr.RespondPermission(issueID, pendingID, "allow", PendingSourcePanel)
+	if !errors.Is(err, ErrPendingAlreadyHandled) {
+		t.Fatalf("后到方应答应回 ErrPendingAlreadyHandled，got %v", err)
+	}
+	var handled *PendingAlreadyHandledError
+	if !errors.As(err, &handled) || handled.Source != PendingSourceBot ||
+		handled.Label != "允许" || handled.Settled {
+		t.Fatalf("判别详情应记先手方 bot/允许，got %+v", handled)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "IM") || !strings.Contains(msg, "允许") {
+		t.Fatalf("后到方文案应带入口与选项，got %q", msg)
 	}
 }
 
@@ -410,7 +421,7 @@ func TestRespondElicitationFlow(t *testing.T) {
 	}
 	pendingID := opened.Pending.PendingID
 	// accept 带内容应答 → pendingClosed → 内容回显条目 + 回合终态（并发到达，双谓词合流）。
-	if err := mgr.RespondElicitation(issueID, pendingID, "accept", map[string]any{"choice": "b"}); err != nil {
+	if err := mgr.RespondElicitation(issueID, pendingID, "accept", map[string]any{"choice": "b"}, PendingSourcePanel); err != nil {
 		t.Fatalf("RespondElicitation: %v", err)
 	}
 	closed := waitFrame(t, frames, "pendingClosed", func(f Frame) bool {
@@ -441,8 +452,16 @@ func TestRespondElicitationFlow(t *testing.T) {
 		t.Fatalf("应答后挂起应清空，got %+v", pendings)
 	}
 	// 非法 action 拒绝（服务入口已 oneof 校验，此处覆盖 manager 直调路径）。
-	if err := mgr.RespondElicitation(issueID, pendingID, "bogus", nil); err == nil {
+	if err := mgr.RespondElicitation(issueID, pendingID, "bogus", nil, PendingSourcePanel); err == nil {
 		t.Fatal("非法 action 应拒绝")
+	}
+	// 后到方应答（回合已收敛、挂起已摘）：判别哨兵 + 「表单」名词。
+	err := mgr.RespondElicitation(issueID, pendingID, "decline", nil, PendingSourceBot)
+	if !errors.Is(err, ErrPendingAlreadyHandled) {
+		t.Fatalf("后到方 elicitation 应答应回哨兵，got %v", err)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "桌面端") || !strings.Contains(msg, "接受") {
+		t.Fatalf("后到方文案应带先手方与动作，got %q", msg)
 	}
 }
 
@@ -460,7 +479,7 @@ func TestRespondKindMismatch(t *testing.T) {
 	if openedP.Pending == nil {
 		t.Fatal("pendingOpened 应带投影")
 	}
-	if err := mgrP.RespondElicitation(issueP, openedP.Pending.PendingID, "accept", nil); err == nil {
+	if err := mgrP.RespondElicitation(issueP, openedP.Pending.PendingID, "accept", nil, PendingSourcePanel); err == nil {
 		t.Fatal("elicitation 应答打 permission 挂起应拒绝")
 	}
 	if pendings := mgrP.Get(issueP).Pendings; len(pendings) != 1 {
@@ -479,11 +498,43 @@ func TestRespondKindMismatch(t *testing.T) {
 	if openedE.Pending == nil {
 		t.Fatal("pendingOpened 应带投影")
 	}
-	if err := mgrE.RespondPermission(issueE, openedE.Pending.PendingID, "allow"); err == nil {
+	if err := mgrE.RespondPermission(issueE, openedE.Pending.PendingID, "allow", PendingSourcePanel); err == nil {
 		t.Fatal("permission 应答打 elicitation 挂起应拒绝")
 	}
 	if pendings := mgrE.Get(issueE).Pendings; len(pendings) != 1 {
 		t.Fatalf("错配应答不应消耗挂起，got %+v", pendings)
+	}
+}
+
+// 回合收尾结算后的迟到应答（T2.4）：endTurn 把残余挂起登记为 settled——迟到方拿到
+// 「已随回合结束自动结算」判别哨兵，而非笼统的「不存在或已关闭」。
+func TestRespondAfterTurnSettled(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "permission", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "需要权限"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	opened := waitFrame(t, frames, "pendingOpened", func(f Frame) bool { return f.Type == FramePendingOpened })
+	pendingID := opened.Pending.PendingID
+	// pendingOpened 已证明回合与挂起注册在案（permission 脚本无 tick，无需等 tick），
+	// 直接软取消，回合以 cancelled 收敛。
+	if err := mgr.Cancel(issueID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	waitFrame(t, frames, "cancelled 终态", func(f Frame) bool { return f.Type == FrameTurnEnded })
+	err := mgr.RespondPermission(issueID, pendingID, "allow", PendingSourceBot)
+	if !errors.Is(err, ErrPendingAlreadyHandled) {
+		t.Fatalf("回合结束后迟到应答应回哨兵，got %v", err)
+	}
+	var handled *PendingAlreadyHandledError
+	if !errors.As(err, &handled) || !handled.Settled {
+		t.Fatalf("迟到应答应判 settled，got %+v", handled)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "随回合结束自动结算") {
+		t.Fatalf("迟到应答文案应带结算语义，got %q", msg)
 	}
 }
 

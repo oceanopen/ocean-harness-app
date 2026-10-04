@@ -128,17 +128,20 @@ const (
 	TurnInit    TurnEventType = "init"     // system/init：携带 session_id（持久化回会话映射）
 	TurnText    TurnEventType = "text"     // 文本增量（thinking 增量已在 driver 层过滤）
 	TurnToolUse TurnEventType = "tool_use" // 工具调用开始（回复泵置状态行）
+	TurnStatus  TurnEventType = "status"   // 状态行覆写（非文本语义：审批挂起提示等，T2.4）
 	TurnDone    TurnEventType = "done"     // result 终态帧
 	TurnError   TurnEventType = "error"    // 进程非零退出 / spawn 失败 / 解析失败
 )
 
-// TurnEvent 回合事件。Delta 仅 TurnText 携带；ToolName 仅 TurnToolUse；
-// Result/IsError 仅 TurnDone；Err 仅 TurnError（spawn 失败时 RunTurn 同步返回 error 而不发本事件）。
+// TurnEvent 回合事件。Delta 仅 TurnText 携带；ToolName 仅 TurnToolUse；Status 仅
+// TurnStatus；Result/IsError 仅 TurnDone；Err 仅 TurnError（spawn 失败时 RunTurn 同步
+// 返回 error 而不发本事件）。
 type TurnEvent struct {
 	Type      TurnEventType
 	SessionID string
 	Delta     string
 	ToolName  string
+	Status    string
 	Result    string
 	IsError   bool
 	Err       error

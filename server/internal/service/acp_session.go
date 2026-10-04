@@ -34,12 +34,14 @@ func (svc AcpSession) Cancel(req *types.AcpSessionCancelRequest) error {
 	return global.AcpSessions.Cancel(req.IssueID)
 }
 
-// RespondPermission 以 optionId 应答挂起权限审批。
+// RespondPermission 以 optionId 应答挂起权限审批。HTTP 面即桌面 issue 主窗口，source
+// 恒 panel（T2.4 收敛语义的入口标记；bot 快路径不经本层）。
 func (svc AcpSession) RespondPermission(req *types.AcpSessionRespondPermissionRequest) error {
-	return global.AcpSessions.RespondPermission(req.IssueID, req.PendingID, req.OptionID)
+	return global.AcpSessions.RespondPermission(req.IssueID, req.PendingID, req.OptionID, acpsession.PendingSourcePanel)
 }
 
-// RespondElicitation 应答挂起 elicitation（accept 带 content / decline / cancel）。
+// RespondElicitation 应答挂起 elicitation（accept 带 content / decline / cancel）；
+// source 同 RespondPermission 恒 panel。
 func (svc AcpSession) RespondElicitation(req *types.AcpSessionRespondElicitationRequest) error {
-	return global.AcpSessions.RespondElicitation(req.IssueID, req.PendingID, req.Action, req.Content)
+	return global.AcpSessions.RespondElicitation(req.IssueID, req.PendingID, req.Action, req.Content, acpsession.PendingSourcePanel)
 }

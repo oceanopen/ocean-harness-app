@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"sync"
 	"testing"
 
 	"go.uber.org/zap"
@@ -8,8 +9,10 @@ import (
 	"ocean-harness/server/internal/dal/model"
 )
 
-// fakeReplyStream 测试替身：顺序记录帧（content/final），恒成功。
+// fakeReplyStream 测试替身：顺序记录帧（content/final），恒成功。写入方在 worker
+// goroutine（回合泵），读取方在测试 goroutine——互斥保护，跨 goroutine 断言走 snapshot。
 type fakeReplyStream struct {
+	mu     sync.Mutex
 	frames []fakeFrame
 }
 
@@ -19,8 +22,17 @@ type fakeFrame struct {
 }
 
 func (f *fakeReplyStream) Flush(content string, final bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.frames = append(f.frames, fakeFrame{content: content, final: final})
 	return nil
+}
+
+// snapshot 帧序只读拷贝（跨 goroutine 读取入口）。
+func (f *fakeReplyStream) snapshot() []fakeFrame {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]fakeFrame(nil), f.frames...)
 }
 
 func (f *fakeReplyStream) ByteLimit() int { return 20480 }
@@ -30,7 +42,7 @@ func (f *fakeReplyStream) ByteLimit() int { return 20480 }
 func newOrchestratorWithDB(t *testing.T) (*Orchestrator, *ConversationStore) {
 	t.Helper()
 	store := &ConversationStore{DB: newIssueTestDB(t)}
-	return NewOrchestrator(store, nil, zap.NewNop()), store
+	return NewOrchestrator(store, nil, nil, zap.NewNop()), store
 }
 
 // issueCmdCfg 测试用运行配置。
