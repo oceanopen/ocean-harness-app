@@ -72,10 +72,18 @@ type QuoteRef struct {
 // 中立产物，核心不感知渠道编码（企微 `delivery_id:action_index` 的编码与反解双向同源，
 // 同守在适配器）。
 type Interaction struct {
-	DeliveryID  string // 点击目标卡的应用侧投递锚（= 出站 CardSpec.TaskID；解析失败空串）
-	ActionIndex int    // 选项序号（0 基；-1 = 非选项 key，如提交按钮/未知形态）
-	TaskID      string // 渠道回传 task_id 原样（置灰更新的对照锚）
-	RawKey      string // 原始 event_key（排障与兜底事实保全）
+	DeliveryID  string                 // 点击目标卡的应用侧投递锚（= 出站 CardSpec.TaskID；解析失败空串）
+	ActionIndex int                    // 选项序号（0 基；-1 = 非选项 key，如提交按钮/未知形态）
+	TaskID      string                 // 渠道回传 task_id 原样（置灰更新的对照锚）
+	RawKey      string                 // 原始 event_key（排障与兜底事实保全）
+	Selections  []InteractionSelection // 提交型卡的勾选集（T3.3；纯点击型事件为空）
+}
+
+// InteractionSelection 提交型卡单道题的勾选（企微 selected_items 归一产物）：题目定位键
+// 与选中项下标均为适配器翻译后的中立形态。
+type InteractionSelection struct {
+	QuestionKey   string // 题目定位键（适配器按出卡位置序生成；单题卡 = TaskID，多题卡 = q0/q1/q2）
+	OptionIndexes []int  // 该题选中项下标（0 基，按出卡选项序；适配器已剥渠道选项 id 前缀）
 }
 
 // InboundFile 已落地的附件。Path 为 bot 工作目录内绝对路径（claude 用 Read 等工具按路径读取，

@@ -14,8 +14,9 @@ import (
 // 就绪等待与回合输出均由本驱动按帧驱动收集。回合受理走 PromptQueued 排队语义（T2.2
 // 跨入口回合锁）——活动回合中 FIFO 等位、回合空隙自动开跑，与桌面 prompt 入口互斥且
 // 有序（桌面即时受理不经队列，用户优先）。Get/RespondPermission 供审批数字快路径
-// （T2.4，pending_gate.go）读写挂起审批——与桌面 respondPermission HTTP 面同一 Manager
-// 入口，first-writer-wins 由 acpsession 收敛语义层保证。
+// （T2.4，pending_gate.go）读写挂起审批，RespondElicitation 供表单卡点击应答（T3.3，
+// permission_card.go）——与桌面 respond* HTTP 面同一 Manager 入口，first-writer-wins
+// 由 acpsession 收敛语义层保证。
 type acpSessions interface {
 	Ensure(ctx context.Context, issueID, pickedLaunchMode string) (acpsession.ViewSnapshot, error)
 	Subscribe(issueID string) (<-chan acpsession.Frame, func())
@@ -23,6 +24,7 @@ type acpSessions interface {
 	Cancel(issueID string) error
 	Get(issueID string) acpsession.ViewSnapshot
 	RespondPermission(issueID string, pendingID uint64, optionID, source string) error
+	RespondElicitation(issueID string, pendingID uint64, action string, content map[string]any, source string) error
 }
 
 // 编译期断言：Manager 满足消费面。
@@ -161,8 +163,10 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 	seenTools := map[string]bool{}
 	var text string
 	var openPendings []acpsession.PendingView // 回合内开放挂起（状态行编号与摘除追踪）
-	cardSent := false                         // 本回合审批卡已出（企微一消息一卡，至多一张）
-	acpSess := acpSessionID                   // 会话代锚初值来自就绪快照，随后帧快照覆写
+	cardSent := false                         // 本回合卡已出（企微一消息一卡，至多一张——首个可出卡挂起先到先得）
+	elicitCardPendingID := uint64(0)          // 已出表单卡对应的挂起 id（0=未出；表单状态行按挂起粒度两态——
+	// 首表单已答后接开的次表单虽可表示也不出卡，状态行不得指向已置灰首卡）
+	acpSess := acpSessionID // 会话代锚初值来自就绪快照，随后帧快照覆写
 	armed := false
 	notify := ctx.Done()
 
@@ -214,34 +218,55 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 					}
 				}
 			case acpsession.FramePendingOpened:
-				// 审批挂起呈现（T2.4 回合内文本交互 + T3.2 审批卡）：permission 出编号状态行
-				// （编号与数字快路径同源于视图注册序——快路径按 Get 快照序应答，本处按帧到达序
-				// 展示，二者同源恒一致），本回合首个 permission 挂起随状态行附审批卡（企微一消息
-				// 一卡，后续挂起回落纯状态行——数字应答通道仍覆盖全部挂起）；elicitation 指回桌面
-				// （应答面随 T3.3）。混合挂起合并展示——表单提示附尾，审批的数字应答指引不被覆写。
+				// 挂起呈现（T2.4 回合内文本交互 + T3.2 审批卡 + T3.3 表单卡）：permission 出
+				// 编号状态行（编号与数字快路径同源于视图注册序——快路径按 Get 快照序应答，本处
+				// 按帧到达序展示，二者同源恒一致），elicitation 按挂起粒度两态（当前挂起可表示且
+				// 卡位空闲即随状态行出表单卡并提示卡上提交；不可表示/卡位被占/首表单已答后的
+				// 接续表单指回桌面）。本回合首个可出卡挂起先到先得（企微一消息一卡，后续挂起回落
+				// 纯状态行——审批数字应答通道覆盖全部挂起、表单回落桌面应答）。混合挂起合并展示
+				// ——表单提示附尾，审批的数字应答指引不被覆写。
 				if !armed || frame.Pending == nil {
 					continue
 				}
 				openPendings = append(openPendings, *frame.Pending)
+				// 出卡尝试（本回合未出过 + 会话代锚在场 + TaskID 过契约校验——issueID 含非法
+				// 字符等脏数据、代锚缺失回落纯状态行，审批数字/表单桌面应答兜底仍在）。
+				var card *CardSpec
+				if !cardSent && acpSess != "" {
+					switch frame.Pending.Kind {
+					case "permission":
+						if len(frame.Pending.Options) > 0 {
+							spec := permissionCardSpec(issueID, acpSess, *frame.Pending)
+							if ValidateCardTaskID(spec.TaskID) == nil {
+								cardSent = true
+								card = &spec
+							}
+						}
+					case "elicitation":
+						// schema 分类失败（自由输入/越界形态/超上限）即不可表示，不出卡不判错。
+						if spec, ok := elicitationCardSpec(issueID, acpSess, *frame.Pending); ok && ValidateCardTaskID(spec.TaskID) == nil {
+							cardSent, elicitCardPendingID = true, frame.Pending.PendingID
+							card = &spec
+						}
+					}
+				}
+				// 表单状态行按挂起粒度两态：当前挂起即已出卡的表单 → 提示卡上提交；否则指回
+				// 桌面（不可表示 / 卡位被审批卡占用 / 首表单已答后接开的次表单——后者指向首卡
+				// 会误导用户点已置灰卡，decline 探测虽安全但次表单悬空）。
+				elicitLine := elicitPendingDesktopText
+				if elicitCardPendingID != 0 && elicitCardPendingID == frame.Pending.PendingID {
+					elicitLine = elicitPendingCardText
+				}
 				perms, hasElicit := splitPendings(openPendings)
 				if len(perms) > 0 {
 					ev := TurnEvent{Type: TurnStatus, Status: formatPermissionPendingStatus(permissionChoices(perms))}
 					if hasElicit {
-						ev.Status += "\n" + elicitationPendingText
+						ev.Status += "\n" + elicitLine
 					}
-					// 出卡条件：本回合未出过 + permission 挂起 + 有选项 + 会话代锚在场 +
-					// TaskID 过契约校验（issueID 含非法字符等脏数据、代锚缺失回落纯状态行，
-					// 数字应答兜底仍在）。
-					if !cardSent && frame.Pending.Kind == "permission" && len(frame.Pending.Options) > 0 && acpSess != "" {
-						spec := permissionCardSpec(issueID, acpSess, *frame.Pending)
-						if ValidateCardTaskID(spec.TaskID) == nil {
-							cardSent = true
-							ev.Card = &spec
-						}
-					}
+					ev.Card = card
 					events <- ev
 				} else {
-					events <- TurnEvent{Type: TurnStatus, Status: elicitationPendingText}
+					events <- TurnEvent{Type: TurnStatus, Status: elicitLine, Card: card}
 				}
 			case acpsession.FramePendingClosed:
 				// 已见挂起的关闭：状态行切「已处理，继续执行…」（未见过的关闭不打扰——

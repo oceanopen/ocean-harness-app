@@ -689,15 +689,26 @@ issue 主窗口 ─────┘
 
 #### T3.3 elicitation 单选/多选卡
 
-**状态**：⬜
+**状态**：✅
 
-**功能**：`elicitation/create` → 企微选择卡
+**功能**：`elicitation/create` → 企微选择卡（单选投票 / 多选投票 / 多题下拉三形态）
 
 **技术方案**：
 - 单选：checkbox mode 0 投票卡；多选：checkbox mode 1 / `multiple_interaction` 多题卡
 - 提交结果经 T1.5 会话域回写 ACP 会话；终态更新同 T3.2
 
 **依赖**：T3.1、T2.4
+
+**实施定稿**：
+- **SDK 勾选集解码缺口（v0.1.1）**：企微 submit 回调 wire 携带 `selected_items.selected_item[]`（每项 `{question_key, option_ids.option_id[]}`），Go SDK v0.1.0 的 TemplateCardEventData 未建模该字段且 rawEvent 未导出无法旁路——上游补齐解码（`TemplateCardSelectedItems/SelectedItem/OptionIds` 三类型 + omitempty 容错）发 v0.1.1，本项目直接升级消费
+- **核心契约扩展（bot/card.go + types.go）**：CardSpec 加 `Submit`（统一 submit 语义：应答取提交回传勾选集而非选项点击；审批卡 false 点击即答）与 `Questions []CardQuestion`（多题卡 1..3 题每题 1..10 项，非空时 Options/Multiple 选项面不消费、提交按钮恒有）；Interaction 加 `Selections []InteractionSelection`（题目定位键 + 0 基下标，适配器已剥渠道 id 前缀）
+- **企微适配器双卡型（wecom/card.go）**：Questions 非空走 multiple_interaction select_list（题目定位键 `q<题序>` 位置序——字段名字符集不可控，位置序在首发与置灰重建间确定一致；选项 id 纯下标，各题 option_list 独立命名空间卡内唯一即满足协议；selected_id 默认首项，多题下拉必选；title 截 13 / 选项截 10）否则 vote checkbox（`Submit=true` 或 Multiple 即挂提交按钮）。`cardEventPayload` 从 SDK SelectedItems 归一 Selections：选项 id 剥 `<TaskID>:` 前缀（vote 形态）或按纯下标（多题形态）解析，无法解析丢弃、整题无效跳过。上限校验拒绝：vote 选项 [1,20]、题数 ≤3、每题选项 [1,10]（越界整卡不出，指回桌面）
+- **schema 分类器（bot/elicitation_card.go）**：requestedSchema → 卡题集，规则镜像前端 SSOT（AcpSessionView/elicitationForm.ts：string+oneOf→单选 / array+items.anyOf→多选，枚举成立需每项 const 为字符串）。**Other 字段剔除**：`_meta._askUserQuestionCustomAnswer.isCustomAnswer=true` 的自由文本字段（questionId 挂靠目标题）从卡题集剔除。**可表示性判定**：恰 1 单选→单选卡（带 Other 容忍——预设选项独立成立）；恰 1 多选且无 Other→多选卡（带 Other 不可表示——自定义答案是多选语义的一部分）；2–3 题全单选→多题卡；其余（自由文本/数值/布尔/未知形态字段在场、混合单多选、题数/选项数越卡上限）不可表示。properties 插入序保持（json.Decoder token 流有序解码，map 解码丢序会破坏多题顺序）
+- **TaskID 与出卡链**：elicit 卡投递锚 `acp-<issueID>@<代锚>-elicit-<pendingID>`（-perm- 留位兑现，两域锚互斥可分流）。collectTurn 出卡条件从「首个 permission 挂起」扩为「首个可出卡挂起」（permission 有选项 / elicitation 可表示，先到先得，企微一消息一卡）；表单状态行按挂起粒度两态（判据记 elicitCardPendingID = 已出表单卡的挂起 id）：当前挂起即已出卡的表单→「请在上方卡片中选择并提交」，否则（不可表示 / 卡位被审批卡占用 / 首表单已答后的接续表单）→指回桌面——接续表单（AskUserQuestion 逐题阻塞的串行正常产物）指向已置灰首卡会误导用户点旧卡（decline 探测虽安全但次表单悬空）。`acpSessions` 接口加 RespondElicitation（与桌面 respond* 同一 Manager 入口，first-writer-wins 语义层收敛）
+- **点击消费（TryHandleInteraction 按 marker 分流）**：`-perm-` 收敛为域内函数（行为不变），`-elicit-` 决策链：点选项 key→提示「请点提交」不置灰不触达（统一 submit 语义下点击只是改选）；submit key→classify 重建卡题集 + `elicitationContent`（勾选集→accept content：单题以 TaskID 定位、多题以 q<序> 定位，多选按卡选项序）→ RespondElicitation(accept)，成功与后到方哨兵均置灰（原卡全量 + Disabled，`elicitationCardSpec` 首发与置灰同构造 SSOT）、其他失败不置灰可重试；空勾选集 / 勾选集与卡题集不符→提示重选不置灰；挂起已关闭→decline 探测取 closed-history 判别文案（decline 只对开放挂起生效，快照 miss 后必摘——探测安全，同审批域空 optionID 形态）；快照未就绪 / 代锚不符→失效文案不置灰
+- **数字回吞两态（pending_gate.go）**：纯表单挂起期数字回复的提示按可表示性分流——可表示回不确定态文案（「如上方有对应的表单卡片，请在卡片中选择并提交；否则请在桌面端处理」；gate 无回合上下文，审批卡曾占位后应答残留的纯表单态与正常出卡态在快照上同形，确定态文案会在前者指引一张不存在的卡）；不可表示明确指回桌面
+- **已知限制**：企微 vote 单选加提交按钮后点选项是否触发 event_key 回调未文档化，已按「触发即提示点提交」防御（不触达应答，任意形态安全）
+- 验证：build / vet / 全量 `-race` / gofmt 通过；SDK aibot/types 测试（勾选集完整解码 / 无字段零值回归 / 缺字段容错）通过。`wecom/card_test.go` 覆盖 Submit 语义、多题卡构造（定位键/纯下标/默认首项/截断/置灰/上限拒绝）、勾选集归一（双形态/无效丢弃/空容错）、事件帧链路；`bot/elicitation_card_test.go` 覆盖 TaskID 往返与域互斥、分类器（三卡型/Other 剔除与容忍/不可表示形态表/顺序）、spec 映射、content 映射（双定位形态/不符表）、点击决策矩阵（点选项提示/空勾选集/单选命中/多题命中/勾选不符/后到方/失败/已关闭 decline 探测/代锚拦截）；`driver_acp_test.go` 覆盖出卡链（可表示出卡/不可表示不出/卡位占用回落/首表单已答后接续表单回落）与状态行两态
 
 #### T3.4 流式/思考与工具状态呈现
 

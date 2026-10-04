@@ -125,7 +125,7 @@ func TestPendingGateOnlyElicitation(t *testing.T) {
 	if !handled {
 		t.Fatal("只有表单挂起时应命中快路径（桌面指引）")
 	}
-	if text != elicitationPendingText {
+	if text != elicitPendingDesktopText {
 		t.Fatalf("表单挂起应回桌面指引，got %q", text)
 	}
 	if len(sessions.responds()) != 0 {

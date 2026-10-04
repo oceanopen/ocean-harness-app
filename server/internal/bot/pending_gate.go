@@ -42,7 +42,7 @@ func (r *driverRoute) TryRespondPending(cfg BotRuntimeConfig, msg InboundMessage
 	perms, hasElicit := splitPendings(snap.Pendings)
 	if len(perms) == 0 {
 		if hasElicit {
-			return elicitationPendingText, true // 只有表单挂起：IM 应答面随 T3.3，指回桌面
+			return elicitGateText(snap.Pendings), true // 只有表单挂起：数字非应答形态，按可表示性两态指引
 		}
 		return "", false
 	}
@@ -128,8 +128,31 @@ func formatPermissionPendingStatus(choices []permissionChoice) string {
 	return b.String()
 }
 
-// elicitationPendingText 只有表单挂起时的 IM 指引（表单应答面随 T3.3，现阶段桌面处理）。
-const elicitationPendingText = "⏳ Agent 请求输入（表单）：IM 暂不支持表单应答，请在桌面端处理。"
+// 表单挂起的 IM 指引文案（T3.3）：已出表单卡 → 提示卡上提交（collectTurn 状态行专用——
+// 按挂起粒度判定，命中即卡在场，文案可确定）；gate 数字回吞可表示 → 不确定态（gate 无回合
+// 上下文，「审批卡曾占位后残留纯表单挂起」在快照上与正常出卡态同形，无法判定卡是否在场，
+// 文案两头兜底）；不可表示 → 指回桌面（两处共用）。
+const (
+	elicitPendingCardText    = "⏳ Agent 请求输入（表单）：请在上方卡片中选择并提交。"
+	elicitPendingGateText    = "⏳ Agent 请求输入（表单）：如上方有对应的表单卡片，请在卡片中选择并提交；否则请在桌面端处理。"
+	elicitPendingDesktopText = "⏳ Agent 请求输入（表单）：该表单 IM 无法呈现，请在桌面端处理。"
+)
+
+// elicitGateText 纯表单挂起期的数字回吞提示两态：任一挂起 schema 可表示 → 不确定态文案
+// （可表示仅说明「若卡位空闲则已出卡」，本回合卡位是否被审批卡占用过、首表单是否已答，
+// 快照上不可见——审批已答后的纯表单态与正常出卡态同形，确定态文案会在前者指引一张不存在
+// 的卡）；全部不可表示 → 指回桌面。
+func elicitGateText(pendings []acpsession.PendingView) string {
+	for i := range pendings {
+		if pendings[i].Kind != "elicitation" || pendings[i].Request == nil {
+			continue
+		}
+		if _, ok := classifyElicitation(pendings[i].Request.RequestedSchema); ok {
+			return elicitPendingGateText
+		}
+	}
+	return elicitPendingDesktopText
+}
 
 // splitPendings 快照挂起按 kind 二分（保持注册序）：permission 列表 + 是否存在
 // elicitation。

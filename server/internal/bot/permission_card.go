@@ -89,23 +89,34 @@ func permissionCardSpec(issueID, acpSessionID string, pending acpsession.Pending
 
 // TryHandleInteraction 卡片点击消费（interactionHandler 的 driverRoute 第三角色实现，
 // pendingGate 同款装配形态）：纯决策不做流 I/O——置灰与终帧由编排器拦截步统一编排。
-// 决策链：非本域锚 miss → 渠道回传锚对照不一致 miss → 非选项 key miss → 快照未就绪
-// （跨 sidecar 重启窗口）出失效文案不置灰 → 命中以选项应答（成功与后到方判别均置灰；
-// 其他失败不置灰可重点重试）→ 挂起已出快照（桌面先答/回合结算）经空 optionID 应答取
-// closed-history 判别文案（不置灰——已关闭挂起重建不出完整卡）。
+// 按 TaskID marker 分流：-perm- 审批卡（点击即答）/ -elicit- 表单卡（提交应答，消费逻辑
+// 在 elicitation_card.go 同域文件）。两域决策链共形：非本域锚 miss → 渠道回传锚对照不一致
+// miss → 域内 key 形态分流 → 快照未就绪（跨 sidecar 重启窗口）出失效文案不置灰 → 命中应答
+// （成功与后到方判别均置灰；其他失败不置灰可重试）→ 挂起已出快照（桌面先答/回合结算）经
+// 探测应答取 closed-history 判别文案（不置灰——已关闭挂起重建不出完整卡）。
 func (r *driverRoute) TryHandleInteraction(cfg BotRuntimeConfig, msg InboundMessage) (string, *CardSpec, bool) {
 	in := msg.Interaction
 	if in == nil {
-		return "", nil, false
-	}
-	issueID, sessionToken, pendingID, ok := parsePermissionCardTaskID(in.DeliveryID)
-	if !ok {
 		return "", nil, false
 	}
 	// 对照锚：渠道回传 task_id 须与本域投递锚一致（防串卡）；空值容忍（渠道未回传字段）。
 	if in.TaskID != "" && in.TaskID != in.DeliveryID {
 		return "", nil, false
 	}
+	if issueID, sessionToken, pendingID, ok := parsePermissionCardTaskID(in.DeliveryID); ok {
+		return r.handlePermissionInteraction(issueID, sessionToken, pendingID, in)
+	}
+	if issueID, sessionToken, pendingID, ok := parseElicitCardTaskID(in.DeliveryID); ok {
+		return r.handleElicitationInteraction(issueID, sessionToken, pendingID, in)
+	}
+	return "", nil, false
+}
+
+// handlePermissionInteraction 审批卡点击消费（-perm- 域，T3.2 原逻辑收敛为域内函数）：
+// 非选项 key miss（本卡单选不可达）→ 快照/代锚失效文案 → 命中以选项应答（成功与后到方
+// 判别均置灰；其他失败不置灰可重点重试）→ 已关闭经空 optionID 应答取 closed-history
+// 判别文案（空选项过不了预检，错误即收敛文案）。
+func (r *driverRoute) handlePermissionInteraction(issueID, sessionToken string, pendingID uint64, in *Interaction) (string, *CardSpec, bool) {
 	if in.ActionIndex < 0 {
 		return "", nil, false // 非选项 key（如多选提交按钮）：本卡单选不可达，防御 miss
 	}

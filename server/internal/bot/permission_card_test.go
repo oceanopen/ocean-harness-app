@@ -267,7 +267,7 @@ func TestAcpDriverPermissionCardEmission(t *testing.T) {
 	}
 	// elicitation 挂起追加：合并展示、无卡。
 	ev = recvEvent(t, events)
-	if ev.Type != TurnStatus || ev.Card != nil || !strings.Contains(ev.Status, elicitationPendingText) {
+	if ev.Type != TurnStatus || ev.Card != nil || !strings.Contains(ev.Status, elicitPendingDesktopText) {
 		t.Fatalf("混合挂起应合并展示且无卡: %+v", ev)
 	}
 	if done := recvEvent(t, events); done.Type != TurnDone {

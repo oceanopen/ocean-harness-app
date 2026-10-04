@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/kevinburke/ssh_config v1.6.0
 	github.com/modelcontextprotocol/go-sdk v0.2.0
-	github.com/oceanopen/wecom-aibot-go-sdk v0.1.0
+	github.com/oceanopen/wecom-aibot-go-sdk v0.1.1
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/zap v1.28.0

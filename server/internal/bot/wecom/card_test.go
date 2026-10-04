@@ -232,3 +232,191 @@ func TestCardEventNormalize(t *testing.T) {
 		t.Fatal("非模板卡事件应返回 false")
 	}
 }
+
+// Submit 语义（T3.3）：单选 + Submit=true 也带提交按钮（点击只是改选，应答取提交回传的
+// 勾选集）；默认选中仍为首项。
+func TestBuildVoteCardSubmit(t *testing.T) {
+	spec := bot.CardSpec{
+		Title:   "选择方案",
+		Options: []bot.CardOption{{ID: "a", Text: "方案一"}, {ID: "b", Text: "方案二"}},
+		Submit:  true,
+		TaskID:  "elicit_task@1",
+	}
+	card, err := buildTemplateCard(spec)
+	if err != nil {
+		t.Fatalf("构建失败: %v", err)
+	}
+	if card.Checkbox == nil || card.Checkbox.Mode != 0 {
+		t.Fatalf("Submit 单选应为 mode=0: %+v", card.Checkbox)
+	}
+	if card.SubmitButton == nil || card.SubmitButton.Key != "elicit_task@1:submit" {
+		t.Fatalf("Submit=true 应带提交按钮: %+v", card.SubmitButton)
+	}
+	if !card.Checkbox.OptionList[0].IsChecked {
+		t.Fatal("Submit 单选仍默认选中首项")
+	}
+}
+
+// 多题下拉卡（multiple_interaction select_list，T3.3）：卡型分派、题目定位键 q<序>、选项 id
+// 纯下标、selected_id 首项、截断（题 13 字/选项 10 字）、置灰、上限校验拒绝。
+func TestBuildMultipleInteractionCard(t *testing.T) {
+	spec := bot.CardSpec{
+		Title: "补充信息",
+		Questions: []bot.CardQuestion{
+			{Title: "环境", Options: []bot.CardOption{{ID: "dev", Text: "开发"}, {ID: "prod", Text: "生产"}}},
+			{Title: "级别", Options: []bot.CardOption{{ID: "p0", Text: "紧急"}, {ID: "p1", Text: "普通"}}},
+		},
+		TaskID: "elicit_task@2",
+	}
+	card, err := buildTemplateCard(spec)
+	if err != nil {
+		t.Fatalf("构建失败: %v", err)
+	}
+	if card.CardType != aibottypes.TemplateCardType.MultipleInteraction {
+		t.Fatalf("卡型应为 multiple_interaction: %q", card.CardType)
+	}
+	if card.Checkbox != nil {
+		t.Fatal("多题卡不应有 checkbox")
+	}
+	if len(card.SelectList) != 2 {
+		t.Fatalf("应两道题: %+v", card.SelectList)
+	}
+	first := card.SelectList[0]
+	if first.QuestionKey != "q0" || first.Title != "环境" {
+		t.Fatalf("首题定位键/标题不符: %+v", first)
+	}
+	if len(first.OptionList) != 2 || first.OptionList[0].Id != "0" || first.OptionList[0].Text != "开发" || first.OptionList[1].Id != "1" {
+		t.Fatalf("首题选项 id 应为纯下标: %+v", first.OptionList)
+	}
+	if first.SelectedId != "0" {
+		t.Fatalf("默认选中应为首项: %q", first.SelectedId)
+	}
+	if card.SelectList[1].QuestionKey != "q1" {
+		t.Fatalf("次题定位键不符: %q", card.SelectList[1].QuestionKey)
+	}
+	if card.SubmitButton == nil || card.SubmitButton.Key != "elicit_task@2:submit" {
+		t.Fatalf("多题卡恒带提交按钮: %+v", card.SubmitButton)
+	}
+	if first.Disable {
+		t.Fatal("未置灰帧 disable 应为 false")
+	}
+
+	// 置灰：select_list[].disable=true（更新帧同 builder，task_id/submit key 不变）。
+	gray := spec
+	gray.Disabled = true
+	card, err = buildTemplateCard(gray)
+	if err != nil {
+		t.Fatalf("置灰构建失败: %v", err)
+	}
+	if !card.SelectList[0].Disable || !card.SelectList[1].Disable || card.TaskId != "elicit_task@2" {
+		t.Fatalf("置灰帧应整卡 disable 且 TaskId 不变: %+v", card.SelectList)
+	}
+
+	// 截断：题目标题 14→13、选项 11→10（rune 级）。
+	trunc := spec
+	trunc.Questions = []bot.CardQuestion{{Title: rep("题", 14), Options: []bot.CardOption{{ID: "a", Text: rep("项", 11)}}}}
+	card, err = buildTemplateCard(trunc)
+	if err != nil {
+		t.Fatalf("截断构建失败: %v", err)
+	}
+	if got := len([]rune(card.SelectList[0].Title)); got != 13 {
+		t.Fatalf("题目标题应截到 13: %d", got)
+	}
+	if got := len([]rune(card.SelectList[0].OptionList[0].Text)); got != 10 {
+		t.Fatalf("选项应截到 10: %d", got)
+	}
+
+	// 校验拒绝：题数 >3、单题选项空、单题选项 >10。
+	bad := []bot.CardSpec{
+		{Title: "t", TaskID: "ok_task", Questions: []bot.CardQuestion{
+			{Title: "a", Options: spec.Questions[0].Options},
+			{Title: "b", Options: spec.Questions[0].Options},
+			{Title: "c", Options: spec.Questions[0].Options},
+			{Title: "d", Options: spec.Questions[0].Options},
+		}},
+		{Title: "t", TaskID: "ok_task", Questions: []bot.CardQuestion{{Title: "a"}}},
+		{Title: "t", TaskID: "ok_task", Questions: []bot.CardQuestion{
+			{Title: "a", Options: make([]bot.CardOption, 11)},
+		}},
+	}
+	for i, s := range bad {
+		if _, err := buildTemplateCard(s); err == nil {
+			t.Fatalf("非法多题 spec[%d] 应报错: %+v", i, s.Questions)
+		}
+	}
+}
+
+// normalizeSelections 勾选集归一（T3.3）：vote 前缀形态、多题纯下标形态、无效 id 丢弃、
+// 整题无效跳过、nil/缺 OptionIds 容错。
+func TestNormalizeSelections(t *testing.T) {
+	// vote 形态：`<TaskID>:<i>` 剥前缀得下标。
+	items := &aibottypes.TemplateCardSelectedItems{SelectedItem: []aibottypes.TemplateCardSelectedItem{
+		{QuestionKey: "task@1", OptionIds: &aibottypes.TemplateCardOptionIds{OptionId: []string{"task@1:0", "task@1:2"}}},
+	}}
+	got := normalizeSelections(items, "task@1")
+	if len(got) != 1 || got[0].QuestionKey != "task@1" || len(got[0].OptionIndexes) != 2 || got[0].OptionIndexes[0] != 0 || got[0].OptionIndexes[1] != 2 {
+		t.Fatalf("vote 勾选集归一不符: %+v", got)
+	}
+
+	// 多题形态：选项 id 纯下标（无 TaskID 前缀），多题各自成条。
+	items = &aibottypes.TemplateCardSelectedItems{SelectedItem: []aibottypes.TemplateCardSelectedItem{
+		{QuestionKey: "q0", OptionIds: &aibottypes.TemplateCardOptionIds{OptionId: []string{"1"}}},
+		{QuestionKey: "q1", OptionIds: &aibottypes.TemplateCardOptionIds{OptionId: []string{"0", "2"}}},
+	}}
+	got = normalizeSelections(items, "task@1")
+	if len(got) != 2 || got[0].QuestionKey != "q0" || len(got[0].OptionIndexes) != 1 || got[0].OptionIndexes[0] != 1 ||
+		got[1].QuestionKey != "q1" || len(got[1].OptionIndexes) != 2 || got[1].OptionIndexes[1] != 2 {
+		t.Fatalf("多题勾选集归一不符: %+v", got)
+	}
+
+	// 无效 id 丢弃；全部无效/缺 OptionIds 的题整题跳过。
+	items = &aibottypes.TemplateCardSelectedItems{SelectedItem: []aibottypes.TemplateCardSelectedItem{
+		{QuestionKey: "q0", OptionIds: &aibottypes.TemplateCardOptionIds{OptionId: []string{"task@1:1", "task@1:x", "other:9"}}},
+		{QuestionKey: "q1", OptionIds: &aibottypes.TemplateCardOptionIds{OptionId: []string{"x", "-1"}}},
+		{QuestionKey: "q2"},
+	}}
+	got = normalizeSelections(items, "task@1")
+	if len(got) != 1 || got[0].QuestionKey != "q0" || len(got[0].OptionIndexes) != 1 || got[0].OptionIndexes[0] != 1 {
+		t.Fatalf("无效项应丢弃、空题跳过: %+v", got)
+	}
+
+	// nil 勾选集（纯点击型事件）：nil。
+	if got := normalizeSelections(nil, "task@1"); got != nil {
+		t.Fatalf("nil 应归一 nil: %+v", got)
+	}
+	// DeliveryID 为空（无冒号 key）：仅纯下标可解析。
+	items = &aibottypes.TemplateCardSelectedItems{SelectedItem: []aibottypes.TemplateCardSelectedItem{
+		{QuestionKey: "q0", OptionIds: &aibottypes.TemplateCardOptionIds{OptionId: []string{"3"}}},
+	}}
+	got = normalizeSelections(items, "")
+	if len(got) != 1 || got[0].OptionIndexes[0] != 3 {
+		t.Fatalf("空 DeliveryID 应按纯下标解析: %+v", got)
+	}
+}
+
+// cardEventPayload 勾选集链路（T3.3）：selected_items 归一进 Interaction.Selections，与
+// event_key 反解同帧产出。
+func TestCardEventSelectionsPipeline(t *testing.T) {
+	body := aibottypes.EventMessage{
+		MsgId: "ev-10", AibotId: "bot-1", ChatType: "single",
+		From:    aibottypes.EventFrom{UserId: "u1", CorpId: "corp"},
+		MsgType: "event",
+		Event: aibottypes.TemplateCardEventData{
+			EventType: "template_card_event", EventKey: "elicit_task@3:submit", TaskId: "elicit_task@3",
+			SelectedItems: &aibottypes.TemplateCardSelectedItems{SelectedItem: []aibottypes.TemplateCardSelectedItem{
+				{QuestionKey: "elicit_task@3", OptionIds: &aibottypes.TemplateCardOptionIds{OptionId: []string{"elicit_task@3:1"}}},
+			}},
+		},
+	}
+	_, interaction, ok := cardEventPayload(body)
+	if !ok {
+		t.Fatal("模板卡事件应解码成功")
+	}
+	if interaction.DeliveryID != "elicit_task@3" || interaction.ActionIndex != -1 {
+		t.Fatalf("提交事件反解不符: %+v", interaction)
+	}
+	if len(interaction.Selections) != 1 || interaction.Selections[0].QuestionKey != "elicit_task@3" ||
+		len(interaction.Selections[0].OptionIndexes) != 1 || interaction.Selections[0].OptionIndexes[0] != 1 {
+		t.Fatalf("勾选集应随帧归一: %+v", interaction.Selections)
+	}
+}

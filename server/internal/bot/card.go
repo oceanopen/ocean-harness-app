@@ -17,15 +17,25 @@ type CardOption struct {
 	Text string // 选项文案（企微截 11 字）
 }
 
+// CardQuestion 多题卡的单道题（T3.3 elicitation 多题表单）：题目标题 + 各自的选项列表。
+// 题目定位键不进模型——适配器按位置序生成（企微 select_list question_key），点击回传的
+// 勾选集以同位置序对齐。
+type CardQuestion struct {
+	Title   string       // 题目标题（企微 select_list title，截 13 字）
+	Options []CardOption // 该题选项（企微 select_list option_list，1..10 项）
+}
+
 // CardSpec 核心窄中立卡片模型：一张「标题 + 描述 + 选项 + 提交」的一次性交互卡（T3.2 审批
 // 单选卡 / T3.3 表单卡可见视界）。刻意窄——按场景消费后不足再扩字段，不为未证实协议预建。
 type CardSpec struct {
-	Title       string       // 标题（企微 main_title.title，截 26 字）
-	Description string       // 描述（企微 main_title.desc，截 30 字）
-	Options     []CardOption // 选项列表（企微 checkbox option_list，1..20）
-	Multiple    bool         // true 多选（企微 checkbox mode 1 + 提交按钮）
-	TaskID      string       // 投递锚 = 企微 task_id（≤128 字节，仅 [0-9A-Za-z_\-@]）；确定性生成，点击回传即 Interaction.DeliveryID
-	Disabled    bool         // 仅 UpdateCard 消费：置灰整卡（企微 checkbox.disable）；创建帧忽略该字段
+	Title       string         // 标题（企微 main_title.title，截 26 字）
+	Description string         // 描述（企微 main_title.desc，截 30 字）
+	Options     []CardOption   // 选项列表（企微 checkbox option_list，1..20）；Questions 非空时不消费
+	Multiple    bool           // true 多选（企微 checkbox mode 1 + 提交按钮）
+	Submit      bool           // true 带提交按钮（T3.3 统一 submit 语义：应答取自提交回传的勾选集而非选项点击）；审批卡 false 点击即答
+	Questions   []CardQuestion // 多题下拉卡（企微 multiple_interaction select_list，1..3 题每题 1..10 项）；非空时 Options/Multiple/Submit 的选项面不消费（提交按钮恒有）
+	TaskID      string         // 投递锚 = 企微 task_id（≤128 字节，仅 [0-9A-Za-z_\-@]）；确定性生成，点击回传即 Interaction.DeliveryID
+	Disabled    bool           // 仅 UpdateCard 消费：置灰整卡（企微 checkbox.disable / select_list[].disable）；创建帧忽略该字段
 }
 
 // CardReplyStream ReplyStream 的可选卡片扩展面：实现它的回复流可随流附卡、以卡片更新应答

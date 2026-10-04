@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -39,6 +40,9 @@ type fakeSessions struct {
 	respondErr   error // RespondPermission 注入错误（nil = 应答成功）
 	respondCalls []respondCall
 
+	elicitRespondErr   error // RespondElicitation 注入错误（nil = 应答成功）
+	elicitRespondCalls []elicitRespondCall
+
 	ensureCalls int
 	promptTexts []string
 	cancelCalls int
@@ -49,6 +53,14 @@ type fakeSessions struct {
 type respondCall struct {
 	pendingID uint64
 	optionID  string
+	source    string
+}
+
+// elicitRespondCall RespondElicitation 调用留痕（表单卡点击断言用，T3.3）。
+type elicitRespondCall struct {
+	pendingID uint64
+	action    string
+	content   map[string]any
 	source    string
 }
 
@@ -130,6 +142,14 @@ func (f *fakeSessions) RespondPermission(_ string, pendingID uint64, optionID, s
 	return f.respondErr
 }
 
+// RespondElicitation 应答留痕 + 注入错误（表单卡点击消费，T3.3）。
+func (f *fakeSessions) RespondElicitation(_ string, pendingID uint64, action string, content map[string]any, source string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.elicitRespondCalls = append(f.elicitRespondCalls, elicitRespondCall{pendingID: pendingID, action: action, content: content, source: source})
+	return f.elicitRespondErr
+}
+
 // push 投递脚本帧：订阅建立前入 pending（Subscribe 灌入，时序无关）；有订阅则推最新
 // 订阅通道（缓冲远大于脚本帧数，满即阻塞为测试编写错误）。
 func (f *fakeSessions) push(t *testing.T, frame acpsession.Frame) {
@@ -177,6 +197,12 @@ func (f *fakeSessions) responds() []respondCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]respondCall(nil), f.respondCalls...)
+}
+
+func (f *fakeSessions) elicitResponds() []elicitRespondCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]elicitRespondCall(nil), f.elicitRespondCalls...)
 }
 
 // boundDriver 测试构造：引擎是纯执行者（T2.3 起目标 issue 由路由层经 TurnRequest.IssueID
@@ -729,7 +755,7 @@ func TestAcpDriverPendingStatusLine(t *testing.T) {
 	}
 }
 
-// TestAcpDriverElicitationPendingStatus 表单挂起呈现：指回桌面（应答面随 T3.3），关闭帧
+// TestAcpDriverElicitationPendingStatus 表单挂起呈现（不可表示形态）：指回桌面，关闭帧
 // 同步状态行。
 func TestAcpDriverElicitationPendingStatus(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
@@ -744,12 +770,137 @@ func TestAcpDriverElicitationPendingStatus(t *testing.T) {
 	sessions.push(t, turnEndedFrame("end_turn"))
 
 	ev := recvEvent(t, events)
-	if ev.Type != TurnStatus || ev.Status != elicitationPendingText {
+	if ev.Type != TurnStatus || ev.Status != elicitPendingDesktopText {
 		t.Fatalf("表单挂起状态行不符: %+v", ev)
 	}
 	ev = recvEvent(t, events)
 	if ev.Type != TurnStatus || ev.Status != "✅ 表单已处理，继续执行…" {
 		t.Fatalf("表单处理状态行不符: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// elicitPendingFrame 表单挂起帧夹具（携带可分类 schema；view 构造同包共用于
+// elicitation_card_test.go 的 elicitPendingView）。
+func elicitPendingFrame(pendingID uint64, schema json.RawMessage) acpsession.Frame {
+	return pendingOpenedFrame(elicitPendingView(pendingID, schema))
+}
+
+// anchoredReadySnap 携会话代锚的就绪快照（出卡条件的 acpSess 依据）。
+func anchoredReadySnap() acpsession.ViewSnapshot {
+	snap := readySnap()
+	snap.AcpSessionID = testAcpSessionID
+	return snap
+}
+
+// TestAcpDriverElicitationCardEmission 表单卡出卡（T3.3）：可表示 schema 随状态行附卡
+// （Submit 语义 + elicit TaskID marker + 选项面），状态行指向卡上提交。
+func TestAcpDriverElicitationCardEmission(t *testing.T) {
+	sessions := newFakeSessions(anchoredReadySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, elicitPendingFrame(9, schemaOf(radioField("db", "数据库", "mysql", "postgres"))))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	ev := recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != elicitPendingCardText {
+		t.Fatalf("表单卡状态行不符: %+v", ev)
+	}
+	if ev.Card == nil {
+		t.Fatalf("可表示表单应随状态行出卡: %+v", ev)
+	}
+	if !ev.Card.Submit || ev.Card.Multiple || len(ev.Card.Questions) != 0 || len(ev.Card.Options) != 2 {
+		t.Fatalf("表单卡 spec 不符: %+v", ev.Card)
+	}
+	if want := elicitCardTaskID("issue-acp", testAcpSessionID, 9); ev.Card.TaskID != want {
+		t.Fatalf("TaskID 不符: %q want %q", ev.Card.TaskID, want)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// TestAcpDriverElicitationCardUnrepresentableWithAnchor 代锚在场但 schema 不可表示：不出卡，
+// 状态行指回桌面（分类失败不判错）。
+func TestAcpDriverElicitationCardUnrepresentableWithAnchor(t *testing.T) {
+	sessions := newFakeSessions(anchoredReadySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, elicitPendingFrame(9, schemaOf(checkboxField("langs", "语言", "go"), otherField("langs_custom", "langs"))))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	ev := recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != elicitPendingDesktopText || ev.Card != nil {
+		t.Fatalf("不可表示表单应指回桌面且不出卡: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// TestAcpDriverElicitationCardAfterPermissionCard 卡位占用：审批卡先出后表单挂起打开
+// （可表示）——不再出卡，表单行指回桌面。
+func TestAcpDriverElicitationCardAfterPermissionCard(t *testing.T) {
+	sessions := newFakeSessions(anchoredReadySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, pendingOpenedFrame(acpsession.PendingView{PendingID: 3, Kind: "permission", Options: permOptions()}))
+	second := recvEvent(t, events)
+	if second.Type != TurnStatus || second.Card == nil {
+		t.Fatalf("审批挂起应先出审批卡: %+v", second)
+	}
+	sessions.push(t, elicitPendingFrame(9, schemaOf(radioField("db", "数据库", "mysql", "postgres"))))
+	sessions.push(t, turnEndedFrame("end_turn"))
+	ev := recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Card != nil {
+		t.Fatalf("卡位占用后表单不应再出卡: %+v", ev)
+	}
+	if want := "⏳ Agent 请求审批，回复数字应答：\n1. 允许\n2. 拒绝\n" + elicitPendingDesktopText; ev.Status != want {
+		t.Fatalf("混合挂起状态行不符: %q", ev.Status)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// TestAcpDriverElicitationSuccessorAfterAnswered 首表单已答后的接续表单（串行逐题阻塞的
+// 正常产物）：卡位已被首卡占用，次表单虽可表示也不出卡，状态行按挂起粒度指回桌面——
+// 不得指向已置灰首卡（误导用户点旧卡，decline 探测虽安全但次表单悬空）。
+func TestAcpDriverElicitationSuccessorAfterAnswered(t *testing.T) {
+	sessions := newFakeSessions(anchoredReadySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, elicitPendingFrame(9, schemaOf(radioField("db", "数据库", "mysql", "postgres"))))
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != elicitPendingCardText || ev.Card == nil {
+		t.Fatalf("首表单应出卡并指向卡上提交: %+v", ev)
+	}
+	sessions.push(t, pendingClosedFrame(9))
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "✅ 表单已处理，继续执行…" {
+		t.Fatalf("首表单处理状态行不符: %+v", ev)
+	}
+	sessions.push(t, elicitPendingFrame(10, schemaOf(radioField("env", "环境", "dev", "prod"))))
+	sessions.push(t, turnEndedFrame("end_turn"))
+	ev := recvEvent(t, events)
+	if ev.Type != TurnStatus || ev.Status != elicitPendingDesktopText || ev.Card != nil {
+		t.Fatalf("接续表单应指回桌面且不再出卡: %+v", ev)
 	}
 	if done := recvEvent(t, events); done.Type != TurnDone {
 		t.Fatalf("终态事件不符: %+v", done)
@@ -774,7 +925,7 @@ func TestAcpDriverMixedPendingStatus(t *testing.T) {
 	if ev.Type != TurnStatus || ev.Status != "⏳ Agent 请求审批，回复数字应答：\n1. 允许\n2. 拒绝" {
 		t.Fatalf("首挂起状态行不符: %+v", ev)
 	}
-	want := "⏳ Agent 请求审批，回复数字应答：\n1. 允许\n2. 拒绝\n" + elicitationPendingText
+	want := "⏳ Agent 请求审批，回复数字应答：\n1. 允许\n2. 拒绝\n" + elicitPendingDesktopText
 	ev = recvEvent(t, events)
 	if ev.Type != TurnStatus || ev.Status != want {
 		t.Fatalf("混合挂起应合并展示（审批指引不覆写）: %+v", ev)
