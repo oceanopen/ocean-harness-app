@@ -33,9 +33,14 @@ type TurnOutcome struct {
 // 事件流关闭后停 ticker，由主 goroutine 写 finish=true 终帧。tool_use 到达时清空已累计文本、
 // 置「正在执行 …」状态行（丢弃工具前泄漏文本，SDK agent 示例同款）；result 终文本优先于增量累计。
 // 回合失败同样以终帧收尾（失败文案），保证每条流式消息恰好一个 finish 帧。
+// 卡片（T3.2 审批卡）：TurnStatus 携带的 Card 入 mu 保护状态，由 ticker 周期写者随中间帧
+// SendCard 同帧下发（保住单写者纪律；200ms 节奏下延迟无感）。卡是一次性消费——本 tick 发卡
+// 尝试（含失败回落）或回合收尾后不再附发；收尾时未发出的卡直接丢弃（挂起随回合终态结算，
+// 再发即置灰态误导）。流无卡能力（未实现 CardReplyStream）自动回落纯文本帧。
 func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sink OverflowSink, log *zap.Logger) TurnOutcome {
 	var mu sync.Mutex
 	var statusText, currentText, sessionID string
+	var pendingCard *CardSpec
 	var turnErr error
 	var isError bool
 
@@ -47,6 +52,19 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 		}
 		return statusText
 	}
+
+	// takePendingCard 取走待发卡（一次性消费语义的收口点）。
+	takePendingCard := func() *CardSpec {
+		mu.Lock()
+		defer mu.Unlock()
+		card := pendingCard
+		pendingCard = nil
+		return card
+	}
+
+	// 卡能力探测一次：headless 引擎不产卡、纯文本渠道不实现 CardReplyStream，两种场景都
+	// 无需分支处理（无卡即回落 Flush）。
+	cardStream, hasCard := rs.(CardReplyStream)
 
 	done := make(chan struct{})
 	tickerDone := make(chan struct{})
@@ -60,6 +78,16 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 			case <-ticker.C:
 				cur := truncateForFrame(snapshot(), rs.ByteLimit(), nil)
 				if cur != "" && cur != lastSent {
+					if card := takePendingCard(); card != nil && hasCard {
+						// 卡随状态行同帧下发（双渲染单事件，无卡渠道的降级文案不丢失）；
+						// 发送失败回落纯文本帧（卡通道故障不吞状态行）。
+						err := cardStream.SendCard(*card, cur, false)
+						if err == nil {
+							lastSent = cur
+							continue
+						}
+						log.Warn("bot 审批卡发送失败（回落文本帧）", zap.Error(err))
+					}
 					if err := rs.Flush(cur, false); err != nil {
 						log.Warn("bot 流式中间帧发送失败（跳过）", zap.Error(err))
 					}
@@ -90,6 +118,9 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 			mu.Lock()
 			currentText = ""
 			statusText = ev.Status
+			if ev.Card != nil {
+				pendingCard = ev.Card
+			}
 			mu.Unlock()
 		case TurnDone:
 			mu.Lock()

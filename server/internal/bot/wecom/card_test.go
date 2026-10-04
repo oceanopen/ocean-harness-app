@@ -51,11 +51,15 @@ func TestBuildTemplateCard(t *testing.T) {
 	if card.Checkbox.OptionList[1].Id != "task_2026@01:1" || card.Checkbox.OptionList[1].Text != "拒绝" {
 		t.Fatalf("选项 1 编码不符: %+v", card.Checkbox.OptionList[1])
 	}
+	// 单选默认选中第一项（T3.2 拍板：单选卡须有选中项），其余不选。
+	if !card.Checkbox.OptionList[0].IsChecked || card.Checkbox.OptionList[1].IsChecked {
+		t.Fatalf("单选应仅首项选中: %+v", card.Checkbox.OptionList)
+	}
 	if card.SubmitButton != nil {
 		t.Fatalf("单选不应有提交按钮: %+v", card.SubmitButton)
 	}
 
-	// 多选：mode 1 + 提交按钮（文案「提交」、key `TaskID:submit`）。
+	// 多选：mode 1 + 提交按钮（文案「提交」、key `TaskID:submit`），不预选。
 	multi := spec
 	multi.Multiple = true
 	card, err = buildTemplateCard(multi)
@@ -67,6 +71,11 @@ func TestBuildTemplateCard(t *testing.T) {
 	}
 	if card.SubmitButton == nil || card.SubmitButton.Text != "提交" || card.SubmitButton.Key != "task_2026@01:submit" {
 		t.Fatalf("提交按钮不符: %+v", card.SubmitButton)
+	}
+	for i, opt := range card.Checkbox.OptionList {
+		if opt.IsChecked {
+			t.Fatalf("多选不应预选（选项 %d）: %+v", i, opt)
+		}
 	}
 
 	// 置灰：checkbox.disable=true（更新帧统一走本 builder，task_id/keys 与原卡一致）。

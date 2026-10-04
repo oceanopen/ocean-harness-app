@@ -25,6 +25,12 @@ const byteLimit = 20480
 // 通道的消费 goroutine（保消息顺序）。满即丢（企微 WS 无补投，fail closed 不积压）。
 const inboundBufferCapacity = 32
 
+// interactionBufferCapacity 交互事件快车道容量（T3.2 与消息队列分流）：卡片点击事件与消息
+// 不共通道——前置消息的附件同步下载（URL 五分钟有效）会排队占用消息消费 goroutine 数秒，
+// 而点击的置灰更新须在回调 5 秒窗口内完成，共通道即被吃掉。点击事件低频（人工逐次点击），
+// 容量取小；满即丢告警（卡片仍在可重点，用户即有反馈）。
+const interactionBufferCapacity = 16
+
 // Factory 渠道工厂（main 装配注册）。
 type Factory struct{}
 
@@ -52,6 +58,7 @@ type channelRuntime struct {
 	onInbound func(bot.InboundMessage) // supervisor 装配注入的入站出口
 
 	inbound  chan func(*bot.InboundMessage) // 入站构建任务（保序串行消费）
+	actions  chan func(*bot.InboundMessage) // 交互事件构建任务（快车道独立串行消费，T3.2）
 	stopProc chan struct{}
 }
 
@@ -81,9 +88,12 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	r.lastErr = ""
 	// 入站通道按 Start 代际创建：processLoop 以参数持有本代通道（见下），旧代 loop 只能
 	// 收到旧代 stop 关闭信号退出，绝不消费新代消息——同实例误重入也不会双消费者抢食。
+	// 交互快车道同代际创建、共用同一 stop（两条消费 loop 同生共死）。
 	ch := make(chan func(*bot.InboundMessage), inboundBufferCapacity)
+	ach := make(chan func(*bot.InboundMessage), interactionBufferCapacity)
 	stop := make(chan struct{})
 	r.inbound = ch
+	r.actions = ach
 	r.stopProc = stop
 	client := aibot.NewWsClient(aibottypes.WsClientOptions{
 		BotId:  cred.BotId,
@@ -133,21 +143,24 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 		})
 	}
 	// 模板卡片点击事件（T3.1）：SDK dispatch 已预调 DecodeEvent，回调内 Body.Event 即具体
-	// 事件类型。归一为合成 BaseMessage + Interaction 后轻投递（与消息回调同款），重活
-	// （拦截步判定/置灰更新）在编排器侧完成；解码失败丢弃并告警（无 msgid 不可幂等）。
+	// 事件类型。归一为合成 BaseMessage + Interaction 后投交互快车道（T3.2 分流：不排附件
+	// 下载队，保住点击置灰的 5 秒窗口），重活（拦截步判定/置灰更新）在编排器侧完成；解码
+	// 失败丢弃并告警（无 msgid 不可幂等）。
 	client.OnTemplateCardEvent = func(frame *aibottypes.WsFrame[aibottypes.EventMessage]) {
 		base, interaction, ok := cardEventPayload(frame.Body)
 		if !ok {
 			log.Warn("企微模板卡片事件解码失败，已丢弃", zap.String("msgid", frame.Body.MsgId))
 			return
 		}
-		r.submitMsg(frame.Headers, base, func(in *bot.InboundMessage) {
+		r.submitInteractionMsg(frame.Headers, base, func(in *bot.InboundMessage) {
 			in.Interaction = &interaction
 		})
 	}
 
-	// 入站处理 goroutine：保序串行消费（下载在 5 分钟有效 URL 约束下同步完成）。
+	// 入站处理 goroutine：保序串行消费（下载在 5 分钟有效 URL 约束下同步完成）；交互快车道
+	// 独立 goroutine 同款生命周期（共用 stop，两条 loop 同生共死）。
 	go r.processLoop(ch, stop)
+	go r.processLoop(ach, stop)
 
 	go func() {
 		if err := client.Connect(ctx); err != nil {
@@ -223,11 +236,28 @@ func (r *channelRuntime) submit(build func(*bot.InboundMessage)) {
 	if ch == nil {
 		return
 	}
+	trySend(ch, stop, build, "bot 入站通道已满，消息丢弃")
+}
+
+// submitInteraction 交互事件轻投递（快车道，与消息队列分流——见 interactionBufferCapacity）。
+func (r *channelRuntime) submitInteraction(build func(*bot.InboundMessage)) {
+	r.mu.Lock()
+	ch, stop := r.actions, r.stopProc
+	r.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	trySend(ch, stop, build, "bot 交互通道已满，点击事件丢弃")
+}
+
+// trySend 非阻塞投递：通道满即丢并告警（企微 WS 无补投，fail closed 不积压）；Stop 关闭
+// 窗口内的迟到投递经 stop 分支静默丢弃。
+func trySend(ch chan func(*bot.InboundMessage), stop chan struct{}, build func(*bot.InboundMessage), fullWarn string) {
 	select {
 	case ch <- build:
 	case <-stop:
 	default:
-		zap.L().Warn("bot 入站通道已满，消息丢弃", zap.String("channel", "wecom"))
+		zap.L().Warn(fullWarn, zap.String("channel", "wecom"))
 	}
 }
 

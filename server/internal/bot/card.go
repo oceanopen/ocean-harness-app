@@ -1,5 +1,10 @@
 package bot
 
+import (
+	"errors"
+	"fmt"
+)
+
 // 本文件是渠道卡片交互的核心契约（T3.1 企微卡片通道接线）：入站交互消费者骨架
 // （interactionHandler）+ 出站窄中立卡片模型（CardSpec）与 ReplyStream 的可选卡片扩展面
 // （CardReplyStream）。渠道差异（企微 vote_interaction 映射、文案截断、按钮 key 编码、
@@ -59,4 +64,22 @@ type interactionHandler interface {
 // interactionFallbackText 兜底文案：通道已通、消费者未接（T3.2 前）或投递过期时的统一提示。
 func interactionFallbackText() string {
 	return "该卡片交互暂不能在此处理，请在桌面端操作，或直接发送文字消息。"
+}
+
+// ValidateCardTaskID CardSpec.TaskID 契约校验（T3.2 起生成侧与适配器共用 SSOT）：非空、
+// ≤128 字节、字符集 [0-9A-Za-z_-@]——不含冒号是渠道按钮 key 编码（`TaskID:<下标>`）无歧义
+// 的前提。生成侧（审批卡构造）用它兜底防脏数据出卡，适配器侧照抄协议同一判据。
+func ValidateCardTaskID(taskID string) error {
+	if taskID == "" {
+		return errors.New("卡片 TaskID 不能为空")
+	}
+	if len(taskID) > 128 {
+		return errors.New("卡片 TaskID 超过 128 字节上限")
+	}
+	for _, c := range taskID {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' || c == '-' || c == '@') {
+			return fmt.Errorf("卡片 TaskID 含非法字符 %q（仅允许数字/字母/_-@）", c)
+		}
+	}
+	return nil
 }

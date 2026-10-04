@@ -146,13 +146,15 @@ const (
 
 // TurnEvent 回合事件。Delta 仅 TurnText 携带；ToolName 仅 TurnToolUse；Status 仅
 // TurnStatus；Result/IsError 仅 TurnDone；Err 仅 TurnError（spawn 失败时 RunTurn 同步
-// 返回 error 而不发本事件）。
+// 返回 error 而不发本事件）；Card 仅 TurnStatus 携带（T3.2 审批卡随状态行出卡，一回合
+// 至多一张；headless 引擎不产卡，纯文本渠道由泵回落纯文本帧）。
 type TurnEvent struct {
 	Type      TurnEventType
 	SessionID string
 	Delta     string
 	ToolName  string
 	Status    string
+	Card      *CardSpec
 	Result    string
 	IsError   bool
 	Err       error

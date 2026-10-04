@@ -662,7 +662,7 @@ issue 主窗口 ─────┘
 
 #### T3.2 审批 vote_interaction 卡
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：`session/request_permission` → 企微单选审批卡 + 终态置灰
 
@@ -673,6 +673,19 @@ issue 主窗口 ─────┘
 - IM 侧不过滤动作（T2.4 拍板②：bot 与桌面等价客户端）：卡片呈现与桌面同一选项全集（含 allow_always），安全周界 = 访问白名单 + 专属工作目录（见 §5 风险 5）
 
 **依赖**：T3.1、T2.4
+
+**实施定稿**：
+- **出卡链（回合内）**：collectTurn 的本回合首个 permission 挂起随 TurnStatus 事件附卡（TurnEvent 新增 `Card *CardSpec` 字段，仅 TurnStatus 携带；headless 引擎不产卡）。卡与编号状态行同发——状态行即数字应答目录，卡是点击升级形态，两通道并行覆盖（后续挂起与 elicitation 回落纯状态行，企微一消息一卡）。出卡条件：permission + 有选项 + TaskID 过 `bot.ValidateCardTaskID`（TaskID 契约校验上移核心包为生成侧与适配器共 SSOT，wecom 本地实现删除改委托），失败回落纯状态行、数字通道兜底仍在
+- **TaskID 无状态编码（含会话代锚）**：`acp-<issueID>@<AcpSessionID 前 8 位>-perm-<pendingID>`（perm 段为 T3.3 留位；issueID 为 UUID 不含 '@'，Index 切分无歧义；'-perm-' 以 LastIndex 取最右）。点击时经 Get 快照重建完整 spec；就绪后代锚对照快照 AcpSessionID——pendingID 是 per-AgentClient 发号（会话重建后从 1 重记，旧卡锚可能撞上同号新挂起），代锚不符即旧代卡失效文案收口、不触达应答（防撞号误答新请求）。无内存注册表，跨 sidecar 重启（AcpSessionID 必换新）与迟到点击（挂起已关闭）同样自然降级为文案告知；就绪快照缺会话 ID（防御面）不出卡回落纯状态行
+- **发卡与置灰同构造 SSOT**：`permissionCardSpec`（bot/permission_card.go）为首发与置灰重建共用——企微 UpdateTemplateCard 整卡替换，同一构造函数保证字段一致（T3.1 注意事项②收口）。选项全集不过滤（拍板②），标签走 PermissionOptionLabel 中文 SSOT，描述 = ToolTitle（空回落兜底文案）
+- **回复泵发卡（单写者纪律保持）**：TurnStatus 携带的卡入 mu 保护状态，由 ticker 周期写者 `SendCard` 随中间帧同帧下发（双渲染单事件，200ms 节奏延迟无感）；一次性消费——本 tick 发卡尝试（含失败回落 Flush）后不再附发，回合收尾未发出的卡直接丢弃（挂起随回合终态结算，迟发即置灰态误导）。流无卡能力（未实现 CardReplyStream）自动回落纯文本帧
+- **点击消费（driverRoute 第三角色）**：`TryHandleInteraction` 实现 interactionHandler，supervisor 三角色装配（ClaudeDriver + pendingGate + interactionHandler 同源于 route 单实例，共享会话域消费面）。决策链：非本域锚 / 渠道回传对照锚不一致 / 非选项 key → miss 交兜底；快照未就绪（跨 sidecar 重启边界，风险 §5.4）→ 失效文案不置灰；会话代锚不符（旧代卡，含重建撞号窗口）→ 失效文案不置灰、不触达应答；命中 → RespondPermission（source=bot），成功与后到方哨兵（`ErrPendingAlreadyHandled`，快照在手仍开放的窄竞态）均置灰「原卡全量 + Disabled」、其他失败不置灰可重点重试；挂起已出快照（桌面先答/回合结算的迟到点击）→ 空 optionID 应答取 closed-history 判别文案直出不置灰；下标越界 → 提示重重点。代锚供给链：RunTurn 就绪快照传入 collectTurn + 帧快照覆写（waitSessionReady 对状态帧字段合并，防 AcpSessionID 被空投影冲掉）
+- **企微交互快车道（T3.1 注意事项①落地）**：交互事件与消息队列分流——独立通道（容量 16）+ 独立消费 goroutine（processLoop 同款生命周期，共用 stop 同生共死），防前置消息的附件同步下载排队吃掉点击置灰的 5 秒回调窗口；满即丢告警（卡片仍在可重点）。submitMsg / submitInteractionMsg 归一链同源（fillCommon）
+- **单选默认选中**：buildTemplateCard 单选首项 `IsChecked=true`（Gold-Band PoC 校准：单选卡须有选中项），多选不预选；首发与置灰帧同 builder 天然一致
+- **已知限制**：企微快车道串行消费 + 终帧 Flush 阻塞，理论上可能挤占紧随其后的第二次点击的置灰 5 秒窗口（仅置灰失败告警，应答与终帧文案不受损，卡片可重点）；wecom processLoop 对 onInbound 的跨代无锁读为技术性数据竞争（后果良性，T3.1 单 lane 同款形态）
+- 验证：build / vet / 全量 `-race` / gofmt 通过。`permission_card_test.go` 覆盖 TaskID 编解码往返与非法形态表、spec 映射、点击决策矩阵（miss×3 / 未就绪跨重启 / 会话重建撞号代锚拦截 / 命中 / 后到方 / 其他失败 / 已关闭判别 / 越界）、回合出卡条件（首 permission 附卡、后续与 elicitation 无卡、代锚缺失不出卡）、泵发卡四态（成功不重发文本 / 失败回落 / 无卡流 / 收尾丢弃）；wecom 补单选默认选中断言与快车道分流用例（满载消息队列下点击事件仍即时到达）
+
+---
 
 #### T3.3 elicitation 单选/多选卡
 

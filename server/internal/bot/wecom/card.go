@@ -5,7 +5,6 @@ package wecom
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -47,7 +46,7 @@ func encodeSubmitKey(taskID string) string {
 // （更新帧须与原卡保持 card_type/task_id/submit_button.key 一致，同一 builder 天然保证；
 // submit_button 无 disable 字段，置灰只置 checkbox.disable）。
 func buildTemplateCard(spec bot.CardSpec) (aibottypes.TemplateCard, error) {
-	if err := validateCardTaskID(spec.TaskID); err != nil {
+	if err := bot.ValidateCardTaskID(spec.TaskID); err != nil {
 		return aibottypes.TemplateCard{}, err
 	}
 	if len(spec.Options) == 0 {
@@ -58,6 +57,9 @@ func buildTemplateCard(spec bot.CardSpec) (aibottypes.TemplateCard, error) {
 		options = append(options, templateCardOption{
 			Id:   encodeActionKey(spec.TaskID, i),
 			Text: truncateRunes(opt.Text, cardOptionMaxRunes),
+			// 单选默认选中第一项（Gold-Band PoC 校准：单选卡须有选中项，方案阶段 3 场景
+			// 映射拍板）；多选不预选。
+			IsChecked: !spec.Multiple && i == 0,
 		})
 	}
 	card := aibottypes.TemplateCard{
@@ -76,23 +78,6 @@ func buildTemplateCard(spec bot.CardSpec) (aibottypes.TemplateCard, error) {
 		card.SubmitButton = &aibottypes.TemplateCardSubmitButton{Text: cardSubmitText, Key: encodeSubmitKey(spec.TaskID)}
 	}
 	return card, nil
-}
-
-// validateCardTaskID 企微 task_id 契约：非空、≤128 字节、字符集 [0-9A-Za-z_-@]（不含冒号
-// 是本通道 key 编码无歧义的前提）。
-func validateCardTaskID(taskID string) error {
-	if taskID == "" {
-		return errors.New("卡片 TaskID 不能为空")
-	}
-	if len(taskID) > 128 {
-		return errors.New("卡片 TaskID 超过 128 字节上限")
-	}
-	for _, c := range taskID {
-		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c == '_' || c == '-' || c == '@') {
-			return fmt.Errorf("卡片 TaskID 含非法字符 %q（仅允许数字/字母/_-@）", c)
-		}
-	}
-	return nil
 }
 
 // parseEventKey 企微 event_key → 中立 Interaction。last-colon 切分（TaskID 字符集无冒号，

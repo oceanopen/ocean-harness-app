@@ -84,7 +84,7 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 	stop() // 等位窗口帧全部作废（含受理帧自身——armed 由重开订阅的首帧快照装填）
 	turnFrames, stopTurn := d.sessions.Subscribe(issueID)
 	events := make(chan TurnEvent, 128)
-	go collectTurn(ctx, d.sessions, issueID, turnFrames, stopTurn, events)
+	go collectTurn(ctx, d.sessions, issueID, snap.AcpSessionID, turnFrames, stopTurn, events)
 	return events, nil
 }
 
@@ -108,7 +108,10 @@ func waitSessionReady(ctx context.Context, frames <-chan acpsession.Frame, snap 
 				return snap, errors.New("ACP 事件流已断开，会话状态未知")
 			}
 			if s := frameStatus(frame); s != nil {
-				snap = *s
+				// 字段合并而非整份替换：sessionStatus/terminated 帧只携带状态投影，保留
+				// 快照其余字段（AcpSessionID 等）免被空值冲掉。
+				snap.Status = s.Status
+				snap.Error = s.Error
 			}
 		}
 	}
@@ -151,13 +154,15 @@ func sessionStateError(snap acpsession.ViewSnapshot) error {
 // 终态帧；不自建超时——终结时序统一由 acp 层取消预算与帧到达表达，不引入时间性兜底。
 // 取消信号消费一次即摘出 select（置 nil）——Done 恒就绪，留在集合里会在等终态帧期间
 // 空转烧 CPU。
-func collectTurn(ctx context.Context, sessions acpSessions, issueID string, frames <-chan acpsession.Frame, stop func(), events chan<- TurnEvent) {
+func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionID string, frames <-chan acpsession.Frame, stop func(), events chan<- TurnEvent) {
 	defer close(events)
 	defer stop()
 
 	seenTools := map[string]bool{}
 	var text string
 	var openPendings []acpsession.PendingView // 回合内开放挂起（状态行编号与摘除追踪）
+	cardSent := false                         // 本回合审批卡已出（企微一消息一卡，至多一张）
+	acpSess := acpSessionID                   // 会话代锚初值来自就绪快照，随后帧快照覆写
 	armed := false
 	notify := ctx.Done()
 
@@ -180,7 +185,10 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID string, fram
 				// 回合已在订阅建立前收敛（agent 极快；Subscribe 建立与 PromptText RPC
 				// 存在量级差，生产不可达、fake 测试可达），从快照直接合成终态（entries
 				// 含全文；回合级协议错误不落快照视图，以 StopReason 判 cancelled，其余
-				// 按正常完成）。
+				// 按正常完成）。快照携带会话代锚（审批卡 TaskID 编码依据）。
+				if id := frame.Snapshot.AcpSessionID; id != "" {
+					acpSess = id
+				}
 				armed = frame.Snapshot.TurnActive
 				if !armed {
 					emitTurnDone(events, &acpsession.TurnPayload{
@@ -206,21 +214,32 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID string, fram
 					}
 				}
 			case acpsession.FramePendingOpened:
-				// 审批挂起呈现（T2.4 回合内文本交互）：permission 出编号状态行（编号与
-				// 数字快路径同源于视图注册序——快路径按 Get 快照序应答，本处按帧到达序
-				// 展示，二者同源恒一致）；elicitation 指回桌面（应答面随 T3.3）。混合挂起
-				// 合并展示——表单提示附尾，审批的数字应答指引不被覆写。
+				// 审批挂起呈现（T2.4 回合内文本交互 + T3.2 审批卡）：permission 出编号状态行
+				// （编号与数字快路径同源于视图注册序——快路径按 Get 快照序应答，本处按帧到达序
+				// 展示，二者同源恒一致），本回合首个 permission 挂起随状态行附审批卡（企微一消息
+				// 一卡，后续挂起回落纯状态行——数字应答通道仍覆盖全部挂起）；elicitation 指回桌面
+				// （应答面随 T3.3）。混合挂起合并展示——表单提示附尾，审批的数字应答指引不被覆写。
 				if !armed || frame.Pending == nil {
 					continue
 				}
 				openPendings = append(openPendings, *frame.Pending)
 				perms, hasElicit := splitPendings(openPendings)
 				if len(perms) > 0 {
-					status := formatPermissionPendingStatus(permissionChoices(perms))
+					ev := TurnEvent{Type: TurnStatus, Status: formatPermissionPendingStatus(permissionChoices(perms))}
 					if hasElicit {
-						status += "\n" + elicitationPendingText
+						ev.Status += "\n" + elicitationPendingText
 					}
-					events <- TurnEvent{Type: TurnStatus, Status: status}
+					// 出卡条件：本回合未出过 + permission 挂起 + 有选项 + 会话代锚在场 +
+					// TaskID 过契约校验（issueID 含非法字符等脏数据、代锚缺失回落纯状态行，
+					// 数字应答兜底仍在）。
+					if !cardSent && frame.Pending.Kind == "permission" && len(frame.Pending.Options) > 0 && acpSess != "" {
+						spec := permissionCardSpec(issueID, acpSess, *frame.Pending)
+						if ValidateCardTaskID(spec.TaskID) == nil {
+							cardSent = true
+							ev.Card = &spec
+						}
+					}
+					events <- ev
 				} else {
 					events <- TurnEvent{Type: TurnStatus, Status: elicitationPendingText}
 				}

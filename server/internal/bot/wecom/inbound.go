@@ -29,6 +29,19 @@ func (r *channelRuntime) submitMsg(
 	})
 }
 
+// submitInteractionMsg submitMsg 的交互快车道变体（T3.2）：归一链同源（fillCommon + 专属
+// 填充），仅投递通道不同——点击事件不排附件下载队，保住置灰 5 秒窗口。
+func (r *channelRuntime) submitInteractionMsg(
+	headers aibottypes.WsFrameHeaders,
+	base aibottypes.BaseMessage,
+	fill func(inbound *bot.InboundMessage),
+) {
+	r.submitInteraction(func(inbound *bot.InboundMessage) {
+		r.fillCommon(headers, base, inbound)
+		fill(inbound)
+	})
+}
+
 // fillCommon BaseMessage → InboundMessage 公共字段 + 引用抽取。
 func (r *channelRuntime) fillCommon(headers aibottypes.WsFrameHeaders, base aibottypes.BaseMessage, in *bot.InboundMessage) {
 	chatType := bot.ChatDirect
