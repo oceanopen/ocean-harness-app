@@ -34,10 +34,11 @@ type BotStatusView struct {
 	LastError string
 }
 
-// NewSupervisor 构造 supervisor（port 为 sidecar 自身 HTTP 端口）。
-func NewSupervisor(db *gorm.DB, port int, log *zap.Logger) *Supervisor {
+// NewSupervisor 构造 supervisor（port 为 sidecar 自身 HTTP 端口；sessions 为 ACP 会话域，
+// 引擎路由按 workspace 启动模式消费——两引擎共存，见 driver_route.go）。
+func NewSupervisor(db *gorm.DB, port int, sessions acpSessions, log *zap.Logger) *Supervisor {
 	return &Supervisor{
-		orch:  NewOrchestrator(&ConversationStore{DB: db}, NewClaudeDriver(), log),
+		orch:  NewOrchestrator(&ConversationStore{DB: db}, newDriverRoute(db, sessions), log),
 		db:    db,
 		port:  port,
 		log:   log,
@@ -199,6 +200,7 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 		BotID:        b.ID,
 		Channel:      b.Channel,
 		Credential:   b.Credential,
+		WorkspaceID:  b.WorkspaceID,
 		WorkspaceDir: wsDir,
 		Model:        b.Model,
 		SystemPrompt: b.SystemPrompt,

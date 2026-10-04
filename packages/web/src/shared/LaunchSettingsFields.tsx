@@ -45,7 +45,7 @@ export default function LaunchSettingsFields({
       <Divider />
       <TextField
         select
-        label="启动模式"
+        label="默认任务启动模式"
         value={mode}
         onChange={e => onModeChange(e.target.value as LaunchMode)}
         fullWidth

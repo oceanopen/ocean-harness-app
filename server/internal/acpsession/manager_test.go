@@ -44,8 +44,8 @@ func TestMain(m *testing.M) {
 
 // fakeSpawn 顶替 spawnAgentSession 的测试实现：固定脚本拉起 fakeagent（wantErr 非 nil 时
 // 直接失败，模拟 vendored/握手链报错）；calls 统计实际调用次数（join 幂等断言用）。
-func fakeSpawn(script string, wantErr error, calls *atomic.Int64) func(SessionConfig, Dirs, *zap.Logger) (*acp.AgentClient, *acp.Session, error) {
-	return func(cfg SessionConfig, _ Dirs, log *zap.Logger) (*acp.AgentClient, *acp.Session, error) {
+func fakeSpawn(script string, wantErr error, calls *atomic.Int64) func(SessionConfig, Dirs, int, *zap.Logger) (*acp.AgentClient, *acp.Session, error) {
+	return func(cfg SessionConfig, _ Dirs, _ int, log *zap.Logger) (*acp.AgentClient, *acp.Session, error) {
 		calls.Add(1)
 		if wantErr != nil {
 			return nil, nil, wantErr
@@ -77,7 +77,7 @@ func newManagerWithIssue(t *testing.T, script string, wantErr error) (*Manager, 
 	db := newTestDB(t)
 	wsDir := t.TempDir()
 	issueID := seedIssue(t, db, wsDir, `{"mode":"acp"}`, "")
-	mgr, err := NewManager(db, Dirs{}, zap.NewNop())
+	mgr, err := NewManager(db, Dirs{}, 0, zap.NewNop())
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}

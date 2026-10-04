@@ -197,12 +197,14 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	}
 	prompt := BuildTurnPrompt(msg)
 	events, err := o.driver.RunTurn(o.ctx, TurnRequest{
-		WorkspaceDir: cfg.WorkspaceDir,
-		SessionID:    prevSessionID,
-		Prompt:       prompt,
-		Model:        cfg.Model,
-		SystemPrompt: ComposeSystemPrompt(cfg.SystemPrompt),
-		Port:         cfg.Port,
+		WorkspaceID:     cfg.WorkspaceID,
+		WorkspaceDir:    cfg.WorkspaceDir,
+		ConversationKey: key,
+		SessionID:       prevSessionID,
+		Prompt:          prompt,
+		Model:           cfg.Model,
+		SystemPrompt:    ComposeSystemPrompt(cfg.SystemPrompt),
+		Port:            cfg.Port,
 	})
 	if err != nil {
 		<-o.turns
@@ -213,9 +215,14 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		}
 		// spawn 即失败（如 claude 不在场）：终态帧 + 自愈（若带 resume 尝试则清锚点，
 		// 下条消息开新会话——失败后不复用旧锚点是确定性单步恢复，不做脆弱的文案匹配）。
+		// 引擎受理拒绝（turnNotAcceptedError，如 ACP 模式的引导报错）除外：回合未发生，
+		// headless 锚点有效性不受影响，误清会丢既有会话上下文。
 		o.log.Error("bot 回合启动失败", zap.Int("botID", cfg.BotID), zap.Error(err))
 		_ = job.reply.Flush("❌ 无法启动 claude 会话："+firstLine(err.Error()), true)
-		o.healAfterFailure(cfg.BotID, key, prevSessionID)
+		var rejected turnNotAcceptedError
+		if !errors.As(err, &rejected) {
+			o.healAfterFailure(cfg.BotID, key, prevSessionID)
+		}
 		return
 	}
 

@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 
 	acpgo "github.com/BrokkAi/acp-go"
@@ -38,6 +39,7 @@ type Dirs struct {
 type Manager struct {
 	db       *gorm.DB
 	dirs     Dirs
+	port     int // sidecar 自身 HTTP 端口（spawn env 注入 OCEAN_HARNESS_PORT，会话内插件工具链用）
 	log      *zap.Logger
 	bindings *BindingStore
 	hub      *hub
@@ -46,15 +48,16 @@ type Manager struct {
 	entries map[string]*sessionEntry
 }
 
-// NewManager 装配会话域（main 步骤 5.7）：启动清扫运行时锚（无 resume 语义，重启后旧锚
-// 全部失效归零）。
-func NewManager(db *gorm.DB, dirs Dirs, log *zap.Logger) (*Manager, error) {
+// NewManager 装配会话域（main 步骤 5.5）：启动清扫运行时锚（无 resume 语义，重启后旧锚
+// 全部失效归零）。port 为 sidecar 自身 HTTP 端口。
+func NewManager(db *gorm.DB, dirs Dirs, port int, log *zap.Logger) (*Manager, error) {
 	if log == nil {
 		log = zap.NewNop()
 	}
 	m := &Manager{
 		db:       db,
 		dirs:     dirs,
+		port:     port,
 		log:      log,
 		bindings: &BindingStore{DB: db},
 		hub:      newHub(),
@@ -80,7 +83,7 @@ type sessionEntry struct {
 }
 
 // spawnFunc 测试替换点（对齐 acpdoctor probeFunc 惯例）：catalog 条目 → vendored 拉起链
-// → 握手 → 建会话 → 下发权限模式。
+// → spawn env 注入 → 握手 → 建会话 → 下发权限模式。
 var spawnFunc = spawnAgentSession
 
 // Ensure 幂等受理会话创建：同步解析配置（校验失败立即反馈）→ starting/ready 态 join 返回
@@ -125,7 +128,7 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 // 落因（last_error 跨重启可见）。不捕获请求 ctx（Ensure 已返回）；发现 discarded（受理后
 // issue 被删）直接自清。
 func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig) {
-	client, session, err := spawnFunc(cfg, m.dirs, m.log)
+	client, session, err := spawnFunc(cfg, m.dirs, m.port, m.log)
 	entry.mu.Lock()
 	if entry.discarded {
 		entry.mu.Unlock()
@@ -160,7 +163,7 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig) {
 // 「生产拉起」同一条链，差别仅在探测后清理、本链长期持有）。node 预检不复制——那是
 // doctor 的 stage 级定位面职责，本链 node 缺失在 EnsureVendored/VendoredSpawnConfig 显式
 // 报错。任一后置步失败回收已拉起进程。
-func spawnAgentSession(cfg SessionConfig, dirs Dirs, log *zap.Logger) (*acp.AgentClient, *acp.Session, error) {
+func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger) (*acp.AgentClient, *acp.Session, error) {
 	entry, ok := agentcatalog.GetAgentCatalogInfoByCode(cfg.AgentCode)
 	if !ok {
 		return nil, nil, fmt.Errorf("agent catalog 无 %q 条目", cfg.AgentCode)
@@ -177,6 +180,13 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, log *zap.Logger) (*acp.Agen
 	if err != nil {
 		return nil, nil, err
 	}
+	// OCEAN_HARNESS_PORT 显式注入（语义对齐 bot 驱动 driver_claude 的 turnEnv）：sidecar
+	// 自身 env 无此变量（Rust 只注入 GO_SERVER_*），缺失会让会话内插件 .mcp.json 的
+	// ${OCEAN_HARNESS_PORT:-9100} 回落默认端口，dev（9000）等场景错配。
+	if spawn.Env == nil {
+		spawn.Env = map[string]string{}
+	}
+	spawn.Env["OCEAN_HARNESS_PORT"] = strconv.Itoa(port)
 	if spawn.Env, err = acp.ClaudeEnvOverrides(spawn.Env, claudeBin); err != nil {
 		return nil, nil, err
 	}

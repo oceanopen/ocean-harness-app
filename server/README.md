@@ -101,12 +101,12 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 
 ## imBot 域（IM 渠道数字人 bot）
 
-tracker 基线之后的第二个业务域，与 tracker 的差异在「**运行时**」：`/api/imBot/*` 只管 bot 配置 CRUD + 重启连接，真正的消息收发在 `internal/bot`（渠道无关核心：幂等/白名单/每会话串行队列/claude headless 回合/流式回复泵）+ `internal/bot/wecom` 等渠道适配器（实现核心的 `ChannelRuntime` 接口）。分层要点：
+tracker 基线之后的第二个业务域，与 tracker 的差异在「**运行时**」：`/api/imBot/*` 只管 bot 配置 CRUD + 重启连接，真正的消息收发在 `internal/bot`（渠道无关核心：幂等/白名单/每会话串行队列/claude 回合/流式回复泵——引擎双实现按 workspace 启动模式逐回合路由，见 `driver_route.go`）+ `internal/bot/wecom` 等渠道适配器（实现核心的 `ChannelRuntime` 接口）。分层要点：
 
 - **DB 是配置 SSOT，运行时是投影**：service 写库成功后才调 `global.BotSupervisor`（`ApplyBot`=Stop→Start 无脑重启 / `StopBot`），失败仅日志、可经「重启连接」收敛。
-- **启动装配**：`cmd/server/main.go` 步骤 5.5 注册渠道工厂 + `StartEnabled()`；SIGTERM 先 `StopAll()`（断连接 + 杀在途 claude 子进程）再关 HTTP。
+- **启动装配**：`cmd/server/main.go` 步骤 5.6 注册渠道工厂 + `StartEnabled()`（5.5 为 ACP 会话域装配，先于 bot——引擎路由消费其实例）；SIGTERM 先 `BotSupervisor.StopAll()`（断连接 + 取消在途回合），再 `AcpSessions.StopAll()`（收敛 ACP 会话 + 关停 SSE 订阅），最后关 HTTP。
 - **channel 差异收窄在 credential JSON**（各适配器自行解释 shape，如 wecom `{"botId","secret"}`），新渠道 = 新增适配器包 + main 注册一行，表结构/API 不动。
-- **claude 引擎在核心层**：`driver_claude.go` spawn `claude -p --output-format stream-json`（stdin 传 prompt），会话多轮经 `--resume <sessionId>`（id 从 init 事件捕获后回写 `t_im_bot_conversations`），与 PTY 面板链路互不干扰。
+- **claude 引擎在核心层，双实现并存**（按 workspace `launch_settings.mode` 逐回合路由）：headless `driver_claude.go` spawn `claude -p --output-format stream-json`（stdin 传 prompt），会话多轮经 `--resume <sessionId>`（id 从 init 事件捕获后回写 `t_im_bot_conversations`），与 PTY 面板链路互不干扰；ACP `driver_acp.go` 经 acpsession 域复用 issue 级共享会话（与桌面主窗口同会话、同审批状态，无 resume、不写 claude_session_id 锚点）。
 - **扫码授权接入**：`/api/imBot/provisionBegin|provisionPoll|provisionCancel`——直连腾讯官方端点
   （`work.weixin.qq.com/ai/qc/generate|query_result`，无中转服务），auth_url 强校验官方域防钓鱼；
   attempt 状态机在 `internal/bot/wecom/provision.go`（pending→connecting→connected，5 分钟本地 TTL，

@@ -25,7 +25,7 @@
 | 权限控制 | claude TUI 在终端内问（只有看得见终端的人能批） | 无——`--permission-mode acceptEdits` 一口气跑完 + `--allowedTools` 白名单 |
 | 共享的东西 | 仅两项环境级复用：同一 workspace 目录、同一 MCP 工具链（`OCEAN_HARNESS_PORT` 同源注入） | 同左 |
 
-**根因**：本项目桌面端是「终端优先、被动观察」架构——Rust 侧不拥有 claude 进程，自然没有可供 bot 接入的 runtime 会话。bot 只能独立 spawn headless 进程（`server/README.md:109` 明文写了与 PTY「互不干扰」）。
+**根因**：本项目桌面端是「终端优先、被动观察」架构——Rust 侧不拥有 claude 进程，自然没有可供 bot 接入的 runtime 会话。bot 只能独立 spawn headless 进程（`server/README.md` 的 imBot 域在 T2.1 之前明文写了与 PTY「互不干扰」；ACP 引擎落地后该描述仅适用于 headless 路径，bot 与桌面共享会话见 T2.1 实施定稿）。
 
 ### 1.2 Gold-Band 对比结论（已调研定稿）
 
@@ -530,7 +530,7 @@ issue 主窗口 ─────┘
 
 #### T2.1 bot ACP driver
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：`ClaudeDriver` 接口的 ACP 实现——bot 回合经 sidecar 内 ACP session 驱动 claude
 
@@ -543,6 +543,14 @@ issue 主窗口 ─────┘
 **依赖**：T1.5
 
 **决策关联**：P6
+
+**实施定稿**：
+- **引擎装配（`driver_route.go`）**：路由层实现 ClaudeDriver，编排器零改动；逐回合直查 `t_workspaces.launch_settings`（`types.ParseLaunchSettings`，mode=='acp' 判定；读取失败 fail closed 同步报错不静默回落 headless，行缺失/空配置/损坏 JSON = 未启用）。`NewSupervisor` 增加 `acpSessions` 参数，main 的 ACP 会话域装配（步骤 5.5）提前至 bot 装配之前传入；mode 每回合读取——workspace 抽屉改配置即对在跑 bot 生效，bot 不随其重启
+- **ACP 驱动（`driver_acp.go`）**：消费侧窄接口 `acpSessions`（Ensure/Subscribe/Prompt/Cancel，`*acpsession.Manager` 编译期断言满足）；`issueResolver` 解析缝，生产实现恒未绑定（P2 显式绑定原则，T2.3 落地绑定存储后替换）。RunTurn 固定时序：解析 issue → Ensure 受理 → 订阅（受理成功后立即订阅——首帧快照新于受理时点，旧会话失败快照进不来、等就绪判定不回退旧因；Prompt 受理在订阅之后，受理帧同步广播不漏）→ 帧驱动等就绪（failed/terminated 同步报错并落因）→ Prompt（`acp.ErrTurnActive` 转友好同步报错，复用编排器启动失败回复路径）→ collectTurn 帧循环：turnStarted 起 armed 窗口隔离订阅残留，agentMessage 帧携带累计全量文本取最新，toolCall 按 id 首见发进度事件；turnEnded 终态映射——end_turn = TurnDone{Result 全文}、cancelled = TurnDone{IsError}（泵文案「回合被中断」携带已产出文本）、turn.Error = TurnError；FrameTerminated / 帧通道关闭 = TurnError；ctx 取消 = 软取消后继续消费至终态帧，取消信号消费即摘出 select（Done 恒就绪，留存会空转烧 CPU），不自建超时（终结时序由 acp 层取消预算与帧到达表达）。不发 TurnInit、不写 claude_session_id 锚点（ACP session id 与 --resume 不兼容）
+- **锚点保护（`turnNotAcceptedError`）**：ACP 引擎同步失败与启动模式解析失败由 driverRoute 包「回合未受理」标记，编排器据 errors.As 跳过 healAfterFailure 清锚（编排器不感知具体引擎）——headless 时代的续聊锚点不因 ACP 受理失败被误清；headless 引擎自身失败的自愈语义不变
+- **OCEAN_HARNESS_PORT 补链**：acpsession `spawnAgentSession` 显式注入该变量（语义对齐 headless 驱动的 turnEnv——sidecar 自身 env 无此变量，Rust 只注入 GO_SERVER_*，缺失会令会话内插件 `.mcp.json` 的 `${OCEAN_HARNESS_PORT:-9100}` 回落默认端口、dev 端口 9000 错配）；`NewManager` 增加 port 参数
+- **相对方案的偏离/已知限制**：① bot prompt（TurnRequest.SystemPrompt/Model）ACP 驱动不消费——ACP 链路无 per-turn system prompt 通道且会话与桌面共享，bot 人设不宜做会话级注入（拍板：暂不处理，bot prompt 配置存废另行决策）；② issue 级 launch_settings 覆盖暂不参与路由判定（bot 侧尚无 issue 归属，T2.3 绑定落地后再纳入）；③ headless 路径行为不变，两驱动并存
+- 验证：build / vet / bot+acpsession 全量测试回归通过（`driver_acp_test.go` 帧脚本用例覆盖 happy / armed 窗口隔离 / 等就绪快照校正 / failed / terminated / 受理失败链 / ErrTurnActive / 未绑定 / 终态三形态 / ctx 软取消 + 真实 Manager 空目录失败链验收；`driver_route_test.go` 覆盖路由分发 / 解析失败 fail closed / launch_settings 各形态 DB 判定）
 
 #### T2.2 per-session 跨入口回合锁
 

@@ -1,8 +1,10 @@
 // Package bot 是 IM 渠道数字人 bot 的渠道无关核心层：入站消息规范化 → 幂等/白名单 →
-// 每会话串行队列 → prompt 组装 → claude headless 回合（stream-json 事件流）→ 覆写式流式回复泵。
+// 每会话串行队列 → prompt 组装 → claude 回合 → 覆写式流式回复泵。回合引擎有两实现
+// （headless spawn：driver_claude.go；ACP 共享 issue 会话：driver_acp.go），按 workspace
+// 级启动模式逐回合路由（driver_route.go）。
 // 渠道差异（企微/飞书…）全部收窄在 adapter 包（实现本包 channel.go 的 ChannelRuntime 接口），
 // 依赖方向单向：adapter → core，core 不 import 任何渠道 SDK。
-// claude 引擎（driver_claude.go）属核心层：所有渠道共用同一个会话引擎。
+// claude 引擎属核心层：所有渠道共用同一组引擎。
 package bot
 
 import (
@@ -96,6 +98,7 @@ type BotRuntimeConfig struct {
 	BotID        int
 	Channel      enums.Channel
 	Credential   string // 渠道凭据 JSON，适配器自行解析（核心不解引用）
+	WorkspaceID  int    // 工作空间行 id（引擎路由按 workspace 级 launch_settings 解析；0 = 未选择）
 	WorkspaceDir string
 	Model        string // claude --model；空 = CLI 默认
 	SystemPrompt string // 人设；组装见 prompt.go ComposeSystemPrompt
@@ -103,14 +106,17 @@ type BotRuntimeConfig struct {
 	Port         int // sidecar HTTP 端口，driver 注入 claude 子进程 OCEAN_HARNESS_PORT
 }
 
-// TurnRequest 一次 claude 回合的请求。SessionID 空 = 新会话，非空 = --resume 续聊。
+// TurnRequest 一次 claude 回合的请求。SessionID 为 headless 语义（空 = 新会话，非空 =
+// --resume 续聊）；ACP 驱动不消费它（共享会话无 resume，bot 侧不写会话锚点）。
 type TurnRequest struct {
-	WorkspaceDir string
-	SessionID    string
-	Prompt       string // prompt.go 组装后的最终 user prompt
-	Model        string
-	SystemPrompt string // ComposeSystemPrompt 产物
-	Port         int
+	WorkspaceID     int // 工作空间行 id（引擎路由解析 launch_settings.mode 的键）
+	WorkspaceDir    string
+	ConversationKey string // FormatConversationKey 产物（ACP 驱动解析目标 issue 的会话键）
+	SessionID       string
+	Prompt          string // prompt.go 组装后的最终 user prompt
+	Model           string
+	SystemPrompt    string // ComposeSystemPrompt 产物
+	Port            int
 }
 
 // TurnEventType claude 回合事件类型（driver_claude 解析 stream-json 产出）。
