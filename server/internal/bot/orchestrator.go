@@ -26,6 +26,10 @@ var errQueueFull = errors.New("排队已满")
 // errStopped 编排器已停止（sidecar 退出中），不再受理新消息。
 var errStopped = errors.New("编排器已停止")
 
+// msgAlreadySeenText 重投已处理消息的统一终帧文案（gate 快路径 / 交互拦截步 / runTurn
+// 权威复查三处共用）。
+const msgAlreadySeenText = "该消息已处理过，重复推送已忽略。"
+
 // turnJob 一个待执行回合。reply 是受理时已开出并发过「正在思考…」占位帧的回复流——
 // 企微 5 秒被动回复窗口在受理瞬间被占住，排队多久都不超窗（两写者一次交接：适配器在
 // 回调 goroutine 发占位帧，此后全部帧只由 worker 的回复泵写）。
@@ -37,12 +41,14 @@ type turnJob struct {
 
 // Orchestrator 编排核心：入站受理（白名单/快路径/占位帧）→ 每会话串行队列 → prompt →
 // claude 回合 → 回复泵 → 会话持久化。无渠道知识；HandleInbound 由适配器回调
-// （supervisor 装配）。gate 为审批数字快路径的可选依赖（T2.4；nil = 关闭）。
+// （supervisor 装配）。gate 为审批数字快路径的可选依赖（T2.4；nil = 关闭）；interactions
+// 为卡片交互消费者的可选依赖（T3.1 通用拦截骨架；nil = 仅兜底文案）。
 type Orchestrator struct {
-	store  *ConversationStore
-	driver ClaudeDriver
-	gate   pendingGate
-	log    *zap.Logger
+	store        *ConversationStore
+	driver       ClaudeDriver
+	gate         pendingGate
+	interactions interactionHandler
+	log          *zap.Logger
 
 	ctx    context.Context // 生命周期 ctx：Stop 级联取消全部在途回合（杀 claude 子进程）
 	cancel context.CancelFunc
@@ -53,24 +59,26 @@ type Orchestrator struct {
 	closed bool
 }
 
-// NewOrchestrator 构造编排器。gate 可为 nil（无 ACP 会话域的装配与既有测试）。
-func NewOrchestrator(store *ConversationStore, driver ClaudeDriver, gate pendingGate, log *zap.Logger) *Orchestrator {
+// NewOrchestrator 构造编排器。gate / interactions 可为 nil（无 ACP 会话域的装配与既有
+// 测试；interactions nil = 卡片点击仅回兜底文案，T3.2 换 driverRoute 第三角色注入）。
+func NewOrchestrator(store *ConversationStore, driver ClaudeDriver, gate pendingGate, interactions interactionHandler, log *zap.Logger) *Orchestrator {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Orchestrator{
-		store:  store,
-		driver: driver,
-		gate:   gate,
-		log:    log,
-		ctx:    ctx,
-		cancel: cancel,
-		queues: make(map[string]chan turnJob),
-		turns:  make(chan struct{}, maxConcurrentTurns),
+		store:        store,
+		driver:       driver,
+		gate:         gate,
+		interactions: interactions,
+		log:          log,
+		ctx:          ctx,
+		cancel:       cancel,
+		queues:       make(map[string]chan turnJob),
+		turns:        make(chan struct{}, maxConcurrentTurns),
 	}
 }
 
 // HandleInbound 入站唯一入口（适配器回调 goroutine 上执行，须快进快出）。
-// 固定时序：白名单判定 → （拒绝：direct 回提示帧 / group 静默）→ 受理开流 → 审批数字
-// 快路径（命中即终帧收口，不入队）→ 占位帧 → 入队。
+// 固定时序：白名单判定 → （拒绝：direct 回提示帧 / group 静默）→ 受理开流 → 卡片交互
+// 拦截步（恒终帧收口，不入队）→ 审批数字快路径（命中即终帧收口，不入队）→ 占位帧 → 入队。
 // openStream 由适配器提供（闭包持有渠道连接），核心决定是否/何时调用——策略拒绝与群聊
 // 静默不产生任何流。
 func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, openStream func() (ReplyStream, error)) {
@@ -93,6 +101,41 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 		o.log.Error("bot 开启回复流失败", zap.Int("botID", cfg.BotID), zap.Error(err))
 		return
 	}
+	// 卡片交互拦截步（T3.1 通用拦截骨架）：点击不承载回合正文（企微模板卡无自由文本
+	// 控件），组 prompt 出回合无意义——恒在此终结（handled 与否都不入队、不占并发槽，
+	// 不回落主路径）。幂等前置到判定之前——交互应答在 T3.2 是变更性动作（RespondPermission
+	// CAS + 置灰更新）却不入队，与 gate 快路径同款防御；兜底处理也 MarkSeen（防重投重复
+	// 打扰）。置灰更新须以点击事件帧 headers 开出的本流发起（企微 5 秒窗口内），故 update
+	// 在终帧之前应用；流无卡能力（纯文本渠道）静默跳过，置灰失败仅告警不阻断终帧。
+	if msg.Interaction != nil {
+		seen, err := o.store.HasSeen(cfg.BotID, msg.ConversationKey, msg.MessageID)
+		if err != nil {
+			o.log.Error("bot 幂等查询失败（放行交互拦截）", zap.Error(err))
+		}
+		if seen {
+			_ = rs.Flush(msgAlreadySeenText, true)
+			return
+		}
+		text, update, handled := interactionFallbackText(), (*CardSpec)(nil), false
+		if o.interactions != nil {
+			text, update, handled = o.interactions.TryHandleInteraction(cfg, msg)
+		}
+		if !handled {
+			text = interactionFallbackText()
+		}
+		if err := o.store.MarkSeen(cfg.BotID, msg.ConversationKey, msg.MessageID); err != nil {
+			o.log.Error("bot markSeen 失败", zap.Error(err))
+		}
+		if update != nil {
+			if cs, ok := rs.(CardReplyStream); ok {
+				if err := cs.UpdateCard(*update); err != nil {
+					o.log.Warn("bot 卡片置灰失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+				}
+			}
+		}
+		_ = rs.Flush(text, true)
+		return
+	}
 	// 审批数字快路径（T2.4）：审批应答消息入队会排在被 pending 挂起的回合之后死锁，
 	// 必须在占位帧之前拦截；命中即该消息的终帧（不入队、不占并发槽），未命中落回主路径。
 	// 幂等前置到判定之前——快路径产生变更性动作（RespondPermission CAS）却不入队，错过
@@ -104,7 +147,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 			o.log.Error("bot 幂等查询失败（放行快路径）", zap.Error(err))
 		}
 		if seen {
-			_ = rs.Flush("该消息已处理过，重复推送已忽略。", true)
+			_ = rs.Flush(msgAlreadySeenText, true)
 			return
 		}
 		if text, handled := o.gate.TryRespondPending(cfg, msg); handled {
@@ -247,7 +290,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		o.log.Error("bot 幂等查询失败（放行执行）", zap.Error(err))
 	}
 	if seen {
-		_ = job.reply.Flush("该消息已处理过，重复推送已忽略。", true)
+		_ = job.reply.Flush(msgAlreadySeenText, true)
 		return
 	}
 	if err := o.store.MarkSeen(cfg.BotID, key, msg.MessageID); err != nil {

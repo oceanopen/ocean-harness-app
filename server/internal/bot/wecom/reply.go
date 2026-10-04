@@ -21,14 +21,16 @@ func (r *channelRuntime) OpenReply(route bot.RouteInfo) (bot.ReplyStream, error)
 }
 
 // replyStream bot.ReplyStream 的企微落地。终帧恰好一次由核心回复泵保证；本层只做
-// 客户端快照与 finished 幂等防御。
+// 客户端快照与 finished 幂等防御。cardAttached 标记本流已随帧发过卡片（企微协议
+// 「同一消息只能回复一次卡片」，见 card.go 的 SendCard）。
 type replyStream struct {
 	rt       *channelRuntime
 	headers  aibottypes.WsFrameHeaders
 	streamId string
 
-	mu       sync.Mutex
-	finished bool
+	mu           sync.Mutex
+	finished     bool
+	cardAttached bool
 }
 
 // Flush 实现 bot.ReplyStream。final=false 走 NonBlocking（上一帧未 ack 时跳过——协议固有

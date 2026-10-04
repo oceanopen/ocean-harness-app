@@ -42,7 +42,7 @@ func (f *fakeReplyStream) ByteLimit() int { return 20480 }
 func newOrchestratorWithDB(t *testing.T) (*Orchestrator, *ConversationStore) {
 	t.Helper()
 	store := &ConversationStore{DB: newIssueTestDB(t)}
-	return NewOrchestrator(store, nil, nil, zap.NewNop()), store
+	return NewOrchestrator(store, nil, nil, nil, zap.NewNop()), store
 }
 
 // issueCmdCfg 测试用运行配置。

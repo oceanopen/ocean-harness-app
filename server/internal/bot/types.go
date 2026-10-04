@@ -53,9 +53,10 @@ type InboundMessage struct {
 	MessageID       string // 渠道消息 id（幂等键，如企微 msgid）
 	ConversationKey string // FormatConversationKey 产物
 	ChatType        ChatType
-	SenderID        string    // 发送者渠道用户 id（白名单判定 + 引用作者标注）
-	Text            string    // 用户正文（不含引用/附件，二者结构化传递）
-	Quote           *QuoteRef // 引用消息（未加工；防注入围栏在 prompt.go 统一包装）
+	SenderID        string       // 发送者渠道用户 id（白名单判定 + 引用作者标注）
+	Text            string       // 用户正文（不含引用/附件，二者结构化传递）
+	Quote           *QuoteRef    // 引用消息（未加工；防注入围栏在 prompt.go 统一包装）
+	Interaction     *Interaction // 卡片交互（非 nil 即交互消息：Text/Quote/Files 恒空，拦截步消费）
 	Files           []InboundFile
 	Route           RouteInfo // 回执路由（渠道 opaque 值，核心当黑盒原样传回 OpenReply）
 }
@@ -65,6 +66,16 @@ type QuoteRef struct {
 	AuthorID  string
 	Text      string
 	Truncated bool
+}
+
+// Interaction 卡片交互的规范化事实（企微模板卡点击等）。适配器已把渠道 event_key 解析成
+// 中立产物，核心不感知渠道编码（企微 `delivery_id:action_index` 的编码与反解双向同源，
+// 同守在适配器）。
+type Interaction struct {
+	DeliveryID  string // 点击目标卡的应用侧投递锚（= 出站 CardSpec.TaskID；解析失败空串）
+	ActionIndex int    // 选项序号（0 基；-1 = 非选项 key，如提交按钮/未知形态）
+	TaskID      string // 渠道回传 task_id 原样（置灰更新的对照锚）
+	RawKey      string // 原始 event_key（排障与兜底事实保全）
 }
 
 // InboundFile 已落地的附件。Path 为 bot 工作目录内绝对路径（claude 用 Read 等工具按路径读取，

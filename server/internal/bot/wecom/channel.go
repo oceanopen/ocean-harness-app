@@ -132,6 +132,19 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 			r.buildMixed(frame.Body.Mixed, in)
 		})
 	}
+	// 模板卡片点击事件（T3.1）：SDK dispatch 已预调 DecodeEvent，回调内 Body.Event 即具体
+	// 事件类型。归一为合成 BaseMessage + Interaction 后轻投递（与消息回调同款），重活
+	// （拦截步判定/置灰更新）在编排器侧完成；解码失败丢弃并告警（无 msgid 不可幂等）。
+	client.OnTemplateCardEvent = func(frame *aibottypes.WsFrame[aibottypes.EventMessage]) {
+		base, interaction, ok := cardEventPayload(frame.Body)
+		if !ok {
+			log.Warn("企微模板卡片事件解码失败，已丢弃", zap.String("msgid", frame.Body.MsgId))
+			return
+		}
+		r.submitMsg(frame.Headers, base, func(in *bot.InboundMessage) {
+			in.Interaction = &interaction
+		})
+	}
 
 	// 入站处理 goroutine：保序串行消费（下载在 5 分钟有效 URL 约束下同步完成）。
 	go r.processLoop(ch, stop)

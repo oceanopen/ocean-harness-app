@@ -642,7 +642,7 @@ issue 主窗口 ─────┘
 
 #### T3.1 企微卡片通道接线
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：打通企微模板卡片收发通道——出站卡片能力接口 + 点击事件入站
 
@@ -652,6 +652,13 @@ issue 主窗口 ─────┘
 - 其他渠道（飞书）不实现新接口则不受影响；SDK 零改动
 
 **依赖**：无（可与阶段 1 并行开发；产生真实卡片流量需 T2.4 就绪）
+
+**实施定稿**：
+- **入站三件套**：① `InboundMessage.Interaction`（`types.go`）——`DeliveryID`（= 出站 CardSpec.TaskID 的点击回传锚）/`ActionIndex`（0 基，-1 = 非选项 key 如提交按钮）/`TaskID`（渠道回传 task_id 原样，置灰对照锚）/`RawKey`（原始 event_key 排障保全）；② 编排器交互拦截步（`orchestrator.go`，开流成功后、gate 快路径之前）——点击不承载回合正文，恒终帧收口不入队不占并发槽，幂等前置（HasSeen → 判定 → MarkSeen，与 gate 同款防御），置灰 update 先于终帧（企微 5 秒窗口），流无卡能力经 `CardReplyStream` 类型探测静默跳过、置灰失败仅 Warn 不阻断终帧；③ `interactionHandler` 可选依赖接口（`bot/card.go`，`TryHandleInteraction` 纯决策不做流 I/O）——T3.1 装配 nil 仅兜底文案（通道已通、消费者未接的可运行中间态），T3.2 由 driverRoute 第三角色承接（supervisor 注入点已留）。
+- **出站契约**（`bot/card.go`）：窄中立模型 `CardSpec{Title, Description, Options, Multiple, TaskID, Disabled}` + `CardReplyStream{SendCard(spec, content, final) / UpdateCard(spec)}`。**双渲染单事件**：`SendCard` 的 content 与卡同帧下发，非卡渠道的降级文案不丢失；`UpdateCard` 语义 = 整卡替换，置灰 spec 须为「原卡全量字段 + Disabled=true」（仅 TaskID+Disabled 会被适配器拒绝）。泵侧零改动——PumpReply/TurnEvent 不加 Card 类型，随 T3.2 场景消费落地。桌面主动推卡（无入站锚）留 `CardPusher` TODO（T3.4）。
+- **企微落地**（`wecom/card.go`）：vote_interaction 单卡型，选项 key 编码 `TaskID:<下标>`、多选提交 key `TaskID:submit`，入站 last-colon 反解（TaskID 字符集 [0-9A-Za-z_\-@] 不含冒号保证无歧义），编码与反解双向同守适配器、核心零渠道知识；文案截断标题 26/desc 30/选项 11（rune 级）；TaskID 校验（非空/≤128 字节/字符集）；置灰走同一 builder（card_type/task_id/submit_button.key 天然一致，`checkbox.disable=true`，无 submit_button.disable 字段即天然不发）；`replyStream` 加 `cardAttached` 单次卡约束（协议「同一消息只能回复一次卡片」）。入站归一 `cardEventPayload` 合成 BaseMessage 复用 `submitMsg`/`fillCommon`（会话键/发送者/路由与消息回调同源），事件经既有入站串行通道轻投递。
+- **T3.2 注意事项**：① 交互事件与附件下载共用 processLoop 串行队列，前置下载排队会吃掉 5 秒应答窗口——T3.2 置灰落地时评估交互事件分流；② 置灰返回 spec 须完整形态（见出站契约）；③ `CardSpec.Options` 上限 20 未在适配器校验（审批/表单场景 2–4 项无触发面，T3.3 表单卡扩字段时一并处理）。
+- 验证：`go test ./... -race` / `gofmt` / `build` / `vet` 全过。`bot/card_test.go` 覆盖拦截步六态（nil 兜底含 MarkSeen / 命中含置灰先于终帧 / 未命中 / 重投幂等 / 纯文本流跳置灰 / 群聊白名单零帧）；`wecom/card_test.go` 覆盖构建表（单/多选、截断、key 编码、Disabled、校验拒绝）/ 反解表（last-colon/无冒号/负数/空串）/ 编码-反解往返 / 归一链（单/群会话键、headers 透传、Interaction 注入、非模板卡事件丢弃）。
 
 #### T3.2 审批 vote_interaction 卡
 

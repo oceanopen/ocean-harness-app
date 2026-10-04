@@ -238,7 +238,7 @@ func TestOrchestratorPendingGateHit(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	driver := &stubTurnDriver{}
 	gate := &stubGate{text: "✅ 已应答审批：允许", handled: true}
-	o := NewOrchestrator(store, driver, gate, zap.NewNop())
+	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
 	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
@@ -263,7 +263,7 @@ func TestOrchestratorPendingGateRedelivery(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	driver := &stubTurnDriver{}
 	gate := &stubGate{text: "✅ 已应答审批：允许", handled: true}
-	o := NewOrchestrator(store, driver, gate, zap.NewNop())
+	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
 	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
@@ -295,7 +295,7 @@ func TestOrchestratorPendingGateMiss(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	driver := &stubTurnDriver{}
 	gate := &stubGate{text: "", handled: false}
-	o := NewOrchestrator(store, driver, gate, zap.NewNop())
+	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
 	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
@@ -323,7 +323,7 @@ func TestOrchestratorPendingGateMiss(t *testing.T) {
 func TestOrchestratorPendingGateNil(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	driver := &stubTurnDriver{}
-	o := NewOrchestrator(store, driver, nil, zap.NewNop())
+	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
 	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
