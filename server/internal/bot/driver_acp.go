@@ -5,18 +5,19 @@ import (
 	"errors"
 	"fmt"
 
-	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/acpsession"
 )
 
 // acpSessions bot 域消费 acpsession 域的最小面（消费侧缝，惯例同 ClaudeDriver 本身）：
 // *acpsession.Manager 隐式满足（编译期断言紧随定义）；测试以 fake 帧脚本驱动，不依赖
 // 真实 Manager 与 agent 进程。Ensure 为受理式（同步返回现状快照，spawn 链后台进行），
-// 就绪等待与回合输出均由本驱动按帧驱动收集。
+// 就绪等待与回合输出均由本驱动按帧驱动收集。回合受理走 PromptQueued 排队语义（T2.2
+// 跨入口回合锁）——活动回合中 FIFO 等位、回合空隙自动开跑，与桌面 prompt 入口互斥且
+// 有序（桌面即时受理不经队列，用户优先）。
 type acpSessions interface {
 	Ensure(ctx context.Context, issueID, pickedLaunchMode string) (acpsession.ViewSnapshot, error)
 	Subscribe(issueID string) (<-chan acpsession.Frame, func())
-	Prompt(issueID string, text string) error
+	PromptQueued(ctx context.Context, issueID, text string) error
 	Cancel(issueID string) error
 }
 
@@ -52,11 +53,14 @@ func NewAcpDriver(sessions acpSessions) ClaudeDriver {
 	return acpDriver{sessions: sessions, issue: unboundIssueResolver}
 }
 
-// RunTurn 实现见 driver.go 契约。受理失败（未绑定 / 配置非法 / 会话起不来 / 目标回合冲突）
-// 同步返回 error（复用编排器的启动失败回复路径）；受理成功后异步收集帧直至回合终态。
-// 固定时序：解析 issue → Ensure 受理 → 订阅（受理成功后立即订阅，首帧快照新于受理时点，
-// 旧会话的失败快照进不来；Prompt 受理在订阅之后，受理帧同步广播不漏）→ 帧驱动等就绪 →
-// Prompt 受理 → 帧循环收集。
+// RunTurn 实现见 driver.go 契约。受理失败（未绑定 / 配置非法 / 会话起不来 / 排队受理
+// 被拒）同步返回 error（复用编排器的启动失败回复路径）；受理成功后异步收集帧直至回合
+// 终态。固定时序：解析 issue → Ensure 受理 → 订阅（受理成功后立即订阅——首帧快照新于
+// 受理时点，旧会话的失败快照进不来）→ 帧驱动等就绪 → 排队受理（活动回合中 FIFO 等位，
+// 回合空隙自动开跑；等位期间会话终结 / ctx 取消则同步报错）→ 受理后重开干净订阅 → 帧
+// 循环收集。两段订阅的分工：第一段只服务等就绪，等位全程挂着不消费（等位窗口里阻塞
+// 回合的完整帧序全部作废——重开订阅让 collectTurn 缓冲里只可能有本回合的生命周期帧，
+// 外来 turnEnded 误终止、hub 慢订户溢出摘除两个窗口一并消除）。
 func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
 	issueID, ok := d.issue(req.ConversationKey)
 	if !ok {
@@ -72,15 +76,16 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 		stop()
 		return nil, err
 	}
-	if err := d.sessions.Prompt(issueID, req.Prompt); err != nil {
+	// 排队受理（T2.2）：受理失败（会话终结 / ctx 取消）同步报错，经 driverRoute 包
+	// turnNotAcceptedError，编排器不清锚。
+	if err := d.sessions.PromptQueued(ctx, issueID, req.Prompt); err != nil {
 		stop()
-		if errors.Is(err, acp.ErrTurnActive) {
-			return nil, errors.New("目标 issue 正有回合进行中（可能正在桌面端执行），请等回合结束后再发")
-		}
 		return nil, err
 	}
+	stop() // 等位窗口帧全部作废（含受理帧自身——armed 由重开订阅的首帧快照装填）
+	turnFrames, stopTurn := d.sessions.Subscribe(issueID)
 	events := make(chan TurnEvent, 128)
-	go collectTurn(ctx, d.sessions, issueID, frames, stop, events)
+	go collectTurn(ctx, d.sessions, issueID, turnFrames, stopTurn, events)
 	return events, nil
 }
 
@@ -137,10 +142,12 @@ func sessionStateError(snap acpsession.ViewSnapshot) error {
 	return fmt.Errorf("ACP 会话已终结：%s", reason)
 }
 
-// collectTurn 回合输出收集（RunTurn 受理成功后开启，订阅与退订所有权在此）。固定窗口：
-// turnStarted 后视图侧回合闸门保证不存在别的回合，窗口内 agentMessage entry 即本轮回复
-// （帧携带累计全量文本，取最新即可）；toolCall 按 id 首见发进度事件。终态唯一性：
-// turnEnded / terminated / 帧通道关闭三者先到先收，收即返回。
+// collectTurn 回合输出收集（RunTurn 受理成功后开启，订阅与退订所有权在此；订阅为受理
+// 后重开的干净通道，缓冲里只可能有本回合生命周期帧）。armed 窗口装填：首帧快照的
+// TurnActive（本回合 turnStarted 帧广播早于订阅建立，收不到）或收到的 FrameTurnStarted；
+// 窗口内视图侧回合闸门保证不存在别的回合，agentMessage entry 即本轮回复（帧携带累计
+// 全量文本，取最新即可）；toolCall 按 id 首见发进度事件。终态唯一性：turnEnded /
+// terminated / 帧通道关闭三者先到先收，收即返回。
 // ctx 取消 = 软取消（Manager.Cancel → acp 层预算内强制收口，终态帧必达），继续消费直至
 // 终态帧；不自建超时——终结时序统一由 acp 层取消预算与帧到达表达，不引入时间性兜底。
 // 取消信号消费一次即摘出 select（置 nil）——Done 恒就绪，留在集合里会在等终态帧期间
@@ -165,6 +172,23 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID string, fram
 				return
 			}
 			switch frame.Type {
+			case acpsession.FrameSnapshot:
+				if frame.Snapshot == nil {
+					continue
+				}
+				// 首帧快照（真实 hub 订阅首帧）：TurnActive=true 装填 armed；false =
+				// 回合已在订阅建立前收敛（agent 极快；Subscribe 建立与 PromptText RPC
+				// 存在量级差，生产不可达、fake 测试可达），从快照直接合成终态（entries
+				// 含全文；回合级协议错误不落快照视图，以 StopReason 判 cancelled，其余
+				// 按正常完成）。
+				armed = frame.Snapshot.TurnActive
+				if !armed {
+					emitTurnDone(events, &acpsession.TurnPayload{
+						StopReason: frame.Snapshot.StopReason,
+						Error:      frame.Snapshot.Error,
+					}, lastAgentText(frame.Snapshot.Entries))
+					return
+				}
 			case acpsession.FrameTurnStarted:
 				armed = frame.Turn != nil && frame.Turn.Active
 			case acpsession.FrameEntry:
@@ -190,6 +214,18 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID string, fram
 			}
 		}
 	}
+}
+
+// lastAgentText 快照 entries 中最后一条 agentMessage 文本（极快收敛合成终态用——帧语义
+// 的「累计全量取最新」在快照投影上即取最后一条非空）。
+func lastAgentText(entries []acpsession.ConversationEntry) string {
+	var text string
+	for i := range entries {
+		if entries[i].Kind == "agentMessage" && entries[i].Text != "" {
+			text = entries[i].Text
+		}
+	}
+	return text
 }
 
 // terminatedError 会话终结帧的用户可读错误（带因优先）。

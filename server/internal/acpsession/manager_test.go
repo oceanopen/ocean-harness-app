@@ -118,6 +118,16 @@ func statusFrameIs(want SessionStatus) func(Frame) bool {
 	}
 }
 
+// waitFirstTick 等首个 tick 条目（slow-cancel 脚本：回合已推进、acp 层 turnCancel 必已
+// 注册）——过早取消会在后台回合尚未注册时静默丢失（对齐 acp 包 TestCancelTurnSoftCancel
+// 惯例）。取消类用例的前置步骤。
+func waitFirstTick(t *testing.T, frames <-chan Frame) {
+	t.Helper()
+	waitFrame(t, frames, "首个 tick 条目", func(f Frame) bool {
+		return f.Type == FrameEntry && f.Entry != nil && strings.HasPrefix(f.Entry.Text, "tick-")
+	})
+}
+
 // bindingRow 按 issueId 查锚点行（断言辅助）。
 func bindingRow(t *testing.T, db *gorm.DB, issueID string) *model.IssueAcpSession {
 	t.Helper()
@@ -292,11 +302,9 @@ func TestPromptTurnGateAndCancel(t *testing.T) {
 	if err := mgr.Prompt(issueID, "并发回合"); !errors.Is(err, acp.ErrTurnActive) {
 		t.Fatalf("并发回合应 ErrTurnActive，got %v", err)
 	}
-	// 等首个 tick 条目（回合已推进、acp 层 turnCancel 必已置位）再取消——过早 Cancel
-	// 会在后台回合尚未注册时静默丢失（对齐 acp 包 TestCancelTurnSoftCancel 惯例）。
-	waitFrame(t, frames, "首个 tick 条目", func(f Frame) bool {
-		return f.Type == FrameEntry && f.Entry != nil && strings.HasPrefix(f.Entry.Text, "tick-")
-	})
+	// 等首个 tick（acp 层 cancel 必已注册）再取消——过早 Cancel 会在后台回合尚未注册时
+	// 静默丢失。
+	waitFirstTick(t, frames)
 	if err := mgr.Cancel(issueID); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
@@ -493,6 +501,233 @@ func TestDiscardCascade(t *testing.T) {
 	mgr.Discard(issueID)
 	if snap := mgr.Get(issueID); snap.Status != StatusIdle {
 		t.Fatalf("Discard 后应为 idle，got %s", snap.Status)
+	}
+}
+
+// —— T2.2 per-session 跨入口回合锁（PromptQueued 排队受理）——
+
+// queuedWaiters 测试观察点：等位队列当前长度（集成测试以「入队完成」做确定性时序同步，
+// 不依赖 sleep）。
+func queuedWaiters(mgr *Manager, issueID string) int {
+	mgr.mu.Lock()
+	entry, ok := mgr.entries[issueID]
+	mgr.mu.Unlock()
+	if !ok {
+		return 0
+	}
+	entry.turnQueue.mu.Lock()
+	defer entry.turnQueue.mu.Unlock()
+	return len(entry.turnQueue.waiters)
+}
+
+// queueResult 收排队受理结果（超时失败，防测试悬挂）。
+func queueResult(t *testing.T, ch <-chan error, what string) error {
+	t.Helper()
+	select {
+	case err := <-ch:
+		return err
+	case <-time.After(10 * time.Second):
+		t.Fatalf("等待 %s 超时", what)
+		return nil
+	}
+}
+
+// TestPromptQueuedAutoStartAfterTurn 主链路：活动回合中排队受理阻塞等位（不开新回合），
+// 回合终态释放槽位后自动开跑（受理式：受理即返回，终态经帧流/视图可见）。
+func TestPromptQueuedAutoStartAfterTurn(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "第一轮"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	queued := make(chan error, 1)
+	go func() { queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息") }()
+	// 等位入队（确定性时序同步）后：等位期间不受理新回合（用户条目不落视图）。
+	waitForCondition(t, "等位入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
+	snap := mgr.Get(issueID)
+	if !snap.TurnActive {
+		t.Fatalf("第一轮应仍在进行，got %+v", snap)
+	}
+	for _, e := range snap.Entries {
+		if e.Text == "排队消息" {
+			t.Fatalf("等位期间不应受理新回合，got %+v", snap.Entries)
+		}
+	}
+	// 等首个 tick（acp 层 cancel 必已注册）再取消——过早取消会静默丢失（既有惯例）。
+	waitFirstTick(t, frames)
+	if err := mgr.Cancel(issueID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	waitFrame(t, frames, "第一轮 cancelled 终态", func(f Frame) bool { return f.Type == FrameTurnEnded })
+	// 槽位释放 → 等位者自动受理开跑（canceled 标记残留，第二轮立即 cancelled 收敛）。
+	if err := queueResult(t, queued, "排队受理自动开跑"); err != nil {
+		t.Fatalf("排队受理应在回合结束后自动开跑: %v", err)
+	}
+	waitForCondition(t, "排队回合条目落视图", func() bool {
+		snap := mgr.Get(issueID)
+		return !snap.TurnActive && len(snap.Entries) >= 2 && snap.Entries[len(snap.Entries)-1].Text == "排队消息"
+	})
+}
+
+// TestPromptQueuedFIFOOrder 两个等位者按入队序依次开跑：A 先受理，其回合终态释放后 B
+// 才受理（用户条目落视图顺序即受理顺序）。
+func TestPromptQueuedFIFOOrder(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "第一轮"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	queuedA := make(chan error, 1)
+	queuedB := make(chan error, 1)
+	go func() { queuedA <- mgr.PromptQueued(context.Background(), issueID, "排队A") }()
+	waitForCondition(t, "A 入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
+	go func() { queuedB <- mgr.PromptQueued(context.Background(), issueID, "排队B") }()
+	waitForCondition(t, "B 入队", func() bool { return queuedWaiters(mgr, issueID) == 2 })
+	waitFirstTick(t, frames)
+	if err := mgr.Cancel(issueID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	waitFrame(t, frames, "第一轮 cancelled 终态", func(f Frame) bool { return f.Type == FrameTurnEnded })
+	if err := queueResult(t, queuedA, "A 受理"); err != nil {
+		t.Fatalf("A 应自动开跑: %v", err)
+	}
+	if err := queueResult(t, queuedB, "B 受理"); err != nil {
+		t.Fatalf("B 应在 A 终态后自动开跑: %v", err)
+	}
+	entryIndex := func(snap ViewSnapshot, text string) int {
+		for i, e := range snap.Entries {
+			if e.Text == text {
+				return i
+			}
+		}
+		return -1
+	}
+	waitForCondition(t, "受理顺序 FIFO 落视图", func() bool {
+		snap := mgr.Get(issueID)
+		ia, ib := entryIndex(snap, "排队A"), entryIndex(snap, "排队B")
+		return !snap.TurnActive && ia > 0 && ib > ia
+	})
+}
+
+// TestPromptQueuedContextCancelSelfRemoves ctx 取消自摘：等位者取消后出队不占槽——回合
+// 结束的 release 不误投（若自摘失败，幽灵等位者会在释放后开跑并落出「排队消息」条目）。
+func TestPromptQueuedContextCancelSelfRemoves(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "第一轮"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	queued := make(chan error, 1)
+	go func() { queued <- mgr.PromptQueued(ctx, issueID, "排队消息") }()
+	waitForCondition(t, "等位入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
+	cancel()
+	if err := queueResult(t, queued, "ctx 取消退出"); err == nil || !strings.Contains(err.Error(), "取消") {
+		t.Fatalf("ctx 取消应报错退出: %v", err)
+	}
+	waitForCondition(t, "自摘出队", func() bool { return queuedWaiters(mgr, issueID) == 0 })
+	// 回合结束后释放槽位：闸门空闲（即时受理成功即证）且无幽灵回合条目。
+	waitFirstTick(t, frames)
+	if err := mgr.Cancel(issueID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	waitFrame(t, frames, "第一轮 cancelled 终态", func(f Frame) bool { return f.Type == FrameTurnEnded })
+	if err := mgr.Prompt(issueID, "手动轮"); err != nil {
+		t.Fatalf("取消后闸门应空闲可受理: %v", err)
+	}
+	waitForCondition(t, "手动轮受理落视图", func() bool {
+		snap := mgr.Get(issueID)
+		return !snap.TurnActive && len(snap.Entries) >= 2 && snap.Entries[len(snap.Entries)-1].Text == "手动轮"
+	})
+	for _, e := range mgr.Get(issueID).Entries {
+		if e.Text == "排队消息" {
+			t.Fatalf("幽灵等位者不应被唤醒开跑: %+v", mgr.Get(issueID).Entries)
+		}
+	}
+}
+
+// TestPromptQueuedDiscardAborts 等位中会话删除：close 广播 → 受理失败退出（回合未发生，
+// 语义 = 受理被拒）。
+func TestPromptQueuedDiscardAborts(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "第一轮"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	queued := make(chan error, 1)
+	go func() { queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息") }()
+	waitForCondition(t, "等位入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
+	mgr.Discard(issueID)
+	if err := queueResult(t, queued, "等位中 Discard 退出"); err == nil || !strings.Contains(err.Error(), "终结") {
+		t.Fatalf("等位中会话删除应报错退出: %v", err)
+	}
+}
+
+// TestPromptQueuedReadyRecheckAfterWake 等位唤醒后的就绪复验（白盒）：等位期间会话终结
+// 收尾完成（白盒置态模拟 pump 哨兵路径），槽位释放唤醒后旧 entry 不得续接受理。
+func TestPromptQueuedReadyRecheckAfterWake(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "第一轮"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	queued := make(chan error, 1)
+	go func() { queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息") }()
+	waitForCondition(t, "等位入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
+	mgr.mu.Lock()
+	entry := mgr.entries[issueID]
+	mgr.mu.Unlock()
+	entry.mu.Lock()
+	entry.state = StatusTerminated
+	entry.mu.Unlock()
+	entry.turnQueue.release()
+	if err := queueResult(t, queued, "唤醒后复验退出"); err == nil || !strings.Contains(err.Error(), "未就绪") {
+		t.Fatalf("等位中终结的旧 entry 不得续接受理: %v", err)
+	}
+}
+
+// TestPromptQueuedDeathReleasesAllWaiters 进程死亡释放全部等位者（回归锁）：终结收尾
+// 必须关等位队列——release 只弹队首，不 close 会让其余等位者无限滞留（堵死编排器会话
+// 队列并占住全局并发槽位）。
+func TestPromptQueuedDeathReleasesAllWaiters(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "第一轮"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	queuedB := make(chan error, 1)
+	queuedC := make(chan error, 1)
+	go func() { queuedB <- mgr.PromptQueued(context.Background(), issueID, "排队B") }()
+	waitForCondition(t, "B 入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
+	go func() { queuedC <- mgr.PromptQueued(context.Background(), issueID, "排队C") }()
+	waitForCondition(t, "C 入队", func() bool { return queuedWaiters(mgr, issueID) == 2 })
+	// 走真实终结收尾路径（置态 + close 队列 + 落因 + 广播）；entry 尚 ready 态不被幂等挡回。
+	mgr.mu.Lock()
+	entry := mgr.entries[issueID]
+	mgr.mu.Unlock()
+	mgr.finishTerminated(entry)
+	for name, ch := range map[string]<-chan error{"B": queuedB, "C": queuedC} {
+		if err := queueResult(t, ch, name+" 随终结退出"); err == nil || !strings.Contains(err.Error(), "终结") {
+			t.Fatalf("等位者 %s 应随会话终结报错退出: %v", name, err)
+		}
 	}
 }
 

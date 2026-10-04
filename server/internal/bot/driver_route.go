@@ -16,7 +16,7 @@ import (
 const launchModeACP = "acp"
 
 // turnNotAcceptedError 引擎受理拒绝：回合未真正发生，与 headless 会话锚点有效性无关
-// （ACP 引擎的同步失败——未绑定引导、配置非法、会话起不来、目标回合冲突——与启动模式
+// （ACP 引擎的同步失败——未绑定引导、配置非法、会话起不来、排队受理被拒——与启动模式
 // 解析失败全属此类）。driverRoute 以此标记此类错误，编排器据其跳过 healAfterFailure
 // 清锚（errors.As 判别，编排器不感知具体引擎；误清会把 headless 时代的续聊锚点永久丢掉）。
 type turnNotAcceptedError struct{ err error }

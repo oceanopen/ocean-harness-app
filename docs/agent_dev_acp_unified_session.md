@@ -554,7 +554,7 @@ issue 主窗口 ─────┘
 
 #### T2.2 per-session 跨入口回合锁
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：UI / bot 两入口抢同一 ACP 会话时的回合互斥
 
@@ -563,6 +563,15 @@ issue 主窗口 ─────┘
 - ACP 会话内回合天然串行，锁解决的是「两入口同时发起回合」的抢跑
 
 **依赖**：T2.1
+
+**实施定稿**：
+- **锁落点 acpsession（相对方案偏离）**：锁的 SSOT 不落 orchestrator 而落 acpsession 域——两入口已在 `Manager.Prompt` 汇聚（互斥天然成立），缺的只是「后到方有序等待」；orchestrator 每会话队列职责（bot 消息序 + fail closed 容量 8）独立保留、零改动。落 acpsession 还使未来第三入口（如 CLI）复用同一锁语义
+- **受理面拆分**：`Manager.Prompt`（UI，即时受理不变——活动回合拒绝 `acp.ErrTurnActive`，输入禁用是桌面常态交互，TOCTOU 兜底拒绝）与新增 `Manager.PromptQueued(ctx, issueID, text)`（bot，排队受理——活动回合中 per-entry FIFO 等位，回合终态后自动开跑；受理成功即返回，回合异步跑到终态，受理式语义与 Prompt 一致）。公平性：UI 即时受理不经队列，回合空隙上桌面先到先得，等位者被插队后重新排队继续等（用户优先）
+- **等位队列（`turnqueue.go`）**：join/depart/release/close/done 五操作；固定时序「先入队、再尝试闸门」消解登记与 turnActive 检查的竞态（回合结束的 release 不会漏掉已入队者；未等位即获槽位则 depart 幂等出队）；释放路径在回合收尾 goroutine 的 endTurn 之后 release（`acceptTurn` 为 Prompt/PromptQueued 共用收口）；close 广播于四处挂载——entry 重建（Ensure）/ Discard / StopAll / 进程死亡收尾（finishTerminated，release 只弹队首，不关队列会让其余等位者无限滞留并占住编排器并发槽位）——等位者随旧 entry 终结退出，旧等待不跨会话续接；锁序约定 q.mu 独立于 manager/entry/view 锁（持 q.mu 不取其他锁，单向不成环）
+- **等位无预算**：ctx 取消与回合终态驱动，不设时长上限（回合时长不可预估，对齐 acp 层 prompt 不设超时的既有拍板）；等位唤醒后就绪复验（`entry.readyError`）——等位期间终结/重建的旧 entry 不得续接受理
+- **bot 侧接线（`driver_acp.go`）**：`acpSessions` 消费面 Prompt → PromptQueued（生命周期 ctx 透传）；`acp.ErrTurnActive` 的驱动侧人话映射删除（排队后不再可达）；同步失败路径（等位中会话终结 / ctx 取消）经 driverRoute 包 turnNotAcceptedError，编排器不清锚（锚点保护语义不变）。帧收集采用**两段订阅**：第一段只服务等就绪（等位全程挂着不消费），受理成功后重开干净订阅给 collectTurn——等位窗口里阻塞回合的完整帧序全部作废，collectTurn 缓冲里只可能有本回合生命周期帧（外来 turnEnded 误终止本回合、hub 慢订户 256 帧溢出摘除断流两个窗口一并消除）；armed 窗口由重开订阅的首帧快照 TurnActive 装填（本回合 turnStarted 帧广播早于订阅建立收不到），快照 TurnActive=false（agent 极快收敛，生产不可达）则从快照直接合成终态
+- **已知限制**：等位期间 bot 侧 IM 呈现仍是受理时已发的「正在思考…」占位帧，无排队/执行区分的状态行——排队反馈依赖回合受理模型异步化，随 T3.4 事件化呈现一并做（拍板）
+- 验证：build / vet / 全量测试 `-race` 回归通过；`turnqueue_test.go` 覆盖 FIFO 序 / depart 幂等（含 release 后补摘）/ close 广播与关后 no-op；`manager_test.go` 新增等位主链路（占住回合 → PromptQueued 阻塞不开新回合 → Cancel → 自动开跑）/ 双等位者 FIFO 序 / ctx 取消自摘无幽灵回合 / Discard 中止 / 唤醒后就绪复验与进程死亡释放全部等位者（白盒）；`driver_acp_test.go` 覆盖受理失败透传退订 / 等位期 ctx 取消同步报错 / 等位窗口帧整体作废 / 快照装填 armed / 极快收敛快照合成
 
 #### T2.3 bot↔issue 显式绑定与 IM 内切换
 

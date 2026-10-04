@@ -2,6 +2,8 @@
 // launch_settings 解析消费、绑定锚点落库（D7 受控反转：当初随 chat 视图删除
 // claude_session_ref，本域以 t_issue_acp_sessions 重新落绑定——sidecar 亲自持有 ACP
 // 会话后绑定语义才成立，这是受控反转而非回退）、事件流积累与会话视图、SSE hub 扇出。
+// 跨入口回合锁（T2.2）：桌面 prompt（即时受理）与 bot 回合（排队受理 PromptQueued）
+// 共用同一视图闸门，两入口抢跑由 per-entry 等位队列串行。
 // 依赖方向：本包 → acp + agentcatalog + dal；由 main 装配为 global.AcpSessions，
 // service/controller 层仅做受理转发与投影，不反向被本包依赖。
 package acpsession
@@ -70,7 +72,8 @@ func NewManager(db *gorm.DB, dirs Dirs, port int, log *zap.Logger) (*Manager, er
 }
 
 // sessionEntry 单 issue 的运行时会话宿主。mu 守护 state / client / session / discarded；
-// 锁序：entry.mu → view 内部锁（绝不反向，view 不感知 entry）。
+// 锁序：entry.mu → view 内部锁（绝不反向，view 不感知 entry）；turnQueue 的 q.mu 独立
+// （约定见 turnqueue.go）。
 type sessionEntry struct {
 	issueID string
 	mu      sync.Mutex
@@ -79,7 +82,8 @@ type sessionEntry struct {
 	client    *acp.AgentClient
 	session   *acp.Session
 	view      *sessionView
-	discarded bool // Discard 已受理：后台 spawn 完成后发现即自清（不落锚、不注册 pump）
+	turnQueue *turnQueue // 跨入口回合等位队列（T2.2）：PromptQueued 排队受理的槽位等待
+	discarded bool       // Discard 已受理：后台 spawn 完成后发现即自清（不落锚、不注册 pump）
 }
 
 // spawnFunc 测试替换点（对齐 acpdoctor probeFunc 惯例）：catalog 条目 → vendored 拉起链
@@ -107,9 +111,11 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 		}
 		// failed/terminated：重建。旧 entry 已终态且无在途写者（spawn 失败路径在置态前
 		// 已完整收尾；pump 终结路径置态后仅剩一次 hub 广播），直接替换。
+		// 等位者随旧 entry 终结退出（close 广播）——旧等待不跨 entry 续接新会话。
 		delete(m.entries, issueID)
+		old.turnQueue.close()
 	}
-	entry := &sessionEntry{issueID: issueID, state: StatusStarting, view: newSessionView()}
+	entry := &sessionEntry{issueID: issueID, state: StatusStarting, view: newSessionView(), turnQueue: newTurnQueue()}
 	m.entries[issueID] = entry
 	m.mu.Unlock()
 
@@ -260,6 +266,9 @@ func (m *Manager) finishTerminated(entry *sessionEntry) {
 	frames := entry.view.setTerminated(reason)
 	agentCode := entry.view.snapshot().AgentCode
 	entry.mu.Unlock()
+	// 等位者随会话终结全部退出（release 只弹队首，不关队列会让其余等位者无限滞留——
+	// 堵死编排器会话队列并占住并发槽位）。与 Discard/StopAll/重建三处 close 同语义。
+	entry.turnQueue.close()
 	_ = m.bindings.SaveError(context.Background(), entry.issueID, agentCode, reason)
 	m.hub.broadcast(entry.issueID, frames)
 }
@@ -285,9 +294,10 @@ func (m *Manager) Subscribe(issueID string) (<-chan Frame, func()) {
 	})
 }
 
-// Prompt 受理一轮回合：视图侧串行闸门（活动回合拒绝，acp.ErrTurnActive 同语义）→ 立即
-// 返回 → 后台阻塞至 agent 终态并合成 turnEnded（StopReason 只在 Prompt 返回值可见，
-// 回合两端帧由本域合成补齐 gap）。
+// Prompt 即时受理一轮回合（UI 入口语义）：视图侧串行闸门（活动回合拒绝，acp.ErrTurnActive
+// 同语义）→ 立即返回 → 后台阻塞至 agent 终态并合成 turnEnded（StopReason 只在 Prompt
+// 返回值可见，回合两端帧由本域合成补齐 gap）。bot 入口的排队受理（跨入口回合锁，T2.2）
+// 走 PromptQueued。
 func (m *Manager) Prompt(issueID, text string) error {
 	entry, err := m.readyEntry(issueID)
 	if err != nil {
@@ -297,15 +307,60 @@ func (m *Manager) Prompt(issueID, text string) error {
 	if err != nil {
 		return err
 	}
-	m.hub.broadcast(issueID, frames)
+	m.acceptTurn(entry, frames, text)
+	return nil
+}
+
+// PromptQueued 排队受理一轮回合（T2.2 per-session 跨入口回合锁）：UI 与 bot 两入口抢同一
+// ACP 会话时，活动回合中的后到者 FIFO 等位，当前回合结束后（release 唤醒）自动开跑；
+// 受理成功（回合开始）即返回，回合异步跑到终态（受理式语义与 Prompt 一致）。等位无预算
+// ——回合时长不可预估，由回合终态与 ctx 取消驱动（对齐 acp 层 prompt 不设超时的既有拍板）。
+// 固定时序：每次循环先 join 再尝试闸门——「已在队列」与 turnActive 检查的竞态由先入队后
+// 重试消解（回合结束的 release 不会漏掉已入队者；未等位即获槽位则 depart 出队）。公平性：
+// UI 即时受理不经队列，回合空隙上桌面先到先得，等位者被插队后循环重试重新排队。
+func (m *Manager) PromptQueued(ctx context.Context, issueID, text string) error {
+	entry, err := m.readyEntry(issueID)
+	if err != nil {
+		return err
+	}
+	q := entry.turnQueue
+	for {
+		// 等位唤醒后对持有的 entry 复验就绪态：等位期间终结/重建的旧 entry 不得续接受理
+		//（重建后的新 entry 自带新队列，旧等待不跨 entry 续接新会话）。
+		if err := entry.readyError(); err != nil {
+			return err
+		}
+		w := q.join()
+		frames, err := entry.view.beginTurn(text)
+		if err == nil {
+			q.depart(w) // 未等位即获槽位（或被 release 弹出后闸门成功）：出队
+			m.acceptTurn(entry, frames, text)
+			return nil
+		}
+		select {
+		case <-w: // 回合空隙唤醒（可能被 UI 即时受理插队）：重新排队重试
+		case <-q.done():
+			return errors.New("ACP 会话已终结，排队回合未受理")
+		case <-ctx.Done():
+			q.depart(w)
+			return fmt.Errorf("排队等待回合结束被取消: %w", ctx.Err())
+		}
+	}
+}
+
+// acceptTurn 受理收口（Prompt 即时受理与 PromptQueued 排队受理共用）：广播受理帧 →
+// 后台阻塞至 agent 终态 → 合成 turnEnded 广播 → 释放回合槽位（唤醒等位队首）。回合
+// 终态先落视图再 release——被唤醒者重试闸门时槽位必然已释放。
+func (m *Manager) acceptTurn(entry *sessionEntry, frames []Frame, text string) {
+	m.hub.broadcast(entry.issueID, frames)
 	entry.mu.Lock()
 	client, session := entry.client, entry.session
 	entry.mu.Unlock()
 	go func() {
 		stop, promptErr := client.PromptText(context.Background(), session, text)
-		m.hub.broadcast(issueID, entry.view.endTurn(string(stop), errorText(promptErr)))
+		m.hub.broadcast(entry.issueID, entry.view.endTurn(string(stop), errorText(promptErr)))
+		entry.turnQueue.release()
 	}()
-	return nil
 }
 
 // Cancel 软取消当前回合（无活动回合幂等 no-op，语义见 acp.CancelTurn）。
@@ -381,6 +436,7 @@ func (m *Manager) Discard(issueID string) {
 	entry.discarded = true
 	state, client := entry.state, entry.client
 	entry.mu.Unlock()
+	entry.turnQueue.close() // 排队回合随会话删除退出（受理失败语义，回合未发生，不涉锚点清理）
 	if client != nil && state == StatusReady {
 		client.Close()
 		return
@@ -403,6 +459,7 @@ func (m *Manager) StopAll() {
 		entry.mu.Lock()
 		client := entry.client
 		entry.mu.Unlock()
+		entry.turnQueue.close() // 排队回合随关停退出
 		if client != nil {
 			client.Close() // 有界（结算 + 连接关闭 + 进程组回收）
 		}
@@ -418,13 +475,21 @@ func (m *Manager) readyEntry(issueID string) (*sessionEntry, error) {
 	if !ok {
 		return nil, errors.New("ACP 会话不存在，请先创建会话")
 	}
-	entry.mu.Lock()
-	state := entry.state
-	entry.mu.Unlock()
-	if state != StatusReady {
-		return nil, fmt.Errorf("ACP 会话未就绪（当前 %s）", state)
+	if err := entry.readyError(); err != nil {
+		return nil, err
 	}
 	return entry, nil
+}
+
+// readyError 就绪态校验。readyEntry 之外，PromptQueued 在每次等位唤醒后复验持有的
+// entry：等位期间终结/重建后，旧 entry 不得续接受理。
+func (e *sessionEntry) readyError() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.state != StatusReady {
+		return fmt.Errorf("ACP 会话未就绪（当前 %s）", e.state)
+	}
+	return nil
 }
 
 // errorText 回合错误转文案（nil → 空串）。

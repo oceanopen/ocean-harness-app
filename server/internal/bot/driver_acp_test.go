@@ -13,23 +13,30 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
 )
 
-// fakeSessions acpSessions 的帧脚本替身：订阅返回自管帧通道，Ensure/Prompt 行为与错误按
-// 字段注入，调用留痕供断言。push 只允许在 stop 生效前调用（脚本帧序即测试编排序）。
+// fakeSessions acpSessions 的帧脚本替身：每次 Subscribe 返回独立通道（对齐真实 hub 的
+// 「受理后重开干净订阅」——RunTurn 建两段订阅，脚本帧按投递时点落位），Ensure/PromptQueued
+// 行为与错误按字段注入，调用留痕供断言。
+// push 时序无关：订阅建立前入 pending（Subscribe 时灌入新通道首部，模拟真实 hub「订阅
+// 首帧快照 + 预推状态帧」），有订阅则推最新订阅通道。
+// PromptQueued 替身默认即到即返（等位语义由 acpsession 包的 Manager 测试承载）；置
+// promptBlockOnCtx 模拟等位阻塞（驱动应透传生命周期 ctx）；promptHook 在受理返回前
+// 调用（模拟等位窗口内往首段订阅灌阻塞回合的帧）。
 type fakeSessions struct {
-	mu        sync.Mutex
-	snap      acpsession.ViewSnapshot
-	ensureErr error
-	promptErr error
+	mu               sync.Mutex
+	snap             acpsession.ViewSnapshot
+	ensureErr        error
+	promptErr        error
+	promptBlockOnCtx bool
+	promptHook       func()
 
-	frames chan acpsession.Frame
-	closed bool
+	pending []acpsession.Frame
+	subs    []*fakeSub
 
 	ensureCalls int
 	promptTexts []string
@@ -37,8 +44,14 @@ type fakeSessions struct {
 	subscribes  int
 }
 
+// fakeSub 单次订阅的通道与关闭态（RunTurn 两段订阅各自独立退订）。
+type fakeSub struct {
+	ch     chan acpsession.Frame
+	closed bool
+}
+
 func newFakeSessions(snap acpsession.ViewSnapshot) *fakeSessions {
-	return &fakeSessions{snap: snap, frames: make(chan acpsession.Frame, 64)}
+	return &fakeSessions{snap: snap}
 }
 
 func (f *fakeSessions) Ensure(_ context.Context, _, _ string) (acpsession.ViewSnapshot, error) {
@@ -51,22 +64,40 @@ func (f *fakeSessions) Ensure(_ context.Context, _, _ string) (acpsession.ViewSn
 func (f *fakeSessions) Subscribe(_ string) (<-chan acpsession.Frame, func()) {
 	f.mu.Lock()
 	f.subscribes++
+	sub := &fakeSub{ch: make(chan acpsession.Frame, 64)}
+	for _, frame := range f.pending {
+		sub.ch <- frame
+	}
+	f.pending = nil
+	f.subs = append(f.subs, sub)
 	f.mu.Unlock()
-	return f.frames, func() {
+	return sub.ch, func() {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		if !f.closed {
-			f.closed = true
-			close(f.frames)
+		if !sub.closed {
+			sub.closed = true
+			close(sub.ch)
 		}
 	}
 }
 
-func (f *fakeSessions) Prompt(_ string, text string) error {
+func (f *fakeSessions) PromptQueued(ctx context.Context, _ string, text string) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.promptTexts = append(f.promptTexts, text)
-	return f.promptErr
+	promptErr := f.promptErr
+	hook := f.promptHook
+	f.mu.Unlock()
+	if promptErr != nil {
+		return promptErr
+	}
+	if f.promptBlockOnCtx {
+		<-ctx.Done() // 模拟等位阻塞：ctx 取消才返回（驱动应透传生命周期 ctx，非 Background）
+		return ctx.Err()
+	}
+	if hook != nil {
+		hook() // 受理返回前的脚本时机：等位窗口帧落首段订阅（最新订阅此刻仍是它）
+	}
+	return nil
 }
 
 func (f *fakeSessions) Cancel(_ string) error {
@@ -76,20 +107,41 @@ func (f *fakeSessions) Cancel(_ string) error {
 	return nil
 }
 
-// push 向订阅帧通道投递一帧（缓冲远大于脚本帧数，满即阻塞为测试编写错误）。
+// push 投递脚本帧：订阅建立前入 pending（Subscribe 灌入，时序无关）；有订阅则推最新
+// 订阅通道（缓冲远大于脚本帧数，满即阻塞为测试编写错误）。
 func (f *fakeSessions) push(t *testing.T, frame acpsession.Frame) {
 	t.Helper()
-	f.frames <- frame
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.subs) == 0 {
+		f.pending = append(f.pending, frame)
+		return
+	}
+	f.subs[len(f.subs)-1].ch <- frame
 }
 
-// closeFrames 主动断开事件流（模拟 hub 关停 / 订阅溢出断开）。
+// closeFrames 主动断开最新订阅的事件流（模拟 hub 关停 / 订阅溢出断开）。
 func (f *fakeSessions) closeFrames() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if !f.closed {
-		f.closed = true
-		close(f.frames)
+	if len(f.subs) == 0 {
+		return
 	}
+	sub := f.subs[len(f.subs)-1]
+	if !sub.closed {
+		sub.closed = true
+		close(sub.ch)
+	}
+}
+
+// lastFrames 最新订阅的帧通道（断言辅助：受理失败路径只可能发生在首段订阅）。
+func (f *fakeSessions) lastFrames() <-chan acpsession.Frame {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.subs) == 0 {
+		return nil
+	}
+	return f.subs[len(f.subs)-1].ch
 }
 
 func (f *fakeSessions) stats() (ensureCalls, cancelCalls, subscribes int, prompts []string) {
@@ -313,7 +365,7 @@ func TestAcpDriverTurnSessionFailed(t *testing.T) {
 	if res.err == nil || !strings.Contains(res.err.Error(), "启动失败") || !strings.Contains(res.err.Error(), "vendored 缺失") {
 		t.Fatalf("failed 终态应同步报错并落因: %v", res.err)
 	}
-	assertClosed(t, sessions.frames, "受理失败应退订")
+	assertClosed(t, sessions.lastFrames(), "受理失败应退订")
 }
 
 func TestAcpDriverTurnSessionTerminatedDuringWait(t *testing.T) {
@@ -352,16 +404,119 @@ func TestAcpDriverTurnEnsureFails(t *testing.T) {
 	}
 }
 
-func TestAcpDriverTurnPromptTurnActive(t *testing.T) {
+// TestAcpDriverTurnPromptRejected 排队受理被拒（T2.2：等位中会话终结 / 重建，Manager 侧
+// 「排队回合未受理」）同步报错并退订——ErrTurnActive 即时拒绝语义已被排队取代，驱动不再
+// 有回合冲突的专属文案映射。
+func TestAcpDriverTurnPromptRejected(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
-	sessions.promptErr = acp.ErrTurnActive
+	sessions.promptErr = errors.New("ACP 会话已终结，排队回合未受理")
 	driver := boundDriver(sessions)
 
 	_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
-	if err == nil || !strings.Contains(err.Error(), "正有回合进行中") {
-		t.Fatalf("回合冲突应同步报错并给引导文案: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "排队回合未受理") {
+		t.Fatalf("排队受理失败应同步透传: %v", err)
 	}
-	assertClosed(t, sessions.frames, "受理失败应退订")
+	assertClosed(t, sessions.lastFrames(), "受理失败应退订")
+}
+
+// TestAcpDriverTurnPromptQueuedContextCancel 等位期 ctx 取消（编排器 Stop 级联）：受理
+// 同步报错且退订，不进入帧循环收集。
+func TestAcpDriverTurnPromptQueuedContextCancel(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	sessions.promptBlockOnCtx = true
+	driver := boundDriver(sessions)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := driver.RunTurn(ctx, TurnRequest{ConversationKey: "single:u1"})
+		result <- err
+	}()
+	cancel()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("等位期 ctx 取消应同步报错: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("等待 RunTurn 返回超时")
+	}
+	assertClosed(t, sessions.lastFrames(), "受理失败应退订")
+}
+
+// TestAcpDriverTurnQueuedWindowFramesDiscarded 等位窗口帧作废（T2.2 回归锁）：阻塞 bot
+// 的桌面回合完整生命周期帧积压在首段订阅缓冲，受理后重开的干净订阅不得让它误终止本
+// 回合（修复前：外来 turnEnded 提前 emitTurnDone，bot 交付外来回合文本、自身产出丢失）。
+func TestAcpDriverTurnQueuedWindowFramesDiscarded(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	sessions.promptHook = func() {
+		// 等位窗口：阻塞回合从 turnStarted 到 turnEnded 的完整帧序落首段订阅。
+		sessions.push(t, turnStartedFrame())
+		sessions.push(t, agentTextFrame("t9-agentMessage", "桌面回合的回复"))
+		sessions.push(t, turnEndedFrame("end_turn"))
+	}
+	driver := boundDriver(sessions)
+
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	// 本回合帧（受理后重开的干净订阅）。
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, agentTextFrame("t1-agentMessage", "bot 自己的回复"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.Result != "bot 自己的回复" {
+		t.Fatalf("等位窗口帧应整体作废，本回合结果不得被外来终态顶替: %+v", done)
+	}
+}
+
+// TestAcpDriverTurnArmedFromSnapshotFrame 首帧快照装填 armed：本回合 turnStarted 帧
+// 广播早于重开订阅建立，collectTurn 收不到——armed 由快照 TurnActive 装填后正常收集。
+func TestAcpDriverTurnArmedFromSnapshotFrame(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	snap := readySnap()
+	snap.TurnActive = true
+	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &snap})
+	sessions.push(t, agentTextFrame("t1-agentMessage", "快照装填后的回复"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.Result != "快照装填后的回复" {
+		t.Fatalf("快照 TurnActive 应装填 armed 并正常收集: %+v", done)
+	}
+}
+
+// TestAcpDriverTurnInstantTurnFromSnapshot 极快收敛（快照 TurnActive=false）：受理的
+// 回合在重开订阅建立前已终态，从快照直接合成终态（entries 末条 agentMessage 即全文）。
+func TestAcpDriverTurnInstantTurnFromSnapshot(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	snap := readySnap()
+	snap.StopReason = "end_turn"
+	snap.Entries = []acpsession.ConversationEntry{
+		{EntryID: "t1-agentMessage", Kind: "agentMessage", Text: "秒回"},
+	}
+	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &snap})
+
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.IsError || done.Result != "秒回" {
+		t.Fatalf("快照终态应直接合成回合结果: %+v", done)
+	}
+	if _, ok := <-events; ok {
+		t.Fatalf("合成终态后事件通道应关闭")
+	}
 }
 
 func TestAcpDriverTurnUnboundConversation(t *testing.T) {
