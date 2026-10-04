@@ -127,7 +127,7 @@ func TestResolveSessionConfig(t *testing.T) {
 	// 用例 1：workspace 配 acp、issue 未配置 → 全回落（agentCode 回落首个 enabled 条目，
 	// permissionMode 回落 acceptEdits），cwd = <wsDir>/<issueId> 且已兜底建目录。
 	issueID := seedIssue(t, db, wsDir, `{"mode":"acp"}`, "")
-	cfg, err := resolveSessionConfig(ctx, db, issueID)
+	cfg, err := resolveSessionConfig(ctx, db, issueID, "")
 	if err != nil {
 		t.Fatalf("resolveSessionConfig: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestResolveSessionConfig(t *testing.T) {
 	// 用例 2：issue 显式覆盖 permissionMode + agentCode。
 	issueID = seedIssue(t, db, wsDir, `{"mode":"acp"}`,
 		`{"mode":"acp","agentCode":"claude-acp","permissionMode":"bypassPermissions"}`)
-	cfg, err = resolveSessionConfig(ctx, db, issueID)
+	cfg, err = resolveSessionConfig(ctx, db, issueID, "")
 	if err != nil {
 		t.Fatalf("resolveSessionConfig(override): %v", err)
 	}
@@ -159,32 +159,42 @@ func TestResolveSessionConfig(t *testing.T) {
 	// 用例 3：mode 非 acp 拒绝（terminal-manual / 显式 none 同拒）。
 	for _, mode := range []string{"terminal-manual", "none"} {
 		issueID = seedIssue(t, db, wsDir, `{"mode":"acp"}`, `{"mode":"`+mode+`"}`)
-		if _, err := resolveSessionConfig(ctx, db, issueID); err == nil {
+		if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil {
 			t.Fatalf("mode=%q 应拒绝", mode)
 		}
 	}
 
 	// 用例 4：双侧均未配置（merged nil）拒绝。
 	issueID = seedIssue(t, db, wsDir, "", "")
-	if _, err := resolveSessionConfig(ctx, db, issueID); err == nil {
+	if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil {
 		t.Fatal("无 launch_settings 应拒绝")
+	}
+
+	// 用例 4b：持久化配置显式 none（LaunchModePicker 场景实况）+ 临场声明 acp 放行；
+	// 无声明仍拒绝（临场声明仅本次会话有效，不落库不记忆）。
+	issueID = seedIssue(t, db, wsDir, `{"mode":"none"}`, "")
+	if _, err := resolveSessionConfig(ctx, db, issueID, "acp"); err != nil {
+		t.Fatalf("临场声明 acp 应放行: %v", err)
+	}
+	if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil {
+		t.Fatal("mode=none 无临场声明仍应拒绝")
 	}
 
 	// 用例 5：非法 permissionMode / agentCode 拒绝。
 	issueID = seedIssue(t, db, wsDir, `{"mode":"acp"}`, `{"mode":"acp","permissionMode":"yolo"}`)
-	if _, err := resolveSessionConfig(ctx, db, issueID); err == nil || !strings.Contains(err.Error(), "权限模式") {
+	if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil || !strings.Contains(err.Error(), "权限模式") {
 		t.Fatalf("非法 permissionMode 应拒绝，got %v", err)
 	}
 	issueID = seedIssue(t, db, wsDir, `{"mode":"acp"}`, `{"mode":"acp","agentCode":"no-such-agent"}`)
-	if _, err := resolveSessionConfig(ctx, db, issueID); err == nil || !strings.Contains(err.Error(), "no-such-agent") {
+	if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil || !strings.Contains(err.Error(), "no-such-agent") {
 		t.Fatalf("非法 agentCode 应拒绝，got %v", err)
 	}
 
 	// 用例 6：issue 不存在 / issueId 非法。
-	if _, err := resolveSessionConfig(ctx, db, "no-such-issue"); err == nil {
+	if _, err := resolveSessionConfig(ctx, db, "no-such-issue", ""); err == nil {
 		t.Fatal("issue 不存在应拒绝")
 	}
-	if _, err := resolveSessionConfig(ctx, db, "../x"); err == nil {
+	if _, err := resolveSessionConfig(ctx, db, "../x", ""); err == nil {
 		t.Fatal("路径穿越 issueId 应拒绝")
 	}
 }
@@ -201,7 +211,7 @@ func TestResolveSessionConfigRelDir(t *testing.T) {
 	if err := q.ProjectIssue.WithContext(context.Background()).Create(issue); err != nil {
 		t.Fatalf("建 issue: %v", err)
 	}
-	if _, err := resolveSessionConfig(context.Background(), db, issue.ID); err == nil || !strings.Contains(err.Error(), "绝对路径") {
+	if _, err := resolveSessionConfig(context.Background(), db, issue.ID, ""); err == nil || !strings.Contains(err.Error(), "绝对路径") {
 		t.Fatalf("相对目录应拒绝，got %v", err)
 	}
 }

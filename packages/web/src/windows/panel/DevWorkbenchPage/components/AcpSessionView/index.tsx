@@ -9,9 +9,11 @@ import PromptComposer from './PromptComposer';
 /**
  * AcpSessionView：issue 主窗口 ACP 模式的会话视图（TerminalLaunchFlow acp 分支渲染，
  * 与终端树完全同位）。编排时序（编码规则 1）：挂载即幂等受理 ensure（starting/ready
- * join 返现状，failed/terminated 重建）→ SSE 订阅建连首帧全量快照 → 视图按快照 status
- * 分支渲染，全程无「先临时值后纠正」路径。挂起审批/表单在 MessageList 与输入区之间的
- * 固定挂起区平铺 PendingCard 应答（卡片移除由 SSE pendingClosed 帧驱动）。
+ * join 返现状，failed/terminated 重建；受理显式携带 pickedLaunchMode='acp'——视图即
+ * acp 意图载体，配置 acp 与临场选择 acp 统一声明，后端门禁以此放行且不落库）→ SSE
+ * 订阅建连首帧全量快照 → 视图按快照 status 分支渲染；受理同步失败（配置校验拒绝等）
+ * 先于快照分支渲染失败态 + 重新启动，绝不落死输入框。挂起审批/表单在 MessageList 与
+ * 输入区之间的固定挂起区平铺 PendingCard 应答（卡片移除由 SSE pendingClosed 帧驱动）。
  */
 export default function AcpSessionView({ issueId }: { issueId: string }) {
   const ensure = useEnsureAcpSession();
@@ -24,7 +26,7 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
       return;
     }
     ensuredRef.current = true;
-    ensure.mutate({ issueId });
+    ensure.mutate({ issueId, pickedLaunchMode: 'acp' });
   }, [ensure, issueId]);
 
   // SSE 订阅：首帧快照入缓存，增量帧归约更新；卸载即断，重挂载重建连自愈。
@@ -32,6 +34,23 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
 
   const { data: snapshot, isPending, error, refetch } = useAcpSessionView(issueId);
 
+  // 受理同步失败优先呈现（配置校验拒绝等）：先于快照分支，杜绝 idle 死输入框。
+  if (ensure.isError) {
+    return (
+      <FullCenter>
+        <Typography variant="body2" color="error">会话创建失败：{ensure.error.message}</Typography>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={() => ensure.mutate({ issueId, pickedLaunchMode: 'acp' })}
+          loading={ensure.isPending}
+          sx={{ mt: 1.5 }}
+        >
+          重新启动
+        </Button>
+      </FullCenter>
+    );
+  }
   if (isPending) {
     return <FullCenter><CircularProgress /></FullCenter>;
   }
@@ -45,7 +64,7 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
       </FullCenter>
     );
   }
-  return <StatusBranch issueId={issueId} snapshot={snapshot} onRestart={() => ensure.mutate({ issueId })} ensurePending={ensure.isPending} />;
+  return <StatusBranch issueId={issueId} snapshot={snapshot} onRestart={() => ensure.mutate({ issueId, pickedLaunchMode: 'acp' })} ensurePending={ensure.isPending} />;
 }
 
 /** 按快照 status 分支：starting 启动中 / failed+terminated 原因与重启 / idle+ready 会话视图。 */

@@ -14,9 +14,9 @@ type AcpSession struct {
 }
 
 // Ensure 幂等受理会话创建（异步建模）：立即返回受理时刻快照，spawn 链在后台进行，
-// 就绪/失败经 SSE sessionStatus 帧或 getInfo 轮询跟进。
+// 就绪/失败经 SSE sessionStatus 帧或 getInfo 轮询跟进。pickedLaunchMode 临场启动声明透传。
 func (svc AcpSession) Ensure(req *types.AcpSessionEnsureRequest) (acpsession.ViewSnapshot, error) {
-	return global.AcpSessions.Ensure(svc.Context, req.IssueID)
+	return global.AcpSessions.Ensure(svc.Context, req.IssueID, req.PickedLaunchMode)
 }
 
 // GetInfo 当前会话视图快照（轮询读端，无副作用；无会话为 idle 空快照）。

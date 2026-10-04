@@ -144,8 +144,11 @@ export interface AcpSessionFrameStatus {
 }
 
 // POST /api/acpSession/ensure：幂等受理会话创建（异步受理，立即返回受理时刻快照）。
+// pickedLaunchMode 临场启动声明（LaunchModePicker 三选一受理，仅本次会话有效不落库；
+// AcpSessionView 即 acp 意图载体，视图内受理一律显式声明）。
 export interface AcpSessionEnsureRequest {
   issueId: string;
+  pickedLaunchMode?: 'acp';
 }
 
 // POST /api/acpSession/prompt：受理一轮回合（立即返回，终态经 SSE turnEnded）。

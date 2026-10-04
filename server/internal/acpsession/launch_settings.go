@@ -60,9 +60,10 @@ func mergeLaunchSettings(base, override *types.WorkspaceLaunchSettings) *types.W
 
 // resolveSessionConfig 由 issueId 解析会话配置：路径安全校验 → issue/workspace 存在性
 // （resolveIssueBaseDir 同款查询链）→ launch_settings 字段级合并（issue 覆盖 workspace）→
-// mode 门禁（非 acp 拒绝）→ agentCode / permissionMode 回落与校验 → cwd 兜底建目录。
+// mode 门禁（持久化配置显式 acp，或请求显式声明临场 acp——LaunchModePicker 三选一仅本次
+// 有效不落库，否则拒绝）→ agentCode / permissionMode 回落与校验 → cwd 兜底建目录。
 // DB 只读 + 目录兜底创建；同步调用（Ensure 受理期），校验失败立即反馈 HTTP 调用方。
-func resolveSessionConfig(ctx context.Context, db *gorm.DB, issueID string) (SessionConfig, error) {
+func resolveSessionConfig(ctx context.Context, db *gorm.DB, issueID, pickedLaunchMode string) (SessionConfig, error) {
 	if !ValidIssueID(issueID) {
 		return SessionConfig{}, errors.New("issueId 非法")
 	}
@@ -88,7 +89,7 @@ func resolveSessionConfig(ctx context.Context, db *gorm.DB, issueID string) (Ses
 		types.ParseLaunchSettings(ws.LaunchSettings),
 		types.ParseLaunchSettings(issue.LaunchSettings),
 	)
-	if merged == nil || merged.Mode != launchModeAcp {
+	if pickedLaunchMode != launchModeAcp && (merged == nil || merged.Mode != launchModeAcp) {
 		return SessionConfig{}, errors.New("issue 启动模式未配置为 ACP，无法创建 ACP 会话")
 	}
 	agentCode := string(merged.AgentCode)

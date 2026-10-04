@@ -159,7 +159,7 @@ func TestEnsureReadyPromptAndAnchor(t *testing.T) {
 	ctx := context.Background()
 
 	// 受理：立即返回 starting 快照；随后 sessionStatus ready 帧到达。
-	snap, err := mgr.Ensure(ctx, issueID)
+	snap, err := mgr.Ensure(ctx, issueID, "")
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -210,12 +210,12 @@ func TestEnsureReadyPromptAndAnchor(t *testing.T) {
 
 func TestEnsureJoinIdempotent(t *testing.T) {
 	mgr, _, issueID, frames, calls := newManagerWithIssue(t, "happy", nil)
-	if _, err := mgr.Ensure(context.Background(), issueID); err != nil {
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure#1: %v", err)
 	}
 	waitFrame(t, frames, "sessionStatus ready", statusFrameIs(StatusReady))
 	// 二次受理：join 返回 ready 快照，不重复 spawn。
-	snap, err := mgr.Ensure(context.Background(), issueID)
+	snap, err := mgr.Ensure(context.Background(), issueID, "")
 	if err != nil {
 		t.Fatalf("Ensure#2: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestEnsureSpawnFailureAndRetry(t *testing.T) {
 	mgr, db, issueID, frames, _ := newManagerWithIssue(t, "", errors.New("vendored 目录未配置"))
 	ctx := context.Background()
 	// 受理同步成功（失败在后台链）；failed 帧带原因。
-	if _, err := mgr.Ensure(ctx, issueID); err != nil {
+	if _, err := mgr.Ensure(ctx, issueID, ""); err != nil {
 		t.Fatalf("受理应成功（失败在后台链），got %v", err)
 	}
 	failed := waitFrame(t, frames, "sessionStatus failed", statusFrameIs(StatusFailed))
@@ -249,7 +249,7 @@ func TestEnsureSpawnFailureAndRetry(t *testing.T) {
 	defer func() { spawnFunc = old }()
 	frames2, cancel := mgr.Subscribe(issueID)
 	defer cancel()
-	if _, err := mgr.Ensure(ctx, issueID); err != nil {
+	if _, err := mgr.Ensure(ctx, issueID, ""); err != nil {
 		t.Fatalf("重试 Ensure: %v", err)
 	}
 	waitFrame(t, frames2, "重建 ready", statusFrameIs(StatusReady))
@@ -261,7 +261,7 @@ func TestEnsureSpawnFailureAndRetry(t *testing.T) {
 
 func TestProcessDeathTerminates(t *testing.T) {
 	mgr, db, issueID, frames, _ := newManagerWithIssue(t, "crash", nil)
-	if _, err := mgr.Ensure(context.Background(), issueID); err != nil {
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
@@ -281,7 +281,7 @@ func TestProcessDeathTerminates(t *testing.T) {
 
 func TestPromptTurnGateAndCancel(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
-	if _, err := mgr.Ensure(context.Background(), issueID); err != nil {
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
@@ -317,7 +317,7 @@ func TestPromptTurnGateAndCancel(t *testing.T) {
 
 func TestRespondPermissionFlow(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "permission", nil)
-	if _, err := mgr.Ensure(context.Background(), issueID); err != nil {
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
@@ -381,7 +381,7 @@ func TestRespondPermissionFlow(t *testing.T) {
 
 func TestRespondElicitationFlow(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "elicitation", nil)
-	if _, err := mgr.Ensure(context.Background(), issueID); err != nil {
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
@@ -441,7 +441,7 @@ func TestRespondElicitationFlow(t *testing.T) {
 // kind 错配拒绝：跨类型应答在摘除前拒绝（nil 槽位不 panic、不消耗挂起），双向覆盖。
 func TestRespondKindMismatch(t *testing.T) {
 	mgrP, _, issueP, framesP, _ := newManagerWithIssue(t, "permission", nil)
-	if _, err := mgrP.Ensure(context.Background(), issueP); err != nil {
+	if _, err := mgrP.Ensure(context.Background(), issueP, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, framesP, "ready", statusFrameIs(StatusReady))
@@ -460,7 +460,7 @@ func TestRespondKindMismatch(t *testing.T) {
 	}
 
 	mgrE, _, issueE, framesE, _ := newManagerWithIssue(t, "elicitation", nil)
-	if _, err := mgrE.Ensure(context.Background(), issueE); err != nil {
+	if _, err := mgrE.Ensure(context.Background(), issueE, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, framesE, "ready", statusFrameIs(StatusReady))
@@ -481,7 +481,7 @@ func TestRespondKindMismatch(t *testing.T) {
 
 func TestDiscardCascade(t *testing.T) {
 	mgr, db, issueID, frames, _ := newManagerWithIssue(t, "happy", nil)
-	if _, err := mgr.Ensure(context.Background(), issueID); err != nil {
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))

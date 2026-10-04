@@ -85,10 +85,11 @@ var spawnFunc = spawnAgentSession
 
 // Ensure 幂等受理会话创建：同步解析配置（校验失败立即反馈）→ starting/ready 态 join 返回
 // 现状 → 否则建 entry + 落锚行 + 广播 starting → 后台 spawn 链（vendored 拉起 + 握手，
-// 分钟级上限，不占 HTTP 请求）。前端经 SSE sessionStatus 帧或 getInfo 轮询跟进（对齐
+// 分钟级上限，不占 HTTP 请求）。pickedLaunchMode 为 LaunchModePicker 的临场启动声明
+// （仅本次有效不落库，非空须为 acp）。前端经 SSE sessionStatus 帧或 getInfo 轮询跟进（对齐
 // issueWorkspace init 的异步受理模型与 acpdoctor 的在跑单飞语义）。
-func (m *Manager) Ensure(ctx context.Context, issueID string) (ViewSnapshot, error) {
-	cfg, err := resolveSessionConfig(ctx, m.db, issueID)
+func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) (ViewSnapshot, error) {
+	cfg, err := resolveSessionConfig(ctx, m.db, issueID, pickedLaunchMode)
 	if err != nil {
 		return ViewSnapshot{}, err
 	}

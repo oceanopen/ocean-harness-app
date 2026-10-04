@@ -6,6 +6,9 @@ package types
 // AcpSessionEnsureRequest 是 POST /api/acpSession/ensure 的入参（幂等受理，异步建模）。
 type AcpSessionEnsureRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
+	// PickedLaunchMode 临场启动覆盖（LaunchModePicker 三选一受理；仅声明本次会话以
+	// acp 运行，不落库不记忆，与 workspace/issue 持久化配置的门禁语义互补）。
+	PickedLaunchMode string `json:"pickedLaunchMode,omitempty" binding:"omitempty,oneof=acp"`
 }
 
 // AcpSessionGetInfoRequest 是 POST /api/acpSession/getInfo 的入参。
