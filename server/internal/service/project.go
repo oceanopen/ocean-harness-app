@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -213,6 +214,16 @@ func deleteProjectCascade(ctx context.Context, orm *gorm.DB, projectID int) erro
 		}
 		if _, e := q.IssueLocalRepository.WithContext(ctx).
 			Where(q.IssueLocalRepository.IssueID.In(issueIDs...)).Delete(); e != nil {
+			return e
+		}
+		// T2.3 级联清绑：清全部被删 issue 的 IM 会话绑定锚（清列保行，同 ProjectIssue.Delete
+		// 的事务内清绑——headless 续聊锚不动，绑定回未绑定态）。
+		if _, e := q.ImBotConversation.WithContext(ctx).Where(
+			q.ImBotConversation.BoundIssueID.In(issueIDs...),
+		).UpdateSimple(
+			q.ImBotConversation.BoundIssueID.Value(""),
+			q.ImBotConversation.UpdatedAt.Value(time.Now()),
+		); e != nil {
 			return e
 		}
 	}

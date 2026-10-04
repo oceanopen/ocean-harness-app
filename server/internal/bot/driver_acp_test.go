@@ -3,15 +3,12 @@ package bot
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/dal/enums"
@@ -150,10 +147,11 @@ func (f *fakeSessions) stats() (ensureCalls, cancelCalls, subscribes int, prompt
 	return f.ensureCalls, f.cancelCalls, f.subscribes, append([]string(nil), f.promptTexts...)
 }
 
-// boundDriver 测试构造：绑定解析替身（生产装配在 T2.3 前恒未绑定——unbound 分支单测
-// 覆盖，回合语义用例全部走绑定路径）。
+// boundDriver 测试构造：引擎是纯执行者（T2.3 起目标 issue 由路由层经 TurnRequest.IssueID
+// 回填，解析缝已删），替身不再持有绑定知识；绑定路径用例的请求已批量携带 issue-acp，
+// unbound 分支由 TestAcpDriverTurnUnboundConversation 单测覆盖。
 func boundDriver(sessions acpSessions) acpDriver {
-	return acpDriver{sessions: sessions, issue: func(string) (string, bool) { return "issue-acp", true }}
+	return acpDriver{sessions: sessions}
 }
 
 func readySnap() acpsession.ViewSnapshot {
@@ -234,7 +232,7 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
 
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -275,7 +273,7 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 func TestAcpDriverTurnArmedWindowIgnoresStale(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -296,7 +294,7 @@ func TestAcpDriverTurnWaitReadyViaSnapshotFrame(t *testing.T) {
 	// 订阅后置于 Ensure 受理：预推的 snapshot 帧即真实 hub 的「订阅首帧快照」（新于受理
 	// 时点，模拟 spawn 在订阅完成前已就绪），waitSessionReady 以其为状态基线直接放行。
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &acpsession.ViewSnapshot{Status: acpsession.StatusReady}})
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -322,7 +320,7 @@ func TestAcpDriverTurnRebuildWaitReady(t *testing.T) {
 	// 受理重建（starting）后订阅；等就绪是 RunTurn 内同步步骤，sessionStatus ready 帧
 	// 先入订阅通道缓冲，模拟 spawn 完成的状态帧在等待期到达（旧会话失败态无从混入）。
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSessionStatus, Status: &acpsession.StatusPayload{Status: acpsession.StatusReady}})
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -351,7 +349,7 @@ func TestAcpDriverTurnSessionFailed(t *testing.T) {
 	}
 	result := make(chan runResult, 1)
 	go func() {
-		events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+		events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 		result <- runResult{events, err}
 	}()
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSessionStatus, Status: &acpsession.StatusPayload{Status: acpsession.StatusFailed, Error: "vendored 缺失"}})
@@ -374,7 +372,7 @@ func TestAcpDriverTurnSessionTerminatedDuringWait(t *testing.T) {
 
 	result := make(chan error, 1)
 	go func() {
-		_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+		_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 		result <- err
 	}()
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameTerminated, Status: &acpsession.StatusPayload{Status: acpsession.StatusTerminated}})
@@ -394,7 +392,7 @@ func TestAcpDriverTurnEnsureFails(t *testing.T) {
 	sessions.ensureErr = errors.New("issue 启动模式未配置为 ACP")
 	driver := boundDriver(sessions)
 
-	_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+	_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 	if err == nil || !strings.Contains(err.Error(), "issue 启动模式未配置为 ACP") {
 		t.Fatalf("Ensure 失败应同步透传: %v", err)
 	}
@@ -412,7 +410,7 @@ func TestAcpDriverTurnPromptRejected(t *testing.T) {
 	sessions.promptErr = errors.New("ACP 会话已终结，排队回合未受理")
 	driver := boundDriver(sessions)
 
-	_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+	_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 	if err == nil || !strings.Contains(err.Error(), "排队回合未受理") {
 		t.Fatalf("排队受理失败应同步透传: %v", err)
 	}
@@ -429,7 +427,7 @@ func TestAcpDriverTurnPromptQueuedContextCancel(t *testing.T) {
 
 	result := make(chan error, 1)
 	go func() {
-		_, err := driver.RunTurn(ctx, TurnRequest{ConversationKey: "single:u1"})
+		_, err := driver.RunTurn(ctx, TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 		result <- err
 	}()
 	cancel()
@@ -458,7 +456,7 @@ func TestAcpDriverTurnQueuedWindowFramesDiscarded(t *testing.T) {
 	}
 	driver := boundDriver(sessions)
 
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -478,7 +476,7 @@ func TestAcpDriverTurnQueuedWindowFramesDiscarded(t *testing.T) {
 func TestAcpDriverTurnArmedFromSnapshotFrame(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -499,7 +497,7 @@ func TestAcpDriverTurnArmedFromSnapshotFrame(t *testing.T) {
 func TestAcpDriverTurnInstantTurnFromSnapshot(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -521,9 +519,9 @@ func TestAcpDriverTurnInstantTurnFromSnapshot(t *testing.T) {
 
 func TestAcpDriverTurnUnboundConversation(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
-	driver := NewAcpDriver(sessions) // 生产装配：T2.3 前恒未绑定
+	driver := NewAcpDriver(sessions) // 生产装配：路由层未回填（IssueID 空 = 未绑定引导分支）
 
-	_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+	_, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: ""})
 	if err == nil || !strings.Contains(err.Error(), "绑定") {
 		t.Fatalf("未绑定应同步报错给引导文案: %v", err)
 	}
@@ -535,7 +533,7 @@ func TestAcpDriverTurnUnboundConversation(t *testing.T) {
 func TestAcpDriverTurnTurnErrorFrame(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -551,7 +549,7 @@ func TestAcpDriverTurnTurnErrorFrame(t *testing.T) {
 func TestAcpDriverTurnCancelledStopReason(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -568,7 +566,7 @@ func TestAcpDriverTurnCancelledStopReason(t *testing.T) {
 func TestAcpDriverTurnTerminatedMidTurn(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -584,7 +582,7 @@ func TestAcpDriverTurnTerminatedMidTurn(t *testing.T) {
 func TestAcpDriverTurnFramesClosedMidTurn(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -603,7 +601,7 @@ func TestAcpDriverTurnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	events, err := driver.RunTurn(ctx, TurnRequest{ConversationKey: "single:u1"})
+	events, err := driver.RunTurn(ctx, TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -629,13 +627,7 @@ func TestAcpDriverTurnContextCancel(t *testing.T) {
 // （mode=acp）、空 vendored 目录 → Ensure 受理成功，spawn 链失败落 failed 帧 → 同步报错
 // 「启动失败 + 落因」（受理模型、帧流、failed 落因三者的跨域联动各验一遍）。
 func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("打开临时 sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.ProjectIssue{}, &model.IssueAcpSession{}); err != nil {
-		t.Fatalf("AutoMigrate: %v", err)
-	}
+	db := newBotTestDB(t, &model.Workspace{}, &model.ProjectIssue{}, &model.IssueAcpSession{})
 	q := query.Use(db)
 	ws := &model.Workspace{Name: "ws", Dir: t.TempDir(), LaunchSettings: `{"mode":"acp"}`}
 	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
@@ -654,8 +646,8 @@ func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
 	}
 	t.Cleanup(mgr.StopAll)
 
-	driver := acpDriver{sessions: mgr, issue: func(string) (string, bool) { return "issue-bot-acp", true }}
-	_, err = driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", Prompt: "hi"})
+	driver := acpDriver{sessions: mgr}
+	_, err = driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-bot-acp", Prompt: "hi"})
 	if err == nil || !strings.Contains(err.Error(), "启动失败") {
 		t.Fatalf("空 vendored 目录下 spawn 链失败应同步报「启动失败」: %v", err)
 	}

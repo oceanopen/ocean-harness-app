@@ -24,20 +24,14 @@ type acpSessions interface {
 // 编译期断言：Manager 满足消费面。
 var _ acpSessions = (*acpsession.Manager)(nil)
 
-// issueResolver 会话键 → 目标 issue 的解析缝：bot↔issue 显式绑定与 IM 内切换随 T2.3
-// 落地，届时以绑定存储实现替换。ok=false = 未绑定。
-type issueResolver func(conversationKey string) (issueID string, ok bool)
-
-// unboundIssueResolver T2.1 生产解析实现：恒未绑定（P2 拍板显式绑定，拒绝隐式挂靠——
-// 不猜「最近打开的 issue」这类隐式目标）。ACP 模式的 bot 回合一律同步报错给引导文案。
-func unboundIssueResolver(string) (string, bool) { return "", false }
-
 // acpDriver ClaudeDriver 的 ACP 实现（T2.1）：bot 回合经 sidecar acpsession 域驱动 claude，
 // 与桌面 issue 主窗口共享同一 ACP 会话（同一 agent 进程、同一会话视图、同一挂起审批状态，
 // IM 与桌面看到的是同一段对话）。
 // 与 headless（driver_claude：每回合一个进程，--resume 锚点续聊）的差异：会话 per-issue
 // 长驻、无 resume，因此不发 TurnInit、不写 claude_session_id 锚点（ACP session id 与
 // --resume 不兼容）。
+// 目标 issue（T2.3）：路由层解析会话显式绑定后经 TurnRequest.IssueID 回填，本驱动是纯
+// 执行者——空值 = 未绑定，只负责回引导文案（绑定知识不进引擎）。
 // 权限面（P6）：不消费 bot 级 allowed_tools——会话权限统一由 workspace/issue 的
 // launch_settings.permissionMode 表达（Ensure 链下发）；「需要审批」档的挂起审批由桌面端
 // 呈现（T1.7），IM 侧交互随 T2.4/T3.2。
@@ -45,27 +39,28 @@ func unboundIssueResolver(string) (string, bool) { return "", false }
 // 通道，且会话与桌面共享，bot 人设不宜做会话级注入（bot prompt 配置存废另行决策）。
 type acpDriver struct {
 	sessions acpSessions
-	issue    issueResolver
 }
 
-// NewAcpDriver 构造 ACP 引擎（supervisor 装配；issue 解析在 T2.3 前恒未绑定）。
+// NewAcpDriver 构造 ACP 引擎（supervisor 装配）。
 func NewAcpDriver(sessions acpSessions) ClaudeDriver {
-	return acpDriver{sessions: sessions, issue: unboundIssueResolver}
+	return acpDriver{sessions: sessions}
 }
 
 // RunTurn 实现见 driver.go 契约。受理失败（未绑定 / 配置非法 / 会话起不来 / 排队受理
 // 被拒）同步返回 error（复用编排器的启动失败回复路径）；受理成功后异步收集帧直至回合
-// 终态。固定时序：解析 issue → Ensure 受理 → 订阅（受理成功后立即订阅——首帧快照新于
-// 受理时点，旧会话的失败快照进不来）→ 帧驱动等就绪 → 排队受理（活动回合中 FIFO 等位，
-// 回合空隙自动开跑；等位期间会话终结 / ctx 取消则同步报错）→ 受理后重开干净订阅 → 帧
-// 循环收集。两段订阅的分工：第一段只服务等就绪，等位全程挂着不消费（等位窗口里阻塞
-// 回合的完整帧序全部作废——重开订阅让 collectTurn 缓冲里只可能有本回合的生命周期帧，
-// 外来 turnEnded 误终止、hub 慢订户溢出摘除两个窗口一并消除）。
+// 终态。固定时序：消费路由层回填的目标 issue → Ensure 受理 → 订阅（受理成功后立即订
+// 阅——首帧快照新于受理时点，旧会话的失败快照进不来）→ 帧驱动等就绪 → 排队受理（活动
+// 回合中 FIFO 等位，回合空隙自动开跑；等位期间会话终结 / ctx 取消则同步报错）→ 受理后
+// 重开干净订阅 → 帧循环收集。两段订阅的分工：第一段只服务等就绪，等位全程挂着不消费
+// （等位窗口里阻塞回合的完整帧序全部作废——重开订阅让 collectTurn 缓冲里只可能有本回合
+// 的生命周期帧，外来 turnEnded 误终止、hub 慢订户溢出摘除两个窗口一并消除）。
 func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
-	issueID, ok := d.issue(req.ConversationKey)
-	if !ok {
-		return nil, errors.New("该工作空间已切换为 ACP 模式，但 IM 机器人尚未绑定目标 issue（绑定入口随后续版本提供），请先将工作空间启动模式切回终端模式")
+	// 目标 issue 由路由层解析会话绑定后回填（routeTarget.IssueID，T2.3）；空 = 未绑定
+	// （含挂空绑定降级），本驱动不持绑定知识，只负责引导文案把用户带回正轨。
+	if req.IssueID == "" {
+		return nil, errors.New("该工作空间已切换为 ACP 模式，但本会话尚未绑定 issue：发送「#issue <标题关键词 或 ID前8位>」完成绑定（发送「#issue」查看用法），或把工作空间启动模式切回终端模式")
 	}
+	issueID := req.IssueID
 	snap, err := d.sessions.Ensure(ctx, issueID, "")
 	if err != nil {
 		return nil, err

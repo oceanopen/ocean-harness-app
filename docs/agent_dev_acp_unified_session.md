@@ -575,7 +575,7 @@ issue 主窗口 ─────┘
 
 #### T2.3 bot↔issue 显式绑定与 IM 内切换
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：bot 会话显式绑定目标 issue（避免隐式状态跳变）
 
@@ -586,6 +586,15 @@ issue 主窗口 ─────┘
 **依赖**：T2.1
 
 **决策关联**：P2
+
+**实施定稿**：
+- **存储**：`t_im_bot_conversations` 增 `bound_issue_id`（NOT NULL DEFAULT ''，空=未绑定），绑定粒度 (bot_id, conversation_key)、与会话同生命周期；与 `claude_session_id` 正交（绑定/解绑不触碰 headless 续聊锚，ACP 本就不写会话锚）。基线迁移直接改列 + `pnpm server:gorm:gen` 重生成（不另起 goose 增量）
+- **指令面（`issue_command.go` 纯函数集）**：`#issue` 仅消息起始生效（token 后须紧跟空白或行尾，`#issues`/`#issue-42` 等粘连形态按普通文本放行，用法由文案教学）；`rest` 恰等于「解绑」才解绑（`#issue 解绑 xxx` 归关键词路径，收窄与标题撞词的歧义）；首个空白切分 target 与 body。短标识双通道：uuid 短前缀（去连字符后 ≥8 位 hex）优先，零命中回落标题子串（与 service 层 getList keyword 同款 LIKE 语义，%/_ 不转义——误放大退化为多候选文案，无害），不按 state 过滤（恒可绑定，与启动模式无关）。前缀通道对「无连字符且超 8 位」的关键词截前 8 位再匹配——uuid 第 9 位恒为连字符，原样拼接会因错位恒零命中；截断后命中集是精确命中的超集，多命中交候选列表文案
+- **回合语义（拍板「绑定+首回合一步」）**：`#issue X 正文` 绑定落库后确认作中间帧、正文改写 `msg.Text` 落回主路径照常出回合；裸 `#issue X` 纯切换，确认即终帧。指令步固定时序插在 workspace 门禁之后（绑定解析需要 WorkspaceID>0 由此保证）、会话锚读取之前；终结分支不出回合、不占全局信号量；解绑分支先于用法分支（两者 Target 同为空串，靠 Unbind 字段区分）；零/多命中回候选列表（截前 5 条 + 总数注明）不写绑定
+- **路由层一站式 resolve（`driver_route.go`，相对方案偏离）**：`issueResolver`/`unboundIssueResolver` 解析缝删除；`acpMode` 升级为 `resolve(botID, workspaceID, conversationKey) → routeTarget{IssueID, ACP}` 一步判定——读绑定（纯读不建行，行由编排器受理路径保证在场）+ issue 存在性/归属双键校验 + 两级 mode 合并；`TurnRequest` 增 BotID/IssueID，ACP 驱动成为纯执行者只消费 `req.IssueID`（空=未绑定回引导文案，绑定知识不进引擎）；绑定读库失败 fail closed（包 turnNotAcceptedError，编排器不清锚），挂空绑定（issue 已删/跨 workspace）降级为未绑定交引导文案，不报错不阻断
+- **两级 mode 合并（`effectiveACPMode`，bot 域自有字面量）**：mode-only 字段合并——绑定 issue 的 launch_settings.mode 非空则覆盖 workspace 级（显式 "none" 亦为有效否决值，「明说不要」≠「未配置」），语义对齐 acpsession.mergeLaunchSettings 的字段级合并但不整份拷贝（bot 路由只消费 mode 一项）；判定不得在绑定解析前按 workspace 级短路（否则吞掉 issue 显式覆盖；acpsession 域同为合并后判，两域语义须一致）
+- **级联清绑**：`ProjectIssue.Delete`（父+子 ids）与 `deleteProjectCascade`（project/workspace 级联共用的下挂清理）两入口事务内 `bound_issue_id In(deletedIDs)` 清列保行——headless 续聊锚不动、绑定回未绑定态、下一回合由路由层降级为引导文案
+- 验证：build / vet / 全量测试回归 + gofmt 零残留；`issue_command_test.go` 覆盖解析形态域 / 双通道匹配与 workspace 隔离 / 候选截断文案；`conversations_test.go` 覆盖绑定往返幂等与两锚正交；`orchestrator_test.go` 覆盖解绑幂等 / 用法 / 零与多命中不写绑定 / 纯切换落库 / 绑定+首回合正文改写；`driver_route_test.go` 覆盖 workspace mode 形态矩阵与绑定语义矩阵（有效回填 IssueID、空锚/挂空/跨域降级、issue 双向显式覆盖、读库失败 fail closed）；service 层覆盖两入口级联清绑（含独立 project 对照组不牵连）
 
 #### T2.4 双入口审批收敛
 

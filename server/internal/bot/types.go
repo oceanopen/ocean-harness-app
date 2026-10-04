@@ -109,9 +109,11 @@ type BotRuntimeConfig struct {
 // TurnRequest 一次 claude 回合的请求。SessionID 为 headless 语义（空 = 新会话，非空 =
 // --resume 续聊）；ACP 驱动不消费它（共享会话无 resume，bot 侧不写会话锚点）。
 type TurnRequest struct {
-	WorkspaceID     int // 工作空间行 id（引擎路由解析 launch_settings.mode 的键）
+	BotID           int // bot 行 id（与 ConversationKey 组成绑定查询键 (bot_id, conversation_key)；headless 不消费）
+	WorkspaceID     int // 工作空间行 id（引擎路由解析合并后 launch_settings.mode 的键之一）
 	WorkspaceDir    string
-	ConversationKey string // FormatConversationKey 产物（ACP 驱动解析目标 issue 的会话键）
+	ConversationKey string // FormatConversationKey 产物（路由层按 (BotID, ConversationKey) 解析绑定）
+	IssueID         string // 路由层回填的绑定产物：目标 issue（空 = 未绑定）；仅 ACP 引擎消费，headless 忽略
 	SessionID       string
 	Prompt          string // prompt.go 组装后的最终 user prompt
 	Model           string

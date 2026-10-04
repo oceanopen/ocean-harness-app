@@ -14,7 +14,8 @@ import (
 // seenWindowLimit 消息幂等滚窗上限：企微 WS 无补投语义，幂等仅防瞬时重推，100 条远超重推窗口。
 const seenWindowLimit = 100
 
-// ConversationStore t_im_bot_conversations 读写（核心层唯一 DB 依赖点）。所有调用都发生在
+// ConversationStore t_im_bot_conversations 行的唯一读写点（bot 核心层；路由层纯读与
+// #issue 匹配另按需裸查各自表，不经过本 store）。所有调用都发生在
 // 单个会话的串行 worker goroutine 内（见 orchestrator），天然无并发写，不需要行级锁。
 // DB 是 SSOT：sidecar 重启后下一条消息自然续上，运行时不做内存副本。
 type ConversationStore struct {
@@ -78,6 +79,31 @@ func (s *ConversationStore) FinishTurn(botID int, conversationKey, sessionID str
 	).UpdateSimple(
 		q.ImBotConversation.ClaudeSessionID.Value(sessionID),
 		q.ImBotConversation.LastMessageAt.Value(at),
+		q.ImBotConversation.UpdatedAt.Value(time.Now()),
+	)
+	return err
+}
+
+// BoundIssueID 读会话显式绑定的目标 issue id（空串 = 未绑定）。读失败交由调用方定降级
+// （消费方按未绑定处理，与 SessionID/HasSeen 同款「尽力读」惯例）。
+func (s *ConversationStore) BoundIssueID(botID int, conversationKey string) (string, error) {
+	conv, err := s.GetOrCreate(botID, conversationKey)
+	if err != nil {
+		return "", err
+	}
+	return conv.BoundIssueID, nil
+}
+
+// SaveBoundIssueID 写绑定锚（issueID 空串 = 解绑；幂等覆盖）。与 claude_session_id 正交：
+// headless 续聊锚与 issue 绑定无耦合，绑定/解绑均不动它；ACP 模式本就不写会话锚。
+// 调用发生在会话串行 worker goroutine 内（同其余方法）。
+func (s *ConversationStore) SaveBoundIssueID(botID int, conversationKey, issueID string) error {
+	q := query.Use(s.DB)
+	_, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.BotID.Eq(botID),
+		q.ImBotConversation.ConversationKey.Eq(conversationKey),
+	).UpdateSimple(
+		q.ImBotConversation.BoundIssueID.Value(issueID),
 		q.ImBotConversation.UpdatedAt.Value(time.Now()),
 	)
 	return err

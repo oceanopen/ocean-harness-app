@@ -375,6 +375,16 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 			}
 			deletedIDs = append(deletedIDs, childIDs...)
 		}
+		// T2.3 级联清绑：清全部被删 issue 的 IM 会话绑定锚（清列保行——claude_session_id
+		// 等 headless 续聊锚不动，绑定回未绑定态，下一回合由路由层降级为未绑定引导）。
+		if _, e := q.ImBotConversation.WithContext(svc.Context).Where(
+			q.ImBotConversation.BoundIssueID.In(deletedIDs...),
+		).UpdateSimple(
+			q.ImBotConversation.BoundIssueID.Value(""),
+			q.ImBotConversation.UpdatedAt.Value(time.Now()),
+		); e != nil {
+			return e
+		}
 		return nil
 	})
 	if err != nil {

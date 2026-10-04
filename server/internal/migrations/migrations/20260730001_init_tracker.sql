@@ -121,11 +121,14 @@ CREATE TABLE t_im_bots (
 
 -- t_im_bot_conversations：bot 会话映射（多轮上下文在 claude 会话存储，本表只存锚点）。
 -- conversation_key：'single:<userid>' / 'group:<chatid>'；claude_session_id 为 --resume 锚（空=未开场）。
+-- bound_issue_id 为 ACP 模式显式绑定锚（T2.3，空=未绑定；与 claude_session_id 正交，issue
+-- 删除时由 service 层级联清列，行保留）。
 CREATE TABLE t_im_bot_conversations (
     id                INTEGER  PRIMARY KEY AUTOINCREMENT,
     bot_id            INTEGER  NOT NULL,
     conversation_key  TEXT     NOT NULL,
     claude_session_id TEXT     NOT NULL DEFAULT '',
+    bound_issue_id    TEXT     NOT NULL DEFAULT '',
     seen_message_ids  TEXT     NOT NULL DEFAULT '[]',
     last_message_at   DATETIME,
     created_at        DATETIME NOT NULL,

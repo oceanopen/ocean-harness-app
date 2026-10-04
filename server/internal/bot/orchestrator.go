@@ -110,6 +110,61 @@ func accessDeniedText(reason string) string {
 	return "您不在该机器人的使用白名单内，请联系机器人管理员。"
 }
 
+// applyIssueCommand runTurn 固定时序中的 #issue 指令步（T2.3）：绑定粒度 = (botID,
+// conversationKey)，与会话同生命周期；写存储与启动模式无关（「恒可绑定」，路由判定在
+// 回合时进行）。返回 true = 本条消息已被指令终结（终帧已发、不出回合、不占全局信号量）；
+// 返回 false = 绑定+首回合一步：绑定确认已作中间帧发出（终帧留给回合泵），msg.Text 已
+// 改写为指令正文，调用方落回主路径照常出回合。所有分支恰发一帧（终态 or 首确认），不产
+// 第二占位帧——「每条消息一个流、恰一次终帧」契约由受理流保证。
+func (o *Orchestrator) applyIssueCommand(cfg BotRuntimeConfig, msg *InboundMessage, cmd *issueCommand, rs ReplyStream) bool {
+	// 解绑：清绑定锚，claude_session_id 不动（两锚正交）。置于用法分支之前——解绑指令
+	// 的 Target 同为空串，两分支靠 Unbind 字段区分。
+	if cmd.Unbind {
+		if err := o.store.SaveBoundIssueID(cfg.BotID, msg.ConversationKey, ""); err != nil {
+			o.log.Error("bot issue 解绑落库失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+			_ = rs.Flush(issueUnbindFailedText(), true)
+			return true
+		}
+		_ = rs.Flush(issueUnboundText(), true)
+		return true
+	}
+	// 裸指令：仅回用法（不做任何绑定操作）。
+	if cmd.Target == "" {
+		_ = rs.Flush(issueUsageText(), true)
+		return true
+	}
+	// 匹配：workspace 域内标题/ID 前缀通道（纯函数，DB 传入）。
+	hits, err := resolveIssueTarget(o.store.DB, cfg.WorkspaceID, cmd.Target)
+	if err != nil {
+		o.log.Error("bot issue 匹配查询失败",
+			zap.Int("botID", cfg.BotID), zap.String("keyword", cmd.Target), zap.Error(err))
+		_ = rs.Flush(issueLookupFailedText(), true)
+		return true
+	}
+	switch len(hits) {
+	case 0:
+		_ = rs.Flush(issueZeroHitText(cmd.Target), true)
+		return true
+	case 1:
+		if err := o.store.SaveBoundIssueID(cfg.BotID, msg.ConversationKey, hits[0].ID); err != nil {
+			o.log.Error("bot issue 绑定落库失败",
+				zap.Int("botID", cfg.BotID), zap.String("issueID", hits[0].ID), zap.Error(err))
+			_ = rs.Flush(issueBindFailedText(), true)
+			return true
+		}
+		if cmd.Body == "" {
+			_ = rs.Flush(issueBoundText(hits[0]), true) // 纯切换：确认即终帧
+			return true
+		}
+		_ = rs.Flush(issueBoundText(hits[0]), false) // 绑定+首回合：确认作中间帧
+		msg.Text = cmd.Body
+		return false
+	default:
+		_ = rs.Flush(issueCandidatesText(cmd.Target, hits), true)
+		return true
+	}
+}
+
 // enqueue 入队（不存在则惰性建会话队列 + worker）。已停止 / 队列满 fail closed。
 func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) error {
 	o.mu.Lock()
@@ -146,8 +201,9 @@ func queueKey(botID int, conversationKey string) string {
 	return strconv.Itoa(botID) + ":" + conversationKey
 }
 
-// runTurn 执行单回合（会话内串行）。固定时序：幂等复查 → markSeen → load session →
-// 组 prompt → RunTurn → PumpReply → 持久化（含 resume 失效自愈）。
+// runTurn 执行单回合（会话内串行）。固定时序：幂等复查 → markSeen → 工作空间门禁 →
+// #issue 指令步（终结或改写正文）→ load session → 组 prompt → RunTurn → PumpReply →
+// 持久化（含 resume 失效自愈）。
 // Stop 后排空的残余 job 走「已停止」短路径，不触发失败自愈（取消 ≠ 会话失效）。
 func (o *Orchestrator) runTurn(job turnJob) {
 	// Stop 短路径：ctx 已取消（含 Stop 后队列残余 job）——只回停止文案，不碰会话锚点。
@@ -174,9 +230,18 @@ func (o *Orchestrator) runTurn(job turnJob) {
 
 	// 工作空间未选择（扫码接入先建 bot 后补选的语义）：连接照常、回合不启动，
 	// 提示用户补选——已 markSeen（消息已被处理），不算失败、不触发会话自愈。
+	// 命令步置于门禁之后：绑定需要 workspace 解析域（WorkspaceID > 0 由此保证）。
 	if strings.TrimSpace(cfg.WorkspaceDir) == "" {
 		_ = job.reply.Flush("机器人尚未选择工作空间，请先在应用「IM 机器人」页编辑机器人并选择工作空间，再重新发送消息。", true)
 		return
+	}
+
+	// #issue 指令步（T2.3）：返回 true = 指令已终结本条消息（终帧已发、不出回合、不占
+	// 全局信号量）；返回 false = 绑定+首回合一步（确认帧已发、正文已改写，落回主路径）。
+	if cmd := parseIssueCommand(msg.Text); cmd != nil {
+		if o.applyIssueCommand(cfg, &msg, cmd, job.reply) {
+			return
+		}
 	}
 
 	prevSessionID, err := o.store.SessionID(cfg.BotID, key)
@@ -197,6 +262,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	}
 	prompt := BuildTurnPrompt(msg)
 	events, err := o.driver.RunTurn(o.ctx, TurnRequest{
+		BotID:           cfg.BotID,
 		WorkspaceID:     cfg.WorkspaceID,
 		WorkspaceDir:    cfg.WorkspaceDir,
 		ConversationKey: key,

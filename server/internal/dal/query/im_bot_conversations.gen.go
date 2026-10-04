@@ -32,6 +32,7 @@ func newImBotConversation(db *gorm.DB, opts ...gen.DOOption) imBotConversation {
 	_imBotConversation.BotID = field.NewInt(tableName, "bot_id")
 	_imBotConversation.ConversationKey = field.NewString(tableName, "conversation_key")
 	_imBotConversation.ClaudeSessionID = field.NewString(tableName, "claude_session_id")
+	_imBotConversation.BoundIssueID = field.NewString(tableName, "bound_issue_id")
 	_imBotConversation.SeenMessageIds = field.NewString(tableName, "seen_message_ids")
 	_imBotConversation.LastMessageAt = field.NewTime(tableName, "last_message_at")
 	_imBotConversation.CreatedAt = field.NewTime(tableName, "created_at")
@@ -50,6 +51,7 @@ type imBotConversation struct {
 	BotID           field.Int
 	ConversationKey field.String
 	ClaudeSessionID field.String
+	BoundIssueID    field.String
 	SeenMessageIds  field.String
 	LastMessageAt   field.Time
 	CreatedAt       field.Time
@@ -74,6 +76,7 @@ func (i *imBotConversation) updateTableName(table string) *imBotConversation {
 	i.BotID = field.NewInt(table, "bot_id")
 	i.ConversationKey = field.NewString(table, "conversation_key")
 	i.ClaudeSessionID = field.NewString(table, "claude_session_id")
+	i.BoundIssueID = field.NewString(table, "bound_issue_id")
 	i.SeenMessageIds = field.NewString(table, "seen_message_ids")
 	i.LastMessageAt = field.NewTime(table, "last_message_at")
 	i.CreatedAt = field.NewTime(table, "created_at")
@@ -106,11 +109,12 @@ func (i *imBotConversation) GetFieldByName(fieldName string) (field.OrderExpr, b
 }
 
 func (i *imBotConversation) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 8)
+	i.fieldMap = make(map[string]field.Expr, 9)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["bot_id"] = i.BotID
 	i.fieldMap["conversation_key"] = i.ConversationKey
 	i.fieldMap["claude_session_id"] = i.ClaudeSessionID
+	i.fieldMap["bound_issue_id"] = i.BoundIssueID
 	i.fieldMap["seen_message_ids"] = i.SeenMessageIds
 	i.fieldMap["last_message_at"] = i.LastMessageAt
 	i.fieldMap["created_at"] = i.CreatedAt
