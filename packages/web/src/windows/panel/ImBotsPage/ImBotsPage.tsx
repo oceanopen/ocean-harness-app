@@ -1,7 +1,9 @@
-import type { ImBotModel } from '@src/services';
+import type { DoctorEntryState, ImBotModel, WorkspaceModel } from '@src/services';
+import type { AcpAgentOption } from '@src/state/agentCatalog';
 import type { ImBotChannelMeta } from './imBotChannels';
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
+import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
 import QrCode2OutlinedIcon from '@mui/icons-material/QrCode2Outlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
@@ -18,7 +20,10 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { effectiveAcpAgentCode, useAcpAgentOptions } from '@src/state/agentCatalog';
+import { useDoctorCheck, useDoctorReports } from '@src/state/doctor';
 import { useDeleteImBot, useImBots, useRestartImBot } from '@src/state/imBots';
+import { useWorkspaces } from '@src/state/tracker';
 import { useState } from 'react';
 import { IM_BOT_CHANNELS } from './imBotChannels';
 import ImBotDrawer from './ImBotDrawer';
@@ -39,6 +44,50 @@ function stateChip(state: string): { label: string; color: 'success' | 'warning'
       return { label: '已断开', color: 'error' };
     default:
       return { label: '未运行', color: 'default' };
+  }
+}
+
+/** 健康徽标形态（T3.5 doctor 四态派生）；tooltip 为引导文案（unhealthy 时直显探测原因）。 */
+interface HealthChip {
+  label: string;
+  color: 'success' | 'error' | 'info' | 'default';
+  tooltip?: string;
+}
+
+/**
+ * ACP bot 的 agent doctor 健康徽标（T3.5）：仅 workspace 启动模式 = acp 的 bot 依赖 doctor
+ * 探测链（node→vendored→adapter→握手）；终端模式 headless 直接 spawn vendored claude 二进制
+ * 不经该链，doctor 结论对其语义不精确——不显示。agentCode 回落规则走域内 SSOT
+ * （effectiveAcpAgentCode，与后端 resolveSessionConfig 同语义）。返回 null = 不显示（非 ACP / workspace 不在缓存 /
+ * doctor 快照未就绪 / catalog 遗留 agentCode 无 doctor 条目）。
+ */
+function acpHealthChip(
+  bot: ImBotModel,
+  workspaces: WorkspaceModel[] | undefined,
+  agentOptions: AcpAgentOption[],
+  doctorEntries: DoctorEntryState[] | undefined,
+): HealthChip | null {
+  if (bot.workspaceId <= 0 || !workspaces || !doctorEntries) {
+    return null;
+  }
+  const ws = workspaces.find(w => w.id === bot.workspaceId);
+  if (!ws || ws.launchSettings?.mode !== 'acp') {
+    return null;
+  }
+  const agentCode = effectiveAcpAgentCode(ws.launchSettings.agentCode, agentOptions);
+  const entry = doctorEntries.find(e => e.agentCode === agentCode);
+  if (!entry) {
+    return null;
+  }
+  switch (entry.status) {
+    case 'healthy':
+      return { label: 'Agent 正常', color: 'success' };
+    case 'unhealthy':
+      return { label: 'Agent 不可用', color: 'error', tooltip: entry.reason ?? 'ACP 运行环境不可用，请检查后重新检测' };
+    case 'checking':
+      return { label: 'Agent 检测中', color: 'info', tooltip: '正在探测 ACP 运行环境' };
+    default: // unknown：从未探测（sidecar 重启后由启动探测重填）
+      return { label: 'Agent 待检测', color: 'default', tooltip: '尚未完成探测，稍候自动检测' };
   }
 }
 
@@ -74,13 +123,14 @@ function ChannelCard(props: { channel: ImBotChannelMeta; total: number; online: 
   );
 }
 
-/** 右栏机器人满行卡片：名称 + 状态徽标 + 操作（重启/编辑/删除），下两行工作空间/访问策略。 */
+/** 右栏机器人满行卡片：名称 + 状态徽标（连接 + ACP bot 的 agent 健康）+ 操作（重启/编辑/删除），下两行工作空间/访问策略。 */
 function ImBotCard(props: {
   bot: ImBotModel;
+  health: HealthChip | null;
   onEdit: () => void;
   onDeleteAsk: () => void;
 }) {
-  const { bot, onEdit, onDeleteAsk } = props;
+  const { bot, health, onEdit, onDeleteAsk } = props;
   const restartMutation = useRestartImBot();
   const chip = stateChip(bot.connState);
 
@@ -91,6 +141,11 @@ function ImBotCard(props: {
         <Tooltip title={bot.lastError || undefined}>
           <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
         </Tooltip>
+        {health && (
+          <Tooltip title={health.tooltip || undefined}>
+            <Chip size="small" label={health.label} color={health.color} variant="outlined" />
+          </Tooltip>
+        )}
         {bot.workspaceId <= 0 && (
           <Tooltip title="尚未选择工作空间，对话时将收到补选提醒">
             <Chip size="small" label="待配置" color="warning" variant="outlined" sx={{ fontSize: 12 }} />
@@ -134,6 +189,13 @@ function ImBotCard(props: {
 function ImBotsPage() {
   const { data: bots = [], isLoading, refetch, isFetching, error } = useImBots();
   const deleteMutation = useDeleteImBot();
+  // T3.5 健康徽标 join 数据面：workspaces（mode/agentCode）+ agentCatalog（回落序）+ doctor
+  // 四态快照，三缓存各自失效/轮询独立；doctor busy（checking/unknown）1s 条件轮询自动驱动
+  // 徽标收敛，全落定自动停。
+  const { data: workspaces } = useWorkspaces();
+  const agentOptions = useAcpAgentOptions();
+  const { data: doctorEntries } = useDoctorReports();
+  const checkDoctor = useDoctorCheck();
   const [channelKey, setChannelKey] = useState(IM_BOT_CHANNELS[0].key);
   const [drawer, setDrawer] = useState<{ bot: ImBotModel | null; channelKey: string } | null>(null);
   const [provisionOpen, setProvisionOpen] = useState(false);
@@ -186,6 +248,18 @@ function ImBotsPage() {
         <Box sx={{ px: 3, py: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{channel.label}</Typography>
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* 检测 Agent（T3.5）：受理全局 doctor 探测（doctor 结论 per-agentCode 全局共享，同
+                agent 的 bot 共用一份），受理与探测异步解耦，收敛经四态轮询自动呈现于徽标。 */}
+            <Tooltip title="检测 Agent 运行环境（node / claude / 适配器握手）">
+              <IconButton
+                size="small"
+                onClick={() => checkDoctor.mutate(undefined)}
+                loading={checkDoctor.isPending}
+                sx={{ '& svg': { fontSize: 20 } }}
+              >
+                <MonitorHeartOutlinedIcon />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="刷新">
               <IconButton
                 size="small"
@@ -233,6 +307,7 @@ function ImBotsPage() {
             <ImBotCard
               key={bot.id}
               bot={bot}
+              health={acpHealthChip(bot, workspaces, agentOptions, doctorEntries)}
               onEdit={() => setDrawer({ bot, channelKey })}
               onDeleteAsk={() => setDeleteTarget(bot)}
             />

@@ -27,8 +27,16 @@ export function useAcpAgentOptions(): AcpAgentOption[] {
   );
 }
 
-/** ACP Agent 选中态派生：未显式选择 → 首个 enabled 条目；显式值原样保留（含目录遗留值）。 */
+/**
+ * ACP agentCode 生效值（回落规则 SSOT）：显式值优先，空串/未配置回落首个 enabled 条目
+ * （后端 resolveSessionConfig 同语义——空串即未配置）；目录遗留值（非空禁用 code）原样保留。
+ */
+export function effectiveAcpAgentCode(agentCode: AgentCode | undefined, options: AcpAgentOption[]): AgentCode {
+  return agentCode || options[0]?.value || '';
+}
+
+/** ACP Agent 选中态派生：未显式选择（空串同）→ 首个 enabled 条目；显式值原样保留（含目录遗留值）。 */
 export function useEffectiveAcpAgentCode(agentCode?: AgentCode): AgentCode {
   const options = useAcpAgentOptions();
-  return agentCode ?? options[0]?.value ?? '';
+  return effectiveAcpAgentCode(agentCode, options);
 }

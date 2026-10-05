@@ -732,7 +732,7 @@ issue 主窗口 ─────┘
 
 #### T3.5 doctor 健康度进 bot 状态徽标
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：bot 状态徽标展示 agent doctor 健康度
 
@@ -740,6 +740,14 @@ issue 主窗口 ─────┘
 - T1.4 doctor 结果经 HTTP API → bot 状态徽标（不健康时置灰 + 引导文案）
 
 **依赖**：T1.4、T2.1
+
+**实施定稿**：
+- **纯前端客户端 join（零后端改动）**：ImBotsPage 挂 useWorkspaces + useAcpAgentOptions + useDoctorReports 三缓存（doctor busy 1s 条件轮询自动驱动徽标收敛、全落定自动停，与 imBots 域 connecting 2s 轮询互不干扰），模块级纯函数 `acpHealthChip` 逐 bot 派生。不选后端合并（ImBotResponseData 扩字段）：doctor 前端域 T1.4 即为多消费方设计、LaunchModePicker 是同构参照，展示性徽标客户端 join 无一致性风险（各缓存独立失效/轮询）
+- **呈现范围（拍板仅 ACP 模式 bot）**：仅 workspace `launchSettings.mode === 'acp'` 的 bot 显示健康徽标——doctor 探测的是 ACP 全链（node→vendored→adapter→握手），终端模式 headless 直接 spawn vendored claude 二进制不经该链，doctor 结论对其语义不精确。agentCode 回落规则收敛为 agentCatalog 域纯函数 `effectiveAcpAgentCode`（显式值优先、空串/未配置回落首个 enabled 条目，与后端 resolveSessionConfig 同语义；useEffectiveAcpAgentCode hook 与 acpHealthChip 共用同一 SSOT）；不显示路径：workspaceId≤0 / workspace 不在缓存 / doctor 快照未就绪 / catalog 遗留 agentCode 无 doctor 条目
+- **四态常驻徽标（拍板）**：healthy→success「Agent 正常」/ unhealthy→error「Agent 不可用」+ Tooltip 直显 doctor reason（后端生成的用户可读引导文案）/ checking→info「Agent 检测中」/ unknown→default「Agent 待检测」；渲染在连接状态徽标之后（「待配置」Chip 同款多徽标并排模式）
+- **「置灰」形态（拍板徽标变色 + Tooltip）**：bot 卡片是管理入口（编辑/删除/重启与 agent 健康无关、桌面端无 IM 发消息入口可置灰），不健康语义收敛为徽标 error 色 + Tooltip 引导文案
+- **检测入口（拍板右栏全局）**：右栏头部「检测 Agent」按钮（MonitorHeart 图标，`useDoctorCheck` 受理全部 enabled 条目、受理与探测异步解耦、loading = 受理态），doctor 结论 per-agentCode 全局共享故全局一个入口（LaunchModePicker 重新检测同款交互，收敛经四态轮询自动呈现于徽标）
+- 验证：web:build（tsc 类型检查入口）+ web:lint 通过（前端无测试文件，UI 变更以类型/lint 为验证面）
 
 ---
 
