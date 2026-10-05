@@ -712,7 +712,7 @@ issue 主窗口 ─────┘
 
 #### T3.4 流式/思考与工具状态呈现
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：bot 侧复用现有回复泵呈现 ACP 流式事件
 
@@ -722,6 +722,13 @@ issue 主窗口 ─────┘
 - 超长输出：现有 `.bot-outbox` 落盘机制不变
 
 **依赖**：T2.1
+
+**实施定稿**：
+- **agentMessage 差分流式（核心增量）**：FrameEntry 携带本回合累计全量（视图按 (回合,kind) 聚合单条目、Text 只增长），泵的 TurnText 是增量语义——驱动层全量→增量差分（`sent` 已发前缀串水位线 + `strings.HasPrefix` 校验，`text[len(sent):]` 补发；sent 恒为 text 的完整前缀、len(sent) 落字符边界，多字节安全；前缀错配——条目覆写换回合的理论态（更短/等长不同/头部不一致）——重置全量重发）。泵/编排器/wecom 零改动——工具调用后泵清屏、差分恰只补新文本，与 headless 行为同构；`text` 局部变量继续存全量供终态 Result
+- **agentThought 思考状态行（用户拍板轻量形态）**：「💭 思考中…」TurnStatus 覆写（泵侧 lastSent 去重，重复帧无副作用），正文 TurnText 到来后 currentText 非空自然让位（与工具状态行同款语义）；思考内容本体不进 IM——headless 驱动本就全过滤 thinking，两引擎 IM 呈现基线收敛
+- **快照取数 user 锚过滤（用户拍板顺带加固，审查后终态）**：`turnAgentText`（armed 首帧基线装填与 armed=false 极快收敛合成终态共用的快照取数函数）以最后一条 user 条目为回合锚——beginTurn 受理即同步写本回合 user 条目（快照恒含之），锚后的 agentMessage 才是本回合已产出（订阅建立前落地的理论窗口）；对已有历史的会话，受理后 agent 尚无产出是常态，无锚直取最后一条会把上一回合回复串进本回合基线与零正文终态 Result——宁空毋串，无锚不回落「最后一条」
+- **零增量确认**：toolCall 状态行 T2.1 已交付（collectTurn 首见发 TurnToolUse）；超长落盘走 PumpReply 终帧 truncateForFrame + 编排器 sink 既有链路，ACP/headless 共用路径天然覆盖
+- 验证：build / vet / bot+wecom 全量 `-race` / gofmt 零残留通过；`driver_acp_test.go` 新增用例（差分流式含多字节安全 / 工具后增量续接 / 思考状态行 / 快照基线衔接 / user 锚排除历史条目 / 零正文终态不串回合 / 水位线前缀错配重置）+ 既有六用例事件序断言同步更新（终态断言前插入正文增量事件断言）
 
 #### T3.5 doctor 健康度进 bot 状态徽标
 

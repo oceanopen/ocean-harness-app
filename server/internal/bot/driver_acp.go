@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"ocean-harness/server/internal/acpsession"
 )
@@ -149,9 +150,10 @@ func sessionStateError(snap acpsession.ViewSnapshot) error {
 // collectTurn 回合输出收集（RunTurn 受理成功后开启，订阅与退订所有权在此；订阅为受理
 // 后重开的干净通道，缓冲里只可能有本回合生命周期帧）。armed 窗口装填：首帧快照的
 // TurnActive（本回合 turnStarted 帧广播早于订阅建立，收不到）或收到的 FrameTurnStarted；
-// 窗口内视图侧回合闸门保证不存在别的回合，agentMessage entry 即本轮回复（帧携带累计
-// 全量文本，取最新即可）；toolCall 按 id 首见发进度事件。终态唯一性：turnEnded /
-// terminated / 帧通道关闭三者先到先收，收即返回。
+// 窗口内视图侧回合闸门保证不存在别的回合，agentMessage entry 即本轮回复——帧携带本回合
+// 累计全量文本，差分转 TurnText 增量流式（T3.4，水位线 sent 经 user 锚从首帧快照装填）；
+// agentThought 出「💭 思考中…」状态行（正文流自然让位）；toolCall 按 id 首见发进度事件。终态唯一性：
+// turnEnded / terminated / 帧通道关闭三者先到先收，收即返回。
 // ctx 取消 = 软取消（Manager.Cancel → acp 层预算内强制收口，终态帧必达），继续消费直至
 // 终态帧；不自建超时——终结时序统一由 acp 层取消预算与帧到达表达，不引入时间性兜底。
 // 取消信号消费一次即摘出 select（置 nil）——Done 恒就绪，留在集合里会在等终态帧期间
@@ -161,7 +163,8 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 	defer stop()
 
 	seenTools := map[string]bool{}
-	var text string
+	var text string                           // 本回合 agentMessage 累计全量（终态 Result）
+	sent := ""                                // 差分水位线：已发增量到达的完整前缀串（HasPrefix 校验，见 agentMessage 分支）
 	var openPendings []acpsession.PendingView // 回合内开放挂起（状态行编号与摘除追踪）
 	cardSent := false                         // 本回合卡已出（企微一消息一卡，至多一张——首个可出卡挂起先到先得）
 	elicitCardPendingID := uint64(0)          // 已出表单卡对应的挂起 id（0=未出；表单状态行按挂起粒度两态——
@@ -198,9 +201,15 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 					emitTurnDone(events, &acpsession.TurnPayload{
 						StopReason: frame.Snapshot.StopReason,
 						Error:      frame.Snapshot.Error,
-					}, lastAgentText(frame.Snapshot.Entries))
+					}, turnAgentText(frame.Snapshot.Entries))
 					return
 				}
+				// 基线装填（user 锚过滤）：快照里最后一条 user 条目即本回合 prompt（受理同步
+				// 写、快照恒含），其后的 agentMessage 才是本回合已产出（订阅建立前落地的理论
+				// 窗口）——上回合回复不串进基线（对已有历史的会话，受理后 agent 尚无产出是
+				// 常态，无锚直取最后一条必取到上回合全文）。
+				text = turnAgentText(frame.Snapshot.Entries)
+				sent = text
 			case acpsession.FrameTurnStarted:
 				armed = frame.Turn != nil && frame.Turn.Active
 			case acpsession.FrameEntry:
@@ -210,7 +219,24 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 				// kind 取值 SSOT 是 acpsession 视图的 wire 形态（未导出常量；前端同镜像字面量）。
 				switch frame.Entry.Kind {
 				case "agentMessage":
+					// 差分流式（T3.4）：帧携带本回合累计全量（视图按 (回合,kind) 聚合、Text 只
+					// 增长），泵的 TurnText 是增量语义——以已发前缀串差分补发；前缀错配（防御：
+					// 条目覆写换回合的理论态——更短/等长不同/头部不一致）重置全量重发。sent
+					// 恒为 text 的完整前缀，len(sent) 落字符边界，多字节安全。工具调用后泵已
+					// 清屏，差分恰只补新文本，与 headless 同构。
 					text = frame.Entry.Text
+					if !strings.HasPrefix(text, sent) {
+						sent = ""
+					}
+					if delta := text[len(sent):]; delta != "" {
+						events <- TurnEvent{Type: TurnText, Delta: delta}
+					}
+					sent = text
+				case "agentThought":
+					// 思考提示（T3.4）：状态行覆写（泵侧 lastSent 去重，重复帧无副作用），正文
+					// TurnText 到来后 currentText 非空自然盖掉——与工具状态行同款让位语义；
+					// 思考内容本体不进 IM（轻量形态，用户拍板）。
+					events <- TurnEvent{Type: TurnStatus, Status: "💭 思考中…"}
 				case "toolCall":
 					if tc := frame.Entry.ToolCall; tc != nil && !seenTools[tc.ToolCallID] {
 						seenTools[tc.ToolCallID] = true
@@ -288,11 +314,23 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 	}
 }
 
-// lastAgentText 快照 entries 中最后一条 agentMessage 文本（极快收敛合成终态用——帧语义
-// 的「累计全量取最新」在快照投影上即取最后一条非空）。
-func lastAgentText(entries []acpsession.ConversationEntry) string {
-	var text string
+// turnAgentText 快照 entries 中本回合的 agentMessage 文本（armed=false 极快收敛合成终态
+// 与 armed 基线装填共用）：beginTurn 受理即同步写本回合 user 条目——最后一条 user 条目
+// 即本回合锚，其后的 agentMessage 才是本回合产出（视图按 (回合,kind) 聚合，锚后至多
+// 一条；取最后非空防御）。无 user 锚返回空——受理后快照恒含本回合 user 条目，无锚属
+// 理论不可达，宁空毋串不回落「最后一条」。
+func turnAgentText(entries []acpsession.ConversationEntry) string {
+	lastUser := -1
 	for i := range entries {
+		if entries[i].Kind == "user" {
+			lastUser = i
+		}
+	}
+	if lastUser < 0 {
+		return ""
+	}
+	var text string
+	for i := lastUser + 1; i < len(entries); i++ {
 		if entries[i].Kind == "agentMessage" && entries[i].Text != "" {
 			text = entries[i].Text
 		}

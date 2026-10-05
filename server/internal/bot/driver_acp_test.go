@@ -232,6 +232,16 @@ func agentTextFrame(entryID, text string) acpsession.Frame {
 	return acpsession.Frame{Type: acpsession.FrameEntry, Entry: &acpsession.ConversationEntry{EntryID: entryID, Kind: "agentMessage", Text: text}}
 }
 
+func thoughtFrame(entryID, text string) acpsession.Frame {
+	return acpsession.Frame{Type: acpsession.FrameEntry, Entry: &acpsession.ConversationEntry{EntryID: entryID, Kind: "agentThought", Text: text}}
+}
+
+func toolCallFrame(toolCallID, name string) acpsession.Frame {
+	return acpsession.Frame{Type: acpsession.FrameEntry, Entry: &acpsession.ConversationEntry{
+		EntryID: "tool:" + toolCallID, Kind: "toolCall", ToolCall: &acpsession.ToolCallView{ToolCallID: toolCallID, Name: name},
+	}}
+}
+
 // recvEvent 收一个回合事件（超时失败，防测试悬挂）。
 func recvEvent(t *testing.T, events <-chan TurnEvent) TurnEvent {
 	t.Helper()
@@ -308,6 +318,13 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 	}})
 	sessions.push(t, turnEndedFrame("end_turn"))
 
+	// 差分流式（T3.4）：累计全量帧差分为增量序列（Hel → lo!），终态 Result 为全文。
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "Hel" {
+		t.Fatalf("首个增量事件不符: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "lo!" {
+		t.Fatalf("续接增量事件不符: %+v", ev)
+	}
 	ev := recvEvent(t, events)
 	if ev.Type != TurnToolUse || ev.ToolName != "Bash" {
 		t.Fatalf("工具进度事件不符: %+v", ev)
@@ -325,6 +342,216 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 	_, _, _, prompts := sessions.stats()
 	if len(prompts) != 1 || prompts[0] != "hi" {
 		t.Fatalf("Prompt 受理内容不符: %v", prompts)
+	}
+}
+
+// TestAcpDriverTurnTextStreaming 差分流式（T3.4）：agentMessage 帧携带本回合累计全量，
+// 差分转 TurnText 增量序列；多字节文本不切半个字符（sent 恒为上次完整串的完整前缀，
+// len(sent) 落字符边界）。
+func TestAcpDriverTurnTextStreaming(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, agentTextFrame("t1-agentMessage", "你好"))
+	sessions.push(t, agentTextFrame("t1-agentMessage", "你好，世界🌍"))
+	sessions.push(t, agentTextFrame("t1-agentMessage", "你好，世界🌍！"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	for _, want := range []string{"你好", "，世界🌍", "！"} {
+		if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != want {
+			t.Fatalf("增量事件不符：want %q got %+v", want, ev)
+		}
+	}
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.Result != "你好，世界🌍！" {
+		t.Fatalf("终态事件应为回合全文: %+v", done)
+	}
+}
+
+// TestAcpDriverTurnTextAfterToolUse 工具调用后续流：泵在 TurnToolUse 清屏，差分基线不回退
+// ——后续增量只含工具后的新文本（与 headless 同构），终态 Result 仍为回合全文。
+func TestAcpDriverTurnTextAfterToolUse(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, agentTextFrame("t1-agentMessage", "先说结论"))
+	sessions.push(t, toolCallFrame("tc1", "Bash"))
+	sessions.push(t, agentTextFrame("t1-agentMessage", "先说结论，验证通过"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "先说结论" {
+		t.Fatalf("工具前增量事件不符: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnToolUse || ev.ToolName != "Bash" {
+		t.Fatalf("工具进度事件不符: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "，验证通过" {
+		t.Fatalf("工具后增量应只含新文本: %+v", ev)
+	}
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.Result != "先说结论，验证通过" {
+		t.Fatalf("终态事件应为回合全文: %+v", done)
+	}
+}
+
+// TestAcpDriverThoughtStatusLine 思考提示（T3.4）：agentThought 帧出「💭 思考中…」状态行
+// （重复帧泵侧 lastSent 去重），正文 TurnText 到来后自然让位；思考内容本体不进 IM。
+func TestAcpDriverThoughtStatusLine(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题"))
+	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题，再给方案"))
+	sessions.push(t, agentTextFrame("t1-agentMessage", "方案如下"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	for i := 0; i < 2; i++ {
+		if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 思考中…" {
+			t.Fatalf("思考状态行不符: %+v", ev)
+		}
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "方案如下" {
+		t.Fatalf("思考后的正文增量事件不符: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone || done.Result != "方案如下" {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// TestAcpDriverSnapshotBaselineArmed 快照基线衔接（T3.4 加固）：armed 快照 entries 已含
+// 本回合产出正文（订阅建立前的理论窗口），基线装填后后续帧差分只发增量，终态全文完整。
+func TestAcpDriverSnapshotBaselineArmed(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	snap := readySnap()
+	snap.TurnActive = true
+	snap.Entries = []acpsession.ConversationEntry{
+		{EntryID: "t1-user", Kind: "user", Text: "hi"},
+		{EntryID: "t1-agentMessage", Kind: "agentMessage", Text: "已产出"},
+	}
+	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &snap})
+	sessions.push(t, agentTextFrame("t1-agentMessage", "已产出+续写"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "+续写" {
+		t.Fatalf("快照基线后增量应只含新增部分: %+v", ev)
+	}
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.Result != "已产出+续写" {
+		t.Fatalf("终态事件应为回合全文: %+v", done)
+	}
+}
+
+// TestAcpDriverSnapshotStaleEntriesExcluded 基线 user 锚过滤（审查修复回归）：armed 快照
+// 含上回合完整问答 + 本回合 user 锚（受理同步写、其后无产出是常态）——上回合条目不进
+// 基线，本回合首帧即全量发出。
+func TestAcpDriverSnapshotStaleEntriesExcluded(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	snap := readySnap()
+	snap.TurnActive = true
+	snap.Entries = []acpsession.ConversationEntry{
+		{EntryID: "t0-user", Kind: "user", Text: "上一回合的提问"},
+		{EntryID: "t0-agentMessage", Kind: "agentMessage", Text: "上一回合的长篇大论……"},
+		{EntryID: "t1-user", Kind: "user", Text: "hi"},
+	}
+	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &snap})
+	sessions.push(t, agentTextFrame("t1-agentMessage", "短"))
+	sessions.push(t, agentTextFrame("t1-agentMessage", "短的回复"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "短" {
+		t.Fatalf("上回合条目经 user 锚排除，首帧应全量发出: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "的回复" {
+		t.Fatalf("增量应正常续接: %+v", ev)
+	}
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.Result != "短的回复" {
+		t.Fatalf("终态事件应为本回合全文: %+v", done)
+	}
+}
+
+// TestAcpDriverZeroTextTurnNotContaminated 零正文终态不串回合（审查修复回归）：本回合
+// 零 agentMessage 帧取消收尾时终态 Result 为空——快照里的上回合回复不得被当作本回合
+// 已产出文本交付（Result 与水位线均经 user 锚过滤装填）。
+func TestAcpDriverZeroTextTurnNotContaminated(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	snap := readySnap()
+	snap.TurnActive = true
+	snap.Entries = []acpsession.ConversationEntry{
+		{EntryID: "t0-user", Kind: "user", Text: "上一回合的提问"},
+		{EntryID: "t0-agentMessage", Kind: "agentMessage", Text: "已完成配置修改"},
+		{EntryID: "t1-user", Kind: "user", Text: "hi"},
+	}
+	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &snap})
+	sessions.push(t, thoughtFrame("t1-agentThought", "思考中"))
+	sessions.push(t, turnEndedFrame("cancelled"))
+
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 思考中…" {
+		t.Fatalf("思考状态行不符: %+v", ev)
+	}
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || !done.IsError || done.Result != "" {
+		t.Fatalf("零正文取消终态：Result 应为空（上回合回复不得串入）: %+v", done)
+	}
+}
+
+// TestAcpDriverWatermarkPrefixMismatchReset 水位线前缀校验（审查修复回归）：已发前缀串与
+// 帧文本错配（条目覆写换回合的理论态——更短/等长不同/头部不一致）即重置全量重发，
+// 不切中段、不静默丢首块；前缀恢复后差分正常续接。
+func TestAcpDriverWatermarkPrefixMismatchReset(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	snap := readySnap()
+	snap.TurnActive = true
+	snap.Entries = []acpsession.ConversationEntry{
+		{EntryID: "t1-user", Kind: "user", Text: "hi"},
+		{EntryID: "t1-agentMessage", Kind: "agentMessage", Text: "旧内容"},
+	}
+	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &snap})
+	sessions.push(t, agentTextFrame("t1-agentMessage", "崭新内容"))
+	sessions.push(t, agentTextFrame("t1-agentMessage", "崭新内容续"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "崭新内容" {
+		t.Fatalf("前缀错配应全量重发（不切中段不丢首块）: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "续" {
+		t.Fatalf("前缀恢复后增量应正常续接: %+v", ev)
+	}
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || done.Result != "崭新内容续" {
+		t.Fatalf("终态事件应为本回合全文: %+v", done)
 	}
 }
 
@@ -386,6 +613,9 @@ func TestAcpDriverTurnRebuildWaitReady(t *testing.T) {
 	sessions.push(t, agentTextFrame("t1-agentMessage", "重建后的回复"))
 	sessions.push(t, turnEndedFrame("end_turn"))
 
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "重建后的回复" {
+		t.Fatalf("正文增量事件不符: %+v", ev)
+	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || done.Result != "重建后的回复" {
 		t.Fatalf("重建受理后应正常完成回合: %+v", done)
@@ -523,6 +753,9 @@ func TestAcpDriverTurnQueuedWindowFramesDiscarded(t *testing.T) {
 	sessions.push(t, agentTextFrame("t1-agentMessage", "bot 自己的回复"))
 	sessions.push(t, turnEndedFrame("end_turn"))
 
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "bot 自己的回复" {
+		t.Fatalf("正文增量事件不符: %+v", ev)
+	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || done.Result != "bot 自己的回复" {
 		t.Fatalf("等位窗口帧应整体作废，本回合结果不得被外来终态顶替: %+v", done)
@@ -544,6 +777,9 @@ func TestAcpDriverTurnArmedFromSnapshotFrame(t *testing.T) {
 	sessions.push(t, agentTextFrame("t1-agentMessage", "快照装填后的回复"))
 	sessions.push(t, turnEndedFrame("end_turn"))
 
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "快照装填后的回复" {
+		t.Fatalf("正文增量事件不符: %+v", ev)
+	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || done.Result != "快照装填后的回复" {
 		t.Fatalf("快照 TurnActive 应装填 armed 并正常收集: %+v", done)
@@ -562,6 +798,7 @@ func TestAcpDriverTurnInstantTurnFromSnapshot(t *testing.T) {
 	snap := readySnap()
 	snap.StopReason = "end_turn"
 	snap.Entries = []acpsession.ConversationEntry{
+		{EntryID: "t1-user", Kind: "user", Text: "hi"},
 		{EntryID: "t1-agentMessage", Kind: "agentMessage", Text: "秒回"},
 	}
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &snap})
@@ -615,6 +852,9 @@ func TestAcpDriverTurnCancelledStopReason(t *testing.T) {
 	sessions.push(t, agentTextFrame("t1-agentMessage", "部分输出"))
 	sessions.push(t, turnEndedFrame("cancelled"))
 
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "部分输出" {
+		t.Fatalf("取消前正文增量事件不符: %+v", ev)
+	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || !done.IsError || done.Result != "部分输出" {
 		t.Fatalf("取消终态应转中断语义 TurnDone 并携带已产出文本: %+v", done)
@@ -748,6 +988,9 @@ func TestAcpDriverPendingStatusLine(t *testing.T) {
 	ev = recvEvent(t, events)
 	if ev.Type != TurnStatus || ev.Status != "✅ 审批已处理，继续执行…" {
 		t.Fatalf("审批处理状态行不符: %+v", ev)
+	}
+	if ev = recvEvent(t, events); ev.Type != TurnText || ev.Delta != "审批后的回复" {
+		t.Fatalf("审批后正文增量事件不符: %+v", ev)
 	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || done.Result != "审批后的回复" {
