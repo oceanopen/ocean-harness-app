@@ -169,7 +169,7 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
 
 #### T1.1 acpsession 条目元数据扩展
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：会话条目携带消息来源与展示元数据（后端显示链路基座）
 
@@ -186,6 +186,16 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
 
 **验收**：acpsession 单测（beginTurn 元数据落条目 / 帧序列化携带 / 空 Display 兼容）；
 `go test ./internal/acpsession/... -race` 通过
+
+**实施定稿**：按方案落地，零偏离；补充三点终态事实——① 来源常量新设
+`EntrySourcePanel/EntrySourceBot`（取值与 `PendingSource*` 一致但语义独立：本来源随
+user 条目进 SSE 帧与快照供前端消费，`PendingSource*` 仍为不进 client DTO 的服务端内部
+追踪字段，两组各自维护）；② bot 驱动本任务即随受理传 `Source: bot`（Display 留待
+T1.2 从 `TurnRequest.Display` 接入），`Manager.Prompt` 内部固定 `Source: panel`，
+HTTP 面 / service / controller 零改动；③ 测试新增 `TestViewBeginTurnPromptMeta`
+（元数据落条目 / entry 帧与快照携带 / panel 零 Display 与全零 meta 的 wire omitempty
+兼容），排队主链路测试尾部补双入口来源装配断言（首轮 tick 条目落在两 user 条目之间，
+按文本定位断言），fakeSessions 增 `promptMetas` 调用留痕备 T1.2 透传断言。
 
 #### T1.2 ACP 回合人设注入与展示元数据传递
 

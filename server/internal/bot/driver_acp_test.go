@@ -45,6 +45,7 @@ type fakeSessions struct {
 
 	ensureCalls int
 	promptTexts []string
+	promptMetas []acpsession.PromptMeta // PromptQueued 元数据留痕（T1.1 来源/展示透传断言）
 	cancelCalls int
 	subscribes  int
 }
@@ -101,9 +102,10 @@ func (f *fakeSessions) Subscribe(_ string) (<-chan acpsession.Frame, func()) {
 	}
 }
 
-func (f *fakeSessions) PromptQueued(ctx context.Context, _ string, text string) error {
+func (f *fakeSessions) PromptQueued(ctx context.Context, _ string, text string, meta acpsession.PromptMeta) error {
 	f.mu.Lock()
 	f.promptTexts = append(f.promptTexts, text)
+	f.promptMetas = append(f.promptMetas, meta)
 	promptErr := f.promptErr
 	hook := f.promptHook
 	f.mu.Unlock()

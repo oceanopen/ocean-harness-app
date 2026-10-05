@@ -31,13 +31,55 @@ const (
 	entryKindToolCall     = "toolCall"
 )
 
+// user 条目来源取值域（T1.1 显示链路基座）：标记回合发起入口，panel 前端据此区分 IM
+// 来源消息渲染（IM 徽标 + Display 元数据）。取值与 PendingSource* 一致但语义独立——
+// 本来源随 user 条目进 SSE 帧与快照（前端消费的 DTO），而 PendingSource* 是服务端内部
+// 追踪字段（不进任何 client DTO），两组常量各自维护。
+const (
+	EntrySourcePanel = "panel" // 桌面 issue 主窗口（Prompt 即时受理恒此来源）
+	EntrySourceBot   = "bot"   // IM bot（PromptQueued 排队受理携带）
+)
+
 // ConversationEntry 会话记录条目（四类：用户消息 / agent 消息 / agent 思考 / 工具调用）。
 // 同类同回合的流式 chunk 聚合进同一 entry，工具调用按 toolCallId 覆写式 upsert。
 type ConversationEntry struct {
 	EntryID  string        `json:"entryId"`
 	Kind     string        `json:"kind"` // user | agentMessage | agentThought | toolCall
 	Text     string        `json:"text,omitempty"`
+	Source   string        `json:"source,omitempty"`  // user 条目来源（EntrySource*；空 = 无来源标记）
+	Display  *EntryDisplay `json:"display,omitempty"` // user 条目展示元数据（nil = 无，前端回落 Text 原样）
 	ToolCall *ToolCallView `json:"toolCall,omitempty"`
+}
+
+// EntryDisplay user 条目展示元数据（显示-发送文本分离，D2）：Text 为正文原文（区别于
+// 条目 Text 的围栏全文），Quote / Files 为 IM 引用与附件的展示投影。nil = 无展示元数据，
+// 前端回落条目 Text 原样直显（旧 sidecar + 新前端混跑窗口兼容）。一经落条目即只读共享
+// （帧与快照锁外序列化），构造方不得再触碰。
+type EntryDisplay struct {
+	Text  string      `json:"text,omitempty"`
+	Quote *EntryQuote `json:"quote,omitempty"`
+	Files []EntryFile `json:"files,omitempty"`
+}
+
+// EntryQuote 引用块展示元数据（IM 引用回复）。
+type EntryQuote struct {
+	Author    string `json:"author,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// EntryFile 附件展示元数据（IM 附件 manifest 的显示投影）。
+type EntryFile struct {
+	Name string `json:"name,omitempty"`
+	Path string `json:"path,omitempty"`
+}
+
+// PromptMeta 回合受理携带的消息来源元数据（T1.1）：Source 标记发起入口（EntrySource*），
+// Display 为展示元数据（bot 路径组装，panel 恒零值）。进程内参数不经序列化——Source /
+// Display 随 beginTurn 落 user 条目，经 SSE entry 帧与快照透出。
+type PromptMeta struct {
+	Source  string
+	Display *EntryDisplay
 }
 
 // ToolCallView 工具调用条目（ACP wire 原样透传，前端按 kind/status 选择呈现形态）。
@@ -582,9 +624,10 @@ func pendingIndexOfLocked(pendings []pendingSlot, pendingID uint64) int {
 	return -1
 }
 
-// beginTurn 受理一轮回合：用户消息条目 + turnStarted 合成。已有活动回合拒绝（单会话
-// 回合串行，与 acp.ErrTurnActive 同语义的视图侧前置闸门）。
-func (v *sessionView) beginTurn(text string) ([]Frame, error) {
+// beginTurn 受理一轮回合：用户消息条目（Text 存 prompt 全文——围栏 + im_context 原样；
+// meta 的 Source / Display 落条目，经 entry 帧与快照透出）+ turnStarted 合成。已有活动
+// 回合拒绝（单会话回合串行，与 acp.ErrTurnActive 同语义的视图侧前置闸门）。
+func (v *sessionView) beginTurn(text string, meta PromptMeta) ([]Frame, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.turnActive {
@@ -593,7 +636,13 @@ func (v *sessionView) beginTurn(text string) ([]Frame, error) {
 	v.turn++
 	v.turnActive = true
 	v.stopReason = ""
-	entry := ConversationEntry{EntryID: fmt.Sprintf("t%d-%s", v.turn, entryKindUser), Kind: entryKindUser, Text: text}
+	entry := ConversationEntry{
+		EntryID: fmt.Sprintf("t%d-%s", v.turn, entryKindUser),
+		Kind:    entryKindUser,
+		Text:    text,
+		Source:  meta.Source,
+		Display: meta.Display,
+	}
 	v.entries = append(v.entries, entry)
 	return []Frame{
 		{Type: FrameEntry, Entry: &entry},

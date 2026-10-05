@@ -21,7 +21,7 @@ import (
 type acpSessions interface {
 	Ensure(ctx context.Context, issueID, pickedLaunchMode string) (acpsession.ViewSnapshot, error)
 	Subscribe(issueID string) (<-chan acpsession.Frame, func())
-	PromptQueued(ctx context.Context, issueID, text string) error
+	PromptQueued(ctx context.Context, issueID, text string, meta acpsession.PromptMeta) error
 	Cancel(issueID string) error
 	Get(issueID string) acpsession.ViewSnapshot
 	RespondPermission(issueID string, pendingID uint64, optionID, source string) error
@@ -79,8 +79,9 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 		return nil, err
 	}
 	// 排队受理（T2.2）：受理失败（会话终结 / ctx 取消）同步报错，经 driverRoute 包
-	// turnNotAcceptedError，编排器不清锚。
-	if err := d.sessions.PromptQueued(ctx, issueID, req.Prompt); err != nil {
+	// turnNotAcceptedError，编排器不清锚。meta 来源恒 bot（T1.1 显示链路：user 条目
+	// 携带来源标记，Display 待 T1.2 随 TurnRequest 接入）。
+	if err := d.sessions.PromptQueued(ctx, issueID, req.Prompt, acpsession.PromptMeta{Source: acpsession.EntrySourceBot}); err != nil {
 		stop()
 		return nil, err
 	}

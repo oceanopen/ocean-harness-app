@@ -296,14 +296,14 @@ func (m *Manager) Subscribe(issueID string) (<-chan Frame, func()) {
 
 // Prompt 即时受理一轮回合（UI 入口语义）：视图侧串行闸门（活动回合拒绝，acp.ErrTurnActive
 // 同语义）→ 立即返回 → 后台阻塞至 agent 终态并合成 turnEnded（StopReason 只在 Prompt
-// 返回值可见，回合两端帧由本域合成补齐 gap）。bot 入口的排队受理（跨入口回合锁，T2.2）
-// 走 PromptQueued。
+// 返回值可见，回合两端帧由本域合成补齐 gap）。来源恒 panel（HTTP 面零改动，T1.1 的
+// Source 装配收口在此）。bot 入口的排队受理（跨入口回合锁，T2.2）走 PromptQueued。
 func (m *Manager) Prompt(issueID, text string) error {
 	entry, err := m.readyEntry(issueID)
 	if err != nil {
 		return err
 	}
-	frames, err := entry.view.beginTurn(text)
+	frames, err := entry.view.beginTurn(text, PromptMeta{Source: EntrySourcePanel})
 	if err != nil {
 		return err
 	}
@@ -313,12 +313,13 @@ func (m *Manager) Prompt(issueID, text string) error {
 
 // PromptQueued 排队受理一轮回合（T2.2 per-session 跨入口回合锁）：UI 与 bot 两入口抢同一
 // ACP 会话时，活动回合中的后到者 FIFO 等位，当前回合结束后（release 唤醒）自动开跑；
-// 受理成功（回合开始）即返回，回合异步跑到终态（受理式语义与 Prompt 一致）。等位无预算
-// ——回合时长不可预估，由回合终态与 ctx 取消驱动（对齐 acp 层 prompt 不设超时的既有拍板）。
+// 受理成功（回合开始）即返回，回合异步跑到终态（受理式语义与 Prompt 一致）。meta 为
+// bot 侧来源与展示元数据（T1.1），随受理落 user 条目。等位无预算——回合时长不可预估，
+// 由回合终态与 ctx 取消驱动（对齐 acp 层 prompt 不设超时的既有拍板）。
 // 固定时序：每次循环先 join 再尝试闸门——「已在队列」与 turnActive 检查的竞态由先入队后
 // 重试消解（回合结束的 release 不会漏掉已入队者；未等位即获槽位则 depart 出队）。公平性：
 // UI 即时受理不经队列，回合空隙上桌面先到先得，等位者被插队后循环重试重新排队。
-func (m *Manager) PromptQueued(ctx context.Context, issueID, text string) error {
+func (m *Manager) PromptQueued(ctx context.Context, issueID, text string, meta PromptMeta) error {
 	entry, err := m.readyEntry(issueID)
 	if err != nil {
 		return err
@@ -331,7 +332,7 @@ func (m *Manager) PromptQueued(ctx context.Context, issueID, text string) error 
 			return err
 		}
 		w := q.join()
-		frames, err := entry.view.beginTurn(text)
+		frames, err := entry.view.beginTurn(text, meta)
 		if err == nil {
 			q.depart(w) // 未等位即获槽位（或被 release 弹出后闸门成功）：出队
 			m.acceptTurn(entry, frames, text)

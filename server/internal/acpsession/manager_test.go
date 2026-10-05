@@ -595,7 +595,9 @@ func TestPromptQueuedAutoStartAfterTurn(t *testing.T) {
 		t.Fatalf("Prompt: %v", err)
 	}
 	queued := make(chan error, 1)
-	go func() { queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息") }()
+	go func() {
+		queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息", PromptMeta{Source: EntrySourceBot})
+	}()
 	// 等位入队（确定性时序同步）后：等位期间不受理新回合（用户条目不落视图）。
 	waitForCondition(t, "等位入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
 	snap := mgr.Get(issueID)
@@ -621,6 +623,19 @@ func TestPromptQueuedAutoStartAfterTurn(t *testing.T) {
 		snap := mgr.Get(issueID)
 		return !snap.TurnActive && len(snap.Entries) >= 2 && snap.Entries[len(snap.Entries)-1].Text == "排队消息"
 	})
+	// 双入口来源装配（T1.1）：Prompt 恒 panel，PromptQueued 透传 meta.Source（首轮
+	// cancelled 前的 tick 条目落在两 user 条目之间，按文本定位各自的 user 条目）。
+	sourceOf := func(text string) string {
+		for _, e := range mgr.Get(issueID).Entries {
+			if e.Kind == entryKindUser && e.Text == text {
+				return e.Source
+			}
+		}
+		return ""
+	}
+	if sourceOf("第一轮") != EntrySourcePanel || sourceOf("排队消息") != EntrySourceBot {
+		t.Fatalf("user 条目来源应按入口装配（panel/bot），got %+v", mgr.Get(issueID).Entries)
+	}
 }
 
 // TestPromptQueuedFIFOOrder 两个等位者按入队序依次开跑：A 先受理，其回合终态释放后 B
@@ -636,9 +651,13 @@ func TestPromptQueuedFIFOOrder(t *testing.T) {
 	}
 	queuedA := make(chan error, 1)
 	queuedB := make(chan error, 1)
-	go func() { queuedA <- mgr.PromptQueued(context.Background(), issueID, "排队A") }()
+	go func() {
+		queuedA <- mgr.PromptQueued(context.Background(), issueID, "排队A", PromptMeta{Source: EntrySourceBot})
+	}()
 	waitForCondition(t, "A 入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
-	go func() { queuedB <- mgr.PromptQueued(context.Background(), issueID, "排队B") }()
+	go func() {
+		queuedB <- mgr.PromptQueued(context.Background(), issueID, "排队B", PromptMeta{Source: EntrySourceBot})
+	}()
 	waitForCondition(t, "B 入队", func() bool { return queuedWaiters(mgr, issueID) == 2 })
 	waitFirstTick(t, frames)
 	if err := mgr.Cancel(issueID); err != nil {
@@ -679,7 +698,7 @@ func TestPromptQueuedContextCancelSelfRemoves(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	queued := make(chan error, 1)
-	go func() { queued <- mgr.PromptQueued(ctx, issueID, "排队消息") }()
+	go func() { queued <- mgr.PromptQueued(ctx, issueID, "排队消息", PromptMeta{Source: EntrySourceBot}) }()
 	waitForCondition(t, "等位入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
 	cancel()
 	if err := queueResult(t, queued, "ctx 取消退出"); err == nil || !strings.Contains(err.Error(), "取消") {
@@ -718,7 +737,9 @@ func TestPromptQueuedDiscardAborts(t *testing.T) {
 		t.Fatalf("Prompt: %v", err)
 	}
 	queued := make(chan error, 1)
-	go func() { queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息") }()
+	go func() {
+		queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息", PromptMeta{Source: EntrySourceBot})
+	}()
 	waitForCondition(t, "等位入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
 	mgr.Discard(issueID)
 	if err := queueResult(t, queued, "等位中 Discard 退出"); err == nil || !strings.Contains(err.Error(), "终结") {
@@ -738,7 +759,9 @@ func TestPromptQueuedReadyRecheckAfterWake(t *testing.T) {
 		t.Fatalf("Prompt: %v", err)
 	}
 	queued := make(chan error, 1)
-	go func() { queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息") }()
+	go func() {
+		queued <- mgr.PromptQueued(context.Background(), issueID, "排队消息", PromptMeta{Source: EntrySourceBot})
+	}()
 	waitForCondition(t, "等位入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
 	mgr.mu.Lock()
 	entry := mgr.entries[issueID]
@@ -766,9 +789,13 @@ func TestPromptQueuedDeathReleasesAllWaiters(t *testing.T) {
 	}
 	queuedB := make(chan error, 1)
 	queuedC := make(chan error, 1)
-	go func() { queuedB <- mgr.PromptQueued(context.Background(), issueID, "排队B") }()
+	go func() {
+		queuedB <- mgr.PromptQueued(context.Background(), issueID, "排队B", PromptMeta{Source: EntrySourceBot})
+	}()
 	waitForCondition(t, "B 入队", func() bool { return queuedWaiters(mgr, issueID) == 1 })
-	go func() { queuedC <- mgr.PromptQueued(context.Background(), issueID, "排队C") }()
+	go func() {
+		queuedC <- mgr.PromptQueued(context.Background(), issueID, "排队C", PromptMeta{Source: EntrySourceBot})
+	}()
 	waitForCondition(t, "C 入队", func() bool { return queuedWaiters(mgr, issueID) == 2 })
 	// 走真实终结收尾路径（置态 + close 队列 + 落因 + 广播）；entry 尚 ready 态不被幂等挡回。
 	mgr.mu.Lock()

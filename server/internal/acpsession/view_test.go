@@ -35,7 +35,7 @@ func framesOf(t *testing.T, view *sessionView, events ...acp.SessionEvent) []Fra
 
 func TestViewChunkAggregation(t *testing.T) {
 	view := newSessionView()
-	if _, err := view.beginTurn("帮我看看"); err != nil {
+	if _, err := view.beginTurn("帮我看看", PromptMeta{}); err != nil {
 		t.Fatalf("beginTurn: %v", err)
 	}
 	frames := framesOf(t, view,
@@ -163,7 +163,7 @@ func TestViewSnapshotReplacement(t *testing.T) {
 
 func TestViewTurnGateAndEndFrames(t *testing.T) {
 	view := newSessionView()
-	frames, err := view.beginTurn("第一问")
+	frames, err := view.beginTurn("第一问", PromptMeta{})
 	if err != nil {
 		t.Fatalf("首回合应受理，got %v", err)
 	}
@@ -174,7 +174,7 @@ func TestViewTurnGateAndEndFrames(t *testing.T) {
 		t.Fatalf("次帧应为 turnStarted，got %+v", frames[1])
 	}
 	// 活动回合中再受理拒绝（与 acp.ErrTurnActive 同语义）。
-	if _, err := view.beginTurn("第二问"); err != acp.ErrTurnActive {
+	if _, err := view.beginTurn("第二问", PromptMeta{}); err != acp.ErrTurnActive {
 		t.Fatalf("并发回合应拒绝，got %v", err)
 	}
 	// 终态合成 turnEnded（StopReason 只从 Prompt 返回值可见的 gap 补齐）。
@@ -189,6 +189,74 @@ func TestViewTurnGateAndEndFrames(t *testing.T) {
 	// 二次 endTurn（无活动回合）无帧。
 	if frames := view.endTurn(string(schema.StopReasonEndTurn), ""); frames != nil {
 		t.Fatalf("非活动回合 endTurn 应无帧，got %+v", frames)
+	}
+}
+
+// T1.1 显示链路基座：beginTurn 元数据落 user 条目、entry 帧与快照携带、wire 形态
+// （空元数据 omitempty 缺席——前端回落 Text 原样的兼容契约）。
+func TestViewBeginTurnPromptMeta(t *testing.T) {
+	view := newSessionView()
+	display := &EntryDisplay{
+		Text:  "正文原文",
+		Quote: &EntryQuote{Author: "张三", Text: "引用内容", Truncated: true},
+		Files: []EntryFile{{Name: "截图.png", Path: "/tmp/截图.png"}},
+	}
+	frames, err := view.beginTurn("<user_message>…</user_message>", PromptMeta{Source: EntrySourceBot, Display: display})
+	if err != nil {
+		t.Fatalf("beginTurn: %v", err)
+	}
+	// entry 帧携带：Text 存围栏全文，Source / Display 元数据随帧透出。
+	if len(frames) != 2 || frames[0].Type != FrameEntry || frames[0].Entry == nil {
+		t.Fatalf("首帧应为用户条目，got %+v", frames)
+	}
+	entry := frames[0].Entry
+	if entry.Text != "<user_message>…</user_message>" || entry.Source != EntrySourceBot || entry.Display != display {
+		t.Fatalf("条目应携带全文与元数据，got %+v", entry)
+	}
+	// 快照同步携带。
+	snap := view.snapshot()
+	if len(snap.Entries) != 1 || snap.Entries[0].Source != EntrySourceBot || snap.Entries[0].Display != display {
+		t.Fatalf("快照条目应携带元数据，got %+v", snap.Entries)
+	}
+	// wire 形态：source 与 display（正文 / 引用块 / 附件）序列化在场。
+	wire, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for _, want := range []string{
+		`"source":"bot"`, `"text":"正文原文"`, `"author":"张三"`, `"truncated":true`,
+		`"name":"截图.png"`, `"path":"/tmp/截图.png"`,
+	} {
+		if !strings.Contains(string(wire), want) {
+			t.Fatalf("wire 应含 %s，got %s", want, wire)
+		}
+	}
+
+	// panel 来源零 Display（空 Display 兼容）：source 在场、display 缺席。
+	panel := newSessionView()
+	panelFrames, err := panel.beginTurn("桌面消息", PromptMeta{Source: EntrySourcePanel})
+	if err != nil {
+		t.Fatalf("beginTurn(panel): %v", err)
+	}
+	wirePanel, err := json.Marshal(panelFrames[0].Entry)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(wirePanel), `"source":"panel"`) || strings.Contains(string(wirePanel), "display") {
+		t.Fatalf("panel 条目应只有 source 无 display，got %s", wirePanel)
+	}
+	// 全零 meta：source / display 均缺席（旧调用方形态不变）。
+	zero := newSessionView()
+	zeroFrames, err := zero.beginTurn("无来源", PromptMeta{})
+	if err != nil {
+		t.Fatalf("beginTurn(zero): %v", err)
+	}
+	wireZero, err := json.Marshal(zeroFrames[0].Entry)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(wireZero), "source") || strings.Contains(string(wireZero), "display") {
+		t.Fatalf("零 meta 条目不应携带来源字段，got %s", wireZero)
 	}
 }
 
