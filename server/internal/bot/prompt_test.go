@@ -56,6 +56,39 @@ func TestBuildTurnPrompt(t *testing.T) {
 	})
 }
 
+// TestBuildTurnDisplay 展示元数据组装（T1.2）：Text 为 trim 后正文原文（区别于围栏全文，
+// 空正文不占位），Quote / Files 为 IM 投影；恒非 nil 全新对象。
+func TestBuildTurnDisplay(t *testing.T) {
+	t.Run("纯文本", func(t *testing.T) {
+		d := buildTurnDisplay(InboundMessage{Text: "  帮我看看构建为什么挂了  "})
+		if d == nil || d.Text != "帮我看看构建为什么挂了" || d.Quote != nil || d.Files != nil {
+			t.Fatalf("纯文本 Display 不符: %+v", d)
+		}
+	})
+	t.Run("引用与附件映射", func(t *testing.T) {
+		d := buildTurnDisplay(InboundMessage{
+			Text:  "照这个报错修一下",
+			Quote: &QuoteRef{AuthorID: "alice", Text: "panic: nil map", Truncated: true},
+			Files: []InboundFile{{Path: "/ws/.wecom-attachments/m1/log.txt", Name: "log.txt"}},
+		})
+		if d.Text != "照这个报错修一下" {
+			t.Fatalf("正文原文不符: %+v", d)
+		}
+		if d.Quote == nil || d.Quote.Author != "alice" || d.Quote.Text != "panic: nil map" || !d.Quote.Truncated {
+			t.Fatalf("引用投影不符: %+v", d.Quote)
+		}
+		if len(d.Files) != 1 || d.Files[0].Name != "log.txt" || d.Files[0].Path != "/ws/.wecom-attachments/m1/log.txt" {
+			t.Fatalf("附件投影不符: %+v", d.Files)
+		}
+	})
+	t.Run("空正文仅有引用不占位", func(t *testing.T) {
+		d := buildTurnDisplay(InboundMessage{Quote: &QuoteRef{AuthorID: "a", Text: "hi"}})
+		if d.Text != "" || d.Quote == nil || d.Quote.Author != "a" {
+			t.Fatalf("空正文 Display 应保持原文空（占位仅模型侧）: %+v", d)
+		}
+	})
+}
+
 func TestComposeSystemPrompt(t *testing.T) {
 	t.Run("有 persona：人设在前防护在后", func(t *testing.T) {
 		got := ComposeSystemPrompt("你是严谨的代码审查助手")

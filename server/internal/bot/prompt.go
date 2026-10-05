@@ -3,6 +3,8 @@ package bot
 import (
 	"fmt"
 	"strings"
+
+	"ocean-harness/server/internal/acpsession"
 )
 
 // ComposeSystemPrompt 组装 claude --append-system-prompt 内容：bot 人设（可空）+ 固定防护引导。
@@ -66,4 +68,23 @@ func BuildTurnPrompt(msg InboundMessage) string {
 	}
 
 	return b.String()
+}
+
+// buildTurnDisplay 组装 bot 回合的展示元数据（T1.2，显示-发送文本分离 D2）：Text 为正文
+// 原文（trim 后——区别于条目 Text 的围栏全文，空正文不占位，panel 靠引用/附件呈现），
+// Quote / Files 为 IM 引用与附件的展示投影。恒返回非 nil 全新对象（panel 前端按
+// display.text 渲染正文原文，nil 会回落裸显围栏标签）；一经落条目即只读共享
+// （acpsession.EntryDisplay 契约），不复用不触碰。
+func buildTurnDisplay(msg InboundMessage) *acpsession.EntryDisplay {
+	d := &acpsession.EntryDisplay{Text: strings.TrimSpace(msg.Text)}
+	if q := msg.Quote; q != nil {
+		d.Quote = &acpsession.EntryQuote{Author: q.AuthorID, Text: q.Text, Truncated: q.Truncated}
+	}
+	if len(msg.Files) > 0 {
+		d.Files = make([]acpsession.EntryFile, len(msg.Files))
+		for i, f := range msg.Files {
+			d.Files[i] = acpsession.EntryFile{Name: f.Name, Path: f.Path}
+		}
+	}
+	return d
 }

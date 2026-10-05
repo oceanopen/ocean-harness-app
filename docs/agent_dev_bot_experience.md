@@ -199,7 +199,7 @@ HTTP 面 / service / controller 零改动；③ 测试新增 `TestViewBeginTurnP
 
 #### T1.2 ACP 回合人设注入与展示元数据传递
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：bot 人设在 ACP 路径生效（仅 IM 来源回合），panel 展示元数据透传
 
@@ -214,6 +214,18 @@ HTTP 面 / service / controller 零改动；③ 测试新增 `TestViewBeginTurnP
 
 **验收**：`driver_acp_test` 新增用例（im_context 附带与格式 / 人设含 `</` 中和 / Display 透传 /
 SystemPrompt 空跳过）；bot 全量测试 `-race` 通过
+
+**实施定稿**：按方案落地，零偏离；补充三点终态事实——① 人设块组装提炼为具名纯函数
+`acpTurnPrompt(req)`（driver_acp.go；空判定用 `TrimSpace`，对齐 driver_claude 的 argv 门槛
+语义），受理文本 = 围栏全文 + `<im_context>` 块，SystemPrompt 空防御性原文受理；②
+`buildTurnDisplay` 在 `#issue` 绑定+首回合步改写正文之后与 `BuildTurnPrompt` 同点组装
+（显示跟随生效正文），bot 路径恒返回非 nil 全新对象——纯文本消息若 Display 为 nil，panel
+（T1.3）会回落裸显围栏全文，与诉求 4 相悖；空正文不占位（占位文案仅模型侧围栏）；③ 测试
+新增 `TestAcpDriverImContextInjection`（附带与格式 / 人设含 `</` 中和 / 空则跳过三子用例）、
+`TestAcpDriverPromptMetaDisplay`（Display 原指针随 PromptMeta 透传，Source 恒 bot）、
+`TestBuildTurnDisplay`（纯文本 / 引用附件映射 / 空正文仅有引用不占位），fakeSessions 增
+`metas()` 访问器；存量 driver_acp 用例均不传 SystemPrompt，空跳过路径使其 prompt 断言
+零扰动。
 
 #### T1.3 panel 会话视图 IM 来源样式渲染
 

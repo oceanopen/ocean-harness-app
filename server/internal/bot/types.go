@@ -10,6 +10,7 @@ package bot
 import (
 	"encoding/json"
 
+	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/dal/enums"
 )
 
@@ -136,7 +137,8 @@ type TurnRequest struct {
 	SessionID       string
 	Prompt          string // prompt.go 组装后的最终 user prompt
 	Model           string
-	SystemPrompt    string // ComposeSystemPrompt 产物
+	SystemPrompt    string                   // ComposeSystemPrompt 产物
+	Display         *acpsession.EntryDisplay // prompt.go buildTurnDisplay 产物：展示元数据（正文原文 + 引用/附件投影）；仅 ACP 引擎随 PromptMeta 落条目，headless 忽略
 	Port            int
 }
 

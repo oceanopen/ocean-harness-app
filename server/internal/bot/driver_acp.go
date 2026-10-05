@@ -42,8 +42,9 @@ var _ acpSessions = (*acpsession.Manager)(nil)
 // 权限面（P6）：不消费 bot 级 allowed_tools——会话权限统一由 workspace/issue 的
 // launch_settings.permissionMode 表达（Ensure 链下发）；「需要审批」档的挂起审批由桌面端
 // 呈现（T1.7），IM 侧交互随 T2.4/T3.2。
-// 已知限制：TurnRequest.Model / SystemPrompt 不消费——ACP 链路无 per-turn system prompt
-// 通道，且会话与桌面共享，bot 人设不宜做会话级注入（bot prompt 配置存废另行决策）。
+// 人设（D3，T1.2）：TurnRequest.SystemPrompt 经回合级 <im_context> 块随受理 prompt 注入
+// （ACP 无 per-turn system prompt 通道；共享会话下「仅 IM 来源回合生效」的唯一解），
+// 桌面回合零影响；TurnRequest.Model 仍不消费——ACP 会话模型跟随桌面端。
 type acpDriver struct {
 	sessions acpSessions
 }
@@ -79,9 +80,10 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 		return nil, err
 	}
 	// 排队受理（T2.2）：受理失败（会话终结 / ctx 取消）同步报错，经 driverRoute 包
-	// turnNotAcceptedError，编排器不清锚。meta 来源恒 bot（T1.1 显示链路：user 条目
-	// 携带来源标记，Display 待 T1.2 随 TurnRequest 接入）。
-	if err := d.sessions.PromptQueued(ctx, issueID, req.Prompt, acpsession.PromptMeta{Source: acpsession.EntrySourceBot}); err != nil {
+	// turnNotAcceptedError，编排器不清锚。受理文本 = 围栏全文 + <im_context> 人设块
+	//（T1.2）；meta 来源恒 bot，Display 随 TurnRequest 透传（panel 显示链路：user 条目
+	// 携带来源标记与展示元数据）。
+	if err := d.sessions.PromptQueued(ctx, issueID, acpTurnPrompt(req), acpsession.PromptMeta{Source: acpsession.EntrySourceBot, Display: req.Display}); err != nil {
 		stop()
 		return nil, err
 	}
@@ -90,6 +92,17 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 	events := make(chan TurnEvent, 128)
 	go collectTurn(ctx, d.sessions, issueID, snap.AcpSessionID, turnFrames, stopTurn, events)
 	return events, nil
+}
+
+// acpTurnPrompt 组装 ACP 受理全文（T1.2，D3）：围栏 prompt 尾附 <im_context> 块——
+// SystemPrompt（人设 + IM 守则 + 内容边界，ComposeSystemPrompt SSOT 产物）经 </ 中和
+// 防逃逸（人设是用户配置文本，可信但不排除含闭合序列）后随回合注入，仅本引擎（IM
+// 来源回合）生效，桌面回合零影响。SystemPrompt 空则防御性跳过（固定段恒非空，理论不达）。
+func acpTurnPrompt(req TurnRequest) string {
+	if strings.TrimSpace(req.SystemPrompt) == "" {
+		return req.Prompt
+	}
+	return req.Prompt + "\n\n<im_context>\n" + neutralizeTagClose(req.SystemPrompt) + "\n</im_context>"
 }
 
 // waitSessionReady 帧驱动等会话就绪：从 Ensure 返回的受理快照出发，消费帧直至 ready /
