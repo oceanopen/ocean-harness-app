@@ -46,7 +46,32 @@ export interface AcpConversationEntry {
   entryId: string;
   kind: AcpConversationEntryKind;
   text?: string;
+  source?: 'panel' | 'bot'; // user 条目来源（view.go EntrySource*；空 = 无来源标记）
+  display?: AcpEntryDisplay; // user 条目展示元数据（缺失回落 text 直显，见 AcpEntryDisplay）
   toolCall?: AcpToolCallView;
+}
+
+// user 条目展示元数据（view.go EntryDisplay，显示-发送文本分离）：text 为正文原文
+// （区别于条目 text 的围栏全文，围栏只归模型侧），quote / files 为 IM 引用与附件的
+// 展示投影；display 缺失（旧 sidecar + 新前端混跑窗口，历史条目随 sidecar 重启即消失）
+// 前端回落条目 text 原样直显。
+export interface AcpEntryDisplay {
+  text?: string;
+  quote?: AcpEntryQuote;
+  files?: AcpEntryFile[];
+}
+
+// IM 引用块展示元数据（view.go EntryQuote）。
+export interface AcpEntryQuote {
+  author?: string;
+  text?: string;
+  truncated?: boolean;
+}
+
+// IM 附件展示元数据（view.go EntryFile）。
+export interface AcpEntryFile {
+  name?: string;
+  path?: string;
 }
 
 // 权限选项 kind（ACP wire schema.PermissionOptionKind 透传取值域）：决定审批按钮的

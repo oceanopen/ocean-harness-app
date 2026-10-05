@@ -1,15 +1,17 @@
 import type { SxProps, Theme } from '@mui/material';
-import type { AcpConversationEntry } from '@src/services';
-import { Box, Typography } from '@mui/material';
+import type { AcpConversationEntry, AcpEntryDisplay } from '@src/services';
+import { AttachFileOutlined as AttachFileOutlinedIcon, ForumOutlined as ForumOutlinedIcon } from '@mui/icons-material';
+import { Box, Chip, Tooltip, Typography } from '@mui/material';
 import { useEffect, useRef } from 'react';
 import { Streamdown } from 'streamdown';
 import { proseSx, REHYPE_PLUGINS, REMARK_PLUGINS } from '../fileViewer/streamdownShared';
 import ToolCallItem from './ToolCallItem';
 import 'streamdown/styles.css';
 
-// 会话记录条目列表：四类条目（user 高亮块 / agentMessage markdown / agentThought 淡化 /
-// toolCall 折叠卡）+ 近底部自动滚底。滚动策略「先测量后使用」：onScroll 实时测距判定
-// 用户是否贴底（48px 阈值），entries 更新时仅在贴底态才归位——用户上翻查阅历史不被打断。
+// 会话记录条目列表：四类条目（user 高亮块——IM 来源带徽标与展示元数据 / agentMessage
+// markdown / agentThought 淡化 / toolCall 折叠卡）+ 近底部自动滚底。滚动策略「先测量后
+// 使用」：onScroll 实时测距判定用户是否贴底（48px 阈值），entries 更新时仅在贴底态才
+// 归位——用户上翻查阅历史不被打断。
 export default function MessageList({ entries }: { entries: AcpConversationEntry[] }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -54,11 +56,7 @@ export default function MessageList({ entries }: { entries: AcpConversationEntry
 function EntryItem({ entry }: { entry: AcpConversationEntry }) {
   switch (entry.kind) {
     case 'user':
-      return (
-        <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: 2, px: 1.5, py: 1 }}>
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{entry.text}</Typography>
-        </Box>
-      );
+      return <UserEntry entry={entry} />;
     case 'agentMessage':
       return (
         <Box sx={{ alignSelf: 'stretch', color: 'text.primary' }}>
@@ -79,6 +77,60 @@ function EntryItem({ entry }: { entry: AcpConversationEntry }) {
         </Box>
       );
   }
+}
+
+/**
+ * user 条目：IM 来源（source=bot 且携带 display）以「IM 徽标 + 引用块 + 正文原文 +
+ * 附件 chips」呈现（显示-发送文本分离——条目 text 的围栏全文只归模型侧）；panel 来源或
+ * display 缺失（旧 sidecar + 新前端混跑窗口）原样直显 text。
+ */
+function UserEntry({ entry }: { entry: AcpConversationEntry }) {
+  if (entry.source === 'bot' && entry.display) {
+    return <ImUserBubble display={entry.display} />;
+  }
+  return (
+    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: 2, px: 1.5, py: 1 }}>
+      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{entry.text}</Typography>
+    </Box>
+  );
+}
+
+/**
+ * IM 来源 user 气泡：右对齐与 panel 消息同位（同一会话双入口混排），徽标与引用块用
+ * text.secondary / action.hover 淡化（对齐 agentThought 视觉语言）；正文为 display.text
+ * 原文，空正文（纯引用/附件消息）不渲染正文行——占位文案只存在于模型侧围栏。
+ */
+function ImUserBubble({ display }: { display: AcpEntryDisplay }) {
+  return (
+    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: 2, px: 1.5, py: 1, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <ForumOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+        <Typography variant="caption" color="text.secondary">IM</Typography>
+      </Box>
+      {display.quote && (
+        <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, px: 1, py: 0.5 }}>
+          <Typography variant="caption" color="text.secondary">
+            {display.quote.author ? `${display.quote.author}：` : '引用消息'}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {display.quote.text}{display.quote.truncated ? '…' : ''}
+          </Typography>
+        </Box>
+      )}
+      {display.text && (
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{display.text}</Typography>
+      )}
+      {display.files && display.files.length > 0 && (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+          {display.files.map(f => (
+            <Tooltip key={f.path || f.name} title={f.path ?? ''}>
+              <Chip size="small" icon={<AttachFileOutlinedIcon />} label={f.name || f.path} sx={{ 'height': 20, 'fontSize': 12, '& .MuiChip-icon': { fontSize: 14 } }} />
+            </Tooltip>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
 }
 
 // agent 消息 markdown 渲染：MarkdownViewer 同款排版（proseSx）与插件链（模块级常量防

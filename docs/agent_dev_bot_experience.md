@@ -229,7 +229,7 @@ SystemPrompt 空跳过）；bot 全量测试 `-race` 通过
 
 #### T1.3 panel 会话视图 IM 来源样式渲染
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：桌面 ACP 视图以样式区分 IM 来源消息，不再裸显围栏标签
 
@@ -246,6 +246,16 @@ SystemPrompt 空跳过）；bot 全量测试 `-race` 通过
 
 **验收**：`pnpm web:build`（tsc 类型检查）+ `pnpm web:lint` 通过；IM 消息在 panel 呈现徽标 +
 正文 + 引用块 + 附件，无 XML 标签裸露
+
+**实施定稿**：按方案落地，一处呈现修正——IM 徽标不含企微专属标识：`entry.source` 取值域仅
+`panel|bot`（无渠道维度），企微标记不可派生，改用通用 IM 图标（`ForumOutlined`，ImBotsPage
+既有用例）+「IM」caption。补充三点终态事实——① user 分支拆为 `UserEntry` 组件做双态分发：
+`source==='bot' && display` 走 `ImUserBubble`，否则回落原 panel 气泡直显 `entry.text`（混跑
+兼容窗口，风险 §6.7），渲染主体集中单组件便于后续渠道维度细化；② 引用块置于正文之上（IM
+回复惯例「先引用后正文」），`truncated` 尾缀「…」呈现截断（适配器侧已截断，前端不做二次
+clamp）；空正文（纯引用/附件消息）不渲染正文行——占位文案只存在于模型侧围栏；③ TS 镜像
+`display` 拆三个独立 interface（`AcpEntryDisplay/AcpEntryQuote/AcpEntryFile`）并补齐 services
+barrel 导出；reducer 整对象覆写式 upsert 零改动，新字段经 SSE entry 帧与快照天然透传。
 
 ---
 

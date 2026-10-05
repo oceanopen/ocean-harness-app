@@ -2,6 +2,9 @@ export { AcpSessionService } from './AcpSessionService';
 export type {
   AcpConversationEntry,
   AcpConversationEntryKind,
+  AcpEntryDisplay,
+  AcpEntryFile,
+  AcpEntryQuote,
   AcpFrame,
   AcpFrameType,
   AcpPendingView,
