@@ -1,4 +1,4 @@
-export { AcpSessionService } from './AcpSessionService';
+export { AcpSessionService, normalizeAcpViewSnapshot } from './AcpSessionService';
 export type {
   AcpConversationEntry,
   AcpConversationEntryKind,
@@ -19,6 +19,7 @@ export type {
   AcpToolCallStatus,
   AcpToolCallView,
   AcpViewSnapshot,
+  AcpViewSnapshotWire,
   AcpWireAvailableCommand,
   AcpWirePlan,
   AcpWireUsage,

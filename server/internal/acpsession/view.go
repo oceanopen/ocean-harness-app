@@ -672,7 +672,9 @@ func (v *sessionView) endTurn(stop string, errText string) []Frame {
 }
 
 // snapshot 投影快照。entries 浅拷贝安全：条目字段一经写入只被整体替换（chunk 聚合是
-// string 追加 + 工具调用是整体指针替换），单写者 + 锁互斥下无共享可变态。
+// string 追加 + 工具调用是整体指针替换），单写者 + 锁互斥下无共享可变态。拷贝必须以
+// 非 nil 字面量起始：entries 的 json tag 无 omitempty，nil 会序列化为 null 违反前端
+// 非空数组契约（零条目新会话首开即崩，wire 契约用例见 TestViewSnapshotEmptyIsArray）。
 func (v *sessionView) snapshot() ViewSnapshot {
 	v.mu.RLock()
 	defer v.mu.RUnlock()
@@ -681,7 +683,7 @@ func (v *sessionView) snapshot() ViewSnapshot {
 		AgentCode:         v.agentCode,
 		AcpSessionID:      v.sessionID,
 		PermissionMode:    v.permMode,
-		Entries:           append([]ConversationEntry(nil), v.entries...),
+		Entries:           append([]ConversationEntry{}, v.entries...),
 		Pendings:          pendingViewsOf(v.pendings),
 		Plan:              v.plan,
 		Usage:             v.usage,

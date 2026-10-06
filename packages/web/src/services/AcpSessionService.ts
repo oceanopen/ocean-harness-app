@@ -127,6 +127,21 @@ export interface AcpViewSnapshot {
   error?: string;
 }
 
+// wire 快照形态（ViewSnapshot 序列化）：entries/pendings 的 json tag 无 omitempty 恒
+// 在场；旧 sidecar 的零条目缺陷窗口可能为 null（view.go 曾用 append(nil) 拷贝，已根治），
+// 入站归一化后即为 AcpViewSnapshot。
+export type AcpViewSnapshotWire = Omit<AcpViewSnapshot, 'entries' | 'pendings'> & {
+  entries: AcpConversationEntry[] | null;
+  pendings: AcpPendingView[] | null;
+};
+
+// 快照入站归一化（HTTP ensure/getInfo 与 SSE snapshot 帧两入口统一调用）：wire 的
+// null 数组归一为 []，域内快照契约恒非空——reducer/UI 免二次防御（旧 sidecar + 新
+// 前端混跑窗口兼容，同 AcpEntryDisplay 缺失回落先例）。
+export function normalizeAcpViewSnapshot(wire: AcpViewSnapshotWire): AcpViewSnapshot {
+  return { ...wire, entries: wire.entries ?? [], pendings: wire.pendings ?? [] };
+}
+
 // SSE 帧型全集（hub.go FrameType）。
 export type AcpFrameType
   = | 'snapshot'
@@ -206,12 +221,12 @@ export interface AcpSessionRespondElicitationRequest {
 export class AcpSessionService {
   // ensure：幂等受理（starting/ready join 返现状，failed/terminated 删旧重建）。
   static ensure(req: AcpSessionEnsureRequest): Promise<AcpViewSnapshot> {
-    return request<AcpViewSnapshot>('POST', '/api/acpSession/ensure', req);
+    return request<AcpViewSnapshotWire>('POST', '/api/acpSession/ensure', req).then(normalizeAcpViewSnapshot);
   }
 
   // getInfo：当前会话视图快照（轮询读端，无副作用）。
   static getInfo(req: AcpSessionEnsureRequest): Promise<AcpViewSnapshot> {
-    return request<AcpViewSnapshot>('POST', '/api/acpSession/getInfo', req);
+    return request<AcpViewSnapshotWire>('POST', '/api/acpSession/getInfo', req).then(normalizeAcpViewSnapshot);
   }
 
   // prompt：受理一轮回合（活动回合中被后端拒绝，前端以 turnActive 禁用输入为主）。

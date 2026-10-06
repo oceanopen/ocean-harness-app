@@ -1,4 +1,5 @@
 import type { AcpFrame, AcpViewSnapshot } from '@src/services';
+import { normalizeAcpViewSnapshot } from '@src/services';
 import { serverUrl } from '@src/services/http';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -28,7 +29,12 @@ export function useAcpSessionEvents(issueId: string): void {
       es = null;
     };
 
-    const applyAndSet = (frame: AcpFrame) => {
+    const applyAndSet = (rawFrame: AcpFrame) => {
+      // snapshot 帧载荷入站归一化（旧 sidecar 零条目快照 entries 可能为 null）：分支前
+      // 先归一，无 prev 首落缓存与 applyFrame 整体替换两条路径同守。
+      const frame: AcpFrame = rawFrame.type === 'snapshot' && rawFrame.snapshot
+        ? { ...rawFrame, snapshot: normalizeAcpViewSnapshot(rawFrame.snapshot) }
+        : rawFrame;
       // 缓存尚未建立（getInfo 在飞）时：快照帧直接落缓存；增量帧 updater 返回
       // undefined 即不写（TanStack Query 语义），等快照/查询先到。
       queryClient.setQueryData<AcpViewSnapshot>(acpSessionKeys.view(issueId), prev =>

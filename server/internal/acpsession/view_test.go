@@ -346,6 +346,22 @@ func TestViewSetReadyAndSnapshot(t *testing.T) {
 	}
 }
 
+// 零条目快照 wire 契约：entries/pendings 恒为数组。json tag 无 omitempty，曾因
+// append(nil) 拷贝陷阱把零条目新会话序列化成 null 崩掉前端首开（快照拷贝须非 nil 起始）。
+func TestViewSnapshotEmptyIsArray(t *testing.T) {
+	view := newSessionView()
+	wire, err := json.Marshal(view.snapshot())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(wire), `"entries":[]`) || strings.Contains(string(wire), `"entries":null`) {
+		t.Fatalf("零条目快照 entries 应为 []，got %s", wire)
+	}
+	if !strings.Contains(string(wire), `"pendings":[]`) || strings.Contains(string(wire), `"pendings":null`) {
+		t.Fatalf("零挂起快照 pendings 应为 []，got %s", wire)
+	}
+}
+
 func kindPtr(k schema.ToolKind) *schema.ToolKind               { return &k }
 func statusPtr(s schema.ToolCallStatus) *schema.ToolCallStatus { return &s }
 func strPtr(s string) *string                                  { return &s }

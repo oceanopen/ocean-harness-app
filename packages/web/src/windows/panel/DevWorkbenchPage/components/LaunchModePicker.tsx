@@ -5,6 +5,7 @@ import { AGENT_CODE } from '@src/shared/agentCode';
 import { useDoctorCheck, useDoctorEntry } from '@src/state/doctor';
 import { useState } from 'react';
 import AcpSessionView from './AcpSessionView';
+import TerminalErrorBoundary from './EmbeddedTerminal/TerminalErrorBoundary';
 import TerminalPaneRoot from './TerminalPanes/TerminalPaneRoot';
 
 /** 临场启动方式（none 档 issue 就绪后的三选一；仅本次有效，不回写 workspace 配置）。 */
@@ -176,7 +177,13 @@ export function TerminalLaunchFlow({
     );
   }
   if (mode === 'acp' || picked === 'acp') {
-    return <AcpSessionView issueId={issueId} />;
+    // ACP 分支自带错误边界（title 区分文案）：ACP 视图的渲染异常在内层收敛为
+    // 「会话视图异常退出」，不冒泡到外层（DevWorkbenchPage）的终端文案边界。
+    return (
+      <TerminalErrorBoundary title="会话视图异常退出">
+        <AcpSessionView issueId={issueId} />
+      </TerminalErrorBoundary>
+    );
   }
   return <TerminalPaneRoot issueId={issueId} workspaceDir={workspaceDir} startupCli={startupCli} />;
 }
