@@ -263,8 +263,9 @@ barrel 导出；reducer 整对象覆写式 upsert 零改动，新字段经 SSE e
 
 **设计要点**：
 - **卡构造**（`bot/binding_card.go`）：workspace 卡 = 全部 workspace 列表（名称选项，单选）；
-  任务卡 = bot workspace 域内非终态 issue（`state_code ∉ 终态集`，排序取前 20，同帧 content
-  附完整标题列表）。选项文案企微截 11 字，完整信息在同帧文本。
+  任务卡 = bot workspace 域内非终态且顶级 issue（`state_code ∉ 终态集` 且 `parent_id` 为空
+  ——对齐前端 isDevIssue 左树口径；子任务经 `#issue` 关键词恒可绑定的通道不变），排序取前
+  20，同帧 content 附完整标题列表。选项文案企微截 11 字，完整信息在同帧文本。
 - **TaskID 指纹防错绑**：`wsbind-<hash8>` / `taskbind-<hash8>`，hash8 = 有序目标 id 串的
   8 位十六进制指纹（fnv 或前 8 位 hex 摘要）。点击时经 `Interaction.DeliveryID` 识别 → 重查
   当前列表 → 指纹比对：一致则按 `ActionIndex`/`Selections` 下标解析目标并绑定；不一致回
@@ -297,7 +298,7 @@ barrel 导出；reducer 整对象覆写式 upsert 零改动，新字段经 SSE e
 
 #### T2.1 绑定卡构造与点击消费
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：wsbind / taskbind 卡片族——构造、无状态 TaskID 指纹、点击落库与置灰
 
@@ -316,6 +317,21 @@ barrel 导出；reducer 整对象覆写式 upsert 零改动，新字段经 SSE e
 
 **验收**：`binding_card_test` 覆盖指纹往返 / 列表变化拦截 / spec 构造；`driver_route_test` 覆盖
 点击决策矩阵（命中 / 指纹不符 / 目标已删 / 越界 / ApplyBotAsync 注入缺失降级）；全量 `-race` 通过
+
+**实施定稿**：按方案落地，一处落位修正——点击分流两支加在 `permission_card.go` 的
+`TryHandleInteraction`（driverRoute 方法实际所在文件，方案写作 driver_route.go），消费逻辑
+全部收在 `binding_card.go` 域内。补充三点终态事实——① `ApplyBotAsync` 延迟后重读 bot 行按
+service 层 `applyRuntime` 同款禁用语义分流：启用 → `ApplyBot`（成败照常回写 `last_error`）、
+停用 → `StopBot`（幂等）、行已删 → 静默跳过；延迟值在调用时点捕获为局部变量再进 goroutine
+（测试缩短/还原包级变量不构成数据竞争）。② 终态集 `issueTerminalStateCodes` 元素类型取
+`[]driver.Valuer`（`StateCode` 字段表达式 `NotIn` 的形参面，枚举原生实现该接口），SSOT 位置
+不变。③ 点击决策矩阵测试落在 `binding_card_test.go`（域内文件，`driver_route_test` 仅适配
+构造器第四依赖），另新增 `supervisor_test.go` 五例：延迟重载拉起渠道（含 supervisor 以
+botApplier 注入的装配断言）/ 行已删跳过 / 停用走 StopBot / 延迟窗口内停用（醒来重读行
+的核心语义回归防护）/ StopAll 后不复活渠道。质量审查后补三点终态——workspace 卡候选与
+任务卡共用企微 vote 选项上限（常量更名 `bindingOptionLimit`，防超限卡被适配器拒收）；
+`Supervisor` 增 stopped 生命周期守卫（StopAll 置位 → EnsureStarted 拒绝 + applier 醒后
+早退，杜绝关机窗口复活渠道连接）；指纹计算收敛 `strings.Join` 等价简化。
 
 #### T2.2 绑定卡触发链接线
 

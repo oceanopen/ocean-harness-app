@@ -15,9 +15,11 @@ import (
 const seenWindowLimit = 100
 
 // ConversationStore t_im_bot_conversations 行的唯一读写点（bot 核心层；路由层纯读与
-// #issue 匹配另按需裸查各自表，不经过本 store）。所有调用都发生在
-// 单个会话的串行 worker goroutine 内（见 orchestrator），天然无并发写，不需要行级锁。
-// DB 是 SSOT：sidecar 重启后下一条消息自然续上，运行时不做内存副本。
+// #issue 匹配另按需裸查各自表，不经过本 store）。调用有两类上下文：会话串行 worker
+// goroutine（回合链）与编排器拦截步所在的适配器回调 goroutine（幂等查询/卡片交互，
+// 见 orchestrator.HandleInbound）——两类上下文写列正交、单语句 UPDATE 原子，无并发
+// 丢更新路径，不需要行级锁。DB 是 SSOT：sidecar 重启后下一条消息自然续上，运行时不做
+// 内存副本。
 type ConversationStore struct {
 	DB *gorm.DB
 }
@@ -96,7 +98,8 @@ func (s *ConversationStore) BoundIssueID(botID int, conversationKey string) (str
 
 // SaveBoundIssueID 写绑定锚（issueID 空串 = 解绑；幂等覆盖）。与 claude_session_id 正交：
 // headless 续聊锚与 issue 绑定无耦合，绑定/解绑均不动它；ACP 模式本就不写会话锚。
-// 调用发生在会话串行 worker goroutine 内（同其余方法）。
+// 调用横跨 worker（#issue 指令）与拦截步回调（taskbind 卡点击）两上下文——只写绑定列，
+// 与 worker 侧写列正交（见类型注释）。
 func (s *ConversationStore) SaveBoundIssueID(botID int, conversationKey, issueID string) error {
 	q := query.Use(s.DB)
 	_, err := q.ImBotConversation.WithContext(context.Background()).Where(

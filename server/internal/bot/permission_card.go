@@ -89,11 +89,13 @@ func permissionCardSpec(issueID, acpSessionID string, pending acpsession.Pending
 
 // TryHandleInteraction 卡片点击消费（interactionHandler 的 driverRoute 第三角色实现，
 // pendingGate 同款装配形态）：纯决策不做流 I/O——置灰与终帧由编排器拦截步统一编排。
-// 按 TaskID marker 分流：-perm- 审批卡（点击即答）/ -elicit- 表单卡（提交应答，消费逻辑
-// 在 elicitation_card.go 同域文件）。两域决策链共形：非本域锚 miss → 渠道回传锚对照不一致
-// miss → 域内 key 形态分流 → 快照未就绪（跨 sidecar 重启窗口）出失效文案不置灰 → 命中应答
-// （成功与后到方判别均置灰；其他失败不置灰可重试）→ 挂起已出快照（桌面先答/回合结算）经
-// 探测应答取 closed-history 判别文案（不置灰——已关闭挂起重建不出完整卡）。
+// 按 TaskID 分流：-perm- 审批卡（点击即答）/ -elicit- 表单卡（提交应答，消费逻辑在
+// elicitation_card.go 同域文件）/ wsbind- 与 taskbind- 绑定卡（重查列表指纹比对后落库，
+// 消费逻辑在 binding_card.go 同域文件）。perm/elicit 两域决策链共形：非本域锚 miss →
+// 渠道回传锚对照不一致 miss → 域内 key 形态分流 → 快照未就绪（跨 sidecar 重启窗口）出
+// 失效文案不置灰 → 命中应答（成功与后到方判别均置灰；其他失败不置灰可重试）→ 挂起已出
+// 快照（桌面先答/回合结算）经探测应答取 closed-history 判别文案（不置灰——已关闭挂起
+// 重建不出完整卡）。绑定卡两支的决策链见 binding_card.go 域内注释。
 func (r *driverRoute) TryHandleInteraction(cfg BotRuntimeConfig, msg InboundMessage) (string, *CardSpec, bool) {
 	in := msg.Interaction
 	if in == nil {
@@ -108,6 +110,12 @@ func (r *driverRoute) TryHandleInteraction(cfg BotRuntimeConfig, msg InboundMess
 	}
 	if issueID, sessionToken, pendingID, ok := parseElicitCardTaskID(in.DeliveryID); ok {
 		return r.handleElicitationInteraction(issueID, sessionToken, pendingID, in)
+	}
+	if fingerprint, ok := parseWsbindTaskID(in.DeliveryID); ok {
+		return r.handleWsbindInteraction(cfg, fingerprint, in)
+	}
+	if fingerprint, ok := parseTaskbindTaskID(in.DeliveryID); ok {
+		return r.handleTaskbindInteraction(cfg, msg, fingerprint, in)
 	}
 	return "", nil, false
 }
