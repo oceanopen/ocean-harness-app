@@ -15,7 +15,7 @@ import (
 const seenWindowLimit = 100
 
 // ConversationStore t_im_bot_conversations 行的唯一读写点（bot 核心层；路由层纯读与
-// #issue 匹配另按需裸查各自表，不经过本 store）。调用有两类上下文：会话串行 worker
+// #任务 候选匹配另按需裸查各自表，不经过本 store）。调用有两类上下文：会话串行 worker
 // goroutine（回合链）与编排器拦截步所在的适配器回调 goroutine（幂等查询/卡片交互，
 // 见 orchestrator.HandleInbound）——两类上下文写列正交、单语句 UPDATE 原子，无并发
 // 丢更新路径，不需要行级锁。DB 是 SSOT：sidecar 重启后下一条消息自然续上，运行时不做
@@ -96,20 +96,21 @@ func (s *ConversationStore) BoundIssueID(botID int, conversationKey string) (str
 	return conv.BoundIssueID, nil
 }
 
-// SaveBoundIssueID 写绑定锚（issueID 空串 = 解绑；幂等覆盖）。与 claude_session_id 正交：
-// headless 续聊锚与 issue 绑定无耦合，绑定/解绑均不动它；ACP 模式本就不写会话锚。
-// 调用横跨 worker（#issue 指令）与拦截步回调（taskbind 卡点击）两上下文——只写绑定列，
-// 与 worker 侧写列正交（见类型注释）。
-func (s *ConversationStore) SaveBoundIssueID(botID int, conversationKey, issueID string) error {
+// SaveBoundIssueID 写绑定锚（issueID 空串 = 解绑；幂等覆盖），返回受影响行数——UPDATE
+// 无行匹配不是 error（行不在场 0 行静默成功曾是隐患），绑定路径调用方须按 0 行失败收口；
+// 解绑路径幂等语义天然忽略行数。与 claude_session_id 正交：headless 续聊锚与任务绑定无
+// 耦合，绑定/解绑均不动它；ACP 模式本就不写会话锚。调用横跨 worker（#任务 指令）与拦截
+// 步回调（taskbind 卡点击）两上下文——只写绑定列，与 worker 侧写列正交（见类型注释）。
+func (s *ConversationStore) SaveBoundIssueID(botID int, conversationKey, issueID string) (int, error) {
 	q := query.Use(s.DB)
-	_, err := q.ImBotConversation.WithContext(context.Background()).Where(
+	res, err := q.ImBotConversation.WithContext(context.Background()).Where(
 		q.ImBotConversation.BotID.Eq(botID),
 		q.ImBotConversation.ConversationKey.Eq(conversationKey),
 	).UpdateSimple(
 		q.ImBotConversation.BoundIssueID.Value(issueID),
 		q.ImBotConversation.UpdatedAt.Value(time.Now()),
 	)
-	return err
+	return int(res.RowsAffected), err
 }
 
 // ClearSessionID resume 失效自愈：清空会话 id（下条消息开新会话）。

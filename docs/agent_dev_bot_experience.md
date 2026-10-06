@@ -45,7 +45,7 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
 2. **三层配置审视**：bot / workspace / issue 配置查缺补漏；
 3. **bot 提示词启用**：ACP 路径消费人设，仅 IM 来源回合生效，应用端回合不限定；
 4. **`<user_message>` 标签退役（显示侧）**：panel 以样式区分 IM 来源，不再裸显标签；
-5. **卡片化绑定**：IM 内说「工作空间」/「任务列表」→ 单选卡 → 选中即绑定；未绑定时的引导自动附卡；
+5. **卡片化绑定**：IM 内 `#工作空间` / `#任务` 指令模糊搜索 → 单选卡 → 选中即绑定；未绑定时的引导自动附卡；
 6. **任务工具栏 IM 模块**：工作台右侧工具条展示本工作空间 bot 列表，绑定高亮 / 切换 / 补绑，与 IM 侧绑定形成双向闭环。
 
 ## 2. 调研结论（定稿依据）
@@ -76,8 +76,9 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
   driver_acp 回合级 <im_context> 注入（SSOT = ComposeSystemPrompt 产物）
 
 阶段 2（T2.1–T2.2）：IM 卡片化绑定（诉求 5）
-  wsbind / taskbind 卡（TaskID 无状态自包含 + 列表指纹防错绑）
-  触发链：#workspace / #issue 裸指令 · 整条消息意图匹配 · workspace 门禁附卡 · ACP 未绑探针附卡
+  wsbind / taskbind / taskunbind 卡（TaskID 无状态自包含 + 关键词与列表指纹防错绑）
+  触发链：#工作空间 / #任务 指令模糊搜索出卡 · #任务解绑 确认卡 · workspace 门禁附卡 ·
+  ACP 未绑探针附卡（自然语言意图匹配延后，见 D6）
 
 阶段 3（T3.1–T3.3）：工具栏与配置完善（诉求 6+2）
   boundIssueId 透出 + bindIssue 端点 → 工作台工具栏 IM 模块（高亮/切换/解绑/补绑）
@@ -98,8 +99,8 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
 | D2 | **围栏保留模型侧，显示侧元数据分离** | `<user_message>` 围栏是注入防御 + 人设作用域的载体（模型必须可见来源），不能删；panel 裸显标签是显示层缺陷——照 Gold-Band display_text / 官方 system-reminder 范式，条目带 source + display 元数据，前端按样式渲染 |
 | D3 | **回合级人设注入（仅 ACP 路径）** | ACP 无 per-prompt system prompt 通道（§2）；共享会话下「仅 IM 回合生效」的唯一主流解；`ComposeSystemPrompt` 产物（人设 + IM 守则 + 内容边界）为 SSOT，headless 继续走 `--append-system-prompt`，ACP 包成 `<im_context>` 块随 bot 回合携带，桌面回合零影响 |
 | D4 | **思考状态行滚动摘要** | `agentThought` 帧已是累计全量，差分取尾部 ~72 字进状态行覆写；正文 / 工具行到来自然让位；泵 / 编排器零改动；完整流式会刷屏且被终帧覆写，信息价值低 |
-| D5 | **绑定卡复用现有 interaction 管线** | 指令步 `SendCard` 终帧带卡 + 点击走交互快车道 → `TryHandleInteraction` → 置灰 + 终帧，全部现成；新 TaskID 标记族 `wsbind-<指纹>` / `taskbind-<指纹>`（候选列表哈希指纹，点击时重查列表比对指纹，列表已变则提示重取卡——无状态自包含且防索引错绑）；taskbind 落库点击来源会话行（`ConversationStore.SaveBoundIssueID` 现成，每回合现读免重启），wsbind 落库 bot 行 workspace_id 并经 `ApplyBotAsync` 延迟热重载（终帧发出后再 Stop→Start，避开渠道回调自停时序） |
-| D6 | **意图匹配 = 整条消息模式匹配** | 「工作空间」「工作空间列表」「帮我列下工作空间列表」「任务列表」「看下任务列表」「切换任务」等整条消息仅表达列出 / 切换意图才触发（礼貌词 + 动词 + 核心名词正则全匹配）；**不做子串包含**——正常任务消息提到「工作空间」不误触；宁漏勿误，未命中一律按正常消息出回合 |
+| D5 | **绑定卡复用现有 interaction 管线** | 指令步 `SendCard` 终帧带卡 + 点击走交互快车道 → `TryHandleInteraction` → 置灰 + 终帧，全部现成；TaskID 标记族 `wsbind-<kwhex>-<指纹>` / `taskbind-<kwhex>-<指纹>`（搜索关键词 utf-8 hex + 匹配列表哈希指纹双因子：点击时解码关键词重查同款模糊查询比对指纹，列表已变则提示重取卡——无状态自包含且防索引错绑；关键词必须编码进投递锚，否则点击侧无法复原命中集，连下标到目标的映射都做不出）；taskbind 落库点击来源会话行（`ConversationStore.SaveBoundIssueID` 现成，每回合现读免重启），wsbind 落库 bot 行 workspace_id 并经 `ApplyBotAsync` 延迟热重载（终帧发出后再 Stop→Start，避开渠道回调自停时序） |
+| D6 | **意图匹配延后（T2.2 实施拍板裁剪）** | 原案为整条消息正则全匹配（宁漏勿误）；实施时入口收敛为 `#工作空间` / `#任务` 指令——自然语言意图匹配（正则或 LLM 分类）待实际使用反馈后另行评估。裁剪依据：误触发代价（劫持整条消息不出回合）高于漏触发（Claude 文字兜底），是延后而非否定 |
 | D7 | **工具栏绑定走独立会话级端点** | `POST /api/imBot/bindIssue {botId, conversationKey, issueId}`（issueId 空 = 解绑，作用于具体会话行）；workspace 关联复用现有 update 全表单链路（前端持全量模型）；`bound_issue_id` 不进 update 的 Updates map，抽屉保存天然不误伤；绑定变更每回合现读，无需热重载 |
 | D8 | **headless 链路零改动** | system prompt（`--append-system-prompt`）/ 围栏 / 静态思考线维持现状；两引擎 IM 呈现基线差异按设计接受（headless 无 ACP 视图，显示链路改造对其无感） |
 
@@ -132,13 +133,12 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
    消息串行（每会话 FIFO 队列，IM 有序语义）；不同会话绑同一 issue = 共享 ACP 会话回合
    FIFO 排队（「共享会话」设计本意，与桌面 / bot 双入口同理）——绑同一任务即为共同推进，
    排队不是耦合。工具栏会话明细无昵称存储，以「私聊 / 群聊 + 最近活跃时间 + key 短码」呈现。
-3. **意图匹配边界**：正则模式匹配覆盖常见口语变体，非 NLU；「任务」裸词不触发（须「任务列表」
-   或动词 + 任务），防误触。
+3. **意图匹配边界**：意图匹配延后（D6），本期入口仅指令，无误触发面。
 4. **ApplyBotAsync 延迟热重载时序**：workspace 卡点击落库后延迟 ~1s 再 Stop→Start，窗口内旧 cfg
    的在途回合仍用旧 workspace（可接受；落库即生效的是下下回合）。需测试覆盖「点击 → 置灰 →
    终帧 → 重启」全序。
-5. **任务列表卡上限**：非终态 issue 超 20 截断（企微 vote 选项上限），同帧文本附完整标题列表，
-   超出部分提示 `#issue <关键词>` 精确绑定。
+5. **绑定卡候选上限**：workspace / 任务卡统一截 10（企微 vote 选项上限 20 内留余量），同帧文本
+   附完整名称列表，触及上限提示 `#工作空间 <关键词>` / `#任务 <关键词>` 缩小范围。
 6. **企微选项文案截断**：vote 选项 11 字（协议限制），完整标题在同帧 content 文本；卡面标题截断
    可读性靠同帧文本补足。
 7. **panel 显示兼容**：`Display` 元数据缺失（旧 sidecar + 新前端混跑窗口）回落原样直显 Text，
@@ -261,38 +261,47 @@ barrel 导出；reducer 整对象覆写式 upsert 零改动，新字段经 SSE e
 
 ### 阶段 2：IM 卡片化绑定
 
-**设计要点**：
-- **卡构造**（`bot/binding_card.go`）：workspace 卡 = 全部 workspace 列表（名称选项，单选）；
-  任务卡 = bot workspace 域内非终态且顶级 issue（`state_code ∉ 终态集` 且 `parent_id` 为空
-  ——对齐前端 isDevIssue 左树口径；子任务经 `#issue` 关键词恒可绑定的通道不变），排序取前
-  20，同帧 content 附完整标题列表。选项文案企微截 11 字，完整信息在同帧文本。
-- **TaskID 指纹防错绑**：`wsbind-<hash8>` / `taskbind-<hash8>`，hash8 = 有序目标 id 串的
-  8 位十六进制指纹（fnv 或前 8 位 hex 摘要）。点击时经 `Interaction.DeliveryID` 识别 → 重查
-  当前列表 → 指纹比对：一致则按 `ActionIndex`/`Selections` 下标解析目标并绑定；不一致回
-  「列表已变化，请重新发送指令获取新卡片」。无内存注册表，跨重启 / 迟到点击自然降级（与
-  perm/elicit 卡同哲学）。
-- **点击消费**（driverRoute `TryHandleInteraction` 扩展，按前缀分流）：
-  - `wsbind-`：重查 workspace 列表 + 指纹 → 落库 `t_im_bots.workspace_id` → 置灰（原卡全量
-    spec 由重查列表重建，指纹一致保证字段一致）+ 终帧「✅ 已关联工作空间「名」」→
-    `ApplyBotAsync(botID)` 延迟热重载（supervisor 注入窄接口，goroutine + ~1s 延迟，确保终帧
-    先发；风险 §6.4）
-  - `taskbind-`：重查非终态 issue 列表 + 指纹 → 校验归属 → 落库点击来源会话行
-    （`ConversationStore.SaveBoundIssueID` 现成，点击消息自带 ConversationKey）→ 置灰 +
-    终帧「✅ 已绑定任务「名」，直接发消息即可下达任务」（绑定每回合现读，无需重载）
-  - 目标已删 / 跨 workspace / 下标越界：提示文案不置灰不落库
-- **触发链**（orchestrator `runTurn` 固定时序，插在 workspace 门禁前后按需）：
-  1. `#workspace` 裸指令 或 workspace 意图命中 → workspace 卡终帧（**门禁之前**——未绑
-     workspace 的 bot 也要能出这张卡）；
-  2. workspace 门禁（`WorkspaceDir` 空）→ 指引文本 + workspace 卡同帧（替代纯文本）；
-  3. `#issue` 裸指令 → 任务列表卡（原用法文案并入卡描述 / 同帧文本）；`#issue <kw>` 多命中 →
-     候选卡（替代 top5 文本）；唯一命中 / 解绑语义不变（会话级，现状粒度）；
-  4. 任务意图命中（「任务列表」「看下任务列表」「切换任务」等）→ 任务卡；
-  5. ACP 未绑探针：driverRoute 暴露 `ProbeTarget(cfg, conversationKey) (acp bool,
-     boundIssueID string, err error)`（resolve 内部重构复用），orchestrator 在组 prompt 前
-     类型断言调用——ACP 且未绑 → 任务卡 + 终帧（driver 内未绑定报错保留兜底）；
-  6. 意图匹配 `matchBindingIntent(text)`：整条消息正则全匹配（礼貌词 `(请|麻烦|帮我|给我)` +
-     动词 `(列出?一下?|看一?下?|查看|显示|切换|选择|切到)` + 核心词 `(工作空间|任务列表)`
-     （裸「任务」不触发）+ 可选后缀 `(列表|卡片?|吧)` + 尾部标点），宁漏勿误（D6）。
+**设计要点**（T2.2 实施拍板收敛为统一「搜索 → 卡片选择 → 提交绑定」模型；解绑同模型）：
+- **统一模型**：指令 / 门禁 / 探针全部入口只做候选计算与出卡，绑定与解绑动作唯一入口都是
+  卡点击——选择与提交逻辑收敛。旧 `#issue`「唯一命中直绑 + Body 首回合一步」链路与 ID
+  前缀通道、`#任务 解绑` 子指令（撞词收窄特例）均退役——解绑改走独立指令 `#任务解绑`
+  （恰等判定）出单选项确认卡，点击提交才清锚；`#任务` / `#工作空间` 后整段皆为搜索词
+  （名称 LIKE 模糊，不支持 ID）。
+- **卡构造**（`bot/binding_card.go`）：单选卡；候选 = 模糊匹配结果（关键词空 = 全列表），
+  统一截前 10，同帧 content 附完整名称列表；任务卡候选口径 = bot workspace 域内非终态且
+  顶级（`state_code ∉ 终态集` 且 `parent_id` 空——对齐前端 isDevIssue 左树口径；子任务不再
+  经 #任务 搜索可绑，与左树「所见即所绑」一致）。选项文案企微截 11 字，完整信息在同帧文本。
+- **TaskID 关键词 + 指纹防错绑**：`wsbind-<kwhex>-<hash8>` / `taskbind-<kwhex>-<hash8>`，
+  kwhex = 搜索关键词 utf-8 hex 编码（空关键词 = 空段；关键词截限保 TaskID ≤128），hash8 =
+  匹配后有序目标 id 串的 8 位十六进制指纹。点击时解码关键词 → 重查同款模糊查询 → 指纹比对：
+  一致则按 `ActionIndex` 下标解析目标并绑定；不一致回「列表已变化，请重新发送指令获取新卡片」。
+  关键词必须进 TaskID——不在投递锚里则点击侧无法复原命中集。无内存注册表，跨重启 / 迟到点击
+  自然降级（与 perm/elicit 卡同哲学）。
+- **点击消费**（driverRoute `TryHandleInteraction` 按前缀分流，决策链 T2.1 已交付）：
+  - `wsbind-`：解码 kw 重查 + 指纹 → 落库 `t_im_bots.workspace_id` → 置灰（重查列表重建
+    完整 spec，指纹一致保证字段一致）+ 终帧「✅ 已关联工作空间「名」」→ `ApplyBotAsync(botID)`
+    延迟热重载（supervisor 注入窄接口，goroutine + ~1s 延迟，确保终帧先发；风险 §6.4）
+  - `taskbind-`：解码 kw 重查 + 指纹 → 落库点击来源会话行（`ConversationStore.SaveBoundIssueID`
+    现成，点击消息自带 ConversationKey）→ 置灰 + 终帧「✅ 已绑定任务「名」，直接发消息即可
+    向该任务下达任务」（绑定每回合现读，无需重载）
+  - `taskunbind-`：读当前绑定 → 指纹比对（锚 = 绑定 id 单元素序列；出卡后已解绑 / 换绑 /
+    悬空锚均不符）→ 清锚（幂等）→ 置灰 + 终帧「✅ 已解绑任务「名」」
+  - 列表变化 / 下标越界 / 落库失败：提示文案不置灰不落库（fail visible）
+- **触发链**（orchestrator `runTurn` 固定时序插步，全部「指令步」形态：终帧收口、不入队、
+  不占并发槽；出卡经 `CardReplyStream.SendCard` 类型断言，无卡能力回落纯文本）：
+  1. `#帮助` 指令 → 指令列表纯文本终帧（置于全部绑定指令与门禁之前——不依赖任何前置
+     状态，未选工作空间时恰是用户最需要指令列表的时刻）；
+  2. `#工作空间 [kw]` 指令 → workspace 卡终帧（**门禁之前**——未绑 workspace 的 bot 也要能
+     出这张卡）；
+  3. `#任务解绑` 指令 → 解绑确认卡终帧（**门禁之前**——清锚不依赖 workspace，未选工作
+     空间的 bot 也要能解绑历史锚点；未绑定回纯文本教学）；
+  4. workspace 门禁（`WorkspaceDir` 空）→ 指引文本 + workspace 卡同帧（指引为中性 lead
+     前缀，统一前置于出卡 / 库空教学 / 读库失败一切形态文本）；
+  5. `#任务 [kw]` 指令 → 任务卡（唯一命中同样出卡）；
+  6. ACP 未绑探针：driverRoute 暴露 `ProbeTarget(cfg, conversationKey) (acp bool,
+     boundIssueID string, err error)`（resolve 重构为具名方法复用），orchestrator 在组 prompt
+     前经 `routeProber` 接口类型断言调用（不实现则跳过）——ACP 且未绑 → 任务卡 + 终帧
+     （driver 内未绑定报错保留兜底；探针读库失败不拦截，落回主路径由 resolve 报错收口）。
 - 终态集 SSOT：`state_code` 终态判定（DONE / CANCELLED）在 bot 域定义常量集，与前端
   `isDevIssue` 语义对齐（§1.2 事实 9）。
 
@@ -335,25 +344,49 @@ botApplier 注入的装配断言）/ 行已删跳过 / 停用走 StopBot / 延�
 
 #### T2.2 绑定卡触发链接线
 
-**状态**：⬜
+**状态**：✅
 
-**功能**：指令 / 意图 / 门禁 / 探针四类入口把绑定卡送到用户手上
+**功能**：指令 / 门禁 / 探针入口把绑定卡送到用户手上（统一「搜索 → 卡片 → 提交绑定」模型）
 
 **技术方案**：
-- `issue_command.go` 扩展或新增 `bot/commands.go`：`#workspace` 解析（裸 = 出卡；无参数子
-  指令）、`#issue` 裸指令改出卡、多命中改候选卡、意图匹配函数（正则表 + 用例表驱动）
-- `orchestrator.runTurn` 时序插步（见阶段 2 设计要点 1–5，全部「指令步」形态：终帧收口、
-  不入队、不占并发槽、幂等前置已由受理层保证）；指令步出卡经 `CardReplyStream` 类型断言，
-  无卡能力回落纯文本（渠道中立）
-- `driver_route.go` 暴露 `ProbeTarget`（resolve 重构为内部函数 + 公开探针；绑定读会话行即
-  现状语义）；orchestrator 经 `routeProber` 接口类型断言消费（nil 跳过——headless 路由不实现）
-- 任务列表查询：bot 域直查 DO（`workspace_id = cfg.WorkspaceID AND state_code NOT IN 终态集`，
-  sort_order 排序 cap 20）
+- 新增 `server/internal/bot/commands.go`：`parseWorkspaceCommand`（裸 = 全列表卡；带参数 =
+  名称模糊搜索词）；`parseIssueCommand` 简化为 `{Unbind, Keyword}`（整段关键词，Body 一步
+  链路与 ID 前缀通道删除）；关键词字节截断规整（保 TaskID ≤128）
+- `binding_card.go`：TaskID 扩为 `<prefix><kwhex>-<fp8>` 编解码（空关键词 = 空段）；候选查询
+  加 keyword 参数（名称 LIKE，空 = 全列表）；`bindingOptionLimit` 20→10；点击消费改「解码
+  kw → 同款查询 → 指纹 → 下标落库」
+- `orchestrator.runTurn` 时序插步（见阶段 2 设计要点触发链 1–5，统一 `sendBindingCard`
+  收口：查候选 → 零候选纯文本终帧 / `SendCard` 一帧带卡收口 / 无卡能力回落纯文本）
+- `driver_route.go` 暴露 `ProbeTarget`（resolve 重构为具名方法 + 公开探针）；orchestrator 经
+  `routeProber` 接口类型断言消费（不实现则跳过——headless 路由不实现）
 
 **依赖**：T2.1
 
-**验收**：`orchestrator_test` 覆盖四入口出卡 / 意图命中与不命中表 / 门禁附卡 / 探针出卡不出回合；
-`commands` 解析与意图正则用例表；全量 `-race` 通过
+**验收**：`orchestrator_test` 覆盖指令出卡（`#工作空间` / `#任务` 裸与带 kw / 解绑保留）/
+门禁附卡 / 探针出卡不出回合 / 无卡回落；`commands` 解析用例表；`binding_card` kw 编解码与
+点击链路；全量 `-race` 通过
+
+**实施定稿**：按方案落地；实施评审拍板两项方案外变更——① 指令改名对齐用户面词汇：
+`#workspace` → `#工作空间`、`#issue` → `#任务`（token 常量 SSOT，出卡/空态/帮助全部文案
+从常量派生；预发布期旧名直接退役无别名，解析回归用例锁死旧名不再命中）；② 新增 `#帮助`
+指令（TrimSpace 恰等判定，置于绑定指令与门禁之前，列出全部指令及触发方式；企微回复流
+无 markdown，纯文本 `\n- ` 行式列表）。门禁指引重构为中性 lead 前缀：不预设「点击下方
+卡片」，统一前置于出卡 / 库空教学 / 读库失败一切形态文本。补充五点终态事实——
+`SaveBoundIssueID` 返回受影响行数，taskbind 点击 0 行（会话行不在场）回绑定失败不置灰，
+解绑幂等忽略行数；指令邻接判定按首 rune 解码（`utf8.DecodeRuneInString`），全角空格
+U+3000 为合法分隔；ACP 引擎未绑定引导文案改 `#任务 <标题关键词>` 搜索语义（ID 前缀教学
+随通道退役），正常链路探针步先行递卡收口、该文案为无卡链路兜底；探针步经 `routeProber`
+类型断言消费，headless 直连装配与测试替身未实现时自然跳过；测试覆盖指令解析形态域（含
+旧 token 退役 / 全角空格 / #帮助 恰等判定）、指令/门禁/探针全链路出卡与回落、点击
+0 行 / 指纹不符 / 越界矩阵，`-race` 与全仓测试通过。
+解绑形态拍板（同模型收敛）：`#任务 解绑` 子指令与撞词收窄特例退役，独立指令
+`#任务解绑`（token 从 `#任务` 常量派生，TrimSpace 恰等判定；带后缀/粘连不命中，对
+`#任务` 是粘连形态互不抢消息）同样卡片化——触发步置于门禁之前（清锚不依赖
+workspace），出单选项确认卡（TaskID `taskunbind-<空关键词段>-<绑定 id 单元素指纹>`，
+关键词恒空）；点击消费与绑定卡同构：读当前绑定 → 指纹比对（出卡后已解绑/换绑/悬空锚
+均不符，回重取卡文案不落库）→ 清锚（幂等忽略行数）→ 置灰 + 终帧「✅ 已解绑任务
+「名」」；未绑定回教学终帧；`applyIssueCommand` 退役，`#任务` 指令步直调
+`sendBindingCard` 统一出卡口。
 
 ---
 
@@ -459,8 +492,9 @@ botApplier 注入的装配断言）/ 行已删跳过 / 停用走 StopBot / 延�
 BuildTurnPrompt 围栏）、`bot/driver_acp.go:45-46,161-315`（SystemPrompt 忽略注释 / collectTurn
 帧收集与出卡链）、`bot/driver_route.go:72-145`（resolve 路由与绑定解析）、
 `bot/orchestrator.go:188-235,277-379`（指令步 / runTurn 时序）、`bot/card.go:30-95`
-（CardSpec / CardReplyStream / interactionHandler / CardPusher TODO）、`bot/issue_command.go`
-（#issue 双通道解析）、`bot/supervisor.go:188-214`（botRuntimeConfig）、
+（CardSpec / CardReplyStream / interactionHandler / CardPusher TODO）、`bot/commands.go` +
+`bot/issue_command.go`（#工作空间 / #任务 指令解析）、`bot/supervisor.go:188-214`
+（botRuntimeConfig）、
 `bot/wecom/card.go`（vote / multiple_interaction 双向翻译）、
 `service/im_bot.go:63-128`（Create/Update 显式列 Updates）、
 `service/project_issue.go:344-399`（删除级联）、`service/workspace.go:150-161`（workspace

@@ -139,7 +139,7 @@ func TestPendingGateMisses(t *testing.T) {
 	sessions := newFakeSessions(gateSnap(permPendingView(11)))
 	route := gateTestRoute(acpResolve, sessions)
 
-	for _, text := range []string{"允许一下", "1a", "#issue", ""} {
+	for _, text := range []string{"允许一下", "1a", "#任务", ""} {
 		if _, handled := route.TryRespondPending(gateCfg(), gateMsg(text)); handled {
 			t.Fatalf("非纯数字 %q 不应命中", text)
 		}

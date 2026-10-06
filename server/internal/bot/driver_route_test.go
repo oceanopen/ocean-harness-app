@@ -241,3 +241,51 @@ func TestDriverRouteBindingResolution(t *testing.T) {
 		}
 	})
 }
+
+// TestDriverRouteProbeTarget 探针契约（T2.2 触发链消费面）：ProbeTarget 与 resolve 同源
+// ——ACP 未绑（探针步出任务卡的判据）、ACP 已绑回填锚、终端档非 ACP 三形态对齐路由
+// 实际判定；读库失败原样透传 err（调用方不拦截落回主路径，引擎侧 RunTurn 同款错误
+// fail closed 收口）。
+func TestDriverRouteProbeTarget(t *testing.T) {
+	const acpSettings = `{"mode":"acp"}`
+	const botID = 1
+	const convKey = "single:u1"
+	probe := func(db *gorm.DB, wsID int) (bool, string, error) {
+		return newDriverRoute(db, nil, nil).ProbeTarget(BotRuntimeConfig{BotID: botID, WorkspaceID: wsID}, convKey)
+	}
+
+	t.Run("ACP 未绑（探针步出卡判据）", func(t *testing.T) {
+		wsID, _, db := mkRouteBindingFixture(t, acpSettings, "")
+		acp, bound, err := probe(db, wsID)
+		if err != nil || !acp || bound != "" {
+			t.Fatalf("未绑探针应 ACP+空锚: acp=%v bound=%q err=%v", acp, bound, err)
+		}
+	})
+
+	t.Run("ACP 已绑回填锚", func(t *testing.T) {
+		wsID, issueID, db := mkRouteBindingFixture(t, acpSettings, "")
+		setConvBinding(t, db, botID, convKey, issueID)
+		acp, bound, err := probe(db, wsID)
+		if err != nil || !acp || bound != issueID {
+			t.Fatalf("已绑探针应回填锚: acp=%v bound=%q err=%v", acp, bound, err)
+		}
+	})
+
+	t.Run("终端档非 ACP", func(t *testing.T) {
+		wsID, _, db := mkRouteBindingFixture(t, `{"mode":"terminal-manual"}`, "")
+		acp, bound, err := probe(db, wsID)
+		if err != nil || acp || bound != "" {
+			t.Fatalf("终端档探针应非 ACP: acp=%v bound=%q err=%v", acp, bound, err)
+		}
+	})
+
+	t.Run("读库失败透传", func(t *testing.T) {
+		wsID, _, db := mkRouteBindingFixture(t, acpSettings, "")
+		if err := db.Migrator().DropTable("t_im_bot_conversations"); err != nil {
+			t.Fatalf("掉会话表: %v", err)
+		}
+		if _, _, err := probe(db, wsID); err == nil {
+			t.Fatal("读库失败应透传 err")
+		}
+	})
+}

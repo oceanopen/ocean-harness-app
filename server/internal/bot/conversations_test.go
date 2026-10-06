@@ -26,6 +26,7 @@ func newBotTestDB(t *testing.T, models ...any) *gorm.DB {
 
 // newConversationTestDB 内存 sqlite + 会话映射表。
 func newConversationTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
 	return newBotTestDB(t, &model.ImBotConversation{})
 }
 
@@ -39,22 +40,22 @@ func TestConversationStoreBoundIssueRoundtrip(t *testing.T) {
 	if got, err := store.BoundIssueID(botID, convKey); err != nil || got != "" {
 		t.Fatalf("新会话应未绑定且 GetOrCreate 不报错: got=%q err=%v", got, err)
 	}
-	if err := store.SaveBoundIssueID(botID, convKey, "issue-1"); err != nil {
-		t.Fatalf("写绑定: %v", err)
+	if rows, err := store.SaveBoundIssueID(botID, convKey, "issue-1"); err != nil || rows != 1 {
+		t.Fatalf("写绑定应恰一行受影响: rows=%d err=%v", rows, err)
 	}
 	if got, err := store.BoundIssueID(botID, convKey); err != nil || got != "issue-1" {
 		t.Fatalf("绑定读回: got=%q err=%v", got, err)
 	}
 	// 幂等覆盖（换绑）。
-	if err := store.SaveBoundIssueID(botID, convKey, "issue-2"); err != nil {
+	if _, err := store.SaveBoundIssueID(botID, convKey, "issue-2"); err != nil {
 		t.Fatalf("换绑: %v", err)
 	}
 	if got, _ := store.BoundIssueID(botID, convKey); got != "issue-2" {
 		t.Fatalf("换绑后应指向新 issue: got=%q", got)
 	}
 	// 解绑 = 空串覆盖，回到未绑定态。
-	if err := store.SaveBoundIssueID(botID, convKey, ""); err != nil {
-		t.Fatalf("解绑: %v", err)
+	if rows, err := store.SaveBoundIssueID(botID, convKey, ""); err != nil || rows != 1 {
+		t.Fatalf("解绑应恰一行受影响: rows=%d err=%v", rows, err)
 	}
 	if got, _ := store.BoundIssueID(botID, convKey); got != "" {
 		t.Fatalf("解绑后应为空: got=%q", got)
@@ -78,10 +79,10 @@ func TestConversationStoreBoundIssueOrthogonalToSession(t *testing.T) {
 	if err := store.SaveSessionID(botID, convKey, "sess-abc"); err != nil {
 		t.Fatalf("写续聊锚: %v", err)
 	}
-	if err := store.SaveBoundIssueID(botID, convKey, "issue-1"); err != nil {
+	if _, err := store.SaveBoundIssueID(botID, convKey, "issue-1"); err != nil {
 		t.Fatalf("写绑定: %v", err)
 	}
-	if err := store.SaveBoundIssueID(botID, convKey, ""); err != nil {
+	if _, err := store.SaveBoundIssueID(botID, convKey, ""); err != nil {
 		t.Fatalf("解绑: %v", err)
 	}
 	if sess, err := store.SessionID(botID, convKey); err != nil || sess != "sess-abc" {
@@ -92,5 +93,16 @@ func TestConversationStoreBoundIssueOrthogonalToSession(t *testing.T) {
 	}
 	if bound, _ := store.BoundIssueID(botID, convKey); bound != "" {
 		t.Fatalf("续聊锚回写不得触碰绑定: bound=%q", bound)
+	}
+}
+
+// TestConversationStoreSaveBoundIssueZeroRows 0 行语义契约（F4）：行不在场时 UPDATE 无错
+// 但受影响行数为 0——绑定路径调用方据此按失败收口（防「静默成功假象」），解绑路径幂等
+// 语义忽略行数。
+func TestConversationStoreSaveBoundIssueZeroRows(t *testing.T) {
+	store := &ConversationStore{DB: newConversationTestDB(t)}
+	rows, err := store.SaveBoundIssueID(1, "single:ghost", "issue-1") // 不预置行
+	if err != nil || rows != 0 {
+		t.Fatalf("行不在场应为 0 行且非 error: rows=%d err=%v", rows, err)
 	}
 }

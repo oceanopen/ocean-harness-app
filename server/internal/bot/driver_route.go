@@ -46,7 +46,7 @@ func effectiveACPMode(workspaceMode, issueMode string) bool {
 // driverRoute ClaudeDriver 的引擎路由实现（T2.1 建骨架，T2.3 并入绑定解析）：按 workspace
 // 级 launch_settings.mode 与会话显式绑定逐回合在 headless（driver_claude）与 ACP
 // （driver_acp）两引擎间切换。路由知识收在引擎层（实现 ClaudeDriver），编排器保持零引擎
-// 感知；mode 与绑定每回合读取——workspace 抽屉改启动配置、IM 内 #issue 切换绑定，均对
+// 感知；mode 与绑定每回合读取——workspace 抽屉改启动配置、IM 内 taskbind 卡切换绑定，均对
 // 在跑 bot 下一回合生效（bot 不随配置重启）。
 type driverRoute struct {
 	headless ClaudeDriver
@@ -61,6 +61,7 @@ type driverRoute struct {
 	// resolve 一步判定路由目标：读绑定 + issue 存在性/归属校验 + 两级 launch_settings
 	// mode 合并。读库失败 fail closed 同步报错（不静默回落 headless——配置读不出时
 	// 「以为没配 ACP」是危险默认）；挂空绑定（issue 已删/换工作空间）降级为未绑定。
+	// 惯例实现是 resolveTarget 方法（构造器赋值）；保留字段形态供白盒测试注入替身。
 	resolve func(botID, workspaceID int, conversationKey string) (routeTarget, error)
 }
 
@@ -70,66 +71,71 @@ type driverRoute struct {
 // (issue.id, workspace_id) 双键——挂在其他 workspace 的 issue 上的绑定等同未绑定（降级
 // 交引导文案，不报错不阻断）。
 func newDriverRoute(db *gorm.DB, sessions acpSessions, applier botApplier) *driverRoute {
-	return &driverRoute{
+	r := &driverRoute{
 		headless: NewClaudeDriver(),
 		acp:      NewAcpDriver(sessions),
 		sessions: sessions,
 		db:       db,
 		applier:  applier,
-		resolve: func(botID, workspaceID int, conversationKey string) (routeTarget, error) {
-			if workspaceID <= 0 {
-				return routeTarget{}, nil // 未选工作空间已被编排器门禁拦截，此处兜底 headless
-			}
-			q := query.Use(db)
-			ws, err := q.Workspace.WithContext(context.Background()).Where(q.Workspace.ID.Eq(workspaceID)).First()
-			if err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return routeTarget{}, nil
-				}
-				return routeTarget{}, err
-			}
-			wsMode := ""
-			if ls := types.ParseLaunchSettings(ws.LaunchSettings); ls != nil {
-				wsMode = ls.Mode
-			}
-			// 未绑定语义 =「是否 ACP 由 workspace 级定，无目标 issue」。绑定与 issue 解析
-			// 全部前置完成后统一走 effectiveACPMode 合并判定——issue 级 mode 显式覆盖双向
-			// 生效（"none" 否决 / "acp" 启用），不得在绑定解析前按 wsMode 短路（会吞掉
-			// issue 显式覆盖；acpsession 域同为合并后判，语义须一致）。
-			unbound := routeTarget{ACP: wsMode == launchModeACP}
-			conv, err := q.ImBotConversation.WithContext(context.Background()).Where(
-				q.ImBotConversation.BotID.Eq(botID),
-				q.ImBotConversation.ConversationKey.Eq(conversationKey),
-			).First()
-			switch {
-			case errors.Is(err, gorm.ErrRecordNotFound):
-				return unbound, nil // 未绑定：ACP 档时引擎回引导文案
-			case err != nil:
-				return routeTarget{}, err
-			}
-			if conv.BoundIssueID == "" {
-				return unbound, nil
-			}
-			issue, err := q.ProjectIssue.WithContext(context.Background()).Where(
-				q.ProjectIssue.ID.Eq(conv.BoundIssueID),
-				q.ProjectIssue.WorkspaceID.Eq(workspaceID),
-			).First()
-			switch {
-			case errors.Is(err, gorm.ErrRecordNotFound):
-				return unbound, nil // 挂空绑定降级未绑定：引擎引导重新 #issue
-			case err != nil:
-				return routeTarget{}, err
-			}
-			issueMode := ""
-			if ls := types.ParseLaunchSettings(issue.LaunchSettings); ls != nil {
-				issueMode = ls.Mode
-			}
-			if !effectiveACPMode(wsMode, issueMode) {
-				return routeTarget{}, nil // issue 显式否决 ACP（如 mode="none"）：回合落回 headless
-			}
-			return routeTarget{IssueID: issue.ID, ACP: true}, nil
-		},
 	}
+	r.resolve = r.resolveTarget
+	return r
+}
+
+// resolveTarget 路由判定实现（RunTurn 与 ProbeTarget 共用；原构造器内联闭包，T2.2 探针
+// 步抽取为方法）。
+func (r *driverRoute) resolveTarget(botID, workspaceID int, conversationKey string) (routeTarget, error) {
+	if workspaceID <= 0 {
+		return routeTarget{}, nil // 未选工作空间已被编排器门禁拦截，此处兜底 headless
+	}
+	q := query.Use(r.db)
+	ws, err := q.Workspace.WithContext(context.Background()).Where(q.Workspace.ID.Eq(workspaceID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return routeTarget{}, nil
+		}
+		return routeTarget{}, err
+	}
+	wsMode := ""
+	if ls := types.ParseLaunchSettings(ws.LaunchSettings); ls != nil {
+		wsMode = ls.Mode
+	}
+	// 未绑定语义 =「是否 ACP 由 workspace 级定，无目标 issue」。绑定与 issue 解析
+	// 全部前置完成后统一走 effectiveACPMode 合并判定——issue 级 mode 显式覆盖双向
+	// 生效（"none" 否决 / "acp" 启用），不得在绑定解析前按 wsMode 短路（会吞掉
+	// issue 显式覆盖；acpsession 域同为合并后判，语义须一致）。
+	unbound := routeTarget{ACP: wsMode == launchModeACP}
+	conv, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.BotID.Eq(botID),
+		q.ImBotConversation.ConversationKey.Eq(conversationKey),
+	).First()
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return unbound, nil // 未绑定：ACP 档时引擎回引导文案
+	case err != nil:
+		return routeTarget{}, err
+	}
+	if conv.BoundIssueID == "" {
+		return unbound, nil
+	}
+	issue, err := q.ProjectIssue.WithContext(context.Background()).Where(
+		q.ProjectIssue.ID.Eq(conv.BoundIssueID),
+		q.ProjectIssue.WorkspaceID.Eq(workspaceID),
+	).First()
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return unbound, nil // 挂空绑定降级未绑定：引擎引导重新绑定
+	case err != nil:
+		return routeTarget{}, err
+	}
+	issueMode := ""
+	if ls := types.ParseLaunchSettings(issue.LaunchSettings); ls != nil {
+		issueMode = ls.Mode
+	}
+	if !effectiveACPMode(wsMode, issueMode) {
+		return routeTarget{}, nil // issue 显式否决 ACP（如 mode="none"）：回合落回 headless
+	}
+	return routeTarget{IssueID: issue.ID, ACP: true}, nil
 }
 
 // RunTurn 实现见 driver.go 契约：一步解析路由目标后转发对应引擎，IssueID 在此回填
@@ -149,4 +155,16 @@ func (r *driverRoute) RunTurn(ctx context.Context, req TurnRequest) (<-chan Turn
 		return nil, turnNotAcceptedError{err}
 	}
 	return events, nil
+}
+
+// ProbeTarget 路由探针（T2.2 触发链消费面）：不改状态地探明本会话下一回合会落的引擎与
+// 绑定目标。编排器探针步据此在 ACP 档且未绑定时先出任务绑定卡终帧收口（不进回合管线
+// 白撞一次引导文案）；读库失败原样返回 err，调用方不拦截落回主路径——引擎侧 RunTurn 会
+// 以同款错误 fail closed 收口，行为不变。
+func (r *driverRoute) ProbeTarget(cfg BotRuntimeConfig, conversationKey string) (acp bool, boundIssueID string, err error) {
+	target, err := r.resolve(cfg.BotID, cfg.WorkspaceID, conversationKey)
+	if err != nil {
+		return false, "", err
+	}
+	return target.ACP, target.IssueID, nil
 }

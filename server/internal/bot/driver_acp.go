@@ -64,9 +64,11 @@ func NewAcpDriver(sessions acpSessions) ClaudeDriver {
 // 的生命周期帧，外来 turnEnded 误终止、hub 慢订户溢出摘除两个窗口一并消除）。
 func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
 	// 目标 issue 由路由层解析会话绑定后回填（routeTarget.IssueID，T2.3）；空 = 未绑定
-	// （含挂空绑定降级），本驱动不持绑定知识，只负责引导文案把用户带回正轨。
+	// （含挂空绑定降级），本驱动不持绑定知识，只负责引导文案把用户带回正轨。T2.2 后正常
+	// 链路由编排器探针步先行递卡收口，此处文案是无卡链路（探针未实现/读库失败落回主路径）
+	// 的兜底。
 	if req.IssueID == "" {
-		return nil, errors.New("该工作空间已切换为 ACP 模式，但本会话尚未绑定 issue：发送「#issue <标题关键词 或 ID前8位>」完成绑定（发送「#issue」查看用法），或把工作空间启动模式切回终端模式")
+		return nil, errors.New("该工作空间已切换为 ACP 模式，但本会话尚未绑定任务：发送「" + issueCommandToken + " <标题关键词>」搜索任务并点击卡片完成绑定，或把工作空间启动模式切回终端模式")
 	}
 	issueID := req.IssueID
 	snap, err := d.sessions.Ensure(ctx, issueID, "")

@@ -179,59 +179,115 @@ func accessDeniedText(reason string) string {
 	return "您不在该机器人的使用白名单内，请联系机器人管理员。"
 }
 
-// applyIssueCommand runTurn 固定时序中的 #issue 指令步（T2.3）：绑定粒度 = (botID,
-// conversationKey)，与会话同生命周期；写存储与启动模式无关（「恒可绑定」，路由判定在
-// 回合时进行）。返回 true = 本条消息已被指令终结（终帧已发、不出回合、不占全局信号量）；
-// 返回 false = 绑定+首回合一步：绑定确认已作中间帧发出（终帧留给回合泵），msg.Text 已
-// 改写为指令正文，调用方落回主路径照常出回合。所有分支恰发一帧（终态 or 首确认），不产
-// 第二占位帧——「每条消息一个流、恰一次终帧」契约由受理流保证。
-func (o *Orchestrator) applyIssueCommand(cfg BotRuntimeConfig, msg *InboundMessage, cmd *issueCommand, rs ReplyStream) bool {
-	// 解绑：清绑定锚，claude_session_id 不动（两锚正交）。置于用法分支之前——解绑指令
-	// 的 Target 同为空串，两分支靠 Unbind 字段区分。
-	if cmd.Unbind {
-		if err := o.store.SaveBoundIssueID(cfg.BotID, msg.ConversationKey, ""); err != nil {
-			o.log.Error("bot issue 解绑落库失败", zap.Int("botID", cfg.BotID), zap.Error(err))
-			_ = rs.Flush(issueUnbindFailedText(), true)
-			return true
+// bindingKind 绑定卡域别（sendBindingCard 的候选查询与文案分派因子）。
+type bindingKind int
+
+const (
+	bindingWorkspace bindingKind = iota
+	bindingIssue
+)
+
+// routeProber 路由探针消费面（T2.2 探针步）：不改状态地探明本会话下一回合会落的引擎与
+// 绑定目标。driverRoute 实现（ProbeTarget）；编排器对 o.driver 类型断言获取——headless
+// 直连装配与测试替身未实现时探针步自然跳过，主路径行为不变。
+type routeProber interface {
+	ProbeTarget(cfg BotRuntimeConfig, conversationKey string) (acp bool, boundIssueID string, err error)
+}
+
+// workspaceGateLead 门禁指引（T2.2）：说明回合为何未启动。中性措辞不预设出卡——lead 是
+// 纯文本前缀，后接域内文本（出卡时的完整名称列表 / 库空教学 / 读库失败文案）。
+const workspaceGateLead = "机器人尚未选择工作空间，请选择归属工作空间后重新发送消息；也可在应用「IM 机器人」页编辑机器人。"
+
+// sendBindingCard 绑定卡统一收口（T2.2 统一「搜索 → 卡片 → 提交绑定」模型，指令步/门禁/
+// 探针步三入口的唯一出卡口）：查候选 → 组域内文本（出卡同帧完整名称列表 / 零候选教学文案
+// / 读库失败文案）→ lead 非空（门禁语境）时指引段前置于一切形态 → 有卡出卡（终帧收口）、
+// 无卡或 SendCard 失败回落 Flush 纯文本（卡契约：渠道协议「卡同消息仅一次」，已附卡后的
+// 调用返回错误）。恒终帧，调用方一律终结本条消息（不入队、不占全局信号量）。
+func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, kind bindingKind, keyword, lead string, rs ReplyStream) {
+	var spec CardSpec
+	var has bool
+	var text string
+	switch kind {
+	case bindingWorkspace:
+		wss, err := bindingWorkspaces(o.store.DB, keyword)
+		if err != nil {
+			o.log.Error("bot workspace 绑定候选查询失败",
+				zap.Int("botID", cfg.BotID), zap.String("keyword", keyword), zap.Error(err))
+			text = workspaceLookupFailedText
+			break
 		}
-		_ = rs.Flush(issueUnboundText(), true)
-		return true
+		spec, has = workspaceCardSpec(wss, keyword)
+		if has {
+			text = workspaceCardText(keyword, wss)
+		} else {
+			text = workspaceEmptyText(keyword)
+		}
+	case bindingIssue:
+		issues, err := bindingIssueCandidates(o.store.DB, cfg.WorkspaceID, keyword)
+		if err != nil {
+			o.log.Error("bot 任务绑定候选查询失败",
+				zap.Int("botID", cfg.BotID), zap.String("keyword", keyword), zap.Error(err))
+			text = issueLookupFailedText
+			break
+		}
+		spec, has = issueCardSpec(issues, keyword)
+		if has {
+			text = issueCardText(keyword, issues)
+		} else {
+			text = issueEmptyText(keyword)
+		}
 	}
-	// 裸指令：仅回用法（不做任何绑定操作）。
-	if cmd.Target == "" {
-		_ = rs.Flush(issueUsageText(), true)
-		return true
+	if lead != "" {
+		text = lead + "\n\n" + text
 	}
-	// 匹配：workspace 域内标题/ID 前缀通道（纯函数，DB 传入）。
-	hits, err := resolveIssueTarget(o.store.DB, cfg.WorkspaceID, cmd.Target)
+	if has {
+		if cs, ok := rs.(CardReplyStream); ok {
+			if err := cs.SendCard(spec, text, true); err != nil {
+				o.log.Warn("bot 绑定卡发送失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
+			} else {
+				return
+			}
+		}
+	}
+	_ = rs.Flush(text, true)
+}
+
+// sendUnbindCard 解绑确认卡出口（#任务解绑 指令步，与 sendBindingCard 同款收口形态）：
+// 读当前绑定 → 未绑定纯文本教学终帧 / 悬空锚按未绑定收口（issue 删除级联清列已交付，
+// 行缺失是防御分支）→ 出卡（SendCard 终帧收口；无卡能力或发送失败回落 Flush 纯文本
+// ——回落链路解绑不可达，与绑定卡同款降级语义）。解绑动作唯一入口是 taskunbind 卡点击
+// （binding_card.go 域内消费）。恒终帧，调用方一律终结本条消息（不入队、不占全局信号量）。
+func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) {
+	bound, err := o.store.BoundIssueID(cfg.BotID, msg.ConversationKey)
 	if err != nil {
-		o.log.Error("bot issue 匹配查询失败",
-			zap.Int("botID", cfg.BotID), zap.String("keyword", cmd.Target), zap.Error(err))
-		_ = rs.Flush(issueLookupFailedText(), true)
-		return true
+		o.log.Error("bot 任务绑定读取失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+		_ = rs.Flush(issueUnbindFailedText(), true)
+		return
 	}
-	switch len(hits) {
-	case 0:
-		_ = rs.Flush(issueZeroHitText(cmd.Target), true)
-		return true
-	case 1:
-		if err := o.store.SaveBoundIssueID(cfg.BotID, msg.ConversationKey, hits[0].ID); err != nil {
-			o.log.Error("bot issue 绑定落库失败",
-				zap.Int("botID", cfg.BotID), zap.String("issueID", hits[0].ID), zap.Error(err))
-			_ = rs.Flush(issueBindFailedText(), true)
-			return true
-		}
-		if cmd.Body == "" {
-			_ = rs.Flush(issueBoundText(hits[0]), true) // 纯切换：确认即终帧
-			return true
-		}
-		_ = rs.Flush(issueBoundText(hits[0]), false) // 绑定+首回合：确认作中间帧
-		msg.Text = cmd.Body
-		return false
-	default:
-		_ = rs.Flush(issueCandidatesText(cmd.Target, hits), true)
-		return true
+	if bound == "" {
+		_ = rs.Flush(issueNotBoundText(), true)
+		return
 	}
+	issue, found, err := issueRowByID(o.store.DB, bound)
+	if err != nil {
+		o.log.Error("bot 解绑卡任务行读取失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+		_ = rs.Flush(issueUnbindFailedText(), true)
+		return
+	}
+	if !found {
+		_ = rs.Flush(issueNotBoundText(), true) // 悬空锚视为未绑定
+		return
+	}
+	spec := taskunbindCardSpec(issue)
+	text := taskunbindCardText(issue)
+	if cs, ok := rs.(CardReplyStream); ok {
+		if err := cs.SendCard(spec, text, true); err != nil {
+			o.log.Warn("bot 解绑卡发送失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
+		} else {
+			return
+		}
+	}
+	_ = rs.Flush(text, true)
 }
 
 // enqueue 入队（不存在则惰性建会话队列 + worker）。已停止 / 队列满 fail closed。
@@ -270,10 +326,12 @@ func queueKey(botID int, conversationKey string) string {
 	return strconv.Itoa(botID) + ":" + conversationKey
 }
 
-// runTurn 执行单回合（会话内串行）。固定时序：幂等复查 → markSeen → 工作空间门禁 →
-// #issue 指令步（终结或改写正文）→ load session → 组 prompt → RunTurn → PumpReply →
-// 持久化（含 resume 失效自愈）。
-// Stop 后排空的残余 job 走「已停止」短路径，不触发失败自愈（取消 ≠ 会话失效）。
+// runTurn 执行单回合（会话内串行）。固定时序：幂等复查 → markSeen → #帮助 指令步 →
+// #工作空间 指令步 → #任务解绑 指令步（确认卡）→ 工作空间门禁（指引 + workspace 卡
+// 同帧）→ #任务 指令步（统一出卡）→ ACP 未绑探针步 → load session → 组 prompt →
+// RunTurn → PumpReply → 持久化（含 resume 失效自愈）。指令步/门禁/探针步均终帧收口：
+// 不出回合、不占全局信号量。Stop 后排空的残余 job 走「已停止」短路径，不触发失败自愈
+// （取消 ≠ 会话失效）。
 func (o *Orchestrator) runTurn(job turnJob) {
 	// Stop 短路径：ctx 已取消（含 Stop 后队列残余 job）——只回停止文案，不碰会话锚点。
 	if o.ctx.Err() != nil {
@@ -297,18 +355,48 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		o.log.Error("bot markSeen 失败", zap.Error(err))
 	}
 
-	// 工作空间未选择（扫码接入先建 bot 后补选的语义）：连接照常、回合不启动，
-	// 提示用户补选——已 markSeen（消息已被处理），不算失败、不触发会话自愈。
-	// 命令步置于门禁之后：绑定需要 workspace 解析域（WorkspaceID > 0 由此保证）。
-	if strings.TrimSpace(cfg.WorkspaceDir) == "" {
-		_ = job.reply.Flush("机器人尚未选择工作空间，请先在应用「IM 机器人」页编辑机器人并选择工作空间，再重新发送消息。", true)
+	// #帮助 指令步（置于全部绑定指令与门禁之前）：帮助不依赖任何前置状态（未选工作空间
+	// 时恰是用户最需要指令列表的时刻），纯文本终帧收口。
+	if parseHelpCommand(msg.Text) {
+		_ = job.reply.Flush(helpText(), true)
 		return
 	}
 
-	// #issue 指令步（T2.3）：返回 true = 指令已终结本条消息（终帧已发、不出回合、不占
-	// 全局信号量）；返回 false = 绑定+首回合一步（确认帧已发、正文已改写，落回主路径）。
+	// #工作空间 指令步（T2.2，置于门禁之前）：workspace 搜索不依赖已选工作空间（未选域
+	// 恰是该指令要解决的场景），恒终帧收口（出卡/空态文案）。
+	if cmd := parseWorkspaceCommand(msg.Text); cmd != nil {
+		o.sendBindingCard(cfg, bindingWorkspace, cmd.Keyword, "", job.reply)
+		return
+	}
+
+	// #任务解绑 指令步（置于门禁之前）：清绑定锚不依赖已选工作空间（未选域的 bot 也要
+	// 能解绑历史锚点），出确认卡终帧收口（解绑动作唯一入口是 taskunbind 卡点击）。
+	if parseIssueUnbindCommand(msg.Text) {
+		o.sendUnbindCard(cfg, msg, job.reply)
+		return
+	}
+
+	// 工作空间未选择（扫码接入先建 bot 后补选的语义）：连接照常、回合不启动——已
+	// markSeen（消息已被处理），不算失败、不触发会话自愈。T2.2：指引文本与 workspace
+	// 绑定卡同帧（点卡即补选，免开桌面端）；无可选 workspace/查询失败保纯文本指引。
+	if strings.TrimSpace(cfg.WorkspaceDir) == "" {
+		o.sendBindingCard(cfg, bindingWorkspace, "", workspaceGateLead, job.reply)
+		return
+	}
+
+	// #任务 指令步（T2.3 → T2.2 统一卡片化）：搜索出卡，恒终帧收口。
 	if cmd := parseIssueCommand(msg.Text); cmd != nil {
-		if o.applyIssueCommand(cfg, &msg, cmd, job.reply) {
+		o.sendBindingCard(cfg, bindingIssue, cmd.Keyword, "", job.reply)
+		return
+	}
+
+	// ACP 未绑探针步（T2.2）：ACP 档且本会话未绑 issue 时先递任务绑定卡终帧收口（不出
+	// 回合——ACP 引擎对未绑定的同步失败只是一句引导文案，白撞一次回合没有意义）。探针
+	// 读库失败不拦截（落回主路径，引擎侧 RunTurn 以同款错误 fail closed 收口）；driver
+	// 未实现探针接口（headless 直连装配/测试替身）同样跳过。
+	if prober, ok := o.driver.(routeProber); ok {
+		if acp, bound, err := prober.ProbeTarget(cfg, key); err == nil && acp && bound == "" {
+			o.sendBindingCard(cfg, bindingIssue, "", "", job.reply)
 			return
 		}
 	}
