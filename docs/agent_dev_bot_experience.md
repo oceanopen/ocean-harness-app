@@ -515,7 +515,7 @@ helperText 已随 T5.1 配置项退役整体删除（本任务交付被其终结
 
 #### T4.1 思考内容 IM 滚动摘要
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：IM 侧滚动展示思考内容尾部摘要（诉求 1）
 
@@ -532,6 +532,15 @@ helperText 已随 T5.1 配置项退役整体删除（本任务交付被其终结
 
 **验收**：`driver_acp_test` 新增用例（差分滚动含多字节 / 前缀错配重置 / 与正文让位时序）；
 全量 `-race` 通过
+
+**实施定稿**：按方案落地，一处命名细化——尾部截取助手定名 `tailRunes`（方案字面 `tail`，
+显式表达 rune 安全语义），上限常量 `thoughtTailRunes = 72`。补充两点终态事实——① 驱动侧
+差分仅增长时发事件（重复帧零事件，水位线即主去重），泵侧 `lastSent` 去重降为兜底防线；
+② 测试形态：`TestAcpDriverThoughtStatusLine`（T3.4 静态文案）重构为
+`TestAcpDriverThoughtScrollingSummary`（差分滚动含多字节 / 超 72 rune 截断省略号 / 重复帧
+不重发 / 正文让位时序），新增 `TestAcpDriverThoughtWatermarkReset`（前缀错配重置与续接，
+范式对齐 agentMessage 同款用例），`TestAcpDriverZeroTextTurnNotContaminated` 思考行断言随
+滚动语义同步为摘要直出（「💭 思考中」，短串无省略号）。
 
 ---
 

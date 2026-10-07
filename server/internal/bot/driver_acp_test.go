@@ -487,9 +487,43 @@ func TestAcpDriverTurnTextAfterToolUse(t *testing.T) {
 	}
 }
 
-// TestAcpDriverThoughtStatusLine 思考提示（T3.4）：agentThought 帧出「💭 思考中…」状态行
-// （重复帧泵侧 lastSent 去重），正文 TurnText 到来后自然让位；思考内容本体不进 IM。
-func TestAcpDriverThoughtStatusLine(t *testing.T) {
+// TestAcpDriverThoughtScrollingSummary 思考滚动摘要（T4.1，D4）：agentThought 帧携带本回合
+// 累计全量，水位线差分仅在增长时覆写状态行「💭 + 尾部摘要」——≤72 rune 原样直出、超限截
+// 尾部 72 rune 且以省略号前缀标识（多字节安全），重复帧不重发；正文 TurnText 到来自然让位。
+func TestAcpDriverThoughtScrollingSummary(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	long := strings.Repeat("思", 80) // 80 rune 长思考：摘要应截尾部 72 rune 且带省略号前缀
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题"))
+	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题")) // 重复帧：水位线无增长不重发
+	sessions.push(t, thoughtFrame("t1-agentThought", long))
+	sessions.push(t, agentTextFrame("t1-agentMessage", "方案如下"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 先分析问题" {
+		t.Fatalf("短摘要应原样直出: %+v", ev)
+	}
+	wantTail := "💭 …" + strings.Repeat("思", 72)
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != wantTail {
+		t.Fatalf("长摘要应截尾部 72 rune 且带省略号前缀:\ngot:  %s\nwant: %s", ev.Status, wantTail)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "方案如下" {
+		t.Fatalf("思考后的正文增量事件不符（重复帧不得额外发状态行）: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone || done.Result != "方案如下" {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+// TestAcpDriverThoughtWatermarkReset 思考水位线前缀校验（T4.1，范式同 agentMessage 的
+// TestAcpDriverWatermarkPrefixMismatchReset）：已发前缀串与帧文本错配（条目覆写换内容的
+// 理论态）即重置全量重发摘要；前缀恢复后续接差分。
+func TestAcpDriverThoughtWatermarkReset(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
 	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
@@ -497,20 +531,21 @@ func TestAcpDriverThoughtStatusLine(t *testing.T) {
 		t.Fatalf("受理失败: %v", err)
 	}
 	sessions.push(t, turnStartedFrame())
-	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题"))
-	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题，再给方案"))
-	sessions.push(t, agentTextFrame("t1-agentMessage", "方案如下"))
+	sessions.push(t, thoughtFrame("t1-agentThought", "旧思考"))
+	sessions.push(t, thoughtFrame("t1-agentThought", "崭新思考"))  // 前缀错配：重置后全量重发
+	sessions.push(t, thoughtFrame("t1-agentThought", "崭新思考续")) // 前缀恢复：正常增长
 	sessions.push(t, turnEndedFrame("end_turn"))
 
-	for i := 0; i < 2; i++ {
-		if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 思考中…" {
-			t.Fatalf("思考状态行不符: %+v", ev)
-		}
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 旧思考" {
+		t.Fatalf("首条思考摘要不符: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "方案如下" {
-		t.Fatalf("思考后的正文增量事件不符: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 崭新思考" {
+		t.Fatalf("前缀错配应重置全量重发摘要: %+v", ev)
 	}
-	if done := recvEvent(t, events); done.Type != TurnDone || done.Result != "方案如下" {
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 崭新思考续" {
+		t.Fatalf("前缀恢复后应正常续接: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
 		t.Fatalf("终态事件不符: %+v", done)
 	}
 }
@@ -598,8 +633,8 @@ func TestAcpDriverZeroTextTurnNotContaminated(t *testing.T) {
 	sessions.push(t, thoughtFrame("t1-agentThought", "思考中"))
 	sessions.push(t, turnEndedFrame("cancelled"))
 
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 思考中…" {
-		t.Fatalf("思考状态行不符: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 思考中" {
+		t.Fatalf("思考摘要状态行不符: %+v", ev)
 	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || !done.IsError || done.Result != "" {

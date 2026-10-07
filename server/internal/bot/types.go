@@ -133,7 +133,7 @@ type TurnRequest struct {
 	ConversationKey string // FormatConversationKey 产物（路由层按 (BotID, ConversationKey) 解析绑定）
 	IssueID         string // 路由层回填的绑定产物：目标 issue（空 = 未绑定）；仅 ACP 引擎消费，headless 忽略
 	SessionID       string
-	Prompt          string // prompt.go 组装后的最终 user prompt
+	Prompt          string                   // prompt.go 组装后的最终 user prompt
 	SystemPrompt    string                   // ComposeSystemPrompt 产物（固定守则段）
 	Display         *acpsession.EntryDisplay // prompt.go buildTurnDisplay 产物：展示元数据（正文原文 + 引用/附件投影）；仅 ACP 引擎随 PromptMeta 落条目，headless 忽略
 	Port            int

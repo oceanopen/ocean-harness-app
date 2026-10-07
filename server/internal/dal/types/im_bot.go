@@ -140,13 +140,13 @@ type ImBotResponseData struct {
 // 数据语义，编辑抽屉回显，前端自行掩码展示）。
 func (ImBotResponseData) FromModel(r *model.ImBot) ImBotResponseData {
 	out := ImBotResponseData{
-		ID:           r.ID,
-		Name:         r.Name,
-		Channel:      r.Channel,
-		WorkspaceId:  r.WorkspaceID,
-		Enabled:      r.Enabled.IsYes(),
-		CreatedAt:    r.CreatedAt,
-		UpdatedAt:    r.UpdatedAt,
+		ID:          r.ID,
+		Name:        r.Name,
+		Channel:     r.Channel,
+		WorkspaceId: r.WorkspaceID,
+		Enabled:     r.Enabled.IsYes(),
+		CreatedAt:   r.CreatedAt,
+		UpdatedAt:   r.UpdatedAt,
 	}
 	_ = json.Unmarshal([]byte(r.AccessPolicy), &out.AccessPolicy)
 	if r.Credential != "" {

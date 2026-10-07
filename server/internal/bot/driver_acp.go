@@ -169,7 +169,8 @@ func sessionStateError(snap acpsession.ViewSnapshot) error {
 // TurnActive（本回合 turnStarted 帧广播早于订阅建立，收不到）或收到的 FrameTurnStarted；
 // 窗口内视图侧回合闸门保证不存在别的回合，agentMessage entry 即本轮回复——帧携带本回合
 // 累计全量文本，差分转 TurnText 增量流式（T3.4，水位线 sent 经 user 锚从首帧快照装填）；
-// agentThought 出「💭 思考中…」状态行（正文流自然让位）；toolCall 按 id 首见发进度事件。终态唯一性：
+// agentThought 差分出「💭 + 尾部摘要」滚动状态行（T4.1，正文流自然让位）；toolCall 按 id
+// 首见发进度事件。终态唯一性：
 // turnEnded / terminated / 帧通道关闭三者先到先收，收即返回。
 // ctx 取消 = 软取消（Manager.Cancel → acp 层预算内强制收口，终态帧必达），继续消费直至
 // 终态帧；不自建超时——终结时序统一由 acp 层取消预算与帧到达表达，不引入时间性兜底。
@@ -182,6 +183,7 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 	seenTools := map[string]bool{}
 	var text string                           // 本回合 agentMessage 累计全量（终态 Result）
 	sent := ""                                // 差分水位线：已发增量到达的完整前缀串（HasPrefix 校验，见 agentMessage 分支）
+	thoughtSent := ""                         // 思考差分水位线（agentThought 滚动摘要，见该分支）
 	var openPendings []acpsession.PendingView // 回合内开放挂起（状态行编号与摘除追踪）
 	cardSent := false                         // 本回合卡已出（企微一消息一卡，至多一张——首个可出卡挂起先到先得）
 	elicitCardPendingID := uint64(0)          // 已出表单卡对应的挂起 id（0=未出；表单状态行按挂起粒度两态——
@@ -250,10 +252,17 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 					}
 					sent = text
 				case "agentThought":
-					// 思考提示（T3.4）：状态行覆写（泵侧 lastSent 去重，重复帧无副作用），正文
-					// TurnText 到来后 currentText 非空自然盖掉——与工具状态行同款让位语义；
-					// 思考内容本体不进 IM（轻量形态，用户拍板）。
-					events <- TurnEvent{Type: TurnStatus, Status: "💭 思考中…"}
+					// 思考滚动摘要（T4.1，D4）：帧携带本回合累计全量（与 agentMessage 同构），水位线
+					// 差分仅在增长时覆写状态行「💭 + 尾部摘要」（rune 安全截断，截断以省略号前缀
+					// 标识）；泵侧 lastSent 去重兜底重复帧，正文 TurnText / 工具状态行到来自然让位
+					// （既有覆写语义）。
+					if !strings.HasPrefix(frame.Entry.Text, thoughtSent) {
+						thoughtSent = ""
+					}
+					if delta := frame.Entry.Text[len(thoughtSent):]; delta != "" {
+						events <- TurnEvent{Type: TurnStatus, Status: "💭 " + tailRunes(frame.Entry.Text, thoughtTailRunes)}
+					}
+					thoughtSent = frame.Entry.Text
 				case "toolCall":
 					if tc := frame.Entry.ToolCall; tc != nil && !seenTools[tc.ToolCallID] {
 						seenTools[tc.ToolCallID] = true
@@ -329,6 +338,20 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 			}
 		}
 	}
+}
+
+// thoughtTailRunes 思考滚动摘要的尾部截取上限（rune 数，T4.1）：状态行可读宽度；💭 前缀
+// 与截断省略号不占额度。
+const thoughtTailRunes = 72
+
+// tailRunes 取文本尾部至多 max 个 rune（rune 安全，不切半个多字节序列）；发生截断时以
+// 前缀省略号标识（读者可知所见非全文开头）。
+func tailRunes(s string, max int) string {
+	rs := []rune(s)
+	if len(rs) <= max {
+		return s
+	}
+	return "…" + string(rs[len(rs)-max:])
 }
 
 // turnAgentText 快照 entries 中本回合的 agentMessage 文本（armed=false 极快收敛合成终态
