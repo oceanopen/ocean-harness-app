@@ -50,9 +50,6 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	if req.SessionID != "" {
 		args = append(args, "--resume", req.SessionID)
 	}
-	if req.Model != "" {
-		args = append(args, "--model", req.Model)
-	}
 	if strings.TrimSpace(req.SystemPrompt) != "" {
 		args = append(args, "--append-system-prompt", req.SystemPrompt)
 	}

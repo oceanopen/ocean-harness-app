@@ -77,8 +77,6 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 		Channel:      enums.CHANNEL_WECOM,
 		Credential:   credentialJSON(req.BotId, req.Secret),
 		WorkspaceID:  req.WorkspaceId,
-		Model:        req.Model,
-		SystemPrompt: req.SystemPrompt,
 		AccessPolicy: accessPolicyJSON(req.AccessPolicy),
 		Enabled:      enabledYesNo(req.Enabled),
 	}
@@ -114,8 +112,6 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	row.Name = req.Name
 	row.Credential = credentialJSON(req.BotId, secret)
 	row.WorkspaceID = req.WorkspaceId
-	row.Model = req.Model
-	row.SystemPrompt = req.SystemPrompt
 	row.AccessPolicy = accessPolicyJSON(req.AccessPolicy)
 	row.Enabled = enabledYesNo(req.Enabled)
 
@@ -125,7 +121,6 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	if _, err := q.ImBot.WithContext(svc.Context).Where(q.ImBot.ID.Eq(row.ID)).
 		Updates(map[string]any{
 			"name": row.Name, "credential": row.Credential, "workspace_id": row.WorkspaceID,
-			"model": row.Model, "system_prompt": row.SystemPrompt,
 			"access_policy": row.AccessPolicy, "enabled": row.Enabled,
 		}); err != nil {
 		return nil, err

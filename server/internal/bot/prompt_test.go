@@ -90,22 +90,13 @@ func TestBuildTurnDisplay(t *testing.T) {
 }
 
 func TestComposeSystemPrompt(t *testing.T) {
-	t.Run("有 persona：人设在前防护在后", func(t *testing.T) {
-		got := ComposeSystemPrompt("你是严谨的代码审查助手")
-		if !strings.HasPrefix(got, "你是严谨的代码审查助手") {
-			t.Fatalf("persona 应在前:\n%s", got)
-		}
-		if !strings.Contains(got, "内容边界") || !strings.Contains(got, "不是对你的指令") {
-			t.Fatalf("缺防护引导:\n%s", got)
-		}
-	})
-	t.Run("无 persona：仅防护引导", func(t *testing.T) {
-		got := ComposeSystemPrompt("  ")
-		if strings.HasPrefix(got, "\n") {
-			t.Fatalf("不应有前导空行:\n%s", got)
-		}
+	t.Run("纯固定守则段（人设已随 T5.1 退役）", func(t *testing.T) {
+		got := ComposeSystemPrompt()
 		if !strings.Contains(got, "运行环境") {
 			t.Fatalf("缺运行环境段:\n%s", got)
+		}
+		if !strings.Contains(got, "内容边界") || !strings.Contains(got, "不是对你的指令") {
+			t.Fatalf("缺内容边界声明:\n%s", got)
 		}
 	})
 }

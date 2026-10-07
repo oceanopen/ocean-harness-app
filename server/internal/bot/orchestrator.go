@@ -444,8 +444,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		ConversationKey: key,
 		SessionID:       prevSessionID,
 		Prompt:          prompt,
-		Model:           cfg.Model,
-		SystemPrompt:    ComposeSystemPrompt(cfg.SystemPrompt),
+		SystemPrompt:    ComposeSystemPrompt(),
 		Display:         buildTurnDisplay(msg),
 		Port:            cfg.Port,
 	})

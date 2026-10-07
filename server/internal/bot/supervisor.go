@@ -257,8 +257,6 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 		Credential:   b.Credential,
 		WorkspaceID:  b.WorkspaceID,
 		WorkspaceDir: wsDir,
-		Model:        b.Model,
-		SystemPrompt: b.SystemPrompt,
 		AccessPolicy: policy,
 		Port:         s.port,
 	}, nil

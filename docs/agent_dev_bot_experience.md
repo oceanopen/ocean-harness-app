@@ -113,7 +113,7 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
 | `t_im_bot_conversations.bound_issue_id` | 保留（现状承载） | 会话级绑定锚（D1）：(bot, 会话) 粒度，空 = 未绑定；issue 删除级联清列 T2.3 已交付 |
 | `t_im_bot_conversations.claude_session_id` | 保留 | headless `--resume` 锚，ACP 不写（与绑定锚正交） |
 | `t_im_bot_conversations.seen_message_ids` | 保留 | 幂等滚窗，与绑定无关 |
-| `t_im_bots.model` / `system_prompt` | 保留 + 语义标注 | model 仅终端模式生效（ACP 会话模型跟随桌面端）；system_prompt 两引擎均生效（D3 落地后） |
+| `t_im_bots.model` / `system_prompt` | 已退役（T5.1 删列） | model 仅终端模式生效的语义割裂退役（headless 回落 CLI 默认模型）；人设承载让位后续专门的提示词管理模块，固定 IM 守则 + 内容边界声明照常注入两引擎 |
 | `t_workspaces` / `t_issues` 的 `launch_settings` | 保留 | 无冗余；权限 / 模式体系（P1/P6）不受本方案影响 |
 | `t_issue_acp_sessions` | 保留 | issue↔ACP 会话锚，与 bot 绑定正交 |
 
@@ -121,7 +121,8 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
 
 ### 5.2 配置项
 
-- **ImBotDrawer**：人设 helperText 更新为作用范围说明（仅 IM 来源回合生效；ACP 随每条 IM 消息注入、终端模式注入系统提示词）；模型 helperText 标注仅终端模式生效（T3.3）。
+- **ImBotDrawer**：人设与模型两配置项已随 T5.1 退役（含 T3.3 两段 helperText 一并移除）；
+  抽屉保留渠道 / 名称 / Bot ID / Secret / 工作空间 / 访问模式 / 启用。
 - **WorkspaceDrawer / ProjectIssueDrawer**：无变更（launch_settings 体系已闭环）。
 - 无新增 bot 级配置项——人设既有列即承载「bot 特化」诉求，不引入工具白名单类回潮配置。
 
@@ -149,7 +150,7 @@ ACP 会话域与桌面共享同一 claude 会话，审批 / 表单企微卡、�
 ## 7. 任务清单（进度 SSOT）
 
 > 任务粒度：模块 + 功能 + 技术方案，一个任务 ≈ 一次可独立验收的交付。
-> 执行顺序：T1.1 → T1.2 → T1.3 → T2.1 → T2.2 → T3.1 → T3.2 → T3.3 → T4.1
+> 执行顺序：T1.1 → T1.2 → T1.3 → T2.1 → T2.2 → T3.1 → T3.2 → T3.3 → T4.1 → T5.1
 > （阶段 1 与阶段 4 可并行；阶段 2、3 相互独立，均直接消费会话级绑定现状，无表结构前置）。
 
 ### 阶段 1：会话显示链路与人设注入
@@ -490,7 +491,7 @@ onClick（键盘可激活，stopPropagation 防与父行点击冒泡双 toggle �
 
 #### T3.3 bot 抽屉配置文案完善
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：配置项作用范围说明对齐实际语义（诉求 2 收尾）
 
@@ -502,6 +503,11 @@ onClick（键盘可激活，stopPropagation 防与父行点击冒泡双 toggle �
 **依赖**：无
 
 **验收**：`pnpm web:build` + `pnpm web:lint` 通过
+
+**实施定稿**：按方案落地，零偏离；补充三点终态事实——① 模型字段原无 helperText（仅
+placeholder），本任务新增方案文案、placeholder「留空 = CLI 默认」保留；② 「终端模式」措辞与
+ImBotsPage 既有注释词汇一致（ImBotsPage.tsx doctor 徽标注释同款表述）；③ 两输入框与两段
+helperText 已随 T5.1 配置项退役整体删除（本任务交付被其终结）。
 
 ---
 
@@ -526,6 +532,36 @@ onClick（键盘可激活，stopPropagation 防与父行点击冒泡双 toggle �
 
 **验收**：`driver_acp_test` 新增用例（差分滚动含多字节 / 前缀错配重置 / 与正文让位时序）；
 全量 `-race` 通过
+
+---
+
+### 阶段 5：配置项裁剪（体验审视跟进）
+
+#### T5.1 bot 级 model / system_prompt 配置项退役
+
+**状态**：✅
+
+**功能**：删除 bot 行 model / system_prompt 两列及全链路配置面——model 仅终端模式生效的
+语义割裂是配置异味（headless 回落 CLI 默认模型）；人设承载让位后续专门的提示词管理模块
+统一关联（本次不预建）。
+
+**技术方案**：
+- 迁移退役两列；固定 IM 守则 + 内容边界声明（ComposeSystemPrompt 固定段）不受影响照常
+  注入两引擎（`--append-system-prompt` / `<im_context>`）；`neutralizeTagClose` 防线保留
+  （未来提示词管理模块会重新引入外部内容）
+- DTO / service / BotRuntimeConfig / TurnRequest.Model / `--model` argv / web（Drawer 两
+  输入框、ImBotService 类型、ImBotPanel 补绑 payload）全链路移除
+
+**依赖**：无
+
+**验收**：`pnpm server:gorm:gen` + `go -C server test ./... -race` + `pnpm web:build` +
+`pnpm web:lint` 全部通过
+
+**实施定稿**：按方案落地，零偏离。终态事实——`ComposeSystemPrompt` 无参化（固定段 SSOT，
+函数签名即提示词管理模块的接入点）；`TurnRequest.SystemPrompt` 字段保留（承载固定守则
+产物，`<im_context>` 注入链与 `--append-system-prompt` argv 零改动）；本任务同时终结
+T3.3 交付的两段 helperText（随字段一起退役）；相对方案的偏离——两列未追加独立 DROP 迁移，
+经 tracker 基线迁移内联退役（预发布期基线可改，DO 层已重生成对齐）。
 
 ---
 

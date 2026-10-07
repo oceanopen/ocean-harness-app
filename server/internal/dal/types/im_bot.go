@@ -39,8 +39,6 @@ type ImBotCreateRequest struct {
 	BotId        string            `json:"botId" binding:"required"`
 	Secret       string            `json:"secret" binding:"required"`
 	WorkspaceId  int               `json:"workspaceId" binding:"required"` // 必选工作空间（会话目录取其 dir）
-	Model        string            `json:"model" binding:"omitempty"`
-	SystemPrompt string            `json:"systemPrompt" binding:"omitempty,max=8000"`
 	AccessPolicy ImBotAccessPolicy `json:"accessPolicy" binding:"required"`
 	Enabled      bool              `json:"enabled"`
 }
@@ -52,8 +50,6 @@ type ImBotUpdateRequest struct {
 	BotId        string            `json:"botId" binding:"required"`
 	Secret       string            `json:"secret" binding:"omitempty"`
 	WorkspaceId  int               `json:"workspaceId" binding:"required"`
-	Model        string            `json:"model" binding:"omitempty"`
-	SystemPrompt string            `json:"systemPrompt" binding:"omitempty,max=8000"`
 	AccessPolicy ImBotAccessPolicy `json:"accessPolicy" binding:"required"`
 	Enabled      bool              `json:"enabled"`
 }
@@ -126,8 +122,6 @@ type ImBotResponseData struct {
 	Channel       enums.Channel     `json:"channel"`
 	WorkspaceId   int               `json:"workspaceId"`   // 0 = 未选择（扫码接入待补选）
 	WorkspaceName string            `json:"workspaceName"` // 关联工作空间名（service 合并装配）
-	Model         string            `json:"model"`
-	SystemPrompt  string            `json:"systemPrompt"`
 	AccessPolicy  ImBotAccessPolicy `json:"accessPolicy"`
 	Enabled       bool              `json:"enabled"`
 	// credential 明文 secret：桌面应用数据全本地，编辑抽屉直接回显（前端默认掩码 + 显式切换明文）。
@@ -150,8 +144,6 @@ func (ImBotResponseData) FromModel(r *model.ImBot) ImBotResponseData {
 		Name:         r.Name,
 		Channel:      r.Channel,
 		WorkspaceId:  r.WorkspaceID,
-		Model:        r.Model,
-		SystemPrompt: r.SystemPrompt,
 		Enabled:      r.Enabled.IsYes(),
 		CreatedAt:    r.CreatedAt,
 		UpdatedAt:    r.UpdatedAt,

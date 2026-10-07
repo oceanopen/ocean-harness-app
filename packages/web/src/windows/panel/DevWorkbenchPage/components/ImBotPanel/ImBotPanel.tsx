@@ -162,8 +162,6 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
           botId: bot.botId,
           secret: '',
           workspaceId: issue.workspaceId,
-          model: bot.model,
-          systemPrompt: bot.systemPrompt,
           accessPolicy: bot.accessPolicy,
           enabled: bot.enabled,
         },

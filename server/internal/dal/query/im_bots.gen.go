@@ -33,8 +33,6 @@ func newImBot(db *gorm.DB, opts ...gen.DOOption) imBot {
 	_imBot.Channel = field.NewField(tableName, "channel")
 	_imBot.Credential = field.NewString(tableName, "credential")
 	_imBot.WorkspaceID = field.NewInt(tableName, "workspace_id")
-	_imBot.Model = field.NewString(tableName, "model")
-	_imBot.SystemPrompt = field.NewString(tableName, "system_prompt")
 	_imBot.AccessPolicy = field.NewString(tableName, "access_policy")
 	_imBot.Enabled = field.NewField(tableName, "enabled")
 	_imBot.LastError = field.NewString(tableName, "last_error")
@@ -55,8 +53,6 @@ type imBot struct {
 	Channel      field.Field
 	Credential   field.String
 	WorkspaceID  field.Int
-	Model        field.String
-	SystemPrompt field.String
 	AccessPolicy field.String
 	Enabled      field.Field
 	LastError    field.String
@@ -83,8 +79,6 @@ func (i *imBot) updateTableName(table string) *imBot {
 	i.Channel = field.NewField(table, "channel")
 	i.Credential = field.NewString(table, "credential")
 	i.WorkspaceID = field.NewInt(table, "workspace_id")
-	i.Model = field.NewString(table, "model")
-	i.SystemPrompt = field.NewString(table, "system_prompt")
 	i.AccessPolicy = field.NewString(table, "access_policy")
 	i.Enabled = field.NewField(table, "enabled")
 	i.LastError = field.NewString(table, "last_error")
@@ -114,14 +108,12 @@ func (i *imBot) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (i *imBot) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 12)
+	i.fieldMap = make(map[string]field.Expr, 10)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["name"] = i.Name
 	i.fieldMap["channel"] = i.Channel
 	i.fieldMap["credential"] = i.Credential
 	i.fieldMap["workspace_id"] = i.WorkspaceID
-	i.fieldMap["model"] = i.Model
-	i.fieldMap["system_prompt"] = i.SystemPrompt
 	i.fieldMap["access_policy"] = i.AccessPolicy
 	i.fieldMap["enabled"] = i.Enabled
 	i.fieldMap["last_error"] = i.LastError

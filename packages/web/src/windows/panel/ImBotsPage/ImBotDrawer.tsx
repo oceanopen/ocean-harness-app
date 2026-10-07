@@ -41,8 +41,6 @@ interface ImBotDraft {
   botId: string;
   secret: string;
   workspaceId: number;
-  model: string;
-  systemPrompt: string;
   accessMode: ImBotAccessPolicy['mode'];
   allowUsersText: string;
   enabled: boolean;
@@ -54,8 +52,6 @@ function draftFromBot(bot: ImBotModel | null): ImBotDraft {
     botId: bot?.botId ?? '',
     secret: bot?.secret ?? '',
     workspaceId: bot?.workspaceId ?? 0,
-    model: bot?.model ?? '',
-    systemPrompt: bot?.systemPrompt ?? '',
     accessMode: bot?.accessPolicy.mode ?? 'allowlist',
     allowUsersText: bot?.accessPolicy.allowUsers.join(', ') ?? '',
     enabled: bot?.enabled ?? true,
@@ -107,8 +103,6 @@ function ImBotDrawer(props: ImBotDrawerProps) {
       botId: draft.botId.trim(),
       secret: draft.secret.trim(),
       workspaceId: draft.workspaceId,
-      model: draft.model.trim(),
-      systemPrompt: draft.systemPrompt,
       accessPolicy,
       enabled: draft.enabled,
     };
@@ -235,26 +229,16 @@ function ImBotDrawer(props: ImBotDrawerProps) {
             ))}
           </TextField>
 
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <TextField
-              size="small"
-              fullWidth
-              label="模型（可选）"
-              placeholder="留空 = CLI 默认"
-              value={draft.model}
-              onChange={e => setField('model', e.target.value)}
-            />
-            <FormControlLabel
-              sx={{ flexShrink: 0 }}
-              control={(
-                <Switch
-                  checked={draft.enabled}
-                  onChange={e => setField('enabled', e.target.checked)}
-                />
-              )}
-              label="启用"
-            />
-          </Box>
+          <FormControlLabel
+            sx={{ flexShrink: 0 }}
+            control={(
+              <Switch
+                checked={draft.enabled}
+                onChange={e => setField('enabled', e.target.checked)}
+              />
+            )}
+            label="启用"
+          />
 
           <Divider />
 
@@ -281,18 +265,6 @@ function ImBotDrawer(props: ImBotDrawerProps) {
               helperText={helpText('白名单模式下仅名单内用户可使用（单聊与群聊 @ 均按发送者判定）')}
             />
           )}
-
-          <TextField
-            size="small"
-            fullWidth
-            multiline
-            minRows={5}
-            maxRows={10}
-            label="人设提示词（可选）"
-            value={draft.systemPrompt}
-            onChange={e => setField('systemPrompt', e.target.value)}
-            helperText={helpText('注入为系统提示词，塑造机器人的角色与语气')}
-          />
 
           {(createMutation.error || updateMutation.error) && (
             <Alert severity="error" sx={{ fontSize: 12 }}>

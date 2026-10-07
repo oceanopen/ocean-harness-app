@@ -120,8 +120,6 @@ type BotRuntimeConfig struct {
 	Credential   string // 渠道凭据 JSON，适配器自行解析（核心不解引用）
 	WorkspaceID  int    // 工作空间行 id（引擎路由按 workspace 级 launch_settings 解析；0 = 未选择）
 	WorkspaceDir string
-	Model        string // claude --model；空 = CLI 默认
-	SystemPrompt string // 人设；组装见 prompt.go ComposeSystemPrompt
 	AccessPolicy AccessPolicy
 	Port         int // sidecar HTTP 端口，driver 注入 claude 子进程 OCEAN_HARNESS_PORT
 }
@@ -136,8 +134,7 @@ type TurnRequest struct {
 	IssueID         string // 路由层回填的绑定产物：目标 issue（空 = 未绑定）；仅 ACP 引擎消费，headless 忽略
 	SessionID       string
 	Prompt          string // prompt.go 组装后的最终 user prompt
-	Model           string
-	SystemPrompt    string                   // ComposeSystemPrompt 产物
+	SystemPrompt    string                   // ComposeSystemPrompt 产物（固定守则段）
 	Display         *acpsession.EntryDisplay // prompt.go buildTurnDisplay 产物：展示元数据（正文原文 + 引用/附件投影）；仅 ACP 引擎随 PromptMeta 落条目，headless 忽略
 	Port            int
 }
