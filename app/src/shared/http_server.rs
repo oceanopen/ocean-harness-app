@@ -661,6 +661,18 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                 port
             );
         } else {
+            // 身份校验：deadline 内可能已发生「停→重启」（如 reset_server_data 的停删重拉、
+            // 用户快速关→开服务），run_state 短暂经过 Stopped 又回到 Starting 时，本线程会把
+            // 新 child 的 Starting 误认成自己的。child_pid 已换代说明 mutex 里的 child 属于
+            // 新一次 spawn，交由其自己的 settle 线程裁定，本线程不 kill、不裁定。
+            if state.child_pid.load(Ordering::SeqCst) != child_pid {
+                log::info!(
+                    "[http-server] settle for pid {} superseded by pid {}; skip verdict",
+                    child_pid,
+                    state.child_pid.load(Ordering::SeqCst)
+                );
+                return;
+            }
             log::warn!(
                 "[http-server] startup failed: pid {} not listening on port {} within deadline",
                 child_pid,
@@ -851,5 +863,71 @@ pub fn set_http_server_enabled(app: AppHandle, enabled: bool) -> Result<(), Stri
 pub fn cleanup_orphan_http_server(app: AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
     reclaim_port_if_orphan_go_server(state.port(), &app.config().identifier);
+    Ok(())
+}
+
+/// 删除 server.db 文件（幂等：不存在视为成功）。
+/// Windows 上进程刚被 kill、句柄可能延迟释放，短重试兜底；unix 通常一次成功。
+fn remove_server_db(sqlite_dir: &str) -> Result<(), String> {
+    // 文件名 SSOT 在 Go 侧（server/internal/initialize/sqlite.go 的 sqliteFileName），
+    // 与 README「查看服务 SQLite 数据库」文档口径一致。
+    let db_path = PathBuf::from(sqlite_dir).join("server.db");
+    if !db_path.exists() {
+        return Ok(());
+    }
+    const RETRIES: usize = 5;
+    let mut last_err = String::new();
+    for _ in 0..RETRIES {
+        match fs::remove_file(&db_path) {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => {
+                last_err = e.to_string();
+                thread::sleep(Duration::from_millis(200));
+            }
+        }
+    }
+    Err(format!(
+        "remove server.db failed after {RETRIES} attempts: {last_err}"
+    ))
+}
+
+/// 重置服务数据（数据清理页，整库重置）：停 sidecar → 删 server.db → 原本在跑则重拉。
+///
+/// server.db 无任何种子数据、空库即初始态，Go 启动时 goose 迁移自动重建全部表，
+/// 删除文件即完成重置。选择进程外重置而非 Go 进程内清表：Go 侧 bot Supervisor 的
+/// StopAll 终态位不可逆、ACP/会话锚点表有 GetOrCreate 自愈语义（清表后旧写方会重建
+/// 脏行），进程内收敛复杂且脆弱——停进程是最干净的收敛。
+///
+/// 时序：先停自有 child（此后端口监听者只会是跨会话孤儿）→ 回收孤儿（其打开的 db
+/// 句柄会阻塞 Windows 删除）→ 删文件 → was_active 时重拉（迁移重跑）。
+#[tauri::command]
+#[specta::specta]
+pub fn reset_server_data(app: AppHandle) -> Result<(), String> {
+    let state = app.state::<HttpServerState>();
+    if state.sqlite_dir.is_empty() {
+        return Err("sqlite_dir not resolved".into());
+    }
+    let was_active = state.run_state() != HttpServerRunState::Stopped;
+    if was_active {
+        stop_server(&app)?;
+    }
+    reclaim_port_if_orphan_go_server(state.port(), &app.config().identifier);
+    if let Err(e) = remove_server_db(&state.sqlite_dir) {
+        // 删除失败（如 Windows 句柄延迟未释放）：库文件仍在、数据未动。原本在跑则尽力
+        // 拉回服务（回到旧数据可用态），再向上报错——避免服务停留 Stopped 需用户手动重开。
+        if was_active {
+            if let Err(re) = start_server(&app) {
+                log::warn!(
+                    "[http-server] restore after remove failure failed: {}",
+                    re
+                );
+            }
+        }
+        return Err(e);
+    }
+    if was_active {
+        start_server(&app)?;
+    }
     Ok(())
 }

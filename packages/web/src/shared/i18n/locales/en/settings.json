@@ -4,6 +4,7 @@
     "appConfig": "App Settings",
     "terminalConfig": "Terminal Config",
     "userProfile": "User Profile",
+    "dataCleanup": "Data Cleanup",
     "about": "About"
   },
   "common": {

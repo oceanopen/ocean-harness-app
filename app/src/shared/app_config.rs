@@ -108,3 +108,18 @@ pub fn set_app_config(
     .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// 重置应用设置（数据清理页）：清空 app_config 表全部行，回到「缺失即默认」的出厂态。
+///
+/// 在既有 Mutex<Connection> 锁内执行 DELETE，与 get/set 读写天然串行、无并发窗口。
+/// 不逐 key 发 app-config-changed 事件：多数 key 的默认值定义在前端 appConfig.ts
+/// （Rust 无从得知），「回默认」无法用单 key 事件表达——收敛由调用方随后调用的
+/// restart_app（应用自动重启）统一接管。
+#[tauri::command]
+#[specta::specta]
+pub fn reset_app_config(state: State<'_, AppConfigState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM app_config", [])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}

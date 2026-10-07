@@ -10,6 +10,7 @@ export type SettingsSection
   = | 'appConfig'
     | 'terminalConfig'
     | 'userProfile'
+    | 'dataCleanup'
     | 'about';
 
 // 默认分区（/settings 本体与未知子段的回落目标）。
@@ -22,6 +23,7 @@ export const SECTION_PATHS: Record<SettingsSection, string> = {
   appConfig: 'appConfig',
   terminalConfig: 'terminalConfig',
   userProfile: 'userProfile',
+  dataCleanup: 'dataCleanup',
   about: 'about',
 };
 
@@ -48,5 +50,6 @@ export const SECTION_MENUS: ReadonlyArray<{ key: SettingsSection; labelI18nKey: 
   { key: 'appConfig', labelI18nKey: 'settings:menu.appConfig' },
   { key: 'terminalConfig', labelI18nKey: 'settings:menu.terminalConfig' },
   { key: 'userProfile', labelI18nKey: 'settings:menu.userProfile' },
+  { key: 'dataCleanup', labelI18nKey: 'settings:menu.dataCleanup' },
   { key: 'about', labelI18nKey: 'settings:menu.about' },
 ];

@@ -92,12 +92,27 @@ export const commands = {
 	getAppConfig: (key: string) => typedError<string | null, string>(__TAURI_INVOKE("get_app_config", { key })),
 	setAppConfig: (key: string, value: string) => typedError<null, string>(__TAURI_INVOKE("set_app_config", { key, value })),
 	/**
+	 *  重置应用设置（数据清理页）：清空 app_config 表全部行，回到「缺失即默认」的出厂态。
+	 * 
+	 *  在既有 Mutex<Connection> 锁内执行 DELETE，与 get/set 读写天然串行、无并发窗口。
+	 *  不逐 key 发 app-config-changed 事件：多数 key 的默认值定义在前端 appConfig.ts
+	 *  （Rust 无从得知），「回默认」无法用单 key 事件表达——收敛由调用方随后调用的
+	 *  restart_app（应用自动重启）统一接管。
+	 */
+	resetAppConfig: () => typedError<null, string>(__TAURI_INVOKE("reset_app_config")),
+	/**
 	 *  当前应用名（panel 面包屑根 crumb 等 UI 展示用）。
 	 *  取自 config product_name（与窗口标题同源）：dev 构建经 tauri.dev.conf.json 覆盖为
 	 *  "Ocean Harness [DEV]"，发布构建为 "Ocean Harness"——前端借此区分当前构建形态
 	 *  （i18n common:brand 无此后缀，仅作异步回填前的同步初值）。缺失时回退品牌名。
 	 */
 	getAppName: () => __TAURI_INVOKE<string>("get_app_name"),
+	getDataFilePaths: () => typedError<DataFilePaths, string>(__TAURI_INVOKE("get_data_file_paths")),
+	/**
+	 *  延迟重启应用（应用设置重置后的收敛手段）：后台线程 sleep ~300ms 让本命令的 IPC
+	 *  响应先送达前端，再 app.restart()——避免响应未发出进程就退出、前端悬挂在 pending。
+	 */
+	restartApp: () => __TAURI_INVOKE<void>("restart_app"),
 	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
 	httpServerStatus: () => __TAURI_INVOKE<HttpServerStatus>("http_server_status"),
 	/**
@@ -117,6 +132,18 @@ export const commands = {
 	 *  注：init 自动启动场景不调用本命令（按需求仅在服务状态页开关触发）。
 	 */
 	cleanupOrphanHttpServer: () => typedError<null, string>(__TAURI_INVOKE("cleanup_orphan_http_server")),
+	/**
+	 *  重置服务数据（数据清理页，整库重置）：停 sidecar → 删 server.db → 原本在跑则重拉。
+	 * 
+	 *  server.db 无任何种子数据、空库即初始态，Go 启动时 goose 迁移自动重建全部表，
+	 *  删除文件即完成重置。选择进程外重置而非 Go 进程内清表：Go 侧 bot Supervisor 的
+	 *  StopAll 终态位不可逆、ACP/会话锚点表有 GetOrCreate 自愈语义（清表后旧写方会重建
+	 *  脏行），进程内收敛复杂且脆弱——停进程是最干净的收敛。
+	 * 
+	 *  时序：先停自有 child（此后端口监听者只会是跨会话孤儿）→ 回收孤儿（其打开的 db
+	 *  句柄会阻塞 Windows 删除）→ 删文件 → was_active 时重拉（迁移重跑）。
+	 */
+	resetServerData: () => typedError<null, string>(__TAURI_INVOKE("reset_server_data")),
 	/**  查询 CLI 命令注册状态（四态 + 路径）。 */
 	cliLinkStatus: () => __TAURI_INVOKE<CliCommandStatus>("cli_link_status"),
 	/**  注册 CLI 命令（幂等）：~/.local/bin 建 symlink + ~/.zshrc 注入 PATH，全程免提权。 */
@@ -295,6 +322,18 @@ export type CliCommandStatus = {
 	linkPath: string,
 	/**  本 app 的 cli 二进制绝对路径（随包 sidecar，与主程序同目录）。 */
 	binPath: string,
+};
+
+/**
+ *  本地数据文件路径（设置 → 数据清理页展示用）。均从 app_data_dir 推导，与
+ *  app_config::init / http_server::resolve_dirs 同口径——不依赖服务运行态，
+ *  sidecar 未启动也能拿到路径。
+ */
+export type DataFilePaths = {
+	/**  Rust 自身应用设置库（app_config KV 表）文件路径。 */
+	appDbPath: string,
+	/**  Go sidecar 业务数据库文件路径（文件名 SSOT 在 Go 侧 sqlite.go，同 README 口径）。 */
+	serverDbPath: string,
 };
 
 /**

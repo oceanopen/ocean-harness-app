@@ -4,6 +4,7 @@
     "appConfig": "应用设置",
     "terminalConfig": "终端配置",
     "userProfile": "个人中心",
+    "dataCleanup": "数据清理",
     "about": "关于"
   },
   "common": {
