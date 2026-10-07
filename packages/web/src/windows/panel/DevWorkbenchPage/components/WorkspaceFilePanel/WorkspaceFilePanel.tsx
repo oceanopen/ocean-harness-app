@@ -1,5 +1,4 @@
 import {
-  Autorenew as AutorenewIcon,
   FolderOutlined as FolderOutlinedIcon,
 } from '@mui/icons-material';
 import {
@@ -7,7 +6,6 @@ import {
   Box,
   Button,
   CircularProgress,
-  IconButton,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -25,6 +23,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import PanelToolbar from '../PanelToolbar';
+import RefreshIconButton from '../RefreshIconButton';
 import { buildFileTree } from './buildFileTree';
 import { allDirsExpanded, buildGitChangesTree } from './buildGitChangesTree';
 import FileTree from './FileTree';
@@ -145,24 +144,11 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
               <ToggleButton value="all" sx={{ py: 0.25, px: 1 }}>全部文件</ToggleButton>
               <ToggleButton value="git" sx={{ py: 0.25, px: 1 }}>Git 变更</ToggleButton>
             </ToggleButtonGroup>
-            <IconButton
-              size="small"
+            <RefreshIconButton
               onClick={refresh}
-              disabled={mode === 'git' ? gitQuery.isFetching : isFetching}
-              aria-label="刷新文件列表"
-              sx={{ color: 'text.secondary' }}
-            >
-              <AutorenewIcon
-                fontSize="small"
-                sx={{
-                  'animation': (mode === 'git' ? gitQuery.isFetching : isFetching) ? 'spin 0.8s linear infinite' : undefined,
-                  '@keyframes spin': {
-                    from: { transform: 'rotate(0deg)' },
-                    to: { transform: 'rotate(360deg)' },
-                  },
-                }}
-              />
-            </IconButton>
+              fetching={mode === 'git' ? gitQuery.isFetching : isFetching}
+              ariaLabel="刷新文件列表"
+            />
           </Box>
         )}
       />

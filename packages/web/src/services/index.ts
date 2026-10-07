@@ -43,8 +43,11 @@ export type {
 export { ImBotService } from './ImBotService';
 export type {
   ImBotAccessPolicy,
+  ImBotBindIssueRequest,
+  ImBotConversationModel,
   ImBotCreateRequest,
   ImBotDeleteRequest,
+  ImBotGetConversationsRequest,
   ImBotModel,
   ImBotProvisionCancelRequest,
   ImBotProvisionPollRequest,

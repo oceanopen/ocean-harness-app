@@ -430,7 +430,7 @@ bot 不存在拒绝、绑定解绑主链路（含续聊锚不扰动与列表口�
 
 #### T3.2 任务工具栏 IM 机器人模块（bot 聚合 + 会话明细）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：工作台右侧工具条 IM 机器人模块——bot 聚合态 + 会话明细绑定管理（桌面侧闭环入口）
 
@@ -456,6 +456,37 @@ bot 不存在拒绝、绑定解绑主链路（含续聊锚不扰动与列表口�
 
 **验收**：`pnpm web:build` + `pnpm web:lint` 通过；聚合 / 展开 / 会话绑定切换 / 解绑 / 补绑 /
 空态交互完整
+
+**实施定稿**：按方案落地，四处方案外拍板/落位修正——① 目录落位
+`DevWorkbenchPage/components/ImBotPanel/`（与 IssueSubTaskPanel / WorkspaceFilePanel 同级，
+工具面板组件目录既有惯例），非方案字面的 `WorkbenchTools/ImBotPanel/`，toolRegistry 仍是
+唯一注册扩展点；② 实施澄清拍板：聚合卡加连接状态徽标（doctor 徽标维持可选增强不做），
+`stateChip` 从 ImBotsPage 提取为 `ImBotsPage/imBotStateChip.ts` 共享导出；③ 实施澄清拍板：
+会话行全部操作（关联 / 切换 / 解绑）统一面板级确认弹窗二次确认（方案未规定弹窗形态），
+补绑迁移确认弹窗按方案保留——四形态文案由 `confirmSpec` 纯函数派生，pending 禁关闭防并发、
+失败保留弹窗错误可见、重开弹窗清残留错误；④ T3.1 前端遗留缺口随任务补齐：
+`services/index.ts` 补 `ImBotBindIssueRequest` / `ImBotConversationModel` /
+`ImBotGetConversationsRequest` 三类型导出，imBots 域增 `conversations(botId)` key 与
+`useImBotConversations`（enabled 门槛）/ `useBindImBotIssue`（成功按 botId invalidate 会话
+key）两 hook。组件三文件——`ImBotPanel.tsx`：PanelToolbar（「机器人 N」计数 + 「+」补绑
+Popover 候选 = 非本工作空间 bot 含未配置、无候选禁用提示项 + 刷新 invalidate root 整域）
++ 四分支骨架 + 统一确认弹窗（面板级单飞行中操作，在飞请求经 `bindPending` 下传 bot 卡做
+行级 loading，卡内按 botId 自筛）；`ImBotBotCard.tsx`：聚合头（name + connState 徽标 +
+「N 个会话已关联」success / 「未关联」置灰 chip + 加载中小 spinner + 展开箭头）+ 会话明细
+行（私聊/群聊 · 相对活跃文案 · key 尾 6 位短码 + 所绑任务态行 + 关联/切换/解除按钮）；
+`format.ts`：中文直出纯函数（活跃文案分档 刚刚/N 分钟前/N 小时前/昨天/N 天前/超一周落
+YYYY-MM-DD/null=从未活跃、chatType 文案、短码；相对文案语义对齐 shared/time
+formatRelativeTime 但本地实现——i18n t 注入不适用工具面板中文直出约定）。补绑提交 =
+`useUpdateImBot` 全表单（workspaceId = 当前，secret 空串沿用；update 就地替换列表缓存，
+面板过滤自动收敛新卡）。质量审查后补三点终态——① 刷新按钮提取共享组件
+`components/RefreshIconButton.tsx`（IconButton small + Autorenew spin，fetching 禁用+旋转），
+收敛 IssueSubTaskPanel / WorkspaceFilePanel / ImBotPanel 三份逐字拷贝；② ConversationRow
+操作按钮合并为单按钮三态 label（解除关联 / 切换为当前任务 / 关联当前任务），解绑态色
+inherit；③ `workspaceShortLabel` 收敛 workspace 名缺失回落 `#id` 规则（面板内两处：迁移
+确认文案 + 补绑候选二级文案）。正确性审查零缺陷（弹窗快照并发等 low 置信度观察记录不修）；
+规范/抽象一致性审查零发现，两条低置信度备注经拍板顺手修复——bot 卡展开箭头补自身
+onClick（键盘可激活，stopPropagation 防与父行点击冒泡双 toggle 抵消）、state 域 README
+键工厂整域失效根命名 all → root 三处对齐实作（全库九域一律 root，先于本任务的文档漂移）。
 
 #### T3.3 bot 抽屉配置文案完善
 

@@ -1,7 +1,6 @@
 import type { ProjectIssueResponseData } from '@src/services';
 import {
   Add as AddIcon,
-  Autorenew as AutorenewIcon,
   ChecklistOutlined as ChecklistOutlinedIcon,
 } from '@mui/icons-material';
 import {
@@ -18,6 +17,7 @@ import { trackerKeys, useProjectIssues } from '@src/state/tracker';
 import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import PanelToolbar from '../PanelToolbar';
+import RefreshIconButton from '../RefreshIconButton';
 
 interface IssueSubTaskPanelProps {
   projectId: number;
@@ -80,24 +80,7 @@ export default function IssueSubTaskPanel({ projectId, issueId, onEditIssue, onC
             >
               <AddIcon fontSize="small" />
             </IconButton>
-            <IconButton
-              size="small"
-              onClick={refresh}
-              disabled={isFetching}
-              aria-label="刷新子任务状态"
-              sx={{ color: 'text.secondary' }}
-            >
-              <AutorenewIcon
-                fontSize="small"
-                sx={{
-                  'animation': isFetching ? 'spin 0.8s linear infinite' : undefined,
-                  '@keyframes spin': {
-                    from: { transform: 'rotate(0deg)' },
-                    to: { transform: 'rotate(360deg)' },
-                  },
-                }}
-              />
-            </IconButton>
+            <RefreshIconButton onClick={refresh} fetching={isFetching} ariaLabel="刷新子任务状态" />
           </>
         )}
       />

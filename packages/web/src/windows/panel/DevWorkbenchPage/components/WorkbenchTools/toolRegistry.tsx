@@ -12,7 +12,8 @@
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { ProjectIssueResponseData } from '@src/services';
 import type { ReactNode } from 'react';
-import { Checklist as ChecklistIcon, FolderOutlined as FolderOutlinedIcon } from '@mui/icons-material';
+import { Checklist as ChecklistIcon, FolderOutlined as FolderOutlinedIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
+import ImBotPanel from '../ImBotPanel/ImBotPanel';
 import IssueSubTaskPanel from '../IssueSubTaskPanel/IssueSubTaskPanel';
 import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
 
@@ -58,6 +59,13 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     icon: FolderOutlinedIcon,
     exclusive: true,
     render: ({ issue }) => <WorkspaceFilePanel issueId={issue.id} />,
+  },
+  {
+    id: 'imBots',
+    title: 'IM 机器人',
+    icon: SmartToyIcon,
+    exclusive: true,
+    render: ({ issue }) => <ImBotPanel issue={issue} />,
   },
 ];
 

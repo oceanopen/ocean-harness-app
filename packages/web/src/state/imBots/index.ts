@@ -2,8 +2,10 @@
 // 无 store.ts：本域无 client 选中态（抽屉选中用页面局部 useState），遵守「server 状态用 Query」。
 export { imBotsKeys } from './keys';
 export {
+  useBindImBotIssue,
   useCreateImBot,
   useDeleteImBot,
+  useImBotConversations,
   useImBots,
   useProvisionBegin,
   useProvisionCancel,

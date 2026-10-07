@@ -1,4 +1,5 @@
 import type {
+  ImBotBindIssueRequest,
   ImBotCreateRequest,
   ImBotModel,
   ImBotProvisionCancelRequest,
@@ -23,6 +24,18 @@ export function useImBots() {
     // 稳定态后自动停；窗口失焦不轮询（refetchIntervalInBackground 默认 false）。
     refetchInterval: query =>
       query.state.data?.some(bot => bot.connState === 'connecting') ? 2000 : false,
+  });
+}
+
+// ─── 会话域（T3.1 会话级绑定面，T3.2 工具栏面板消费）───
+
+/** 指定 bot 的会话列表（绑定锚 + 活跃时间，最近活跃在前）。 */
+export function useImBotConversations(botId: number) {
+  return useQuery({
+    queryKey: imBotsKeys.conversations(botId),
+    queryFn: () => ImBotService.getConversations({ botId }),
+    // 无效 bot 行 id（面板过滤/竞态窗口）不发请求。
+    enabled: botId > 0,
   });
 }
 
@@ -71,6 +84,17 @@ export function useRestartImBot() {
   return useMutation({
     mutationFn: (req: { id: number }) => ImBotService.restart(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: imBotsKeys.list() }),
+  });
+}
+
+/** 会话级绑定/解绑（issueId 空 = 解绑；绑定每回合现读无需热重载）。成功后失效该 bot 的会话缓存。 */
+export function useBindImBotIssue() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: ImBotBindIssueRequest) => ImBotService.bindIssue(req),
+    onSuccess: (_, req) => {
+      void qc.invalidateQueries({ queryKey: imBotsKeys.conversations(req.botId) });
+    },
   });
 }
 
