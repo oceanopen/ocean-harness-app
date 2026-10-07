@@ -48,14 +48,15 @@ type wecomCredential struct {
 
 // channelRuntime 单个企微 bot 的连接运行时。state/lastErr 由 SDK 回调驱动写入，Status 投影读取。
 type channelRuntime struct {
-	mu        sync.Mutex
-	cfg       bot.BotRuntimeConfig
-	client    *aibot.WsClient
-	cancel    context.CancelFunc
-	state     string // connecting | connected | disconnected | stopped
-	lastErr   string
-	log       *zap.Logger
-	onInbound func(bot.InboundMessage) // supervisor 装配注入的入站出口
+	mu            sync.Mutex
+	cfg           bot.BotRuntimeConfig
+	client        *aibot.WsClient
+	replyOverride replyClient // 仅单测注入的出站 fake（clientSnapshot 优先取它）；生产恒 nil
+	cancel        context.CancelFunc
+	state         string // connecting | connected | disconnected | stopped
+	lastErr       string
+	log           *zap.Logger
+	onInbound     func(bot.InboundMessage) // supervisor 装配注入的入站出口
 
 	inbound  chan func(*bot.InboundMessage) // 入站构建任务（保序串行消费）
 	actions  chan func(*bot.InboundMessage) // 交互事件构建任务（快车道独立串行消费，T3.2）
@@ -144,16 +145,29 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	}
 	// 模板卡片点击事件（T3.1）：SDK dispatch 已预调 DecodeEvent，回调内 Body.Event 即具体
 	// 事件类型。归一为合成 BaseMessage + Interaction 后投交互快车道（T3.2 分流：不排附件
-	// 下载队，保住点击置灰的 5 秒窗口），重活（拦截步判定/置灰更新）在编排器侧完成；解码
-	// 失败丢弃并告警（无 msgid 不可幂等）。
+	// 下载队，保住点击置灰的 5 秒窗口），重活（拦截步判定/置灰更新）在编排器侧完成；路由
+	// 载荷覆写为 wsRoute 事件流（置灰用事件 headers，终帧走主动推送——见 wsRoute 注释）；
+	// 解码失败丢弃并告警（无 msgid 不可幂等）。response_url 受理即应答已下线（真机定标：
+	// 独立 HTTP 通道同样被客户端合并渲染，解决不了首帧反馈，徒增一条消息）。
 	client.OnTemplateCardEvent = func(frame *aibottypes.WsFrame[aibottypes.EventMessage]) {
 		base, interaction, ok := cardEventPayload(frame.Body)
 		if !ok {
 			log.Warn("企微模板卡片事件解码失败，已丢弃", zap.String("msgid", frame.Body.MsgId))
 			return
 		}
+		// 真机载荷观测（DEBUG）：event_key 原文（RawKey）+ 回传 task_id + 归一下标与勾选集
+		// ——企微实际回传形态与文档假设的差异（前缀形态/字段缺失）只能实测定标。
+		log.Debug("企微模板卡事件载荷",
+			zap.String("raw_key", interaction.RawKey),
+			zap.String("task_id", interaction.TaskID),
+			zap.String("delivery", interaction.DeliveryID),
+			zap.Int("action_index", interaction.ActionIndex),
+			zap.Any("selections", interaction.Selections),
+		)
+		route := wsRouteFrom(frame.Headers, base, true)
 		r.submitInteractionMsg(frame.Headers, base, func(in *bot.InboundMessage) {
 			in.Interaction = &interaction
+			in.Route.Payload = route
 		})
 	}
 
@@ -221,10 +235,17 @@ func (r *channelRuntime) Status() bot.ChannelStatus {
 	return bot.ChannelStatus{State: r.state, LastError: r.lastErr}
 }
 
-// clientSnapshot 回复流用的客户端快照（nil = 已停止/未启动）。
-func (r *channelRuntime) clientSnapshot() *aibot.WsClient {
+// clientSnapshot 回复流用的客户端快照（nil = 已停止/未启动）。返回接缝接口（replyClient）
+// 供单测注入 fake；nil 判定显式判 client 字段——具体类型 nil 上转接口会得到非 nil 接口值。
+func (r *channelRuntime) clientSnapshot() replyClient {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.replyOverride != nil {
+		return r.replyOverride
+	}
+	if r.client == nil {
+		return nil
+	}
 	return r.client
 }
 

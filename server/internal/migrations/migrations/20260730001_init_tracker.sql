@@ -122,7 +122,10 @@ CREATE TABLE t_im_bots (
 -- t_im_bot_conversations：bot 会话映射（多轮上下文在 claude 会话存储，本表只存锚点）。
 -- conversation_key：'single:<userid>' / 'group:<chatid>'；claude_session_id 为 --resume 锚（空=未开场）。
 -- bound_issue_id 为 ACP 模式显式绑定锚（T2.3，空=未绑定；与 claude_session_id 正交，issue
--- 删除时由 service 层级联清列，行保留）。
+-- 删除时由 service 层级联清列，行保留）。last_message_card 为最近一张绑定族卡（wsbind/taskbind/
+-- taskunbind）的登记槽 JSON {kind, status, spec}——status 标记消费态（重复点击收口），出卡
+-- 即覆盖实现旧卡失效语义（审批/表单卡不进槽：域内快照判别已覆盖）；空串 = 无登记（点击
+-- 消费 fail open 走原链）。
 CREATE TABLE t_im_bot_conversations (
     id                INTEGER  PRIMARY KEY AUTOINCREMENT,
     bot_id            INTEGER  NOT NULL,
@@ -130,6 +133,7 @@ CREATE TABLE t_im_bot_conversations (
     claude_session_id TEXT     NOT NULL DEFAULT '',
     bound_issue_id    TEXT     NOT NULL DEFAULT '',
     seen_message_ids  TEXT     NOT NULL DEFAULT '[]',
+    last_message_card TEXT     NOT NULL DEFAULT '',
     last_message_at   DATETIME,
     created_at        DATETIME NOT NULL,
     updated_at        DATETIME NOT NULL

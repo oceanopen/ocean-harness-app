@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	aibottypes "github.com/oceanopen/wecom-aibot-go-sdk/aibot/types"
 	"go.uber.org/zap"
@@ -42,8 +43,16 @@ func (r *channelRuntime) submitInteractionMsg(
 	})
 }
 
-// fillCommon BaseMessage → InboundMessage 公共字段 + 引用抽取。
+// fillCommon BaseMessage → InboundMessage 公共字段 + 引用抽取。路由载荷统一 wsRoute 消息流
+// （event=false：文本终帧走 respond_msg 保流式，推送面供卡解耦用）。
 func (r *channelRuntime) fillCommon(headers aibottypes.WsFrameHeaders, base aibottypes.BaseMessage, in *bot.InboundMessage) {
+	// 入站延迟定标（DEBUG）：企微侧时间戳与本机到达时刻的秒级差（含时钟偏差），拆「企微→
+	// 本机」投递延迟与客户端首绘延迟的归属（真机体感 8s+ vs 服务端处理 ~1.1s，差额在哪段）。
+	if base.CreateTime > 0 && r.log != nil {
+		r.log.Debug("bot 入站延迟定标",
+			zap.Int64("age_s", time.Now().Unix()-int64(base.CreateTime)),
+			zap.String("msgid", base.MsgId))
+	}
 	chatType := bot.ChatDirect
 	convID := base.From.UserId
 	if base.ChatType == "group" {
@@ -54,7 +63,7 @@ func (r *channelRuntime) fillCommon(headers aibottypes.WsFrameHeaders, base aibo
 	in.ChatType = chatType
 	in.ConversationKey = bot.FormatConversationKey(chatType, convID)
 	in.SenderID = base.From.UserId
-	in.Route = bot.RouteInfo{Channel: enums.CHANNEL_WECOM, Payload: headers}
+	in.Route = bot.RouteInfo{Channel: enums.CHANNEL_WECOM, Payload: wsRouteFrom(headers, base, false)}
 	in.Quote = extractQuote(base.Quote)
 }
 

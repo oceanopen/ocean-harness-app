@@ -320,7 +320,7 @@ func (r *driverRoute) handleElicitationInteraction(issueID, sessionToken string,
 		return "该表单形态已变化，请在桌面端处理。", nil, true // 同上（出卡可表示 → 点击时可分类）
 	}
 	if len(in.Selections) == 0 {
-		return "未选择任何选项：请在卡片中选择后点「提交」。", nil, true
+		return cardNoSelectionText, nil, true
 	}
 	content, ok := elicitationContent(questions, in.DeliveryID, in.Selections)
 	if !ok {

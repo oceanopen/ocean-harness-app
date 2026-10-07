@@ -5,12 +5,14 @@
 // 搜索卡（wsbind-/taskbind-）点击时解码关键词重查同款模糊查询算指纹比对，一致才按
 // ActionIndex 下标解析目标落库——列表增删或换位均指纹不符，回「重新获取卡片」防索引错绑；
 // 解绑卡（taskunbind-）无搜索语义：关键词段恒空、指纹 = 绑定 id 单元素序列，点击时与当前
-// 绑定比对后清锚（issueRowByID 为触发/点击两侧共用取行口）。跨 sidecar 重启与迟到点击
-// 同样自然降级为文案告知，无内存注册表可失配（与 perm/elicit 卡同哲学）。
+// 绑定比对后清锚（issueRowByID 为触发/点击两侧共用取行口）。消费态与旧卡失效由会话行
+// last_message_card 登记槽收口（重启持久、无内存注册表，见 gateBindingCardClick）；跨 sidecar
+// 重启与迟到点击同样自然降级为文案告知。
 package bot
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql/driver"
 	"encoding/hex"
 	"errors"
@@ -75,35 +77,43 @@ func bindingFingerprint(ids []string) string {
 	return fmt.Sprintf("%016x", h.Sum64())[:bindingFingerprintLen]
 }
 
-// bindingTaskID 投递锚编码：<前缀><关键词 utf-8 hex>-<候选列表指纹>（空关键词 = 空段，
-// 形如 wsbind--<fp>；关键词经 normalizeBindingKeyword 截限，hex 后总长留足 128 字节上限
-// 余量）。指纹输入是关键词过滤后的候选序列——与点击侧重查所见同源。
+// bindingTaskID 投递锚编码：<前缀><关键词 utf-8 hex>-<候选列表指纹>-<一次性随机段>（空
+// 关键词 = 空段，形如 wsbind--<fp>-<n8>；关键词经 normalizeBindingKeyword 截限，hex 后总
+// 长留足 128 字节上限余量）。指纹输入是关键词过滤后的候选序列——与点击侧重查所见同源；
+// 随机段保证每次出卡 task_id 全局唯一（企微约束 taskid 已存在即拒发，errcode=42014 真机
+// 实证——确定性 task_id 同列表重发必撞）。点击侧解析只取关键词与指纹段，随机段不参与语义。
 func bindingTaskID(prefix, keyword string, ids []string) string {
-	return prefix + hex.EncodeToString([]byte(keyword)) + "-" + bindingFingerprint(ids)
+	return prefix + hex.EncodeToString([]byte(keyword)) + "-" + bindingFingerprint(ids) + "-" + nonceHex8()
 }
 
-// parseBindingTaskID 解码本域投递锚（搜索关键词 + 尾段指纹）：末个 "-" 前为关键词 hex 段
-// （空段 = 空关键词）、其后须恰 8 位小写 hex 指纹；关键词段非合法 hex（奇数长度 / 非 hex
-// 字符）视为非本域形态。T2.1 旧形态 <prefix><fp8>（无关键词段）同样 miss——升级窗口内的
-// 旧卡点击自然降级为拦截步兜底文案。
+// nonceHex8 一次性随机段：crypto/rand 4 字节 → 8 位小写 hex。熵源故障退化时间戳低位
+// （唯一性弱保证；撞车表现为出卡被拒可重试，不致命）。
+func nonceHex8() string {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%08x", time.Now().UnixNano()&0xffffffff)
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// parseBindingTaskID 解码本域投递锚（搜索关键词 + 指纹 + 随机段三段式，hex 段不含 "-" 故
+// Split 无歧义；空关键词 = 空首段）：指纹与随机段均须恰 8 位小写 hex；关键词段非合法 hex
+// （奇数长度 / 非 hex 字符）视为非本域形态。T2.2 旧两段式（无随机段）与 T2.1 无关键词段
+// 形态同样 miss——升级窗口内的旧卡点击自然降级为拦截步兜底文案。
 func parseBindingTaskID(taskID, prefix string) (keyword, fingerprint string, ok bool) {
 	rest, hit := strings.CutPrefix(taskID, prefix)
 	if !hit {
 		return "", "", false
 	}
-	i := strings.LastIndex(rest, "-")
-	if i < 0 {
+	parts := strings.Split(rest, "-")
+	if len(parts) != 3 || !isBindingHex8(parts[1]) || !isBindingHex8(parts[2]) {
 		return "", "", false
 	}
-	kwHex, fp := rest[:i], rest[i+1:]
-	if !isBindingFingerprint(fp) {
-		return "", "", false
-	}
-	kw, err := hex.DecodeString(kwHex)
+	kw, err := hex.DecodeString(parts[0])
 	if err != nil {
 		return "", "", false
 	}
-	return string(kw), fp, true
+	return string(kw), parts[1], true
 }
 
 // parseWsbindTaskID / parseTaskbindTaskID 解码各自域的投递锚（尾段指纹）；非本域形态
@@ -122,9 +132,9 @@ func parseTaskunbindTaskID(taskID string) (keyword, fingerprint string, ok bool)
 	return parseBindingTaskID(taskID, taskunbindCardPrefix)
 }
 
-// isBindingFingerprint 恰 8 位小写 hex（生成侧 %x 恒小写，解析同口径收紧——大小写混排
-// 视为非本域形态）。
-func isBindingFingerprint(s string) bool {
+// isBindingHex8 恰 8 位小写 hex（指纹段与一次性随机段共用形态；生成侧 %x 恒小写，解析
+// 同口径收紧——大小写混排视为非本域形态）。
+func isBindingHex8(s string) bool {
 	if len(s) != bindingFingerprintLen {
 		return false
 	}
@@ -273,14 +283,55 @@ func issueIDKeys(issues []*model.ProjectIssue) []string {
 	return ids
 }
 
-// handleWsbindInteraction workspace 卡点击消费（wsbind- 域）。决策链：非选项 key miss →
-// 解码关键词重查列表（读库失败 fail visible，不置灰不落库）→ 指纹比对（不符回重取卡文案，
-// 同前）→ 下标越界防御 → 落库 bot 行 workspace_id（直查 DO 惯例；bot 行已删视为失败）→
-// 置灰（重查列表重建完整 spec，指纹一致保证与原卡字段一致）+ 终帧 → applier 热重载
-// （nil 跳过）。
+// bindingCardKind 绑定族锚判别（前缀匹配）：wsbind-/taskbind-/taskunbind- 返回对应卡族名，
+// 其余返回空（perm/elicit 域不进 last_message_card 槽——域内快照判别已覆盖，且单槽会被回合中
+// 权限卡与指令卡互相顶掉）。
+func bindingCardKind(taskID string) string {
+	switch {
+	case strings.HasPrefix(taskID, wsbindCardPrefix):
+		return "wsbind"
+	case strings.HasPrefix(taskID, taskbindCardPrefix):
+		return "taskbind"
+	case strings.HasPrefix(taskID, taskunbindCardPrefix):
+		return "taskunbind"
+	}
+	return ""
+}
+
+// gateBindingCardClick 绑定族三卡的会话行 last_message_card 闸（TryHandleInteraction 的卡族分流
+// 入口，出卡侧登记见 orchestrator 的 sendBindingCard/sendUnbindCard）：无登记 fail open
+// 走原消费链；登记锚与点击锚一致且已消费 → 重复点击收口（置灰卡按钮仍可点）；不一致 →
+// 旧卡失效收口（槽已被更新的卡覆盖，supersession 过期）；一致且 pending → 原消费链，
+// 消费成功（置灰更新帧）乐观置位。置位失败静默——下次点击重走消费链，与重启空槽同款
+// 退化（各域幂等/指纹防错绑）。
+func (r *driverRoute) gateBindingCardClick(cfg BotRuntimeConfig, msg InboundMessage, in *Interaction) (string, *CardSpec, bool) {
+	store := &ConversationStore{DB: r.db}
+	lc, ok := store.LastMessageCard(cfg.BotID, msg.ConversationKey)
+	if !ok {
+		return r.dispatchCardInteraction(cfg, msg, in)
+	}
+	if lc.Spec.TaskID != in.DeliveryID {
+		return cardExpiredText, nil, true
+	}
+	if lc.Status == lastMessageCardProcessed {
+		return cardAlreadyProcessedText, nil, true
+	}
+	text, update, handled := r.dispatchCardInteraction(cfg, msg, in)
+	if handled && update != nil {
+		store.MarkLastMessageCardProcessed(cfg.BotID, msg.ConversationKey, in.DeliveryID)
+	}
+	return text, update, handled
+}
+
+// handleWsbindInteraction workspace 卡点击消费（wsbind- 域）。决策链：提交事件勾选集解析
+// （无勾选回引导文案，卡未置灰可重点；选项直点兜底）→ 解码关键词重查列表（读库失败 fail
+// visible，不置灰不落库）→ 指纹比对（不符回重取卡文案，同前）→ 下标越界防御 → 落库 bot 行
+// workspace_id（直查 DO 惯例；bot 行已删视为失败）→ 置灰（重查列表重建完整 spec，指纹一致
+// 保证与原卡字段一致）+ 终帧 → applier 热重载（nil 跳过）。
 func (r *driverRoute) handleWsbindInteraction(cfg BotRuntimeConfig, keyword, fingerprint string, in *Interaction) (string, *CardSpec, bool) {
-	if in.ActionIndex < 0 {
-		return "", nil, false // 非选项 key（如提交按钮）：单选卡不可达，防御 miss
+	idx, ok := cardActionIndex(in)
+	if !ok {
+		return cardNoSelectionText, nil, true
 	}
 	wss, err := bindingWorkspaces(r.db, keyword)
 	if err != nil {
@@ -289,10 +340,10 @@ func (r *driverRoute) handleWsbindInteraction(cfg BotRuntimeConfig, keyword, fin
 	if bindingFingerprint(workspaceIDKeys(wss)) != fingerprint {
 		return bindingListChangedText, nil, true
 	}
-	if in.ActionIndex >= len(wss) {
+	if idx >= len(wss) {
 		return bindingInvalidOptionText, nil, true
 	}
-	ws := wss[in.ActionIndex]
+	ws := wss[idx]
 	q := query.Use(r.db)
 	res, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(cfg.BotID)).UpdateSimple(
 		q.ImBot.WorkspaceID.Value(ws.ID),
@@ -302,6 +353,9 @@ func (r *driverRoute) handleWsbindInteraction(cfg BotRuntimeConfig, keyword, fin
 		return "工作空间关联失败，请稍后重试。", nil, true
 	}
 	gray, _ := workspaceCardSpec(wss, keyword)
+	// 置灰帧 task_id 须与被点卡一致（企微按 task_id 匹配更新，TaskID 含一次性随机段，
+	// 重建生成的新随机段不可用——原卡 task_id 经点击事件 TaskID 字段回传）。
+	gray.TaskID = in.TaskID
 	gray.Disabled = true
 	if r.applier != nil {
 		r.applier.ApplyBotAsync(cfg.BotID)
@@ -309,12 +363,14 @@ func (r *driverRoute) handleWsbindInteraction(cfg BotRuntimeConfig, keyword, fin
 	return "✅ 已关联工作空间「" + ws.Name + "」", &gray, true
 }
 
-// handleTaskbindInteraction 任务卡点击消费（taskbind- 域）。决策链同 wsbind 同构——解码
-// 关键词重查候选 → 指纹比对 → 越界防御 → 落库点击来源会话行（(botID, conversationKey)
-// 粒度，行由拦截步 HasSeen→GetOrCreate 保证在场）→ 置灰 + 终帧。绑定每回合现读，无需热重载。
+// handleTaskbindInteraction 任务卡点击消费（taskbind- 域）。决策链同 wsbind 同构——提交
+// 事件勾选集解析（无勾选回引导文案）→ 解码关键词重查候选 → 指纹比对 → 越界防御 → 落库
+// 点击来源会话行（(botID, conversationKey) 粒度，行由拦截步 HasSeen→GetOrCreate 保证在场）
+// → 置灰 + 终帧。绑定每回合现读，无需热重载。
 func (r *driverRoute) handleTaskbindInteraction(cfg BotRuntimeConfig, msg InboundMessage, keyword, fingerprint string, in *Interaction) (string, *CardSpec, bool) {
-	if in.ActionIndex < 0 {
-		return "", nil, false // 非选项 key（如提交按钮）：单选卡不可达，防御 miss
+	idx, ok := cardActionIndex(in)
+	if !ok {
+		return cardNoSelectionText, nil, true
 	}
 	issues, err := bindingIssueCandidates(r.db, cfg.WorkspaceID, keyword)
 	if err != nil {
@@ -323,16 +379,17 @@ func (r *driverRoute) handleTaskbindInteraction(cfg BotRuntimeConfig, msg Inboun
 	if bindingFingerprint(issueIDKeys(issues)) != fingerprint {
 		return bindingListChangedText, nil, true
 	}
-	if in.ActionIndex >= len(issues) {
+	if idx >= len(issues) {
 		return bindingInvalidOptionText, nil, true
 	}
-	issue := issues[in.ActionIndex]
+	issue := issues[idx]
 	store := &ConversationStore{DB: r.db}
 	rows, err := store.SaveBoundIssueID(cfg.BotID, msg.ConversationKey, issue.ID)
 	if err != nil || rows == 0 { // 0 行 = 会话行不在场：绑定未生效，不得回成功文案
 		return "任务绑定失败，请稍后重试。", nil, true
 	}
 	gray, _ := issueCardSpec(issues, keyword)
+	gray.TaskID = in.TaskID // 同 wsbind：保全被点卡 task_id（一次性随机段）
 	gray.Disabled = true
 	return "✅ 已绑定任务「" + issue.Name + "」，直接发消息即可向该任务下达任务。", &gray, true
 }
@@ -369,13 +426,14 @@ func taskunbindCardText(issue *model.ProjectIssue) string {
 	return "当前会话已绑定任务，点击卡片确认解绑：\n- " + issue.Name
 }
 
-// handleTaskunbindInteraction 解绑卡点击消费（taskunbind- 域）。决策链与绑定卡同构——
-// 读当前绑定（读库失败 fail visible）→ 指纹比对（出卡后已解绑/换绑均不符，回重取卡文案
-// 不落库）→ 越界防御（单选项）→ 读绑定行取名（悬空锚按已变化收口）→ 清绑定锚（幂等
-// 忽略行数，claude_session_id 不动——两锚正交）→ 置灰 + 终帧。
+// handleTaskunbindInteraction 解绑卡点击消费（taskunbind- 域）。决策链与绑定卡同构——提交
+// 事件勾选集解析（无勾选回引导文案）→ 读当前绑定（读库失败 fail visible）→ 指纹比对（出卡
+// 后已解绑/换绑均不符，回重取卡文案不落库）→ 越界防御（单选项）→ 读绑定行取名（悬空锚按
+// 已变化收口）→ 清绑定锚（幂等忽略行数，claude_session_id 不动——两锚正交）→ 置灰 + 终帧。
 func (r *driverRoute) handleTaskunbindInteraction(cfg BotRuntimeConfig, msg InboundMessage, fingerprint string, in *Interaction) (string, *CardSpec, bool) {
-	if in.ActionIndex < 0 {
-		return "", nil, false // 非选项 key（如提交按钮）：单选卡不可达，防御 miss
+	idx, ok := cardActionIndex(in)
+	if !ok {
+		return cardNoSelectionText, nil, true
 	}
 	store := &ConversationStore{DB: r.db}
 	bound, err := store.BoundIssueID(cfg.BotID, msg.ConversationKey)
@@ -385,7 +443,7 @@ func (r *driverRoute) handleTaskunbindInteraction(cfg BotRuntimeConfig, msg Inbo
 	if bindingFingerprint([]string{bound}) != fingerprint {
 		return bindingListChangedText, nil, true
 	}
-	if in.ActionIndex >= 1 {
+	if idx >= 1 {
 		return bindingInvalidOptionText, nil, true
 	}
 	issue, found, err := issueRowByID(r.db, bound)
@@ -400,6 +458,7 @@ func (r *driverRoute) handleTaskunbindInteraction(cfg BotRuntimeConfig, msg Inbo
 		return issueUnbindFailedText(), nil, true
 	}
 	gray := taskunbindCardSpec(issue)
+	gray.TaskID = in.TaskID // 同 wsbind：保全被点卡 task_id（一次性随机段）
 	gray.Disabled = true
 	return "✅ 已解绑任务「" + issue.Name + "」", &gray, true
 }

@@ -127,6 +127,12 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 			o.log.Error("bot markSeen 失败", zap.Error(err))
 		}
 		if update != nil {
+			// 混合承载（卡面+推送）：置灰帧 desc 覆写为应答首行——结果在卡面原地可见
+			// （渠道文案截断兜底），完整文案随终帧推送（企微事件流终帧走 aibot_send_msg，
+			// 事件 req_id 不可用于 respond_msg）。
+			if text != "" {
+				update.Description = firstLine(text)
+			}
 			if cs, ok := rs.(CardReplyStream); ok {
 				if err := cs.UpdateCard(*update); err != nil {
 					o.log.Warn("bot 卡片置灰失败", zap.Int("botID", cfg.BotID), zap.Error(err))
@@ -200,10 +206,11 @@ const workspaceGateLead = "机器人尚未选择工作空间，请选择归属�
 
 // sendBindingCard 绑定卡统一收口（T2.2 统一「搜索 → 卡片 → 提交绑定」模型，指令步/门禁/
 // 探针步三入口的唯一出卡口）：查候选 → 组域内文本（出卡同帧完整名称列表 / 零候选教学文案
-// / 读库失败文案）→ lead 非空（门禁语境）时指引段前置于一切形态 → 有卡出卡（终帧收口）、
-// 无卡或 SendCard 失败回落 Flush 纯文本（卡契约：渠道协议「卡同消息仅一次」，已附卡后的
-// 调用返回错误）。恒终帧，调用方一律终结本条消息（不入队、不占全局信号量）。
-func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, kind bindingKind, keyword, lead string, rs ReplyStream) {
+// / 读库失败文案）→ lead 非空（门禁语境）时指引段前置于一切形态 → 有卡先登记 last_message_card
+// 再出卡（终帧收口；last_message_card 闸的 SSOT——写库失败不出卡，防「刚收到的卡一点就提示已
+// 失效」）、无卡或 SendCard 失败回落 Flush 纯文本（卡契约：渠道协议「卡同消息仅一次」，
+// 已附卡后的调用返回错误）。恒终帧，调用方一律终结本条消息（不入队、不占全局信号量）。
+func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage, kind bindingKind, keyword, lead string, rs ReplyStream) {
 	var spec CardSpec
 	var has bool
 	var text string
@@ -242,7 +249,15 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, kind bindingKind, k
 	}
 	if has {
 		if cs, ok := rs.(CardReplyStream); ok {
-			if err := cs.SendCard(spec, text, true); err != nil {
+			// 先登记后发卡：last_message_card 槽是点击消费闸的 SSOT。写库成功而发卡失败时槽指向未
+			// 送达卡——旧卡点击按失效收口，用户重发指令即自愈。
+			kindName := "wsbind"
+			if kind == bindingIssue {
+				kindName = "taskbind"
+			}
+			if err := o.store.SaveLastMessageCard(cfg.BotID, msg.ConversationKey, kindName, spec); err != nil {
+				o.log.Error("bot 绑定卡登记失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
+			} else if err := cs.SendCard(spec, text, true); err != nil {
 				o.log.Warn("bot 绑定卡发送失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
 			} else {
 				return
@@ -254,9 +269,10 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, kind bindingKind, k
 
 // sendUnbindCard 解绑确认卡出口（#任务解绑 指令步，与 sendBindingCard 同款收口形态）：
 // 读当前绑定 → 未绑定纯文本教学终帧 / 悬空锚按未绑定收口（issue 删除级联清列已交付，
-// 行缺失是防御分支）→ 出卡（SendCard 终帧收口；无卡能力或发送失败回落 Flush 纯文本
-// ——回落链路解绑不可达，与绑定卡同款降级语义）。解绑动作唯一入口是 taskunbind 卡点击
-// （binding_card.go 域内消费）。恒终帧，调用方一律终结本条消息（不入队、不占全局信号量）。
+// 行缺失是防御分支）→ 先登记 last_message_card 再出卡（SendCard 终帧收口；无卡能力或发送失败
+// 回落 Flush 纯文本——回落链路解绑不可达，与绑定卡同款降级语义）。解绑动作唯一入口是
+// taskunbind 卡点击（binding_card.go 域内消费）。恒终帧，调用方一律终结本条消息（不入队、
+// 不占全局信号量）。
 func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) {
 	bound, err := o.store.BoundIssueID(cfg.BotID, msg.ConversationKey)
 	if err != nil {
@@ -281,7 +297,10 @@ func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, 
 	spec := taskunbindCardSpec(issue)
 	text := taskunbindCardText(issue)
 	if cs, ok := rs.(CardReplyStream); ok {
-		if err := cs.SendCard(spec, text, true); err != nil {
+		// 先登记后发卡（与 sendBindingCard 同款时序语义）。
+		if err := o.store.SaveLastMessageCard(cfg.BotID, msg.ConversationKey, "taskunbind", spec); err != nil {
+			o.log.Error("bot 解绑卡登记失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
+		} else if err := cs.SendCard(spec, text, true); err != nil {
 			o.log.Warn("bot 解绑卡发送失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
 		} else {
 			return
@@ -365,7 +384,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	// #工作空间 指令步（T2.2，置于门禁之前）：workspace 搜索不依赖已选工作空间（未选域
 	// 恰是该指令要解决的场景），恒终帧收口（出卡/空态文案）。
 	if cmd := parseWorkspaceCommand(msg.Text); cmd != nil {
-		o.sendBindingCard(cfg, bindingWorkspace, cmd.Keyword, "", job.reply)
+		o.sendBindingCard(cfg, msg, bindingWorkspace, cmd.Keyword, "", job.reply)
 		return
 	}
 
@@ -380,13 +399,13 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	// markSeen（消息已被处理），不算失败、不触发会话自愈。T2.2：指引文本与 workspace
 	// 绑定卡同帧（点卡即补选，免开桌面端）；无可选 workspace/查询失败保纯文本指引。
 	if strings.TrimSpace(cfg.WorkspaceDir) == "" {
-		o.sendBindingCard(cfg, bindingWorkspace, "", workspaceGateLead, job.reply)
+		o.sendBindingCard(cfg, msg, bindingWorkspace, "", workspaceGateLead, job.reply)
 		return
 	}
 
 	// #任务 指令步（T2.3 → T2.2 统一卡片化）：搜索出卡，恒终帧收口。
 	if cmd := parseIssueCommand(msg.Text); cmd != nil {
-		o.sendBindingCard(cfg, bindingIssue, cmd.Keyword, "", job.reply)
+		o.sendBindingCard(cfg, msg, bindingIssue, cmd.Keyword, "", job.reply)
 		return
 	}
 
@@ -396,7 +415,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	// 未实现探针接口（headless 直连装配/测试替身）同样跳过。
 	if prober, ok := o.driver.(routeProber); ok {
 		if acp, bound, err := prober.ProbeTarget(cfg, key); err == nil && acp && bound == "" {
-			o.sendBindingCard(cfg, bindingIssue, "", "", job.reply)
+			o.sendBindingCard(cfg, msg, bindingIssue, "", "", job.reply)
 			return
 		}
 	}

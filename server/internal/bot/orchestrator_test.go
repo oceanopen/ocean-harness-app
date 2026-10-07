@@ -170,7 +170,7 @@ func TestSendUnbindCard(t *testing.T) {
 		if err != nil {
 			t.Fatalf("读回任务行: %v", err)
 		}
-		if cards[0].spec.TaskID != bindingTaskID(taskunbindCardPrefix, "", []string{issue.ID}) ||
+		if !bindingTaskIDMatches(cards[0].spec.TaskID, taskunbindCardPrefix, "", []string{issue.ID}) ||
 			cards[0].content != taskunbindCardText(issue) {
 			t.Fatalf("卡锚与同帧文本应与绑定任务同源: %+v", cards[0])
 		}
@@ -239,7 +239,7 @@ func TestSendBindingCardIssueCards(t *testing.T) {
 
 	card := func(keyword string) *fakeCardReplyStream {
 		rs := &fakeCardReplyStream{}
-		o.sendBindingCard(issueCmdCfg(), bindingIssue, keyword, "", rs)
+		o.sendBindingCard(issueCmdCfg(), InboundMessage{ConversationKey: "single:u1"}, bindingIssue, keyword, "", rs)
 		return rs
 	}
 
@@ -250,9 +250,14 @@ func TestSendBindingCardIssueCards(t *testing.T) {
 			t.Fatalf("应恰一张终帧卡: frames=%+v cards=%+v", frames, cards)
 		}
 		issues, _ := bindingIssueCandidates(db, 1, "")
-		if cards[0].spec.TaskID != bindingTaskID(taskbindCardPrefix, "", issueIDKeys(issues)) ||
+		if !bindingTaskIDMatches(cards[0].spec.TaskID, taskbindCardPrefix, "", issueIDKeys(issues)) ||
 			cards[0].content != issueCardText("", issues) {
 			t.Fatalf("卡锚与同帧文本应与候选同源: %+v", cards[0])
+		}
+		// 出卡即登记 last_message_card（pending，spec 快照与所发卡同锚）——点击消费闸的 SSOT。
+		lc, ok := store.LastMessageCard(1, "single:u1")
+		if !ok || lc.Kind != "taskbind" || lc.Status != lastMessageCardPending || lc.Spec.TaskID != cards[0].spec.TaskID {
+			t.Fatalf("出卡应登记 last_message_card（taskbind/pending/同锚）: %+v ok=%v", lc, ok)
 		}
 	})
 
@@ -292,7 +297,7 @@ func TestSendBindingCardIssueNoCardFallback(t *testing.T) {
 	mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
 
 	rs := &fakeReplyStream{}
-	o.sendBindingCard(issueCmdCfg(), bindingIssue, "登录页", "", rs)
+	o.sendBindingCard(issueCmdCfg(), InboundMessage{ConversationKey: "single:u1"}, bindingIssue, "登录页", "", rs)
 	frames := rs.snapshot()
 	issues, _ := bindingIssueCandidates(store.DB, 1, "登录页")
 	if len(frames) != 1 || !frames[0].final || frames[0].content != issueCardText("登录页", issues) {
@@ -323,7 +328,7 @@ func TestRunTurnWorkspaceCommandCard(t *testing.T) {
 		t.Fatalf("应恰一张终帧 workspace 卡: %+v", cards)
 	}
 	wss, _ := bindingWorkspaces(store.DB, "前端")
-	if cards[0].spec.TaskID != bindingTaskID(wsbindCardPrefix, "前端", workspaceIDKeys(wss)) ||
+	if !bindingTaskIDMatches(cards[0].spec.TaskID, wsbindCardPrefix, "前端", workspaceIDKeys(wss)) ||
 		cards[0].content != workspaceCardText("前端", wss) {
 		t.Fatalf("卡锚与同帧文本应与候选同源: %+v", cards[0])
 	}
@@ -362,7 +367,7 @@ func TestRunTurnUnbindCommandCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读回任务行: %v", err)
 	}
-	if cards[0].spec.TaskID != bindingTaskID(taskunbindCardPrefix, "", []string{issue.ID}) ||
+	if !bindingTaskIDMatches(cards[0].spec.TaskID, taskunbindCardPrefix, "", []string{issue.ID}) ||
 		cards[0].content != taskunbindCardText(issue) {
 		t.Fatalf("卡锚与同帧文本应与绑定任务同源: %+v", cards[0])
 	}
@@ -396,7 +401,7 @@ func TestRunTurnGateCard(t *testing.T) {
 		if cards[0].content != workspaceGateLead+"\n\n"+workspaceCardText("", bindWsList(t, o.store.DB, "")) {
 			t.Fatalf("同帧文本应为指引 + 完整名称列表: %q", cards[0].content)
 		}
-		if cards[0].spec.TaskID != bindingTaskID(wsbindCardPrefix, "", workspaceIDKeys(bindWsList(t, o.store.DB, ""))) {
+		if !bindingTaskIDMatches(cards[0].spec.TaskID, wsbindCardPrefix, "", workspaceIDKeys(bindWsList(t, o.store.DB, ""))) {
 			t.Fatalf("卡锚应为全列表空关键词: %q", cards[0].spec.TaskID)
 		}
 	})

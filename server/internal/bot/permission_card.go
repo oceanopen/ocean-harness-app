@@ -89,10 +89,11 @@ func permissionCardSpec(issueID, acpSessionID string, pending acpsession.Pending
 
 // TryHandleInteraction 卡片点击消费（interactionHandler 的 driverRoute 第三角色实现，
 // pendingGate 同款装配形态）：纯决策不做流 I/O——置灰与终帧由编排器拦截步统一编排。
-// 按 TaskID 分流：-perm- 审批卡（点击即答）/ -elicit- 表单卡（提交应答，消费逻辑在
-// elicitation_card.go 同域文件）/ wsbind- 与 taskbind- 绑定卡（重查列表指纹比对后落库）
-// 与 taskunbind- 解绑卡（指纹比对当前绑定后清锚），消费逻辑均在 binding_card.go 同域
-// 文件。perm/elicit 两域决策链共形：非本域锚 miss →
+// 按卡族分流：绑定族三卡（wsbind-/taskbind-/taskunbind-）先进会话行 last_message_card 闸（重复
+// 点击/旧卡失效收口，见 binding_card.go 的 gateBindingCardClick）；其余按 TaskID 分流：
+// -perm- 审批卡（点击即答）/ -elicit- 表单卡（提交应答，消费逻辑在 elicitation_card.go
+// 同域文件），其重复/过期点击由域内快照判别收口，不进 last_message_card 槽（单槽会被回合中权限卡
+// 与指令卡互相顶掉）。perm/elicit 两域决策链共形：非本域锚 miss →
 // 渠道回传锚对照不一致 miss → 域内 key 形态分流 → 快照未就绪（跨 sidecar 重启窗口）出
 // 失效文案不置灰 → 命中应答（成功与后到方判别均置灰；其他失败不置灰可重试）→ 挂起已出
 // 快照（桌面先答/回合结算）经探测应答取 closed-history 判别文案（不置灰——已关闭挂起
@@ -106,6 +107,15 @@ func (r *driverRoute) TryHandleInteraction(cfg BotRuntimeConfig, msg InboundMess
 	if in.TaskID != "" && in.TaskID != in.DeliveryID {
 		return "", nil, false
 	}
+	if bindingCardKind(in.DeliveryID) != "" {
+		return r.gateBindingCardClick(cfg, msg, in)
+	}
+	return r.dispatchCardInteraction(cfg, msg, in)
+}
+
+// dispatchCardInteraction 按 TaskID 前缀分流各卡域消费逻辑（TryHandleInteraction 的
+// 分流主体）。
+func (r *driverRoute) dispatchCardInteraction(cfg BotRuntimeConfig, msg InboundMessage, in *Interaction) (string, *CardSpec, bool) {
 	if issueID, sessionToken, pendingID, ok := parsePermissionCardTaskID(in.DeliveryID); ok {
 		return r.handlePermissionInteraction(issueID, sessionToken, pendingID, in)
 	}
@@ -125,12 +135,13 @@ func (r *driverRoute) TryHandleInteraction(cfg BotRuntimeConfig, msg InboundMess
 }
 
 // handlePermissionInteraction 审批卡点击消费（-perm- 域，T3.2 原逻辑收敛为域内函数）：
-// 非选项 key miss（本卡单选不可达）→ 快照/代锚失效文案 → 命中以选项应答（成功与后到方
-// 判别均置灰；其他失败不置灰可重点重试）→ 已关闭经空 optionID 应答取 closed-history
-// 判别文案（空选项过不了预检，错误即收敛文案）。
+// 提交事件勾选集解析（无勾选回引导文案；选项直点兜底）→ 快照/代锚失效文案 → 命中以选项
+// 应答（成功与后到方判别均置灰；其他失败不置灰可重点重试）→ 已关闭经空 optionID 应答取
+// closed-history 判别文案（空选项过不了预检，错误即收敛文案）。
 func (r *driverRoute) handlePermissionInteraction(issueID, sessionToken string, pendingID uint64, in *Interaction) (string, *CardSpec, bool) {
-	if in.ActionIndex < 0 {
-		return "", nil, false // 非选项 key（如多选提交按钮）：本卡单选不可达，防御 miss
+	idx, ok := cardActionIndex(in)
+	if !ok {
+		return cardNoSelectionText, nil, true // 提交事件无勾选：引导重选（卡未置灰可重点）
 	}
 	snap := r.sessions.Get(issueID)
 	if snap.Status != acpsession.StatusReady {
@@ -152,10 +163,10 @@ func (r *driverRoute) handlePermissionInteraction(issueID, sessionToken string, 
 		}
 		return firstLine(err.Error()), nil, true
 	}
-	if in.ActionIndex >= len(pending.Options) {
+	if idx >= len(pending.Options) {
 		return "点击的选项无效，请重新点击卡片中的选项。", nil, true
 	}
-	opt := pending.Options[in.ActionIndex]
+	opt := pending.Options[idx]
 	choice := permissionChoice{
 		pendingID: pendingID,
 		optionID:  string(opt.OptionID),

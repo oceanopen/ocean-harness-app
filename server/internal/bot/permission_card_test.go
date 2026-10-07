@@ -101,7 +101,8 @@ func TestPermissionCardSpec(t *testing.T) {
 	}
 }
 
-// 点击决策矩阵·miss 三情形：非本域锚 / 渠道回传对照锚不一致 / 非选项 key——均交兜底文案。
+// 点击决策矩阵·miss 两情形（非本域锚 / 对照锚不一致）+ 无勾选提交引导——前两者交兜底
+// 文案，后者为提交语义的引导终帧。
 func TestTryHandleInteractionMiss(t *testing.T) {
 	sessions := newFakeSessions(gateSnap(permPendingView(7)))
 	route := gateTestRoute(acpResolve, sessions)
@@ -116,10 +117,11 @@ func TestTryHandleInteractionMiss(t *testing.T) {
 	if _, _, handled := route.TryHandleInteraction(gateCfg(), mismatch); handled {
 		t.Fatal("对照锚不一致应 miss")
 	}
-	// 非选项 key（提交按钮等）。
-	nonOption := cardClickMsg(permissionCardTaskID("i-1", testAcpSessionID, 7), -1)
-	if _, _, handled := route.TryHandleInteraction(gateCfg(), nonOption); handled {
-		t.Fatal("非选项 key 应 miss")
+	// 提交事件无勾选（真机形态：点选项不发事件、提交携勾选集回传）：引导文案，不置灰。
+	taskID := permissionCardTaskID("i-1", testAcpSessionID, 7)
+	text, update, handled := route.TryHandleInteraction(gateCfg(), cardClickMsg(taskID, -1))
+	if !handled || text != cardNoSelectionText || update != nil {
+		t.Fatalf("无勾选提交应回引导文案: (%q, %+v, %v)", text, update, handled)
 	}
 	if calls := sessions.responds(); len(calls) != 0 {
 		t.Fatalf("miss 情形不得触达应答: %+v", calls)
@@ -177,6 +179,25 @@ func TestTryHandleInteractionRespond(t *testing.T) {
 	if update == nil || !update.Disabled || update.TaskID != permissionCardTaskID("i-1", testAcpSessionID, 7) || len(update.Options) != 2 ||
 		update.Options[0].Text != "允许" || update.Options[1].Text != "拒绝" || update.Title != "Agent 请求审批" {
 		t.Fatalf("置灰 spec 须为原卡完整形态 + Disabled: %+v", update)
+	}
+}
+
+// 点击决策矩阵·提交事件应答（真机形态：提交携勾选集回传）：勾选下标应答等价选项直点。
+func TestTryHandleInteractionSubmitRespond(t *testing.T) {
+	sessions := newFakeSessions(interactSnap(permPendingView(7)))
+	route := gateTestRoute(acpResolve, sessions)
+
+	taskID := permissionCardTaskID("i-1", testAcpSessionID, 7)
+	msg := cardClickMsg(taskID, -1)
+	msg.Interaction.RawKey = taskID + ":submit"
+	msg.Interaction.Selections = []InteractionSelection{{QuestionKey: taskID, OptionIndexes: []int{1}}}
+	text, update, handled := route.TryHandleInteraction(gateCfg(), msg)
+	if !handled || text != "✅ 已应答审批：拒绝（Bash: echo hi）" || update == nil || !update.Disabled {
+		t.Fatalf("提交勾选应等价选项直点应答: (%q, %+v, %v)", text, update, handled)
+	}
+	calls := sessions.responds()
+	if len(calls) != 1 || calls[0].pendingID != 7 || calls[0].optionID != "reject" {
+		t.Fatalf("应按勾选下标应答: %+v", calls)
 	}
 }
 

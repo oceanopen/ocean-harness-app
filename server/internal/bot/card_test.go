@@ -116,6 +116,9 @@ func TestOrchestratorInteractionHandled(t *testing.T) {
 	if len(rs.updates) != 1 || rs.updates[0].TaskID != "d-1" || !rs.updates[0].Disabled || len(rs.updates[0].Options) != 2 {
 		t.Fatalf("置灰 spec 不符（须完整形态）: %+v", rs.updates)
 	}
+	if rs.updates[0].Description != "✅ 已应答审批：允许" {
+		t.Fatalf("混合承载应把应答首行写进置灰 desc: %+v", rs.updates[0])
+	}
 	frames := rs.snapshot()
 	if len(frames) != 1 || !frames[0].final || frames[0].content != "✅ 已应答审批：允许" {
 		t.Fatalf("命中应恰发一帧 handler 文案终帧: %+v", frames)
@@ -216,5 +219,28 @@ func TestOrchestratorInteractionGroupDenied(t *testing.T) {
 	}
 	if n := driver.turnCount(); n != 0 {
 		t.Fatalf("拒绝不应出回合，got %d", n)
+	}
+}
+
+// cardActionIndex 单题单选卡应答下标解析：直点原样、提交事件取定位键匹配勾选集首项、
+// 定位键不符跳过（多题形态防御）、无勾选 false。
+func TestCardActionIndex(t *testing.T) {
+	if idx, ok := cardActionIndex(&Interaction{ActionIndex: 2}); !ok || idx != 2 {
+		t.Fatalf("直点应原样取用: (%d, %v)", idx, ok)
+	}
+	submit := &Interaction{DeliveryID: "tk", ActionIndex: -1, Selections: []InteractionSelection{
+		{QuestionKey: "tk", OptionIndexes: []int{1}},
+	}}
+	if idx, ok := cardActionIndex(submit); !ok || idx != 1 {
+		t.Fatalf("提交事件应取勾选集首项: (%d, %v)", idx, ok)
+	}
+	other := &Interaction{DeliveryID: "tk", ActionIndex: -1, Selections: []InteractionSelection{
+		{QuestionKey: "other", OptionIndexes: []int{3}},
+	}}
+	if _, ok := cardActionIndex(other); ok {
+		t.Fatal("定位键不符不应取值（多题形态防御）")
+	}
+	if _, ok := cardActionIndex(&Interaction{DeliveryID: "tk", ActionIndex: -1}); ok {
+		t.Fatal("无勾选集应 false")
 	}
 }

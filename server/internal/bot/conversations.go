@@ -166,3 +166,97 @@ func decodeSeenIDs(raw string) []string {
 	}
 	return ids
 }
+
+// last_message_card 列的处理状态（绑定族卡登记槽）。
+const (
+	lastMessageCardPending   = "pending"
+	lastMessageCardProcessed = "processed"
+)
+
+// lastMessageCard 会话行 last_message_card 列的 JSON 形态：最近一张绑定族卡（wsbind/taskbind/taskunbind）
+// 的消费状态 + 出卡时的完整 CardSpec 快照。快照仅供排查与将来「灰化旧卡」重建帧用——消费
+// 链不得从快照取数（绑定关系走点击时指纹重导，快照不作数据源）。出卡即覆盖本槽，旧卡点击
+// 自然按已失效收口（supersession 过期，无需 TTL）。
+type lastMessageCard struct {
+	Kind   string   `json:"kind"`   // 出卡族：wsbind / taskbind / taskunbind
+	Status string   `json:"status"` // pending 未消费 / processed 已消费
+	Spec   CardSpec `json:"spec"`   // 出卡时完整快照（Spec.TaskID 即点击对照锚）
+}
+
+// SaveLastMessageCard 出卡登记（status=pending 覆盖旧槽）。时序约定：先写库后发卡——写库失败
+// 调用方不得出卡（防「刚收到的卡一点就提示已失效」）；写库成功而发卡失败则槽指向未送达
+// 卡，旧卡点击按已失效收口，用户重发指令即可自愈。
+func (s *ConversationStore) SaveLastMessageCard(botID int, conversationKey, kind string, spec CardSpec) error {
+	q := query.Use(s.DB)
+	conv, err := s.GetOrCreate(botID, conversationKey)
+	if err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(lastMessageCard{Kind: kind, Status: lastMessageCardPending, Spec: spec})
+	if err != nil {
+		return err
+	}
+	_, err = q.ImBotConversation.WithContext(context.Background()).Where(q.ImBotConversation.ID.Eq(conv.ID)).UpdateSimple(
+		q.ImBotConversation.LastMessageCard.Value(string(encoded)),
+		q.ImBotConversation.UpdatedAt.Value(time.Now()),
+	)
+	return err
+}
+
+// LastMessageCard 读最近卡登记；未建行/空列/损坏一律按无登记处理（点击消费 fail open 走原链，
+// 与 decodeSeenIDs 同款尽力语义）。纯读不建行——点击路径不得因登记查询顺手创建会话行
+// （生产上行由受理步 GetOrCreate 保证在场，缺席即防御分支）。
+func (s *ConversationStore) LastMessageCard(botID int, conversationKey string) (lastMessageCard, bool) {
+	q := query.Use(s.DB)
+	conv, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.BotID.Eq(botID),
+		q.ImBotConversation.ConversationKey.Eq(conversationKey),
+	).First()
+	if err != nil {
+		return lastMessageCard{}, false
+	}
+	return decodeLastMessageCard(conv.LastMessageCard)
+}
+
+// MarkLastMessageCardProcessed 消费置位（绑定族点击消费成功后调用）。乐观锁：重读对照锚仍为
+// taskID 且列原文未变才写——置位与并发出卡（指令步 vs 拦截步回调）互相顶掉的窗口下不误标
+// 新卡；不匹配/0 行静默（卡已被新卡取代，重复点击走已失效收口）。返回是否实际置位。
+func (s *ConversationStore) MarkLastMessageCardProcessed(botID int, conversationKey, taskID string) bool {
+	q := query.Use(s.DB)
+	conv, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.BotID.Eq(botID),
+		q.ImBotConversation.ConversationKey.Eq(conversationKey),
+	).First()
+	if err != nil {
+		return false
+	}
+	lc, ok := decodeLastMessageCard(conv.LastMessageCard)
+	if !ok || lc.Spec.TaskID != taskID || lc.Status == lastMessageCardProcessed {
+		return false
+	}
+	lc.Status = lastMessageCardProcessed
+	encoded, err := json.Marshal(lc)
+	if err != nil {
+		return false
+	}
+	res, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.ID.Eq(conv.ID),
+		q.ImBotConversation.LastMessageCard.Eq(conv.LastMessageCard), // 原文比对：并发写则 0 行放弃
+	).UpdateSimple(
+		q.ImBotConversation.LastMessageCard.Value(string(encoded)),
+		q.ImBotConversation.UpdatedAt.Value(time.Now()),
+	)
+	return err == nil && res.RowsAffected == 1
+}
+
+// decodeLastMessageCard 解析 last_message_card JSON；空/损坏/无锚按无登记处理。
+func decodeLastMessageCard(raw string) (lastMessageCard, bool) {
+	if raw == "" {
+		return lastMessageCard{}, false
+	}
+	var lc lastMessageCard
+	if err := json.Unmarshal([]byte(raw), &lc); err != nil || lc.Spec.TaskID == "" {
+		return lastMessageCard{}, false
+	}
+	return lc, true
+}

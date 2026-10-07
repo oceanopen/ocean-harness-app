@@ -34,7 +34,7 @@ type TurnOutcome struct {
 // 置「正在执行 …」状态行（丢弃工具前泄漏文本，SDK agent 示例同款）；result 终文本优先于增量累计。
 // 回合失败同样以终帧收尾（失败文案），保证每条流式消息恰好一个 finish 帧。
 // 卡片（T3.2 审批卡）：TurnStatus 携带的 Card 入 mu 保护状态，由 ticker 周期写者随中间帧
-// SendCard 同帧下发（保住单写者纪律；200ms 节奏下延迟无感）。卡是一次性消费——本 tick 发卡
+// SendCard 一并下发（保住单写者纪律；200ms 节奏下延迟无感）。卡是一次性消费——本 tick 发卡
 // 尝试（含失败回落）或回合收尾后不再附发；收尾时未发出的卡直接丢弃（挂起随回合终态结算，
 // 再发即置灰态误导）。流无卡能力（未实现 CardReplyStream）自动回落纯文本帧。
 func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sink OverflowSink, log *zap.Logger) TurnOutcome {
@@ -79,7 +79,7 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 				cur := truncateForFrame(snapshot(), rs.ByteLimit(), nil)
 				if cur != "" && cur != lastSent {
 					if card := takePendingCard(); card != nil && hasCard {
-						// 卡随状态行同帧下发（双渲染单事件，无卡渠道的降级文案不丢失）；
+						// 卡随状态行一并下发（渠道侧自定帧形态，无卡渠道的降级文案不丢失）；
 						// 发送失败回落纯文本帧（卡通道故障不吞状态行）。
 						err := cardStream.SendCard(*card, cur, false)
 						if err == nil {

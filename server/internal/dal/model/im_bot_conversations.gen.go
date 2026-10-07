@@ -21,6 +21,7 @@ type ImBotConversation struct {
 	LastMessageAt   *time.Time `gorm:"column:last_message_at;type:DATETIME" json:"lastMessageAt"`
 	CreatedAt       time.Time  `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt       time.Time  `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	LastMessageCard string     `gorm:"column:last_message_card;type:TEXT;not null;default:''" json:"lastMessageCard"`
 }
 
 // TableName ImBotConversation's table name

@@ -1,9 +1,14 @@
 package wecom
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
+	aibot "github.com/oceanopen/wecom-aibot-go-sdk/aibot"
 	aibottypes "github.com/oceanopen/wecom-aibot-go-sdk/aibot/types"
 
 	"ocean-harness/server/internal/bot"
@@ -55,8 +60,8 @@ func TestBuildTemplateCard(t *testing.T) {
 	if !card.Checkbox.OptionList[0].IsChecked || card.Checkbox.OptionList[1].IsChecked {
 		t.Fatalf("单选应仅首项选中: %+v", card.Checkbox.OptionList)
 	}
-	if card.SubmitButton != nil {
-		t.Fatalf("单选不应有提交按钮: %+v", card.SubmitButton)
+	if card.SubmitButton == nil || card.SubmitButton.Text != "提交" || card.SubmitButton.Key != "task_2026@01:submit" {
+		t.Fatalf("单选也应恒带提交按钮（协议必填）: %+v", card.SubmitButton)
 	}
 
 	// 多选：mode 1 + 提交按钮（文案「提交」、key `TaskID:submit`），不预选。
@@ -78,7 +83,8 @@ func TestBuildTemplateCard(t *testing.T) {
 		}
 	}
 
-	// 置灰：checkbox.disable=true（更新帧统一走本 builder，task_id/keys 与原卡一致）。
+	// 置灰：checkbox.disable=true（更新帧统一走本 builder，task_id/keys 与原卡一致；提交
+	// 按钮仍须携带——更新帧省略被企微拒收 errcode=42049，真机实证）。
 	gray := multi
 	gray.Disabled = true
 	card, err = buildTemplateCard(gray)
@@ -87,6 +93,9 @@ func TestBuildTemplateCard(t *testing.T) {
 	}
 	if !card.Checkbox.Disable || card.TaskId != "task_2026@01" {
 		t.Fatalf("置灰帧应 disable=true 且 TaskId 不变: %+v", card.Checkbox)
+	}
+	if card.SubmitButton == nil || card.SubmitButton.Text != cardSubmitTextDone {
+		t.Fatalf("置灰帧仍须带提交按钮且文案改「已处理」（省略被企微 42049 拒收）: %+v", card.SubmitButton)
 	}
 
 	// 截断：标题 27→26、描述 31→30、选项 12→11（rune 级）。
@@ -203,8 +212,9 @@ func TestCardEventNormalize(t *testing.T) {
 	if msg.Text != "" || msg.Quote != nil {
 		t.Fatalf("交互消息 Text/Quote 应恒空: %+v", msg)
 	}
-	if msg.Route.Channel != enums.CHANNEL_WECOM || msg.Route.Payload.(aibottypes.WsFrameHeaders) != headers {
-		t.Fatalf("路由应透传点击事件帧 headers: %+v", msg.Route)
+	ws, ok := msg.Route.Payload.(wsRoute)
+	if msg.Route.Channel != enums.CHANNEL_WECOM || !ok || ws.headers != headers || ws.event || ws.chatID != "u1" || ws.chatType != 1 {
+		t.Fatalf("路由应为消息流 wsRoute（事件 headers 透传 + 推送面）: %+v", msg.Route)
 	}
 	if msg.Interaction == nil || msg.Interaction.DeliveryID != "dlv" || msg.Interaction.ActionIndex != 1 ||
 		msg.Interaction.TaskID != "dlv" || msg.Interaction.RawKey != "dlv:1" {
@@ -301,7 +311,7 @@ func TestBuildMultipleInteractionCard(t *testing.T) {
 		t.Fatal("未置灰帧 disable 应为 false")
 	}
 
-	// 置灰：select_list[].disable=true（更新帧同 builder，task_id/submit key 不变）。
+	// 置灰：select_list[].disable=true（更新帧同 builder，task_id/keys 不变；提交按钮仍须携带）。
 	gray := spec
 	gray.Disabled = true
 	card, err = buildTemplateCard(gray)
@@ -310,6 +320,9 @@ func TestBuildMultipleInteractionCard(t *testing.T) {
 	}
 	if !card.SelectList[0].Disable || !card.SelectList[1].Disable || card.TaskId != "elicit_task@2" {
 		t.Fatalf("置灰帧应整卡 disable 且 TaskId 不变: %+v", card.SelectList)
+	}
+	if card.SubmitButton == nil || card.SubmitButton.Text != cardSubmitTextDone {
+		t.Fatalf("置灰帧仍须带提交按钮且文案改「已处理」（省略被企微 42049 拒收）: %+v", card.SubmitButton)
 	}
 
 	// 截断：题目标题 14→13、选项 11→10（rune 级）。
@@ -418,5 +431,271 @@ func TestCardEventSelectionsPipeline(t *testing.T) {
 	if len(interaction.Selections) != 1 || interaction.Selections[0].QuestionKey != "elicit_task@3" ||
 		len(interaction.Selections[0].OptionIndexes) != 1 || interaction.Selections[0].OptionIndexes[0] != 1 {
 		t.Fatalf("勾选集应随帧归一: %+v", interaction.Selections)
+	}
+}
+
+// fakeReplyClient replyClient 接缝的测试替身：按序记录出站调用，可对卡帧/推送卡/文本帧
+// 分别注错。
+type fakeReplyClient struct {
+	calls       []string
+	cardErr     error // ReplyTemplateCard 注错
+	pushCardErr error // SendMessage(pushCardBody) 注错
+	streamErr   error // ReplyStream / ReplyStreamNonBlocking 注错
+}
+
+func (f *fakeReplyClient) ReplyTemplateCard(frame aibottypes.WsFrameHeaders, card aibottypes.TemplateCard, feedback *aibottypes.ReplyFeedback) (*aibottypes.WsFrame[json.RawMessage], error) {
+	f.calls = append(f.calls, "card:"+card.TaskId)
+	return nil, f.cardErr
+}
+
+func (f *fakeReplyClient) ReplyStream(frame aibottypes.WsFrameHeaders, streamId, content string, finish bool, msgItem []aibottypes.ReplyMsgItem, feedback *aibottypes.ReplyFeedback) (*aibottypes.WsFrame[json.RawMessage], error) {
+	f.calls = append(f.calls, fmt.Sprintf("stream:%t:%s", finish, content))
+	return nil, f.streamErr
+}
+
+func (f *fakeReplyClient) ReplyStreamNonBlocking(frame aibottypes.WsFrameHeaders, streamId, content string, finish bool, msgItem []aibottypes.ReplyMsgItem, feedback *aibottypes.ReplyFeedback) (*aibottypes.WsFrame[json.RawMessage], error) {
+	f.calls = append(f.calls, fmt.Sprintf("streamnb:%t:%s", finish, content))
+	return nil, f.streamErr
+}
+
+func (f *fakeReplyClient) UpdateTemplateCard(frame aibottypes.WsFrameHeaders, card aibottypes.TemplateCard, userIds []string) (*aibottypes.WsFrame[json.RawMessage], error) {
+	f.calls = append(f.calls, "update:"+card.TaskId+"@"+frame.ReqId)
+	return nil, nil
+}
+
+func (f *fakeReplyClient) SendMessage(chatid string, body any) (*aibottypes.WsFrame[json.RawMessage], error) {
+	switch b := body.(type) {
+	case pushMarkdownBody:
+		f.calls = append(f.calls, fmt.Sprintf("push:%s:%d:%s", chatid, b.ChatType, b.Markdown.Content))
+	case pushCardBody:
+		f.calls = append(f.calls, fmt.Sprintf("pushcard:%s:%d:%s", chatid, b.ChatType, b.TemplateCard.TaskId))
+		return nil, f.pushCardErr
+	default:
+		f.calls = append(f.calls, "push:"+chatid+":other")
+	}
+	return nil, nil
+}
+
+// newCardTestStream 经接缝注入 fake 的 replyStream（SendCard/UpdateCard 域测试装配）。
+func newCardTestStream(fake *fakeReplyClient) *replyStream {
+	return &replyStream{rt: &channelRuntime{replyOverride: fake}, headers: aibottypes.WsFrameHeaders{ReqId: "req-t"}, streamId: "st-t"}
+}
+
+// sendCardSpec 拆帧域共用合法单选 spec。
+func sendCardSpec() bot.CardSpec {
+	return bot.CardSpec{
+		Title:       "关联工作空间",
+		Description: "选择机器人归属的工作空间",
+		Options:     []bot.CardOption{{ID: "ws1", Text: "空间一"}},
+		TaskID:      "wsbind-e7a19c3a-1a2b3c4d",
+	}
+}
+
+// TestSendCardSplitFrames SendCard 拆双帧域：文本帧先行终流、卡帧跟进（真机定标后拍板的
+// 消息序）、失败语义（文本失败卡不发 / 卡失败文本已终流、回落 Flush 幂等无重复）、非终帧
+// 背压吞 skip、一卡一消息与终流幂等。长连接不支持组合 msgtype（企微对组合帧静默丢卡），
+// 拆帧形态是回归主保护面。
+func TestSendCardSplitFrames(t *testing.T) {
+	t.Run("终帧先文本终流后卡跟进", func(t *testing.T) {
+		fake := &fakeReplyClient{}
+		rs := newCardTestStream(fake)
+		if err := rs.SendCard(sendCardSpec(), "请点击卡片选择", true); err != nil {
+			t.Fatalf("终帧拆帧发送失败: %v", err)
+		}
+		want := []string{"stream:true:请点击卡片选择", "card:wsbind-e7a19c3a-1a2b3c4d"}
+		if !reflect.DeepEqual(fake.calls, want) {
+			t.Fatalf("调用序不符（须文本先行终流、卡帧跟进）: %v", fake.calls)
+		}
+	})
+
+	t.Run("卡帧失败文本已送达（回落 Flush 幂等无重复）", func(t *testing.T) {
+		fake := &fakeReplyClient{cardErr: errors.New("ack timeout")}
+		rs := newCardTestStream(fake)
+		if err := rs.SendCard(sendCardSpec(), "文本", true); err == nil {
+			t.Fatal("卡帧失败应返回错误")
+		}
+		if err := rs.Flush("文本", true); err != nil {
+			t.Fatalf("回落 Flush 应幂等成功: %v", err)
+		}
+		want := []string{"stream:true:文本", "card:wsbind-e7a19c3a-1a2b3c4d"}
+		if !reflect.DeepEqual(fake.calls, want) {
+			t.Fatalf("卡失败后回落 Flush 不应重复文本: %v", fake.calls)
+		}
+	})
+
+	t.Run("文本帧失败不置终态不发卡（调用方回落 Flush 不被幂等吞）", func(t *testing.T) {
+		fake := &fakeReplyClient{streamErr: errors.New("ack timeout")}
+		rs := newCardTestStream(fake)
+		if err := rs.SendCard(sendCardSpec(), "文本", true); err == nil {
+			t.Fatal("文本帧失败应返回错误")
+		}
+		if len(fake.calls) != 1 || fake.calls[0] != "stream:true:文本" {
+			t.Fatalf("文本帧失败后不应再发卡帧: %v", fake.calls)
+		}
+		fake.streamErr = nil
+		if err := rs.Flush("文本", true); err != nil {
+			t.Fatalf("回落 Flush 应可送达: %v", err)
+		}
+		want := []string{"stream:true:文本", "stream:true:文本"}
+		if !reflect.DeepEqual(fake.calls, want) {
+			t.Fatalf("回落重试应补发文本帧: %v", fake.calls)
+		}
+	})
+
+	t.Run("非终帧背压 skip 吞掉（文本视作送达，卡跟进）", func(t *testing.T) {
+		fake := &fakeReplyClient{streamErr: aibot.ErrReplySkipped}
+		rs := newCardTestStream(fake)
+		if err := rs.SendCard(sendCardSpec(), "状态行", false); err != nil {
+			t.Fatalf("ErrReplySkipped 应视作送达吞掉: %v", err)
+		}
+		want := []string{"streamnb:false:状态行", "card:wsbind-e7a19c3a-1a2b3c4d"}
+		if !reflect.DeepEqual(fake.calls, want) {
+			t.Fatalf("非终帧应走非阻塞通道: %v", fake.calls)
+		}
+	})
+
+	t.Run("重复附卡报错（一卡一消息）", func(t *testing.T) {
+		fake := &fakeReplyClient{}
+		rs := newCardTestStream(fake)
+		if err := rs.SendCard(sendCardSpec(), "状态行", false); err != nil {
+			t.Fatalf("首发（非终帧）应成功: %v", err)
+		}
+		if err := rs.SendCard(sendCardSpec(), "再次附卡", true); err == nil {
+			t.Fatal("流未终时重复附卡应报错")
+		}
+		if err := rs.Flush("终帧", true); err != nil {
+			t.Fatalf("被拒附卡后流应仍可终帧: %v", err)
+		}
+	})
+
+	t.Run("终流后迟到调用幂等忽略", func(t *testing.T) {
+		fake := &fakeReplyClient{}
+		rs := newCardTestStream(fake)
+		if err := rs.Flush("正文", true); err != nil {
+			t.Fatalf("终帧应成功: %v", err)
+		}
+		if err := rs.SendCard(sendCardSpec(), "迟到", true); err != nil {
+			t.Fatalf("终流后 SendCard 应幂等忽略: %v", err)
+		}
+		if len(fake.calls) != 1 {
+			t.Fatalf("终流后不应有任何出站调用: %v", fake.calls)
+		}
+	})
+
+	t.Run("置灰更新走接缝透传", func(t *testing.T) {
+		fake := &fakeReplyClient{}
+		rs := newCardTestStream(fake)
+		if err := rs.UpdateCard(sendCardSpec()); err != nil {
+			t.Fatalf("置灰更新应透传成功: %v", err)
+		}
+		if len(fake.calls) != 1 || fake.calls[0] != "update:wsbind-e7a19c3a-1a2b3c4d@req-t" {
+			t.Fatalf("置灰更新调用不符: %v", fake.calls)
+		}
+	})
+}
+
+// wsRouteFrom 域：单聊（userid, chat_type=1）/ 群聊（chatid, chat_type=2）、event 标记透传。
+func TestWsRouteFrom(t *testing.T) {
+	h := aibottypes.WsFrameHeaders{ReqId: "req-e"}
+	single := wsRouteFrom(h, aibottypes.BaseMessage{ChatType: "single", From: aibottypes.MessageFrom{UserId: "u1"}}, false)
+	if single.chatID != "u1" || single.chatType != 1 || single.headers != h || single.event {
+		t.Fatalf("单聊路由不符: %+v", single)
+	}
+	group := wsRouteFrom(h, aibottypes.BaseMessage{ChatType: "group", ChatId: "chat1", From: aibottypes.MessageFrom{UserId: "u1"}}, true)
+	if group.chatID != "chat1" || group.chatType != 2 || group.headers != h || !group.event {
+		t.Fatalf("群聊路由不符: %+v", group)
+	}
+}
+
+// TestEventStreamFlushPushes 事件流终帧分流（真机定标：事件 req_id 不可用于
+// aibot_respond_msg，errcode=846605 invalid req_id 实证）：终帧走 aibot_send_msg 主动推送
+// （chatid/chat_type 透传），置灰更新仍以事件 headers 走 aibot_respond_update_msg（官方
+// 点击应答通道）；消息流（headers 载荷）终帧不受影响。
+func TestEventStreamFlushPushes(t *testing.T) {
+	fake := &fakeReplyClient{}
+	rt := &channelRuntime{replyOverride: fake}
+	rs, err := rt.OpenReply(bot.RouteInfo{Payload: wsRoute{
+		headers: aibottypes.WsFrameHeaders{ReqId: "req-e"}, chatID: "u1", chatType: 1, event: true,
+	}})
+	if err != nil {
+		t.Fatalf("事件流开流失败: %v", err)
+	}
+	if err := rs.Flush("✅ 已关联工作空间「测试」", true); err != nil {
+		t.Fatalf("终帧推送失败: %v", err)
+	}
+	want := []string{"push:u1:1:✅ 已关联工作空间「测试」"}
+	if !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("事件流终帧应走主动推送: %v", fake.calls)
+	}
+	// 置灰仍走事件 headers 的 respond_update_msg 通道。
+	cs := rs.(bot.CardReplyStream)
+	if err := cs.UpdateCard(sendCardSpec()); err != nil {
+		t.Fatalf("置灰更新失败: %v", err)
+	}
+	want = append(want, "update:wsbind-e7a19c3a-1a2b3c4d@req-e")
+	if !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("置灰应走事件 headers 通道: %v", fake.calls)
+	}
+	// 终流后迟到 Flush 幂等（无出站）。
+	if err := rs.Flush("迟到", true); err != nil {
+		t.Fatalf("终流后 Flush 应幂等: %v", err)
+	}
+	if len(fake.calls) != 2 {
+		t.Fatalf("终流后不应再有出站: %v", fake.calls)
+	}
+
+	// 消息流（headers 载荷）终帧不受影响，仍走 aibot_respond_msg。
+	rs2, err := rt.OpenReply(bot.RouteInfo{Payload: aibottypes.WsFrameHeaders{ReqId: "req-m"}})
+	if err != nil {
+		t.Fatalf("消息流开流失败: %v", err)
+	}
+	if err := rs2.Flush("正文", true); err != nil {
+		t.Fatalf("消息流终帧失败: %v", err)
+	}
+	if got := fake.calls[2:]; !reflect.DeepEqual(got, []string{"stream:true:正文"}) {
+		t.Fatalf("消息流终帧应走 respond_msg: %v", got)
+	}
+}
+
+// TestSendCardDecoupledPush 消息流卡解耦域：带推送面的流文本先行走 respond_msg 终流、卡
+// 走 aibot_send_msg 独立推送跟进（不占回复流）；卡推送失败时文本已终流送达（回落 Flush
+// 幂等无重复）。
+func TestSendCardDecoupledPush(t *testing.T) {
+	fake := &fakeReplyClient{}
+	rt := &channelRuntime{replyOverride: fake}
+	rs, err := rt.OpenReply(bot.RouteInfo{Payload: wsRoute{
+		headers: aibottypes.WsFrameHeaders{ReqId: "req-m"}, chatID: "u1", chatType: 1,
+	}})
+	if err != nil {
+		t.Fatalf("消息流开流失败: %v", err)
+	}
+	if err := rs.(bot.CardReplyStream).SendCard(sendCardSpec(), "请点击卡片选择", true); err != nil {
+		t.Fatalf("解耦推送失败: %v", err)
+	}
+	want := []string{"stream:true:请点击卡片选择", "pushcard:u1:1:wsbind-e7a19c3a-1a2b3c4d"}
+	if !reflect.DeepEqual(fake.calls, want) {
+		t.Fatalf("文本应先行终流、卡走独立推送跟进: %v", fake.calls)
+	}
+
+	// 卡推送失败：文本已送达（回落 Flush 幂等，无重复文本）。
+	fake2 := &fakeReplyClient{pushCardErr: errors.New("send_msg rejected")}
+	rt2 := &channelRuntime{replyOverride: fake2}
+	rs2, err := rt2.OpenReply(bot.RouteInfo{Payload: wsRoute{
+		headers: aibottypes.WsFrameHeaders{ReqId: "req-m2"}, chatID: "u1", chatType: 1,
+	}})
+	if err != nil {
+		t.Fatalf("消息流开流失败: %v", err)
+	}
+	if err := rs2.(bot.CardReplyStream).SendCard(sendCardSpec(), "文本", true); err == nil {
+		t.Fatal("卡推送失败应返回错误")
+	}
+	if len(fake2.calls) != 2 || fake2.calls[0] != "stream:true:文本" || fake2.calls[1] != "pushcard:u1:1:wsbind-e7a19c3a-1a2b3c4d" {
+		t.Fatalf("卡推送失败时文本应已终流送达: %v", fake2.calls)
+	}
+	if err := rs2.Flush("文本", true); err != nil {
+		t.Fatalf("回落 Flush 应幂等成功: %v", err)
+	}
+	if len(fake2.calls) != 2 {
+		t.Fatalf("终流后回落 Flush 不应再发: %v", fake2.calls)
 	}
 }

@@ -35,8 +35,21 @@ const (
 	cardSelectOptionMax   = 10
 )
 
-// cardSubmitText 提交按钮文案（≤10 字）。
-const cardSubmitText = "提交"
+// 提交按钮文案（≤10 字）：首发「提交」；置灰更新帧改「已处理」——submit_button 无 disable
+// 字段且更新帧不可省略（errcode=42049 真机实证），文案是传达消费态的唯一口子（按钮仍可
+// 点，误点由拦截步兜底「该消息已处理过」）。
+const (
+	cardSubmitText     = "提交"
+	cardSubmitTextDone = "已处理"
+)
+
+// cardSubmitTextFor 按帧形态取提交按钮文案（首发「提交」/置灰帧「已处理」，key 恒不变）。
+func cardSubmitTextFor(disabled bool) string {
+	if disabled {
+		return cardSubmitTextDone
+	}
+	return cardSubmitText
+}
 
 // templateCardOption SDK Checkbox.OptionList 匿名结构体的本地别名（字段名/类型/tag 须与
 // SDK 声明逐项一致才可赋值；别名只为字面量构造可写）。
@@ -69,9 +82,9 @@ func cardQuestionKey(index int) string {
 }
 
 // buildTemplateCard CardSpec → 企微模板卡（Questions 非空走 multiple_interaction 多题下拉，
-// 否则 vote_interaction 单题投票）。统一用于首发与置灰更新（更新帧须与原卡保持
-// card_type/task_id/submit_button.key 一致，同一 builder 天然保证；submit_button 无 disable
-// 字段，置灰只置 checkbox.disable / select_list[].disable）。
+// 否则 vote_interaction 单题投票）。统一用于首发与置灰更新（更新帧须与原卡保持 card_type/
+// task_id/submit_button.key 一致，同一 builder 天然保证；submit_button 更新帧不可省略——
+// errcode=42049 真机实证，置灰置 checkbox.disable / select_list[].disable 并改按钮文案）。
 func buildTemplateCard(spec bot.CardSpec) (aibottypes.TemplateCard, error) {
 	if err := bot.ValidateCardTaskID(spec.TaskID); err != nil {
 		return aibottypes.TemplateCard{}, err
@@ -111,11 +124,13 @@ func buildVoteCard(spec bot.CardSpec) (aibottypes.TemplateCard, error) {
 		},
 		TaskId: spec.TaskID,
 	}
-	if spec.Multiple || spec.Submit {
-		// 多选与提交型卡需要提交按钮（T3.3 统一 submit 语义：单选点击只是改选，应答取自
-		// 提交回传的勾选集）；text≤10 字、key 与 TaskID 同源可反解。
-		card.SubmitButton = &aibottypes.TemplateCardSubmitButton{Text: cardSubmitText, Key: encodeSubmitKey(spec.TaskID)}
-	}
+	// 提交按钮恒有（协议必填，首发与更新帧同规）：官方模板卡片类型规格中 vote_interaction
+	// 的 submit_button 为必须字段——长连接真机校验 errcode=42049「submit_button.text
+	// Missing or Invalid」实证，且对 aibot_respond_update_msg 置灰帧同样成立（曾试置灰帧
+	// 省略提交按钮以去可点元素，被同码拒绝后回退）。text≤10 字、key 与 TaskID 同源可反解；
+	// spec.Submit 退化为纯应答语义标记（应答取自提交回传勾选集），不再决定按钮有无。置灰帧
+	// 文案改「已处理」传达消费态（见 cardSubmitTextFor）。
+	card.SubmitButton = &aibottypes.TemplateCardSubmitButton{Text: cardSubmitTextFor(spec.Disabled), Key: encodeSubmitKey(spec.TaskID)}
 	return card, nil
 }
 
@@ -154,7 +169,7 @@ func buildMultipleInteractionCard(spec bot.CardSpec) (aibottypes.TemplateCard, e
 		CardType:     aibottypes.TemplateCardType.MultipleInteraction,
 		MainTitle:    &aibottypes.TemplateCardMainTitle{Title: truncateRunes(spec.Title, cardTitleMaxRunes), Desc: truncateRunes(spec.Description, cardDescMaxRunes)},
 		SelectList:   selectList,
-		SubmitButton: &aibottypes.TemplateCardSubmitButton{Text: cardSubmitText, Key: encodeSubmitKey(spec.TaskID)},
+		SubmitButton: &aibottypes.TemplateCardSubmitButton{Text: cardSubmitTextFor(spec.Disabled), Key: encodeSubmitKey(spec.TaskID)},
 		TaskId:       spec.TaskID,
 	}, nil
 }
@@ -219,6 +234,29 @@ func parseOptionIndex(id, prefix string) (int, bool) {
 	return n, true
 }
 
+// wsRoute 长连接帧路由载荷（消息流/交互事件流共用）：headers 供 respond_msg 系回复透传——
+// 消息流文本走 aibot_respond_msg 覆写流、事件流置灰更新走 aibot_respond_update_msg（须用
+// 事件 req_id，5 秒窗口内）；chatID/chatType 供 aibot_send_msg 主动推送——事件流终帧（事件
+// req_id 不可用于 respond_msg，真机 errcode=846605 实证；官方对点击事件只文档化了更新卡片
+// 一条应答通道）与消息流的卡片解耦推送（卡帧夹在本条回复流里会被企微与亚秒级占位/终帧
+// 合并投递，「正在思考…」占位被吞，真机实证——卡走独立气泡，见 reply.go 的 SendCard）。
+// 消息流也带推送面：文本终帧仍走 respond_msg 保流式，仅卡走推送。
+type wsRoute struct {
+	headers  aibottypes.WsFrameHeaders
+	chatID   string // 推送目标：单聊 = 点击者/发送者 userid，群聊 = 会话 chatid
+	chatType int    // 官方 chat_type 枚举：1 单聊 / 2 群聊
+	event    bool   // 交互事件流：终帧走主动推送；消息流终帧仍走 aibot_respond_msg 覆写流
+}
+
+// wsRouteFrom 帧 → 路由载荷。chat_type 显式指定：官方规范不填时优先按群聊解析，单聊
+// userid 会被误解析。
+func wsRouteFrom(headers aibottypes.WsFrameHeaders, base aibottypes.BaseMessage, event bool) wsRoute {
+	if base.ChatType == "group" {
+		return wsRoute{headers: headers, chatID: base.ChatId, chatType: 2, event: event}
+	}
+	return wsRoute{headers: headers, chatID: base.From.UserId, chatType: 1, event: event}
+}
+
 // cardEventPayload 模板卡片事件帧 → (合成 BaseMessage, Interaction)。SDK dispatch 已预调
 // DecodeEvent，回调内 Body.Event 即 TemplateCardEventData；事件帧无 Quote/Text，合成
 // BaseMessage 供 submitMsg 复用 fillCommon（会话键/发送者/路由归一）。false = 非
@@ -229,12 +267,13 @@ func cardEventPayload(body aibottypes.EventMessage) (aibottypes.BaseMessage, bot
 		return aibottypes.BaseMessage{}, bot.Interaction{}, false
 	}
 	base := aibottypes.BaseMessage{
-		MsgId:    body.MsgId,
-		AibotId:  body.AibotId,
-		ChatId:   body.ChatId,
-		ChatType: body.ChatType,
-		From:     aibottypes.MessageFrom{UserId: body.From.UserId},
-		MsgType:  body.MsgType, // 事件回调固定 "event"
+		MsgId:      body.MsgId,
+		AibotId:    body.AibotId,
+		ChatId:     body.ChatId,
+		ChatType:   body.ChatType,
+		From:       aibottypes.MessageFrom{UserId: body.From.UserId},
+		MsgType:    body.MsgType,    // 事件回调固定 "event"
+		CreateTime: body.CreateTime, // 事件产生时间戳透传（fillCommon 入站延迟定标消费）
 	}
 	interaction := parseEventKey(ev.EventKey, ev.TaskId)
 	interaction.Selections = normalizeSelections(ev.SelectedItems, interaction.DeliveryID)
@@ -259,9 +298,14 @@ func boolToInt(b bool) int {
 // 编译期断言：replyStream 具备卡能力（无卡渠道的流不实现本接口，编排器置灰步类型探测跳过）。
 var _ bot.CardReplyStream = (*replyStream)(nil)
 
-// SendCard 实现 bot.CardReplyStream：流文本与卡同帧下发（ReplyStreamWithCard 双渲染单
-// 事件，非卡渠道的降级文案由上层双参签名保证不丢失）。final=true 时一并终流；协议限
-// 同一消息只回一次卡，重复调用报错。
+// SendCard 实现 bot.CardReplyStream：先文本后卡——文本帧照旧走 aibot_respond_msg 覆写流
+// （final=true 即终流，流式回归纯文本原始逻辑），卡在流收尾后作为独立跟进消息走
+// aibot_send_msg 推送（不占回复流、不受「同消息一卡」限制）。时序拍板（真机定标：服务端
+// 全通道亚秒级 ack、企微客户端对快速连发的多通道消息合并渲染，服务端排序改变不了客户端
+// 节奏）只对齐「流答复完、卡片跟进」的自然消息序。失败语义：文本帧失败即返回（卡未发，
+// 调用方回落 Flush 重试文本）；卡推送失败时文本已终流送达，返回错误仅供上游感知（调用方
+// 回落 Flush 被幂等吞掉，无重复文本）。无推送面（旧 headers 载荷/测试装配）卡回落
+// respond_msg 独立卡帧。
 func (s *replyStream) SendCard(spec bot.CardSpec, content string, final bool) error {
 	s.mu.Lock()
 	if s.finished {
@@ -281,13 +325,33 @@ func (s *replyStream) SendCard(spec bot.CardSpec, content string, final bool) er
 	if err != nil {
 		return err
 	}
-	_, err = client.ReplyStreamWithCard(s.headers, s.streamId, content, final, aibot.ReplyStreamWithCardOptions{TemplateCard: &card})
+	// 文本帧先行（不经 s.Flush：其 final 失败也会置 finished，随后调用方回落 Flush 将被幂等
+	// 防御吞掉——此处仅成功时置位，失败交调用方回落重试，卡未发）。非终帧与 Flush 同款非
+	// 阻塞背压，ErrReplySkipped 视作送达。
+	if final {
+		_, err = client.ReplyStream(s.headers, s.streamId, content, true, nil, nil)
+	} else {
+		_, err = client.ReplyStreamNonBlocking(s.headers, s.streamId, content, false, nil, nil)
+		if errors.Is(err, aibot.ErrReplySkipped) {
+			err = nil
+		}
+	}
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if final {
+		s.finished = true
+	}
+	s.mu.Unlock()
+	if s.push != nil {
+		_, err = client.SendMessage(s.push.chatID, pushCardBody{ChatType: s.push.chatType, MsgType: "template_card", TemplateCard: card})
+	} else {
+		_, err = client.ReplyTemplateCard(s.headers, card, nil)
+	}
 	s.mu.Lock()
 	if err == nil {
 		s.cardAttached = true
-		if final {
-			s.finished = true
-		}
 	}
 	s.mu.Unlock()
 	return err

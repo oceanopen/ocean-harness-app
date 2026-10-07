@@ -35,15 +35,16 @@ type CardSpec struct {
 	Submit      bool           // true 带提交按钮（T3.3 统一 submit 语义：应答取自提交回传的勾选集而非选项点击）；审批卡 false 点击即答
 	Questions   []CardQuestion // 多题下拉卡（企微 multiple_interaction select_list，1..3 题每题 1..10 项）；非空时 Options/Multiple/Submit 的选项面不消费（提交按钮恒有）
 	TaskID      string         // 投递锚 = 企微 task_id（≤128 字节，仅 [0-9A-Za-z_\-@]）；确定性生成，点击回传即 Interaction.DeliveryID
-	Disabled    bool           // 仅 UpdateCard 消费：置灰整卡（企微 checkbox.disable / select_list[].disable）；创建帧忽略该字段
+	Disabled    bool           // 仅 UpdateCard 消费：置灰整卡（企微 checkbox.disable / select_list[].disable，提交按钮文案改「已处理」——submit_button 不可省、无 disable 字段，errcode=42049 真机实证）；创建帧忽略该字段
 }
 
 // CardReplyStream ReplyStream 的可选卡片扩展面：实现它的回复流可随流附卡、以卡片更新应答
 // 一条点击事件。纯文本渠道不实现即完全不受影响——消费方类型断言探测，失败回落纯文本
-// （双渲染单事件：卡是升级渲染，文本是无卡渠道的回落）。
+// （卡是升级渲染，文本是无卡渠道的回落；具体帧形态由渠道落地决定）。
 type CardReplyStream interface {
 	ReplyStream
-	// SendCard 附卡帧：content/final 语义对齐 Flush（覆写、final 终帧），卡随帧附带。
+	// SendCard 附卡：content/final 语义对齐 Flush（覆写、final 终帧），文本随卡一并下发
+	// （渠道自定帧形态，如企微长连接不支持组合 msgtype、落地为「独立卡帧+文本帧」拆发）。
 	// 渠道协议「卡同消息仅一次」：已附卡后的调用返回错误，调用方回落 Flush(content, final)。
 	SendCard(spec CardSpec, content string, final bool) error
 	// UpdateCard 以卡片更新应答本条入站（仅对「点击事件路由」开出的流有意义，如置灰原卡）。
@@ -51,7 +52,8 @@ type CardReplyStream interface {
 	// 事件 5 秒窗口内——拦截步在渠道入站串行消费 goroutine 执行，前置消息的附件下载排队会
 	// 吃掉窗口（T3.2 置灰落地时评估交互事件分流）；spec 须为被点卡的完整 spec（企微
 	// UpdateTemplateCard 整卡替换，置灰即「原卡全量字段 + Disabled=true」，仅给 TaskID+
-	// Disabled 会被适配器拒绝）且 TaskID 与被点卡一致（card_type/submit_button.key 一致同此）。
+	// Disabled 会被适配器拒绝）且 TaskID 与被点卡一致（card_type/task_id/submit_button
+	// 一致由同一 builder 天然保证）。
 	UpdateCard(spec CardSpec) error
 }
 
@@ -74,6 +76,38 @@ type interactionHandler interface {
 // interactionFallbackText 兜底文案：通道已通、消费者未接（T3.2 前）或投递过期时的统一提示。
 func interactionFallbackText() string {
 	return "该卡片交互暂不能在此处理，请在桌面端操作，或直接发送文字消息。"
+}
+
+// cardNoSelectionText 提交型卡无勾选回传的统一引导文案（绑定/审批/表单域共用）。
+const cardNoSelectionText = "未选择任何选项：请在卡片中选择后点「提交」。"
+
+// cardAlreadyProcessedText 最近卡已消费的重复点击收口文案：置灰卡按钮仍可点（企微
+// submit_button 无 disable 属性，文案改「已处理」仅是视觉传达），由会话行 last_message_card 登记
+// 槽拦截（绑定族三卡，见 binding_card.go 的 gateBindingCardClick）。
+const cardAlreadyProcessedText = "当前卡片消息已处理过，不能重复处理。"
+
+// cardExpiredText 历史卡点击收口文案：last_message_card 槽已被更新的卡覆盖（或指向未送达卡），
+// 绑定族一次性交互卡翻旧重点一律按失效收口，重新发指令即可再出卡。
+const cardExpiredText = "卡片消息已失效，请重新发送消息。"
+
+// cardActionIndex 单题单选卡的应答下标解析（绑定/审批域共用）：真机定标（企微长连接）——
+// 带提交按钮的单选卡点选项不发事件、只有提交发（勾选集随 selected_items 回传），消费须以
+// 提交为主形态。直接选项点击（ActionIndex ≥ 0，无提交按钮的渠道/历史形态）原样取用；提交
+// 事件（ActionIndex = -1）取定位键匹配的首题首项（单选恰一项）。ok=false = 提交事件无勾选
+// 集，调用方回引导文案（elicitation 多题形态不经本 helper，见 elicitationContent）。
+func cardActionIndex(in *Interaction) (int, bool) {
+	if in.ActionIndex >= 0 {
+		return in.ActionIndex, true
+	}
+	for _, sel := range in.Selections {
+		if sel.QuestionKey != in.DeliveryID {
+			continue // 单题卡定位键 = TaskID = DeliveryID；不符即多题形态，防御跳过
+		}
+		if len(sel.OptionIndexes) > 0 {
+			return sel.OptionIndexes[0], true
+		}
+	}
+	return 0, false
 }
 
 // ValidateCardTaskID CardSpec.TaskID 契约校验（T3.2 起生成侧与适配器共用 SSOT）：非空、

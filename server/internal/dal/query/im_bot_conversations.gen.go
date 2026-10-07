@@ -37,6 +37,7 @@ func newImBotConversation(db *gorm.DB, opts ...gen.DOOption) imBotConversation {
 	_imBotConversation.LastMessageAt = field.NewTime(tableName, "last_message_at")
 	_imBotConversation.CreatedAt = field.NewTime(tableName, "created_at")
 	_imBotConversation.UpdatedAt = field.NewTime(tableName, "updated_at")
+	_imBotConversation.LastMessageCard = field.NewString(tableName, "last_message_card")
 
 	_imBotConversation.fillFieldMap()
 
@@ -56,6 +57,7 @@ type imBotConversation struct {
 	LastMessageAt   field.Time
 	CreatedAt       field.Time
 	UpdatedAt       field.Time
+	LastMessageCard field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -81,6 +83,7 @@ func (i *imBotConversation) updateTableName(table string) *imBotConversation {
 	i.LastMessageAt = field.NewTime(table, "last_message_at")
 	i.CreatedAt = field.NewTime(table, "created_at")
 	i.UpdatedAt = field.NewTime(table, "updated_at")
+	i.LastMessageCard = field.NewString(table, "last_message_card")
 
 	i.fillFieldMap()
 
@@ -109,7 +112,7 @@ func (i *imBotConversation) GetFieldByName(fieldName string) (field.OrderExpr, b
 }
 
 func (i *imBotConversation) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 9)
+	i.fieldMap = make(map[string]field.Expr, 10)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["bot_id"] = i.BotID
 	i.fieldMap["conversation_key"] = i.ConversationKey
@@ -119,6 +122,7 @@ func (i *imBotConversation) fillFieldMap() {
 	i.fieldMap["last_message_at"] = i.LastMessageAt
 	i.fieldMap["created_at"] = i.CreatedAt
 	i.fieldMap["updated_at"] = i.UpdatedAt
+	i.fieldMap["last_message_card"] = i.LastMessageCard
 }
 
 func (i imBotConversation) clone(db *gorm.DB) imBotConversation {

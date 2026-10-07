@@ -2,7 +2,6 @@ package bot
 
 import (
 	"context"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -83,6 +82,17 @@ func bindClickMsg(taskID string, idx int) InboundMessage {
 	}
 }
 
+// bindSubmitMsg 提交事件消息构造（真机形态：带提交按钮的单选卡点选项不发事件、提交携
+// 勾选集回传）：RawKey 为 submit key、ActionIndex=-1、勾选集携带选中下标（可省略）。
+func bindSubmitMsg(taskID string, selections ...int) InboundMessage {
+	in := bindClickMsg(taskID, -1)
+	in.Interaction.RawKey = taskID + ":submit"
+	if len(selections) > 0 {
+		in.Interaction.Selections = []InteractionSelection{{QuestionKey: taskID, OptionIndexes: selections}}
+	}
+	return in
+}
+
 // bindWsList 当前 workspace 列表（卡构造同源数据，可选关键词）。
 func bindWsList(t *testing.T, db *gorm.DB, keyword string) []*model.Workspace {
 	t.Helper()
@@ -93,8 +103,8 @@ func bindWsList(t *testing.T, db *gorm.DB, keyword string) []*model.Workspace {
 	return wss
 }
 
-// TestBindingTaskIDRoundtrip 投递锚往返三段式（关键词 + 指纹双因子）+ 域互斥 + 非法形态
-// 全 miss + 卡契约合法。
+// TestBindingTaskIDRoundtrip 投递锚往返三段式（关键词 + 指纹 + 一次性随机段）+ 域互斥 +
+// 非法形态全 miss + 卡契约合法 + 同输入两次出卡锚不同（task_id 全局唯一约束）。
 func TestBindingTaskIDRoundtrip(t *testing.T) {
 	ids := []string{"1", "22", "333"}
 	// 空关键词与中文关键词两形态往返。
@@ -115,19 +125,23 @@ func TestBindingTaskIDRoundtrip(t *testing.T) {
 	if kw, fp, ok := parseTaskunbindTaskID(unAnchor); !ok || kw != "" || fp != bindingFingerprint([]string{"i-1"}) {
 		t.Fatalf("taskunbind 往返不符: kw=%q fp=%q ok=%v", kw, fp, ok)
 	}
-	// 域互斥 + 非法形态：对侧域锚、无前缀、尾段空/过短/过长/非 hex、旧 T2.1 无关键词段
-	// 形态、关键词段非合法 hex 全部 miss（各域各验各的）。
-	for _, bad := range []string{itKw, unAnchor, "acp-x@y-perm-1", "wsbind-", "wsbind-abc", "wsbind-123456789", "wsbind-01234567", "wsbind-xy-01234567", "wsbind--0123456", "wsbind-abc-0123456789"} {
+	// 一次性随机段：同输入两次出卡锚不同（企微 taskid 已存在即拒发，errcode=42014 实证）。
+	if again := bindingTaskID(wsbindCardPrefix, "", ids); again == wsEmpty {
+		t.Fatalf("同输入两次出卡锚应不同: %q", again)
+	}
+	// 域互斥 + 非法形态：对侧域锚、无前缀、段数不符（T2.1 无关键词段 / T2.2 两段式）、
+	// 指纹与随机段空/过短/过长/非 hex、关键词段非合法 hex 全部 miss（各域各验各的）。
+	for _, bad := range []string{itKw, unAnchor, "acp-x@y-perm-1", "wsbind-", "wsbind-abc", "wsbind-123456789", "wsbind-01234567", "wsbind-xy-01234567", "wsbind--0123456", "wsbind-abc-0123456789", "wsbind--01234567", "wsbind--01234567-zzzzzzzz", "wsbind--01234567-0123456", "wsbind--01234567-01234567-extra"} {
 		if _, _, ok := parseWsbindTaskID(bad); ok {
 			t.Fatalf("parseWsbindTaskID(%q) 应 miss", bad)
 		}
 	}
-	for _, bad := range []string{wsKw, unAnchor, "acp-x@y-perm-1", "taskbind-", "taskbind-abc", "taskbind-123456789", "taskbind-zzzzzzzz", "taskbind-01234567", "taskbind-xyz-01234567"} {
+	for _, bad := range []string{wsKw, unAnchor, "acp-x@y-perm-1", "taskbind-", "taskbind-abc", "taskbind-123456789", "taskbind-zzzzzzzz", "taskbind-01234567", "taskbind-xyz-01234567", "taskbind--01234567", "taskbind--01234567-0123456789abcdef"} {
 		if _, _, ok := parseTaskbindTaskID(bad); ok {
 			t.Fatalf("parseTaskbindTaskID(%q) 应 miss", bad)
 		}
 	}
-	for _, bad := range []string{wsKw, itKw, "taskunbind-", "taskunbind-abc", "taskunbind-xyz-01234567"} {
+	for _, bad := range []string{wsKw, itKw, "taskunbind-", "taskunbind-abc", "taskunbind-xyz-01234567", "taskunbind--01234567"} {
 		if _, _, ok := parseTaskunbindTaskID(bad); ok {
 			t.Fatalf("parseTaskunbindTaskID(%q) 应 miss", bad)
 		}
@@ -208,8 +222,15 @@ func TestBindingFingerprintStability(t *testing.T) {
 	}
 }
 
+// bindingTaskIDMatches 解析式卡锚断言助手：TaskID 含一次性随机段（企微 taskid 全局唯一
+// 约束），字面/重算比对恒假——按「关键词 + 指纹」语义段比对（随机段不参与语义）。
+func bindingTaskIDMatches(taskID, prefix, keyword string, ids []string) bool {
+	kw, fp, ok := parseBindingTaskID(taskID, prefix)
+	return ok && kw == keyword && fp == bindingFingerprint(ids)
+}
+
 // TestBindingCardSpecConstruction 卡构造 SSOT：单选点击即答形态、TaskID 关键词 + 指纹锚、
-// 置灰重建同构（企微整卡替换）、空列表不出卡。
+// 置灰重建同构（企微整卡替换；TaskID 随机段不参与比对）、空列表不出卡。
 func TestBindingCardSpecConstruction(t *testing.T) {
 	wss := []*model.Workspace{{ID: 3, Name: "前端仓"}, {ID: 7, Name: "后端仓"}}
 	spec, ok := workspaceCardSpec(wss, "")
@@ -223,18 +244,20 @@ func TestBindingCardSpecConstruction(t *testing.T) {
 		spec.Options[0].ID != "3" || spec.Options[0].Text != "前端仓" || spec.Options[1].ID != "7" {
 		t.Fatalf("workspace 卡字段不符: %+v", spec)
 	}
-	if spec.TaskID != wsbindCardPrefix+hex.EncodeToString(nil)+"-"+bindingFingerprint([]string{"3", "7"}) {
+	if !bindingTaskIDMatches(spec.TaskID, wsbindCardPrefix, "", workspaceIDKeys(wss)) {
 		t.Fatalf("TaskID 应为关键词 + 候选指纹锚: %q", spec.TaskID)
 	}
 	// 带关键词构造：锚编码过滤关键词（指纹输入是过滤后序列）。
 	kwSpec, _ := workspaceCardSpec(wss[:1], "前端")
-	if kwSpec.TaskID != bindingTaskID(wsbindCardPrefix, "前端", []string{"3"}) {
+	if !bindingTaskIDMatches(kwSpec.TaskID, wsbindCardPrefix, "前端", []string{"3"}) {
 		t.Fatalf("带关键词 TaskID 不符: %q", kwSpec.TaskID)
 	}
-	// 置灰重建共用 SSOT：同构造仅 Disabled（首发与点击侧重建两处同源，字段一致由此保证）。
+	// 置灰重建共用 SSOT：同构造字段一致（随机段每次出新——置灰帧在点击消费侧保全被点卡
+	// task_id，见 handleWsbindInteraction；语义段关键词 + 指纹仍须一致）。
 	gray, _ := workspaceCardSpec(wss, "")
 	gray.Disabled = true
-	if gray.TaskID != spec.TaskID || !gray.Disabled || len(gray.Options) != len(spec.Options) {
+	if !bindingTaskIDMatches(gray.TaskID, wsbindCardPrefix, "", workspaceIDKeys(wss)) ||
+		!gray.Disabled || len(gray.Options) != len(spec.Options) {
 		t.Fatal("置灰卡应与原卡同构仅 Disabled")
 	}
 	// 空列表不出卡（触发侧回纯文本）。
@@ -248,7 +271,7 @@ func TestBindingCardSpecConstruction(t *testing.T) {
 	issues := []*model.ProjectIssue{{ID: "i-1", Name: "登录重构"}, {ID: "i-2", Name: "接口联调"}}
 	ispec, ok := issueCardSpec(issues, "")
 	if !ok || len(ispec.Options) != 2 || ispec.Options[1].Text != "接口联调" ||
-		ispec.TaskID != bindingTaskID(taskbindCardPrefix, "", []string{"i-1", "i-2"}) {
+		!bindingTaskIDMatches(ispec.TaskID, taskbindCardPrefix, "", issueIDKeys(issues)) {
 		t.Fatalf("任务卡字段不符: %+v", ispec)
 	}
 }
@@ -340,18 +363,23 @@ func TestBindingWorkspacesLimit(t *testing.T) {
 	}
 }
 
-// TestWsbindClick 命中路径：落库 bot 行 workspace_id + 置灰完整重建 + 热重载触发 + 终帧文案。
+// TestWsbindClick 命中路径：落库 bot 行 workspace_id + 置灰完整重建 + 热重载触发 + 终帧文案；
+// 尾段覆盖 last_message_card 闸全链（出卡登记 → 消费置位 → 重复点击收口 → 新卡覆盖旧锚失效）。
 func TestWsbindClick(t *testing.T) {
 	db := newBindingTestDB(t)
 	wsA, wsB := mkWorkspace(t, db, "前端仓"), mkWorkspace(t, db, "后端仓")
 	mkBot(t, db, wsA)
 	applier := &fakeApplier{}
 	route := &driverRoute{db: db, applier: applier}
+	store := &ConversationStore{DB: db}
 	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: wsA}
 
 	spec, ok := workspaceCardSpec(bindWsList(t, db, ""), "")
 	if !ok {
 		t.Fatal("应能出卡")
+	}
+	if err := store.SaveLastMessageCard(1, "single:u1", "wsbind", spec); err != nil { // 出卡登记（sendBindingCard 同款）
+		t.Fatalf("预置 last_message_card: %v", err)
 	}
 	text, update, handled := route.TryHandleInteraction(cfg, bindClickMsg(spec.TaskID, 1))
 	if !handled {
@@ -372,6 +400,89 @@ func TestWsbindClick(t *testing.T) {
 	}
 	if botRow.WorkspaceID != wsB {
 		t.Fatalf("bot 行 workspace_id 应已落库: ws=%d", botRow.WorkspaceID)
+	}
+	// 消费成功即置位 processed（持久防重依据——重启后依然收口）。
+	if lc, ok := store.LastMessageCard(1, "single:u1"); !ok || lc.Status != lastMessageCardProcessed || lc.Spec.TaskID != spec.TaskID {
+		t.Fatalf("消费成功应置位 last_message_card: %+v ok=%v", lc, ok)
+	}
+
+	// 重复点击收口：置灰卡按钮仍可点，第二次点击（即使换选项）回「已处理过」，不再重放
+	// 消费链——不二次落库（仍 wsB）、不再触发热重载。
+	text, update, handled = route.TryHandleInteraction(cfg, bindClickMsg(spec.TaskID, 0))
+	if !handled || text != cardAlreadyProcessedText || update != nil {
+		t.Fatalf("重复点击应收口: (%q, %+v, %v)", text, update, handled)
+	}
+	if applier.count() != 1 {
+		t.Fatalf("重复点击不得再触发热重载，got %d", applier.count())
+	}
+	botRow, err = query.Use(db).ImBot.WithContext(context.Background()).Where(query.Use(db).ImBot.ID.Eq(1)).First()
+	if err != nil || botRow.WorkspaceID != wsB {
+		t.Fatalf("重复点击不得改写落库结果: ws=%d err=%v", botRow.WorkspaceID, err)
+	}
+
+	// 旧卡失效：重发指令再出一张新卡（登记覆盖）后，点旧锚按失效收口（supersession 过期）。
+	spec2, _ := workspaceCardSpec(bindWsList(t, db, ""), "")
+	if err := store.SaveLastMessageCard(1, "single:u1", "wsbind", spec2); err != nil {
+		t.Fatalf("登记新卡: %v", err)
+	}
+	text, update, handled = route.TryHandleInteraction(cfg, bindClickMsg(spec.TaskID, 0))
+	if !handled || text != cardExpiredText || update != nil {
+		t.Fatalf("旧卡点击应按失效收口: (%q, %+v, %v)", text, update, handled)
+	}
+	if applier.count() != 1 {
+		t.Fatalf("旧卡失效不得触发热重载: %d", applier.count())
+	}
+}
+
+// TestWsbindSubmitClick 提交事件消费（真机形态：提交携勾选集回传）：勾选下标落库等价选项
+// 直点、置灰保全被点卡 task_id（一次性随机段）；无勾选回引导文案不落库。
+func TestWsbindSubmitClick(t *testing.T) {
+	db := newBindingTestDB(t)
+	wsA, wsB := mkWorkspace(t, db, "前端仓"), mkWorkspace(t, db, "后端仓")
+	mkBot(t, db, wsA)
+	applier := &fakeApplier{}
+	route := &driverRoute{db: db, applier: applier}
+
+	spec, ok := workspaceCardSpec(bindWsList(t, db, ""), "")
+	if !ok {
+		t.Fatal("应能出卡")
+	}
+	store := &ConversationStore{DB: db}
+	if err := store.SaveLastMessageCard(1, "single:u1", "wsbind", spec); err != nil {
+		t.Fatalf("预置 last_message_card: %v", err)
+	}
+	text, update, handled := route.TryHandleInteraction(BotRuntimeConfig{BotID: 1}, bindSubmitMsg(spec.TaskID, 1))
+	if !handled || text != "✅ 已关联工作空间「后端仓」" || update == nil || !update.Disabled {
+		t.Fatalf("提交勾选应等价选项直点消费: (%q, %+v, %v)", text, update, handled)
+	}
+	if update.TaskID != spec.TaskID {
+		t.Fatalf("置灰应保全被点卡 task_id: %q want %q", update.TaskID, spec.TaskID)
+	}
+	if applier.count() != 1 {
+		t.Fatalf("应恰一次热重载触发，got %d", applier.count())
+	}
+	botRow, err := query.Use(db).ImBot.WithContext(context.Background()).Where(query.Use(db).ImBot.ID.Eq(1)).First()
+	if err != nil || botRow.WorkspaceID != wsB {
+		t.Fatalf("提交勾选应落库第 2 项: ws=%d err=%v", botRow.WorkspaceID, err)
+	}
+
+	// 无勾选提交：引导文案、不落库不置灰、不置位登记（同卡随后补选提交仍可成功）。用
+	// 新出的卡（新 nonce 锚）——上一张已被成功消费置位，重复提交会先命中「已处理过」收口。
+	fresh, _ := workspaceCardSpec(bindWsList(t, db, ""), "")
+	if err := store.SaveLastMessageCard(1, "single:u1", "wsbind", fresh); err != nil {
+		t.Fatalf("登记新卡: %v", err)
+	}
+	text, update, handled = route.TryHandleInteraction(BotRuntimeConfig{BotID: 1}, bindSubmitMsg(fresh.TaskID))
+	if !handled || text != cardNoSelectionText || update != nil {
+		t.Fatalf("无勾选提交应回引导文案: (%q, %+v, %v)", text, update, handled)
+	}
+	text, update, handled = route.TryHandleInteraction(BotRuntimeConfig{BotID: 1}, bindSubmitMsg(fresh.TaskID, 1))
+	if !handled || text != "✅ 已关联工作空间「后端仓」" || update == nil || !update.Disabled {
+		t.Fatalf("无勾选不登记消费，同卡补选提交应成功: (%q, %+v, %v)", text, update, handled)
+	}
+	botRow, err = query.Use(db).ImBot.WithContext(context.Background()).Where(query.Use(db).ImBot.ID.Eq(1)).First()
+	if err != nil || botRow.WorkspaceID != wsB {
+		t.Fatalf("无勾选不得落库: ws=%d err=%v", botRow.WorkspaceID, err)
 	}
 }
 
@@ -478,7 +589,7 @@ func TestWsbindClickMisses(t *testing.T) {
 			t.Fatalf("掉 workspace 表: %v", err)
 		}
 		route := &driverRoute{db: db}
-		text, update, handled := route.TryHandleInteraction(BotRuntimeConfig{BotID: 1}, bindClickMsg(wsbindCardPrefix+"-deadbeef", 0))
+		text, update, handled := route.TryHandleInteraction(BotRuntimeConfig{BotID: 1}, bindClickMsg(wsbindCardPrefix+"-deadbeef-00000000", 0))
 		if !handled || text != workspaceLookupFailedText || update != nil {
 			t.Fatalf("读库失败应 fail visible: text=%q handled=%v", text, handled)
 		}
@@ -539,6 +650,9 @@ func TestTaskbindClick(t *testing.T) {
 	if !ok {
 		t.Fatal("应能出卡")
 	}
+	if err := store.SaveLastMessageCard(1, "single:u1", "taskbind", spec); err != nil { // 出卡登记（sendBindingCard 同款）
+		t.Fatalf("预置 last_message_card: %v", err)
+	}
 	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: ws}
 	text, update, handled := route.TryHandleInteraction(cfg, bindClickMsg(spec.TaskID, 1))
 	if !handled {
@@ -549,6 +663,9 @@ func TestTaskbindClick(t *testing.T) {
 	}
 	if update == nil || !update.Disabled || update.TaskID != spec.TaskID || len(update.Options) != 2 {
 		t.Fatalf("置灰 spec 应为完整重建: %+v", update)
+	}
+	if lc, ok := store.LastMessageCard(1, "single:u1"); !ok || lc.Status != lastMessageCardProcessed || lc.Spec.TaskID != spec.TaskID {
+		t.Fatalf("消费成功应置位 last_message_card: %+v ok=%v", lc, ok)
 	}
 	bound, err := store.BoundIssueID(1, "single:u1")
 	if err != nil || bound != "i-2" {
@@ -628,7 +745,7 @@ func TestTaskbindClickMisses(t *testing.T) {
 			t.Fatalf("掉 issue 表: %v", err)
 		}
 		route := &driverRoute{db: db}
-		text, update, handled := route.TryHandleInteraction(BotRuntimeConfig{BotID: 1, WorkspaceID: 1}, bindClickMsg(taskbindCardPrefix+"-deadbeef", 0))
+		text, update, handled := route.TryHandleInteraction(BotRuntimeConfig{BotID: 1, WorkspaceID: 1}, bindClickMsg(taskbindCardPrefix+"-deadbeef-00000000", 0))
 		if !handled || text != issueLookupFailedText || update != nil {
 			t.Fatalf("读库失败应 fail visible: text=%q handled=%v", text, handled)
 		}
@@ -646,13 +763,14 @@ func TestTaskunbindCard(t *testing.T) {
 	if len(spec.Options) != 1 || spec.Options[0].ID != "i-1" || spec.Options[0].Text != "登录重构" {
 		t.Fatalf("应为单选项（当前绑定任务）: %+v", spec.Options)
 	}
-	if spec.TaskID != bindingTaskID(taskunbindCardPrefix, "", []string{"i-1"}) {
+	if !bindingTaskIDMatches(spec.TaskID, taskunbindCardPrefix, "", []string{"i-1"}) {
 		t.Fatalf("TaskID 应为空关键词 + 绑定 id 单元素指纹锚: %q", spec.TaskID)
 	}
-	// 置灰重建共用 SSOT：同构造仅 Disabled。
+	// 置灰重建共用 SSOT：同构造字段一致（TaskID 随机段每次出新，置灰帧保全被点卡锚）。
 	gray := taskunbindCardSpec(issue)
 	gray.Disabled = true
-	if gray.TaskID != spec.TaskID || !gray.Disabled || len(gray.Options) != 1 {
+	if !bindingTaskIDMatches(gray.TaskID, taskunbindCardPrefix, "", []string{"i-1"}) ||
+		!gray.Disabled || len(gray.Options) != 1 {
 		t.Fatal("置灰卡应与原卡同构仅 Disabled")
 	}
 	if got := taskunbindCardText(issue); got != "当前会话已绑定任务，点击卡片确认解绑：\n- 登录重构" {
@@ -676,6 +794,9 @@ func TestTaskunbindClick(t *testing.T) {
 		}
 		route := &driverRoute{db: db}
 		spec := taskunbindCardSpec(&model.ProjectIssue{ID: "i-1", Name: "登录重构"})
+		if err := store.SaveLastMessageCard(1, "single:u1", "taskunbind", spec); err != nil { // 出卡登记（sendUnbindCard 同款）
+			t.Fatalf("预置 last_message_card: %v", err)
+		}
 
 		text, update, handled := route.TryHandleInteraction(BotRuntimeConfig{BotID: 1}, bindClickMsg(spec.TaskID, 0))
 		if !handled || text != "✅ 已解绑任务「登录重构」" {
@@ -683,6 +804,9 @@ func TestTaskunbindClick(t *testing.T) {
 		}
 		if update == nil || !update.Disabled || update.TaskID != spec.TaskID || len(update.Options) != 1 {
 			t.Fatalf("置灰 spec 应为完整重建: %+v", update)
+		}
+		if lc, ok := store.LastMessageCard(1, "single:u1"); !ok || lc.Status != lastMessageCardProcessed {
+			t.Fatalf("消费成功应置位 last_message_card: %+v ok=%v", lc, ok)
 		}
 		if bound, _ := store.BoundIssueID(1, "single:u1"); bound != "" {
 			t.Fatalf("点击后绑定锚应为空: %q", bound)
@@ -747,7 +871,7 @@ func TestTaskunbindClick(t *testing.T) {
 		}
 	})
 
-	t.Run("越界防御与非选项 key", func(t *testing.T) {
+	t.Run("越界防御与无勾选提交", func(t *testing.T) {
 		db := newBindingTestDB(t)
 		ws := mkWorkspace(t, db, "ws")
 		mkBindIssue(t, db, ws, "i-1", "登录重构", 1, enums.STATE_CODE_BACKLOG, "")
@@ -765,8 +889,9 @@ func TestTaskunbindClick(t *testing.T) {
 		if !handled || text != bindingInvalidOptionText || update != nil {
 			t.Fatalf("越界应回无效选项文案: text=%q update=%+v handled=%v", text, update, handled)
 		}
-		if _, _, handled := route.TryHandleInteraction(BotRuntimeConfig{BotID: 1}, bindClickMsg(spec.TaskID, -1)); handled {
-			t.Fatal("非选项 key 应 miss")
+		text, update, handled = route.TryHandleInteraction(BotRuntimeConfig{BotID: 1}, bindSubmitMsg(spec.TaskID))
+		if !handled || text != cardNoSelectionText || update != nil {
+			t.Fatalf("无勾选提交应回引导文案: (%q, %+v, %v)", text, update, handled)
 		}
 	})
 
