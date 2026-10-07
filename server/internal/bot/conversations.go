@@ -14,8 +14,10 @@ import (
 // seenWindowLimit 消息幂等滚窗上限：企微 WS 无补投语义，幂等仅防瞬时重推，100 条远超重推窗口。
 const seenWindowLimit = 100
 
-// ConversationStore t_im_bot_conversations 行的唯一读写点（bot 核心层；路由层纯读与
-// #任务 候选匹配另按需裸查各自表，不经过本 store）。调用有两类上下文：会话串行 worker
+// ConversationStore t_im_bot_conversations 行的唯一读写点（bot 核心层；路由层纯读、
+// #任务 候选匹配、HTTP service 层（getConversations/bindIssue）与删除/tracker 级联清绑
+// 另按需裸查直写各自列，不经过本 store——均为单语句读写，写列与本 store 正交）。调用有
+// 两类上下文：会话串行 worker
 // goroutine（回合链）与编排器拦截步所在的适配器回调 goroutine（幂等查询/卡片交互，
 // 见 orchestrator.HandleInbound）——两类上下文写列正交、单语句 UPDATE 原子，无并发
 // 丢更新路径，不需要行级锁。DB 是 SSOT：sidecar 重启后下一条消息自然续上，运行时不做

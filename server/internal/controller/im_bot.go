@@ -108,6 +108,39 @@ func (api ImBot) Restart(ctx *gin.Context) {
 	api.JsonOK(nil)
 }
 
+// GetConversations POST /api/imBot/getConversations：返回 bot 会话列表（绑定锚 + 活跃时间，
+// 最近活跃在前；工具栏会话明细数据链）。
+func (api ImBot) GetConversations(ctx *gin.Context) {
+	req := &types.ImBotGetConversationsRequest{}
+	svc := service.ImBot{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.GetConversations(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}
+
+// BindIssue POST /api/imBot/bindIssue：会话级绑定/解绑（issueId 空 = 解绑；绑定每回合现读，
+// 不热重载连接）。
+func (api ImBot) BindIssue(ctx *gin.Context) {
+	req := &types.ImBotBindIssueRequest{}
+	svc := service.ImBot{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	if err := svc.BindConversationIssue(req); err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(nil)
+}
+
 // ProvisionBegin POST /api/imBot/provisionBegin：开新扫码授权会话（返回二维码内容 + 轮询节奏）。
 func (api ImBot) ProvisionBegin(ctx *gin.Context) {
 	req := &types.ImBotProvisionBeginRequest{}

@@ -61,6 +61,29 @@ export interface ImBotRestartRequest {
   id: number;
 }
 
+// ImBotConversationModel：对齐后端 types.ImBotConversationData 的 JSON 形态
+// （t_im_bot_conversations 会话行投影）。chatType 由会话键前缀派生，绑定锚为会话级。
+export interface ImBotConversationModel {
+  conversationKey: string; // single:<userid> / group:<chatid>
+  chatType: 'single' | 'group'; // single 私聊 / group 群聊（前端映射文案）
+  boundIssueId: string; // 空 = 未绑定
+  boundIssueName: string; // 绑定任务名（悬空锚 = 空串）
+  lastMessageAt: string | null; // null = 从未活跃
+}
+
+// POST /api/imBot/getConversations 的入参。
+export interface ImBotGetConversationsRequest {
+  botId: number;
+}
+
+// POST /api/imBot/bindIssue 的入参（issueId 空 = 解绑；作用于 (bot, conversationKey) 会话行，
+// 绑定每回合现读、无需热重载连接）。
+export interface ImBotBindIssueRequest {
+  botId: number;
+  conversationKey: string;
+  issueId: string;
+}
+
 // ─── 扫码授权接入（provision）───
 // 凭据安全语义：secret 仅在服务端落库，provision 扫码链路不回传；落库后经 getList/getInfo
 // 明文回显（本地数据语义，见 ImBotModel.secret）。qrContent 为腾讯授权页 URL（公开）。
@@ -118,6 +141,16 @@ export class ImBotService {
   // restart：以当前落库配置重连。
   static restart(req: ImBotRestartRequest): Promise<void> {
     return request<void>('POST', '/api/imBot/restart', req);
+  }
+
+  // getConversations：返回 bot 会话列表（绑定锚 + 活跃时间，最近活跃在前）。
+  static getConversations(req: ImBotGetConversationsRequest): Promise<ImBotConversationModel[]> {
+    return request<ImBotConversationModel[]>('POST', '/api/imBot/getConversations', req);
+  }
+
+  // bindIssue：会话级绑定/解绑（issueId 空 = 解绑；行不在场/归属不符由后端拒）。
+  static bindIssue(req: ImBotBindIssueRequest): Promise<void> {
+    return request<void>('POST', '/api/imBot/bindIssue', req);
   }
 
   // provisionBegin：开新扫码授权会话（返回二维码内容 + 轮询节奏；已有会话自动取消）。

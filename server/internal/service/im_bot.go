@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -173,6 +175,111 @@ func (svc ImBot) Restart(req *types.ImBotRestartRequest) error {
 		return errors.New("bot 运行时未就绪")
 	}
 	return global.BotSupervisor.ApplyBot(row)
+}
+
+// ---------- 会话级绑定（工具栏数据链，D1/D7） ----------
+
+// GetConversations 返回 bot 的会话列表（最近活跃在前，从未活跃殿后）+ 绑定任务名批量装配。
+func (svc ImBot) GetConversations(req *types.ImBotGetConversationsRequest) ([]types.ImBotConversationData, error) {
+	if _, err := svc.mustGet(req.BotId); err != nil {
+		return nil, err
+	}
+	q := query.Use(svc.Orm)
+	rows, err := q.ImBotConversation.WithContext(svc.Context).
+		Where(q.ImBotConversation.BotID.Eq(req.BotId)).
+		Order(q.ImBotConversation.LastMessageAt.Desc()).
+		Order(q.ImBotConversation.ID.Desc()).
+		Find()
+	if err != nil {
+		return nil, err
+	}
+	names := svc.boundIssueNames(rows)
+	out := make([]types.ImBotConversationData, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, types.ImBotConversationData{
+			ConversationKey: row.ConversationKey,
+			ChatType:        chatTypeOfKey(row.ConversationKey),
+			BoundIssueId:    row.BoundIssueID,
+			BoundIssueName:  names[row.BoundIssueID],
+			LastMessageAt:   row.LastMessageAt,
+		})
+	}
+	return out, nil
+}
+
+// BindConversationIssue 会话级绑定/解绑（issueId 空 = 解绑）。绑定校验链：bot 已选工作空间 →
+// issue 存在且归属 bot 工作空间 → 会话行在场（绑定以会话已开启为前提，行不存在即拒）。
+// 只写绑定列不动 claude_session_id；不触发 applyRuntime——绑定每回合现读，无需热重载。
+func (svc ImBot) BindConversationIssue(req *types.ImBotBindIssueRequest) error {
+	botRow, err := svc.mustGet(req.BotId)
+	if err != nil {
+		return err
+	}
+	q := query.Use(svc.Orm)
+	if req.IssueId != "" {
+		if botRow.WorkspaceID == 0 {
+			return errors.New("请先为机器人选择工作空间")
+		}
+		issue, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.IssueId)).First()
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("任务不存在")
+			}
+			return err
+		}
+		if issue.WorkspaceID != botRow.WorkspaceID {
+			return errors.New("任务不属于机器人当前工作空间")
+		}
+	}
+	res, err := q.ImBotConversation.WithContext(svc.Context).
+		Where(q.ImBotConversation.BotID.Eq(req.BotId),
+			q.ImBotConversation.ConversationKey.Eq(req.ConversationKey)).
+		UpdateSimple(
+			q.ImBotConversation.BoundIssueID.Value(req.IssueId),
+			q.ImBotConversation.UpdatedAt.Value(time.Now()),
+		)
+	if err != nil {
+		return err
+	}
+	if res.RowsAffected == 0 {
+		return errors.New("会话不存在（需先在 IM 中向机器人发消息开启会话）")
+	}
+	return nil
+}
+
+// boundIssueNames 会话行绑定 issue id → name 一次性映射（对齐 workspaceNames 惯例；
+// 悬空锚/查失败按空名兜底，不阻塞列表加载）。
+func (svc ImBot) boundIssueNames(rows []*model.ImBotConversation) map[string]string {
+	ids := make([]string, 0, len(rows))
+	seen := map[string]bool{}
+	for _, row := range rows {
+		if row.BoundIssueID != "" && !seen[row.BoundIssueID] {
+			seen[row.BoundIssueID] = true
+			ids = append(ids, row.BoundIssueID)
+		}
+	}
+	if len(ids) == 0 {
+		return map[string]string{}
+	}
+	q := query.Use(svc.Orm)
+	issues, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.In(ids...)).Find()
+	if err != nil {
+		return map[string]string{}
+	}
+	names := make(map[string]string, len(issues))
+	for _, is := range issues {
+		names[is.ID] = is.Name
+	}
+	return names
+}
+
+// chatTypeOfKey 会话键前缀派生聊天类型（group: → group，single: 及其余 → single）。键格式
+// SSOT 是 bot.FormatConversationKey（前缀自描述），此处按前缀就地解析、不调用 bot 包函数。
+func chatTypeOfKey(key string) string {
+	if strings.HasPrefix(key, "group:") {
+		return "group"
+	}
+	return "single"
 }
 
 // ---------- 扫码授权接入（provision） ----------

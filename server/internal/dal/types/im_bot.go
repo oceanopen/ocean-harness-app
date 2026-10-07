@@ -68,6 +68,29 @@ type ImBotRestartRequest struct {
 	ID int `json:"id" binding:"required"`
 }
 
+// ImBotGetConversationsRequest 是 POST /api/imBot/getConversations 的入参（bot 的会话列表）。
+type ImBotGetConversationsRequest struct {
+	BotId int `json:"botId" binding:"required"`
+}
+
+// ImBotConversationData bot 会话行投影（工具栏会话明细数据链）。ChatType 由会话键前缀派生
+// （group: → 群聊，single: → 私聊，key 前缀自描述不落表）；绑定锚为会话级（D1）。
+type ImBotConversationData struct {
+	ConversationKey string     `json:"conversationKey"`
+	ChatType        string     `json:"chatType"`       // single | group
+	BoundIssueId    string     `json:"boundIssueId"`   // 空 = 未绑定
+	BoundIssueName  string     `json:"boundIssueName"` // 绑定任务名（service 合并装配，悬空锚 = 空）
+	LastMessageAt   *time.Time `json:"lastMessageAt"`  // null = 从未活跃
+}
+
+// ImBotBindIssueRequest 是 POST /api/imBot/bindIssue 的入参（会话级绑定/解绑，作用于
+// (bot, conversationKey) 行；issueId 空 = 解绑）。
+type ImBotBindIssueRequest struct {
+	BotId           int    `json:"botId" binding:"required"`
+	ConversationKey string `json:"conversationKey" binding:"required"`
+	IssueId         string `json:"issueId"` // 空 = 解绑
+}
+
 // ImBotProvisionBeginRequest 是 POST /api/imBot/provisionBegin 的入参（无入参，开新扫码会话；
 // 已有进行中会话自动取消）。
 type ImBotProvisionBeginRequest struct{}

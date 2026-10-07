@@ -394,7 +394,7 @@ workspace），出单选项确认卡（TaskID `taskunbind-<空关键词段>-<绑
 
 #### T3.1 会话级绑定 HTTP 面
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：bot 会话列表透出 + 会话级绑定 / 解绑端点（工具栏数据链）
 
@@ -415,6 +415,18 @@ workspace），出单选项确认卡（TaskID `taskunbind-<空关键词段>-<绑
 
 **验收**：service 层单测（会话列表装配 / 绑定 / 解绑 / 归属校验 / 无 workspace 拒绝 / 会话行
 不存在拒绝）；`go vet` + 全量测试通过
+
+**实施定稿**：按方案落地，零偏离；补充四点终态事实——① ChatType wire 值取 `single | group`
+（会话键前缀派生，service 层 `chatTypeOfKey` 就地解析、不依赖 bot 包；键格式 SSOT 仍是
+`bot.FormatConversationKey`）；② 会话列表排序 = `last_message_at` 倒序 + `id` 倒序（从未活跃
+殿后，SQLite NULL 最小值语义下 DESC 天然置尾）；绑定任务名批量 join 收敛 `boundIssueNames`
+（对齐 workspaceNames 惯例，悬空锚/查失败按空名兜底不阻塞列表）；③ 会话行写入走 service 层
+直查 `query.Use` `UpdateSimple`（未绕 bot 域 ConversationStore——后者 `context.Background()`
+与 service 请求上下文语义不符，且对齐 Delete 级联直查惯例）；行不在场 0 行拒绝，绑定与解绑
+同拒；只写 `bound_issue_id` + `updated_at`，`claude_session_id` 不扰动；bindIssue 无返回体
+（对齐 delete/restart）；④ 测试三用例（`im_bot_test.go`）：列表装配/排序/chatType 派生/
+bot 不存在拒绝、绑定解绑主链路（含续聊锚不扰动与列表口径回读断言）、六路拒绝矩阵（issue
+不存在 / 跨工作空间 / bot 无 workspace / 会话行不在场绑定与解绑 / bot 不存在）。
 
 #### T3.2 任务工具栏 IM 机器人模块（bot 聚合 + 会话明细）
 

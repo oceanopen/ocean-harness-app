@@ -129,7 +129,8 @@ func SetupRouter() *gin.Engine {
 		}
 
 		// imBot 模块：IM 渠道数字人 bot 管理（action 风格，POST）。渠道无关命名（channel 差异
-		// 在 credential JSON 内）；写操作落库后经 supervisor 热更新连接，getList 合并运行态。
+		// 在 credential JSON 内）；写操作落库后经 supervisor 热更新连接（会话绑定除外，每回合
+		// 现读无需热重载），getList 合并运行态。
 		imBotGroup := apiGroup.Group("/imBot")
 		{
 			imBotGroup.POST("/getList", controller.ImBot{}.GetList)
@@ -138,6 +139,8 @@ func SetupRouter() *gin.Engine {
 			imBotGroup.POST("/update", controller.ImBot{}.Update)
 			imBotGroup.POST("/delete", controller.ImBot{}.Delete)
 			imBotGroup.POST("/restart", controller.ImBot{}.Restart)
+			imBotGroup.POST("/getConversations", controller.ImBot{}.GetConversations)
+			imBotGroup.POST("/bindIssue", controller.ImBot{}.BindIssue)
 			imBotGroup.POST("/provisionBegin", controller.ImBot{}.ProvisionBegin)
 			imBotGroup.POST("/provisionPoll", controller.ImBot{}.ProvisionPoll)
 			imBotGroup.POST("/provisionCancel", controller.ImBot{}.ProvisionCancel)
