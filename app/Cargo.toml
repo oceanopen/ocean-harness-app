@@ -55,6 +55,9 @@ tauri-plugin-log = "2"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# 单实例：双开时主实例收到回调、第二实例退出（lib.rs 插件链首位注册，官方要求最先）。
+# 锁按 tauri identifier 隔离，dev/build 各自互不干扰。
+tauri-plugin-single-instance = "2"
 # 本地仓库管理：添加仓库弹窗的系统目录选择器（文件夹选择对话框）。
 tauri-plugin-dialog = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }

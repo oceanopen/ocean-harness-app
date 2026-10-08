@@ -148,6 +148,19 @@ pub fn run() {
     let specta_builder = build_specta_builder();
 
     let builder = tauri::Builder::default()
+        // 单实例：官方要求注册在插件链最前（plugins 按注册顺序执行，越早注册越早拦截
+        // 二次启动）。第二实例启动时本回调在主实例触发：唤起 panel 主控台后第二实例
+        // 自动退出——根治双实例并行互杀 sidecar 的边界（两实例共享 app_data_dir 与
+        // 固定端口，任一时刻只应存活一份；崩溃/强杀残留孤儿仍由 http_server::init 自愈）。
+        // 锁按 tauri identifier 隔离：dev（com.ocean.harness.dev）与 build（com.ocean.harness
+        // / ...build.local）互不干扰，可照常并行开发调试。
+        .plugin(tauri_plugin_single_instance::init(
+            |app, _argv, _cwd| {
+                if let Err(e) = crate::windows::panel::show_panel_window(app.clone(), None) {
+                    log::warn!("failed to show panel on second instance launch: {e}");
+                }
+            },
+        ))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

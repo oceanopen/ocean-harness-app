@@ -9,11 +9,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"ocean-harness/server/internal/agentcatalog"
+	"ocean-harness/server/internal/clibin"
 	"ocean-harness/server/internal/dal/enums"
 )
 
@@ -41,6 +43,26 @@ func run(timeout time.Duration, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
+	// login PATH 注入（best-effort，对齐 bot driver_claude turnEnv / ACP ClaudeEnvOverrides
+	// 惯例，本函数是 claude 调用方三链路中最后补齐的一个）：GUI 拉起的 sidecar PATH 常缺
+	// nvm/homebrew 等目录，marketplace add/update 派生的 git 等工具子进程同享完整环境；
+	// 探测失败保留原环境，不阻断主流程。替换既有 PATH= 项而非 append（env 重复项语义
+	// 依赖 libc 实现，替换为确定性覆盖）。
+	if loginPath, err := clibin.LoginPath(); err == nil && loginPath != "" {
+		env := os.Environ()
+		replaced := false
+		for i, kv := range env {
+			if strings.HasPrefix(kv, "PATH=") {
+				env[i] = "PATH=" + loginPath
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			env = append(env, "PATH="+loginPath)
+		}
+		cmd.Env = env
+	}
 	// WaitDelay 收口孙进程管道：ctx 超时只 kill claude 主进程，其内部的 git fetch/clone
 	// 孙进程仍继承 stdout/stderr 管道写端——管道不关则 Run() 永久阻塞（超时分支不可达：
 	// HTTP 挂死、前端无限转圈、包级 mutex 永久占用）。设置后进程退出且管道仍被持有，
