@@ -1,6 +1,6 @@
 [package]
 name = "ocean-harness"
-version = "0.2.2"
+version = "0.2.3"
 description = "Ocean Harness Desktop App"
 authors = ["oceangao"]
 license = ""
