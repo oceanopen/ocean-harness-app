@@ -131,6 +131,12 @@ function adapterSpec(entry: CatalogEntry): string {
 /**
  * 构建目标平台（npm os/cpu 命名）：CI 交叉构建读 GOOS/GOARCH（两者须成对出现），
  * 本地开发无 env 回退当前机器——staging 平台包与消费方 sidecar 架构强一致的 SSOT。
+ *
+ * Go → npm 词汇翻译唯一收口：os（windows→win32）与 cpu（amd64→x64；arm64 两套词汇
+ * 同名）。npm/pnpm 的 cpu 词汇表没有 amd64，不翻译则 supportedArchitectures 匹配不到
+ * 任何平台包（SA 生效期连本机平台都不装出），平台包名/二进制断言路径亦全错（npm 真名
+ * 形如 claude-agent-sdk-darwin-x64，与 Go claudePlatformTriple / Rust platform_triple
+ * 的运行时定位同口径）。回退分支的 process.platform/process.arch 本就是 npm 词汇。
  */
 interface TargetPlatform {
   os: string;
@@ -149,7 +155,7 @@ function targetPlatform(): TargetPlatform {
   if (goarch !== 'amd64' && goarch !== 'arm64') {
     fail(`env GOARCH=${goarch ?? '缺失'} 不支持（∈ amd64/arm64，须与 GOOS 成对注入）`);
   }
-  return { os: goos === 'windows' ? 'win32' : goos, cpu: goarch };
+  return { os: goos === 'windows' ? 'win32' : goos, cpu: goarch === 'amd64' ? 'x64' : goarch };
 }
 
 /** 目标平台的 SDK claude 二进制相对路径（与 Go agentcatalog.VendoredClaudeBin 的定位同口径）。 */
