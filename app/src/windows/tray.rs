@@ -206,7 +206,10 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "restart" => {
-                app.restart();
+                // 托盘菜单事件在主线程派发——正因如此必须经统一入口重启（机制说明见
+                // shared::app_info::request_clean_restart，直调 restart() 会跳过
+                // RunEvent::Exit 清理致 sidecar 孤儿化占端口）。
+                crate::shared::app_info::request_clean_restart(app);
             }
             "quit" => {
                 app.exit(0);

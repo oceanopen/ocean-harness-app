@@ -62,8 +62,10 @@ func TestEnsureVendoredHit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureVendored: %v", err)
 	}
-	if data, err := os.ReadFile(markerAt(installDir)); err != nil || strings.TrimSpace(string(data)) != "1.0.0" {
-		t.Fatalf("marker 内容 = %q, %v, want 1.0.0", data, err)
+	// marker 内容 = 版本@平台 triple（npm 平台命名，与 VendoredClaudeBin 定位同口径）。
+	wantMarker := "1.0.0@" + claudePlatformTriple()
+	if data, err := os.ReadFile(markerAt(installDir)); err != nil || strings.TrimSpace(string(data)) != wantMarker {
+		t.Fatalf("marker 内容 = %q, %v, want %q", data, err, wantMarker)
 	}
 	// 命中即复用：二次调用不重制（installDir 内新落文件原样保留）。
 	sentinel := filepath.Join(installDir, "sentinel.txt")
@@ -112,14 +114,55 @@ func TestEnsureVendoredHalfDoneReinstall(t *testing.T) {
 	if reinstalled != installDir {
 		t.Fatalf("重制目录漂移: %s != %s", reinstalled, installDir)
 	}
-	if data, err := os.ReadFile(markerAt(installDir)); err != nil || strings.TrimSpace(string(data)) != "1.0.0" {
-		t.Fatalf("marker 未恢复: %q, %v", data, err)
+	wantMarker := "1.0.0@" + claudePlatformTriple()
+	if data, err := os.ReadFile(markerAt(installDir)); err != nil || strings.TrimSpace(string(data)) != wantMarker {
+		t.Fatalf("marker 未恢复: %q, %v, want %q", data, err, wantMarker)
 	}
 	if _, err := os.Stat(filepath.Join(installDir, "junk.txt")); !os.IsNotExist(err) {
 		t.Fatalf("整树替换未清除垃圾文件: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(installDir, "node_modules", "@scope", "pkg", "dist", "cli.js")); err != nil {
 		t.Fatalf("重制后入口缺失: %v", err)
+	}
+}
+
+// 旧格式 / 异平台 marker 一律不命中，整树重制自愈——跨架构错配的受管目录
+// （如历史版本按「仅版本号」marker 复用的 darwin-arm64-only 资源被 amd64 sidecar 命中）
+// 在升级后首次请求即被重制，无法永久存续。
+func TestEnsureVendoredStaleMarkerReinstalls(t *testing.T) {
+	srcRoot, dstRoot := writeStaging(t, "1.0.0")
+	entry := vendoringEntry("1.0.0")
+	installDir, err := EnsureVendored(entry, srcRoot, dstRoot)
+	if err != nil {
+		t.Fatalf("EnsureVendored: %v", err)
+	}
+	// 旧格式（仅版本号，marker 带 triple 前的历史产物）与异平台 triple 两种不匹配形态。
+	for name, stale := range map[string]string{
+		"旧格式仅版本号": "1.0.0",
+		"异平台triple": "1.0.0@sunos-sparc",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := os.WriteFile(markerAt(installDir), []byte(stale), 0o644); err != nil {
+				t.Fatalf("写入过期 marker: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(installDir, "junk.txt"), []byte("junk"), 0o644); err != nil {
+				t.Fatalf("write junk: %v", err)
+			}
+			reinstalled, err := EnsureVendored(entry, srcRoot, dstRoot)
+			if err != nil {
+				t.Fatalf("EnsureVendored 重制: %v", err)
+			}
+			if reinstalled != installDir {
+				t.Fatalf("重制目录漂移: %s != %s", reinstalled, installDir)
+			}
+			wantMarker := "1.0.0@" + claudePlatformTriple()
+			if data, err := os.ReadFile(markerAt(installDir)); err != nil || strings.TrimSpace(string(data)) != wantMarker {
+				t.Fatalf("marker 未恢复: %q, %v, want %q", data, err, wantMarker)
+			}
+			if _, err := os.Stat(filepath.Join(installDir, "junk.txt")); !os.IsNotExist(err) {
+				t.Fatalf("错配目录未被整树重制: %v", err)
+			}
+		})
 	}
 }
 

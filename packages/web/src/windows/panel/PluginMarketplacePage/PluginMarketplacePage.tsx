@@ -45,7 +45,7 @@ function errMsg(e: unknown): string {
 // 经 windowShownTrigger 触发 refetch。页面内文案为硬编码中文（i18n 仅覆盖菜单/页面名，
 // 国际化扩展口子见 panel.json menu.pluginMarketplace）。
 function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: number }) {
-  const { data, isPending, isError, refetch, isFetching } = usePluginMarketplaces();
+  const { data, isPending, isError, error, refetch, isFetching } = usePluginMarketplaces();
   const removeMu = useRemovePluginMarketplace();
   const updateMu = useUpdatePluginMarketplace();
 
@@ -199,6 +199,21 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
             >
               <AlertTitle>插件市场列表加载失败</AlertTitle>
               请确认 go-server 与 Claude Code CLI 可用后重试
+              {/* 后端真实原因（http.ts 自 code!==0 的 msg 抛出，如「vendored claude 二进制缺失: …」）：
+                  透出直达用户，可选中复制，避免纯硬编码文案掩盖排障线索。 */}
+              {error != null && (
+                <Typography
+                  sx={{
+                    mt: 1,
+                    fontSize: 12,
+                    color: 'text.secondary',
+                    userSelect: 'text',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  {errMsg(error)}
+                </Typography>
+              )}
             </Alert>
           </Box>
         )}

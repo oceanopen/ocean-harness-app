@@ -53,13 +53,21 @@ pub fn get_data_file_paths(app: AppHandle) -> Result<DataFilePaths, String> {
     })
 }
 
+/// 重启应用的唯一入口：托盘菜单、设置页命令等一切重启触点一律经此，禁止直调
+/// `AppHandle::restart()`——后者在主线程调用走快速路径（直接 spawn 新实例 + exit(0)），
+/// 跳过 `RunEvent::Exit` 清理，sidecar/PTY 孤儿化占端口、新实例 bind 失败。
+/// `request_restart` 线程无关，恒走 request_exit → `RunEvent::Exit`（回收子进程）→ 再重启。
+pub fn request_clean_restart(app: &AppHandle) {
+    app.request_restart();
+}
+
 /// 延迟重启应用（应用设置重置后的收敛手段）：后台线程 sleep ~300ms 让本命令的 IPC
-/// 响应先送达前端，再 app.restart()——避免响应未发出进程就退出、前端悬挂在 pending。
+/// 响应先送达前端再重启——避免响应未发出进程就退出、前端悬挂在 pending。
 #[tauri::command]
 #[specta::specta]
 pub fn restart_app(app: AppHandle) {
     thread::spawn(move || {
         thread::sleep(Duration::from_millis(300));
-        app.restart();
+        request_clean_restart(&app);
     });
 }

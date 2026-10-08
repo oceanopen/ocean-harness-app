@@ -110,7 +110,7 @@ export const commands = {
 	getDataFilePaths: () => typedError<DataFilePaths, string>(__TAURI_INVOKE("get_data_file_paths")),
 	/**
 	 *  延迟重启应用（应用设置重置后的收敛手段）：后台线程 sleep ~300ms 让本命令的 IPC
-	 *  响应先送达前端，再 app.restart()——避免响应未发出进程就退出、前端悬挂在 pending。
+	 *  响应先送达前端再重启——避免响应未发出进程就退出、前端悬挂在 pending。
 	 */
 	restartApp: () => __TAURI_INVOKE<void>("restart_app"),
 	/**  查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。 */
@@ -129,7 +129,8 @@ export const commands = {
 	 *  不误杀占用同端口的其它应用。前端「服务状态」页开关从关闭→开启时，应在 `set_http_server_enabled(true)`
 	 *  之前调用本命令，确保端口可用，避免新 sidecar bind 失败。
 	 * 
-	 *  注：init 自动启动场景不调用本命令（按需求仅在服务状态页开关触发）。
+	 *  注：init 自动启动路径不经本命令，但其启动线程内直接调用同一款
+	 *  `reclaim_port_if_orphan_go_server` 自愈（见 init 注释）。
 	 */
 	cleanupOrphanHttpServer: () => typedError<null, string>(__TAURI_INVOKE("cleanup_orphan_http_server")),
 	/**

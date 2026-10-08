@@ -7,8 +7,9 @@
  * sidecar EnsureVendored 检测受管目录缺失时从此处复制——终端用户机零 npm/零 registry
  * 依赖（公司网络无需代理），版本由构建期锁死 = catalog pin。
  *
- * 安装形态（勿破坏）：staging 内置 .npmrc（node-linker=hoisted）+ pnpm --ignore-workspace，
- * 产出 npm 同构的扁平真实目录树——Go VendoredClaudeBin / Rust cli_bin 按扁平路径直取平台
+ * 安装形态（勿破坏）：staging 内置 .npmrc（node-linker=hoisted）+ 自身 pnpm-workspace.yaml
+ * （staging 即工作区根，天然不向上吸附；supportedArchitectures 声明构建目标平台），产出
+ * npm 同构的扁平真实目录树——Go VendoredClaudeBin / Rust cli_bin 按扁平路径直取平台
  * 二进制（node_modules/@anthropic-ai/claude-agent-sdk-<triple>/<bin>），Tauri bundle.resources
  * 打包亦要求真实文件；pnpm 默认 isolated（symlink）布局会整链路打穿。
  *
@@ -20,6 +21,13 @@
  * 幂等：目标已存在且包版本匹配则跳过（秒回），新版本自动新增目录；安装走「临时目录 +
  * rename」原子落地（安装中断不产生以目标名存在的半成品，bundle.resources 不打包残缺品）。
  * 需联网（开发机/CI）。
+ *
+ * 目标平台：CI 交叉构建时 env GOOS/GOARCH（release-assets.yml 矩阵按目标注入，
+ * beforeBuildCommand 继承）决定 staging 平台包架构，经 staging .npmrc 的
+ * supported-architectures 让 pnpm 装出目标平台 optional 依赖——不信 pnpm 的本机过滤
+ * （arm64 runner 打 x86_64 资产必须装出 darwin-x64，与 amd64 sidecar 运行时定位一致；
+ * 错配即运行期「vendored claude 二进制缺失」）；本地无 env 回退当前机器。staging 就绪
+ * 判定与安装后断言均校验目标平台 claude 二进制存在，缺失即 fail（残缺品不落地）。
  */
 
 import { execFileSync } from 'node:child_process';
@@ -120,17 +128,54 @@ function adapterSpec(entry: CatalogEntry): string {
   return spec;
 }
 
-/** staging 是否已就绪（目标包 package.json 存在且 version 匹配）。 */
-function stagingReady(dir: string, pkg: string, version: string): boolean {
-  const pkgJsonPath = resolve(dir, 'node_modules', ...pkg.split('/'), 'package.json');
-  if (!existsSync(pkgJsonPath)) {
-    return false;
+/**
+ * 构建目标平台（npm os/cpu 命名）：CI 交叉构建读 GOOS/GOARCH（两者须成对出现），
+ * 本地开发无 env 回退当前机器——staging 平台包与消费方 sidecar 架构强一致的 SSOT。
+ */
+interface TargetPlatform {
+  os: string;
+  cpu: string;
+}
+
+function targetPlatform(): TargetPlatform {
+  const goos = process.env.GOOS;
+  const goarch = process.env.GOARCH;
+  if (!goos && !goarch) {
+    return { os: process.platform, cpu: process.arch };
   }
+  if (goos !== 'darwin' && goos !== 'windows' && goos !== 'linux') {
+    fail(`env GOOS=${goos ?? '缺失'} 非法或与 GOARCH 未成对注入（GOOS ∈ darwin/windows/linux，GOARCH ∈ amd64/arm64）`);
+  }
+  if (goarch !== 'amd64' && goarch !== 'arm64') {
+    fail(`env GOARCH=${goarch ?? '缺失'} 不支持（∈ amd64/arm64，须与 GOOS 成对注入）`);
+  }
+  return { os: goos === 'windows' ? 'win32' : goos, cpu: goarch };
+}
+
+/** 目标平台的 SDK claude 二进制相对路径（与 Go agentcatalog.VendoredClaudeBin 的定位同口径）。 */
+function claudePlatBinRel(platform: TargetPlatform): string[] {
+  return [
+    'node_modules',
+    '@anthropic-ai',
+    `claude-agent-sdk-${platform.os}-${platform.cpu}`,
+    platform.os === 'win32' ? 'claude.exe' : 'claude',
+  ];
+}
+
+/**
+ * staging 是否已就绪：目标包就位且版本匹配，且目标平台 claude 二进制存在——
+ * 跨架构错配的旧 staging（如换 GOARCH 重跑）不复用，整目录重装。
+ */
+function stagingReady(dir: string, pkg: string, version: string, platformBinRel: string[]): boolean {
   try {
-    return JSON.parse(readFileSync(pkgJsonPath, 'utf8')).version === version;
+    const pkgJsonPath = resolve(dir, 'node_modules', ...pkg.split('/'), 'package.json');
+    if (JSON.parse(readFileSync(pkgJsonPath, 'utf8')).version !== version) {
+      return false;
+    }
   } catch {
     return false;
   }
+  return existsSync(resolve(dir, ...platformBinRel));
 }
 
 /** 安装树内实际落地的 claude SDK 版本（读不到 = 安装树异常）。 */
@@ -158,9 +203,13 @@ function cleanStaleTmp(idDir: string): void {
   }
 }
 
-/** pnpm add（--ignore-workspace 隔离：staging 非根 workspace 成员，防向上吸附）。 */
+/**
+ * pnpm add（staging 自带 pnpm-workspace.yaml 即工作区根，天然隔离、不向上吸附。
+ * 勿加 --ignore-workspace：该 flag 会连 supportedArchitectures 等工作区设置一起忽略——
+ * 实测其存在时平台包退回「仅当前机器」过滤，CI 交叉目标装不出对应平台包）。
+ */
 function pnpmAdd(args: string[], cwd: string): void {
-  execFileSync('pnpm', ['add', '--ignore-workspace', ...args], {
+  execFileSync('pnpm', ['add', ...args], {
     cwd,
     stdio: 'inherit',
     shell: process.platform === 'win32',
@@ -178,6 +227,8 @@ if (entries.length === 0) {
 
 const pmSpec = packageManagerSpec();
 const sdkPin = rootClaudeSdkPin();
+const platform = targetPlatform();
+const platformBinRel = claudePlatBinRel(platform);
 // .npmrc 随 staging 落地：人工 cd 进 staging 手动 pnpm install 也得到同构布局（可复现）。
 const STAGING_NPMRC = [
   '# hoisted = npm 同构扁平真实目录树（无 symlink）：扁平路径供 Go/Rust 直取平台二进制，',
@@ -185,6 +236,22 @@ const STAGING_NPMRC = [
   'node-linker=hoisted',
   '',
 ].join('\n');
+// pnpm-workspace.yaml 随 staging 落地：其一，staging 成为自身工作区根（pnpm 向上寻根到此
+// 为止，防吸附进外层 workspace）；其二，supportedArchitectures 让平台包按构建目标装出
+// （不信 pnpm 的本机 optional 过滤）——CI arm64 runner 打 x86_64 资产时靠它装出 darwin-x64，
+// 与 amd64 sidecar 运行时定位一致。注：该设置仅 pnpm-workspace.yaml 形态生效
+// （.npmrc 在现代 pnpm 只读 auth/registry 类设置），且被 --ignore-workspace 连带忽略。
+function stagingWorkspaceYaml(platform: TargetPlatform): string {
+  return [
+    '# 由 scripts/prepare-acp-adapters.ts 生成：平台包按构建目标架构装出（勿手改）。',
+    'supportedArchitectures:',
+    '  os:',
+    `    - ${platform.os}`,
+    '  cpu:',
+    `    - ${platform.cpu}`,
+    '',
+  ].join('\n');
+}
 
 for (const entry of entries) {
   const spec = adapterSpec(entry);
@@ -196,8 +263,8 @@ for (const entry of entries) {
   const version = spec.slice(at + 1);
   const dir = resolve(STAGING_ROOT, entry.id, version);
 
-  if (stagingReady(dir, pkg, version)) {
-    console.log(`prepare-acp-adapters: ${spec} 已就绪，跳过（${dir}）`);
+  if (stagingReady(dir, pkg, version, platformBinRel)) {
+    console.log(`prepare-acp-adapters: ${spec} 已就绪（${platform.os}-${platform.cpu} 平台二进制在位），跳过（${dir}）`);
     continue;
   }
 
@@ -212,6 +279,7 @@ for (const entry of entries) {
     `${JSON.stringify({ private: true, packageManager: pmSpec }, null, 2)}\n`,
   );
   writeFileSync(resolve(tmpDir, '.npmrc'), STAGING_NPMRC);
+  writeFileSync(resolve(tmpDir, 'pnpm-workspace.yaml'), stagingWorkspaceYaml(platform));
 
   console.log(`prepare-acp-adapters: pnpm add ${spec} → ${tmpDir}`);
   try {
@@ -248,7 +316,14 @@ for (const entry of entries) {
     fail(`pnpm add ${CLAUDE_SDK_PKG}@${sdkActual} 失败: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  if (!stagingReady(tmpDir, pkg, version)) {
+  // 目标平台二进制断言（bundle.resources 不打包与 sidecar 架构错配的残缺品）。
+  const platBinPath = resolve(tmpDir, ...platformBinRel);
+  if (!existsSync(platBinPath)) {
+    rmSync(tmpDir, { recursive: true, force: true });
+    fail(`目标平台 claude 二进制缺失: ${platBinPath}（pnpm 未按构建目标 ${platform.os}-${platform.cpu} 装出平台包，检查 supported-architectures 注入）`);
+  }
+
+  if (!stagingReady(tmpDir, pkg, version, platformBinRel)) {
     rmSync(tmpDir, { recursive: true, force: true });
     fail(`安装后校验失败：${tmpDir} 下未见 ${pkg}@${version}`);
   }

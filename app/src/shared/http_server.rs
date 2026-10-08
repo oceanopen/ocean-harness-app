@@ -31,10 +31,10 @@
 //   STARTUP_POLL_INTERVAL 轮询「子进程 PID 是否监听端口」做身份校验——命中即置 Running，窗口结束未命中则 kill 子进程后置 Stopped。
 //   运行中进程退出由事件线程的 Terminated 即时捕获。run_state 三态供前端渲染，Running 即自有进程已 bind 可直接 fetch。
 //
-// 孤立进程清理（cleanup_orphan_http_server 命令）：app 异常退出后跨会话残留的 go-server 可能占用端口，
-//   导致新 sidecar bind 失败。前端「服务状态」页开关开启时在 start 前显式调用本命令清理——
+// 孤立进程清理（防端口占用 bind 失败，两个触点同一套匹配校验）：app 重启/异常退出后残留的 go-server
+//   可能占用端口。① init 自动启动前自愈 reclaim_port_if_orphan_go_server（覆盖重启/崩溃/强杀一切孤儿）；
+//   ② 前端「服务状态」页开关开启时经 cleanup_orphan_http_server 命令在 start 前显式清理——
 //   仅当端口占用者进程名含 tauri.conf identifier + go_server_bin（本应用 sidecar）才 kill，不误杀他应用。
-//   init 自动启动场景不清理（按需求仅在前端开关触发）。
 //
 // 退出阶段（RunEvent::Exit → shutdown）：unix 先 SIGTERM 让服务优雅退出，再 kill() 兜底；
 // Windows 直接 kill()（无 SIGTERM 概念）。
@@ -494,8 +494,9 @@ fn finalize_stopped(app: &AppHandle, error: Option<String>) {
 
 /// 启动 sidecar（仅 spawn + 启动成败判定，不含端口清理逻辑）。在调用方线程同步执行；失败返回 Err。
 ///
-/// 跨会话 go-server 孤立进程的清理已迁移到独立 IPC 命令 `cleanup_orphan_http_server`，
-/// 由前端「服务状态」页开关开启时在调用本函数前显式触发（详见该命令注释）。
+/// 跨会话 go-server 孤立进程的清理由调用方负责：init 自动启动路径先行自愈
+/// （reclaim_port_if_orphan_go_server），手动开关路径经 `cleanup_orphan_http_server`
+/// 命令显式触发（详见该命令注释）。
 ///
 /// 1) 停掉同会话 Rust 持有的 child（强制干净重启；init 时 child 为 None，空操作）。
 /// 2) 加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 记 child_pid → 置 Starting；
@@ -793,7 +794,8 @@ pub fn init(app: &AppHandle) {
         aborted: AtomicBool::new(false),
         run_state: AtomicU8::new(HttpServerRunState::Stopped as u8),
         mode,
-        // 初值取模式默认；实际端口在 start_server 时按 app_config 解析覆盖。
+        // 端口为编译期固定值（dev=9000 / release=9100，见本文件顶部端口契约注释），
+        // start_server 时同值写入。
         port: AtomicU16::new(default_port()),
         log_dir,
         sqlite_dir,
@@ -802,10 +804,14 @@ pub fn init(app: &AppHandle) {
         start_last_error: Mutex::new(None),
     });
 
-    // 默认自动启动（后台线程，不阻塞 setup）。
+    // 默认自动启动（后台线程，不阻塞 setup）。启动前先自愈清理本应用 sidecar 孤儿——
+    // 上一实例重启/崩溃/强杀残留占用端口会让新 sidecar bind 失败（复用与手动开关路径
+    // 同一款 identifier+go_server_bin 双重校验，不误杀他应用）。
     if dirs.is_some() {
         let handle = app.clone();
         thread::spawn(move || {
+            let identifier = handle.config().identifier.to_string();
+            reclaim_port_if_orphan_go_server(default_port(), &identifier);
             if let Err(e) = start_server(&handle) {
                 log::warn!("[http-server] auto-start failed: {}", e);
             }
@@ -857,7 +863,8 @@ pub fn set_http_server_enabled(app: AppHandle, enabled: bool) -> Result<(), Stri
 /// 不误杀占用同端口的其它应用。前端「服务状态」页开关从关闭→开启时，应在 `set_http_server_enabled(true)`
 /// 之前调用本命令，确保端口可用，避免新 sidecar bind 失败。
 ///
-/// 注：init 自动启动场景不调用本命令（按需求仅在服务状态页开关触发）。
+/// 注：init 自动启动路径不经本命令，但其启动线程内直接调用同一款
+/// `reclaim_port_if_orphan_go_server` 自愈（见 init 注释）。
 #[tauri::command]
 #[specta::specta]
 pub fn cleanup_orphan_http_server(app: AppHandle) -> Result<(), String> {

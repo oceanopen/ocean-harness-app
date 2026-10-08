@@ -27,19 +27,33 @@ import (
 //	资源源 GO_SERVER_ACP_RESOURCES_DIR：打包只读内容
 //	受管根 GO_SERVER_ACP_ADAPTERS_DIR：EnsureVendored 自建并保持卫生
 
-// vendoredMarker 安装完整性 marker，位于安装目录根部，内容 = 条目版本号。
+// vendoredMarker 安装完整性 marker，位于安装目录根部，内容见 vendoredMarkerContent。
 const vendoredMarker = ".ocean-vendored"
+
+// vendoredMarkerContent marker 内容 = <版本号>@<运行时平台 triple>（如 0.84.0@darwin-x64，
+// triple 与 VendoredClaudeBin 的 SDK 平台包命名同口径）。带 triple 使跨架构错配的安装
+// （如 CI arm64 runner 打出的 darwin-arm64 资源被 amd64 sidecar 复用）不命中——旧格式
+// / 版本漂移 / 平台漂移一律整树重制，错配目录无法永久存续。
+func vendoredMarkerContent(entry Entry) string {
+	return entry.Version + "@" + claudePlatformTriple()
+}
+
+// markerMatches 校验 marker 内容与写入方期望（vendoredMarkerContent）全等——reader 由
+// writer 派生，格式永不漂移；空 triple 平台写出 "ver@" 亦自洽命中复用，不触发反复重制。
+func markerMatches(data []byte, entry Entry) bool {
+	return strings.TrimSpace(string(data)) == vendoredMarkerContent(entry)
+}
 
 // vendoredMu 序列化 EnsureVendored：并发拉起会话时避免对同一受管树并行安装。
 var vendoredMu sync.Mutex
 
 // EnsureVendored 确保条目 adapter 在受管目录就绪，返回安装目录 <dstRoot>/<id>/<version>。
 //
-// 幂等：marker 内容 = 版本即命中复用；缺失或不符（半成品、内容漂移）整树重制。
-// 安装走「临时目录 + rename」原子落地，marker 先于 rename 写入（rename 可见即完整安装）。
-// 成功后清理同 id 下其它版本目录与临时残留（受管目录恒只保留当前 pin 版本）。
-// 仅支持 npx-adapter 策略；srcRoot / dstRoot 为空 = 未配置，显式报错（config 可选字段
-// 语义：不阻断启动，本函数调用期拦截）。
+// 幂等：marker「版本+平台」双匹配即命中复用；缺失或不符（半成品、内容漂移、跨架构
+// 错配）整树重制。安装走「临时目录 + rename」原子落地，marker 先于 rename 写入
+// （rename 可见即完整安装）。成功后清理同 id 下其它版本目录与临时残留（受管目录恒只
+// 保留当前 pin 版本）。仅支持 npx-adapter 策略；srcRoot / dstRoot 为空 = 未配置，
+// 显式报错（config 可选字段语义：不阻断启动，本函数调用期拦截）。
 func EnsureVendored(entry Entry, srcRoot, dstRoot string) (string, error) {
 	if entry.Strategy != StrategyNpxAdapter {
 		return "", fmt.Errorf("agent %q 策略 %s 无 vendoring 形态", entry.ID, entry.Strategy)
@@ -53,9 +67,9 @@ func EnsureVendored(entry Entry, srcRoot, dstRoot string) (string, error) {
 	vendoredMu.Lock()
 	defer vendoredMu.Unlock()
 
-	// 命中：marker 内容 = 版本即视为完整安装，直接复用。
+	// 命中：marker「版本+平台」双匹配即视为完整安装，直接复用。
 	if data, err := os.ReadFile(filepath.Join(dst, vendoredMarker)); err == nil &&
-		strings.TrimSpace(string(data)) == entry.Version {
+		markerMatches(data, entry) {
 		return dst, nil
 	}
 	if info, err := os.Stat(src); err != nil || !info.IsDir() {
@@ -72,7 +86,7 @@ func EnsureVendored(entry Entry, srcRoot, dstRoot string) (string, error) {
 		_ = os.RemoveAll(tmp)
 		return "", fmt.Errorf("复制 vendored 资源: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(tmp, vendoredMarker), []byte(entry.Version), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tmp, vendoredMarker), []byte(vendoredMarkerContent(entry)), 0o644); err != nil {
 		_ = os.RemoveAll(tmp)
 		return "", fmt.Errorf("写入 vendored marker: %w", err)
 	}
