@@ -22,7 +22,7 @@
 |---|---|---|
 | 1 | vendoring 机制现成：EnsureVendored 幂等安装（marker「版本+平台」双匹配、临时目录+rename 原子落地；本体仅消费 Entry 的 Strategy/ID/Version，配套 VendoredSpawnConfig 再消费 Args/Env），Entry 全字段导出，包外可构造字面量复用 | server/internal/agentcatalog/vendored.go:57 |
 | 2 | node 解析 SSOT：ResolveNodeBin（PATH + login shell 兜底），系统 node 已是运行时前提（ACP adapter 同款拉起） | server/internal/agentcatalog/vendored.go:151 |
-| 3 | go-sdk v1.8.0 已 pin（T0 升级完成；client 侧 CallTool/ListTools/NewInMemoryTransports 可用，与 server 侧同版本），桥接引擎零新增依赖；关键行为断言（v1.8.0 源码级复核）：CommandTransport 的 Connect 内自行 Start（cmd.go），Close 走「关 stdin → 5s 等待 → SIGTERM → SIGKILL」仅杀主进程不杀进程组；ToolHandlerFor 三返回值形态自动装配工具结果（出参双挂载 StructuredContent+TextContent、error → IsError 中文文案），结果无需手工包装；AddTool 对 map 型 In 推导 `{"type":"object","additionalProperties":true}` 宽松 schema（任意嵌套透传、缺参得 {}），struct 型 In 推导 additionalProperties:false（未知属性在协议层拒绝）；StreamableHTTPHandler 支持 SessionTimeout 空闲会话 TTL 回收（ocean_harness server 已配 10 分钟） | server/go.mod |
+| 3 | go-sdk v1.8.0 已 pin（T0 升级完成；client 侧 CallTool/ListTools/NewInMemoryTransports 可用，与 server 侧同版本），桥接引擎零新增依赖；关键行为断言（v1.8.0 源码级复核）：CommandTransport 的 Connect 内自行 Start（cmd.go）；关停编排（关 stdin → 5s 等待 → SIGTERM → SIGKILL，仅杀主进程不杀进程组）在 pipeRWC.Close、由 session.Close() 触达（CommandTransport 本身无 Close 方法），实测引擎 stdin EOF 即自退并自收浏览器（T1.1 场景 A，20ms）；ToolHandlerFor 三返回值形态自动装配工具结果（出参双挂载 StructuredContent+TextContent、error → IsError 中文文案），结果无需手工包装；AddTool 对 map 型 In 推导 `{"type":"object","additionalProperties":true}` 宽松 schema（任意嵌套透传、缺参得 {}），struct 型 In 推导 additionalProperties:false（未知属性在协议层拒绝）；StreamableHTTPHandler 支持 SessionTimeout 空闲会话 TTL 回收（ocean_harness server 已配 10 分钟） | server/go.mod |
 | 4 | MCP 工具注册唯一入口：ocean_harness server 单例 init() 内 AddTool，schema 由 handler 泛型 Args/Content 反射推导；同包多文件 init 按文件名序，禁止另立 init | server/internal/mcpservers/mcp_ocean_harness.go:28 |
 | 5 | SSE 范式蓝本：seq 单调、建连首帧全量 snapshot、慢订户断开；前端消费范式五文件切分（reducer 纯函数 + EventSource gap 重连） | server/internal/acpsession/hub.go；packages/web/src/state/acpSession/ |
 | 6 | REST 分组范式：acpSessionGroup（POST action + GET events SSE） | server/internal/router/router.go:108 |
@@ -71,7 +71,7 @@
 
 | 风险 | 对策（落点见任务） |
 |---|---|
-| 引擎真实行为未实测（**剩余两项待实机**：进程组清理、go-sdk 反射；flag 拼写/工具名/cookie 结构/webdriver/下载落点/idle 行为已经上游源码核实并采信） | T1.1 spike 两项本地实测前置于编码，结论回写本文档 |
+| 引擎真实行为：macOS 进程组清理已实测闭环（T1.1 四场景全无孤儿）；仅剩 Windows 侧进程组行为待实机；其余（flag 拼写/工具名/cookie 结构/webdriver/下载落点/idle 行为/go-sdk 反射）均已核实采信 | 已回写；Windows 项沿 acp 生产模式 + GOOS=windows 编译验收兜底 |
 | Windows 侧 Go 编译只在 tag 构建暴露（PR CI 不编） | 跨平台进程组复用 acp 模式 + `GOOS=windows go build` 验收（T1.2）；CI 常态交叉编译检查留扩展点 |
 | cookie 跨站泄漏（authhttp 无域过滤会把 profile 全部凭据发给任意 URL） | 按 domain/path/secure 过滤 + cookiejar 标准域匹配 + 跨域不泄漏单测断言（T1.4） |
 | 引擎挂死拖死全链路（Forward 无超时） | per-call ctx 超时 120s + 连续 3 次超时置 failed 自动重建 + close/ensure 竞态显式错误（T1.3） |
@@ -126,14 +126,14 @@
 
 #### T1.1 前置 spike：实测 playwright-mcp 引擎行为（本地项）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：编码前实机验证无法靠上游源码核实的行为，结论作为后续任务的事实输入。其余待实测项（flag 拼写、工具名、cookie 返回结构、webdriver 标记、下载落点、idle 行为）已经上游源码核实采信，结论直接记入本任务「外部已核实」段，不再本地重测。
 
 **技术方案**：
 - 本机临时目录 `pnpm add @playwright/mcp`（不进仓库依赖）
 - 本地实测一项：
-  - ③ 进程组清理：kill 引擎进程后浏览器子进程是否随之退出（macOS 与 Windows 分平台测，校验杀组/杀树方案——D4 主层释放依赖干净退出；注意引擎自身 idle 自关只关浏览器且下次调用自愈，但「杀引擎进程树」的清理行为仍需实测）
+  - ~~③ 进程组清理：kill 引擎进程后浏览器子进程是否随之退出（校验杀组/杀树方案——D4 主层释放依赖干净退出）~~（macOS 实测闭环：四杀法全无孤儿，Chrome 经 `--remote-debugging-pipe` 监测引擎死亡自退——详见实施定稿；Windows 侧待实机验证）
   - ~~④ go-sdk AddTool 对 map 型 Args 的反射行为~~（T0 已实测闭环：map 型 In 推导 `{"type":"object","additionalProperties":true}` 宽松 schema，任意嵌套参数原样透传、缺参得 `{}`——T2.2 逃生舱 DTO 直接可用，结论见 §1.1 事实 3）
 - 外部已核实结论（采信记录，实施依据）：
   - flags：`--caps`（合法全集 config,network,pdf,storage,testing,vision,devtools，逗号分隔不校验枚举——传错值工具静默不可见）/ `--browser chrome`（chromium + channel chrome，缺省同）/ `--user-data-dir` / `--output-dir`（缺省 cwd 下 `.playwright-mcp`）/ `--headless`（默认有头）/ `--idle-timeout`（**毫秒**；无头默认 1h、有头 never、0 关闭；到期只关浏览器、下次调用自愈重启）/ `--blocked-origins`/`--allowed-origins`（分号分隔，自述非安全边界）/ `--image-responses allow|omit|only` / `--config`（JSON，launchOptions 完整支持）
@@ -148,6 +148,21 @@
 - ③ 结论有明确记录（进程组分平台行为）
 - 本文档对应设计段已更新为实测事实
 
+**实施定稿**：
+- 实测环境：macOS（Darwin 25.5.0）、系统 Chrome 154.0.8037.99（channel chrome）、@playwright/mcp 0.0.83（依赖闭包 playwright/playwright-core 1.64.0-alpha-1790635538000——薄壳携带 alpha 版 playwright，「锁版须连带精确 pin」的直接印证）、go-sdk v1.8.0（与仓库同版）；headless 模式（进程树结构与有头一致，免桌面打扰）；Setpgid 拉起；判定口径 = 动作后 5s 按 profile 路径 pgrep 全树 + PRE/POST 快照自证
+- 四场景结论（每场景 PRE 8 进程 = 引擎 node + Chrome 主 + GPU + network/storage 工具进程 + 3 renderer）：
+
+  | 场景 | 动作 | 引擎 | Chrome 树 |
+  |---|---|---|---|
+  | A 优雅关停 | session.Close() | stdin EOF 即自退（20ms 返回）并自收浏览器 | 全退，0 残留 |
+  | B 主进程 SIGTERM | kill -TERM | 信号处理收浏览器后退出 | 全退，0 残留 |
+  | C 主进程 SIGKILL | kill -9 | 即死（无清理机会） | **5s 内自退**：Chrome 经 --remote-debugging-pipe 监测启动方死亡（pipe EOF）自关，无孤儿 |
+  | D 进程组 SIGKILL | kill(-pgid)（复刻 acp killProcessGroup） | 即死 | 全灭，0 残留 |
+
+- 核心结论：**macOS 上任何杀法（含 SIGKILL 主进程）都不留 Chrome 孤儿**——T1.2 killProcessGroup 补杀为纵深防御而非硬需求（保留：防未知挂死态 + Windows 未实测）；「session.Close() → 补杀」收敛序成立，主路径极快
+- 顺带本地坐实：Chrome argv 实含 --disable-blink-features=AutomationControlled 与 --remote-debugging-pipe；引擎为单 node 进程（直连 cli.js，无 npx 包装层）；Chrome 树全成员 argv 含 --user-data-dir=&lt;profile&gt;（按 profile 路径检索进程树可靠）；引擎错误以 isError:true 文本返回（navigate 超时实测）；--output-dir 缺省落 cwd/.playwright-mcp 实锤（spike 引擎在启动 cwd 留下 page-*.yml，T1.2 显式传 --output-dir 的必要性坐实）
+- Windows 侧待实机验证：生产代码沿用 acp 包已在生产验证的 CREATE_NEW_PROCESS_GROUP + taskkill /T /F 模式，T1.2 以 GOOS=windows 编译验收兜底
+
 #### T1.2 引擎拉起与桥接
 
 **状态**：⬜
@@ -159,8 +174,8 @@
 - 新增 `pin.go`：构造 `agentcatalog.Entry{ID:"playwright-mcp", Strategy: npx-adapter}`（Args 由 pin 单 SSOT 派生；**@playwright/mcp 已是薄壳包——实现在其依赖的 playwright-core 里，锁版须连带 playwright/playwright-core 一起精确 pin**，pnpm add 依赖闭包自动携带）+ SpawnArgs 组装：`--browser chrome --user-data-dir <profile> --caps storage,network,pdf --output-dir ~/.ocean-harness/browser/downloads/<profile>/`；**per-profile 无头选项**（headless=true 时追加 `--headless`，偏好持久化见 paths.go，D10）；**idle 释放双层（D4）**：主层 manager 侧计时（T1.3），兜底层 spawn 显式传 `--idle-timeout <毫秒>`（值宽于 manager 一档，如 manager 10 分钟/引擎 900000（15 分钟）；有头默认 never 故必须显式传——到期只关浏览器窗口、下次调用自愈重启，防 manager 异常时 Chrome 常驻）；`--caps` 为常量可配置（合法全集 config,network,pdf,storage,testing,vision,devtools；不开的 cap 其工具不存在，逃生舱也摸不到）；`--no-webmcp`（工具面静态，免 tools/list 动态变更处理）与 `--file-paths absolute`（路径回传口径）纳入默认参数；`--blocked-origins`/`--allowed-origins` 预留可选配置（默认不设，prompt injection 工具层抓手）；可选 `--config` launchOptions.ignoreDefaultArgs 追加 `--enable-automation` 去「Chrome is being controlled」信息条（**仅外观——引擎默认已注入 `--disable-blink-features=AutomationControlled`，navigator.webdriver 默认 false，无需反检测处理**）
 - 新增 `paths.go`：`~/.ocean-harness/browser/profiles/<name>/` 与 `~/.ocean-harness/browser/downloads/<name>/` 布局 SSOT，包内变量可覆盖根目录（测试用）；profile 名合法性校验防路径穿越；**per-profile 偏好元数据文件**（`profiles/<name>/prefs.json`：headless 等非凭据偏好，D10——ensure 重拉时读取，显式传参覆写回存；不违 D3，D3 约束的是登录态凭据不落盘）
 - 新增 `detect.go`：系统浏览器探测（macOS/Windows/Linux 标准路径），仅用于 spawn 失败时的错误文案增强；识别 profile 锁冲突（残留会话占住 user-data-dir 时提示「检测到残留会话，已尝试回收」）
-- 新增 `client.go`：拉起链 EnsureVendored → ResolveNodeBin + `node --version` 预检（<18 显式中文报错；先例在 acpdoctor 包内未导出，仿写约 30 行；@playwright/mcp engines 即 node≥18，口径一致）→ argv 组装 → exec.Cmd 配置后交 go-sdk（**CommandTransport 的 Connect 内自行 Start，client.go 不得自行 Start**，只配 SysProcAttr/Cancel/WaitDelay——T0 已源码级复核确认该行为在 v1.8.0 依旧成立，且 Close 仅杀主进程、杀组须自理）→ `&mcp.CommandTransport{Command: cmd}` + NewClient + Connect（三参形态）；进程退出守护 goroutine（cmd.Wait 返回 → 通知上层置 failed）
-- **进程纪律（跨平台，复用 acp 包模式）**：unix 走 `process_unix.go` 的 Setpgid 进程组语义、Windows 走 `process_windows.go` 的 CREATE_NEW_PROCESS_GROUP + `taskkill /T /F` 杀树 + PID 易主防护（**两函数在 acp 包内未导出——acp 侧新增导出包装，或 browser 内 build-tag 副本，二选一**；Linux 非当前打包目标但 unix 分支天然兼容）；profile 目录落 .engine.pid；StopAll 收敛序 = transport.Close()（MCP 协议关停，只管主进程）→ killProcessGroup 补杀孙进程（与 spike ③ 结论联动）
+- 新增 `client.go`：拉起链 EnsureVendored → ResolveNodeBin + `node --version` 预检（<18 显式中文报错；先例在 acpdoctor 包内未导出，仿写约 30 行；@playwright/mcp engines 即 node≥18，口径一致）→ argv 组装 → exec.Cmd 配置后交 go-sdk（**CommandTransport 的 Connect 内自行 Start，client.go 不得自行 Start**，只配 SysProcAttr/Cancel/WaitDelay——T0 已源码级复核确认该行为在 v1.8.0 依旧成立，且 session.Close() 编排只杀主进程、杀组须自理）→ `&mcp.CommandTransport{Command: cmd}` + NewClient + Connect（三参形态）；进程退出守护 goroutine（cmd.Wait 返回 → 通知上层置 failed）
+- **进程纪律（跨平台，复用 acp 包模式）**：unix 走 `process_unix.go` 的 Setpgid 进程组语义、Windows 走 `process_windows.go` 的 CREATE_NEW_PROCESS_GROUP + `taskkill /T /F` 杀树 + PID 易主防护（**两函数在 acp 包内未导出——acp 侧新增导出包装，或 browser 内 build-tag 副本，二选一**；Linux 非当前打包目标但 unix 分支天然兼容）；profile 目录落 .engine.pid；StopAll 收敛序 = session.Close()（MCP 协议关停编排，只管主进程；实测引擎即退并自收浏览器）→ killProcessGroup 补杀孙进程（spike ③ 实测：macOS 任何杀法均无 Chrome 孤儿，补杀为纵深防御保留，Windows 待实机）
 - 单测：spawnFunc 式可替换点（对齐 acpsession 惯例）+ `mcp.NewInMemoryTransports` 内存桩
 
 **依赖**：T1.1（进程组实机结论；flag 拼写/工具名/webdriver/下载落点已经外部核实采信）
