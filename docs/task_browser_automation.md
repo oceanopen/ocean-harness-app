@@ -1,6 +1,6 @@
 # 浏览器自动化基础设施——方案与任务清单
 
-> 状态：方案定稿
+> 状态：实施中
 > 范围：为 Ocean Harness 构建浏览器自动化基础设施——vendored playwright-mcp 引擎、browser_* MCP 工具面、登录态活引擎拉取（零持久化）、SSE 实时面板与 skill 双入口；本拆分覆盖方案全部实施面，不含后续演进项（见 §5 扩展点）。本文档自含全部设计事实，是唯一 SSOT。
 >
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
@@ -22,7 +22,7 @@
 |---|---|---|
 | 1 | vendoring 机制现成：EnsureVendored 幂等安装（marker「版本+平台」双匹配、临时目录+rename 原子落地；本体仅消费 Entry 的 Strategy/ID/Version，配套 VendoredSpawnConfig 再消费 Args/Env），Entry 全字段导出，包外可构造字面量复用 | server/internal/agentcatalog/vendored.go:57 |
 | 2 | node 解析 SSOT：ResolveNodeBin（PATH + login shell 兜底），系统 node 已是运行时前提（ACP adapter 同款拉起） | server/internal/agentcatalog/vendored.go:151 |
-| 3 | go-sdk v0.2.0 已 pin（client 侧 NewCommandTransport/CallTool/ListTools 可用，与 server 侧同版本），桥接引擎零新增依赖；注意 CommandTransport 的 Connect 内自行 Start，Close 走协议关停只管主进程 | server/go.mod |
+| 3 | go-sdk v1.8.0 已 pin（T0 升级完成；client 侧 CallTool/ListTools/NewInMemoryTransports 可用，与 server 侧同版本），桥接引擎零新增依赖；关键行为断言（v1.8.0 源码级复核）：CommandTransport 的 Connect 内自行 Start（cmd.go），Close 走「关 stdin → 5s 等待 → SIGTERM → SIGKILL」仅杀主进程不杀进程组；ToolHandlerFor 三返回值形态自动装配工具结果（出参双挂载 StructuredContent+TextContent、error → IsError 中文文案），结果无需手工包装；AddTool 对 map 型 In 推导 `{"type":"object","additionalProperties":true}` 宽松 schema（任意嵌套透传、缺参得 {}），struct 型 In 推导 additionalProperties:false（未知属性在协议层拒绝）；StreamableHTTPHandler 支持 SessionTimeout 空闲会话 TTL 回收（ocean_harness server 已配 10 分钟） | server/go.mod |
 | 4 | MCP 工具注册唯一入口：ocean_harness server 单例 init() 内 AddTool，schema 由 handler 泛型 Args/Content 反射推导；同包多文件 init 按文件名序，禁止另立 init | server/internal/mcpservers/mcp_ocean_harness.go:28 |
 | 5 | SSE 范式蓝本：seq 单调、建连首帧全量 snapshot、慢订户断开；前端消费范式五文件切分（reducer 纯函数 + EventSource gap 重连） | server/internal/acpsession/hub.go；packages/web/src/state/acpSession/ |
 | 6 | REST 分组范式：acpSessionGroup（POST action + GET events SSE） | server/internal/router/router.go:108 |
@@ -31,7 +31,7 @@
 | 9 | bot 零接线：headless 引擎 env 已注入 OCEAN_HARNESS_PORT，bot 跑 skill 与终端同链 | server/internal/bot/driver_claude.go |
 | 10 | skill 调用契约：不直调 MCP，经 ocean-harness CLI `mcp call <工具名> --data <json>` 原子操作编排 | plugins/ocean-harness-plugin/skills/cli-usage/SKILL.md |
 | 11 | acp 包已有跨平台进程组先例：unix Setpgid / Windows CREATE_NEW_PROCESS_GROUP + `taskkill /T /F` 杀树 + PID 易主防护（Windows 侧为 OpenProcess 句柄钉住探活，非 cmdline 校验）；processGroupAttr/killProcessGroup 均未导出，browser 包不能直接 import——acp 侧新增导出包装或 browser 内 build-tag 副本二选一（T1.2） | server/internal/acp/process_unix.go、process_windows.go |
-| 12 | MCP 结果包装只出 TextContent（任意出参 Marshal 成单条文本），纯 ImageContent 在 CLI 端退化为 null——转发类工具必须绕开该包装原样透传 Content 数组 | server/internal/mcpservers/mcp_util/result.go:16；server/internal/cli/render.go:13 |
+| 12 | v1.8.0 ToolHandlerFor 对类型化出参自动双挂载 StructuredContent+TextContent（出参为 JSON，无法承载 ImageContent），纯 ImageContent 结果在 CLI 端退化为 null——转发类工具必须手工构造 `*mcp.CallToolResult` 原样透传引擎 Content 数组，不走类型化出参自动装配 | server/internal/cli/render.go:13 |
 | 13 | 正式发布平台 = macOS + Windows（bundle targets `app/dmg/nsis` + release 矩阵 darwin×2/windows），Linux 非当前打包目标；PR CI 不编 Windows 侧 Go，问题只在 tag 构建暴露 | app/tauri.conf.json:37；.github/workflows/release-assets.yml:12-30 |
 
 ### 1.2 需求诉求
@@ -56,7 +56,7 @@
 
 | # | 决策 | 理由 |
 |---|---|---|
-| D1 | 引擎 = vendored @playwright/mcp，go-sdk（T0 升级后 v1.7.x）stdio 桥接 | 快照/自动等待业界最佳；Node 已是运行时前提；升级后同版桥接零新增依赖 |
+| D1 | 引擎 = vendored @playwright/mcp，go-sdk（T0 升级后 v1.8.0）stdio 桥接 | 快照/自动等待业界最佳；Node 已是运行时前提；升级后同版桥接零新增依赖 |
 | D2 | 仅系统浏览器（--browser chrome channel 探测），独立 user-data-dir | 用户拍板；探测成熟度交给 playwright |
 | D3 | 登录态零持久化：profile 目录即活 SSOT，带态 HTTP 从活引擎实时拉 cookies/localStorage（browser_cookie_list 口径，纯内存） | 零陈旧风险、无明文凭据落盘（用户拍板，勿擅自加落盘；注意 browser_storage_state 是落文件语义，主路径勿用） |
 | D4 | 会话 per-profile 单引擎进程，**用完即释放，双层兜底**（主层：manager 侧 idle 计时自动 close——杀引擎进程树；兜底层：spawn 显式传引擎 `--idle-timeout`（毫秒）——到期**只关浏览器窗口**，引擎 node 进程存活、下次调用自愈重启浏览器（登录态续存），防的是 manager 异常时 Chrome 常驻不释放）；下次调用 ensure 重拉，登录态在 profile 目录续存，重拉仅 1–3s，页面态丢失由 AI 重新导航即可；issueId 仅展示标签 | 同 user-data-dir 单实例互斥；任务执行期连续调用保活、任务完成自动释放（用户拍板非常驻）；**面板激活期截图轮询即保活（用户在看就不释放），轮询停止后 idle 正常计时——属预期**；「切 issue 不中断」= 运行中的任务不受影响，不是进程常驻 |
@@ -75,7 +75,7 @@
 | Windows 侧 Go 编译只在 tag 构建暴露（PR CI 不编） | 跨平台进程组复用 acp 模式 + `GOOS=windows go build` 验收（T1.2）；CI 常态交叉编译检查留扩展点 |
 | cookie 跨站泄漏（authhttp 无域过滤会把 profile 全部凭据发给任意 URL） | 按 domain/path/secure 过滤 + cookiejar 标准域匹配 + 跨域不泄漏单测断言（T1.4） |
 | 引擎挂死拖死全链路（Forward 无超时） | per-call ctx 超时 120s + 连续 3 次超时置 failed 自动重建 + close/ensure 竞态显式错误（T1.3） |
-| 截图/二进制 content 在转发链静默丢失（McpOK 单条 TextContent / CLI 纯图返回 null） | 转发 handler 绕过 McpOK 原样透传 Content 数组 + `--output-dir` 落盘使消费者拿路径（T2.2/T1.2） |
+| 截图/二进制 content 在转发链静默丢失（类型化出参的自动 Content 装配会丢图 / CLI 纯图返回 null） | 转发 handler 手工构造 `*mcp.CallToolResult` 原样透传 Content 数组 + `--output-dir` 落盘使消费者拿路径（T2.2/T1.2） |
 | prompt injection（网页内容诱导 agent 作恶） | SKILL.md 不可信内容铁律 + 提交类操作复述确认 + `--blocked-origins` 预留 spawn 配置项（T1.2/T3.3） |
 | 孤儿进程（sidecar 重启后引擎/浏览器残留） | 进程组 + pid 文件 + recoverOrphans 杀组前 cmdline 校验防 PID 复用误杀（T1.2/T1.3） |
 | 同 profile 互斥 / 并发失控 | manager map 单飞 + 并发上限 3 + 锁三分纪律（T1.3） |
@@ -94,16 +94,16 @@
 
 ### 阶段 0：依赖升级（先行）
 
-#### T0 go-sdk 升级：v0.2.0 → 最新 stable v1.7.x（破坏性迁移）
+#### T0 go-sdk 升级：v0.2.0 → 最新 stable v1.8.0（破坏性迁移）
 
-**状态**：⬜
+**状态**：✅
 
-**功能**：消除 pre-1.0 版本差距（当前 pin v0.2.0，上游已到 v1.7.x），浏览器桥接直接落在新版 API 上，避免按 v0.2.0 行为写完再迁移返工。
+**功能**：消除 pre-1.0 版本差距（原 pin v0.2.0），浏览器桥接直接落在新版 API 上，避免按 v0.2.0 行为写完再迁移返工。
 
 **技术方案**：
-- `server/go.mod` 升级 pin 至实施时 releases 页最新 stable v1.7.x + `go mod tidy`
-- 迁移面 10 文件：server 侧（`mcp_ocean_harness.go` 的 NewServer + 9×AddTool + NewStreamableHTTPHandler、`mcp_util/result.go` 结果构造、`mcp_tool/` 泛型 handler）+ CLI 侧（`cli/client.go` NewClient/NewStreamableClientTransport/ListTools 分页、`cli/mcp.go` CallTool、`cli/render.go` 渲染、`cli/session.go`）+ 2 测试文件；v1.x 已知破坏类（AddTool handler 签名与泛型 schema 推导、NewServer 必填 options、client options 形态）以编译报错为清单逐一迁移，不预设细节
-- **行为断言复核并回写本文档**（v0.2.0 → 新版逐条重验）：① CommandTransport 的 Connect 是否仍内含 Start、Close 是否仍只杀主进程不杀进程组（T1.2 拉起链依据，用 stdio 桥小冒烟验证）；② AddTool 对 map 型 Args 的反射行为（T1.1 spike ④ 输入）；③ StreamableHTTPHandler 会话孤儿/TTL 回收行为（cli/client.go:19 注释依据）——结论更新 §1.1 事实 3 / D1 / T1.1 / T1.2 对应文字
+- `server/go.mod` 升级 pin 至实施时 releases 页最新 stable（v1.8.0）+ `go mod tidy`
+- 迁移面：server 侧（`mcp_ocean_harness.go` 的 NewServer + 9×AddTool + NewStreamableHTTPHandler、`mcp_util/result.go` 结果构造、`mcp_tool/` 泛型 handler）+ CLI 侧（`cli/client.go`、`cli/mcp.go`、`cli/render.go`、`cli/session.go`）+ 2 测试文件；破坏类（handler 签名形态、client transport 构造、Connect 参数）以编译报错为清单逐一迁移，不预设细节
+- **行为断言复核并回写本文档**（① CommandTransport Connect/Close 语义；② AddTool 对 map 型 Args 的反射；③ StreamableHTTPHandler 会话孤儿/TTL 回收）——结论已更新 §1.1 事实 3 / D1 / T1.1 / T1.2 对应文字
 
 **依赖**：无
 
@@ -112,6 +112,15 @@
 - CLI 端到端：`mcp tools` 列出全部工具、`mcp call` 实调成功
 - bot/终端 skill 链路冒烟（同链 MCP 调用）不受影响
 - 本文档 v0.2.0 相关断言已回写为新版事实
+
+**实施定稿**：
+- pin v1.8.0（releases 页最新 stable；方案原文的 v1.7.x 是成稿时最新，按「实施时最新 stable」原则取 v1.8.0）
+- 写法全面对齐 v1.x 推荐形态（经用户确认不设保守上限）：handler 迁移至 `ToolHandlerFor` 三返回值 `(ctx, *CallToolRequest, In) (*CallToolResult, Out, error)`——成功 `return nil, 出参, nil`（SDK 自动双挂载 StructuredContent+TextContent）、失败 `return nil, 零值, err`（SDK 自动装配 IsError 中文文案）；`mcp_util/result.go` 整文件删除（McpOK/McpFail 职责已被 SDK 自动装配内建，v1.8.0 实测验证），失败日志职责收敛为 `McpTool.Fail(err)`（zap Warn）
+- server 侧另改：`McpOceanHarnessStreamableHTTPHandler` 配置 `SessionTimeout: 10min`（v1.8.0 新能力，空闲会话 TTL 兜底回收；正常路径 CLI 仍主动 DELETE 即时释放）
+- CLI 侧仅 `client.go` 实改：`NewStreamableClientTransport(url, nil)` → `&mcp.StreamableClientTransport{Endpoint}`、`Connect` 增第三参；`mcp.go`/`render.go`/`session.go` 与 2 测试文件零改动（CallTool/ListTools/Content 形态经实测不变）
+- 行为断言复核结论（已并入 §1.1 事实 3）：① Connect 内含 Start、Close 仅杀主进程（关 stdin → 5s → SIGTERM → SIGKILL）不杀进程组——T1.2 杀组补杀方案依据成立；② map 型 In 宽松透传（T1.1 spike ④ 就此闭环，T2.2 逃生舱 DTO 可行）；③ SessionTimeout 存在且已启用
+- DTO 零改动：现有 mcp_dto 已符合新版 `omitempty→可选、无→required` 推导约定（实测 issue_update schema required 仅 issueId），入出参契约不变
+- 验收全过：build/test/vet + `GOOS=windows` 交叉编译绿；独立实例（9299）CLI 实调七项全通（tools/schema/get_info/child_list/update/业务错误文案/未知属性 schema 拒绝）；CLI 即 skill/bot 同链执行体，链路不受影响
 
 ### 阶段 1：引擎域核心（server/internal/browser/）
 
@@ -123,9 +132,9 @@
 
 **技术方案**：
 - 本机临时目录 `pnpm add @playwright/mcp`（不进仓库依赖）
-- 本地实测两项：
+- 本地实测一项：
   - ③ 进程组清理：kill 引擎进程后浏览器子进程是否随之退出（macOS 与 Windows 分平台测，校验杀组/杀树方案——D4 主层释放依赖干净退出；注意引擎自身 idle 自关只关浏览器且下次调用自愈，但「杀引擎进程树」的清理行为仍需实测）
-  - ④ go-sdk（T0 升级后版本）AddTool 对 map 型 Args 的反射行为（决定转发工具 DTO 形态）
+  - ~~④ go-sdk AddTool 对 map 型 Args 的反射行为~~（T0 已实测闭环：map 型 In 推导 `{"type":"object","additionalProperties":true}` 宽松 schema，任意嵌套参数原样透传、缺参得 `{}`——T2.2 逃生舱 DTO 直接可用，结论见 §1.1 事实 3）
 - 外部已核实结论（采信记录，实施依据）：
   - flags：`--caps`（合法全集 config,network,pdf,storage,testing,vision,devtools，逗号分隔不校验枚举——传错值工具静默不可见）/ `--browser chrome`（chromium + channel chrome，缺省同）/ `--user-data-dir` / `--output-dir`（缺省 cwd 下 `.playwright-mcp`）/ `--headless`（默认有头）/ `--idle-timeout`（**毫秒**；无头默认 1h、有头 never、0 关闭；到期只关浏览器、下次调用自愈重启）/ `--blocked-origins`/`--allowed-origins`（分号分隔，自述非安全边界）/ `--image-responses allow|omit|only` / `--config`（JSON，launchOptions 完整支持）
   - 工具面：storage cap 提供 `browser_cookie_list`/`browser_localstorage_list`（内联返回不落文件）；`browser_storage_state` 落文件且 set 变体先清空现有态（D3 主路径勿用）；未启用 cap 的工具不进 tools/list，误调返回 isError:true 文本；modal state（dialog/fileChooser）激活时其它工具短路返回提示而非执行
@@ -133,10 +142,10 @@
   - 下载：经 outputDir 收纳（download- 前缀命名），路径经工具响应 events 区回传
 - 结论回写本文档对应任务的技术方案段（以实测修正）
 
-**依赖**：T0（spike ④ 在升级后 go-sdk 上实测）
+**依赖**：T0（已完成；原 spike ④ 的 go-sdk 反射实测已由 T0 顺带闭环，本任务只剩 ③）
 
 **验收**：
-- ③④ 两项结论有明确记录（进程组分平台行为 + 反射行为）
+- ③ 结论有明确记录（进程组分平台行为）
 - 本文档对应设计段已更新为实测事实
 
 #### T1.2 引擎拉起与桥接
@@ -150,7 +159,7 @@
 - 新增 `pin.go`：构造 `agentcatalog.Entry{ID:"playwright-mcp", Strategy: npx-adapter}`（Args 由 pin 单 SSOT 派生；**@playwright/mcp 已是薄壳包——实现在其依赖的 playwright-core 里，锁版须连带 playwright/playwright-core 一起精确 pin**，pnpm add 依赖闭包自动携带）+ SpawnArgs 组装：`--browser chrome --user-data-dir <profile> --caps storage,network,pdf --output-dir ~/.ocean-harness/browser/downloads/<profile>/`；**per-profile 无头选项**（headless=true 时追加 `--headless`，偏好持久化见 paths.go，D10）；**idle 释放双层（D4）**：主层 manager 侧计时（T1.3），兜底层 spawn 显式传 `--idle-timeout <毫秒>`（值宽于 manager 一档，如 manager 10 分钟/引擎 900000（15 分钟）；有头默认 never 故必须显式传——到期只关浏览器窗口、下次调用自愈重启，防 manager 异常时 Chrome 常驻）；`--caps` 为常量可配置（合法全集 config,network,pdf,storage,testing,vision,devtools；不开的 cap 其工具不存在，逃生舱也摸不到）；`--no-webmcp`（工具面静态，免 tools/list 动态变更处理）与 `--file-paths absolute`（路径回传口径）纳入默认参数；`--blocked-origins`/`--allowed-origins` 预留可选配置（默认不设，prompt injection 工具层抓手）；可选 `--config` launchOptions.ignoreDefaultArgs 追加 `--enable-automation` 去「Chrome is being controlled」信息条（**仅外观——引擎默认已注入 `--disable-blink-features=AutomationControlled`，navigator.webdriver 默认 false，无需反检测处理**）
 - 新增 `paths.go`：`~/.ocean-harness/browser/profiles/<name>/` 与 `~/.ocean-harness/browser/downloads/<name>/` 布局 SSOT，包内变量可覆盖根目录（测试用）；profile 名合法性校验防路径穿越；**per-profile 偏好元数据文件**（`profiles/<name>/prefs.json`：headless 等非凭据偏好，D10——ensure 重拉时读取，显式传参覆写回存；不违 D3，D3 约束的是登录态凭据不落盘）
 - 新增 `detect.go`：系统浏览器探测（macOS/Windows/Linux 标准路径），仅用于 spawn 失败时的错误文案增强；识别 profile 锁冲突（残留会话占住 user-data-dir 时提示「检测到残留会话，已尝试回收」）
-- 新增 `client.go`：拉起链 EnsureVendored → ResolveNodeBin + `node --version` 预检（<18 显式中文报错；先例在 acpdoctor 包内未导出，仿写约 30 行；@playwright/mcp engines 即 node≥18，口径一致）→ argv 组装 → exec.Cmd 配置后交 go-sdk（**CommandTransport 的 Connect 内自行 Start，client.go 不得自行 Start**，只配 SysProcAttr/Cancel/WaitDelay——该行为断言以 T0 升级后复核结论为准）→ NewCommandTransport + NewClient + Connect；进程退出守护 goroutine（cmd.Wait 返回 → 通知上层置 failed）
+- 新增 `client.go`：拉起链 EnsureVendored → ResolveNodeBin + `node --version` 预检（<18 显式中文报错；先例在 acpdoctor 包内未导出，仿写约 30 行；@playwright/mcp engines 即 node≥18，口径一致）→ argv 组装 → exec.Cmd 配置后交 go-sdk（**CommandTransport 的 Connect 内自行 Start，client.go 不得自行 Start**，只配 SysProcAttr/Cancel/WaitDelay——T0 已源码级复核确认该行为在 v1.8.0 依旧成立，且 Close 仅杀主进程、杀组须自理）→ `&mcp.CommandTransport{Command: cmd}` + NewClient + Connect（三参形态）；进程退出守护 goroutine（cmd.Wait 返回 → 通知上层置 failed）
 - **进程纪律（跨平台，复用 acp 包模式）**：unix 走 `process_unix.go` 的 Setpgid 进程组语义、Windows 走 `process_windows.go` 的 CREATE_NEW_PROCESS_GROUP + `taskkill /T /F` 杀树 + PID 易主防护（**两函数在 acp 包内未导出——acp 侧新增导出包装，或 browser 内 build-tag 副本，二选一**；Linux 非当前打包目标但 unix 分支天然兼容）；profile 目录落 .engine.pid；StopAll 收敛序 = transport.Close()（MCP 协议关停，只管主进程）→ killProcessGroup 补杀孙进程（与 spike ③ 结论联动）
 - 单测：spawnFunc 式可替换点（对齐 acpsession 惯例）+ `mcp.NewInMemoryTransports` 内存桩
 
@@ -231,7 +240,7 @@
 **技术方案**：
 - 新增 `server/internal/mcpservers/mcp_dto/browser.go`：全部工具入出参 DTO（jsonschema tag；统一可选 profile 缺省 "default"、issueId 归因展示；`browser_profile_open` 加可选 `headless`——缺省读 profile 偏好文件，显式传入覆写回存，D10）
 - 新增 `server/internal/mcpservers/mcp_tool/mcp_browser_tools.go`：`McpBrowserTool` 嵌 mcputil.McpTool——原生 6（browser_status / browser_profile_open / browser_session_close / browser_auth_state / browser_auth_request / browser_tool_list）+ 转发 17（browser_navigate / browser_snapshot / browser_click / browser_type / browser_fill_form / browser_select_option / browser_wait_for / browser_evaluate / browser_tabs / **browser_take_screenshot** / **browser_file_upload**（modal state 卡点，升转发换确定性）/ browser_console_messages / browser_navigate_back / browser_close / browser_find / browser_press_key（core 常驻，Enter 提交显式覆盖）/ browser_handle_dialog（core 常驻，dialog modal state 唯一清除工具）；DTO = 引擎参数 + profile/issueId）+ 逃生舱 1（browser_tool_call {name,args} 原样直通，isError 原样传导；**黑名单拒绝 browser_run_code_unsafe**——引擎 core 常驻的 RCE 等价工具（引擎进程内执行任意 JS），中文报错说明；黑名单单点维护于 tools.go 常量表）；handler 复用 service 层
-- **转发类 handler 不经 McpOK 包装**：手工构造 CallToolResultFor 原样透传引擎 Content 数组（含 ImageContent——McpOK 单条 TextContent 会丢图、CLI 对纯图返回 null），profile/issueId 元数据追加为附加 TextContent；判错按引擎结果的 isError:true 标志（引擎错误一律 isError 文本，非 JSON-RPC error）；原生 6 工具维持 McpOK 范式
+- **转发类 handler 不走类型化出参自动装配**：手工构造 `*mcp.CallToolResult` 原样透传引擎 Content 数组（含 ImageContent——类型化出参的自动 Content 装配会丢图、CLI 对纯图返回 null），profile/issueId 元数据追加为附加 TextContent；判错按引擎结果的 isError:true 标志（引擎错误一律 isError 文本，非 JSON-RPC error）；原生 6 工具维持 ToolHandlerFor 三返回值范式（`mt.Fail` + SDK IsError 装配）
 - 引擎工具名一律引用 T1.3 的 tools.go 单点常量表（名字漂移一行改一处）
 - `browser_click` 工具 Description 提示 modal state（含 alert/文件选择框的页面点击后若报 modal state，需先处理模态）
 - 修改 `server/internal/mcpservers/mcp_ocean_harness.go`：init() 末尾追加 24 个 AddTool 注册（勿另立 init）

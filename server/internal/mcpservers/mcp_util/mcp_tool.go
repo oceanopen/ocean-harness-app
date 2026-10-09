@@ -1,6 +1,8 @@
-// Package mcputil 提供 MCP server 域的共用基础设施：McpTool 基类（依赖装配与校验）、
-// MCP/McpFail 结果包装、Rust app_config 只读读取。ocean_harness server 的各业务域工具
-// （issue/workspace/github 等，handler 见 mcp_tool/）均基于本包构建。
+// Package mcputil 提供 MCP server 域的共用基础设施：McpTool 基类（依赖装配与校验、
+// 失败日志）、Rust app_config 只读读取。ocean_harness server 的各业务域工具（issue/
+// workspace/github 等，handler 见 mcp_tool/）均基于本包构建。工具结果的装配（出参双挂载
+// StructuredContent+TextContent、error → IsError 中文文案）由 go-sdk ToolHandlerFor
+// 自动完成，无需手工包装。
 package mcputil
 
 import (
@@ -74,4 +76,19 @@ func (mt *McpTool) MakeService(svc *apis.Service) *McpTool {
 	svc.Orm = mt.Orm
 	svc.Logger = mt.Logger
 	return mt
+}
+
+// Fail 记录工具业务失败日志后原样返回错误。ToolHandlerFor 会把非 nil error 自动装配为
+// IsError=true 的工具结果（错误文案进 Content，LLM 可读可自我纠正），结果的包装职责已
+// 收敛到 SDK；本方法只承接业务失败的可观测性（zap Warn，中文文案同轨进结果）。
+// MakeContext 之前调用时（前置守卫路径）mt.Logger 尚未注入，兜底走全局 logger。
+func (mt *McpTool) Fail(err error) error {
+	logger := mt.Logger
+	if logger == nil {
+		logger = global.Logger
+	}
+	if logger != nil {
+		logger.Warn("[mcp] tool failed", zap.Error(err))
+	}
+	return err
 }

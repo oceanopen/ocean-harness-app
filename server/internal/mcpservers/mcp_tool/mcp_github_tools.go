@@ -51,24 +51,23 @@ func (mt McpGithubTool) githubTarget(repoSvc *service.GithubTool, issueID string
 
 // CreatePullRequest 创建 PR（github_create_pr）。head/base 缺省按 agent 工作流推导：
 // head = agent_{issueId}（工作空间统一目标分支），base = issue 关联基准分支 → 仓库默认分支。
-func (mt McpGithubTool) CreatePullRequest(ctx context.Context, _ *mcp.ServerSession,
-	params *mcp.CallToolParamsFor[mcpdto.GitHubCreatePRArgs]) (*mcp.CallToolResultFor[mcpdto.GitHubPullRequestContent], error) {
+func (mt McpGithubTool) CreatePullRequest(ctx context.Context, _ *mcp.CallToolRequest,
+	input mcpdto.GitHubCreatePRArgs) (*mcp.CallToolResult, mcpdto.GitHubPullRequestContent, error) {
 
-	args := params.Arguments
 	repoSvc := service.GithubTool{}
-	if err := mt.MakeContext(ctx).Validate(&args).MakeService(&repoSvc.Service).Errors; err != nil {
-		return mcputil.McpFail[mcpdto.GitHubPullRequestContent](err)
+	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&repoSvc.Service).Errors; err != nil {
+		return nil, mcpdto.GitHubPullRequestContent{}, mt.Fail(err)
 	}
-	ref, client, branches, err := mt.githubTarget(&repoSvc, args.IssueID, args.LocalRepositoryID)
+	ref, client, branches, err := mt.githubTarget(&repoSvc, input.IssueID, input.LocalRepositoryID)
 	if err != nil {
-		return mcputil.McpFail[mcpdto.GitHubPullRequestContent](err)
+		return nil, mcpdto.GitHubPullRequestContent{}, mt.Fail(err)
 	}
-	head := args.Head
+	head := input.Head
 	if head == "" {
-		head = "agent_" + args.IssueID
+		head = "agent_" + input.IssueID
 	}
 	// base 两级回退（与 clone 步骤同款语义：关联基准分支为空 = 仓库默认分支）。
-	base := args.Base
+	base := input.Base
 	if base == "" {
 		base = branches.BaseBranch
 	}
@@ -76,65 +75,63 @@ func (mt McpGithubTool) CreatePullRequest(ctx context.Context, _ *mcp.ServerSess
 		base = branches.DefaultBranch
 	}
 	if base == "" {
-		return mcputil.McpFail[mcpdto.GitHubPullRequestContent](
+		return nil, mcpdto.GitHubPullRequestContent{}, mt.Fail(
 			errors.New("无法推导 base 分支（issue 关联与仓库默认分支均为空），请显式传入 base"))
 	}
 
 	pr, err := client.CreatePullRequest(ref.Owner, ref.Repo, githubapi.CreatePullRequestInput{
-		Title: args.Title,
-		Body:  args.Body,
+		Title: input.Title,
+		Body:  input.Body,
 		Head:  head,
 		Base:  base,
 	})
 	if err != nil {
-		return mcputil.McpFail[mcpdto.GitHubPullRequestContent](err)
+		return nil, mcpdto.GitHubPullRequestContent{}, mt.Fail(err)
 	}
-	return mcputil.McpOK(newGithubPullRequestContent(pr, args.LocalRepositoryID))
+	return nil, newGithubPullRequestContent(pr, input.LocalRepositoryID), nil
 }
 
 // ListPullRequests 列出仓库 PR（github_list_prs，state 缺省 open，最多 50 条）。
-func (mt McpGithubTool) ListPullRequests(ctx context.Context, _ *mcp.ServerSession,
-	params *mcp.CallToolParamsFor[mcpdto.GitHubListPRsArgs]) (*mcp.CallToolResultFor[mcpdto.GitHubPullRequestListContent], error) {
+func (mt McpGithubTool) ListPullRequests(ctx context.Context, _ *mcp.CallToolRequest,
+	input mcpdto.GitHubListPRsArgs) (*mcp.CallToolResult, mcpdto.GitHubPullRequestListContent, error) {
 
-	args := params.Arguments
 	repoSvc := service.GithubTool{}
-	if err := mt.MakeContext(ctx).Validate(&args).MakeService(&repoSvc.Service).Errors; err != nil {
-		return mcputil.McpFail[mcpdto.GitHubPullRequestListContent](err)
+	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&repoSvc.Service).Errors; err != nil {
+		return nil, mcpdto.GitHubPullRequestListContent{}, mt.Fail(err)
 	}
-	ref, client, _, err := mt.githubTarget(&repoSvc, "", args.LocalRepositoryID)
+	ref, client, _, err := mt.githubTarget(&repoSvc, "", input.LocalRepositoryID)
 	if err != nil {
-		return mcputil.McpFail[mcpdto.GitHubPullRequestListContent](err)
+		return nil, mcpdto.GitHubPullRequestListContent{}, mt.Fail(err)
 	}
 
-	prs, err := client.ListPullRequests(ref.Owner, ref.Repo, args.State)
+	prs, err := client.ListPullRequests(ref.Owner, ref.Repo, input.State)
 	if err != nil {
-		return mcputil.McpFail[mcpdto.GitHubPullRequestListContent](err)
+		return nil, mcpdto.GitHubPullRequestListContent{}, mt.Fail(err)
 	}
 	pulls := make([]*mcpdto.GitHubPullRequestContent, 0, len(prs))
 	for i := range prs {
-		pulls = append(pulls, prContentPtr(newGithubPullRequestContent(&prs[i], args.LocalRepositoryID)))
+		pulls = append(pulls, prContentPtr(newGithubPullRequestContent(&prs[i], input.LocalRepositoryID)))
 	}
-	return mcputil.McpOK(mcpdto.GitHubPullRequestListContent{Pulls: pulls, RepositoryID: args.LocalRepositoryID})
+	return nil, mcpdto.GitHubPullRequestListContent{Pulls: pulls, RepositoryID: input.LocalRepositoryID}, nil
 }
 
 // PullRequestCIStatus 获取 PR 的 CI 检查状态（github_ci_status：combined status +
 // check runs 归并，规则见 githubapi.mergeCIState）。
-func (mt McpGithubTool) PullRequestCIStatus(ctx context.Context, _ *mcp.ServerSession,
-	params *mcp.CallToolParamsFor[mcpdto.GitHubCIStatusArgs]) (*mcp.CallToolResultFor[mcpdto.GitHubCIStatusContent], error) {
+func (mt McpGithubTool) PullRequestCIStatus(ctx context.Context, _ *mcp.CallToolRequest,
+	input mcpdto.GitHubCIStatusArgs) (*mcp.CallToolResult, mcpdto.GitHubCIStatusContent, error) {
 
-	args := params.Arguments
 	repoSvc := service.GithubTool{}
-	if err := mt.MakeContext(ctx).Validate(&args).MakeService(&repoSvc.Service).Errors; err != nil {
-		return mcputil.McpFail[mcpdto.GitHubCIStatusContent](err)
+	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&repoSvc.Service).Errors; err != nil {
+		return nil, mcpdto.GitHubCIStatusContent{}, mt.Fail(err)
 	}
-	ref, client, _, err := mt.githubTarget(&repoSvc, "", args.LocalRepositoryID)
+	ref, client, _, err := mt.githubTarget(&repoSvc, "", input.LocalRepositoryID)
 	if err != nil {
-		return mcputil.McpFail[mcpdto.GitHubCIStatusContent](err)
+		return nil, mcpdto.GitHubCIStatusContent{}, mt.Fail(err)
 	}
 
-	st, err := client.GetPullRequestCIStatus(ref.Owner, ref.Repo, args.PullNumber)
+	st, err := client.GetPullRequestCIStatus(ref.Owner, ref.Repo, input.PullNumber)
 	if err != nil {
-		return mcputil.McpFail[mcpdto.GitHubCIStatusContent](err)
+		return nil, mcpdto.GitHubCIStatusContent{}, mt.Fail(err)
 	}
 	checks := make([]mcpdto.GitHubCIRecordContent, 0, len(st.Checks))
 	for _, c := range st.Checks {
@@ -145,12 +142,12 @@ func (mt McpGithubTool) PullRequestCIStatus(ctx context.Context, _ *mcp.ServerSe
 			HTMLURL:    c.HTMLURL,
 		})
 	}
-	return mcputil.McpOK(mcpdto.GitHubCIStatusContent{
+	return nil, mcpdto.GitHubCIStatusContent{
 		PullNumber:   st.PullNumber,
 		State:        st.State,
 		Checks:       checks,
-		RepositoryID: args.LocalRepositoryID,
-	})
+		RepositoryID: input.LocalRepositoryID,
+	}, nil
 }
 
 // —— Content 转换（githubapi 出参 → mcp_dto 平铺镜像）——
