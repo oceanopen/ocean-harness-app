@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,21 @@ import (
 // 分析（Analyze）经 global.AcpSessions 即时受理注入 issue 绑定的 agent 会话。
 type BrowserSession struct {
 	apis.Service
+}
+
+// forwardOK 转发引擎调用并把 err/isError 双检收敛为中文 fail（action 为动作短语）：
+// transport 错 → "<action>: %w"；引擎 isError 文本 → "<action>失败: %s"。Forward 契约
+// 是引擎错误一律 isError 结果、Go error 为 nil，判错归调用方——所有转发统一经此，
+// 杜绝单点漏检导致引擎失败被当成功透传。
+func forwardOK(ctx context.Context, profile, tool string, args map[string]any, issueTag, action string) (*mcp.CallToolResult, error) {
+	res, err := global.Browser.Forward(ctx, profile, tool, args, issueTag)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", action, err)
+	}
+	if res.IsError {
+		return nil, fmt.Errorf("%s失败: %s", action, browser.ResultText(res))
+	}
+	return res, nil
 }
 
 // GetInfo 当前全量会话投影快照（轮询读端，无副作用；无会话为空 sessions 列表）。
@@ -37,51 +53,34 @@ func (svc BrowserSession) Close(req *types.BrowserCloseRequest) error {
 }
 
 // Navigate 打开地址（Forward 引擎 browser_navigate；导航本身会触发引擎自动 ensure——
-// idle 会话冷启动 1–3s 属预期）。引擎 isError 结果转中文 fail，不作为成功透传。
+// idle 会话冷启动 1–3s 属预期）。引擎结果原样透传——成功为页面快照文本。
 func (svc BrowserSession) Navigate(req *types.BrowserNavigateRequest) (*mcp.CallToolResult, error) {
-	res, err := global.Browser.Forward(svc.Context, req.Profile, browser.EngineToolNavigate,
-		map[string]any{"url": req.URL}, "")
-	if err != nil {
-		return nil, fmt.Errorf("打开页面: %w", err)
-	}
-	if res.IsError {
-		return nil, fmt.Errorf("打开页面失败: %s", browser.ResultText(res))
-	}
-	return res, nil
+	return forwardOK(svc.Context, req.Profile, browser.EngineToolNavigate,
+		map[string]any{"url": req.URL}, "", "打开页面")
 }
 
 // Screenshot 截取当前页（Forward 引擎 browser_take_screenshot；--output-dir 已在 spawn
 // 传入）。成功结果原样透传——ImageContent base64 与 TextContent 落盘路径并存，供面板
-// 轮询伪实时；引擎 isError 结果转中文 fail。
+// 轮询伪实时。
 func (svc BrowserSession) Screenshot(req *types.BrowserScreenshotRequest) (*mcp.CallToolResult, error) {
-	res, err := global.Browser.Forward(svc.Context, req.Profile, browser.EngineToolTakeScreenshot, nil, "")
-	if err != nil {
-		return nil, fmt.Errorf("截取页面: %w", err)
-	}
-	if res.IsError {
-		return nil, fmt.Errorf("截取页面失败: %s", browser.ResultText(res))
-	}
-	return res, nil
+	return forwardOK(svc.Context, req.Profile, browser.EngineToolTakeScreenshot, nil, "", "截取页面")
 }
 
 // Analyze 即时受理「AI 分析此页」：拉页面快照 → 组装分析 prompt → 经 ACP 会话域 Prompt
 // 注入 issue 绑定的 agent 会话（即时受理语义：会话缺失/回合进行中即中文报错，不排队，
-// 回答走终端/IM 既有链路）。PageID 非 nil 先选中该 tab 再快照（支持分析非当前页）；
-// 相关 Forward 以 issueId 归因（recentCalls 徽标）。快照为不可信页面内容，prompt 显式
-// 标注纪律（T3.3 铁律的服务端同款约束）。
+// 回答走终端/IM 既有链路）。PageID 非 nil 先选中该 tab 再快照（支持分析非当前页）——
+// 选中失败显式报错，不静默降级为分析旧当前页；相关 Forward 以 issueId 归因（recentCalls
+// 徽标）。快照为不可信页面内容，prompt 显式标注纪律（T3.3 铁律的服务端同款约束）。
 func (svc BrowserSession) Analyze(req *types.BrowserAnalyzeRequest) error {
 	if req.PageID != nil {
-		if _, err := global.Browser.Forward(svc.Context, req.Profile, browser.EngineToolTabs,
-			map[string]any{"action": "select", "index": *req.PageID}, req.IssueID); err != nil {
-			return fmt.Errorf("选中页面: %w", err)
+		if _, err := forwardOK(svc.Context, req.Profile, browser.EngineToolTabs,
+			map[string]any{"action": "select", "index": *req.PageID}, req.IssueID, "选中页面"); err != nil {
+			return err
 		}
 	}
-	res, err := global.Browser.Forward(svc.Context, req.Profile, browser.EngineToolSnapshot, nil, req.IssueID)
+	res, err := forwardOK(svc.Context, req.Profile, browser.EngineToolSnapshot, nil, req.IssueID, "拉取页面快照")
 	if err != nil {
-		return fmt.Errorf("拉取页面快照: %w", err)
-	}
-	if res.IsError {
-		return fmt.Errorf("拉取页面快照失败: %s", browser.ResultText(res))
+		return err
 	}
 	if err := global.AcpSessions.Prompt(req.IssueID, analyzePrompt(req.Profile, browser.ResultText(res))); err != nil {
 		return fmt.Errorf("页面分析受理: %w", err)

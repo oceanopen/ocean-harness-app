@@ -262,7 +262,7 @@
 
 #### T2.1 装配与 REST/SSE 面
 
-**状态**：🔲
+**状态**：✅
 
 **功能**：browser 域装配进 sidecar 主进程，暴露 REST 操作端点与 SSE 事件流。
 
@@ -278,6 +278,14 @@
 **验收**：
 - `pnpm server:dev` 起 sidecar，curl 七端点均正常（getInfo 返回快照、navigate 打开真实页面、screenshot 返回图像数据或路径、analyze 注入的 prompt 到达对应 issue 的 ACP 会话）
 - SSE 建连首帧为全量 snapshot，后续操作产生增量帧
+
+**实施定稿**：
+- 落地文件：global.go（`Browser *browser.Manager` 单例）+ main.go（步骤 5.55 装配——懒启动构造即返回；SIGTERM 收敛序列 Bot → Browser.StopAll → AcpSessions.StopAll → HTTP 关停）+ service/browser_session.go（嵌 apis.Service 薄投影，无本地状态）+ controller/browser_session.go（六 POST 走 acp 链式范式；Events = MakeContext + Subscribe + SSE 写出循环，无 query 绑定）+ dal/types/browser_session.go（六请求 DTO；响应 shape SSOT 留 browser 包与引擎透传，不镜像）+ router.go（browserSessionGroup 七路由）+ browser 包 `ResultText` 导出（pages.go 定义 + 内部 3 处改名）
+- 判错收敛单点化：service 层 `forwardOK` 统一承接 Forward 契约的 err/isError 双检（transport 错 → "<动作>: %w"；引擎 isError 文本 → "<动作>失败: <引擎文本>"）——navigate/screenshot/analyze 三处转发与 analyze 的 tabs select 全部经此。tabs select 选中失败显式报错，不静默降级为分析旧当前页（tabs 属 pagesRefreshExempt，select 失败不触发投影刷新，显式报错是唯一可见性来源）
+- analyze 纪律：即时受理语义（经 `AcpSessions.Prompt`，会话缺失/回合进行中即中文报错，不排队，回答走终端/IM 既有链路）；相关 Forward 以 issueId 归因（recentCalls 徽标）；快照为不可信数据，prompt 显式边界标注 + `--- 页面快照开始/结束 ---` 围栏（T3.3 铁律的服务端同款约束）
+- README 口径同步：server/README.md 装配段补 5.55（懒启动构造即返回）与 SIGTERM 序列中的 Browser.StopAll（收敛浏览器引擎/浏览器进程树，位于 Bot 之后、AcpSessions 之前）
+- 冒烟实录（沙箱 sidecar：GO_SERVER_MODE/PORT/LOG_DIR/SQLITE_DIR 环境覆写独立端口与目录，无 Chrome 子集）：getInfo 返回空快照、close 幂等 no-op、SSE 建连首帧 `{"seq":1,"type":"snapshot","snapshot":{"sessions":[]}}`、navigate 未装配引擎时中文报错链完整传导（vendored 目录未配置 → 引擎启动失败 → 「打开页面: …」不挂起）、缺 url 得 required 参数校验错——五路径均符合预期；依赖真实 Chrome 的路径（ensure 成功、navigate/screenshot 成功、analyze prompt 到达 ACP 会话）顺延 T3.3 端到端验收覆盖同一链路
+- 验收实录：整仓 `go build`/`go vet` 全绿、`GOOS=windows go build` 通过、全量 `go test -count=1` 零失败；`gofmt` 仅剩既有遗留（agentcatalog vendored_test.go，非本次范围）
 
 #### T2.2 MCP 工具面（23+1 工具）
 
