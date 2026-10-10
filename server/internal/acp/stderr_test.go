@@ -32,7 +32,7 @@ func TestClassifyStderr(t *testing.T) {
 }
 
 func TestStderrTailKeepsTailBytes(t *testing.T) {
-	tail := newStderrTail(16)
+	tail := NewStderrTail(16)
 	if n, err := tail.Write([]byte("aaaaaaaaaaaaaaaaaaaa")); n != 20 || err != nil {
 		t.Fatalf("Write = %d, %v", n, err)
 	}
@@ -42,7 +42,7 @@ func TestStderrTailKeepsTailBytes(t *testing.T) {
 }
 
 func TestStderrTailUTF8Safe(t *testing.T) {
-	tail := newStderrTail(4)
+	tail := NewStderrTail(4)
 	// "中" 占 3 字节：写入 两字 + 尾部裁剪落在多字节中间时，残缺前缀应被替换而非 panic。
 	if _, err := tail.Write([]byte("中中中")); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -69,7 +69,7 @@ func TestTruncateRunes(t *testing.T) {
 }
 
 func TestMergeEnvOverrideWins(t *testing.T) {
-	merged := mergeEnv(map[string]string{"OCEAN_TEST_KEY": "override", "OCEAN_TEST_NEW": "new"})
+	merged := MergeEnv(map[string]string{"OCEAN_TEST_KEY": "override", "OCEAN_TEST_NEW": "new"})
 	seen := make(map[string]string)
 	counts := make(map[string]int)
 	for _, kv := range merged {
@@ -93,7 +93,7 @@ func TestMergeEnvOverrideWins(t *testing.T) {
 
 func TestMergeEnvStripsClaudeNestedGuard(t *testing.T) {
 	t.Setenv("CLAUDECODE", "1")
-	merged := mergeEnv(map[string]string{"OCEAN_TEST_KEY": "override", "CLAUDECODE": "1"})
+	merged := MergeEnv(map[string]string{"OCEAN_TEST_KEY": "override", "CLAUDECODE": "1"})
 	seen := make(map[string]string)
 	for _, kv := range merged {
 		key, value, _ := strings.Cut(kv, "=")

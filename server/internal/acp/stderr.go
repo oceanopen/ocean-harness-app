@@ -53,19 +53,22 @@ func truncateRunes(s string, max int) string {
 	return s
 }
 
-// stderrTail 有界字节环：只保留尾部 cap 字节，并发安全；Text 输出合法 UTF-8
+// StderrTail 有界字节环：只保留尾部 cap 字节，并发安全；Text 输出合法 UTF-8
 // （环裁剪落在多字节字符中间时，残缺前缀字节经 ToValidUTF8 替换为 U+FFFD）。
-type stderrTail struct {
+// 导出供 browser 域引擎子进程复用（配合 PumpStderr，单一 SSOT）。
+type StderrTail struct {
 	mu  sync.Mutex
 	buf []byte
 	cap int
 }
 
-func newStderrTail(capacity int) *stderrTail {
-	return &stderrTail{cap: capacity}
+// NewStderrTail 构造指定容量的 stderr tail（容量 = 尾部保留字节数），配合 PumpStderr
+// 使用（导出供 browser 域引擎子进程复用）。
+func NewStderrTail(capacity int) *StderrTail {
+	return &StderrTail{cap: capacity}
 }
 
-func (t *stderrTail) Write(p []byte) (int, error) {
+func (t *StderrTail) Write(p []byte) (int, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if len(p) >= t.cap {
@@ -80,7 +83,7 @@ func (t *stderrTail) Write(p []byte) (int, error) {
 }
 
 // Text 返回 tail 内容（UTF-8 合法化）。
-func (t *stderrTail) Text() string {
+func (t *StderrTail) Text() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return strings.ToValidUTF8(string(t.buf), "�")

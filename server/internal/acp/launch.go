@@ -58,7 +58,7 @@ type AgentProcess struct {
 	waitErr error
 	done    chan struct{} // cmd.Wait 返回后关闭；waitErr 的写入 happens-before 关闭
 
-	Stderr *stderrTail // 全量 stderr tail（进程异常退出时拼进错误摘要）
+	Stderr *StderrTail // 全量 stderr tail（进程异常退出时拼进错误摘要）
 }
 
 // spawnAgent 拉起子进程并启动 stderr 泵。两根管道的协议装配（acp.Connect）由 client.go 接管。
@@ -69,11 +69,11 @@ func spawnAgent(cfg SpawnConfig, log *zap.Logger) (*AgentProcess, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, cfg.Command[0], cfg.Command[1:]...)
 	cmd.Dir = cfg.Cwd
-	cmd.Env = mergeEnv(cfg.Env)
-	cmd.SysProcAttr = processGroupAttr()
+	cmd.Env = MergeEnv(cfg.Env)
+	cmd.SysProcAttr = ProcessGroupAttr()
 	// ctx 取消 → 整组 SIGKILL；WaitDelay 收口孙进程管道（进程组里有后代持 stdout
 	// 写端时管道不关则 Wait 永久阻塞，driver_claude 同款注释）。
-	cmd.Cancel = func() error { return killProcessGroup(cmd) }
+	cmd.Cancel = func() error { return KillProcessGroup(cmd) }
 	cmd.WaitDelay = processWaitDelay
 
 	stdin, err := cmd.StdinPipe()
@@ -99,24 +99,28 @@ func spawnAgent(cfg SpawnConfig, log *zap.Logger) (*AgentProcess, error) {
 		stdout: stdout,
 		cwd:    cfg.Cwd,
 		done:   make(chan struct{}),
-		Stderr: newStderrTail(stderrTailCapacity),
+		Stderr: NewStderrTail(stderrTailCapacity),
 	}
 	if err := cmd.Start(); err != nil {
 		cancel()
 		return nil, fmt.Errorf("ACP agent 启动失败: %w", err)
 	}
-	go p.pumpStderr(stderr, log)
+	go PumpStderr(stderr, p.Stderr, log)
 	go p.awaitExit()
 	return p, nil
 }
 
-// pumpStderr 逐行读 stderr：全量进 tail（崩溃证据完整性），三分类只决定日志级别。
-func (p *AgentProcess) pumpStderr(r io.Reader, log *zap.Logger) {
+// PumpStderr 逐行读 stderr：全量进 tail（崩溃证据完整性），三分类只决定日志级别。
+// 导出供 browser 域引擎子进程复用（tail 由调用方构造，日志为 nil 时静默）。
+func PumpStderr(r io.Reader, tail *StderrTail, log *zap.Logger) {
+	if log == nil {
+		log = zap.NewNop()
+	}
 	reader := bufio.NewReaderSize(r, stderrLineBufSize)
 	for {
 		line, readErr := reader.ReadString('\n')
 		if trimmed := strings.TrimRight(line, "\r\n"); trimmed != "" {
-			_, _ = p.Stderr.Write([]byte(trimmed + "\n"))
+			_, _ = tail.Write([]byte(trimmed + "\n"))
 			logStderrLine(log, classifyStderr(trimmed), truncateRunes(trimmed, stderrMaxLineLen))
 		}
 		if readErr != nil {
@@ -157,7 +161,7 @@ func (p *AgentProcess) WaitErr() error {
 
 // Kill 强杀整组（幂等：组不存在视为已回收）。不等 Wait；收尾交给 <-Done()。
 func (p *AgentProcess) Kill() error {
-	return killProcessGroup(p.cmd)
+	return KillProcessGroup(p.cmd)
 }
 
 // Close 终结进程：整组强杀 + 释放 ctx + 等 Wait（有界，由 WaitDelay 收口）。
@@ -179,9 +183,10 @@ func (p *AgentProcess) exitDetail() string {
 // overrides（调用方无法重新注入），ACP agent 恒以干净环境冷启。
 var stripEnvKeys = []string{"CLAUDECODE"}
 
-// mergeEnv sidecar 环境为底、overrides 按键覆盖、stripEnvKeys 恒剥离。先建 map 去重
+// MergeEnv sidecar 环境为底、overrides 按键覆盖、stripEnvKeys 恒剥离。先建 map 去重
 // 再展开，避免 execve 环境里同键双份导致子进程 getenv 取值不确定。
-func mergeEnv(overrides map[string]string) []string {
+// 导出供 browser 域引擎子进程复用（单一 SSOT）。
+func MergeEnv(overrides map[string]string) []string {
 	env := make(map[string]string, len(os.Environ())+len(overrides))
 	for _, kv := range os.Environ() {
 		if k, _, ok := strings.Cut(kv, "="); ok {
