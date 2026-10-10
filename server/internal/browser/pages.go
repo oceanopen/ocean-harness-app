@@ -44,8 +44,9 @@ func parseTabsOutput(text string) []PageView {
 	return pages
 }
 
-// resultText 提取 CallToolResult 的 TextContent 拼接文本（引擎结果以文本为主载体）。
-func resultText(res *mcp.CallToolResult) string {
+// ResultText 提取 CallToolResult 的 TextContent 拼接文本（引擎结果以文本为主载体；
+// REST/工具面等跨包消费的导出口，T2.1 起供 service 层组装分析 prompt 用）。
+func ResultText(res *mcp.CallToolResult) string {
 	var b strings.Builder
 	for _, c := range res.Content {
 		if tc, ok := c.(*mcp.TextContent); ok {
@@ -70,10 +71,10 @@ func (m *Manager) refreshPages(handle *EngineHandle, profile string) {
 		return
 	}
 	if res.IsError {
-		m.log.Debug("页面投影刷新被引擎拒绝", zap.String("profile", profile), zap.String("result", resultText(res)))
+		m.log.Debug("页面投影刷新被引擎拒绝", zap.String("profile", profile), zap.String("result", ResultText(res)))
 		return
 	}
-	pages := parseTabsOutput(resultText(res))
+	pages := parseTabsOutput(ResultText(res))
 	if pages == nil {
 		return
 	}

@@ -7,6 +7,7 @@ import (
 
 	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/bot"
+	"ocean-harness/server/internal/browser"
 	"ocean-harness/server/internal/config"
 )
 
@@ -28,4 +29,9 @@ var (
 	// AcpSessions 为 ACP 会话域运行时单例（main 装配：启动清扫锚点 + SIGTERM StopAll）。
 	// service 层经此做会话受理/操作/订阅（T1.5）；issue 删除经此级联 Discard。
 	AcpSessions *acpsession.Manager
+
+	// Browser 为浏览器会话域运行时单例（main 装配：懒启动构造即返回，构造内含残留
+	// 引擎孤儿清扫；SIGTERM StopAll）。service 层经此做 per-profile 引擎会话操作与
+	// SSE 投影订阅（T2.1）。
+	Browser *browser.Manager
 )

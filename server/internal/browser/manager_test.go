@@ -231,7 +231,7 @@ func TestManagerForwardPagesAndIssueTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Forward navigate: %v", err)
 	}
-	if res.IsError || resultText(res) != "navigated: https://example.com" {
+	if res.IsError || ResultText(res) != "navigated: https://example.com" {
 		t.Fatalf("navigate 结果 = %+v", res)
 	}
 

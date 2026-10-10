@@ -17,7 +17,8 @@ import (
 // 当前暴露 /api/baseInfo（系统信息）、/api/localRepository/*（本地仓库）、/api/issueWorkspace/*
 // （issue 运行工作空间初始化）、/api/pluginMarketplace/*（插件市场）与 /api/plugin/*
 // （插件安装操作）、/api/agentCatalog/*（ACP agent 目录投影）、/api/doctor/*（ACP agent
-// doctor 探测）、/api/tracker/*（tracker 业务域：workspace 等）与 /mcp/streamableHttp/*
+// doctor 探测）、/api/acpSession/*（ACP 会话域）、/api/browserSession/*（浏览器会话域）、
+// /api/tracker/*（tracker 业务域：workspace 等）与 /mcp/streamableHttp/*
 // （MCP 端点，供工作空间内 AI agent 调用），均无需登录/鉴权。
 // gin.SetMode 已在 config.MustLoad 中按环境变量完成。
 func SetupRouter() *gin.Engine {
@@ -114,6 +115,22 @@ func SetupRouter() *gin.Engine {
 			acpSessionGroup.POST("/respondPermission", controller.AcpSession{}.RespondPermission)
 			acpSessionGroup.POST("/respondElicitation", controller.AcpSession{}.RespondElicitation)
 			acpSessionGroup.GET("/events", controller.AcpSession{}.Events)
+		}
+
+		// browserSession 模块：浏览器会话域（action 风格，POST；events 为 GET SSE）。
+		// per-profile 引擎会话生命周期与投影事件流的 SSOT 为 global.Browser（T2.1）：
+		// ensure 拉起/复用（同步等就绪，headless D10 覆盖），navigate/screenshot 页面
+		// 操作（引擎结果原样透传），analyze 即时受理页面分析入 ACP 会话（不排队），
+		// getInfo 轮询读全量快照，events 订阅投影事件流（建连即快照，全局单源无绑定）。
+		browserSessionGroup := apiGroup.Group("/browserSession")
+		{
+			browserSessionGroup.POST("/getInfo", controller.BrowserSession{}.GetInfo)
+			browserSessionGroup.POST("/ensure", controller.BrowserSession{}.Ensure)
+			browserSessionGroup.POST("/close", controller.BrowserSession{}.Close)
+			browserSessionGroup.POST("/navigate", controller.BrowserSession{}.Navigate)
+			browserSessionGroup.POST("/screenshot", controller.BrowserSession{}.Screenshot)
+			browserSessionGroup.POST("/analyze", controller.BrowserSession{}.Analyze)
+			browserSessionGroup.GET("/events", controller.BrowserSession{}.Events)
 		}
 
 		// plugin 模块：按开发工具（cli）维度的插件安装操作（install/uninstall/enable/disable/

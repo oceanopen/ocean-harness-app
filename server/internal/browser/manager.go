@@ -516,7 +516,7 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 
 	outcome, errText := CallOK, ""
 	if res.IsError {
-		outcome, errText = CallError, resultText(res)
+		outcome, errText = CallError, ResultText(res)
 		if strings.Contains(strings.ToLower(errText), "stale") {
 			outcome = CallStaleRef
 		}

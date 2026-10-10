@@ -120,9 +120,9 @@ func (m *Manager) fetchAuthCookies(ctx context.Context, profile string) ([]engin
 		return nil, fmt.Errorf("拉取浏览器 cookies: %w", err)
 	}
 	if res.IsError {
-		return nil, fmt.Errorf("拉取浏览器 cookies 失败: %s", resultText(res))
+		return nil, fmt.Errorf("拉取浏览器 cookies 失败: %s", ResultText(res))
 	}
-	return parseCookieList(resultText(res))
+	return parseCookieList(ResultText(res))
 }
 
 // fetchBrowserUA 探测引擎浏览器的真实 UA（evaluate navigator.userAgent；冷启动无 tab
@@ -134,9 +134,9 @@ func (m *Manager) fetchBrowserUA(ctx context.Context, profile string) (string, e
 		return "", fmt.Errorf("探测浏览器 UA: %w", err)
 	}
 	if res.IsError {
-		return "", fmt.Errorf("探测浏览器 UA 失败: %s", resultText(res))
+		return "", fmt.Errorf("探测浏览器 UA 失败: %s", ResultText(res))
 	}
-	return parseEvalString(resultText(res))
+	return parseEvalString(ResultText(res))
 }
 
 // engineCookie 引擎 cookie 行解析结果（纯数据）。declaredDomain 保留引擎声明的原始

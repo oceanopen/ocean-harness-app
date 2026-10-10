@@ -27,6 +27,7 @@ import (
 	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/bot"
 	"ocean-harness/server/internal/bot/wecom"
+	"ocean-harness/server/internal/browser"
 	"ocean-harness/server/internal/config"
 	"ocean-harness/server/internal/global"
 	"ocean-harness/server/internal/initialize"
@@ -73,6 +74,14 @@ func main() {
 	}
 	global.AcpSessions = acpSessions
 
+	// 5.55) 浏览器会话域装配（T2.1）：懒启动——构造即返回（不拉引擎），构造内含残留
+	// 引擎孤儿清扫；per-profile 引擎随首次操作 ensure 拉起（D4 用完即释放）。
+	// vendored 目录语义与 acp 会话域同源；先于路由装配——REST/SSE 面经 global.Browser 消费。
+	global.Browser = browser.NewManager(browser.Dirs{
+		Resources: cfg.AcpResourcesDir,
+		Adapters:  cfg.AcpAdaptersDir,
+	}, global.Logger)
+
 	// 5.6) bot 运行时装配：注册企微适配器工厂 + 拉起全部启用 bot（WS 长连接后台运行，
 	// 不阻塞 HTTP 启动；连接状态经 /api/imBot/getList 投影呈现）。
 	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, acpSessions, global.Logger)
@@ -100,9 +109,11 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 		<-sigCh
 		global.Logger.Info("http-server shutting down")
-		// 先断 bot 渠道连接 + 取消在途回合（杀 claude 子进程），再收敛 ACP 会话（关全部
-		// agent 进程 + 关停 SSE 订阅——不先断，SSE 长连会拖住下面的 Shutdown），再关 HTTP。
+		// 先断 bot 渠道连接 + 取消在途回合（杀 claude 子进程），再收敛浏览器引擎/浏览器
+		// 进程树，再收敛 ACP 会话（关全部 agent 进程 + 关停 SSE 订阅——不先断，SSE 长连
+		// 会拖住下面的 Shutdown），再关 HTTP。
 		global.BotSupervisor.StopAll()
+		global.Browser.StopAll()
 		global.AcpSessions.StopAll()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
