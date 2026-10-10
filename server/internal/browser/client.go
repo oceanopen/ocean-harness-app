@@ -234,7 +234,7 @@ func dialFailureHints(profileDir string) []string {
 
 // Close 终结引擎：session.Close() 优雅关停（关 stdin → 5s → SIGTERM → SIGKILL，只杀
 // 主进程；T1.1 实测 stdin EOF 即自退并自收浏览器）→ KillProcessGroup 补杀整组（纵深
-// 防御：防未知挂死态与 Windows 未实测场景）→ 删 pid 文件。幂等可重入。
+// 防御：防未知挂死态与 Windows 未实测场景）→ 删 pid 文件（归属校验）。幂等可重入。
 func (h *EngineHandle) Close() error {
 	h.closedByCaller.Store(true)
 	var err error
@@ -242,6 +242,19 @@ func (h *EngineHandle) Close() error {
 		err = h.session.Close()
 	}
 	_ = acp.KillProcessGroup(h.cmd)
-	_ = os.Remove(h.PidFile)
+	h.removePidFileIfOwned()
 	return err
+}
+
+// removePidFileIfOwned 删除 pid 锚点前校验归属：异步回收的旧引擎 Close 可能晚于同
+// profile 重建的新引擎落锚（连续超时重建等场景）——内容不匹配（新引擎已易主）不动，
+// 防误删新锚点使引擎脱离 recoverOrphans 视野。
+func (h *EngineHandle) removePidFileIfOwned() {
+	if h.cmd == nil || h.cmd.Process == nil {
+		return // in-memory 注入路径未落锚（无进程），无归属可校验
+	}
+	data, err := os.ReadFile(h.PidFile)
+	if err == nil && strings.TrimSpace(string(data)) == strconv.Itoa(h.cmd.Process.Pid) {
+		_ = os.Remove(h.PidFile)
+	}
 }

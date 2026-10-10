@@ -199,7 +199,7 @@
 
 #### T1.3 会话管理与实时投影
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：per-profile 会话管理（状态机/互斥/超时自愈/idle 释放/孤儿回收）+ 页面投影 + SSE hub + 视图帧。
 
@@ -218,6 +218,17 @@
 **验收**：
 - 单测绿
 - 假引擎注入下：Ensure → Forward → 页面投影刷新 → hub 帧广播全链路可用（快照帧含全量、增量帧覆写式 upsert）；模拟引擎挂死时 per-call 超时与连续超时重建均触发；idle 计时到期自动释放、释放后再次 Forward 自动重拉
+
+**实施定稿**：
+- 落地文件：manager.go（状态机/Ensure/Forward/Close/StopAll/recoverOrphans）+ hub.go（acpsession 裁剪，去 issueID 维度）+ view.go（SessionView/PageView/BrowserViewSnapshot/Frame 两类帧）+ pages.go（tab 投影刷新，browser_tabs 输出格式按 playwright-mcp 官方文档逐字核实，`(current)` 以捕获组判定防 title 误判）+ tools.go（引擎工具名常量表：17 转发短名→引擎实名 + 逃生舱黑名单 + 截图轮询豁免表，全部经 0.0.83 README 逐名核实）
+- 锁序实现为四层 `callMu → m.mu → entry.mu → view`（hub 锁独立，broadcast 恒在其余锁外）；activeCount（starting/ready 条目数）在 m.mu → entry.mu 双锁临界区内增减，并发上限判据
+- **go-sdk 行为新事实（实施发现）**：`session.Close()` 会阻塞等在途请求结算，且连接关闭不会使在途 CallTool 失败（悬挂至 per-call 超时）——entry 增加 `callCancel`（在途调用登记），Close/headless 切换**先取消在途调用再关引擎**，在途调用得显式关闭错误而非悬挂；连续超时的 stale 引擎回收走异步 goroutine（挂死引擎的 Close 不得拖住 Forward 返回）
+- **pid 锚点归属校验**（client.go `removePidFileIfOwned`）：删 pid 文件前校验内容为本 handle 的 pid——stale 回收的延迟 Close 不得误删同 profile 重建后新引擎的锚点
+- 审查修复三态机边角：closing 标志生命周期 = 一次 spawn（starting 窗口 Close 由 runSpawn 终结消费复位，closing 期拉起失败按 idle 收尾不报失败态）；Close 对 failed 态只归位 idle 不递减 activeCount（防计数下穿上限闸漂移）；连续超时置 failed 以 `!released` 为前置（close 竞态窗口不重复扣计数）
+- **join 诉求以 prefs 为仲裁**：并发 Ensure 的 join 在 spawn 终结后按 prefs.json 重导 headless 诉求（显式覆写已回存 SSOT），与 entry 不一致才重建——多方并发诉求收敛到 prefs，不互相追逐；settleSpawn 对 starting（他人已抢先重建）让路返回 nil
+- recoverOrphans：unix 读 /proc、ps 兜底（macOS 无 /proc），Windows tasklist CSV 映像名 node.exe 弱校验（已知局限注释载明）；杀组以 `&exec.Cmd{Process: &os.Process{Pid}}` 垫板复用 `acp.KillProcessGroup`（单一 SSOT）；锚点 = `<Adapters>/playwright-mcp/<version>` 安装目录路径（EnsureVendored 布局推导），杀失败保留 pid 文件待下次清扫
+- 时序常量全部 var 化供测试覆写（握手 60s/等就绪 30s/per-call 120s/pages 刷新 30s/idle 10 分钟）；测试在 T1.2 三件套（withTestRoot/withFakeNode/fakeStaging/withFakeDial）之上新增 fakeEngineCtl（工具行为覆写/spawn 计数/一次性 spawn 闸门），覆盖同名复用、headless 切换（close+reopen）、并发上限、busy 拒绝、连续超时重建、idle 释放重拉、close 竞态（ready 与 starting 两态）、join headless 收敛、SSE 帧、recoverOrphans 校验杀与误删防护、pid 归属
+- 验收实录：`go test -race` 全绿（2.7s）、整仓 `go build`/`go test` 零失败、`GOOS=windows go build` 通过、`gofmt`/`go vet` 干净
 
 #### T1.4 带态 HTTP（authhttp）
 

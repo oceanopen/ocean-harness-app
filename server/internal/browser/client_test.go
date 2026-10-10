@@ -156,3 +156,32 @@ func TestLaunchEngineHappyPathAndClose(t *testing.T) {
 		t.Fatal("Close 后 5s 内 Exited 未关闭")
 	}
 }
+
+func TestEngineHandleClosePidOwnership(t *testing.T) {
+	withTestRoot(t)
+	// pid 锚点删除前归属校验：内容非本 handle 的 pid 不动（防异步回收的旧引擎误删
+	// 同 profile 重建后新引擎的锚点），是自己的 pid 才删。
+	root := t.TempDir()
+	pidFile := filepath.Join(root, pidFileName)
+	cmd := exec.Command("true")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("拉起占位进程: %v", err)
+	}
+	h := &EngineHandle{PidFile: pidFile, cmd: cmd}
+
+	if err := os.WriteFile(pidFile, []byte("999999"), 0o644); err != nil {
+		t.Fatalf("写他人锚点: %v", err)
+	}
+	_ = h.Close()
+	if _, err := os.Stat(pidFile); os.IsNotExist(err) {
+		t.Fatal("他人 pid 锚点被误删")
+	}
+
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0o644); err != nil {
+		t.Fatalf("写自有锚点: %v", err)
+	}
+	_ = h.Close()
+	if _, err := os.Stat(pidFile); !os.IsNotExist(err) {
+		t.Fatalf("自有 pid 锚点未删除: %v", err)
+	}
+}
