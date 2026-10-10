@@ -91,6 +91,7 @@ func withEngineCtl(t *testing.T) *fakeEngineCtl {
 		srv := mcp.NewServer(&mcp.Implementation{Name: "fake-engine", Version: "test"}, nil)
 		for _, name := range []string{
 			EngineToolNavigate, EngineToolTabs, EngineToolTakeScreenshot, EngineToolEvaluate,
+			EngineToolCookieList,
 		} {
 			tool := name
 			mcp.AddTool(srv, &mcp.Tool{Name: tool, Description: "fake"},

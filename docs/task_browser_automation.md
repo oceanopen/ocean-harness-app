@@ -73,7 +73,7 @@
 |---|---|
 | 引擎真实行为：macOS 进程组清理已实测闭环（T1.1 四场景全无孤儿）；仅剩 Windows 侧进程组行为待实机；其余（flag 拼写/工具名/cookie 结构/webdriver/下载落点/idle 行为/go-sdk 反射）均已核实采信 | 已回写；Windows 项沿 acp 生产模式 + GOOS=windows 编译验收兜底 |
 | Windows 侧 Go 编译只在 tag 构建暴露（PR CI 不编） | 跨平台进程组复用 acp 模式 + `GOOS=windows go build` 验收（T1.2）；CI 常态交叉编译检查留扩展点 |
-| cookie 跨站泄漏（authhttp 无域过滤会把 profile 全部凭据发给任意 URL） | 按 domain/path/secure 过滤 + cookiejar 标准域匹配 + 跨域不泄漏单测断言（T1.4） |
+| cookie 跨站泄漏（authhttp 无域过滤会把 profile 全部凭据发给任意 URL） | cookie 按声明域逐条落锚（host-only 锚定其真实归属 host——cookiejar 对 Domain 空 cookie 锚定传入 URL 的 host，全量对目标落锚会把其它站 host-only 凭据重锚到目标站）+ 发送期 cookiejar 标准域匹配（domain/path 生效；引擎列表输出无 secure，用户拍板一律注入无 scheme 门槛）+ 跨域不泄漏单测断言（T1.4） |
 | 引擎挂死拖死全链路（Forward 无超时） | per-call ctx 超时 120s + 连续 3 次超时置 failed 自动重建 + close/ensure 竞态显式错误（T1.3） |
 | 截图/二进制 content 在转发链静默丢失（类型化出参的自动 Content 装配会丢图 / CLI 纯图返回 null） | 转发 handler 手工构造 `*mcp.CallToolResult` 原样透传 Content 数组 + `--output-dir` 落盘使消费者拿路径（T2.2/T1.2） |
 | prompt injection（网页内容诱导 agent 作恶） | SKILL.md 不可信内容铁律 + 提交类操作复述确认 + `--blocked-origins` 预留 spawn 配置项（T1.2/T3.3） |
@@ -232,21 +232,31 @@
 
 #### T1.4 带态 HTTP（authhttp）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：从活引擎拉当前登录态，cookies 装 cookie jar 后 Go http.Client 直发，供 browser_auth_request 工具与 skill 配方消费。
 
 **技术方案**：
-- 新增 `authhttp.go`：`AuthedRequest(ctx, profile, method, url, headers, body)`——ensure 引擎（复用 manager）→ CallTool `browser_cookie_list`（**纯内存，勿走 browser_storage_state 落文件语义**——已核实：cookie_list/localstorage_list 内联返回，storage_state 落文件且 set 变体先清空现有态）→ **按目标 URL 的 domain/path/secure 过滤后经 `net/http/cookiejar` 标准域匹配注入**（不手拼 Cookie header——无域过滤会把 A 站凭据发给 B 站，跨站泄漏；cookiejar 为 server 首次引入，标准库无 go.mod 变更）→ http.Client 直发；UA 对齐浏览器；响应体截断 256KB 标注 truncated；显式 header 透传（token 类凭据由 AI 从 localStorage 拉取结果提取后传入）；按需 `browser_localstorage_list` 补充 token 源
+- 新增 `authhttp.go`：`AuthedRequest(ctx, profile, method, url, headers, body)`——ensure 引擎（复用 manager）→ CallTool `browser_cookie_list`（**纯内存，勿走 browser_storage_state 落文件语义**——已核实：cookie_list/localstorage_list 内联返回，storage_state 落文件且 set 变体先清空现有态；输出为逐行 `name=value (domain: <domain>, path: <path>)`，仅 name/value/domain/path 四元组，**无 secure/httpOnly/expires**——0.0.83 源码核实）→ 解析后经 `net/http/cookiejar` 标准域匹配注入（按声明域逐条落锚——host-only 锚定其真实归属 host，防 Domain 空 cookie 被 cookiejar 重锚到目标站；不手拼 Cookie header——无域过滤会把 A 站凭据发给 B 站，跨站泄漏；cookiejar 为 server 首次引入，标准库无 go.mod 变更；**一律注入：防跨站全权交给 cookiejar 域匹配，无 scheme 门槛（用户拍板——引擎不回 secure 标志，降级防护无从谈起）；域名前导点 = domain cookie（匹配子域）、无点 = host-only，精确映射**）→ http.Client 直发；UA 经 `browser_evaluate` 实时探测 `navigator.userAgent`（用户拍板——与实际 Chrome 逐字一致；冷启动无 tab 时引擎 ensureTab 自动补 about:blank，源码核实）；显式 User-Agent 头优先于探测值；响应体截断 256KB 标注 truncated；显式 header 透传（token 类凭据由 AI 从 localStorage 拉取结果提取后传入）；按需 `browser_localstorage_list` 补充 token 源
 - 纯函数式：显式参数传递，无状态封装
 - 局限标注：CHIPS 分区 cookie 可能不在返回里（受影响站点极少），出现时走浏览器内 evaluate 兜底（文档注明）
-- 单测：httptest.Server 断言四类——cookie 注入（**含 A 站 cookie 不出现在 B 站请求头**）/ UA / 截断 / 显式 header；cookie 解析按已核实返回结构（内联名值对行）构造样例
+- 单测：httptest.Server 断言四类——cookie 注入（**含 A 站 cookie 不出现在 B 站请求头**）/ UA / 截断 / 显式 header；cookie 解析按 0.0.83 已核实行格式 `name=value (domain: <domain>, path: <path>)` 构造样例（默认模式外包 `### Result` 段头 + 尾随 `### Code` 段，解析只取 Result 段）
 
 **依赖**：T1.3（复用 manager ensure）
 
 **验收**：
 - 单测绿（cookie 注入/跨域不泄漏/截断/显式 header 四类断言）
 - 手动冒烟：对真实已登录站点发一次带态请求返回 200（可选，网络环境允许时）
+
+**实施定稿**：
+- 落地文件：authhttp.go（`AuthedRequest` + `AuthedResponse{StatusCode/Header/Body/Truncated}` json 化出参，解析、按声明域落锚与截断均为包内纯函数）+ tools.go（`EngineToolCookieList` 入常量表；`pagesRefreshExempt` 加入 cookie_list——context 级读免 tab 刷新；UA 探测的 evaluate 不豁免——用户转发链需要投影新鲜度，其刷新属可接受开销）
+- 引擎行为源码核实（0.0.83 coreBundle 本地解包逐行核对，实施依据）：cookie_list 输出为逐行 `name=value (domain: <domain>, path: <path>)`，仅 name/value/domain/path 四元组（**无 secure/httpOnly/expires**——secure 过滤无从谈起，转向拍板决策「一律注入」），空集文案 "No cookies found"；默认模式输出外包 `### Result` 段头 + 尾随 `### Code` 段（解析只取 Result 段，任何不可解析行显式报错，不静默发无凭据请求）；`redactSecrets` 仅替换 `--secrets` 显式注册值（spawn 未传，cookie 值原样透出）；`browser_evaluate` 出参 = `JSON.stringify(result)` 的 Result 段、无 tab 时 ensureTab 自动补 about:blank（冷启动可探测 UA）
+- 两项拍板（用户确认）：secure **一律注入**——防跨站全权交 cookiejar 域匹配（前导点 = domain cookie、无点 = host-only 精确映射），无 scheme 门槛；UA 经 `browser_evaluate` `() => navigator.userAgent` 实时探测，显式 User-Agent 头优先于探测值
+- 解析纪律：name 取首个 `=` 前的 token，value 可含 `=`；RFC 6265 值不含空白，" (domain: " 分隔天然无歧义；`No cookies found`/空 Result 段 = 空集照发（未登录态由服务端响应呈现）；解析错误文案一律脱敏——只引用 name 与值字节数，缺段/坏行/非字符串结果均不回显引擎文本（格式漂移恰发生在已登录时刻，错误会随上层日志与 MCP 出参扩散）
+- HTTP 直发段预算 30s（var 化供测试覆写），默认跟随重定向（浏览器同款语义）；响应体 256KB 截断置 Truncated；空 body 走 nil reader（GET 不带 Content-Length）
+- cookies 与 UA 为两次独立 Forward 调用的尽力快照（各自受 callMu/per-call 超时/idle 保活纪律约束），中间被并发调用穿插属预期
+- 测试：manager_test 假引擎注册面补 cookie_list（纯增量）；authhttp_test 七用例——注入 + 跨域不泄漏（host-only 命中、`.example.com` 域不匹配被 jar 淘汰）/显式 UA 覆写/空集照发/引擎错误即止不发送/截断/坏 URL 拒绝/cookie 与 evaluate 出参解析单测
+- 验收实录：整仓 `go build`/`go test`/`go vet` 全绿、`GOOS=windows go build` 通过、`gofmt` 干净、browser 包 `go test -race` 绿；手动冒烟（真实已登录站点）未执行——本地无已登录 profile，且 T3.3 端到端验收覆盖同一链路
 
 ### 阶段 2：能力暴露
 

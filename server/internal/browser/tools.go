@@ -24,6 +24,10 @@ const (
 	EngineToolFind            = "browser_find"
 	EngineToolPressKey        = "browser_press_key"
 	EngineToolHandleDialog    = "browser_handle_dialog"
+
+	// EngineToolCookieList storage cap 的 cookie 全集拉取（不在转发集，authhttp 带态
+	// 请求 T1.4 消费）。
+	EngineToolCookieList = "browser_cookie_list"
 )
 
 // forwardedTools D5 的 17 精选转发全集：ocean 短名 → 引擎实名（11 基础 + console_messages/
@@ -55,8 +59,10 @@ var engineToolBlacklist = map[string]bool{
 }
 
 // pagesRefreshExempt 转发成功后不触发 pages 投影刷新的工具：截图不改 tab 状态——豁免
-// 使面板截图轮询（1-2s/帧）不会一次轮询触发两次引擎调用；browser_tabs 本身即刷新源。
+// 使面板截图轮询（1-2s/帧）不会一次轮询触发两次引擎调用；browser_tabs 本身即刷新源；
+// cookie_list 为 context 级读（authhttp 带态请求 T1.4），同样免刷新。
 var pagesRefreshExempt = map[string]bool{
 	EngineToolTakeScreenshot: true,
 	EngineToolTabs:           true,
+	EngineToolCookieList:     true,
 }
