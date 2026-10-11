@@ -56,16 +56,34 @@
 
 | # | 决策 | 理由 |
 |---|---|---|
-| D1 | 引擎 = vendored @playwright/mcp，go-sdk（T0 升级后 v1.8.0）stdio 桥接 | 快照/自动等待业界最佳；Node 已是运行时前提；升级后同版桥接零新增依赖 |
+| D1 | 引擎 = vendored @playwright/mcp，go-sdk（T0 升级后 v1.8.0）stdio 桥接 | 快照/自动等待业界最佳；Node 已是运行时前提；升级后同版桥接零新增依赖；stdio 桥接不受引擎上游 HTTP transport 会话 bug 影响（§2.1 论点 3） |
 | D2 | 仅系统浏览器（--browser chrome channel 探测），独立 user-data-dir | 用户拍板；探测成熟度交给 playwright |
 | D3 | 登录态零持久化：profile 目录即活 SSOT，带态 HTTP 从活引擎实时拉 cookies/localStorage（browser_cookie_list 口径，纯内存） | 零陈旧风险、无明文凭据落盘（用户拍板，勿擅自加落盘；注意 browser_storage_state 是落文件语义，主路径勿用） |
 | D4 | 会话 per-profile 单引擎进程，**用完即释放，双层兜底**（主层：manager 侧 idle 计时自动 close——杀引擎进程树；兜底层：spawn 显式传引擎 `--idle-timeout`（毫秒）——到期**只关浏览器窗口**，引擎 node 进程存活、下次调用自愈重启浏览器（登录态续存），防的是 manager 异常时 Chrome 常驻不释放）；下次调用 ensure 重拉，登录态在 profile 目录续存，重拉仅 1–3s，页面态丢失由 AI 重新导航即可；issueId 仅展示标签 | 同 user-data-dir 单实例互斥；任务执行期连续调用保活、任务完成自动释放（用户拍板非常驻）；**面板激活期截图轮询即保活（用户在看就不释放），轮询停止后 idle 正常计时——属预期**；「切 issue 不中断」= 运行中的任务不受影响，不是进程常驻 |
 | D5 | 工具面 = 17 精选转发（11 基础 + console_messages/navigate_back/close/find/press_key/handle_dialog 扩员）+ 6 原生 + browser_tool_call 逃生舱（**黑名单拒绝 browser_run_code_unsafe**——引擎 core 常驻的 RCE 等价工具；统一可选 profile/issueId 参数）；`--caps` 默认 `storage,network,pdf` | AI 体验与维护成本平衡；不开的 cap 其工具不进 tools/list（误调返回 isError 文本）；三个成熟 cap 零成本扩逃生舱面 |
 | D6 | SSE 第一批（hub 裁剪复制，帧协议 snapshot + sessions 两类） | 实时性是核心需求；范式成熟复制成本低 |
-| D7 | 零新表、零 Rust 改动、bot/CLI/workspace 零改动 | 状态在内存 + SSE；数据面全走 Go sidecar |
+| D7 | 零新表、零 Rust 改动、bot/CLI/workspace 零改动 | 状态在内存 + SSE；数据面全走 Go sidecar；「零 Rust 改动」指浏览器数据面——OS 层窗口聚焦例外见 T3.4 |
 | D8 | 进程管理跨平台：复用 acp 包 unix/windows 双实现模式 | macOS + Windows 双正式发布平台；Setpgid 是 unix-only 字段，Windows tag 构建直接编译失败 |
 | D9 | 引擎 Chrome 有头窗口跑在用户桌面 = 天然 live view，人机接管免费；面板内「进度 = 操作流水（SSE 实时）+ 效果 = 截图轮询伪实时（1–2s/帧）」 | 用户可直接切到窗口操作（登录态配方的介入形态）；iframe 嵌入式预览语义错误（另一浏览器上下文，与 AI 操作的页面不同源不同登录态）明确不做；screencast 帧流留扩展点（见 §5） |
 | D10 | 无头/有头 per-profile 用户自选（spawn 参数追加 `--headless`；**偏好持久化于 profile 目录元数据文件**（非凭据，不违 D3）——ensure 重拉时读偏好、显式传参覆写回存；切换 = close+reopen，登录态在 profile 目录续存） | 无头适合已存登录态的后台自动化（不弹窗打扰，截图轮询即视图）；登录态获取必须有头（人工登录介入窗口）；运行中热切换 playwright 不支持 |
+| D11 | 引擎选型与实例粒度对照：Go 原生 CDP（chromedp/go-rod）路线评估后**驳回即期切换**，合理点转扩展点承载；实例粒度**维持 per-profile**——两项均为登录态隔离约束下的裁决（逐条对照见 §2.1） | agent 页面理解层（snapshot+ref+auto-wait）在 Go 生态无生产级等价物，是「执行稳定」诉求的承重层；全局单实例被 Chrome 单实例锁否决（一个进程仅能绑一个 user-data-dir），每任务实例否决登录态复用（每任务重新人工登录）——per-profile = 两硬约束唯一交点；切换成本 = 500–900 行重写 + snapshot/ref 工作流自建（人月级）；CDP 侧真实优势（可排查性/结构化 cookie/演进通道）均为远期价值，由 §5 扩展点承载 |
+
+### 2.1 引擎选型与实例粒度对照
+
+外部评审对引擎选型与实例粒度的分歧论点逐条裁决如下（对照结论即当前事实依据，随 §5 扩展点演进复评）：
+
+| # | 论点 | 核实事实 | 裁决 |
+|---|---|---|---|
+| 1 | 引擎默认无头，可视化只能靠截图 | 引擎默认有头，`--headless` 才无头（T1.1 实测）；D9 以真实窗口为主视图、截图轮询仅面板辅助 | 不成立 |
+| 2 | 引擎 profile 锁冲突，多实例不可行 | 该批评针对多客户端共享单一 profile；现行 D4 = per-profile 单引擎进程 + 独立 user-data-dir（「每实例一独立 Chrome 进程」形态，彻底隔离），并发上限 3 | 不适用 |
+| 3 | MCP 会话管理有上游 bug | 仅 HTTP transport 受影响；现行桥接为 go-sdk stdio（T1.2） | 不受影响；stdio 选型依据入 D1 |
+| 4 | 浏览器子进程偶发 wedge，调用方不可控 | 属引擎上游已知面；wedge 表现为 per-call 超时，现行 120s 超时 + 连续 3 次重建 + idle 双层释放 + recoverOrphans 四层兜底（T1.3） | 已覆盖；入 §3 风险表 |
+| 5 | 截图轮询低效，应改 CDP 帧流 | `Page.startScreencast` 帧流帧率/带宽优于轮询一个量级，配合 `Input.dispatch*` 输入注入构成完整「远程桌面式」介入通路；但主视图已是真实窗口，轮询仅面板辅助 | 吸收为 §5 screencast 扩展点依据 |
+| 6 | a11y 树与 CDP `Accessibility.getFullAXTree` 同源，Go 侧可低成本复刻 | 数据源同源属实，但 ref 稳定映射/stale ref 恢复/自动等待/表单模态语义等上层工程无现成物：chromedp `Click` 仅接受 CSS selector（a11y→操作需自建 GetFullAXTree → BackendDOMNodeId → DOM.ResolveNode/JS eval 链）；go-rod 无内置 a11y snapshot 体系；rod-mcp 34 stars 无 release 属早期项目，其余 Go 生态浏览器 MCP 均为实验级 | 驳回——复刻即重做 mini playwright-mcp（人月级）；列 §5 引擎可替换扩展点硬缺口 |
+| 7 | headless 窗口对象存在，可经 CDP `Browser.setWindowBounds` 按需弹出真实窗口 | headless=new 有真实窗口边界概念（受物理屏约束），但「无头窗口弹出上屏」无权威支持路径（桌面残留空白窗口属上游 bug 现象非特性），无生产先例 | 驳回——D10 close+reopen（登录态在 profile 目录续存）为唯一可靠路径 |
+| 8 | 换 Go 原生 CDP 更稳、更可排查 | 真实优势：CDP wireline 全量日志 + pprof、`Network.getAllCookies` 结构化 cookie（authhttp 文本解析层随之消失）、零 npm/registry 依赖、screencast/元素 pick 原生通道；代价：约 2100 行资产可复用之外仍需 500–900 行重写 + 论点 6 硬缺口自研 | 驳回即期切换——优势均为远期价值，由 §5 扩展点承载（引擎可替换/screencast/trace 回放）；复评触发点：面板介入/screencast 成为真实痛点，或引擎维护成本显著抬升 |
+| 9 | 全局单实例（单 Chrome 进程内多 target）更好管理、更易做页面展示 | 前提是所有任务共享一个账号——与「登录态按 profile 隔离」（一个 profile 一个账号）正交；Chrome 单实例锁决定一个进程只能绑一个 user-data-dir，多账号/多站点必然多实例；「单实例多页面」形态在同 profile 内已经是（`browser_tabs` 多 tab 共存一窗）；「多实例找不到窗口对应关系」问题在面板模型里不存在——会话卡片 = profile = Chrome 窗口组 1:1 映射，多实例即多卡片并排 | 驳回——per-profile 已是登录态隔离下的最小实例粒度，实例数 = 活跃 profile 数（≤3）而非任务数 |
+| 10 | 每任务单独实例（任务级隔离） | 每任务重新人工登录，需求 2「登录态获取一次、反复带态」语义消失；窗口数 = 并发任务数（无上界）；「任务隔离」诉求已由 profile 维度承载（T3.3：同站第二账号 = 新建 `<site>-<account>` profile） | 驳回——引擎粒度不改；同 profile 多任务并行的真实约束是调用互斥 busy 拒绝（§3），同账号真并行挂 §5 扩展点 |
 
 ## 3. 风险与开放问题
 
@@ -82,6 +100,8 @@
 | stale ref / 引擎错误传导 | 不缓存不包装原样透传，skill 文档写明重新 snapshot（T2.2/T3.3） |
 | 打包脚本 claude SDK 专属断言误伤纯 JS 条目（不止三函数：主循环 SDK 断言/第二段 pnpmAdd/平台二进制断言/skip 路径 stagingReady 均专属） | per-entry 校验谓词分流覆盖整段 claude 专属逻辑 + PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 留作无害保险（playwright 发布包无 postinstall，本不拉浏览器）（T3.1） |
 | token 明文过 AI 上下文（auth_state/localStorage 拉取结果含凭据，prompt injection 可诱导外传） | SKILL.md 凭据纪律铁律：凭据仅用于单次 auth_request 入参，不落盘不外传不复述（T3.3） |
+| 引擎上游已知故障面（浏览器子进程偶发 wedge、HTTP transport 会话回收 bug） | 现行桥接为 stdio（T1.2），不受会话 bug 影响；wedge 表现为 per-call 超时，由 120s 超时 + 连续 3 次重建 + idle 双层释放 + recoverOrphans 兜底（T1.3） |
+| 同 profile 多任务并发互斥（busy 拒绝非排队） | 并发调用得「会话忙」显式错误、AI 层重试（T1.3 busy 语义）；根因 = 引擎 current-tab 语义（browser_* 无 per-call tab 定位参数），同账号真并行挂 §5 扩展点 |
 
 开放问题（已清零）：① cookie/localStorage 工具已核实——storage cap 提供 `browser_cookie_list`/`browser_localstorage_list`（内联返回不落文件）；`browser_storage_state` 确为落文件语义且 set 变体先清空现有态（D3 主路径勿用确认）；② `browser_press_key` 定案升转发（core 常驻存在，Enter 提交显式覆盖）。
 
@@ -90,7 +110,7 @@
 ## 4. 任务清单（进度 SSOT）
 
 > 任务粒度：模块 + 功能 + 技术方案，一个任务 ≈ 一次可独立验收的交付。
-> 执行顺序：T0 → T1.1 → T1.2 → T1.3 → T1.4 →（T2.1、T2.2 并列）→ T3.1 → T3.2 → T3.3
+> 执行顺序：T0 → T1.1 → T1.2 → T1.3 → T1.4 →（T2.1、T2.2 并列）→ T3.1 → T3.2 → T3.4 → T3.3
 
 ### 阶段 0：依赖升级（先行）
 
@@ -375,17 +395,34 @@
 - bot 渠道接入 issue 后发指令，开页面与带态请求同链成功
 - 面板全程实时可见三链操作过程
 
+#### T3.4 面板「聚焦窗口」：一键前置对应 profile 的 Chrome 窗口
+
+**状态**：⬜
+
+**功能**：会话卡片提供「聚焦窗口」按钮，把该 profile 对应的 Chrome 窗口组前置到桌面最前——介入场景（登录/验证码）窗口被埋没时的一键定位。人工介入主通道仍是 D9 的桌面真实窗口（窗口本就可见可操作），本任务为便利增强，非介入通道本身。
+
+**技术方案**：
+- 新增 Rust command `focus_browser_window(profile)`（app/src/）：按 Chrome 进程树 cmdline 含 `--user-data-dir=<profiles 根>/<profile>` 定位该 profile 的 Chrome 主进程（T1.1 实测坐实 Chrome 树全成员 argv 均含此参数，按 profile 路径检索进程树可靠）；macOS 走 osascript 前置（activate + System Events 按窗口归属匹配），Windows 走 EnumWindows + SetForegroundWindow——复用 terminal/「定位外部应用窗口」先例模式；未找到进程/窗口返回显式中文错误（profile 未运行 = idle 态前置无意义，前端按钮仅 ready 态可点）
+- 前端：BrowserPanel 会话卡片 ready 态追加「聚焦窗口」按钮，经 Tauri invoke 调用（纯 OS 层动作，不经 Go sidecar——D7 的「零 Rust 改动」指浏览器数据面，此项为 OS 便利动作例外，D7 已注）
+
+**依赖**：T3.2（BrowserPanel 承载按钮）
+
+**验收**：
+- macOS/Windows 手动验证：多 Chrome 窗口（多 profile）场景下前置目标 profile 窗口组正确；目标 profile 未运行时显式中文报错，无误前置
+- `pnpm tauri:dev` 下面板按钮链路可用；`GOOS=windows` 侧 Rust 编译通过
+
 ## 5. 后续演进扩展点（本期不做，记录防误入）
 
 | 扩展点 | 说明 |
 |---|---|
 | 面板元素选取（人工指路给 AI） | 在**真 Chrome 窗口**上做 pick（非面板内）：CDP Runtime.evaluate 注入 hover 高亮脚本 → 用户在引擎窗口悬停高亮、点击选中 → selector/ref 经 CDP 事件通道回传面板 → 触发 AI 分析/生成后续操作建议；抓手：devtools cap 的 browser_highlight；「选中→回传」通道（CDP binding）需 spike 验证 |
-| screencast 帧流面板（10fps 级实时画面） | orca 级投入：需打通 CDP 通道（playwright 默认 pipe 启动，能否追加 --remote-debugging-port 需 spike）+ 帧步调器；本地场景浏览器在桌面，先用截图轮询伪实时，按真实痛点再决定 |
+| screencast 帧流面板（10fps 级实时画面） | orca 级投入：需打通 CDP 通道（playwright 默认 pipe 启动，能否追加 --remote-debugging-port 需 spike）+ 帧步调器；帧流依据——帧率/带宽优于截图轮询一个量级，配合 `Input.dispatch*` 输入注入构成完整「远程桌面式」介入通路（面板介入形态的终局选项，§2.1 论点 5）；本地场景浏览器在桌面，先用截图轮询伪实时，按真实痛点再决定 |
 | extension 模式连用户真实 Chrome | 外部 SaaS 登录被自动化检测拦截（如 Google OAuth）时的正解（浏览器非自动化启动，登录发生在用户自己手里）；stealth 插件是死路——hello-halo 的 14 项规避是补 Electron 与真 Chrome 的先天差异，我们用真 Chrome channel 场景无必要；引擎默认已注入 `--disable-blink-features=AutomationControlled`（navigator.webdriver 默认 false），`--enable-automation` 仅余信息条外观问题（T1.2 `--config` 可选去除） |
-| devtools cap + trace viewer 做操作回放 | 替代自研 op log 结构：开 devtools cap（browser_start/stop_tracing、video）+ `--output-dir` 后近乎免费；SSE 帧补 trace 文件路径字段 + 面板「打开回放」按钮即可 |
+| devtools cap + trace viewer 做操作回放 | 事后排查主抓手（对位 Go 原生 CDP 的 wireline 日志/pprof 可排查性优势，§2.1 论点 8）：替代自研 op log 结构，开 devtools cap（browser_start/stop_tracing、video）+ `--output-dir` 后近乎免费；SSE 帧补 trace 文件路径字段 + 面板「打开回放」按钮即可；轻量路径 = spawn env 预留 DEBUG=pw:api 引擎调试日志（stderr 泵已接管，T1.2） |
+| 同账号真并行（同 profile 多任务 tab 级隔离） | 引擎 current-tab 语义限制（§3 busy 行）：browser_* 工具无 per-call tab 定位参数，同 profile 并发调用互斥 busy 拒绝；需引擎侧 per-call tab 定位参数或任务级队列策略，属引擎能力面扩展，按真实多任务并行痛点再评估 |
 | SSE 跨域跳转可视提示 | navigate 到 profile 历史以外域名时前端可视提示（不阻断），prompt injection 防御的 UI 层增强 |
 | browser_auth_request ensure:false 参数 | 轻量探针（不拉引擎直接失败提示），当前探针场景 AI 可用 curl 出口 |
 | CI 常态 windows 交叉编译检查 | 避免 Setpgid 类 unix-only 问题只在 tag 构建暴露 |
 | bot 场景零 token 网页搜索 | 原生 Go 工具（navigate → evaluate 选择器抽取），仅当 bot 需要廉价搜索时评估 |
-| 引擎可替换（如 chromedp 重写） | 消费面只依赖 browser_* 工具语义，领域层引擎依赖收敛在 client.go 拉起链一处 |
+| 引擎可替换（如 chromedp 重写，对照裁决见 §2.1 论点 6/8） | 消费面只依赖 browser_* 工具语义；引擎依赖收敛三处——client.go 拨号链、tools.go 引擎实名常量表、isError 判错契约（manager Forward 判错 + service forwardOK 双检）。切换账：约 2100 行资产原样保留（manager 状态机仅 3 引擎触点、hub/view 投影、acp 进程纪律、REST+SSE API 面，对外 browser_* 契约引擎无关）；500–900 行重写（client.go 拨号层、pin.go、authhttp/pages 文本解析层——CDP 结构化返回后属删除变简单、mcp_dto 转发 17 参数镜像）；硬缺口 = snapshot 产 ref → click 消费 ref 工作流无现成等价物需自建（「执行稳定」承重层，人月级）。CDP 侧收益：Network.getAllCookies 完整 cookie 元数据（「引擎列表无 secure 标志」局限随之消失）、wireline 全量日志 + pprof、screencast/元素 pick 原生通道 |
 | acpdoctor 存量 node 预检仿写迁移 | T1.2 已把 node 版本探测/下限校验 SSOT 归位 agentcatalog（`NodeVersion`/`CheckNodeMinVersion`），acpdoctor 内三份未导出仿写随之删除、改为消费导出面——顺带任务，非本期必做 |
