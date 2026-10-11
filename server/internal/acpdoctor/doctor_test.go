@@ -195,7 +195,7 @@ func TestHandshakeProbeSpawnFailure(t *testing.T) {
 // TestRealHandshakeDoctor 生产链路全真探测（CheckEntry：clibin → node → vendored →
 // claude-acp 真握手）。依赖真实环境，双门槛 gating：OCEAN_ACP_REAL_HANDSHAKE=1 且
 // GO_SERVER_ACP_RESOURCES_DIR / GO_SERVER_ACP_ADAPTERS_DIR 均已配置（vendoring 资源源
-// 与受管根，dev 自测由 scripts/prepare-acp-adapters.ts 产出前者）。
+// 与受管根，dev 自测由 scripts/prepare-vendor-staging.ts 产出前者）。
 func TestRealHandshakeDoctor(t *testing.T) {
 	if os.Getenv("OCEAN_ACP_REAL_HANDSHAKE") != "1" {
 		t.Skip("需要 OCEAN_ACP_REAL_HANDSHAKE=1（真实 claude 环境）")

@@ -24,11 +24,11 @@ import (
 // ClaudeEnvOverrides（CLAUDE_CODE_EXECUTABLE + login PATH）→ 真握手。
 // 需要真实凭据与网络，不进常规测试轮次：
 //
-//	pnpm server:acp:vendor   # 资源源缺失时本用例前置报错
+//	pnpm server:vendor:prepare   # 资源源缺失时本用例前置报错
 //	OCEAN_ACP_REAL_HANDSHAKE=1 go test ./internal/acp -run TestRealHandshake -v
 //
 // catalog pin 升级后跑本用例即完成验证（改 pin → pnpm server:catalog:refresh →
-// pnpm server:acp:vendor → 本用例 → 提交）。资源源可经 OCEAN_ACP_RESOURCES_DIR 覆盖
+// pnpm server:vendor:prepare → 本用例 → 提交）。资源源可经 OCEAN_ACP_RESOURCES_DIR 覆盖
 // （缺省仓库内 app/resources/acp-adapters）；受管根缺省用一次性临时目录；可经
 // OCEAN_ACP_REAL_COMMAND 覆盖拉起命令（空格分隔 argv）。
 func TestRealHandshake(t *testing.T) {
@@ -43,7 +43,7 @@ func TestRealHandshake(t *testing.T) {
 	if srcRoot == "" {
 		srcRoot = filepath.Join("..", "..", "..", "app", "resources", "acp-adapters")
 		if _, err := os.Stat(srcRoot); err != nil {
-			t.Fatalf("vendored 资源源缺失（先跑 pnpm server:acp:vendor）: %v", err)
+			t.Fatalf("vendored 资源源缺失（先跑 pnpm server:vendor:prepare）: %v", err)
 		}
 	}
 	dstRoot := os.Getenv("OCEAN_ACP_ADAPTERS_DIR")

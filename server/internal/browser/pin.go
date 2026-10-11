@@ -20,7 +20,9 @@ import (
 //go:embed browser-mcp.json
 var pinJSON []byte
 
-// enginePin 版本 pin SSOT（browser-mcp.json），构建期锁定、运行时只读。
+// enginePin 引擎 pin 投影（browser-mcp.json）：版本 SSOT 在 pnpm-workspace.yaml
+// catalog 段（与 acp 包同款机制），构建期由 scripts/vendor-browser-engine.ts 防漂移
+// 断言对齐两者；Go 不读 yaml，运行期构造 Entry 消费此投影，只读。
 type enginePin struct {
 	Package string `json:"package"`
 	Version string `json:"version"`

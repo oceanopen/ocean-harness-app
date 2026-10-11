@@ -144,7 +144,7 @@ fn last_env_path(stdout: &str) -> Option<String> {
 
 /// vendored 资源源根：测试注入（TEST_RESOURCES_ROOT）优先，否则取装配期基准
 ///（ensure_resources_base）；目录不存在 = vendoring 缺失（staging 未跑
-/// server:acp:vendor / 打包资源缺失）→ None，调用方回落裸 shell。
+/// server:vendor:prepare / 打包资源缺失）→ None，调用方回落裸 shell。
 fn acp_resources_root() -> Option<PathBuf> {
     #[cfg(test)]
     if let Some(root) = TEST_RESOURCES_ROOT

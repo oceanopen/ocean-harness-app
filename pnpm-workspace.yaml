@@ -48,6 +48,7 @@ catalog:
   '@mui/icons-material': ^9.1.0
   '@mui/material': ^9.1.0
   '@mui/x-date-pickers': ^9.10.1
+  '@playwright/mcp': 0.0.83
   '@streamdown/mermaid': ^1.0.2
   '@svgr/core': ^8.1.0
   '@svgr/plugin-jsx': ^8.1.0

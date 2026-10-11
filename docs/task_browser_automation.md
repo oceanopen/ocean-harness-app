@@ -27,7 +27,7 @@
 | 5 | SSE 范式蓝本：seq 单调、建连首帧全量 snapshot、慢订户断开；前端消费范式五文件切分（reducer 纯函数 + EventSource gap 重连） | server/internal/acpsession/hub.go；packages/web/src/state/acpSession/ |
 | 6 | REST 分组范式：acpSessionGroup（POST action + GET events SSE） | server/internal/router/router.go:108 |
 | 7 | 工具栏注册表唯一扩展点：WORKBENCH_TOOLS 追加一项即出 rail 图标 + tab；架构红线——有状态工具会话必须后端常驻，前端 tab 卸载只断渲染流 | packages/web/src/windows/panel/DevWorkbenchPage/components/WorkbenchTools/toolRegistry.tsx:41 |
-| 8 | 打包脚本现有断言全是 claude SDK 专属（installedClaudeSdkVersion/platformBinRel/stagingReady），纯 JS 伪条目需 per-entry 校验分流 | scripts/prepare-acp-adapters.ts:162-195 |
+| 8 | 打包脚本现有断言全是 claude SDK 专属（installedClaudeSdkVersion/platformBinRel/stagingReady），纯 JS 伪条目需 per-entry 校验分流 | scripts/vendor-claude-adapters.ts（拆分前为 prepare-acp-adapters.ts） |
 | 9 | bot 零接线：headless 引擎 env 已注入 OCEAN_HARNESS_PORT，bot 跑 skill 与终端同链 | server/internal/bot/driver_claude.go |
 | 10 | skill 调用契约：不直调 MCP，经 ocean-harness CLI `mcp call <工具名> --data <json>` 原子操作编排 | plugins/ocean-harness-plugin/skills/cli-usage/SKILL.md |
 | 11 | acp 包已有跨平台进程组先例：unix Setpgid / Windows CREATE_NEW_PROCESS_GROUP + `taskkill /T /F` 杀树 + PID 易主防护（Windows 侧为 OpenProcess 句柄钉住探活，非 cmdline 校验）；processGroupAttr/killProcessGroup 原未导出，T1.2 定稿为 **acp 侧导出包装**（连带 stderr 设施 StderrTail/PumpStderr 一并导出，单一 SSOT） | server/internal/acp/process_unix.go、process_windows.go |
@@ -341,19 +341,28 @@
 
 #### T3.1 打包 vendoring
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：@playwright/mcp 进构建期 staging，终端用户机零 npm/registry 依赖。
 
 **技术方案**：
-- 修改 `scripts/prepare-acp-adapters.ts`：安装条目从「catalog npx-adapter 条目」扩展为「catalog 条目 ∪ browser-mcp.json 派生伪条目（id=playwright-mcp）」；伪条目走 per-entry 校验分流——**claude 专属逻辑整段跳过**（不止 installedClaudeSdkVersion/claudePlatBinRel/stagingReady 三函数：主循环的 SDK 存在性与版本漂移断言、SDK 提升直接依赖的第二段 pnpmAdd、平台二进制断言、skip 快路径 stagingReady 内的平台二进制检查均属之），ready 判据改为验 @playwright/mcp 包 package.json 版本匹配；依赖闭包（playwright/playwright-core）由 pnpm lockfile 自动携带（@playwright/mcp 是薄壳，实现在 playwright-core）；pnpmAdd 为该条目注入 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` 留作无害保险（playwright 发布包无 postinstall，本不拉浏览器二进制；运行时前提是用户机装有 Chrome——channel chrome）；staging .npmrc/pnpm-workspace.yaml/原子 rename 机制原样复用
+- 版本 SSOT 与 acp 包同款 catalog 机制（用户拍板）：pnpm-workspace.yaml catalog 段登记 `@playwright/mcp` 版本（唯一 SSOT），根 package.json devDependencies 以 `catalog:` 引用（claude-agent-acp/claude-agent-sdk 同形态）；`browser-mcp.json` 相应降位为 Go 侧 go:embed 投影（Go 不读 yaml，运行期构造 Entry 仍需此投影），脚本派生伪条目时对两者做防漂移断言（catalog 解析版本 ≠ browser-mcp.json 版本即 fail 并给同步指引，镜像 claude SDK 漂移检查；升级流程 = 改 catalog → pnpm install → 同步 browser-mcp.json → pnpm server:vendor:prepare）
+- 构建脚本拆分四文件（用户拍板）：`scripts/prepare-vendor-staging.ts` 入口薄编排（伪条目 pin fail fast 先行 → 平台解析 → 依次跑两域）+ `scripts/vendor-common.ts` 公共设施（根声明/catalog 解析、构建目标平台解析、staging 三件套、统一安装驱动 `installSpec`：快路径 → 临时目录 → 安装 → postInstall → 终验 → 原子 rename，失败清理 rm 临时目录收敛为驱动内单点）+ `scripts/vendor-claude-adapters.ts`（claude 域：catalog npx-adapter 条目 + SDK 专属校验链）+ `scripts/vendor-browser-engine.ts`（browser 域：伪条目 id=playwright-mcp，spec = 根 devDeps 的 `catalog:` 引用经 catalog 段解析，投影防漂移断言在此）；安装条目从「catalog npx-adapter 条目」扩展为「catalog 条目 ∪ 伪条目」，伪条目走 per-entry 校验分流——**claude 专属逻辑整段跳过**（SDK 存在性与版本漂移断言、SDK 提升直接依赖的第二段 pnpmAdd、平台二进制断言、skip 快路径 stagingReady 内的平台二进制检查均属之；sdkPin 基准在「有启用 claude 条目」时安装前解析一次并纳入就绪判据 `readyPins`——快路径亦复验 SDK pin，staging 在位但根声明被改错时本地重跑不再静默跳过，重装后由 postInstall 漂移断言响亮报错；无条目不执行根声明断言，纯 browser 运行不误伤），ready 判据改为验 @playwright/mcp 包 package.json 版本匹配；依赖闭包（playwright/playwright-core）由 pnpm lockfile 自动携带（@playwright/mcp 是薄壳，实现在 playwright-core）；pnpmAdd 为该条目注入 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` 留作无害保险（playwright 发布包无 postinstall，本不拉浏览器二进制；运行时前提是用户机装有 Chrome——channel chrome）；staging .npmrc/pnpm-workspace.yaml/原子 rename 机制原样复用
 - 验证 EnsureVendored 消费侧与 staging 布局一致（`<root>/playwright-mcp/<version>/`，复用 GO_SERVER_ACP_RESOURCES_DIR / GO_SERVER_ACP_ADAPTERS_DIR，零新增环境变量）
 
 **依赖**：T1.2（pin.go 的 Entry 构造）
 
 **验收**：
-- `pnpm server:acp:vendor` 产出 `app/resources/acp-adapters/playwright-mcp/<version>/` 完整依赖闭包（含 playwright-core），无浏览器二进制
+- `pnpm server:vendor:prepare` 产出 `app/resources/acp-adapters/playwright-mcp/<version>/` 完整依赖闭包（含 playwright-core），无浏览器二进制
 - 真实 env 下 EnsureVendored 命中（秒回）与版本变更重制两分支均验证
+
+**实施定稿**：
+- 版本 SSOT 调整（用户拍板，相对原方案偏离）：版本从 browser-mcp.json 迁至 pnpm-workspace.yaml catalog 段（`'@playwright/mcp': 0.0.83`，与 acp 包同款机制），根 devDependencies 以 `catalog:` 引用；browser-mcp.json 降位为 Go 侧 go:embed 投影（Go 不读 yaml，运行期构造 Entry 仍消费它，零 Go 行为改动），脚本 `browserEnginePin()` 派生伪条目时防漂移断言两者一致——fail fast 于任何安装前，报错含两侧版本与精确同步指引（升级流程 = 改 catalog → pnpm install → 同步投影 → 重跑脚本）；pin.go 定位注释同步（纯注释）
+- 脚本落地形态：拆分四文件（用户拍板）——入口 `scripts/prepare-vendor-staging.ts` 薄编排（engine pin fail fast 先行 → 平台解析 → claude 域 → browser 域）、`vendor-common.ts` 公共设施含统一驱动 `installSpec`（快路径 / 临时目录三件套 / pnpmAdd / postInstall / 终验 / 原子 rename；失败清理 rm 临时目录收敛为驱动内单点，域侧 postInstall 抛错即安装失败）、`vendor-claude-adapters.ts` claude 域（postInstall 链：SDK 存在性断言 → 根声明防漂移 → `--save-exact` 明文提升 → 平台二进制断言；sdkPin 基准仅在有启用 claude 条目时解析——安装前一次显式传参，无条目不执行根声明断言（纯 browser 运行不误伤），并作为快路径/终验就绪判据之一（`readyPins`，快路径复验 SDK pin））、`vendor-browser-engine.ts` browser 域（catalog 段解析 + 投影防漂移，`readyBinRel: null` 纯版本判据）；`stagingReady` 签名 `platformBinRel: string[] | null`（null = 纯版本判据，browser 条目专用）；「无 npx-adapter 启用条目即退出」守卫随伪条目无条件并入而移除（browser 引擎为必装项，空 catalog 不再短路跳过）
+- 验收实录：`pnpm server:vendor:prepare` 产出 `playwright-mcp/0.0.83/`——hoisted 扁平闭包 `@playwright/mcp` + `playwright`/`playwright-core` 1.64.0-alpha（与 T1.1 spike 同版）、bin 单键 map `{"playwright-mcp":"cli.js"}` 可解析、无浏览器二进制（`.local-browsers`/`headless_shell` 零命中）、symlink 仅 `.bin` 相对链；幂等秒回两分支文案正确（claude「平台二进制在位」/playwright「版本匹配」）；漂移断言 fail 路径实测（篡改投影版本 → 退出码 1 + 同步指引，还原后全绿）；EnsureVendored 真实 env 三分支经一次性验证程序全过（跑后删除）：首次安装 114ms marker=`0.0.83@darwin-arm64`、命中 21µs 哨兵在位、篡改 marker 漂移重制 56ms 后恢复；`pnpm web:lint`/`gofmt`/`go build`/`go vet` 全绿
+- 真实 Chrome 拉起冒烟（TestRealEngineSmoke）未跑——验收方式经用户拍板走免 Chrome 路径；staging 就绪后该测试缺省即取 `app/resources/acp-adapters`，真实拉起链路顺延 T3.3 端到端覆盖
+- 脚本拆分与更名（用户拍板，实施收尾）：`prepare-acp-adapters.ts` 拆为入口 + 公共 + 两域四文件（`prepare-vendor-staging.ts` / `vendor-common.ts` / `vendor-claude-adapters.ts` / `vendor-browser-engine.ts`），pnpm 命令 `server:acp:vendor` → `server:vendor:prepare`；引用面全量同步（tauri.conf.json beforeDev/BuildCommand、cli_bin.rs / vendored.go / pin.go / doctor_test / handshake_real_test 注释、README、.gitignore、本地 permissions、本档）；staging 目录名 `app/resources/acp-adapters/` 与 GO_SERVER_ACP_* env 不动（深层接线收益低）。重构后复验：删两域 staging 全量重装（claude 断言链 + SDK 提升 + playwright SKIP env 真实走通，5.1s / 361ms）→ 二跑幂等秒回文案正确 → 漂移 fail 路径实测退出码 1 + 同步指引；eslint / gofmt（触及文件，vendored_test.go 既有遗留除外）/ go vet 全绿
+- 第八阶段规范/抽象一致性审查（四步全走）：三维度（导入/命名/错误处理规范、语言风格、抽象分层/架构对齐）均无高置信度发现——installSpec 单向时序与失败清理单点符合编码规则 1、零 class 与显式传参符合编码规则 2、node: 前缀/顶层 import type/ESM `.ts` 扩展名（node 24 type-stripping 成立）核验通过、Go/Rust 消费契约（staging 目录名同源、平台二进制路径与 claudePlatformTriple 同口径、hoisted 布局、spec 还原规则两侧同语义、fail-fast 与 release-assets.yml 矩阵吻合）逐项一致、改名引用面零残留。唯一边界观察（快路径不复验 SDK pin——既有行为非本次引入，CI 全新 staging 兜底无静默发布风险）经拍板立即收紧：`stagingReady` 增 `readyPins` 附加判据，claude 域传 SDK pin 基准（有启用条目时安装前解析一次显式传参，惰性 memo wrapper 随之删除），快路径与终验同验；实测：篡改 catalog SDK 版本 → 快路径不再静默跳过 → 重装后 postInstall 漂移断言退出码 1 + 精确同步指引 → 还原复跑双域秒回；eslint 全绿
 
 #### T3.2 前端面板
 
