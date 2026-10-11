@@ -84,8 +84,12 @@ func EngineVersion() (string, error) {
 // ignoreDefaultArgs 去掉 playwright 默认注入的 --disable-blink-features=AutomationControlled
 // ——品牌 Chrome 坏标记警示条（bad_flags_prompt 的 kBadFlags 含 kDisableBlinkFeatures）
 // 在有头模式恒弹黄条；该标记在 CfT 155 实测已不影响 navigator.webdriver（缺省即 true），
-// 去掉无反检测损失。CLI flags（--user-data-dir 等）优先级高于 config，互不冲突。
-const engineConfigJSON = `{"browser":{"launchOptions":{"ignoreDefaultArgs":["--disable-blink-features=AutomationControlled"]}}}`
+// 去掉无反检测损失。channel="chromium" 为 playwright 官方 bundled-chromium channel：
+// registry 选可执行文件时 channel 非空即绕开 headless-shell 分支——内置分发经 --no-shell
+// 只装完整版（无头也由它以 --headless=new 承担），不指定 channel 的默认选择（headless →
+// chromium-headless-shell）会因 shell 缺失 spawn 失败；PLAYWRIGHT_BROWSERS_PATH 定位不变。
+// CLI flags（--user-data-dir 等）优先级高于 config，互不冲突。
+const engineConfigJSON = `{"browser":{"launchOptions":{"ignoreDefaultArgs":["--disable-blink-features=AutomationControlled"],"channel":"chromium"}}}`
 
 // EnsureEngineConfig 幂等落盘引擎启动配置，返回 --config 消费的文件路径。
 func EnsureEngineConfig() (string, error) {

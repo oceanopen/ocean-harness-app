@@ -102,20 +102,21 @@ function browserDownloadEnv(browsersDir: string): Record<string, string> {
 }
 
 /**
- * install chromium（staged cli.js 保版本精确，不 npx 漂移）：SKIP_BROWSER_DOWNLOAD 仅
- * pnpmAdd 段需要的保险，在此显式失效，不得带进下载步。
+ * install chromium（staged cli.js 保版本精确，不 npx 漂移）：--no-shell 跳过 headless-shell
+ * （202M，无头模式经引擎 launchOptions.channel="chromium" 走完整版，见 server/internal/browser/pin.go）。
+ * SKIP_BROWSER_DOWNLOAD 仅 pnpmAdd 段需要的保险，在此显式失效，不得带进下载步。
  */
 function installBrowsers(tmpDir: string): void {
   const cli = resolve(tmpDir, 'node_modules', 'playwright', 'cli.js');
   const browsersDir = resolve(tmpDir, BROWSERS_DIR_NAME);
   const env = { ...process.env };
   delete env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD;
-  execFileSync(process.execPath, [cli, 'install', 'chromium'], {
+  execFileSync(process.execPath, [cli, 'install', 'chromium', '--no-shell'], {
     cwd: tmpDir,
     stdio: 'inherit',
     env: { ...env, ...browserDownloadEnv(browsersDir) },
   });
-  writeFileSync(resolve(browsersDir, BROWSERS_MARKER), `${BROWSER_ENGINE_PKG} bundled chromium\n`);
+  writeFileSync(resolve(browsersDir, BROWSERS_MARKER), `${BROWSER_ENGINE_PKG} bundled chromium (no-shell)\n`);
 }
 
 /** browser 引擎域安装入口：版本 + 内置浏览器 marker 双判据（快路径与终验同验）。 */

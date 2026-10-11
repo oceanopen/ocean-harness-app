@@ -100,7 +100,8 @@ for (const id of identifiers) {
   const outName = `${id}-go_server_bin-${triple}${exeSuffixFor(targetGOOS)}`;
   execFileSync(
     'go',
-    ['build', '-C', resolve(repoRoot, 'server'), '-o', resolve(outDir, outName), './cmd/server'],
+    // -C 须为首个 flag（go 命令行约定），构建 flags 一律跟在其后。
+    ['build', '-C', resolve(repoRoot, 'server'), '-ldflags', '-s -w', '-o', resolve(outDir, outName), './cmd/server'],
     { stdio: 'inherit', env: { ...process.env, GOOS: targetGOOS, GOARCH: targetGOARCH, CGO_ENABLED: '0' } },
   );
 }
@@ -115,7 +116,8 @@ const pkgVersion = (JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), '
 const cliMode = runMode === 'dev' ? 'test' : 'release';
 const cliLdflags
   = `-X ocean-harness/server/internal/buildinfo.Mode=${cliMode} `
-    + `-X ocean-harness/server/internal/buildinfo.Version=${pkgVersion}`;
+    + `-X ocean-harness/server/internal/buildinfo.Version=${pkgVersion} `
+    + '-s -w';
 for (const id of identifiers) {
   const cliOutName = `${id}-cli_bin-${triple}${exeSuffixFor(targetGOOS)}`;
   execFileSync(
