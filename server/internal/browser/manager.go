@@ -418,58 +418,83 @@ func (m *Manager) watchExit(entry *sessionEntry, handle *EngineHandle) {
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
 }
 
-// Forward 引擎调用统一入口（mcp_tool 转发与 controller navigate/screenshot 均经此）：
-// ensure 就绪 → callMu 互斥（busy 即拒，中文文案）→ per-call 超时 → 成功重置 idle 计时
-// + 页面投影刷新（截图轮询路径豁免）。转发结果按 isError:true 标志判错（引擎错误一律
-// isError 文本，非 JSON-RPC error）——结果原样返回，包装归调用方（T2.2 手工透传
-// Content 数组）。issueTag 为归因展示标签（lastIssueTag/recentCalls，非过滤键）。
-func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[string]any, issueTag string) (*mcp.CallToolResult, error) {
+// acceptCall 调用受理共享纪律步（Forward / ListTools 同一节律，纪律只写一处）：profile
+// 校验 → ensure 就绪 → callMu 互斥（busy 即拒不记流水）→ per-call 超时预算 → 双锁状态
+// 守卫（会话已关记 CallClosed 流水）→ 在途 callCancel 登记。返回的 done 收拢「在途登记
+// 清除 + cancel + callMu 释放」，拿到 handle 后调用终结时必须恰调一次（登记清除须
+// callMu 仍持有，无并发登记窗口）；err 非 nil 时不得调用（callMu 未持有或未登记）。
+func (m *Manager) acceptCall(ctx context.Context, profile, callName, issueTag string) (*EngineHandle, context.Context, func(), error) {
 	if err := ValidateProfileName(profile); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	if _, err := m.Ensure(ctx, profile, nil); err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	entry := m.entryOf(profile)
 	if !entry.callMu.TryLock() {
-		return nil, ErrSessionBusy
+		return nil, nil, nil, ErrSessionBusy
 	}
-	defer entry.callMu.Unlock()
-
 	callCtx, cancel := context.WithTimeout(ctx, forwardCallTimeout)
-	defer cancel()
 
 	m.mu.Lock()
 	entry.mu.Lock()
 	if entry.closing || entry.state != StatusReady || entry.handle == nil {
 		entry.mu.Unlock()
 		m.mu.Unlock()
-		m.recordCall(profile, tool, issueTag, CallClosed, "")
-		return nil, errSessionClosed
+		m.recordCall(profile, callName, issueTag, CallClosed, "")
+		cancel()
+		entry.callMu.Unlock()
+		return nil, nil, nil, errSessionClosed
 	}
 	handle := entry.handle
 	entry.callCancel = cancel
 	entry.mu.Unlock()
 	m.mu.Unlock()
-	// 在途登记清除（调用终结后 Close 不再持失效 cancel；callMu 仍持有，无并发登记）。
-	defer func() {
+	done := func() {
+		// 在途登记清除（调用终结后 Close 不再持失效 cancel；callMu 仍持有，无并发登记）。
 		m.mu.Lock()
 		entry.mu.Lock()
 		entry.callCancel = nil
 		entry.mu.Unlock()
 		m.mu.Unlock()
-	}()
+		cancel()
+		entry.callMu.Unlock()
+	}
+	return handle, callCtx, done, nil
+}
 
+// Forward 引擎调用统一入口（mcp_tool 转发与 controller navigate/screenshot 均经此）：
+// 受理纪律（ensure → callMu 互斥 → per-call 超时 → 在途登记）与 ListTools 共用
+// acceptCall；成功重置 idle 计时 + 页面投影刷新（截图轮询路径豁免）。转发结果按
+// isError:true 标志判错（引擎错误一律 isError 文本，非 JSON-RPC error）——结果原样
+// 返回，包装归调用方（T2.2 手工透传 Content 数组）。issueTag 为归因展示标签
+// （lastIssueTag/recentCalls，非过滤键）。
+func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[string]any, issueTag string) (*mcp.CallToolResult, error) {
+	handle, callCtx, done, err := m.acceptCall(ctx, profile, tool, issueTag)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	// nil 入参归一空 map：引擎侧 zod 要求 arguments 为 record，null 会被拒
+	//（cookie_list 等无参工具与省录入参的调用路径都在此兜住）。
+	if args == nil {
+		args = map[string]any{}
+	}
 	res, err := handle.Session().CallTool(callCtx, &mcp.CallToolParams{Name: tool, Arguments: args})
 
+	entry := m.entryOf(profile) // entries 只增不删，与 acceptCall 取到同一 entry（entryOf 自持 m.mu，须先取再进锁）
 	m.mu.Lock()
 	entry.mu.Lock()
 	released := entry.handle != handle // 会话已释放/替换（close/idle 释放/超时回收）——在途调用据此归类
 	if err != nil {
 		timedOut := errors.Is(err, context.DeadlineExceeded)
-		// released 时不做超时计数与置 failed：会话已被并发释放（计数已结清），
-		// 归类走 CallClosed。
-		if timedOut && !released {
+		// 连续超时计数只认引擎侧：父 ctx 自带 deadline 到期同报 DeadlineExceeded，
+		// 但非引擎之过，累计会误杀健康引擎重建。
+		engineTimedOut := timedOut && ctx.Err() == nil
+		// released 时不做超时计数与置 failed：会话已被并发释放（计数已结清）。分类
+		// 口径 released 优先——超时与并发释放同帧命中记 CallClosed（见下方 switch）。
+		if engineTimedOut && !released {
 			entry.consecutiveTimeouts++
 			if entry.consecutiveTimeouts >= consecutiveTimeoutLimit {
 				// 连续超时 → 置 failed 自动重建：引擎可能挂死，就地杀组回收。
@@ -487,7 +512,7 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 				m.mu.Unlock()
 				if stale != nil {
 					// 异步回收：引擎可能挂死，session.Close 等在途请求结算可能长阻塞，
-					// 不得拖住 Forward 返回（callMu 已随 defer 释放，不影响后续调用）。
+					// 不得拖住 Forward 返回（callMu 已随 done 释放，不影响后续调用）。
 					go func(h *EngineHandle) { _ = h.Close() }(stale)
 				}
 				m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
@@ -500,11 +525,11 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 		outcome := CallError
 		callErr := err
 		switch {
-		case timedOut:
-			outcome = CallTimeout
 		case released:
 			outcome = CallClosed
 			callErr = fmt.Errorf("%w: %w", errSessionClosed, err)
+		case timedOut:
+			outcome = CallTimeout
 		}
 		m.recordCall(profile, tool, issueTag, outcome, callErr.Error())
 		return nil, callErr
@@ -526,6 +551,55 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 		m.refreshPages(handle, profile)
 	}
 	return res, nil
+}
+
+// listToolsCallName tools/list 调用在操作流水中的展示名（引擎侧为协议请求 tools/list，
+// 流水按 ocean 工具名 browser_tool_list 归类，与面板口径一致）。
+const listToolsCallName = "browser_tool_list"
+
+// ListTools 查询引擎当前可用工具全集（T2.2 browser_tool_list 消费——skill 降级顺序
+// 「查引擎全集」的事实源，由引擎 --caps 决定）。受理纪律与 Forward 共用 acceptCall；
+// 成功重置 idle 计时与连续超时计数并记操作流水；页面投影不刷新（tools/list 不改 tab
+// 态）。错误分类与包装与 Forward 对称（并发释放记 CallClosed 并包 errSessionClosed），
+// 但不参与连续超时置 failed——挂死引擎的状态纠正归 Forward 调用链，本方法只作查询。
+func (m *Manager) ListTools(ctx context.Context, profile, issueTag string) ([]*mcp.Tool, error) {
+	handle, callCtx, done, err := m.acceptCall(ctx, profile, listToolsCallName, issueTag)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	res, err := handle.Session().ListTools(callCtx, nil)
+
+	entry := m.entryOf(profile) // entries 只增不删，与 acceptCall 取到同一 entry（entryOf 自持 m.mu，须先取再进锁）
+	m.mu.Lock()
+	entry.mu.Lock()
+	released := entry.handle != handle // 会话已释放/替换——在途调用据此归类
+	if err == nil {
+		entry.consecutiveTimeouts = 0
+		entry.resetIdleTimerLocked(m)
+	}
+	entry.mu.Unlock()
+	m.mu.Unlock()
+
+	outcome, errText := CallOK, ""
+	callErr := err
+	if err != nil {
+		outcome, errText = CallError, err.Error()
+		switch {
+		case released: // 分类口径与 Forward 对齐：并发释放优先记 CallClosed
+			outcome = CallClosed
+			callErr = fmt.Errorf("%w: %w", errSessionClosed, err)
+			errText = callErr.Error()
+		case errors.Is(err, context.DeadlineExceeded):
+			outcome = CallTimeout
+		}
+	}
+	m.recordCall(profile, listToolsCallName, issueTag, outcome, errText)
+	if callErr != nil {
+		return nil, callErr
+	}
+	return res.Tools, nil
 }
 
 // recordCall 操作流水记录（view 行 recentCalls 环形缓冲 + lastIssueTag）并广播

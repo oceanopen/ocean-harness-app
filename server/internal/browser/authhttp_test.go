@@ -93,7 +93,7 @@ func TestAuthedRequestCookieInjectionAndUA(t *testing.T) {
 	), engineResultSample(`"Chrome-UA-Probe/1.0"`))
 
 	resp, err := m.AuthedRequest(context.Background(), "default", "POST", srv.URL+"/login",
-		map[string]string{"X-Trace": "t1", "Content-Type": "application/json"}, `{"k":1}`)
+		map[string]string{"X-Trace": "t1", "Content-Type": "application/json"}, `{"k":1}`, "")
 	if err != nil {
 		t.Fatalf("AuthedRequest: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestAuthedRequestExplicitUAOverridesProbe(t *testing.T) {
 	ctl.toolFn = authedToolFn(engineResultSample(engineNoCookiesText), probedUA)
 
 	if _, err := m.AuthedRequest(context.Background(), "default", "GET", srv.URL,
-		map[string]string{"User-Agent": "explicit-ua"}, ""); err != nil {
+		map[string]string{"User-Agent": "explicit-ua"}, "", ""); err != nil {
 		t.Fatalf("AuthedRequest: %v", err)
 	}
 	if _, _, _, ua, _, _ := rec.snapshot(); ua != "explicit-ua" {
@@ -143,7 +143,7 @@ func TestAuthedRequestNoCookiesProceeds(t *testing.T) {
 	ctl.toolFn = authedToolFn(engineResultSample(engineNoCookiesText), probedUA)
 
 	// 未登录态（空集）合法：请求照发，登录态缺失由服务端响应呈现。
-	if _, err := m.AuthedRequest(context.Background(), "default", "GET", srv.URL, nil, ""); err != nil {
+	if _, err := m.AuthedRequest(context.Background(), "default", "GET", srv.URL, nil, "", ""); err != nil {
 		t.Fatalf("AuthedRequest: %v", err)
 	}
 	hits, _, cookie, _, _, _ := rec.snapshot()
@@ -163,7 +163,7 @@ func TestAuthedRequestEngineErrorStopsRequest(t *testing.T) {
 		return "ok", false
 	}
 
-	_, err := m.AuthedRequest(context.Background(), "default", "GET", srv.URL, nil, "")
+	_, err := m.AuthedRequest(context.Background(), "default", "GET", srv.URL, nil, "", "")
 	if err == nil || !strings.Contains(err.Error(), "modal state") {
 		t.Fatalf("err = %v, want 引擎 isError 文案显式传导", err)
 	}
@@ -178,7 +178,7 @@ func TestAuthedRequestTruncatesLargeBody(t *testing.T) {
 	srv, _ := newCapturingServer(t, http.StatusOK, strings.Repeat("x", authedBodyLimit+1024))
 	ctl.toolFn = authedToolFn(engineResultSample(engineNoCookiesText), probedUA)
 
-	resp, err := m.AuthedRequest(context.Background(), "default", "GET", srv.URL, nil, "")
+	resp, err := m.AuthedRequest(context.Background(), "default", "GET", srv.URL, nil, "", "")
 	if err != nil {
 		t.Fatalf("AuthedRequest: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestAuthedRequestRejectsBadURL(t *testing.T) {
 	m := newTestManager(t)
 
 	for _, rawURL := range []string{"ftp://example.com/x", "not-a-url", "http://"} {
-		if _, err := m.AuthedRequest(context.Background(), "default", "GET", rawURL, nil, ""); err == nil {
+		if _, err := m.AuthedRequest(context.Background(), "default", "GET", rawURL, nil, "", ""); err == nil {
 			t.Fatalf("URL %q 应显式报错", rawURL)
 		}
 	}

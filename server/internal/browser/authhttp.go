@@ -58,8 +58,8 @@ type AuthedResponse struct {
 // browser_evaluate 探测浏览器真实 UA → http.Client 直发（默认跟随重定向，浏览器同款
 // 语义）。显式 headers 全透传，显式 User-Agent 优先于探测值（token 类凭据由调用方从
 // localStorage 提取后传入，本函数不碰 localStorage）。cookies 与 UA 为两次独立调用
-// 的尽力快照，中间被并发调用穿插属预期。
-func (m *Manager) AuthedRequest(ctx context.Context, profile, method, rawURL string, headers map[string]string, body string) (*AuthedResponse, error) {
+// 的尽力快照，中间被并发调用穿插属预期。issueTag 供两次内部调用的操作流水归因。
+func (m *Manager) AuthedRequest(ctx context.Context, profile, method, rawURL string, headers map[string]string, body, issueTag string) (*AuthedResponse, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {
 		return nil, fmt.Errorf("目标 URL 非法: %q", rawURL)
@@ -67,11 +67,11 @@ func (m *Manager) AuthedRequest(ctx context.Context, profile, method, rawURL str
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return nil, fmt.Errorf("目标 URL 协议不受支持（仅 http/https）: %q", u.Scheme)
 	}
-	cookies, err := m.fetchAuthCookies(ctx, profile)
+	cookies, err := m.fetchAuthCookies(ctx, profile, issueTag)
 	if err != nil {
 		return nil, err
 	}
-	ua, err := m.fetchBrowserUA(ctx, profile)
+	ua, err := m.fetchBrowserUA(ctx, profile, issueTag)
 	if err != nil {
 		return nil, err
 	}
@@ -114,8 +114,8 @@ func (m *Manager) AuthedRequest(ctx context.Context, profile, method, rawURL str
 
 // fetchAuthCookies 经 Forward 拉引擎 cookie 全集（isError 显式报错——引擎错误一律
 // isError 文本）并解析为可注入的 cookie 列表。
-func (m *Manager) fetchAuthCookies(ctx context.Context, profile string) ([]engineCookie, error) {
-	res, err := m.Forward(ctx, profile, EngineToolCookieList, nil, "")
+func (m *Manager) fetchAuthCookies(ctx context.Context, profile, issueTag string) ([]engineCookie, error) {
+	res, err := m.Forward(ctx, profile, EngineToolCookieList, nil, issueTag)
 	if err != nil {
 		return nil, fmt.Errorf("拉取浏览器 cookies: %w", err)
 	}
@@ -127,9 +127,9 @@ func (m *Manager) fetchAuthCookies(ctx context.Context, profile string) ([]engin
 
 // fetchBrowserUA 探测引擎浏览器的真实 UA（evaluate navigator.userAgent；冷启动无 tab
 // 时引擎 ensureTab 自动补 about:blank——0.0.83 源码核实，副作用无害）。
-func (m *Manager) fetchBrowserUA(ctx context.Context, profile string) (string, error) {
+func (m *Manager) fetchBrowserUA(ctx context.Context, profile, issueTag string) (string, error) {
 	res, err := m.Forward(ctx, profile, EngineToolEvaluate,
-		map[string]any{"function": "() => navigator.userAgent"}, "")
+		map[string]any{"function": "() => navigator.userAgent"}, issueTag)
 	if err != nil {
 		return "", fmt.Errorf("探测浏览器 UA: %w", err)
 	}

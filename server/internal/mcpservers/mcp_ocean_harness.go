@@ -88,6 +88,144 @@ func init() {
 		Name:        "github_ci_status",
 		Description: "获取指定 PR 的 CI 检查状态（汇总结论 + 逐项检查：GitHub Actions 与旧 commit status 归并）。",
 	}, mcptool.McpGithubTool{}.PullRequestCIStatus)
+
+	// —— 浏览器自动化工具（T2.2，browser_ 前缀分组：原生 6 + 转发 17 + 逃生舱 1）——
+	// 转发类成功结果为引擎原样 Content（截图含图片与落盘路径文本，尾部追加一行归因
+	// 元数据）；profile 留空默认 default；引擎会话自动 ensure，idle 冷启动 1-3s 属预期。
+	// 操作元素一律基于 browser_snapshot 的 ref（stale ref 重新 snapshot 取新值）。
+
+	// 原生 6
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_status",
+		Description: "查看浏览器会话全局投影（各 profile 的状态 idle/starting/ready/failed、页面列表、最近操作流水）。无副作用读。",
+	}, mcptool.McpBrowserTool{}.Status)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "browser_profile_open",
+		Description: "拉起（或复用）指定 profile 的浏览器并同步等就绪。headless 留空读该 profile 偏好文件，显式传入覆写并回存" +
+			"（无头/有头切换会关掉重开，登录态在 profile 目录续存）。冷启动 1-3s 属预期。",
+	}, mcptool.McpBrowserTool{}.ProfileOpen)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "browser_session_close",
+		Description: "关停指定 profile 的浏览器引擎进程（幂等，未运行亦成功）。登录态在 profile 目录续存，下次打开自动恢复。" +
+			"注意与 browser_close 区分：那只关闭当前页 tab，不关引擎进程。",
+	}, mcptool.McpBrowserTool{}.SessionClose)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_auth_state",
+		Description: "拉取浏览器当前登录态（cookie 全集 + 当前页 localStorage）。凭据仅用于本次 browser_auth_request 的入参构造，勿外传勿落盘。",
+	}, mcptool.McpBrowserTool{}.AuthState)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "browser_auth_request",
+		Description: "带登录态的 HTTP 请求：实时拉取浏览器 cookies（按声明域落锚，跨站凭据不泄漏）后直接发送，" +
+			"适合调用需要登录态的站点 API。显式 User-Agent 优先于浏览器真实 UA。",
+	}, mcptool.McpBrowserTool{}.AuthedRequest)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_tool_list",
+		Description: "查询浏览器引擎当前可用的全部工具（browser_tool_call 直调的事实源；服务端黑名单工具带 blocked 标注，直调被拒）。",
+	}, mcptool.McpBrowserTool{}.ToolList)
+
+	// 转发 17（引擎原样结果；元素操作基于 browser_snapshot 的 ref）
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_navigate",
+		Description: "浏览器打开指定 URL（成功返回页面快照）。",
+	}, mcptool.McpBrowserTool{}.Navigate)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_snapshot",
+		Description: "获取页面可访问性快照（元素树 + ref 引用）。后续点击/输入等操作一律基于最新快照的 ref；页面变化后重新获取。",
+	}, mcptool.McpBrowserTool{}.Snapshot)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "browser_click",
+		Description: "点击页面元素（target 来自最新快照）。点击后若报 modal state，需先处理模态：" +
+			"alert/confirm 对话框用 browser_handle_dialog，文件选择框用 browser_file_upload。",
+	}, mcptool.McpBrowserTool{}.Click)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_type",
+		Description: "向可编辑元素输入文本（submit 为 true 时输入后按 Enter 提交）。",
+	}, mcptool.McpBrowserTool{}.Type)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_fill_form",
+		Description: "批量填写多个表单字段（文本框/复选框/单选/下拉/滑杆），比逐个 browser_type 高效。",
+	}, mcptool.McpBrowserTool{}.FillForm)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_select_option",
+		Description: "选择下拉框的选项（可单选可多选）。",
+	}, mcptool.McpBrowserTool{}.SelectOption)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_wait_for",
+		Description: "等待页面状态：指定文本出现/消失，或等待固定秒数（至多 30s）。time/text/textGone 至少传一。",
+	}, mcptool.McpBrowserTool{}.WaitFor)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "browser_evaluate",
+		Description: "在页面（或指定元素）上执行 JavaScript 函数并返回结果。" +
+			"从 localStorage 提取 token 等场景配合 browser_auth_state 使用。",
+	}, mcptool.McpBrowserTool{}.Evaluate)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_tabs",
+		Description: "管理浏览器 tab：list 列表/new 新建（可带 url）/close 关闭/select 选中。",
+	}, mcptool.McpBrowserTool{}.Tabs)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_take_screenshot",
+		Description: "截取当前页面（或指定元素）为图片，结果含图像与落盘路径。截图不可用于继续操作，操作需基于 browser_snapshot 的 ref。",
+	}, mcptool.McpBrowserTool{}.Screenshot)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_file_upload",
+		Description: "处理页面文件选择框（点击上传按钮出现 chooser 后调用）；paths 留空即取消选择。",
+	}, mcptool.McpBrowserTool{}.FileUpload)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_console_messages",
+		Description: "读取页面控制台消息（level 为级别下限，默认 info；all 为 true 返回整个会话以来的消息）。",
+	}, mcptool.McpBrowserTool{}.ConsoleMessages)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_navigate_back",
+		Description: "浏览器历史后退一步。",
+	}, mcptool.McpBrowserTool{}.NavigateBack)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_close",
+		Description: "关闭当前页 tab（浏览器保持运行，后续操作自动重开页）。注意与 browser_session_close 区分：那是关停整个引擎进程。",
+	}, mcptool.McpBrowserTool{}.Close)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_find",
+		Description: "在页面快照中按文本或正则查找元素及其 ref（比整页 snapshot 省时）；text/regex 恰传其一。",
+	}, mcptool.McpBrowserTool{}.Find)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_press_key",
+		Description: "按下键盘按键（如 ArrowLeft/Enter）。Enter 提交的输入框可直接用此键，或用 browser_type 的 submit。",
+	}, mcptool.McpBrowserTool{}.PressKey)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "browser_handle_dialog",
+		Description: "处理页面对话框（alert/confirm/prompt）。页面报 dialog modal state 时这是唯一清除工具，accept 必填。",
+	}, mcptool.McpBrowserTool{}.HandleDialog)
+
+	// 逃生舱 1
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "browser_tool_call",
+		Description: "直调浏览器引擎任意非黑名单工具（名单见 browser_tool_list）：name 传引擎工具实名，args 按该工具引擎 schema 传。" +
+			"引擎结果原样直通（错误不包装）；browser_run_code_unsafe 等可在引擎进程内执行任意代码的黑名单工具被拒绝。" +
+			"优先使用上面的专用 browser_* 工具，本工具仅作兜底。",
+	}, mcptool.McpBrowserTool{}.ToolCall)
 }
 
 // mcpSessionTimeout 是流式 HTTP 会话的空闲 TTL：客户端异常退出（来不及 DELETE 终止

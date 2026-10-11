@@ -99,3 +99,52 @@ func analyzePrompt(profile, snapshotText string) string {
 	b.WriteString("\n--- 页面快照结束 ---")
 	return b.String()
 }
+
+// —— MCP 工具面消费（T2.2）：与 REST 端共用 forwardOK/manager 门面，仅暴露面不同 ——
+
+// ForwardTool MCP 转发统一入口（T2.2 转发 17 工具）：语义同 forwardOK——transport 错
+// 与引擎 isError 文本均收敛为中文 fail（错误呈现口径用户拍板与 REST 一致），成功结果
+// 原样返回供 mcp_tool 层追加归因元数据后手工透传（Content 数组含 ImageContent，不走
+// 类型化出参自动装配）。
+func (svc BrowserSession) ForwardTool(profile, engineTool string, args map[string]any, issueTag, action string) (*mcp.CallToolResult, error) {
+	return forwardOK(svc.Context, profile, engineTool, args, issueTag, action)
+}
+
+// ForwardRaw 逃生舱直通入口（T2.2 browser_tool_call）：引擎结果原样返回（isError 标志
+// 与引擎文本不转换、不包装——直通语义），仅 transport 层 Go 错误包中文前缀。黑名单
+// 前置校验归 mcp_tool 层（browser.CheckEngineToolCall）。
+func (svc BrowserSession) ForwardRaw(profile, name string, args map[string]any, issueTag string) (*mcp.CallToolResult, error) {
+	res, err := global.Browser.Forward(svc.Context, profile, name, args, issueTag)
+	if err != nil {
+		return nil, fmt.Errorf("调用引擎工具 %s: %w", name, err)
+	}
+	return res, nil
+}
+
+// AuthState 拉取当前登录态双源（T2.2 browser_auth_state）：cookies 全集 + 当前页
+// localStorage 键值（引擎内联文本原样返回，服务端不解析不落盘——凭据纪律：结果仅用于
+// 本次 browser_auth_request 入参，D3）。
+func (svc BrowserSession) AuthState(profile, issueTag string) (cookies, localStorage string, err error) {
+	cookiesRes, err := forwardOK(svc.Context, profile, browser.EngineToolCookieList, nil, issueTag, "拉取浏览器 cookies")
+	if err != nil {
+		return "", "", err
+	}
+	localStorageRes, err := forwardOK(svc.Context, profile, browser.EngineToolLocalstorageList, nil, issueTag, "拉取 localStorage")
+	if err != nil {
+		return "", "", err
+	}
+	return browser.ResultText(cookiesRes), browser.ResultText(localStorageRes), nil
+}
+
+// AuthedRequest 带态 HTTP 请求（T2.2 browser_auth_request）：活引擎实时登录态 →
+// cookiejar 域匹配注入 → Go http.Client 直发（纯内存，凭据零落盘——D3）；issueTag
+// 供内部 cookie/UA 两次 Forward 的操作流水归因。
+func (svc BrowserSession) AuthedRequest(profile, method, rawURL string, headers map[string]string, body, issueTag string) (*browser.AuthedResponse, error) {
+	return global.Browser.AuthedRequest(svc.Context, profile, method, rawURL, headers, body, issueTag)
+}
+
+// ListEngineTools 查询引擎当前可用工具全集（T2.2 browser_tool_list——skill 降级顺序
+// 「查引擎全集」的事实源；黑名单 blocked 标注归 mcp_tool 层）。
+func (svc BrowserSession) ListEngineTools(profile, issueTag string) ([]*mcp.Tool, error) {
+	return global.Browser.ListTools(svc.Context, profile, issueTag)
+}

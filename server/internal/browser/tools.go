@@ -1,5 +1,7 @@
 package browser
 
+import "fmt"
+
 // 引擎工具名单点常量表（T1.3，D5）：转发工具名（ocean 短名）→ 引擎实名。mcp_tool 层
 // （T2.2）的 ocean 工具名 = browser_ + 短名，转发时经本表换引擎实名——引擎名字漂移
 // 一行改一处（spike 校对入口）。引擎实名已按 @playwright/mcp 0.0.83 README 逐名核实。
@@ -25,9 +27,11 @@ const (
 	EngineToolPressKey        = "browser_press_key"
 	EngineToolHandleDialog    = "browser_handle_dialog"
 
-	// EngineToolCookieList storage cap 的 cookie 全集拉取（不在转发集，authhttp 带态
-	// 请求 T1.4 消费）。
-	EngineToolCookieList = "browser_cookie_list"
+	// EngineToolCookieList / EngineToolLocalstorageList storage cap 的登录态双源拉取
+	// （不在转发集；cookie 供 authhttp 带态请求 T1.4、双源供 browser_auth_state T2.2
+	// 组合消费）。
+	EngineToolCookieList       = "browser_cookie_list"
+	EngineToolLocalstorageList = "browser_localstorage_list"
 )
 
 // forwardedTools D5 的 17 精选转发全集：ocean 短名 → 引擎实名（11 基础 + console_messages/
@@ -58,11 +62,28 @@ var engineToolBlacklist = map[string]bool{
 	"browser_run_code_unsafe": true,
 }
 
+// IsEngineToolBlacklisted 逃生舱拒绝名单判定（T2.2 browser_tool_list 出参的 blocked
+// 标注消费；拒绝文案统一走 CheckEngineToolCall）。
+func IsEngineToolBlacklisted(name string) bool {
+	return engineToolBlacklist[name]
+}
+
+// CheckEngineToolCall 逃生舱直调前置校验（T2.2 browser_tool_call）：黑名单工具中文
+// 报错拒绝——名单与文案单点收敛于此，mcp_tool 层只调用不复制。
+func CheckEngineToolCall(name string) error {
+	if engineToolBlacklist[name] {
+		return fmt.Errorf("引擎工具 %s 被拒绝：该工具可在引擎进程内执行任意代码（RCE 等价），禁止直调", name)
+	}
+	return nil
+}
+
 // pagesRefreshExempt 转发成功后不触发 pages 投影刷新的工具：截图不改 tab 状态——豁免
 // 使面板截图轮询（1-2s/帧）不会一次轮询触发两次引擎调用；browser_tabs 本身即刷新源；
-// cookie_list 为 context 级读（authhttp 带态请求 T1.4），同样免刷新。
+// cookie_list 为 context 级读（authhttp 带态请求 T1.4）、localstorage_list 为纯读
+// （browser_auth_state T2.2），同样免刷新。
 var pagesRefreshExempt = map[string]bool{
-	EngineToolTakeScreenshot: true,
-	EngineToolTabs:           true,
-	EngineToolCookieList:     true,
+	EngineToolTakeScreenshot:   true,
+	EngineToolTabs:             true,
+	EngineToolCookieList:       true,
+	EngineToolLocalstorageList: true,
 }

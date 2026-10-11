@@ -626,3 +626,69 @@ func mustProfileDir(t *testing.T, profile string) string {
 	}
 	return dir
 }
+
+func TestManagerListTools(t *testing.T) {
+	ctl := withEngineCtl(t)
+	m := newTestManager(t)
+
+	tools, err := m.ListTools(context.Background(), "default", "issue-1")
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	names := map[string]bool{}
+	for _, tl := range tools {
+		names[tl.Name] = true
+	}
+	for _, want := range []string{
+		EngineToolNavigate, EngineToolTabs, EngineToolTakeScreenshot, EngineToolEvaluate, EngineToolCookieList,
+	} {
+		if !names[want] {
+			t.Fatalf("tools 缺 %s: %v", want, names)
+		}
+	}
+	// 只读纪律：tools/list 不触发页面投影刷新（ensure 自身也不刷）。
+	if _, _, tabsCalls := ctl.stats(); tabsCalls != 0 {
+		t.Fatalf("tabsCalls = %d, want 0（tools/list 免刷新）", tabsCalls)
+	}
+	// 操作流水：browser_tool_list 名义 + ok 分类 + issueTag 归因。
+	sv := sessionRow(t, m, "default")
+	if sv.LastIssueTag != "issue-1" {
+		t.Fatalf("lastIssueTag = %q, want issue-1", sv.LastIssueTag)
+	}
+	if n := len(sv.RecentCalls); n != 1 || sv.RecentCalls[0].Tool != listToolsCallName || sv.RecentCalls[0].Outcome != CallOK {
+		t.Fatalf("recentCalls = %+v, want 1 条 %s/%s", sv.RecentCalls, listToolsCallName, CallOK)
+	}
+}
+
+func TestManagerListToolsBusy(t *testing.T) {
+	ctl := withEngineCtl(t)
+	release := make(chan struct{})
+	ctl.toolFn = func(tool string, args map[string]any) (string, bool) {
+		if tool == EngineToolEvaluate {
+			<-release
+		}
+		return "done", false
+	}
+	m := newTestManager(t)
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := m.Forward(context.Background(), "default", EngineToolEvaluate, nil, "")
+		done <- err
+	}()
+	waitActive(t, ctl, 1)
+
+	// 调用互斥：Forward 在途时 tools/list 同样即拒（busy）。
+	if _, err := m.ListTools(context.Background(), "default", ""); !errors.Is(err, ErrSessionBusy) {
+		t.Fatalf("err = %v, want ErrSessionBusy", err)
+	}
+	// busy 拒绝不记流水（与 Forward 同口径）。
+	if sv := sessionRow(t, m, "default"); len(sv.RecentCalls) != 0 {
+		t.Fatalf("recentCalls = %+v, want 空（busy 拒绝不记）", sv.RecentCalls)
+	}
+
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatalf("首个调用应正常完成: %v", err)
+	}
+}

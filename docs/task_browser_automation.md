@@ -289,7 +289,7 @@
 
 #### T2.2 MCP 工具面（23+1 工具）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：browser_* 工具注册进 ocean_harness MCP server，终端与 bot 经 CLI/skill 可调。
 
@@ -307,6 +307,15 @@
 **验收**：
 - `ocean-harness-dev-cli mcp tools` 列出 browser_* 全集；`mcp schema browser_navigate` 直出 schema
 - CLI 端到端：`mcp call browser_navigate` → `browser_snapshot` → `browser_auth_state` → `browser_auth_request` 配方走通（本地 pnpm 引擎）；`browser_take_screenshot` 结果在 CLI 端可见（路径或图像说明，非 null）；`mcp call browser_tool_call` 直调 browser_run_code_unsafe 被拒（黑名单生效）
+
+**实施定稿**：
+- 落地面与方案一致：`mcp_dto/browser.go`（入参 DTO 匿名嵌入 `BrowserProfileArgs` 基座——jsonschema-go 对匿名嵌入字段平铺，MCP 侧 schema 即「引擎参数 + profile/issueId」直出；引擎参数逐字段镜像 0.0.83 实测 schema，枚举约束按项目惯例入 description 不加 vd in()；原生 6 出参为平铺 Content 镜像）、`mcp_tool/mcp_browser_tools.go`（原生 6 三返回值范式 + 转发 17 统一 `forwardTool` 管道 + 逃生舱 ToolCall 黑名单前置）、`mcp_ocean_harness.go` init() 尾部 24 个 AddTool；service 层补 ForwardTool/ForwardRaw/AuthState/AuthedRequest/ListEngineTools 五方法，REST 侧 `AuthedRequest` 顺带贯通 issueTag 归因（函数签名加尾参，调用点同步）
+- 转发透传落地为 `(res, nil, nil)` 手工返回：go-sdk 对非 nil result 且 nil out 跳过全部出参装配，引擎 Content 数组（含 ImageContent）原样到达客户端，方案表述的「手工构造」以此形态实现；归因元数据为**尾部追加** TextContent（`[profile: x, issueId: y]`）——CLI 的 firstText 语义取首个 TextContent 为正文，元数据前置会夺位（验收期实测发现并修正）
+- 引擎入参零手写映射：入参 DTO 整体 JSON 往返成 map 后剥 profile/issueId（`engineArgs`），字段名与引擎 schema 天然对齐
+- 逃生舱 `browser_tool_call`：`browser.CheckEngineToolCall`（tools.go 黑名单单点，tools_test.go 断言）先于链式装配拒绝，`service.ForwardRaw` 纯透传不加元数据不包装（isError 原样传导）
+- `manager.ListTools`（browser_tool_list）与 Forward 受理纪律共用 `acceptCall` 单点（profile 校验 → ensure → callMu 互斥 busy 即拒不记流水 → per-call 超时 → 双锁守卫 → 在途登记，done 收拢登记清除与释放），错误分类与包装对称（并发释放记 CallClosed 并包 errSessionClosed，released 优先）但不参与连续超时置 failed；pages 刷新豁免照旧；连续超时计数只认引擎侧（父 ctx 自带 deadline 不累计触发杀组重建）；`browser_status`、`browser_tool_list` 出参与 service 投影共用同一份转换
+- 验收期修正二：`Manager.Forward` 对 nil 入参归一空 map 后再 CallTool——引擎侧 zod 要求 arguments 为 record，JSON null 被拒（`expected record, received null`），cookie_list 等无参工具与省录入参路径全部在此兜住（T1.4 假引擎不设防，真实引擎 e2e 揪出）
+- 验收全过（CLI 直连 sidecar + 真实引擎 + 真实 Chrome，站点用 www.baidu.com——example.com 在目标网络不可达）：`mcp tools` 33 工具含 browser 24（`browserToolsRegistered` 全名单测试）；`mcp schema browser_navigate` 平铺直出（url 必填 + 中文描述）；navigate → snapshot → auth_state → auth_request 配方四步走通（真实 cookie/localStorage 双源返回，auth_request 200 + 256KiB 截断）；`browser_take_screenshot` CLI 输出含落盘路径（非 null）且 png 落盘；tool_call 直调 browser_run_code_unsafe 中文拒绝退出码 1，正向直调 browser_cookie_get 引擎结果原样直通无归因行；`browser_status` 投影含 profile 状态/pages/recentCalls；manager_test 增 ListTools 正常/Busy 两用例，mcp 侧增注册名单/纯函数/黑名单拒绝用例；整仓 build/vet/test -count=1 + GOOS=windows 全绿，gofmt 仅剩 vendored_test.go 既有遗留（T2.1 定稿已记录）
 
 ### 阶段 3：集成交付
 
