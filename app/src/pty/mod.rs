@@ -33,12 +33,28 @@ fn provider() -> &'static LocalPtyProvider {
     PROVIDER.get_or_init(LocalPtyProvider::new)
 }
 
+/// PTY 子进程注入 env：终端基座 + OCEAN_HARNESS_PORT。无条件覆盖——终端能力以
+/// 前端 xterm.js 为准，不随启动环境（终端拉起 / launchd）漂移。
+fn child_envs(http_port: u16) -> Vec<(String, String)> {
+    vec![
+        (
+            "OCEAN_HARNESS_PORT".to_string(),
+            http_port.to_string(),
+        ),
+        ("TERM".to_string(), "xterm-256color".to_string()),
+        ("COLORTERM".to_string(), "truecolor".to_string()),
+        (
+            "TERM_PROGRAM".to_string(),
+            "OceanHarness".to_string(),
+        ),
+    ]
+}
+
 /// 启动/复用会话（幂等）：未退出复用 + 换装 listener；已退出重起（重开语义）。
 /// 前端挂载即调本命令；输出/退出事件经 on_event Channel 流式回传。
 ///
-/// 业务 env 注入（仅真正 spawn 新进程时）：OCEAN_HARNESS_PORT 指向本应用 Go sidecar 的
-/// HTTP 端口（HttpServerState 持有，默认 dev=9000/build=9100，可被用户设置覆盖——
-/// 服务未启动时也是有效回退值）。ocean-harness 插件捆绑的 .mcp.json 以
+/// env 注入（仅真正 spawn 新进程时）：终端基座 + OCEAN_HARNESS_PORT（child_envs）。
+/// ocean-harness 插件捆绑的 .mcp.json 以
 /// ${OCEAN_HARNESS_PORT:-9100} 展开其 MCP 端点 url，嵌入式终端内的 claude 会话据此连上
 /// 本进程的 /mcp/streamableHttp/oceanHarness。
 #[tauri::command]
@@ -55,10 +71,7 @@ pub fn pty_spawn(
         .state::<crate::shared::http_server::HttpServerState>()
         .port
         .load(std::sync::atomic::Ordering::SeqCst);
-    let envs = vec![(
-        "OCEAN_HARNESS_PORT".to_string(),
-        http_port.to_string(),
-    )];
+    let envs = child_envs(http_port);
     let result = provider().spawn(opts, on_event, &envs);
     match &result {
         Ok(s) => log::info!(
@@ -183,4 +196,24 @@ pub fn shutdown_all(store: &PtySessionStore) {
         }
     }
     log::info!("[pty] shutdown_all complete");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::child_envs;
+
+    /// 终端基座 env 齐全且值正确。
+    #[test]
+    fn child_envs_contains_terminal_base() {
+        let envs = child_envs(9000);
+        let get = |key: &str| {
+            envs.iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.as_str())
+        };
+        assert_eq!(get("OCEAN_HARNESS_PORT"), Some("9000"));
+        assert_eq!(get("TERM"), Some("xterm-256color"));
+        assert_eq!(get("COLORTERM"), Some("truecolor"));
+        assert_eq!(get("TERM_PROGRAM"), Some("OceanHarness"));
+    }
 }

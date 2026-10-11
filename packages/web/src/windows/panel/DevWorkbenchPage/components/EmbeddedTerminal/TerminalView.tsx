@@ -250,13 +250,19 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       },
     });
 
-    // 2. fit + webgl + open。webgl 渲染器（高频输出性能）；上下文创建失败
-    //    （远程桌面/老 GPU/重挂载竞态）抛错时回退 dom 渲染，不影响功能。
+    // 2. fit + webgl + open。webgl 渲染器（高频输出性能）；创建失败或运行期上下文
+    //    丢失均回落 dom 渲染。
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(container);
     try {
-      terminal.loadAddon(new WebglAddon());
+      const webgl = new WebglAddon();
+      // 上下文异步丢失即弃用 addon，xterm 自动回落 dom 渲染（官方模式）。
+      webgl.onContextLoss(() => {
+        console.warn('[TerminalView] webgl context lost, fallback to dom renderer');
+        webgl.dispose();
+      });
+      terminal.loadAddon(webgl);
     } catch (e) {
       console.warn('[TerminalView] webgl unavailable, fallback to dom renderer:', e);
     }
