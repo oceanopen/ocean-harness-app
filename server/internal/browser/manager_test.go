@@ -363,6 +363,47 @@ func TestManagerIdleReleaseAndRepull(t *testing.T) {
 	}
 }
 
+// TestManagerCloseCapturesPages close 收尾捕获真实页面投影：ensure 后零 Forward（模拟
+// 只在浏览器窗口内手动导航——pages 投影为空），close 时引擎还活着，收尾前捕获的 tab
+// 列表即真实当前页（无头切换/重开恢复现场的数据源）。
+func TestManagerCloseCapturesPages(t *testing.T) {
+	ctl := withEngineCtl(t)
+	m := newTestManager(t)
+	ctl.mu.Lock()
+	ctl.toolFn = func(tool string, args map[string]any) (string, bool) {
+		if tool == EngineToolTabs {
+			return "- 0: (current) [Bing](https://www.bing.com/)\n", false
+		}
+		return "ok: " + tool, false
+	}
+	ctl.mu.Unlock()
+
+	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if row := sessionRow(t, m, "default"); len(row.Pages) != 0 {
+		t.Fatalf("ensure 后 pages 应为空投影: %+v", row.Pages)
+	}
+
+	if err := m.Close("default"); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	row := sessionRow(t, m, "default")
+	if row.Status != StatusIdle {
+		t.Fatalf("close 后状态 = %s, want idle", row.Status)
+	}
+	if len(row.Pages) != 1 || row.Pages[0].URL != "https://www.bing.com/" || !row.Pages[0].Current {
+		t.Fatalf("close 未捕获真实页面投影: %+v", row.Pages)
+	}
+	if _, _, tabsCalls := ctl.stats(); tabsCalls == 0 {
+		t.Fatalf("close 收尾未发起 tab 列表捕获")
+	}
+	// Row 导出与投影行同源（close 响应携带的数据源）。
+	if row2 := m.Row("default"); len(row2.Pages) != 1 || row2.Profile != "default" {
+		t.Fatalf("Row 导出行异常: %+v", row2)
+	}
+}
+
 func TestManagerCloseRace(t *testing.T) {
 	ctl := withEngineCtl(t)
 	release := make(chan struct{})

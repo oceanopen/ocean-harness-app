@@ -31,6 +31,25 @@ export type { AgentCatalogEntry, AgentCatalogGetListRequest } from './AgentCatal
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 
+export { BrowserSessionService, screenshotImageOf } from './BrowserSessionService';
+export type {
+  BrowserCallOutcome,
+  BrowserFrame,
+  BrowserFrameType,
+  BrowserPageView,
+  BrowserRecentCall,
+  BrowserSessionAnalyzeRequest,
+  BrowserSessionCloseRequest,
+  BrowserSessionEnsureRequest,
+  BrowserSessionNavigateRequest,
+  BrowserSessionScreenshotRequest,
+  BrowserSessionSnapshot,
+  BrowserSessionStatus,
+  BrowserSessionView,
+  McpCallToolResult,
+  McpContent,
+} from './BrowserSessionService';
+
 export { DoctorService } from './DoctorService';
 export type {
   DoctorCheckRequest,

@@ -2,8 +2,8 @@
 // （ToolPanelArea）tab 内容的唯一扩展点——新增工具在 WORKBENCH_TOOLS 追加一项
 // （icon/title/exclusive/render），rail 与 tab 自动出现。
 //
-// exclusive 语义：true = 同类工具全局单 tab（子任务列表/文件目录——内容单源）；false =
-// 可并存多实例 tab（浏览器——每次打开新开一页）。状态域 openTool 按此分派。
+// exclusive 语义：true = 同类工具全局单 tab（子任务列表/文件目录/浏览器——内容后端全局
+// 单源，多 tab 只会倍增 SSE 连接）；false = 可并存多实例 tab。状态域 openTool 按此分派。
 //
 // ⚠️ 工具会话架构红线（终端链路同款铁律）：render 只是「视口」——有状态的工具会话
 // （浏览器页面/自动化 driver 等）必须后端常驻，前端 tab 卸载（切 issue/收面板/非激活）
@@ -12,10 +12,11 @@
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { ProjectIssueResponseData } from '@src/services';
 import type { ReactNode } from 'react';
-import { Checklist as ChecklistIcon, FolderOutlined as FolderOutlinedIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
+import { Checklist as ChecklistIcon, FolderOutlined as FolderOutlinedIcon, Language as LanguageIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
 import ImBotPanel from '../ImBotPanel/ImBotPanel';
 import IssueSubTaskPanel from '../IssueSubTaskPanel/IssueSubTaskPanel';
 import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
+import BrowserPanel from './BrowserPanel/BrowserPanel';
 
 /// 工具渲染上下文：当前选中 issue（面板内容均围绕选中任务；hasSelection 已由外层保证非空）。
 /// 回调由页面层注入（ToolPanelArea 透传）：issue 编辑抽屉/新建子任务抽屉均挂页面层
@@ -23,6 +24,9 @@ import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
 export interface WorkbenchToolRenderCtx {
   issue: ProjectIssueResponseData;
   projectId: number;
+  /// 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：轮询类视口的暂停闸门
+  /// （浏览器面板截图轮询「收起即停」，D4 展示侧对偶）。
+  panelVisible: boolean;
   /// 打开指定 issue 的编辑抽屉（如子任务卡片点击）。
   onEditIssue: (issue: ProjectIssueResponseData) => void;
   /// 新建当前 issue 的子任务（create+parentIssue 抽屉，父 = ctx.issue）。
@@ -66,6 +70,13 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     icon: SmartToyIcon,
     exclusive: true,
     render: ({ issue }) => <ImBotPanel issue={issue} />,
+  },
+  {
+    id: 'browser',
+    title: '浏览器',
+    icon: LanguageIcon,
+    exclusive: true,
+    render: ({ issue, panelVisible }) => <BrowserPanel issueId={issue.id} panelVisible={panelVisible} />,
   },
 ];
 

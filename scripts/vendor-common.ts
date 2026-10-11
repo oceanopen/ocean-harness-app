@@ -202,7 +202,10 @@ export interface InstallSpecItem {
   /** 安装 spec（形如 pkg@version）。 */
   spec: string;
   platform: TargetPlatform;
-  /** 就绪判据的目标平台二进制相对路径；null = 纯版本判据（纯 JS 闭包条目）。 */
+  /**
+   * 就绪判据相对路径：claude 域 = 目标平台二进制；browser 域 = 内置浏览器 marker
+   * （同版本 staging 缺该判据即整目录重装）；null = 纯版本判据。
+   */
   readyBinRel: string[] | null;
   /** 附加就绪判据的包版本 pin（如 claude SDK 基准——快路径复验防静默跳过；可省）。 */
   readyPins?: ReadyPin[];
@@ -228,7 +231,7 @@ export function installSpec(item: InstallSpecItem): void {
   const dir = resolve(STAGING_ROOT, item.id, version);
 
   if (stagingReady(dir, pkg, version, item.readyBinRel, item.readyPins ?? [])) {
-    log(`${spec} 已就绪（${item.readyBinRel ? `${item.platform.os}-${item.platform.cpu} 平台二进制在位` : '版本匹配'}），跳过（${dir}）`);
+    log(`${spec} 已就绪（${item.readyBinRel ? `${item.platform.os}-${item.platform.cpu} 就绪判据在位` : '版本匹配'}），跳过（${dir}）`);
     return;
   }
 

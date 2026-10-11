@@ -129,7 +129,7 @@ func (mt McpBrowserTool) SessionClose(ctx context.Context, _ *mcp.CallToolReques
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&browserSvc.Service).Errors; err != nil {
 		return nil, mcpdto.BrowserSessionCloseContent{}, mt.Fail(err)
 	}
-	if err := browserSvc.Close(&types.BrowserCloseRequest{Profile: profile}); err != nil {
+	if _, err := browserSvc.Close(&types.BrowserCloseRequest{Profile: profile}); err != nil {
 		return nil, mcpdto.BrowserSessionCloseContent{}, mt.Fail(err)
 	}
 	return nil, mcpdto.BrowserSessionCloseContent{

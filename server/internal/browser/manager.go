@@ -42,6 +42,10 @@ var (
 	forwardCallTimeout = 120 * time.Second
 	// pagesRefreshTimeout pages 投影刷新（tab 列表拉取）超时。
 	pagesRefreshTimeout = 30 * time.Second
+	// closePagesCaptureTimeout close 收尾前的真实页面捕获预算：浏览器窗口内手动导航只
+	// 有引擎知道，无头切换/重开恢复现场以捕获结果为准；引擎挂死时短预算放弃，不拖累
+	// 收尾（idle 释放同路径受益——重开恢复真实最后页面）。
+	closePagesCaptureTimeout = 3 * time.Second
 	// idleReleaseTimeout 主层 idle 释放计时（D4 双层的主层；每次成功调用即重置。兜底层
 	// 为引擎侧 --idle-timeout 15 分钟，见 pin.go——到期只关浏览器窗口，entry 状态无需
 	// 迁移。登录配方 wait_for 轮询与面板截图轮询天然保活，属预期）。
@@ -627,9 +631,9 @@ func (m *Manager) recordCall(profile, tool, issueTag, outcome, errText string) {
 }
 
 // Close 释放会话（D4 主层释放：idle 计时到期/面板切换/用户明示）：走 EngineHandle.Close
-// 收敛序（session.Close 优雅关停 → 杀组 → 删 pid 文件）。entry 回 idle，下次调用 ensure
-// 重拉（登录态在 profile 目录续存，重拉 1-3s）。starting 态受理 closing 由 runSpawn
-// 收尾；在途调用因连接终结得到显式错误而非悬挂。
+// 收敛序（捕获真实页面投影 → session.Close 优雅关停 → 杀组 → 删 pid 文件）。entry 回
+// idle，下次调用 ensure 重拉（登录态在 profile 目录续存，重拉 1-3s）。starting 态受理
+// closing 由 runSpawn 收尾；在途调用因连接终结得到显式错误而非悬挂。
 func (m *Manager) Close(profile string) error {
 	m.mu.Lock()
 	entry, ok := m.entries[profile]
@@ -675,11 +679,24 @@ func (m *Manager) Close(profile string) error {
 		// per-call 超时（最长 120s）。
 		cancelCall()
 	}
+	// idle 行广播先行：捕获帧最后到，最终投影恒为「idle + 捕获到的真实页面」，防旧
+	// pages 回填前端缓存。
+	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
 	if handle != nil {
+		// 收尾前捕获真实页面投影（引擎还活着）：浏览器窗口内手动导航只有引擎知道，
+		// 无头切换/重开恢复现场以此为准。
+		captureCtx, cancel := context.WithTimeout(context.Background(), closePagesCaptureTimeout)
+		defer cancel()
+		m.refreshPagesCtx(captureCtx, handle, profile)
 		_ = handle.Close() // 锁外慢操作
 	}
-	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
 	return nil
+}
+
+// Row 单 profile 投影行只读导出（close 响应携带收尾捕获后的行，供前端恢复现场；未知
+// profile 返回零值行）。
+func (m *Manager) Row(profile string) SessionView {
+	return m.view.row(profile)
 }
 
 // StopAll 全量释放（SIGTERM 收敛序列：Browser.StopAll() 在 AcpSessions.StopAll() 前，

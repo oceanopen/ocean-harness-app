@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,9 @@ const (
 
 	// pidFileName 引擎 pid 文件名（user-data-dir 根部，T1.3 recoverOrphans 杀组目标）。
 	pidFileName = ".engine.pid"
+
+	// envPlaywrightBrowsersPath 内置浏览器定位 env（playwright 运行期约定键名）。
+	envPlaywrightBrowsersPath = "PLAYWRIGHT_BROWSERS_PATH"
 )
 
 // Dirs vendoring 目录对（语义同 acpsession.Dirs / acpdoctor.Dirs：config 的
@@ -151,13 +155,28 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 		return nil, fmt.Errorf("浏览器引擎入口解析: %w", err)
 	}
 
+	// 内置浏览器目录（T3.5/D2 修订）：构建期 vendor 脚本将 install chromium 产物落进
+	// 条目目录 browsers/，EnsureVendored 整树复制随之进受管目录——引擎经
+	// PLAYWRIGHT_BROWSERS_PATH 定位，revision 与 playwright-core browsers.json 天然
+	// 一致（不查系统 Chrome）。
+	browsersDir := filepath.Join(installDir, embeddedBrowsersDirName)
+
 	// argv = node <vendored 入口> <引擎 flags>；cmd 只配进程组与 stderr（Connect 内
-	// 自行 Start，不得提前）。Env 应用条目覆盖（当前 EngineEntry 无 Env，即继承
-	// sidecar 环境不变；带 Env 的未来条目不静默失效）。
-	argv := append(append([]string{}, cfg.Command...), EngineSpawnArgs(profileDir, downloadDir, headless)...)
+	// 自行 Start，不得提前）。Env：条目覆盖基座（maps.Clone 防污染 Entry 原映射）+
+	// PLAYWRIGHT_BROWSERS_PATH 注入。
+	configPath, err := EnsureEngineConfig()
+	if err != nil {
+		return nil, err
+	}
+	argv := append(append([]string{}, cfg.Command...), EngineSpawnArgs(profileDir, downloadDir, configPath, headless)...)
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = cfg.Cwd
-	cmd.Env = acp.MergeEnv(cfg.Env)
+	spawnEnv := maps.Clone(cfg.Env)
+	if spawnEnv == nil {
+		spawnEnv = map[string]string{}
+	}
+	spawnEnv[envPlaywrightBrowsersPath] = browsersDir
+	cmd.Env = acp.MergeEnv(spawnEnv)
 	cmd.SysProcAttr = acp.ProcessGroupAttr()
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
@@ -180,7 +199,7 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 		// 尚未落盘、recoverOrphans 无锚点——不补杀会留下无锚点引擎 + 可能的有头
 		// Chrome 孤儿（cmd.Process 为 nil 的 fake-dial 测试路径幂等跳过）。
 		_ = acp.KillProcessGroup(cmd)
-		return nil, fmt.Errorf("浏览器引擎连接失败: %w%s", err, dialFailureSuffix(profileDir, h.stderr.Text()))
+		return nil, fmt.Errorf("浏览器引擎连接失败: %w%s", err, dialFailureSuffix(profileDir, installDir, h.stderr.Text()))
 	}
 	h.session = session
 
@@ -208,9 +227,9 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 }
 
 // dialFailureSuffix 拉起失败的诊断后缀（探测不参与拉起决策，只丰富错误归因）：
-// profile 残留锁（优先，更具体）→ Chrome 缺失 → 引擎 stderr tail 证据，统一组装一处。
-func dialFailureSuffix(profileDir, stderrText string) string {
-	hints := dialFailureHints(profileDir)
+// profile 残留锁（优先，更具体）→ 内置浏览器缺失 → 引擎 stderr tail 证据，统一组装一处。
+func dialFailureSuffix(profileDir, installDir, stderrText string) string {
+	hints := dialFailureHints(profileDir, installDir)
 	if detail := strings.TrimSpace(stderrText); detail != "" {
 		hints = append(hints, "引擎 stderr: "+detail)
 	}
@@ -220,13 +239,13 @@ func dialFailureSuffix(profileDir, stderrText string) string {
 	return " " + strings.Join(hints, " ")
 }
 
-// dialFailureHints 探测类提示（profile 残留锁优先于 Chrome 缺失——更具体）。
-func dialFailureHints(profileDir string) []string {
+// dialFailureHints 探测类提示（profile 残留锁优先于内置浏览器缺失——更具体）。
+func dialFailureHints(profileDir, installDir string) []string {
 	var hints []string
 	if hint := profileLockHint(profileDir); hint != "" {
 		hints = append(hints, hint)
 	}
-	if hint := chromeMissingHint(); hint != "" {
+	if hint := embeddedBrowsersMissingHint(installDir); hint != "" {
 		hints = append(hints, hint)
 	}
 	return hints

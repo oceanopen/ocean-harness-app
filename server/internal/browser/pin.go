@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -78,25 +80,46 @@ func EngineVersion() (string, error) {
 	return p.Version, err
 }
 
+// engineConfigJSON 引擎启动配置（落盘后经 --config 交引擎，playwright-mcp config 格式）：
+// ignoreDefaultArgs 去掉 playwright 默认注入的 --disable-blink-features=AutomationControlled
+// ——品牌 Chrome 坏标记警示条（bad_flags_prompt 的 kBadFlags 含 kDisableBlinkFeatures）
+// 在有头模式恒弹黄条；该标记在 CfT 155 实测已不影响 navigator.webdriver（缺省即 true），
+// 去掉无反检测损失。CLI flags（--user-data-dir 等）优先级高于 config，互不冲突。
+const engineConfigJSON = `{"browser":{"launchOptions":{"ignoreDefaultArgs":["--disable-blink-features=AutomationControlled"]}}}`
+
+// EnsureEngineConfig 幂等落盘引擎启动配置，返回 --config 消费的文件路径。
+func EnsureEngineConfig() (string, error) {
+	path := filepath.Join(Root(), "engine.json")
+	if data, err := os.ReadFile(path); err == nil && string(data) == engineConfigJSON {
+		return path, nil
+	}
+	if err := os.WriteFile(path, []byte(engineConfigJSON), 0o644); err != nil {
+		return "", fmt.Errorf("写入引擎启动配置: %w", err)
+	}
+	return path, nil
+}
+
 // EngineSpawnArgs 组装引擎 argv 尾参（node 入口路径之后）。
 //
-//	--browser chrome            系统浏览器 channel 探测交还 playwright（D2）
+//	（无 --browser）            playwright 内置 Chromium build（T3.5/D2 修订：嵌入分发，
+//	                            PLAYWRIGHT_BROWSERS_PATH 定位；系统 chrome channel 退役）
 //	--user-data-dir             per-profile 独立数据目录（登录态活 SSOT，D3）
 //	--caps                      能力面常量
 //	--output-dir                下载/产物落点（缺省 cwd/.playwright-mcp——spike 实锤必显式传）
 //	--idle-timeout              兜底层 idle（毫秒，D4）
 //	--no-webmcp                 工具面静态，免 tools/list 动态变更处理
 //	--file-paths absolute       路径回传口径（工具结果回传绝对路径）
+//	--config                    引擎启动配置（engine.json，去 AutomationControlled 默认标记）
 //	--headless                  per-profile 无头偏好为真时追加（D10）
-func EngineSpawnArgs(profileDir, downloadDir string, headless bool) []string {
+func EngineSpawnArgs(profileDir, downloadDir, configPath string, headless bool) []string {
 	args := []string{
-		"--browser", "chrome",
 		"--user-data-dir", profileDir,
 		"--caps", engineCaps,
 		"--output-dir", downloadDir,
 		"--idle-timeout", strconv.Itoa(engineIdleTimeoutMS),
 		"--no-webmcp",
 		"--file-paths", "absolute",
+		"--config", configPath,
 	}
 	if headless {
 		args = append(args, "--headless")

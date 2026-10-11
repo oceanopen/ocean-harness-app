@@ -4,57 +4,36 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 )
 
-// 本文件只做「错误文案增强」级探测（D2：浏览器探测成熟度交给 playwright 的
-// --browser chrome channel 机制，本包不参与拉起决策）。
+// 本文件只做「错误文案增强」级探测（D2 修订：浏览器 = playwright 内置 Chromium 嵌入
+// 分发，随应用打包、PLAYWRIGHT_BROWSERS_PATH 定位，本包不参与拉起决策；系统 Chrome
+// 探测随引擎 --browser chrome channel 一并退役）。
 
-// chromeCandidates 系统标准安装路径候选（按常见度排序）。
-func chromeCandidates() []string {
-	switch runtime.GOOS {
-	case "darwin":
-		return []string{
-			"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-			filepath.Join(os.Getenv("HOME"), "Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-		}
-	case "windows":
-		return []string{
-			filepath.Join(os.Getenv("ProgramFiles"), "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(os.Getenv("ProgramFiles(x86)"), "Google", "Chrome", "Application", "chrome.exe"),
-			filepath.Join(os.Getenv("LocalAppData"), "Google", "Chrome", "Application", "chrome.exe"),
-		}
-	default: // linux 及其余 unix：非当前打包目标，unix 分支天然兼容
-		return []string{
-			"/usr/bin/google-chrome",
-			"/usr/bin/google-chrome-stable",
-			"/usr/bin/chromium",
-			"/usr/bin/chromium-browser",
-			"/snap/bin/chromium",
-		}
-	}
+// embeddedBrowsersDirName 内置浏览器目录名（条目版本目录内；scripts/
+// vendor-browser-engine.ts 构建期产出，EnsureVendored 整树复制随之进受管目录，
+// client.go 注入 PLAYWRIGHT_BROWSERS_PATH 与之同源）。
+const embeddedBrowsersDirName = "browsers"
+
+// embeddedBrowsersDir 内置浏览器目录绝对路径。
+func embeddedBrowsersDir(installDir string) string {
+	return filepath.Join(installDir, embeddedBrowsersDirName)
 }
 
-// DetectChrome 探测系统 Chrome 可执行文件（仅用于 spawn 失败时的错误文案增强：
-// 未探测到时提示安装 Chrome，而非让 playwright 的 channel 报错裸奔）。
-func DetectChrome() (string, bool) {
-	for _, cand := range chromeCandidates() {
-		if cand == "" {
-			continue
-		}
-		if info, err := os.Stat(cand); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
-			return cand, true
-		}
-	}
-	return "", false
+// HasEmbeddedBrowsers 内置浏览器在位检查（存在且非空即视为在位——目录由 playwright
+// install 整批产出，半空状态不可达）。
+func HasEmbeddedBrowsers(installDir string) bool {
+	entries, err := os.ReadDir(embeddedBrowsersDir(installDir))
+	return err == nil && len(entries) > 0
 }
 
-// chromeMissingHint Chrome 缺失时的用户提示（spawn 失败文案增强用）。
-func chromeMissingHint() string {
-	if _, ok := DetectChrome(); ok {
-		return "" // 探测到了：失败原因在别处，不出误导文案
+// embeddedBrowsersMissingHint 内置浏览器缺失时的用户提示（spawn 失败文案增强用）：
+// 覆盖构建期未装（vendor 脚本 postInstall 失败）与应用安装损坏。
+func embeddedBrowsersMissingHint(installDir string) string {
+	if HasEmbeddedBrowsers(installDir) {
+		return "" // 在位：失败原因在别处，不出误导文案
 	}
-	return "（未探测到系统 Chrome：请安装 Google Chrome 后重试——引擎经 --browser chrome 拉起系统浏览器，不自带浏览器二进制）"
+	return fmt.Sprintf("（内置浏览器缺失或损坏：%s 不存在或为空，请重新安装应用）", embeddedBrowsersDir(installDir))
 }
 
 // Chrome 在 user-data-dir 根部落的单实例锁文件（darwin/linux 为符号链接 + socket，

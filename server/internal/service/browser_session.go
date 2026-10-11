@@ -47,9 +47,13 @@ func (svc BrowserSession) Ensure(req *types.BrowserEnsureRequest) (browser.Sessi
 }
 
 // Close 释放会话（幂等：未知 profile 与 idle/failed 态再关均为 no-op 成功；登录态在
-// profile 目录续存，下次 ensure 重拉）。
-func (svc BrowserSession) Close(req *types.BrowserCloseRequest) error {
-	return global.Browser.Close(req.Profile)
+// profile 目录续存，下次 ensure 重拉）。返回释放后的投影行——收尾前已捕获引擎真实当前
+// 页（浏览器窗口内手动导航只有引擎知道），前端切换/重开恢复现场以此为准。
+func (svc BrowserSession) Close(req *types.BrowserCloseRequest) (browser.SessionView, error) {
+	if err := global.Browser.Close(req.Profile); err != nil {
+		return browser.SessionView{}, err
+	}
+	return global.Browser.Row(req.Profile), nil
 }
 
 // Navigate 打开地址（Forward 引擎 browser_navigate；导航本身会触发引擎自动 ensure——

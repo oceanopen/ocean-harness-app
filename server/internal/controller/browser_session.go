@@ -46,7 +46,8 @@ func (api BrowserSession) Ensure(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Close POST /api/browserSession/close：释放会话（幂等）。
+// Close POST /api/browserSession/close：释放会话（幂等），响应携带释放后的投影行
+// （收尾前已捕获真实当前页，供前端恢复现场）。
 func (api BrowserSession) Close(ctx *gin.Context) {
 	req := &types.BrowserCloseRequest{}
 	svc := service.BrowserSession{}
@@ -54,11 +55,12 @@ func (api BrowserSession) Close(ctx *gin.Context) {
 		api.JsonFail(err)
 		return
 	}
-	if err := svc.Close(req); err != nil {
+	data, err := svc.Close(req)
+	if err != nil {
 		api.JsonFail(err)
 		return
 	}
-	api.JsonOK(nil)
+	api.JsonOK(data)
 }
 
 // Navigate POST /api/browserSession/navigate：当前页打开地址（引擎结果原样透传）。

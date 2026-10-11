@@ -191,7 +191,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
           : issue != null && projectId != null
             ? (
                 <Box sx={{ flex: 1, minHeight: 0 }}>
-                  <Box sx={{ height: '100%' }}>{activeEntry.def.render({ issue, projectId, onEditIssue, onCreateSubIssue })}</Box>
+                  <Box sx={{ height: '100%' }}>{activeEntry.def.render({ issue, projectId, onEditIssue, onCreateSubIssue, panelVisible: visible })}</Box>
                 </Box>
               )
             : null}

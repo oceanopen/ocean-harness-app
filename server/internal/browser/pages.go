@@ -56,12 +56,18 @@ func ResultText(res *mcp.CallToolResult) string {
 	return b.String()
 }
 
-// refreshPages Forward 成功后的页面投影刷新：拉 tab 列表 → 解析 → view 行更新（锁外
-// 广播 sessions 帧）。一次调用一次刷新，无防抖；截图轮询路径经 pagesRefreshExempt 豁免
-// （一次轮询不触发两次引擎调用）。best-effort——刷新失败仅记日志，不影响转发结果。
+// refreshPages Forward 成功后的页面投影刷新（缺省预算包装，见 refreshPagesCtx）。
 func (m *Manager) refreshPages(handle *EngineHandle, profile string) {
 	ctx, cancel := context.WithTimeout(context.Background(), pagesRefreshTimeout)
 	defer cancel()
+	m.refreshPagesCtx(ctx, handle, profile)
+}
+
+// refreshPagesCtx 页面投影刷新：拉 tab 列表 → 解析 → view 行更新（锁外广播 sessions
+// 帧）。一次调用一次刷新，无防抖；截图轮询路径经 pagesRefreshExempt 豁免（一次轮询不
+// 触发两次引擎调用）。best-effort——刷新失败仅记日志，不影响转发结果。预算由调用方
+// 给定：Forward 用 pagesRefreshTimeout，Close 收尾捕获用短预算（引擎挂死不拖累收尾）。
+func (m *Manager) refreshPagesCtx(ctx context.Context, handle *EngineHandle, profile string) {
 	res, err := handle.Session().CallTool(ctx, &mcp.CallToolParams{
 		Name:      EngineToolTabs,
 		Arguments: map[string]any{"action": "list"},

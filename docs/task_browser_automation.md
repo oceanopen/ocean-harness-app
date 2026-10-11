@@ -57,7 +57,7 @@
 | # | 决策 | 理由 |
 |---|---|---|
 | D1 | 引擎 = vendored @playwright/mcp，go-sdk（T0 升级后 v1.8.0）stdio 桥接 | 快照/自动等待业界最佳；Node 已是运行时前提；升级后同版桥接零新增依赖；stdio 桥接不受引擎上游 HTTP transport 会话 bug 影响（§2.1 论点 3） |
-| D2 | 仅系统浏览器（--browser chrome channel 探测），独立 user-data-dir | 用户拍板；探测成熟度交给 playwright |
+| D2 | 浏览器 = **playwright 内置 Chromium（嵌入分发）**：构建期 `playwright install chromium` 进 staging，spawn 注入 `PLAYWRIGHT_BROWSERS_PATH`，引擎不传 `--browser` 即内置 build（0.0.83 `resolveBrowserParam` 源码核实）；独立 user-data-dir 不变 | 用户拍板修订（原「仅系统浏览器」）：目标环境企业策略禁 Chrome 自动更新、只能离线安装、版本碎片化严重——自动化行为随用户机浏览器版本漂移不可控，版本确定性是承重变量；企业环境系统 Chrome 同样冻结（安全补丁劣势被中和，且嵌入版通常比离线安装的旧 Chrome 更新）；代价：安装包 +~570MB/平台（T3.5 实测，原估 ~127MB）、引擎升级连带重制浏览器（自家构建流程内可控）、UA 为 Chrome 品牌（内置 build 实为 Chrome for Testing 155.0.8059.12 而非开源 Chromium 纯净版——风控观感优于预期；外部 SaaS 风控归 §5 extension 模式）、macOS quarantine/Windows SmartScreen 分发验证（T3.5） |
 | D3 | 登录态零持久化：profile 目录即活 SSOT，带态 HTTP 从活引擎实时拉 cookies/localStorage（browser_cookie_list 口径，纯内存） | 零陈旧风险、无明文凭据落盘（用户拍板，勿擅自加落盘；注意 browser_storage_state 是落文件语义，主路径勿用） |
 | D4 | 会话 per-profile 单引擎进程，**用完即释放，双层兜底**（主层：manager 侧 idle 计时自动 close——杀引擎进程树；兜底层：spawn 显式传引擎 `--idle-timeout`（毫秒）——到期**只关浏览器窗口**，引擎 node 进程存活、下次调用自愈重启浏览器（登录态续存），防的是 manager 异常时 Chrome 常驻不释放）；下次调用 ensure 重拉，登录态在 profile 目录续存，重拉仅 1–3s，页面态丢失由 AI 重新导航即可；issueId 仅展示标签 | 同 user-data-dir 单实例互斥；任务执行期连续调用保活、任务完成自动释放（用户拍板非常驻）；**面板激活期截图轮询即保活（用户在看就不释放），轮询停止后 idle 正常计时——属预期**；「切 issue 不中断」= 运行中的任务不受影响，不是进程常驻 |
 | D5 | 工具面 = 17 精选转发（11 基础 + console_messages/navigate_back/close/find/press_key/handle_dialog 扩员）+ 6 原生 + browser_tool_call 逃生舱（**黑名单拒绝 browser_run_code_unsafe**——引擎 core 常驻的 RCE 等价工具；统一可选 profile/issueId 参数）；`--caps` 默认 `storage,network,pdf` | AI 体验与维护成本平衡；不开的 cap 其工具不进 tools/list（误调返回 isError 文本）；三个成熟 cap 零成本扩逃生舱面 |
@@ -110,7 +110,7 @@
 ## 4. 任务清单（进度 SSOT）
 
 > 任务粒度：模块 + 功能 + 技术方案，一个任务 ≈ 一次可独立验收的交付。
-> 执行顺序：T0 → T1.1 → T1.2 → T1.3 → T1.4 →（T2.1、T2.2 并列）→ T3.1 → T3.2 → T3.4 → T3.3
+> 执行顺序：T0 → T1.1 → T1.2 → T1.3 → T1.4 →（T2.1、T2.2 并列）→ T3.1 → T3.2 →（T3.4、T3.5 可并列）→ T3.3
 
 ### 阶段 0：依赖升级（先行）
 
@@ -156,7 +156,7 @@
   - ~~③ 进程组清理：kill 引擎进程后浏览器子进程是否随之退出（校验杀组/杀树方案——D4 主层释放依赖干净退出）~~（macOS 实测闭环：四杀法全无孤儿，Chrome 经 `--remote-debugging-pipe` 监测引擎死亡自退——详见实施定稿；Windows 侧待实机验证）
   - ~~④ go-sdk AddTool 对 map 型 Args 的反射行为~~（T0 已实测闭环：map 型 In 推导 `{"type":"object","additionalProperties":true}` 宽松 schema，任意嵌套参数原样透传、缺参得 `{}`——T2.2 逃生舱 DTO 直接可用，结论见 §1.1 事实 3）
 - 外部已核实结论（采信记录，实施依据）：
-  - flags：`--caps`（合法全集 config,network,pdf,storage,testing,vision,devtools，逗号分隔不校验枚举——传错值工具静默不可见）/ `--browser chrome`（chromium + channel chrome，缺省同）/ `--user-data-dir` / `--output-dir`（缺省 cwd 下 `.playwright-mcp`）/ `--headless`（默认有头）/ `--idle-timeout`（**毫秒**；无头默认 1h、有头 never、0 关闭；到期只关浏览器、下次调用自愈重启）/ `--blocked-origins`/`--allowed-origins`（分号分隔，自述非安全边界）/ `--image-responses allow|omit|only` / `--config`（JSON，launchOptions 完整支持）
+  - flags：`--caps`（合法全集 config,network,pdf,storage,testing,vision,devtools，逗号分隔不校验枚举——传错值工具静默不可见）/ `--browser`（**不传 = playwright 内置 Chromium build**；`chrome` = 系统 channel、`chromium` 值 = chrome-for-testing channel——0.0.83 coreBundle `resolveBrowserParam` 源码核实，初稿「缺省同」为误记）/ `--user-data-dir` / `--output-dir`（缺省 cwd 下 `.playwright-mcp`）/ `--headless`（默认有头）/ `--idle-timeout`（**毫秒**；无头默认 1h、有头 never、0 关闭；到期只关浏览器、下次调用自愈重启）/ `--blocked-origins`/`--allowed-origins`（分号分隔，自述非安全边界）/ `--image-responses allow|omit|only` / `--config`（JSON，launchOptions 完整支持）
   - 工具面：storage cap 提供 `browser_cookie_list`/`browser_localstorage_list`（内联返回不落文件）；`browser_storage_state` 落文件且 set 变体先清空现有态（D3 主路径勿用）；未启用 cap 的工具不进 tools/list，误调返回 isError:true 文本；modal state（dialog/fileChooser）激活时其它工具短路返回提示而非执行
   - webdriver：引擎默认注入 `--disable-blink-features=AutomationControlled`（chromium、用户未覆盖时），navigator.webdriver 默认 false——无需反检测处理；去「Chrome is being controlled」信息条可经 `--config` launchOptions.ignoreDefaultArgs 追加 `--enable-automation`（可选，仅外观）
   - 下载：经 outputDir 收纳（download- 前缀命名），路径经工具响应 events 区回传
@@ -203,7 +203,7 @@
 **验收**：
 - 单测绿（拉起链各失败分支：vendored 缺失/node 版本/channel 缺失/profile 锁冲突均有显式错误）
 - `GOOS=windows go build ./...` 通过（跨平台编译卫门，防 unix-only API 逃逸）
-- 真实拉起冒烟：本地 pnpm 安装引擎，CallTool `browser_navigate` 导航 example.com 并回读 title（testing.Short 卫门，CI 跳过）
+- 真实拉起冒烟：本地 pnpm 安装引擎，CallTool `browser_navigate` 导航并回读 title（testing.Short 卫门，CI 跳过；站点当时用 example.com——其在目标网络不可达，后续真机验收统一用 www.baidu.com）
 
 **实施定稿**：
 - pin 0.0.83（npm latest = spike 实测版，无漂移）；`--config` 可选项（去「Chrome is being controlled」信息条）未实现——仅外观，留待有真实诉求再补
@@ -366,21 +366,28 @@
 
 #### T3.2 前端面板
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：issue 工具栏「浏览器」入口——会话/页面实时视口 + 手动操作。
 
 **技术方案**：
-- 新增 `packages/web/src/services/browserSession.ts`：手写镜像 Go DTO + 七端点客户端（服务地址走既有 http.ts 机制，不硬编码端口）
+- 新增 `packages/web/src/services/BrowserSessionService.ts`：手写镜像 Go DTO + 六 REST 方法 + `screenshotImageOf` 纯函数（引擎结果 → dataURL；服务地址走既有 http.ts 机制，不硬编码端口）
 - 新增 `packages/web/src/state/browserSession/`：keys.ts / queries.ts / reducer.ts / useBrowserSessionEvents.ts / index.ts（镜像 state/acpSession 文件切分；EventSource → snapshot 整写缓存、增量帧 reducer 覆写、seq gap 即重连；面板零本地会话状态）
 - 新增 `packages/web/src/windows/panel/DevWorkbenchPage/components/WorkbenchTools/BrowserPanel/BrowserPanel.tsx`：profile 会话卡片（状态 chip（**idle 已释放/starting 准备中/ready/failed**）+ 无头/有头标识 + 页面列表 title/url + 最近操作（含失败分类 chip）+ 失败原因与重开按钮）+ **starting 态 loading 文案「浏览器正在准备中…」**（D4 用完即释放：冷启动 1–3s 属预期，操作挂起等 ensure 完成即可）+ 手动输入地址打开框 + 新建 profile 入口（**含无头开关**，D10）+ 会话卡片无头/有头切换（**切换 = close+reopen**，登录态在 profile 目录续存，面板提示重开成本 1–3s）+ **截图轮询伪实时**（选中页面后面板激活期每 1–2s 调 POST screenshot 自动刷新——「进度 = 操作流水（SSE 实时）+ 效果 = 伪实时截图」双流齐备，无头模式下截图轮询即唯一视图；SSE 帧不载图、非激活 tab 停轮询）+ **「AI 分析此页」按钮**（调 POST analyze → snapshot 经 acpsession Prompt 注入当前 issue 的 agent 会话，面板只发起不重复造 AI UI）+ **issueId 徽标式标注而非过滤**：会话卡片显示 lastIssueTag 徽标、recentCalls 每条带 issueTag、面板手动 navigate 归因「面板手动」（全局单源语义下过滤会造成「会话被隔离」错觉）；尺寸全 px、fontSize ≥12 整数、MUI icon 用 `'& svg'` 选择器
 - 修改 `toolRegistry.tsx`：追加 `{ id: 'browser', title: '浏览器', icon: <MUI 浏览器类图标>, exclusive: true, render: ... }`（icon 为注册表必填字段；会话后端全局单源，多 tab 只会倍增 SSE 连接；「exclusive:false 浏览器=并存」假想示例注释有**两处**——toolRegistry.tsx 头注释与 workbenchTools/actions.ts 头注释，落码时同步修正）
+- **实施三决策（用户拍板）**：① **收起即停**——面板收起（width 0 但组件仍挂载）时截图轮询必须暂停：`WorkbenchToolRenderCtx` 增加 `panelVisible`（ToolPanelArea 传入既有 `visible`），轮询闸门 = 选中卡 ready && panelVisible（D4「用户在看就不释放」的展示侧对偶）；② **「最近操作」过滤成功截图行**——后端 screenshot 调用照记 recentCalls（豁免会丢失败可见性），1.5s 轮询会刷掉真实操作流水，前端展示层过滤「screenshot 且 outcome=ok」行，失败截图行保留（失败 chip 可见性优先）；③ **截图视口帧源无关**——视口只消费 `{ dataUrl, takenAt }` 一帧图（不感知来源），当前帧源 = REST screenshot 轮询，未来 screencast 换帧源零返工
 
 **依赖**：T2.1（REST/SSE 端点）
 
 **验收**：
 - `pnpm web:lint && pnpm web:test && pnpm web:build` 全过
 - `pnpm tauri:dev` 下：面板实时刷新页面列表与状态；切 issue / 关开 tab / 收起面板，会话与执行不中断；手动输入地址可打开页面；选中页面后伪实时截图随 AI 操作自动刷新（1–2s 级）；「AI 分析此页」注入的分析请求在当前 issue 的 agent 会话中产生回答；issueTag 徽标正确显示
+
+**实施定稿**：
+- 落点：service 层 `BrowserSessionService.ts`（六 REST 方法 + `screenshotImageOf` 纯函数，注册进 services/index.ts）；状态域 `state/browserSession/` 五文件 + `reducer.test.ts` 归约单测（snapshot 整体替换 / sessions 覆写 upsert / 追加尾部 / 不 mutate / seq 断档）；面板 `BrowserPanel/` 四文件——BrowserPanel（主面板：SSE 订阅 + PanelToolbar 会话数/「+」Popover 新建打开/刷新 + 四态链）、BrowserSessionCard（会话卡：视口/地址栏/页面列表/无头切换确认弹窗/AI 分析/最近操作）、ScreenshotViewport（帧源无关视口）、browserSessionStateChip（状态与流水 chip SSOT）
+- 相对方案偏离：轮询闸门落地为 `卡展开 && panelVisible && status==='ready'`——比「面板激活期」更收敛（卡收起即停），且 ready 闸门是承重设计：manager.Forward 对已释放会话会自动 ensure，无此闸门则每 1.5s 轮询都会重拉一次 Chrome；轮询频率定 1.5s；「最近操作」行 key 用内容指纹 + 同指纹序号（环形缓冲 index key 随窗口滑动错位复用）；无头切换确认弹窗在 close→ensure 链路期间保持打开展示进度与错误（对齐「等待态 loading 可见」约定）
+- 重启页面恢复（无头切换/重开自动恢复上次页面）：切换/重开重启后的会话落在 about:blank（截图轮询即首个页面级调用、惰性拉起浏览器），不恢复则窗口与视口恒空白；恢复目标以 close 时服务端捕获的引擎真实当前页为准——close 收敛序在取消在途调用后、杀引擎前以短预算（3s）best-effort 拉一次 tab 列表入投影并随 close 响应行返回（浏览器窗口内手动导航只有引擎知道，截图轮询豁免 pages 刷新、前端快照看不到；捕获帧最后广播，最终投影恒为「idle + 真实页面」防旧 pages 回填），close→ensure 成功后串联既有 navigate 恢复（about:blank/空跳过；多标签仅恢复当前页；恢复失败不回滚切换，ready 区 Alert 兜底展示）；确认弹窗打开时的 pages 快照仅作恢复文案提示；编排全程暂停截图轮询（轮询闸门追加 restoreInFlight 项——轮询与恢复导航同争引擎调用互斥，忙拒即恢复失败）。已知边界：idle 释放后被 agent 调用自动重拉不恢复（agent 自会导航，不立项；面板重开走同一 close 捕获路径不受此限）
+- 验收实测：`pnpm web:lint` / `pnpm web:test`（29 用例含归约单测）/ `pnpm web:build` 全绿；服务与状态层语义经直启 sidecar API 链路实测（见 T3.5 定稿冒烟）；面板 GUI 交互项（切 issue/收面板不中断、AI 分析回答产生、issueTag 徽标显示）随 T3.3 端到端一并人工观察
 
 #### T3.3 skill 与端到端验收
 
@@ -420,12 +427,41 @@
 - macOS/Windows 手动验证：多 Chrome 窗口（多 profile）场景下前置目标 profile 窗口组正确；目标 profile 未运行时显式中文报错，无误前置
 - `pnpm tauri:dev` 下面板按钮链路可用；`GOOS=windows` 侧 Rust 编译通过
 
+#### T3.5 嵌入 Chromium 分发切换（D2 修订落地）
+
+**状态**：✅
+
+**功能**：浏览器来源从系统 Chrome（channel）切换为 playwright 内置 Chromium 嵌入分发：终端用户机不再要求装有 Chrome，自动化行为与用户机浏览器版本/形态解耦（D2 修订的企业环境依据见决策表）。
+
+**技术方案**：
+- `server/internal/browser/pin.go`：EngineSpawnArgs 移除 `--browser chrome`（不传即内置 build，§1.1 勘误事实；**勿改传 `--browser chromium`——那是 chrome-for-testing channel 非内置 build**），注释同步 D2 新口径
+- `server/internal/browser/client.go`：LaunchEngine spawn env 注入 `PLAYWRIGHT_BROWSERS_PATH=<installDir>/browsers`（EnsureVendored 返回的安装目录——引擎 node 进程与 browsers 同目录，browsers.json revision 与二进制天然一致；经 acp.MergeEnv 单点合并）
+- `server/internal/browser/detect.go`：系统 Chrome 探测退役，改「内置浏览器在位」检查（`<installDir>/browsers` 存在且非空；缺失提示重新安装应用——覆盖同版本 staging 无 browsers 目录的升级窗口）
+- `scripts/vendor-browser-engine.ts`：staging 安装后以 staged 的 `playwright-core/cli.js install chromium` 定向下载至 `<条目目录>/browsers`（该步 PLAYWRIGHT_BROWSERS_PATH 指向目标、SKIP_BROWSER_DOWNLOAD 显式失效；用 staging 内 cli.js 保版本精确，不 npx 漂移）；浏览器目录在条目版本目录内 → tauri resources 既有 `resources/acp-adapters` 递归打包自动覆盖，tauri.conf.json 零变更
+- 兜底不变：杀组/杀树、pid 锚点、recoverOrphans 均与浏览器来源无关
+
+**依赖**：T3.1（staging 机制）；与 T3.2 同轮实施、共用一轮端到端验收
+
+**验收**：
+- `pnpm server:vendor:prepare` 产出 browsers 目录（install dry-run 核实条目清单）；幂等重跑不重复下载
+- `pnpm tauri:dev` 真机冒烟：引擎拉起的浏览器进程 argv 指向 staging browsers 目录（非系统 Chrome 路径），navigate/screenshot/面板链路可用
+- `go build`/`go vet`/`go test`/`GOOS=windows go build` 全绿
+- DMG 实机 quarantine / Windows SmartScreen 分发验证为装机后人工项，随 T3.3 端到端一并观察
+
+**实施定稿**：
+- 内置 build 实证：0.0.83 内置 Chromium = **Chrome for Testing 155.0.8059.12**（revision 1247），UA 为 Chrome 品牌（D2 行 UA 与体积表述随之修正）；`install chromium` 产出三条目 chromium-1247 / chromium_headless_shell-1247 / ffmpeg-1011，受管目录合计 ~570MB/平台（下载 zip ~170MB）
+- staging 双判据：`readyBinRel = ['browsers', '.ocean-browsers']`（版本匹配 + install 成功后写入的 marker）——同版本无浏览器的旧 staging 不复用、整目录重装；pnpmAdd 段 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` 保险在 postInstall 下载步显式失效；staged `node_modules/playwright/cli.js install chromium` 保版本精确；交叉构建经 `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE` 强制目标平台（dry-run 实证三形态取值：`mac15`→mac-x64、`mac15-arm64`→mac-arm64、`win64`→win64 下载段；vendor 脚本内由 GOOS/GOARCH 派生）
+- 下载源备注：官方 cdn.playwright.dev 在目标网络会挂起（长时零字节假死），一次性 env `PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright` 走 npmmirror 镜像（不落仓库配置；cft 路径镜像已同步）
+- 直启 sidecar 冒烟（独立端口 9301 + 独立数据/受管目录，不触碰运行中实例）：EnsureVendored 整树含 browsers 复制进受管目录 → 引擎 argv 无 `--browser`、固定 flags 全在 → CfT 从受管 browsers 目录真实拉起（本机默认 playwright 缓存无浏览器二进制，排除假阳性）→ navigate `https://www.baidu.com` 成功（title「百度一下，你就知道」回读）→ screenshot 返回 text+image 双 content（image ~134KB base64，前端 `screenshotImageOf` 消费形态）；example.com 在目标网络不可达（DNS 阶段失败，与 T2.1 定稿同款事实，真机验收统一用 www.baidu.com）
+- 有头信息条抑制：品牌 Chrome 对坏标记（`bad_flags_prompt` 的 `kBadFlags` 名单含 `--disable-blink-features`）恒弹「不受支持的命令行标记」黄条，而 playwright 默认每次启动注入 `--disable-blink-features=AutomationControlled`——经引擎 `--config`（`<browser 根>/engine.json`，Go 侧幂等落盘）注入 `browser.launchOptions.ignoreDefaultArgs` 去掉该标记。决策依据：CfT 155 + 同版 playwright-core 实测 `navigator.webdriver` 缺省即 `true`（该标记已无反检测效果，去掉零损失）；引擎 mcp 侧会把 config 数组与持久模式默认项 `--disable-extensions` 合并后统一过滤默认 argv（源码核实），CLI flags 优先级高于 config 不受影响
+- 验收实测：vendor:prepare 产出 + 幂等重跑秒回；`go build`/`go vet`/`go test`（含改写后 detect_test）/`GOOS=windows go build` 全绿；引擎级冒烟如上；面板 GUI 链路随 T3.2 定稿口径（API 层已实测，GUI 交互随 T3.3 人工观察）
+
 ## 5. 后续演进扩展点（本期不做，记录防误入）
 
 | 扩展点 | 说明 |
 |---|---|
 | 面板元素选取（人工指路给 AI） | 在**真 Chrome 窗口**上做 pick（非面板内）：CDP Runtime.evaluate 注入 hover 高亮脚本 → 用户在引擎窗口悬停高亮、点击选中 → selector/ref 经 CDP 事件通道回传面板 → 触发 AI 分析/生成后续操作建议；抓手：devtools cap 的 browser_highlight；「选中→回传」通道（CDP binding）需 spike 验证 |
-| screencast 帧流面板（10fps 级实时画面） | orca 级投入：需打通 CDP 通道（playwright 默认 pipe 启动，能否追加 --remote-debugging-port 需 spike）+ 帧步调器；帧流依据——帧率/带宽优于截图轮询一个量级，配合 `Input.dispatch*` 输入注入构成完整「远程桌面式」介入通路（面板介入形态的终局选项，§2.1 论点 5）；本地场景浏览器在桌面，先用截图轮询伪实时，按真实痛点再决定 |
+| screencast 帧流面板（10fps 级实时画面） | orca 级投入：需打通 CDP 通道（playwright 默认 pipe 启动，能否追加 --remote-debugging-port 需 spike）+ 帧步调器；帧流依据——帧率/带宽优于截图轮询一个量级，配合 `Input.dispatch*` 输入注入构成完整「远程桌面式」介入通路（面板介入形态的终局选项，§2.1 论点 5）；本地场景浏览器在桌面，先用截图轮询伪实时，按真实痛点再决定。T3.2 期复评结论：通道可行性已核实——`--config` launchOptions 可注入 `--remote-debugging-port=0`，Chrome 回写 `<user-data-dir>/DevToolsActivePort`（端口 + path 两行），sidecar 读文件得端口；自定义 `--user-data-dir` 天然满足 Chrome 136 起默认用户目录禁用 remote debugging 的安全约束（官方 developer.chrome.com 口径）；待 spike 项 = 与引擎既有 `--remote-debugging-pipe` 并存互扰、多客户端连接行为；面板收起即停闸门（T3.2 决策①）对轮询/screencast 对称生效，不构成复评触发；人工介入不经此通道——主通道是桌面真实窗口（D9），此处仅服务「面板内介入」形态 |
 | extension 模式连用户真实 Chrome | 外部 SaaS 登录被自动化检测拦截（如 Google OAuth）时的正解（浏览器非自动化启动，登录发生在用户自己手里）；stealth 插件是死路——hello-halo 的 14 项规避是补 Electron 与真 Chrome 的先天差异，我们用真 Chrome channel 场景无必要；引擎默认已注入 `--disable-blink-features=AutomationControlled`（navigator.webdriver 默认 false），`--enable-automation` 仅余信息条外观问题（T1.2 `--config` 可选去除） |
 | devtools cap + trace viewer 做操作回放 | 事后排查主抓手（对位 Go 原生 CDP 的 wireline 日志/pprof 可排查性优势，§2.1 论点 8）：替代自研 op log 结构，开 devtools cap（browser_start/stop_tracing、video）+ `--output-dir` 后近乎免费；SSE 帧补 trace 文件路径字段 + 面板「打开回放」按钮即可；轻量路径 = spawn env 预留 DEBUG=pw:api 引擎调试日志（stderr 泵已接管，T1.2） |
 | 同账号真并行（同 profile 多任务 tab 级隔离） | 引擎 current-tab 语义限制（§3 busy 行）：browser_* 工具无 per-call tab 定位参数，同 profile 并发调用互斥 busy 拒绝；需引擎侧 per-call tab 定位参数或任务级队列策略，属引擎能力面扩展，按真实多任务并行痛点再评估 |

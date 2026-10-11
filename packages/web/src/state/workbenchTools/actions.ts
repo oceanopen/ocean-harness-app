@@ -1,6 +1,7 @@
 // workbenchTools 域纯函数与按 issue 持久化。
-// 工具 tab 模型：互斥工具（子任务/文件目录）同类单 tab（tab id = toolId，单例语义）；
-// 并存工具（浏览器）每实例一个 tab（tab id = randomUUID 前 8 位，跨重启不撞）。
+// 工具 tab 模型：互斥工具（子任务/文件目录/浏览器——内容后端全局单源，多 tab 只会倍增
+// SSE 连接）同类单 tab（tab id = toolId，单例语义）；并存工具每实例一个 tab
+// （tab id = randomUUID 前 8 位，跨重启不撞）。
 // tabs/activeTab 按 issue 隔离：localStorage 按 issue 存 JSON，损坏/缺失回落空 tabs
 // （工具面板为纯展示派生，丢失仅 UI 回落重新手动打开）。
 
