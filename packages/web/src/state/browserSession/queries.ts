@@ -57,18 +57,3 @@ export function useAnalyzeBrowserSession() {
     mutationFn: (req: BrowserSessionAnalyzeRequest) => BrowserSessionService.analyze(req),
   });
 }
-
-/**
- * 截图视口轮询（伪实时帧源）：enabled 数据条件驱动——会话 ready 且面板可见才轮询
- * （会话释放/面板收起即停；轮询本身是 idle 保活，D4「用户在看就不释放」的展示侧对偶），
- * 1.5s 一帧。截图调用在后端照记 recentCalls（豁免会丢失败可见性），「最近操作」展示层
- * 过滤成功行（见 BrowserSessionCard）。
- */
-export function useBrowserScreenshot(profile: string, enabled: boolean) {
-  return useQuery({
-    queryKey: browserSessionKeys.screenshot(profile),
-    queryFn: () => BrowserSessionService.screenshot({ profile }),
-    enabled,
-    refetchInterval: 1500,
-  });
-}

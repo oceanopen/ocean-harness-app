@@ -31,18 +31,21 @@ export type { AgentCatalogEntry, AgentCatalogGetListRequest } from './AgentCatal
 export { BaseInfoService } from './BaseInfoService';
 export type { ServerInfo, ServerRunInfoRequest, ServerRunInfoResponseData, SysInfo } from './BaseInfoService';
 
-export { BrowserSessionService, screenshotImageOf } from './BrowserSessionService';
+export { BrowserSessionService } from './BrowserSessionService';
 export type {
   BrowserCallOutcome,
   BrowserFrame,
   BrowserFrameType,
+  BrowserLiveEvent,
+  BrowserLiveEventType,
+  BrowserLiveFrameMeta,
   BrowserPageView,
   BrowserRecentCall,
   BrowserSessionAnalyzeRequest,
   BrowserSessionCloseRequest,
   BrowserSessionEnsureRequest,
+  BrowserSessionInputRequest,
   BrowserSessionNavigateRequest,
-  BrowserSessionScreenshotRequest,
   BrowserSessionSnapshot,
   BrowserSessionStatus,
   BrowserSessionView,

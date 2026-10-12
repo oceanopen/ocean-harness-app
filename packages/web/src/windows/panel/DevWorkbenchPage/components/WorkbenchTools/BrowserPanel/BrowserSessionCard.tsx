@@ -1,5 +1,4 @@
 import type { BrowserRecentCall, BrowserSessionView } from '@src/services';
-import type { ScreenshotFrame } from './ScreenshotViewport';
 import ExpandLessOutlinedIcon from '@mui/icons-material/ExpandLessOutlined';
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
 import {
@@ -20,24 +19,16 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { screenshotImageOf } from '@src/services';
 import {
   useAnalyzeBrowserSession,
-  useBrowserScreenshot,
+  useBrowserFrameStream,
   useCloseBrowserSession,
   useEnsureBrowserSession,
   useNavigateBrowserSession,
 } from '@src/state/browserSession';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { browserCallOutcomeChip, browserSessionStateChip } from './browserSessionStateChip';
-import ScreenshotViewport from './ScreenshotViewport';
-
-// 「最近操作」展示过滤（T3.2 实施决策②）：截图轮询行（browser_take_screenshot + ok）是
-// 1.5s 周期的流水噪音，展示层滤除；后端照记不豁免（豁免会丢失败可见性），失败截图行
-// 保留——失败可见性优先。
-function isPollingNoise(call: BrowserRecentCall): boolean {
-  return call.tool === 'browser_take_screenshot' && call.outcome === 'ok';
-}
+import LiveViewport from './LiveViewport';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -76,12 +67,11 @@ interface BrowserSessionCardProps {
 }
 
 /**
- * BrowserSessionCard：单 profile 浏览器会话卡（展开态默认）——截图视口（ready 且面板
- * 可见且无恢复编排才轮询）、地址栏打开、页面列表（点选 = 分析目标）、无头切换/重开
- * （close + ensure 链，成功后按 close 时捕获的真实当前页恢复现场；确认弹窗保持展示
- * 错误）、「AI 分析此页」
- * 受理、「最近操作」流水（已滤轮询成功行）。会话状态迁移全由 SSE sessions 帧驱动，
- * 卡片不维护会话状态副本。
+ * BrowserSessionCard：单 profile 浏览器会话卡（展开态默认）——实时视口（ready 且面板
+ * 可见且无恢复编排才订阅帧流，CDP 观察通道远程桌面语义）、地址栏打开、页面列表
+ * （点选 = 分析目标与观看页码）、无头切换/重开（close + ensure 链，成功后按 close 时
+ * 捕获的真实当前页恢复现场；确认弹窗保持展示错误）、「AI 分析此页」受理、「最近操作」
+ * 流水。会话状态迁移全由 SSE sessions 帧驱动，卡片不维护会话状态副本。
  */
 export default function BrowserSessionCard({ session, issueId, panelVisible }: BrowserSessionCardProps) {
   const [expanded, setExpanded] = useState(true);
@@ -92,7 +82,8 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   // （权威恢复目标 = close 响应行——服务端收尾前捕获引擎真实当前页，弹窗快照看不到
   // 浏览器窗口内的手动导航）。编排链路期间弹窗保持打开以展示进度与错误。
   const [pendingToggle, setPendingToggle] = useState<{ headless: boolean; restoreUrl: string | null } | null>(null);
-  // 恢复编排进行中暂停截图轮询：轮询与恢复导航同争引擎调用互斥（忙拒即恢复失败）。
+  // 恢复编排进行中暂停帧流订阅：编排导航与观察通道同争页面拨号（订阅重建风暴即自愈
+  // 抖动）。
   const [restoreInFlight, setRestoreInFlight] = useState(false);
 
   const ensureMutation = useEnsureBrowserSession();
@@ -101,17 +92,13 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   const analyzeMutation = useAnalyzeBrowserSession();
 
   const ready = session.status === 'ready';
-  const polling = expanded && panelVisible && ready && !restoreInFlight;
-  const screenshotQuery = useBrowserScreenshot(session.profile, polling);
+  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight;
+  // 观看页码：点选页优先，未选 = 当前页（分析目标与观看页码同一语义）；pages 未就绪
+  // 以 0 起步，首帧即真实页。
+  const pageId = selectedPageId ?? (session.pages ?? []).find(page => page.current)?.index ?? 0;
+  const stream = useBrowserFrameStream(session.profile, pageId, streamEnabled);
 
-  // 引擎结果 → 视口帧（数据引用变化即新帧，takenAt 取到达时刻；无图 = 引擎 omit 模式，
-  // 视口回落占位态）。
-  const frame: ScreenshotFrame | null = useMemo(() => {
-    const dataUrl = screenshotImageOf(screenshotQuery.data);
-    return dataUrl != null ? { dataUrl, takenAt: Date.now() } : null;
-  }, [screenshotQuery.data]);
-
-  const recentCalls = (session.recentCalls ?? []).filter(call => !isPollingNoise(call));
+  const recentCalls = session.recentCalls ?? [];
   const chip = browserSessionStateChip(session.status);
   const toggling = closeMutation.isPending || ensureMutation.isPending || navigateMutation.isPending;
 
@@ -198,7 +185,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
       >
         <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{session.profile}</Typography>
         <Chip size="small" variant="outlined" label={chip.label} color={chip.color} sx={{ fontSize: 12 }} />
-        <Tooltip title={session.headless ? '无头模式：无窗口，截图视口即页面' : '有头模式：桌面真实 Chrome 窗口（人工介入通道）'}>
+        <Tooltip title={session.headless ? '无头模式：无窗口，面板实时画面即页面' : '有头模式：桌面真实 Chrome 窗口（人工介入通道）'}>
           <Chip size="small" variant="outlined" label={session.headless ? '无头' : '有头'} sx={{ fontSize: 12, color: 'text.secondary' }} />
         </Tooltip>
         {session.lastIssueTag && (
@@ -261,10 +248,20 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
 
           {ready && (
             <>
-              <ScreenshotViewport frame={frame} />
-              {screenshotQuery.error && (
+              <LiveViewport profile={session.profile} frameRef={stream.frameRef} tick={stream.tick} interactive={stream.phase === 'live'} />
+              {stream.target && (
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {`正在投送：${stream.target.title || stream.target.url}`}
+                </Typography>
+              )}
+              {stream.healingMessage != null && (
                 <Alert severity="warning" sx={{ fontSize: 12 }}>
-                  {`截图失败：${errorMessage(screenshotQuery.error)}（将自动重试）`}
+                  {stream.healingMessage}
+                </Alert>
+              )}
+              {stream.closedReason != null && (
+                <Alert severity="warning" sx={{ fontSize: 12 }}>
+                  {`实时画面已停止：${stream.closedReason}（选择其他页面可重新订阅）`}
                 </Alert>
               )}
 
@@ -336,7 +333,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <FormControlLabel
                   control={<Switch size="small" checked={session.headless} onChange={e => askToggleHeadless(e.target.checked)} />}
-                  label="无头模式（无窗口，仅截图视口）"
+                  label="无头模式（无窗口，面板实时画面）"
                   sx={{ '& .MuiFormControlLabel-label': { fontSize: 12 } }}
                 />
                 <Button

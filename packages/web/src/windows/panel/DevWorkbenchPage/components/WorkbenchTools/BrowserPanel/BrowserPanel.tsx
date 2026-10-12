@@ -26,7 +26,7 @@ function errorMessage(error: unknown): string {
 interface BrowserPanelProps {
   /** 当前选中 issue id（「AI 分析此页」归因）。 */
   issueId: string;
-  /** 面板区展开态（ToolPanelArea 透传）：截图轮询「收起即停」闸门。 */
+  /** 面板区展开态（ToolPanelArea 透传）：实时画面帧流「收起即停」闸门。 */
   panelVisible: boolean;
 }
 
@@ -51,7 +51,9 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
   const openAdd = (anchor: HTMLElement) => {
     ensureMutation.reset();
     setProfileName('default');
-    setHeadless(false);
+    // 默认无头（对齐后端 D10 新建 profile 缺省）：面板实时画面即观察面，桌面窗口按需
+    // 显式切换（人工介入通道）。
+    setHeadless(true);
     setAddAnchor(anchor);
   };
 
@@ -150,7 +152,7 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
           />
           <FormControlLabel
             control={<Switch size="small" checked={headless} onChange={e => setHeadless(e.target.checked)} />}
-            label="无头模式（无窗口，仅截图视口）"
+            label="无头模式（无窗口，面板实时画面）"
             sx={{ '& .MuiFormControlLabel-label': { fontSize: 12 } }}
           />
           <Typography variant="caption" color="text.secondary">

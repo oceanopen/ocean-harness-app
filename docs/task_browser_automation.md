@@ -572,7 +572,7 @@
 
 #### T4.6 前端实时视口
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：LiveViewport（canvas 帧渲染 + 输入路由）替换截图轮询全链路（截图方案全量废弃）。
 
@@ -586,6 +586,8 @@
 **依赖**：T4.5（事件契约）；实现可与 T4.3–T4.5 并行（按 DTO 契约先行）
 
 **验收**：`pnpm web:lint && pnpm web:test && pnpm web:build` 全过
+
+**实施定稿**：按方案落地，三处实施口径补充。帧渲染兜底：初始帧（captureScreenshot）metadata 零值——backing 尺寸与坐标换算基准统一经 `frameDisplaySize` 纯函数（metadata 就绪用 deviceWidth/Height，零值回落位图自然尺寸），渲染与投送两态同源一致。输入路由纯函数落 `viewportInput.ts`（modifiersOf/pointToPage/frameDisplaySize/buttonOf/heldButtonOf/vkOf/routeKeyDown/routeKeyUp），组件只做事件编排：键盘分流 IME 组合期不转发（isComposing + `key='Process'` + keyCode 229 兜底——部分浏览器组合期首个 keydown 先于 compositionstart）、可打印字符且无 ctrl/alt/meta → char（text 承载字符）、控制键/修饰组合键 → rawKeyDown/keyUp（ctrl+c 不注入字符，页面按 modifiers 自行解释）、compositionend → insertText；滚轮原生绑定 `passive: false`（React 合成 onWheel 为被动监听，preventDefault 失效）；clickCount 取原生 `e.detail` 双击聚合；mouseMoved 经 `heldButtonOf(e.buttons)` 携带拖拽键位；输入分发失败静默（尽力语义，自愈重连后恢复）。复位时序：帧流 hook（重）订阅激活前清帧复位（帧箱清空 + 相位/消歧/终态归零）——新页码/重开闸门不允许旧页残影与上一轮终态残留；closed 终态主动停订，连接层断开交 EventSource 自动重连，重开闸门才重订。两项澄清裁决落地：「截图视口」文案三处统一「面板实时画面」（Popover + 卡片 Tooltip + 无头 Switch）；`screenshotImageOf`/`BrowserSessionScreenshotRequest` 随 useBrowserScreenshot 一并退役（McpCallToolResult/McpContent 因 navigate 保留），BrowserPanel 新建 Popover 默认无头（对齐后端 D10 新建 profile 缺省）。验收实证：web:lint / web:test（vitest 47 例全绿，含 viewportInput 表驱动 12 例）/ web:build 全过。
 
 #### T4.7 端到端验收与文档收口
 

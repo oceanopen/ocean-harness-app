@@ -1,8 +1,9 @@
 import { request } from './http';
 
 // 浏览器会话域契约：镜像 Go server/internal/browser/view.go（SessionView/BrowserViewSnapshot/
-// Frame 为响应 shape SSOT）与 dal/types/browser_session.go（请求 DTO），手写镜像无生成器。
-// navigate/screenshot 的响应是引擎 CallToolResult 原样透传（Content 数组含 ImageContent）。
+// Frame 为响应 shape SSOT）、browser/live.go（LiveEvent 帧流事件）与 dal/types/
+// browser_session.go（请求 DTO），手写镜像无生成器。navigate 的响应是引擎
+// CallToolResult 原样透传（Content 数组原样保留）。
 
 // 会话状态机（view.go SessionStatus，D4）：idle 已释放（条目驻留供投影）→ starting →
 // ready；任一态可 → failed；failed/idle 经 ensure 自动（重）拉。
@@ -60,19 +61,39 @@ export interface McpCallToolResult {
   isError?: boolean;
 }
 
-// 引擎 Content 元素（本轮消费 text/image 两型；其余型别引擎不会在截图/导航结果中出现）。
+// 引擎 Content 元素（CallToolResult wire 全型别的本域消费面；image 型随截图端点退役
+// 仅为镜像完备保留）。
 export type McpContent
   = | { type: 'text'; text?: string }
     | { type: 'image'; data?: string; mimeType?: string };
 
-// screenshotImageOf 从引擎结果提取截图 dataURL（纯函数；无图返回 null——引擎 omit 模式
-// 或帧形态变化时调用方回落视口占位态，视口只认「一帧图」，帧源无关）。
-export function screenshotImageOf(result: McpCallToolResult | null | undefined): string | null {
-  const image = result?.content?.find(item => item.type === 'image');
-  if (image?.type !== 'image' || !image.data) {
-    return null;
-  }
-  return `data:${image.mimeType || 'image/png'};base64,${image.data}`;
+// GET /api/browserSession/stream SSE 事件信封（镜像 browser.LiveEvent wire 形态，type
+// 判别载荷）：frame = jpeg base64 + screencast metadata（初始帧 captureScreenshot 无
+// metadata，渲染侧按位图尺寸兜底）；target = 实际投送目标回显（url/title 供消歧），
+// closed 置真 = 页面已关闭（后端随后补发 closed 终态）；error = 自然断连可重订自愈；
+// closed = 终态 reason（管理面强拆/页面关闭），前端停止重订。
+export type BrowserLiveEventType = 'frame' | 'target' | 'error' | 'closed';
+
+// screencast metadata（镜像 browser.LiveFrameMeta；deviceWidth/Height 是前端坐标换算
+// 基准——渲染尺寸与投送坐标同源）。
+export interface BrowserLiveFrameMeta {
+  pageScaleFactor: number;
+  deviceWidth: number;
+  deviceHeight: number;
+  scrollOffsetX: number;
+  scrollOffsetY: number;
+  offsetTop: number;
+}
+
+export interface BrowserLiveEvent {
+  type: BrowserLiveEventType;
+  data?: string;
+  metadata?: BrowserLiveFrameMeta;
+  url?: string;
+  title?: string;
+  closed?: boolean;
+  message?: string;
+  reason?: string;
 }
 
 // POST /api/browserSession/ensure：拉起/复用 profile 会话（同步等就绪）。Headless 为
@@ -93,10 +114,24 @@ export interface BrowserSessionNavigateRequest {
   url: string;
 }
 
-// POST /api/browserSession/screenshot：截当前页（ImageContent base64 + TextContent 落盘
-// 路径并存，供面板轮询伪实时）。
-export interface BrowserSessionScreenshotRequest {
+// POST /api/browserSession/input：远程桌面输入分发（kind→CDP Input 域映射归后端；
+// 字段镜像 dal/types BrowserInputRequest，可选字段缺省即不传——后端按 kind 白名单
+// 校验）。key 域 vk = Windows 虚拟键码（CDP windowsVirtualKeyCode）。
+export interface BrowserSessionInputRequest {
   profile: string;
+  kind: 'mouse' | 'wheel' | 'key' | 'text';
+  action?: string;
+  x?: number;
+  y?: number;
+  button?: string;
+  clickCount?: number;
+  modifiers?: number;
+  deltaX?: number;
+  deltaY?: number;
+  key?: string;
+  code?: string;
+  vk?: number;
+  text?: string;
 }
 
 // POST /api/browserSession/analyze：「AI 分析此页」即时受理（会话缺失/回合进行中即中文
@@ -129,9 +164,10 @@ export class BrowserSessionService {
     return request<McpCallToolResult>('POST', '/api/browserSession/navigate', req);
   }
 
-  // screenshot：截当前页（面板轮询伪实时的帧源）。
-  static screenshot(req: BrowserSessionScreenshotRequest): Promise<McpCallToolResult> {
-    return request<McpCallToolResult>('POST', '/api/browserSession/screenshot', req);
+  // input：远程桌面输入分发（要求活跃观察面——未建实时画面即中文报错；分发失败为
+  // 尽力语义，调用方静默，自愈重连后恢复）。
+  static input(req: BrowserSessionInputRequest): Promise<null> {
+    return request<null>('POST', '/api/browserSession/input', req);
   }
 
   // analyze：「AI 分析此页」即时受理（回答走 issue 绑定 agent 会话既有链路）。
