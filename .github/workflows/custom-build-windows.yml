@@ -1,0 +1,152 @@
+# 手动触发的自定义品牌构建：通过仓库 Variables 注入公司名与产品名，产出 MSI + NSIS 安装包。
+# 与正式 tag 构建（release-assets.yml）的差异：不创建 Release/Tag、不签名、无 Gitee 同步；
+# 分发文件名中的空格替换为 "."，安装包内元数据仍保持原始产品名；
+# NSIS 安装包 exe 无 CompanyName 为上游模板已知限制。
+#
+# 必需的仓库 Variables（Settings → Secrets and variables → Actions → Variables，缺失则构建报错终止）：
+#   CUSTOM_APP_COMPANY_NAME  公司名：写入主程序 exe 的 CompanyName、安装包的 Manufacturer（发布者）
+#   CUSTOM_APP_PRODUCT_NAME  产品名：写入 exe 的 ProductName/FileDescription，并决定安装包文件名
+#
+# 版本号自动读取 tauri.conf.json，版权自动取当前年份。
+name: Custom Build For Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      # 统一经 env 中转读取 Variables，shell 内只引用环境变量，避免表达式直接内插
+      CUSTOM_APP_COMPANY_NAME: ${{ vars.CUSTOM_APP_COMPANY_NAME }}
+      CUSTOM_APP_PRODUCT_NAME: ${{ vars.CUSTOM_APP_PRODUCT_NAME }}
+    steps:
+      # 两个变量均为必填，未配置直接失败，错误信息指明配置路径
+      - name: Check required variables
+        shell: bash
+        run: |
+          status=0
+          if [ -z "${CUSTOM_APP_COMPANY_NAME}" ]; then
+            echo "::error::仓库 Variables 未配置 CUSTOM_APP_COMPANY_NAME（仓库 Settings → Secrets and variables → Actions → Variables）"
+            status=1
+          fi
+          if [ -z "${CUSTOM_APP_PRODUCT_NAME}" ]; then
+            echo "::error::仓库 Variables 未配置 CUSTOM_APP_PRODUCT_NAME（仓库 Settings → Secrets and variables → Actions → Variables）"
+            status=1
+          fi
+          exit $status
+
+      # 拉取代码，fetch-depth: 0 获取完整历史（与 release-assets.yml 保持一致）
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # 安装 pnpm 包管理器（项目使用 pnpm 管理依赖）
+      # 必须在 setup-node 之前：setup-node 的 cache: pnpm 需要调用 pnpm 读取 lockfile 来设置缓存 key
+      - uses: pnpm/action-setup@v6
+
+      # 安装 Node.js（前端构建需要）；按 lockfile 缓存 pnpm store（action-setup 已在前提供 pnpm 版本）
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: 'pnpm'
+
+      # 安装 Go 工具链（beforeBuildCommand 需编译 Go sidecar，供 Tauri 打包为外部二进制）。
+      # 按 go-version-file 锁定版本（与 server/go.mod 对齐），并按 server/go.sum 缓存模块。
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      # 安装 Rust 工具链（Tauri 后端使用 Rust 编写）
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      # 安装前端及 Tauri 依赖
+      - name: Install app dependencies
+        run: pnpm install
+
+      # 预拉取 Go 依赖，供 beforeBuildCommand 的 sidecar 构建复用（setup-go 缓存命中时近瞬时）
+      - name: Download Go modules
+        run: go -C server mod download
+
+      # 运行时生成配置覆盖文件（不提交仓库，正常 tag 构建零影响）：
+      # - productName / publisher 来自仓库 Variables（经 env 中转，node 从 process.env 读取并生成 JSON，天然处理转义）
+      # - createUpdaterArtifacts: false —— 内部构建不发布，免去 updater 签名私钥要求
+      # - plugins.updater.active: false —— 禁用官方自动更新，防止自定义品牌构建静默升级回官方正式品牌
+      # - targets msi + nsis —— 不覆盖 version，自动读取仓库 app/tauri.conf.json 的版本号
+      - name: Generate config overlay
+        shell: bash
+        run: |
+          node -e '
+          const fs = require("fs");
+          const conf = {
+            productName: process.env.CUSTOM_APP_PRODUCT_NAME,
+            bundle: {
+              targets: ["msi", "nsis"],
+              publisher: process.env.CUSTOM_APP_COMPANY_NAME,
+              copyright: `版权所有 © ${new Date().getFullYear()}`,
+              shortDescription: "Agent Harness 桌面小工具",
+              createUpdaterArtifacts: false,
+            },
+            plugins: {
+              updater: {
+                active: false,
+              },
+            },
+          };
+          fs.writeFileSync("app/tauri.custom.conf.json", JSON.stringify(conf, null, 2) + "\n");
+          '
+          cat app/tauri.custom.conf.json
+
+      # 构建命令与 tauri-action 调用方式同构（tauri:build:ci 是裸 tauri CLI），--config 深度合并覆盖
+      # app/tauri.conf.json，一次产出 MSI + NSIS 安装包
+      - name: Build Windows installers (MSI + NSIS)
+        run: pnpm tauri:build:ci build --config app/tauri.custom.conf.json
+
+      # 分发文件名中的空格替换为 "."；仅重命名产物，不影响安装包内元数据
+      - name: Rename artifacts (spaces to dots)
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for f in app/target/release/bundle/msi/*.msi app/target/release/bundle/nsis/*.exe; do
+            dir=$(dirname "$f")
+            name=$(basename "$f")
+            new_name="${name// /.}"
+            if [ "$name" != "$new_name" ]; then
+              mv "$f" "$dir/$new_name"
+              echo "renamed: $name -> $new_name"
+            fi
+          done
+
+      # 文件名 / 大小 / SHA256 写入 Job Summary（MSI + NSIS）
+      - name: Show build info
+        shell: bash
+        run: |
+          echo "### 📦 Custom Build 产物信息" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| 文件名 | 大小 | SHA256 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          shopt -s nullglob
+          for f in app/target/release/bundle/msi/*.msi app/target/release/bundle/nsis/*.exe; do
+            name=$(basename "$f")
+            size=$(du -h "$f" | cut -f1)
+            sha=$(sha256sum "$f" | cut -d' ' -f1)
+            echo "=== $name ==="
+            echo "size: $size"
+            echo "sha256: $sha"
+            echo "| \`$name\` | $size | \`$sha\` |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      # 上传 MSI + NSIS 到 Artifact（运行页面底部下载）
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: custom-build-windows
+          path: |
+            app/target/release/bundle/msi/*.msi
+            app/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
