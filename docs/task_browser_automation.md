@@ -533,20 +533,22 @@
 
 #### T4.4 manager 集成与 idle 保活
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：viewer 生命周期挂接 manager，帧流活跃即保活（D4 补充），三处收敛点强拆。
 
 **技术方案**：
-- Manager 新增 `viewerMu sync.Mutex` + `viewers map[string]*liveViewer`（**独立于 m.mu**，帧分发路径零 manager 锁触达）
-- `SubscribeLive(profile, pageID)`：refs 0→1 建连 + `onRefsChange(true)`；refs 1→0 cancel 拆连接 + `onRefsChange(false)`；`DispatchInput(profile, req)`：要求活跃 viewer 存在（无流中文报错「浏览器未在投送」），经已 attach 会话发 Input.dispatch*——**不经过 acceptCall、不占 callMu、不受 120s per-call 超时约束**（远程桌面语义，与 AI Forward 并发允许；「AI 操作中」可见性靠既有 lastIssueTag 徽标）
-- idle 保活：`resetIdleTimerLocked` 加 refs 闸（活跃订户 >0 暂停）；onRefsChange 在锁外回调（active=双锁停计时 / inactive=恢复计时）——锁序 `viewerMu → m.mu → entry.mu` 允许，**持 entry.mu 时绝不调用 viewer 方法**
-- 三处 dropViewer 插入（viewerMu 下 cancel + 删 map）：① `Close`（cancelCall 后、handle.Close 前——杀引擎前 CDP 连接先断）；② ensureSpawned headless 切换 close+reopen 分支（重建后端口变化，下次订阅自然重读）；③ watchExit（置 failed 锁外触发）
+- Manager 新增 `viewerMu sync.Mutex` + `viewers map[string]*liveSlot`（**独立于 m.mu**，帧分发路径零 manager 锁触达；单订槽：viewer + 订阅页锚点 + 强拆 reason）
+- `SubscribeLive(profile, pageID)`：refs 0→1 建连 + `onLiveRefsChange(true)`；refs 1→0 拆槽断连 + `onLiveRefsChange(false)`；`DispatchInput(profile, req)`：要求活跃 viewer 存在（无流中文报错「浏览器未在投送」），经已 attach 会话发 Input.dispatch*——**不经过 acceptCall、不占 callMu、不受 120s per-call 超时约束**（远程桌面语义，与 AI Forward 并发允许；「AI 操作中」可见性靠既有 lastIssueTag 徽标）
+- idle 保活：`resetIdleTimerLocked` 加 refs 闸（活跃订户 >0 暂停）；onLiveRefsChange 在锁外回调（active=双锁停计时 / inactive=恢复计时）——锁序 `viewerMu → m.mu → entry.mu` 允许，**持 entry.mu 时绝不调用 viewer 方法**
+- 三处 dropViewer 插入（viewerMu 下断连 + 删 map，reason 非空优先保留）：① `Close`（cancelCall 后、handle.Close 前——杀引擎前 CDP 连接先断）；② ensureSpawned headless 切换 close+reopen 分支（重建后端口变化，下次订阅自然重读）；③ watchExit（置 failed 锁外触发）
 - 单测：refs 计数/保活闸（-race）/三处收敛路径
 
 **依赖**：T4.3
 
 **验收**：`go test -race` 全绿；观看期 idle 不释放、末订退订恢复计时、Close 强拆三路径单测通过
+
+**实施定稿**：按方案落地，无方向偏离。单订语义：viewers 按 profile 单槽（`liveSlot{viewer, pageURL, reason}`）——DispatchInput 无 pageId、远程桌面画面唯一，订阅页码与在订 viewer 不符即重建（旧流经 done 感知重订）。refs 存 `entry.viewerRefs atomic.Int32`：`resetIdleTimerLocked` 持 entry.mu、锁序 viewerMu → m.mu → entry.mu 下不可反取 viewerMu，原子读是唯一合规路径；onLiveRefsChange 收敛为「按 refs 终值重估 idle 计时」（订户在场停 / 末订恢复，闸复检在 resetIdleTimerLocked 内），回调乱序亦按同一判据收敛。连接阶段 manager 级 connectMu 串行化：并发同页订阅复用同一 viewer 不重复拨号，连接期全退订则丢弃新建 viewer 不落槽。DispatchInput 裁决为原语透传（method+params 直达 viewer，`liveInputTimeout` 5s 自带短预算），kind→Input.dispatch* 映射归 T4.5 service 层。T4.3 预埋的 per-attempt 拨号预算补上：`liveDialTimeout` 3s（实测全序 ~0.5s 的 6× 余量），僵尸端口「accept 不响应」不再挂满调用方 ctx、自愈重试机会保住。页码解析自愈：投影 miss → liveTabsRefresh（Forward browser_tabs list + applyPages 显式回填——tabs 在 pagesRefreshExempt 中，Forward 不自动刷新，抽 applyPages 与 refreshPagesCtx 共用出口）→ 复析 → 仍 miss 显式中文报错。导出面：LiveStream 包装（LatestFrame/WaitFrameChange/Targets/Done/CloseReason/Unsubscribe），frameMeta/targetUpdate 更名 LiveFrameMeta/LiveTarget；强拆 reason 三态文案（「浏览器会话已关闭」/「无头模式切换，实时画面已断开」/「引擎进程意外退出」）供 T4.5 区分 SSE closed 终态 vs 自然断连可重订。边界顺延：mid-stream 断连自动重连不进本任务（前端 EventSource 重订 + connectLive 拨号期自愈已构成自愈环），依 T4.5 SSE error 事件面再定。审查修复三项：liveTabsRefresh 补 res.IsError 检查（Forward 引擎错误走 isError 文本，缺失则引擎故障误报「页码不存在」）、dropViewerLocked 强拆 reason 非空优先保留（重建路径不得覆写管理面终态语义）、测试桩抽 withEngineCtlDial 公共核心（killable 变体经 onSpawn 回调捕获句柄，消 ~25 行复制）。验收实证：包单测 -race 全绿（refs/保活闸/三收敛点含 watchExit 真实链路/页码解析/输入面）、GOOS=windows 构建过、真实冒烟 S1–S4 复跑全 PASS（观察通道损伤帧 513ms 内到达）。
 
 #### T4.5 REST 帧流与输入面
 

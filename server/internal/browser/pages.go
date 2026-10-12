@@ -81,6 +81,12 @@ func (m *Manager) refreshPagesCtx(ctx context.Context, handle *EngineHandle, pro
 		return
 	}
 	pages := parseTabsOutput(ResultText(res))
+	m.applyPages(profile, pages)
+}
+
+// applyPages 页面投影回填并广播 sessions 帧（nil 不动投影——解析失败保持原样不误清
+// 空）；refreshPagesCtx 与观察通道 liveTabsRefresh 共用出口。
+func (m *Manager) applyPages(profile string, pages []PageView) {
 	if pages == nil {
 		return
 	}

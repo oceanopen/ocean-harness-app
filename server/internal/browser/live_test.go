@@ -87,7 +87,7 @@ func TestFrameMailbox(t *testing.T) {
 
 	// keep-latest：连续投递三帧，latest 恒为最新（慢订户跳帧）。
 	for i := 1; i <= 3; i++ {
-		mb.deliver(LiveFrame{Metadata: frameMeta{DeviceWidth: i}})
+		mb.deliver(LiveFrame{Metadata: LiveFrameMeta{DeviceWidth: i}})
 	}
 	f, gen, ok := mb.latest()
 	if !ok || f.Metadata.DeviceWidth != 3 || gen != 3 {

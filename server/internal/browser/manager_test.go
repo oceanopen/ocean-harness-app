@@ -78,6 +78,15 @@ func (c *fakeEngineCtl) stats() (spawns, active, tabsCalls int) {
 func withEngineCtl(t *testing.T) *fakeEngineCtl {
 	t.Helper()
 	ctl := &fakeEngineCtl{}
+	withEngineCtlDial(t, ctl, nil)
+	return ctl
+}
+
+// withEngineCtlDial 可控假引擎的公共核心：注入 dialEngine 桩（in-memory transport 假
+// 引擎 + ctl 记账），onSpawn 非 nil 时在每次服务端会话建立后回调（测试捕获 kill 句柄
+// 等扩展用）。
+func withEngineCtlDial(t *testing.T, ctl *fakeEngineCtl, onSpawn func(ss *mcp.ServerSession)) {
+	t.Helper()
 	withDialFunc(t, func(ctx context.Context, _ *exec.Cmd) (*mcp.ClientSession, error) {
 		ctl.mu.Lock()
 		ctl.spawns++
@@ -103,13 +112,16 @@ func withEngineCtl(t *testing.T) *fakeEngineCtl {
 					}, struct{}{}, nil
 				})
 		}
-		if _, err := srv.Connect(ctx, serverTransport, nil); err != nil {
+		ss, err := srv.Connect(ctx, serverTransport, nil)
+		if err != nil {
 			return nil, fmt.Errorf("假引擎建连: %w", err)
+		}
+		if onSpawn != nil {
+			onSpawn(ss)
 		}
 		client := mcp.NewClient(&mcp.Implementation{Name: "ocean-harness-browser-test", Version: "test"}, nil)
 		return client.Connect(ctx, clientTransport, nil)
 	})
-	return ctl
 }
 
 // waitActive 等在途调用数达标（假引擎 handler 已进入）。

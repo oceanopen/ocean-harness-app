@@ -28,6 +28,9 @@ var (
 	// liveRetryDelays 拨号自愈退避表：每次失败唤醒一次浏览器后等待重拨（合计 ~6s，
 	// 总预算由调用方 ctx 覆盖）。
 	liveRetryDelays = []time.Duration{time.Second, 2 * time.Second, 3 * time.Second}
+	// liveDialTimeout 单次拨号预算（T4.1 实测全序 ~0.5s，6× 余量）：僵尸端口「accept
+	// 不响应」会无限挂住拨号，剥夺自愈重试机会——超时即本轮失败进退避重试。
+	liveDialTimeout = 3 * time.Second
 	// liveAckTimeout 帧回执单次预算（连接已死时快速失败，不积压帧泵）。
 	liveAckTimeout = 5 * time.Second
 	// screencast 参数（T4.1 S4 实测口径）。
@@ -277,7 +280,7 @@ func matchPageTarget(page PageView, targets []cdpTargetInfo) (cdpTargetInfo, err
 // LiveFrame 单帧投递物（jpeg 数据 + screencast metadata；T4.5 SSE frame 事件直取）。
 type LiveFrame struct {
 	Data     []byte
-	Metadata frameMeta
+	Metadata LiveFrameMeta
 }
 
 // frameMailbox keep-latest 单槽帧箱：视频流语义——新帧覆盖旧帧，慢订户跳帧不断连；
@@ -335,13 +338,13 @@ func (mb *frameMailbox) waitChange(ctx context.Context, seenGen uint64) error {
 // screencastFrame Page.screencastFrame 载荷。帧号字段实名 sessionId（Chromium 155 将
 // frameNumber 更名 sessionId，语义仍是帧号；ack 以 {sessionId: 帧号} 回执，T4.1 实测）。
 type screencastFrame struct {
-	FrameNo  int64     `json:"sessionId"`
-	Data     string    `json:"data"`
-	Metadata frameMeta `json:"metadata"`
+	FrameNo  int64         `json:"sessionId"`
+	Data     string        `json:"data"`
+	Metadata LiveFrameMeta `json:"metadata"`
 }
 
-// frameMeta screencast metadata（T4.1 S4 实测全字段齐备；T4.6 坐标换算入参）。
-type frameMeta struct {
+// LiveFrameMeta screencast metadata（T4.1 S4 实测全字段齐备；T4.6 坐标换算入参）。
+type LiveFrameMeta struct {
 	PageScaleFactor float64 `json:"pageScaleFactor"`
 	DeviceWidth     int     `json:"deviceWidth"`
 	DeviceHeight    int     `json:"deviceHeight"`
@@ -350,8 +353,8 @@ type frameMeta struct {
 	OffsetTop       float64 `json:"offsetTop"`
 }
 
-// targetUpdate target 变更通知（SSE target 事件载荷：导航回显消歧 / 页面关闭终态）。
-type targetUpdate struct {
+// LiveTarget target 变更通知（SSE target 事件载荷：导航回显消歧 / 页面关闭终态）。
+type LiveTarget struct {
 	URL    string
 	Title  string
 	Closed bool
@@ -366,7 +369,7 @@ type liveViewer struct {
 	log     *zap.Logger
 
 	frames  *frameMailbox
-	targets chan targetUpdate
+	targets chan LiveTarget
 	done    chan struct{}
 }
 
@@ -386,7 +389,7 @@ func dialViewer(ctx context.Context, profileDir string, page PageView, log *zap.
 		conn:    conn,
 		log:     log,
 		frames:  newFrameMailbox(),
-		targets: make(chan targetUpdate, 16),
+		targets: make(chan LiveTarget, 16),
 		done:    make(chan struct{}),
 	}
 	if err := v.attach(ctx, page, port); err != nil {
@@ -506,7 +509,7 @@ func (v *liveViewer) notifyTarget(ev cdpEvent) {
 	if id != v.page.ID {
 		return
 	}
-	up := targetUpdate{URL: v.page.URL, Title: v.page.Title, Closed: ev.Method == "Target.targetDestroyed"}
+	up := LiveTarget{URL: v.page.URL, Title: v.page.Title, Closed: ev.Method == "Target.targetDestroyed"}
 	if ev.Method == "Target.targetInfoChanged" {
 		up.URL, up.Title = params.TargetInfo.URL, params.TargetInfo.Title
 	}
@@ -548,7 +551,9 @@ func connectLive(ctx context.Context, profile string, page PageView, wake liveWa
 				return nil, fmt.Errorf("CDP 观察通道连接中断: %w", ctx.Err())
 			}
 		}
-		v, err := dialViewer(ctx, profileDir, page, log)
+		dialCtx, dialCancel := context.WithTimeout(ctx, liveDialTimeout)
+		v, err := dialViewer(dialCtx, profileDir, page, log)
+		dialCancel()
 		if err == nil {
 			return v, nil
 		}

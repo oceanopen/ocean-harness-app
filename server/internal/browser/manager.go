@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -79,6 +80,12 @@ type Manager struct {
 	// activeCount starting/ready 条目数（并发上限判据）。仅在 m.mu → entry.mu 双锁
 	// 临界区内增减（锁序见文件头；m.mu 永不反向嵌套 entry.mu 之外的路径）。
 	activeCount int
+
+	// 观察通道域（T4.4，独立于 m.mu——帧分发路径零 manager 锁触达）。锁序：
+	// connectMu → viewerMu → m.mu → entry.mu；onLiveRefsChange 恒在 viewerMu 外调用。
+	viewerMu  sync.Mutex
+	viewers   map[string]*liveSlot
+	connectMu sync.Mutex // 连接阶段串行化（拨号秒级慢操作不持 viewerMu）
 }
 
 // NewManager 装配会话域（T2.1 由 main 懒启动调用，构造即返回）：启动即清扫残留引擎
@@ -93,6 +100,7 @@ func NewManager(dirs Dirs, log *zap.Logger) *Manager {
 		hub:     newHub(),
 		view:    newBrowserView(),
 		entries: map[string]*sessionEntry{},
+		viewers: map[string]*liveSlot{},
 	}
 	m.recoverOrphans()
 	return m
@@ -118,6 +126,11 @@ type sessionEntry struct {
 	// per-call 超时；Close/headless 切换时显式取消，在途调用得显式错误而非悬挂）。
 	callCancel context.CancelFunc
 
+	// viewerRefs 活跃观察订户数（T4.4 idle 保活闸的判据）：写侧在 viewerMu 下
+	// Add，读侧 resetIdleTimerLocked 持 entry.mu 原子 Load——锁序 viewerMu → entry.mu
+	// 下 entry 侧不可反取 viewerMu，原子读是唯一合规路径。
+	viewerRefs atomic.Int32
+
 	callMu sync.Mutex
 }
 
@@ -134,7 +147,11 @@ func (m *Manager) entryOf(profile string) *sessionEntry {
 }
 
 // resetIdleTimerLocked 重置主层 idle 计时（成功调用后；到期走 Close 释放路径）。
+// 观察保活闸（T4.4/D4 补充）：活跃订户在场时计时暂停——观看即使用，不因无 AI 调用释放。
 func (e *sessionEntry) resetIdleTimerLocked(m *Manager) {
+	if e.viewerRefs.Load() > 0 {
+		return
+	}
 	if e.idleTimer != nil {
 		e.idleTimer.Stop()
 	}
@@ -265,6 +282,9 @@ func (m *Manager) ensureSpawned(ctx context.Context, entry *sessionEntry, profil
 			oldCancel() // 先取消旧引擎在途调用（同 Close 语义：session.Close 等在途请求结算）
 		}
 		if old != nil {
+			// 观察通道强拆（T4.4 收敛点②）：重建后端口变化，残连接必死——显式拆让在订
+			// 方拿到终态，下次订阅自然重读新端口。
+			m.dropLiveViewer(profile, "无头模式切换，实时画面已断开")
 			_ = old.Close() // 旧引擎优雅关停（锁外慢操作）
 		}
 		m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
@@ -420,6 +440,8 @@ func (m *Manager) watchExit(entry *sessionEntry, handle *EngineHandle) {
 	m.mu.Unlock()
 	m.log.Warn("浏览器引擎意外退出", zap.String("profile", profile), zap.String("reason", errText))
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
+	// 观察通道强拆（T4.4 收敛点③）：引擎已死，CDP 连接随即断——显式拆记终态原因。
+	m.dropLiveViewer(profile, "引擎进程意外退出")
 }
 
 // acceptCall 调用受理共享纪律步（Forward / ListTools 同一节律，纪律只写一处）：profile
@@ -679,6 +701,9 @@ func (m *Manager) Close(profile string) error {
 		// per-call 超时（最长 120s）。
 		cancelCall()
 	}
+	// 杀引擎前先断观察通道（T4.4 收敛点①）：CDP 连接随引擎死亡本会断，显式强拆让
+	// 在订方拿到终态 reason 而非自然断连表象。
+	m.dropLiveViewer(profile, "浏览器会话已关闭")
 	// idle 行广播先行：捕获帧最后到，最终投影恒为「idle + 捕获到的真实页面」，防旧
 	// pages 回填前端缓存。
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
