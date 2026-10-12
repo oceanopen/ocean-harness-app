@@ -10,9 +10,8 @@ package browser
 //
 //	OCEAN_BROWSER_REAL_SMOKE=1 go -C server test ./internal/browser -run TestRealCDP -v -timeout 600s
 //
-// 端口注入为临时手段（T4.2 才转正进 pin.go 常量）：EnsureEngineConfig 幂等漂移覆写封死
-// 预置文件路线，故经 withDialFunc 钩子在配置落盘之后、引擎进程 Start 之前覆写 engine.json
-// 追加 launchOptions.args——零产品代码 diff，T4.2 后本文件注入段随之简化。
+// 端口注入自 T4.2 起为 pin.go 生产配置常态（engineConfigJSON launchOptions.args），
+// 本文件直用生产 LaunchEngine，实测对象即生产链路。
 // 站点用 www.baidu.com（example.com 在目标网络不可达，T2.1 定稿事实）。
 
 import (
@@ -35,12 +34,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// cdpSpikeConfigJSON spike 临时引擎配置：标准配置追加 --remote-debugging-port=0。
-// T4.2 转正后与 pin.go engineConfigJSON 合流，此处删除。
-func cdpSpikeConfigJSON() string {
-	return `{"browser":{"launchOptions":{"ignoreDefaultArgs":["--disable-blink-features=AutomationControlled"],"channel":"chromium","args":["--remote-debugging-port=0"]}}}`
-}
-
 // realSmokeResources staging 资源源解析（与 real_test.go 内联逻辑同款，spike 族保持自足）。
 func realSmokeResources(t *testing.T) string {
 	t.Helper()
@@ -54,8 +47,8 @@ func realSmokeResources(t *testing.T) string {
 	return srcRoot
 }
 
-// launchCDPSpikeEngine 拉起带 CDP 端口的引擎（headless=true，D10 缺省口径；S2 实测的
-// headless=new 即此形态）。收尾自动 Close + 根目录恢复。
+// launchCDPSpikeEngine 拉起引擎（headless=true，D10 缺省口径；S2 实测的 headless=new
+// 即此形态）。收尾自动 Close + 根目录恢复。
 func launchCDPSpikeEngine(t *testing.T, profile string) *EngineHandle {
 	t.Helper()
 	if os.Getenv("OCEAN_BROWSER_REAL_SMOKE") != "1" {
@@ -63,13 +56,6 @@ func launchCDPSpikeEngine(t *testing.T, profile string) *EngineHandle {
 	}
 	srcRoot := realSmokeResources(t)
 	withTestRoot(t)
-	withDialFunc(t, func(ctx context.Context, cmd *exec.Cmd) (*mcp.ClientSession, error) {
-		path := filepath.Join(Root(), "engine.json")
-		if err := os.WriteFile(path, []byte(cdpSpikeConfigJSON()), 0o644); err != nil {
-			return nil, fmt.Errorf("覆写 spike engine.json: %w", err)
-		}
-		return defaultDialEngine(ctx, cmd)
-	})
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	t.Cleanup(cancel)
 	h, err := LaunchEngine(ctx, Dirs{Resources: srcRoot, Adapters: t.TempDir()}, profile, true, nil)

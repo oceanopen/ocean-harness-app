@@ -1,7 +1,9 @@
 package browser
 
 import (
+	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -60,6 +62,33 @@ func TestEngineSpawnArgs(t *testing.T) {
 				t.Errorf("--headless 出现 = %v, want %v", hasHeadless, tc.headless)
 			}
 		})
+	}
+}
+
+// TestEngineConfigLaunchOptions engine.json 配置面断言：CDP 端口注入常态化（D9/T4.2）
+// 且生产语义字段不丢（EnsureEngineConfig 幂等比对以本常量为锚，防手滑回退）。
+func TestEngineConfigLaunchOptions(t *testing.T) {
+	var cfg struct {
+		Browser struct {
+			LaunchOptions struct {
+				Args              []string `json:"args"`
+				IgnoreDefaultArgs []string `json:"ignoreDefaultArgs"`
+				Channel           string   `json:"channel"`
+			} `json:"launchOptions"`
+		} `json:"browser"`
+	}
+	if err := json.Unmarshal([]byte(engineConfigJSON), &cfg); err != nil {
+		t.Fatalf("解析 engineConfigJSON: %v", err)
+	}
+	lo := cfg.Browser.LaunchOptions
+	if !slices.Contains(lo.Args, "--remote-debugging-port=0") {
+		t.Fatalf("launchOptions.args = %v, want 含 --remote-debugging-port=0", lo.Args)
+	}
+	if lo.Channel != "chromium" {
+		t.Fatalf("channel = %q, want chromium（内置 Chromium 选择）", lo.Channel)
+	}
+	if !slices.Contains(lo.IgnoreDefaultArgs, "--disable-blink-features=AutomationControlled") {
+		t.Fatalf("ignoreDefaultArgs = %v, want 含 AutomationControlled 去标记", lo.IgnoreDefaultArgs)
 	}
 }
 

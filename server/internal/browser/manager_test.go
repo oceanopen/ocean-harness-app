@@ -156,7 +156,7 @@ func TestManagerEnsureReuseAndHeadlessSwitch(t *testing.T) {
 	ctl := withEngineCtl(t)
 	m := newTestManager(t)
 
-	sv, err := m.Ensure(context.Background(), "default", nil)
+	sv, err := m.Ensure(context.Background(), "default", boolPtr(false)) // 显式有头（新建 profile 缺省无头后，显式传参保持本用例的有头起点）
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -519,7 +519,7 @@ func TestManagerEnsureJoinHeadlessMismatch(t *testing.T) {
 
 	aDone := make(chan error, 1)
 	go func() {
-		_, err := m.Ensure(context.Background(), "default", nil) // 缺省有头
+		_, err := m.Ensure(context.Background(), "default", boolPtr(false)) // 显式有头
 		aDone <- err
 	}()
 	waitSpawns(t, ctl, 1)

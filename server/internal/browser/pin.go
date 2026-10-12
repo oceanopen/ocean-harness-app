@@ -88,8 +88,11 @@ func EngineVersion() (string, error) {
 // registry 选可执行文件时 channel 非空即绕开 headless-shell 分支——内置分发经 --no-shell
 // 只装完整版（无头也由它以 --headless=new 承担），不指定 channel 的默认选择（headless →
 // chromium-headless-shell）会因 shell 缺失 spawn 失败；PLAYWRIGHT_BROWSERS_PATH 定位不变。
+// launchOptions.args 注入 --remote-debugging-port=0（D9 CDP 观察通道常态化）：随机端口
+// 随浏览器启动落盘 DevToolsActivePort 供 live viewer 读取；T4.1 S1 实测与 playwright
+// 恒需的 --remote-debugging-pipe 无互斥（launchOptions.args 原样追加给 Chromium）。
 // CLI flags（--user-data-dir 等）优先级高于 config，互不冲突。
-const engineConfigJSON = `{"browser":{"launchOptions":{"ignoreDefaultArgs":["--disable-blink-features=AutomationControlled"],"channel":"chromium"}}}`
+const engineConfigJSON = `{"browser":{"launchOptions":{"ignoreDefaultArgs":["--disable-blink-features=AutomationControlled"],"channel":"chromium","args":["--remote-debugging-port=0"]}}}`
 
 // EnsureEngineConfig 幂等落盘引擎启动配置，返回 --config 消费的文件路径。
 func EnsureEngineConfig() (string, error) {

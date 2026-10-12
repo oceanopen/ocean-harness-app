@@ -76,13 +76,22 @@ func TestDownloadsDirCreated(t *testing.T) {
 func TestProfilePrefsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
-	// 文件缺失 = 有头缺省零值。
+	// 文件缺失 = 无头缺省（新建 profile 缺省口径，D10 修订）。
 	prefs, err := ReadProfilePrefs(dir)
-	if err != nil || prefs.Headless {
-		t.Fatalf("缺省偏好 = %+v, %v; want 零值", prefs, err)
+	if err != nil || !prefs.Headless {
+		t.Fatalf("缺省偏好 = %+v, %v; want headless=true", prefs, err)
 	}
 
-	// 写入后回读。
+	// 已落盘 prefs 的既有 profile 行为不变：显式 false 回读 false。
+	if err := WriteProfilePrefs(dir, ProfilePrefs{Headless: false}); err != nil {
+		t.Fatalf("WriteProfilePrefs: %v", err)
+	}
+	prefs, err = ReadProfilePrefs(dir)
+	if err != nil || prefs.Headless {
+		t.Fatalf("回读偏好 = %+v, %v; want headless=false", prefs, err)
+	}
+
+	// 写入后回读 true。
 	if err := WriteProfilePrefs(dir, ProfilePrefs{Headless: true}); err != nil {
 		t.Fatalf("WriteProfilePrefs: %v", err)
 	}

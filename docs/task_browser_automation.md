@@ -493,7 +493,7 @@
 
 #### T4.2 引擎注入与默认无头
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：CDP 端口注入常态化 + 新建 profile 默认无头（D10 修订落地）。
 
@@ -505,6 +505,8 @@
 **依赖**：T4.1（S1 结论 gate）
 
 **验收**：`go build`/`go test` 全绿；real smoke 拉起 argv 经 engine.json 带 port 且 MCP 全链可用
+
+**实施定稿**：按方案落地，无偏离。pin.go engineConfigJSON 常态注入 `--remote-debugging-port=0`（存量 engine.json 由 EnsureEngineConfig 幂等比对自动覆写升级，下次 spawn 生效）；paths.go `ReadProfilePrefs` 缺文件返回 `{Headless: true}`（已落盘 prefs 的既有 profile 行为不变——显式 false 回读 false 有单测锚定）；manager_test 两处依赖旧缺省的用例改显式 `boolPtr(false)` 对照（switch/mismatch 语义不变），生产转发路径 `manager.go` Ensure(nil) 随缺省翻转自然无头。前端新建入口默认无头 UI 归 T4.6（方案既定分轨）。spike 注入段随之简化：删除 withDialFunc 覆写钩子与 cdpSpikeConfigJSON 临时常量，S1–S4 直用生产 LaunchEngine——实测对象升级为生产配置本身，全家族复跑通过；S1 即验收项实证（4 个双 flag Chrome 进程、DevToolsActivePort 落盘、MCP 全链可用）。
 
 #### T4.3 live.go：CDP 观察通道
 

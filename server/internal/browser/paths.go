@@ -98,7 +98,8 @@ func DownloadsDir(name string) (string, error) {
 }
 
 // ProfilePrefs per-profile 偏好元数据（非凭据，不违 D3——D3 约束的是登录态凭据不落盘）。
-// headless 缺省 false（有头）：登录态获取配方必须有头——人工登录介入窗口（D10）。
+// 缺省无头（D10 修订：D9 面板实时画面下人工登录/介入均在面板内完成，桌面零弹窗）；
+// 有头为显式选项，结构体零值语义不承载缺省——缺省判定在 ReadProfilePrefs。
 type ProfilePrefs struct {
 	Headless bool `json:"headless"`
 }
@@ -106,12 +107,13 @@ type ProfilePrefs struct {
 // prefsFile 偏好文件名（user-data-dir 根部，Chrome 忽略未知文件）。
 const prefsFile = "prefs.json"
 
-// ReadProfilePrefs 读取 profile 偏好（文件缺失 = 零值偏好 + nil error，即有头缺省）。
+// ReadProfilePrefs 读取 profile 偏好（文件缺失 = 无头缺省，即新建 profile 缺省口径
+// D10 修订；已落盘 prefs 的既有 profile 行为不变）。
 func ReadProfilePrefs(profileDir string) (ProfilePrefs, error) {
 	var prefs ProfilePrefs
 	data, err := os.ReadFile(filepath.Join(profileDir, prefsFile))
 	if os.IsNotExist(err) {
-		return prefs, nil
+		return ProfilePrefs{Headless: true}, nil
 	}
 	if err != nil {
 		return prefs, fmt.Errorf("读取 profile 偏好: %w", err)

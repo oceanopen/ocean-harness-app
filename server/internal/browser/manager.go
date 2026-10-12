@@ -169,7 +169,7 @@ func (m *Manager) Ensure(ctx context.Context, profile string, headless *bool) (S
 	return m.view.row(profile), err
 }
 
-// resolveHeadless D10 偏好解析：缺省读 prefs.json（缺失 = 有头），显式传入覆写回存。
+// resolveHeadless D10 偏好解析：缺省读 prefs.json（缺失取 ReadProfilePrefs 缺省），显式传入覆写回存。
 func (m *Manager) resolveHeadless(profileDir string, headless *bool) (bool, error) {
 	if headless == nil {
 		prefs, err := ReadProfilePrefs(profileDir)
