@@ -11,7 +11,7 @@
 //   dev 取 tauri.dev.conf.json、build 取 tauri.conf.json 的 identifier（见下方 outName 拼接）。
 // 运行模式由 beforeDevCommand/beforeBuildCommand 经 `TAURI_RUN_MODE=... ` 前缀注入（跨平台靠
 // pnpm shellEmulator，见 pnpm-workspace.yaml）；Rust 侧
-// app.shell().sidecar(app.config().identifier()+"_go_server_bin") 同源取 identifier，故 dev/build 用同一份代码。
+// app.shell().sidecar(app.config().identifier()+"-go_server_bin") 同源取 identifier，故 dev/build 用同一份代码。
 //
 // 目标平台：CI 通过 GOOS/GOARCH env 注入（按 matrix 交叉编译，见 .github/workflows/release-assets.yml）；
 // 本地未设时按宿主 platform/arch 推断（process.arch 的 x64 对应 GOARCH=amd64）。Go 服务为纯 Go 实现（sqlite 用 glebarez 纯 Go 驱动，无 CGO），显式 CGO_ENABLED=0 可纯交叉编译。
@@ -93,12 +93,11 @@ const outDir = resolve(repoRoot, 'app/binaries');
 mkdirSync(outDir, { recursive: true });
 
 // 产目标 triple 一份（app 实际运行的架构）；build 模式下 CI 名与本地 overlay 名各一套。
-// 文件名 = {identifier}_go_server_bin-{triple}{exe}：triple 是 Tauri sidecar 约定后缀，
-// 去掉后即进程名（identifier 携带 dev/build 标识）。后缀用 _ 不用 -：WiX (MSI) 的
-// Component/@Id 直接取 baseName，标识符只允许字母/数字/_/.（连字符非法，见 tauri #14681）。
+// 文件名 = {identifier}-go_server_bin-{triple}{exe}：triple 是 Tauri sidecar 约定后缀，
+// 去掉后即进程名（identifier 携带 dev/build 标识）。
 const triple = targetTriple(targetGOOS, targetGOARCH);
 for (const id of identifiers) {
-  const outName = `${id}_go_server_bin-${triple}${exeSuffixFor(targetGOOS)}`;
+  const outName = `${id}-go_server_bin-${triple}${exeSuffixFor(targetGOOS)}`;
   execFileSync(
     'go',
     // -C 须为首个 flag（go 命令行约定），构建 flags 一律跟在其后。
@@ -120,7 +119,7 @@ const cliLdflags
     + `-X ocean-harness/server/internal/buildinfo.Version=${pkgVersion} `
     + '-s -w';
 for (const id of identifiers) {
-  const cliOutName = `${id}_cli_bin-${triple}${exeSuffixFor(targetGOOS)}`;
+  const cliOutName = `${id}-cli_bin-${triple}${exeSuffixFor(targetGOOS)}`;
   execFileSync(
     'go',
     ['build', '-C', resolve(repoRoot, 'server'), '-ldflags', cliLdflags, '-o', resolve(outDir, cliOutName), './cmd/cli'],
