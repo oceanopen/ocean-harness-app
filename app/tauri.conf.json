@@ -40,7 +40,7 @@
     "category": "Utility",
     "shortDescription": "Ocean Harness Desktop App",
     "longDescription": "Ocean Harness Desktop App",
-    "externalBin": ["binaries/com.ocean.harness-go_server_bin", "binaries/com.ocean.harness-cli_bin"],
+    "externalBin": ["binaries/com.ocean.harness_go_server_bin", "binaries/com.ocean.harness_cli_bin"],
     "resources": ["resources/acp-adapters"],
     "icon": [
       "icons/32x32.png",

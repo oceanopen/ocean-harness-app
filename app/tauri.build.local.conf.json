@@ -5,8 +5,8 @@
   "bundle": {
     "createUpdaterArtifacts": false,
     "externalBin": [
-      "binaries/com.ocean.harness.build.local-go_server_bin",
-      "binaries/com.ocean.harness.build.local-cli_bin"
+      "binaries/com.ocean.harness.build.local_go_server_bin",
+      "binaries/com.ocean.harness.build.local_cli_bin"
     ]
   }
 }

@@ -52,15 +52,16 @@ fn link_path() -> Result<PathBuf, String> {
     Ok(bin_dir()?.join(link_name()))
 }
 
-/// 本 app 的 cli 二进制路径：随包 sidecar 与主程序同目录，命名 = {identifier}-cli_bin
+/// 本 app 的 cli 二进制路径：随包 sidecar 与主程序同目录，命名 = {identifier}_cli_bin
 /// （tauri externalBin 约定：打包去 triple 后缀进 Contents/MacOS/，dev 下 tauri-build
-/// 拷到 target/debug/<同名>；与 go_server_bin 同一命名规则，见 scripts/build-server.ts）。
+/// 拷到 target/debug/<同名>；与 go_server_bin 同一命名规则，见 scripts/build-server.ts。
+/// 后缀用 _ 不用 -：WiX (MSI) 的 Component/@Id 只允许字母/数字/_/.，连字符非法，见 tauri #14681）。
 fn cli_bin_path(app: &AppHandle) -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| format!("获取当前可执行文件路径失败: {e}"))?;
     let dir = exe
         .parent()
         .ok_or_else(|| "无法定位可执行文件所在目录".to_string())?;
-    Ok(dir.join(format!("{}-cli_bin", app.config().identifier)))
+    Ok(dir.join(format!("{}_cli_bin", app.config().identifier)))
 }
 
 // ---- PATH 注入/摘除（幂等，marker 精确配对） ----

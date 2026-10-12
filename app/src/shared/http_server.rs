@@ -1,10 +1,10 @@
 // HTTP 本地服务的进程生命周期管理（sidecar 模式，dev/build 统一）+ IPC 命令。
 //
 // Go 服务作为 Tauri sidecar 打包，baseName 复用各 conf 的 identifier（让进程名携带环境标识）：
-//   build 取 tauri.conf.json、dev 取 tauri.dev.conf.json，文件名 {identifier}-go_server_bin-{triple}。
+//   build 取 tauri.conf.json、dev 取 tauri.dev.conf.json，文件名 {identifier}_go_server_bin-{triple}。
 //   打包器把对应文件去 triple 后缀放进 Contents/MacOS/（macOS）并随主 app 签名——arm64 下 AMFI 不再拦。
 //   dev 模式下 tauri-build（cargo build）把该文件拷到 target/<profile>/<baseName>。
-//   app.shell().sidecar(format!("{}-go_server_bin", app.config().identifier)) 解析到 current_exe 同级路径，
+//   app.shell().sidecar(format!("{}_go_server_bin", app.config().identifier)) 解析到 current_exe 同级路径，
 //   identifier 随当前生效 conf 自动切换，故 dev/build 用同一份代码。
 //
 // 配置全部走环境变量注入 Go 进程（不读配置文件）：
@@ -310,7 +310,7 @@ fn reclaim_port_if_orphan_go_server(port: u16, identifier: &str) {
 
 /// 进程命令行是否像本应用 go-server：同时含 **tauri.conf 的 identifier** 与 `go_server_bin`。
 /// identifier 由调用方传入运行态 `app.config().identifier`——dev/build 各自取值（见各 conf），
-/// 故同一份匹配逻辑天然兼容 dev（...dev-go_server_bin）与 build（...go_server_bin）两种 sidecar 名。
+/// 故同一份匹配逻辑天然兼容 dev（...dev_go_server_bin）与 build（...go_server_bin）两种 sidecar 名。
 fn looks_like_go_server(cmd: &str, identifier: &str) -> bool {
     cmd.contains(identifier) && cmd.contains("go_server_bin")
 }
@@ -580,7 +580,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     });
 
     // sidecar 名复用当前 identifier（dev/build 各自的 conf 决定），自动区分环境。
-    let sidecar_name = format!("{}-go_server_bin", app.config().identifier);
+    let sidecar_name = format!("{}_go_server_bin", app.config().identifier);
     let mut sidecar_cmd = app
         .shell()
         .sidecar(&sidecar_name)
