@@ -489,9 +489,9 @@ func (m *Manager) acceptCall(ctx context.Context, profile, callName, issueTag st
 	return handle, callCtx, done, nil
 }
 
-// Forward 引擎调用统一入口（mcp_tool 转发与 controller navigate/screenshot 均经此）：
+// Forward 引擎调用统一入口（mcp_tool 转发与 controller navigate 均经此）：
 // 受理纪律（ensure → callMu 互斥 → per-call 超时 → 在途登记）与 ListTools 共用
-// acceptCall；成功重置 idle 计时 + 页面投影刷新（截图轮询路径豁免）。转发结果按
+// acceptCall；成功重置 idle 计时 + 页面投影刷新（pagesRefreshExempt 豁免项除外）。转发结果按
 // isError:true 标志判错（引擎错误一律 isError 文本，非 JSON-RPC error）——结果原样
 // 返回，包装归调用方（T2.2 手工透传 Content 数组）。issueTag 为归因展示标签
 // （lastIssueTag/recentCalls，非过滤键）。

@@ -552,7 +552,7 @@
 
 #### T4.5 REST 帧流与输入面
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：SSE 帧流端点 + 输入注入端点；截图轮询端点退役。
 
@@ -567,6 +567,8 @@
 **依赖**：T4.4
 
 **验收**：沙箱 sidecar 冒烟对齐 T2.1 惯例（getInfo/close 幂等/SSE 建连/stream 参数校验/缺 profile 中文报错）；真实帧流链路顺延 T4.7
+
+**实施定稿**：按方案落地，一处方案偏移：SSE 事件信封 `LiveEvent` 落 browser 包（live.go，与 `LiveFrameMeta`/`LiveTarget` 同源共置）而非本文原写的 dal/types——types 层自述「响应 shape SSOT 在 browser 包」，落 types 需反向依赖 browser 破坏分层；请求 DTO（`BrowserStreamRequest`/`BrowserInputRequest`）仍落 dal/types，`PageID` 用 `*int` 承 required（页码 0 合法，非指针 int 零值会被 required 误拒）。帧循环形态：帧源是 keep-latest 单槽 mailbox 而非 channel——waiter goroutine 以 gen 感知等待（`WaitFrameChange(hctx, seen)`）转合并通知信号（满即丢，主循环醒来按 gen 补读无丢唤醒），主 select 多路（帧通知/targets/done/请求 ctx Done/15s ping ticker），gen 随写推进防重复帧；waiter 随请求 ctx cancel 退出无泄漏。终态语义两项裁决：全部事件走 `event: message` + `LiveEvent.type` 判别（对齐投影 Frame 信封惯例）；target(closed:true) 补发 closed 终态（reason「页面已关闭」）后结束流——前端契约保持二值（error=可重订自愈、closed=终态不重订），done 收尾按 CloseReason 空/非空投影 error/closed。kind→CDP 映射归 service 层纯函数 `inputCDP`：mouse/wheel 同走 dispatchMouseEvent（wheel 固定 type=mouseWheel），key 走 dispatchKeyEvent（vk→windowsVirtualKeyCode），text 走 insertText；action 白名单（mouse: mousePressed/mouseReleased/mouseMoved；key: keyDown/keyUp/rawKeyDown/char），零值合法字段（坐标/delta）缺省不传、必填校验按 kind 表达。截图端点退役四处同步（controller/service/types/router），MCP `browser_take_screenshot` 转发与 `pagesRefreshExempt` 保留。验收实证：gofmt/vet/build/GOOS=windows/包单测 -race 全绿（inputCDP 表驱动 11 例）；沙箱 sidecar 冒烟十路全过（getInfo 空快照、close 幂等 ×2、events 建连首帧 snapshot、stream 缺参 required 错、非法 profile 中文错、缺引擎错误链即时传导不挂起、input 缺 kind required 错、input 无流「浏览器未在投送」、非法 kind 映射校验错、screenshot 404）。
 
 #### T4.6 前端实时视口
 

@@ -117,20 +117,22 @@ func SetupRouter() *gin.Engine {
 			acpSessionGroup.GET("/events", controller.AcpSession{}.Events)
 		}
 
-		// browserSession 模块：浏览器会话域（action 风格，POST；events 为 GET SSE）。
+		// browserSession 模块：浏览器会话域（action 风格，POST；events/stream 为 GET SSE）。
 		// per-profile 引擎会话生命周期与投影事件流的 SSOT 为 global.Browser（T2.1）：
-		// ensure 拉起/复用（同步等就绪，headless D10 覆盖），navigate/screenshot 页面
-		// 操作（引擎结果原样透传），analyze 即时受理页面分析入 ACP 会话（不排队），
-		// getInfo 轮询读全量快照，events 订阅投影事件流（建连即快照，全局单源无绑定）。
+		// ensure 拉起/复用（同步等就绪，headless D10 覆盖），navigate/analyze 页面操作
+		// （引擎结果原样透传；analyze 即时受理页面分析入 ACP 会话，不排队），getInfo
+		// 轮询读全量快照，events 订阅投影事件流（建连即快照，全局单源无绑定），stream/
+		// input 实时画面帧流与远程桌面输入（CDP 观察通道，T4.5）。
 		browserSessionGroup := apiGroup.Group("/browserSession")
 		{
 			browserSessionGroup.POST("/getInfo", controller.BrowserSession{}.GetInfo)
 			browserSessionGroup.POST("/ensure", controller.BrowserSession{}.Ensure)
 			browserSessionGroup.POST("/close", controller.BrowserSession{}.Close)
 			browserSessionGroup.POST("/navigate", controller.BrowserSession{}.Navigate)
-			browserSessionGroup.POST("/screenshot", controller.BrowserSession{}.Screenshot)
 			browserSessionGroup.POST("/analyze", controller.BrowserSession{}.Analyze)
+			browserSessionGroup.POST("/input", controller.BrowserSession{}.Input)
 			browserSessionGroup.GET("/events", controller.BrowserSession{}.Events)
+			browserSessionGroup.GET("/stream", controller.BrowserSession{}.Stream)
 		}
 
 		// plugin 模块：按开发工具（cli）维度的插件安装操作（install/uninstall/enable/disable/

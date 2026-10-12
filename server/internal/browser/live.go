@@ -360,6 +360,32 @@ type LiveTarget struct {
 	Closed bool
 }
 
+// LiveEventType 帧流 SSE 事件型全集（T4.5 /api/browserSession/stream，type 判别载荷）。
+type LiveEventType string
+
+const (
+	LiveEventFrame  LiveEventType = "frame"
+	LiveEventTarget LiveEventType = "target"
+	LiveEventError  LiveEventType = "error"
+	LiveEventClosed LiveEventType = "closed"
+)
+
+// LiveEvent 帧流 SSE 事件信封（JSON 序列化即 wire 形态；至多一个非零载荷字段组，口径
+// 同投影 Frame）。frame：jpeg base64 + screencast metadata（初始帧 metadata 零值——
+// 损伤驱动首帧到达前前端按位图尺寸兜底）；target：closed 置真 = 页面已关闭，随后补发
+// closed 终态；error：自然断连可重订自愈；closed：终态 reason（管理面强拆/页面关闭），
+// 前端停止重订。
+type LiveEvent struct {
+	Type     LiveEventType  `json:"type"`
+	Data     string         `json:"data,omitempty"`
+	Metadata *LiveFrameMeta `json:"metadata,omitempty"`
+	URL      string         `json:"url,omitempty"`
+	Title    string         `json:"title,omitempty"`
+	Closed   bool           `json:"closed,omitempty"`
+	Message  string         `json:"message,omitempty"`
+	Reason   string         `json:"reason,omitempty"`
+}
+
 // liveViewer 单个页面 target 的观察会话：wire 连接 + flatten attach + screencast 帧泵。
 // 生命周期归调用方（T4.4 refs 计数挂接），连接断开以 done 广播。
 type liveViewer struct {

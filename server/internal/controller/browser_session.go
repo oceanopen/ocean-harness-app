@@ -1,11 +1,16 @@
 package controller
 
 import (
+	"encoding/base64"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 
 	"ocean-harness/server/internal/apis"
+	"ocean-harness/server/internal/browser"
 	"ocean-harness/server/internal/dal/types"
 	"ocean-harness/server/internal/global"
 	"ocean-harness/server/internal/service"
@@ -79,23 +84,6 @@ func (api BrowserSession) Navigate(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Screenshot POST /api/browserSession/screenshot：截取当前页（ImageContent base64 与
-// 落盘路径并存，供面板轮询伪实时）。
-func (api BrowserSession) Screenshot(ctx *gin.Context) {
-	req := &types.BrowserScreenshotRequest{}
-	svc := service.BrowserSession{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
-		return
-	}
-	data, err := svc.Screenshot(req)
-	if err != nil {
-		api.JsonFail(err)
-		return
-	}
-	api.JsonOK(data)
-}
-
 // Analyze POST /api/browserSession/analyze：即时受理「AI 分析此页」入 issue 绑定的
 // ACP 会话（会话缺失/回合进行中即中文报错，不排队）。
 func (api BrowserSession) Analyze(ctx *gin.Context) {
@@ -139,4 +127,102 @@ func (api BrowserSession) Events(ctx *gin.Context) {
 			return
 		}
 	}
+}
+
+// liveSSEPingInterval 帧流 ping 周期：静态页零推帧时代理/客户端可能闲置断连，注释行
+// 防御性保活。
+const liveSSEPingInterval = 15 * time.Second
+
+// Stream GET /api/browserSession/stream?profile=&pageId=：CDP 观察通道实时画面帧流
+// （远程桌面语义，per-profile 单订——页码变更即重建，旧流经 done 感知重订）。事件四型
+// frame/target/error/closed（LiveEvent.type 判别载荷）：error=自然断连可重订自愈、
+// closed=终态（管理面强拆/页面关闭）不重订。请求 ctx Done 即退订驱动 refs 减一（末订
+// 拆连接恢复 idle 计时）。长驻期间持有 *gin.Context 是安全的——gin 仅在 handler 返回
+// 后回收复用。
+func (api BrowserSession) Stream(ctx *gin.Context) {
+	req := &types.BrowserStreamRequest{}
+	svc := service.BrowserSession{}
+	if err := api.MakeContext(ctx).Bind(req, binding.Query).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	stream, err := svc.Stream(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	defer stream.Unsubscribe()
+
+	writer := api.Context.Writer
+	writer.Header().Set("Content-Type", "text/event-stream")
+	writer.Header().Set("Cache-Control", "no-cache")
+	writer.Header().Set("Connection", "keep-alive")
+	writer.WriteHeader(http.StatusOK)
+
+	hctx := api.Context.Request.Context()
+	ping := time.NewTicker(liveSSEPingInterval)
+	defer ping.Stop()
+	// 帧源是 keep-latest 单槽 mailbox 而非 channel：waiter 以 gen 感知等待转成通知信号
+	// （满即合并丢信号——主循环醒来按 gen 补读，无丢唤醒），gen 随写入推进防重复帧。
+	notify := make(chan struct{}, 1)
+	var seen atomic.Uint64
+	go func() {
+		for stream.WaitFrameChange(hctx, seen.Load()) == nil {
+			select {
+			case notify <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	writeEvent := func(evt browser.LiveEvent) {
+		api.Context.SSEvent("message", evt)
+		writer.Flush()
+	}
+	for {
+		select {
+		case <-notify:
+			if f, gen, ok := stream.LatestFrame(); ok && gen > seen.Load() {
+				seen.Store(gen)
+				writeEvent(browser.LiveEvent{
+					Type:     browser.LiveEventFrame,
+					Data:     base64.StdEncoding.EncodeToString(f.Data),
+					Metadata: &f.Metadata,
+				})
+			}
+		case t := <-stream.Targets():
+			writeEvent(browser.LiveEvent{Type: browser.LiveEventTarget, URL: t.URL, Title: t.Title, Closed: t.Closed})
+			if t.Closed {
+				writeEvent(browser.LiveEvent{Type: browser.LiveEventClosed, Reason: "页面已关闭"})
+				return
+			}
+		case <-stream.Done():
+			if reason := stream.CloseReason(); reason != "" {
+				writeEvent(browser.LiveEvent{Type: browser.LiveEventClosed, Reason: reason})
+			} else {
+				writeEvent(browser.LiveEvent{Type: browser.LiveEventError, Message: "实时画面连接中断，正在自愈"})
+			}
+			return
+		case <-ping.C:
+			_, _ = writer.WriteString(": ping\n\n")
+			writer.Flush()
+		case <-hctx.Done():
+			return
+		}
+	}
+}
+
+// Input POST /api/browserSession/input：远程桌面输入分发（kind→CDP 映射在 service 层）。
+// 要求活跃观察面存在（未建实时画面即中文报错）；分发预算与失败口径随 DispatchInput。
+func (api BrowserSession) Input(ctx *gin.Context) {
+	req := &types.BrowserInputRequest{}
+	svc := service.BrowserSession{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	if err := svc.Input(req); err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(nil)
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -63,11 +64,81 @@ func (svc BrowserSession) Navigate(req *types.BrowserNavigateRequest) (*mcp.Call
 		map[string]any{"url": req.URL}, "", "打开页面")
 }
 
-// Screenshot 截取当前页（Forward 引擎 browser_take_screenshot；--output-dir 已在 spawn
-// 传入）。成功结果原样透传——ImageContent base64 与 TextContent 落盘路径并存，供面板
-// 轮询伪实时。
-func (svc BrowserSession) Screenshot(req *types.BrowserScreenshotRequest) (*mcp.CallToolResult, error) {
-	return forwardOK(svc.Context, req.Profile, browser.EngineToolTakeScreenshot, nil, "", "截取页面")
+// Stream 订阅实时画面（SSE 帧流端点受理）：页码解析/拨号自愈/refs 计数与 idle 保活闸
+// 全在 manager 层（T4.4），本层零逻辑透传。
+func (svc BrowserSession) Stream(req *types.BrowserStreamRequest) (*browser.LiveStream, error) {
+	return global.Browser.SubscribeLive(svc.Context, req.Profile, *req.PageID)
+}
+
+// Input 远程桌面输入分发：kind→CDP Input 域映射归本层（T4.4 裁决），经活跃观察面直发
+// （不经 acceptCall/callMu，与 AI Forward 并发）；错误全中文——未建实时画面/分发失败
+// 由 manager 层中文错误透出。
+func (svc BrowserSession) Input(req *types.BrowserInputRequest) error {
+	method, params, err := inputCDP(req)
+	if err != nil {
+		return err
+	}
+	return global.Browser.DispatchInput(svc.Context, req.Profile, method, params)
+}
+
+// inputCDP kind→CDP Input 域命令映射（纯函数）：mouse/wheel 同走 dispatchMouseEvent
+// （wheel 固定 type=mouseWheel），key 走 dispatchKeyEvent，text 走 insertText；白名单
+// 收敛 action，坐标/delta 恒传（CDP 必填），其余可选字段零值省略。
+func inputCDP(req *types.BrowserInputRequest) (string, map[string]any, error) {
+	switch req.Kind {
+	case "mouse":
+		switch req.Action {
+		case "mousePressed", "mouseReleased", "mouseMoved":
+		default:
+			return "", nil, fmt.Errorf("action 非法：%q（mouse 支持 mousePressed/mouseReleased/mouseMoved）", req.Action)
+		}
+		params := map[string]any{"type": req.Action, "x": req.X, "y": req.Y}
+		if req.Button != "" {
+			params["button"] = req.Button
+		}
+		if req.ClickCount > 0 {
+			params["clickCount"] = req.ClickCount
+		}
+		if req.Modifiers != 0 {
+			params["modifiers"] = req.Modifiers
+		}
+		return "Input.dispatchMouseEvent", params, nil
+	case "wheel":
+		return "Input.dispatchMouseEvent", map[string]any{
+			"type": "mouseWheel", "x": req.X, "y": req.Y,
+			"deltaX": req.DeltaX, "deltaY": req.DeltaY,
+		}, nil
+	case "key":
+		switch req.Action {
+		case "keyDown", "keyUp", "rawKeyDown", "char":
+		default:
+			return "", nil, fmt.Errorf("action 非法：%q（key 支持 keyDown/keyUp/rawKeyDown/char）", req.Action)
+		}
+		params := map[string]any{"type": req.Action}
+		if req.Key != "" {
+			params["key"] = req.Key
+		}
+		if req.Code != "" {
+			params["code"] = req.Code
+		}
+		if req.VK != 0 {
+			params["windowsVirtualKeyCode"] = req.VK
+		}
+		if req.Text != "" {
+			params["text"] = req.Text
+		}
+		if req.Modifiers != 0 {
+			params["modifiers"] = req.Modifiers
+		}
+		return "Input.dispatchKeyEvent", params, nil
+	case "text":
+		if req.Text == "" {
+			return "", nil, errors.New("text 不能为空")
+		}
+		return "Input.insertText", map[string]any{"text": req.Text}, nil
+	default:
+		return "", nil, fmt.Errorf("kind 非法：%q（支持 mouse/wheel/key/text）", req.Kind)
+	}
 }
 
 // Analyze 即时受理「AI 分析此页」：拉页面快照 → 组装分析 prompt → 经 ACP 会话域 Prompt
