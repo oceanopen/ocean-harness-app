@@ -11,15 +11,14 @@ package browser
 //	OCEAN_BROWSER_REAL_SMOKE=1 go -C server test ./internal/browser -run TestRealCDP -v -timeout 600s
 //
 // 端口注入自 T4.2 起为 pin.go 生产配置常态（engineConfigJSON launchOptions.args），
-// 本文件直用生产 LaunchEngine，实测对象即生产链路。
+// 本文件直用生产 LaunchEngine，实测对象即生产链路；CDP 胶水自 T4.3 起复用生产
+// live.go wire 层（liveConn），S4 末尾另含生产 connectLive 全序端到端。
 // 站点用 www.baidu.com（example.com 在目标网络不可达，T2.1 定稿事实）。
 
 import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -86,7 +84,7 @@ func mustEngineCall(t *testing.T, ctx context.Context, h *EngineHandle, name str
 }
 
 func devToolsActivePortPath(profileDir string) string {
-	return filepath.Join(profileDir, "DevToolsActivePort")
+	return filepath.Join(profileDir, devToolsActivePortFile)
 }
 
 // waitForDevToolsPort 轮询等待 DevToolsActivePort 落盘并解析（两行：实际端口 + browser ws path）。
@@ -135,236 +133,94 @@ func firstSnapshotRef(snap string) string {
 	return m[1]
 }
 
-// ---- 极简 CDP 客户端（spike 专用：browser 级 ws + flatten attach + id 配对）——
-// T4.3 live.go 另行设计，不预支其结构。----
+// ---- spike 侧 CDP 助手（T4.3 起复用生产 live.go wire 层 liveConn，胶水双份收敛）----
 
-type cdpRPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
-type cdpResp struct {
-	Result json.RawMessage `json:"result"`
-	Err    *cdpRPCError    `json:"error"`
-}
-
-type cdpEvent struct {
-	Method    string          `json:"method"`
-	SessionID string          `json:"sessionId"`
-	Params    json.RawMessage `json:"params"`
-}
-
-type cdpWireMsg struct {
-	ID        int             `json:"id"`
-	Result    json.RawMessage `json:"result"`
-	Error     *cdpRPCError    `json:"error"`
-	Method    string          `json:"method"`
-	Params    json.RawMessage `json:"params"`
-	SessionID string          `json:"sessionId"`
-}
-
-type cdpClient struct {
-	t    *testing.T
-	conn *websocket.Conn
-
-	mu     sync.Mutex
-	nextID int
-	pend   map[int]chan cdpResp
-
-	writeMu sync.Mutex // gorilla Conn 写侧单写者纪律
-	events  chan cdpEvent
-}
-
-// dialCDPBrowser 拨号序对齐 T4.3 设计：/json/version 取 browser 级 webSocketDebuggerUrl
-// → ws dial（flatten attach 由 attachPage 完成）。
-func dialCDPBrowser(t *testing.T, port string) *cdpClient {
+// dialSpikeCDP 经生产 wire 层拨号（/json/version → ws；预算 15s，收尾关停）。
+func dialSpikeCDP(t *testing.T, port string) *liveConn {
 	t.Helper()
-	var ver struct {
-		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
-	}
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%s/json/version", port))
+	n, err := strconv.Atoi(port)
 	if err != nil {
-		t.Fatalf("/json/version: %v", err)
+		t.Fatalf("端口解析 %q: %v", port, err)
 	}
-	defer resp.Body.Close()
-	if err := json.NewDecoder(resp.Body).Decode(&ver); err != nil {
-		t.Fatalf("解析 /json/version: %v", err)
-	}
-	if ver.WebSocketDebuggerURL == "" {
-		t.Fatal("/json/version 未返回 webSocketDebuggerUrl")
-	}
-	conn, _, err := websocket.DefaultDialer.Dial(ver.WebSocketDebuggerURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+	conn, err := dialLiveConn(ctx, n)
 	if err != nil {
-		t.Fatalf("ws dial: %v", err)
+		t.Fatalf("CDP 拨号: %v", err)
 	}
-	c := &cdpClient{
-		t:      t,
-		conn:   conn,
-		pend:   map[int]chan cdpResp{},
-		events: make(chan cdpEvent, 512),
-	}
-	go c.readLoop()
-	t.Cleanup(func() { _ = conn.Close() })
-	return c
+	t.Cleanup(func() { _ = conn.close() })
+	return conn
 }
 
-func (c *cdpClient) readLoop() {
-	for {
-		_, data, err := c.conn.ReadMessage()
-		if err != nil {
-			c.mu.Lock()
-			for id, ch := range c.pend {
-				ch <- cdpResp{Err: &cdpRPCError{Message: "连接关闭: " + err.Error()}}
-				delete(c.pend, id)
-			}
-			c.mu.Unlock()
-			close(c.events)
-			return
-		}
-		var m cdpWireMsg
-		if err := json.Unmarshal(data, &m); err != nil {
-			continue
-		}
-		if m.ID != 0 {
-			c.mu.Lock()
-			ch, ok := c.pend[m.ID]
-			if ok {
-				delete(c.pend, m.ID)
-			}
-			c.mu.Unlock()
-			if ok {
-				ch <- cdpResp{Result: m.Result, Err: m.Error}
-			}
-			continue
-		}
-		// 事件：缓冲满即丢弃（spike 缓冲 512 远超帧量，防 reader 卡死优先）。
-		select {
-		case c.events <- cdpEvent{Method: m.Method, SessionID: m.SessionID, Params: m.Params}:
-		default:
-		}
-	}
-}
-
-func (c *cdpClient) call(sessionID, method string, params any, timeout time.Duration) json.RawMessage {
-	raw, err := c.tryCall(sessionID, method, params, timeout)
+// spikeCall 生产 wire 层 call 的测试包装（ctx 超时预算，失败 Fatal）。
+func spikeCall(t *testing.T, conn *liveConn, sessionID, method string, params any, timeout time.Duration) json.RawMessage {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	raw, err := conn.call(ctx, sessionID, method, params)
 	if err != nil {
-		c.t.Fatalf("CDP %s: %v", method, err)
+		t.Fatalf("CDP %s: %v", method, err)
 	}
 	return raw
 }
 
-func (c *cdpClient) tryCall(sessionID, method string, params any, timeout time.Duration) (json.RawMessage, error) {
-	c.mu.Lock()
-	c.nextID++
-	id := c.nextID
-	ch := make(chan cdpResp, 1)
-	c.pend[id] = ch
-	c.mu.Unlock()
-
-	msg := map[string]any{"id": id, "method": method, "params": params}
-	if sessionID != "" {
-		msg["sessionId"] = sessionID
-	}
-	c.writeMu.Lock()
-	err := c.conn.WriteJSON(msg)
-	c.writeMu.Unlock()
-	if err != nil {
-		c.mu.Lock()
-		delete(c.pend, id)
-		c.mu.Unlock()
-		return nil, fmt.Errorf("发送: %w", err)
-	}
-	select {
-	case resp := <-ch:
-		if resp.Err != nil {
-			return nil, fmt.Errorf("code=%d %s", resp.Err.Code, resp.Err.Message)
-		}
-		return resp.Result, nil
-	case <-time.After(timeout):
-		c.mu.Lock()
-		delete(c.pend, id)
-		c.mu.Unlock()
-		return nil, fmt.Errorf("%s 超时", timeout)
-	}
-}
-
-type cdpTargetInfo struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
-	URL  string `json:"url"`
-}
-
-// firstPageTarget GET /json/list 取首个 http page target（T4.3 matchPageTarget 的 spike
-// 前身——多页消歧归 T4.3，此处恒取首个 http 页）。
+// firstPageTarget 取首个 http page target（多页 URL 消歧归生产 matchPageTarget，spike
+// 探针恒取首个 http 页）。
 func firstPageTarget(t *testing.T, port string) cdpTargetInfo {
 	t.Helper()
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%s/json/list", port))
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatalf("端口解析 %q: %v", port, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	targets, err := listPageTargets(ctx, n)
 	if err != nil {
 		t.Fatalf("/json/list: %v", err)
 	}
-	defer resp.Body.Close()
-	var targets []cdpTargetInfo
-	if err := json.NewDecoder(resp.Body).Decode(&targets); err != nil {
-		t.Fatalf("解析 /json/list: %v", err)
-	}
 	for _, tg := range targets {
-		if tg.Type == "page" && strings.HasPrefix(tg.URL, "http") {
+		if strings.HasPrefix(tg.URL, "http") {
 			return tg
 		}
 	}
-	t.Fatalf("/json/list 无 http page target（共 %d 个 target）", len(targets))
+	t.Fatalf("/json/list 无 http page target（共 %d 个 page target）", len(targets))
 	return cdpTargetInfo{}
 }
 
-// attachPage flatten attach 到 page target 并 Page.enable，返回 sessionId。
-func (c *cdpClient) attachPage(targetID string) string {
+// attachSpikePage flatten attach 到 page target 并 Page.enable，返回 sessionId。
+func attachSpikePage(t *testing.T, conn *liveConn, targetID string) string {
+	t.Helper()
 	var out struct {
 		SessionID string `json:"sessionId"`
 	}
-	raw := c.call("", "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true}, 10*time.Second)
+	raw := spikeCall(t, conn, "", "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true}, 10*time.Second)
 	if err := json.Unmarshal(raw, &out); err != nil || out.SessionID == "" {
-		c.t.Fatalf("attachToTarget: %v sid=%q", err, out.SessionID)
+		t.Fatalf("attachToTarget: %v sid=%q", err, out.SessionID)
 	}
-	c.call(out.SessionID, "Page.enable", map[string]any{}, 10*time.Second)
+	spikeCall(t, conn, out.SessionID, "Page.enable", map[string]any{}, 10*time.Second)
 	return out.SessionID
 }
 
-// ---- screencast 收帧记录器（逐帧 ack 可切换）----
-
-type screencastFrame struct {
-	// FrameNo 帧号：Chromium 155 协议已把 frameNumber 更名 sessionId（语义仍是帧号，
-	// protocol.d.ts 注释遗留 "Frame number."），ack 以 {sessionId: FrameNo} 回执。
-	FrameNo   int64     `json:"sessionId"`
-	Data      string    `json:"data"`
-	Metadata  frameMeta `json:"metadata"`
-	Timestamp float64   `json:"timestamp"`
-}
-
-type frameMeta struct {
-	PageScaleFactor float64 `json:"pageScaleFactor"`
-	DeviceWidth     int     `json:"deviceWidth"`
-	DeviceHeight    int     `json:"deviceHeight"`
-	ScrollOffsetX   float64 `json:"scrollOffsetX"`
-	ScrollOffsetY   float64 `json:"scrollOffsetY"`
-	OffsetTop       float64 `json:"offsetTop"`
-}
+// ---- screencast 收帧记录器（逐帧 ack 可切换；帧结构与 metadata 定义见 live.go）----
 
 type frameRecorder struct {
 	mu      sync.Mutex
 	acking  bool
 	session string
-	c       *cdpClient
+	c       *liveConn
 	frames  []screencastFrame
 	ats     []time.Time
 	ackErrs []error // pump 后台 goroutine 不触 testing，失败记账由测试体主动断言
 }
 
-// startScreencast 订阅帧流（参数即 T4.3 定稿口径），后台 pump 收帧，默认逐帧 ack。
-func (c *cdpClient) startScreencast(session string) *frameRecorder {
-	c.call(session, "Page.startScreencast", map[string]any{
-		"format": "jpeg", "quality": 60, "maxWidth": 960, "maxHeight": 600, "everyNthFrame": 1,
+// startSpikeScreencast 订阅帧流（参数即生产定稿口径），后台 pump 收帧，默认逐帧 ack。
+func startSpikeScreencast(t *testing.T, conn *liveConn, session string) *frameRecorder {
+	t.Helper()
+	spikeCall(t, conn, session, "Page.startScreencast", map[string]any{
+		"format": screencastFormat, "quality": screencastQuality,
+		"maxWidth": screencastMaxWidth, "maxHeight": screencastMaxHeight, "everyNthFrame": screencastEveryNth,
 	}, 10*time.Second)
-	rec := &frameRecorder{session: session, c: c, acking: true}
+	rec := &frameRecorder{session: session, c: conn, acking: true}
 	go rec.pump()
 	return rec
 }
@@ -425,7 +281,10 @@ func (r *frameRecorder) pump() {
 		r.ats = append(r.ats, time.Now())
 		r.mu.Unlock()
 		if ack {
-			if _, err := r.c.tryCall(r.session, "Page.screencastFrameAck", map[string]any{"sessionId": f.FrameNo}, 10*time.Second); err != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_, err := r.c.call(ctx, r.session, "Page.screencastFrameAck", map[string]any{"sessionId": f.FrameNo})
+			cancel()
+			if err != nil {
 				r.mu.Lock()
 				r.ackErrs = append(r.ackErrs, err)
 				r.mu.Unlock()
@@ -434,16 +293,17 @@ func (r *frameRecorder) pump() {
 	}
 }
 
-// attachFirstPageCDP S1/S3/S4 同构四步序收敛：等端口落盘 → 拨号 → 取首个 http page
-// target → flatten attach（端口预算统一 30s）。
-func attachFirstPageCDP(t *testing.T, h *EngineHandle) (*cdpClient, string) {
+// attachFirstPageCDP S1/S3/S4 同构四步序收敛：等端口落盘 → 生产 wire 层拨号 → 取首个
+// http page target → flatten attach（端口预算统一 30s；返回 target 供 S4 生产观察
+// 通道按 URL 构造匹配页）。
+func attachFirstPageCDP(t *testing.T, h *EngineHandle) (*liveConn, string, cdpTargetInfo) {
 	t.Helper()
 	port, wsPath := waitForDevToolsPort(t, h.ProfileDir, 30*time.Second)
-	c := dialCDPBrowser(t, port)
+	conn := dialSpikeCDP(t, port)
 	tg := firstPageTarget(t, port)
-	sid := c.attachPage(tg.ID)
+	sid := attachSpikePage(t, conn, tg.ID)
 	t.Logf("CDP attach: port=%s path=%s target=%s url=%s sid=%s", port, wsPath, tg.ID, tg.URL, sid)
-	return c, sid
+	return conn, sid, tg
 }
 
 // ---- S1 pipe+port 并存（存亡级 gate）----
@@ -595,8 +455,8 @@ func TestRealCDPConcurrentClients(t *testing.T) {
 	}
 	bench("基准（无第二客户端）")
 
-	c, sid := attachFirstPageCDP(t, h)
-	rec := c.startScreencast(sid)
+	c, sid, _ := attachFirstPageCDP(t, h)
+	rec := startSpikeScreencast(t, c, sid)
 	time.Sleep(500 * time.Millisecond)
 
 	bench("并发（第二客户端持续收帧中）")
@@ -618,13 +478,13 @@ func TestRealCDPScreencast(t *testing.T) {
 	defer cancel()
 
 	mustEngineCall(t, ctx, h, "browser_navigate", map[string]any{"url": "https://www.baidu.com"})
-	c, sid := attachFirstPageCDP(t, h)
+	c, sid, tg := attachFirstPageCDP(t, h)
 
 	// captureScreenshot 初始帧（T4.3「断线重连初始帧重放」的可行性来源）。
 	var shotOut struct {
 		Data string `json:"data"`
 	}
-	raw := c.call(sid, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 60}, 15*time.Second)
+	raw := spikeCall(t, c, sid, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 60}, 15*time.Second)
 	if err := json.Unmarshal(raw, &shotOut); err != nil {
 		t.Fatalf("解析 captureScreenshot: %v", err)
 	}
@@ -635,7 +495,7 @@ func TestRealCDPScreencast(t *testing.T) {
 	t.Logf("S4: captureScreenshot 初始帧 %dB jpeg", len(jpeg))
 
 	// 真实页面初始帧行为：startScreencast 是否主动推帧（决定重连是否必须 captureScreenshot 兜底）。
-	rec := c.startScreencast(sid)
+	rec := startSpikeScreencast(t, c, sid)
 	time.Sleep(4 * time.Second)
 	t.Logf("S4: 百度首页订阅后 4s 收帧 %d", rec.count())
 
@@ -697,4 +557,33 @@ func TestRealCDPScreencast(t *testing.T) {
 	}
 	t.Logf("S4: metadata: device=%dx%d pageScaleFactor=%.2f scrollOffset=(%.0f,%.0f) offsetTop=%.0f 帧号=%d",
 		f.Metadata.DeviceWidth, f.Metadata.DeviceHeight, f.Metadata.PageScaleFactor, f.Metadata.ScrollOffsetX, f.Metadata.ScrollOffsetY, f.Metadata.OffsetTop, f.FrameNo)
+
+	// T4.3 生产观察通道端到端：connectLive 全序——重读端口、独立连接（S3 已证多客户端
+	// 域隔离，不受上面背压窗口影响）、setDiscoverTargets、URL 匹配、captureScreenshot
+	// 初始帧、帧泵经 mailbox 投递并即时 ack。页按已探明 target 的 URL 构造（等同投影
+	// 同步态）。
+	lv, err := connectLive(ctx, "cdpspike4", PageView{Index: 0, Title: tg.URL, URL: tg.URL}, nil, nil)
+	if err != nil {
+		t.Fatalf("S4: connectLive 生产观察通道: %v", err)
+	}
+	t.Cleanup(func() { _ = lv.conn.close() })
+	_, initGen, ok := lv.frames.latest()
+	if !ok || initGen != 1 {
+		t.Fatalf("S4: 观察通道初始帧缺失（gen=%d ok=%v）", initGen, ok)
+	}
+	t.Logf("S4: 观察通道初始帧就绪（captureScreenshot 兜底）")
+	evalAt := time.Now()
+	mustEngineCall(t, ctx, h, "browser_evaluate", map[string]any{"function": `() => { document.body.style.outline = '2px solid #0af' }`})
+	cur := initGen
+	deadline := time.Now().Add(5 * time.Second)
+	for cur <= initGen {
+		if time.Now().After(deadline) {
+			t.Fatal("S4: 观察通道 5s 内未收到损伤帧（帧泵/ack 链路失效）")
+		}
+		wctx, wcancel := context.WithTimeout(ctx, time.Second)
+		_ = lv.frames.waitChange(wctx, cur)
+		wcancel()
+		_, cur, _ = lv.frames.latest()
+	}
+	t.Logf("S4: 观察通道损伤帧经 mailbox 到达（gen %d → %d，%s 内）", initGen, cur, time.Since(evalAt).Round(time.Millisecond))
 }

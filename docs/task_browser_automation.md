@@ -510,7 +510,7 @@
 
 #### T4.3 live.go：CDP 观察通道
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：per-profile CDP viewer——拨号、screencast 帧订阅（keep-latest mailbox）、输入分发、自愈重试、target 匹配。
 
@@ -528,6 +528,8 @@
 **依赖**：T4.1（S2/S4 结论 gate）
 
 **验收**：单测绿；`GOOS=windows go build` 通过（ws dial 无平台分支）
+
+**实施定稿**：按方案落地。两项基线决策：① gorilla-only——cdproto 不引入（spike 已验证手写胶水覆盖全部命令/事件面，协议面仅 6+1 命令 2 事件，手写 struct 少于依赖树代价）；② spike 迁移——real_cdp_test.go 的自有 cdpClient 收敛至生产 wire 层 liveConn，S1–S4 直测生产胶水，S4 末尾新增生产 connectLive 全序真实浏览器端到端（URL 匹配、初始帧、帧泵 ack、mailbox 投递）。结构定稿：wire 层 liveConn 无策略（id 配对 + 事件缓冲满即丢）/ viewer 层 dispatch 帧泵逐帧即时 ack + frameMailbox（keep-latest 单槽 + close-broadcast，gen 代数感知的 waitChange(seenGen) 消除「投递落在 latest 与快照之间」的丢唤醒窗口——静态页零推帧场景漏唤醒即画面永久滞旧）；matchPageTarget 按 URL 精确匹配、歧义取首个；connectLive 自愈 = wake 钩子注入（T4.4 接 Forward(browser_tabs list)，busy 拒绝按「浏览器活着」正交解读）+ 退避 1/2/3s。方案偏移两处：Target.setDiscoverTargets 为 target 生命周期事件面前提新增入列（命令面 6→7）；captureScreenshot 初始帧无 metadata 来源——损伤驱动首帧到达前 T4.6 前端按位图尺寸兜底。审查修复三项并发正确性：dispatch 启动序后置（session/page 写定后起泵，消除 attach 窗口竞争）、waitChange gen 感知、测试服务器记账锁口径统一。验收实证：包单测 -race 绿、GOOS=windows 构建过、真实冒烟 S1–S4 复跑全 PASS（观察通道损伤帧 ~0.5s 内经 mailbox 到达）。T4.4 参考：单次拨号暂无 per-attempt 短预算（僵尸端口「accept 不响应」会挂满调用方 ctx，剥夺自愈重试机会），挂接 manager 时补。
 
 #### T4.4 manager 集成与 idle 保活
 
