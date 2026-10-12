@@ -93,7 +93,7 @@
 | Windows 侧 Go 编译只在 tag 构建暴露（PR CI 不编） | 跨平台进程组复用 acp 模式 + `GOOS=windows go build` 验收（T1.2）；CI 常态交叉编译检查留扩展点 |
 | cookie 跨站泄漏（authhttp 无域过滤会把 profile 全部凭据发给任意 URL） | cookie 按声明域逐条落锚（host-only 锚定其真实归属 host——cookiejar 对 Domain 空 cookie 锚定传入 URL 的 host，全量对目标落锚会把其它站 host-only 凭据重锚到目标站）+ 发送期 cookiejar 标准域匹配（domain/path 生效；引擎列表输出无 secure，用户拍板一律注入无 scheme 门槛）+ 跨域不泄漏单测断言（T1.4） |
 | 引擎挂死拖死全链路（Forward 无超时） | per-call ctx 超时 120s + 连续 3 次超时置 failed 自动重建 + close/ensure 竞态显式错误（T1.3） |
-| pipe+port 双 flag 并存未经源码核实（CDP 观察通道的存亡级承重假设——playwright 恒需 pipe，Go 侧无 pipe 旁路） | T4.1 spike S1 前置 gate，全部后续任务以其为依赖门；contingency = pnpm patch playwright-core 的 chromium launcher（port 存在时跳过 pipe），代价收敛在自家构建流程内 |
+| pipe+port 双 flag 并存（CDP 观察通道的存亡级承重假设） | 已消解（T4.1 S1 实测）：playwright 把 launchOptions.args 原样追加给 Chromium，与 pipe 无互斥——双 flag 4 进程共存、MCP 全链正常、DevToolsActivePort 落盘，contingency（pnpm patch playwright-core）未启用 |
 | CDP 端口漂移（惰性启动/idle 关窗/无头切换/超时重建四源）× 唤醒自旋 | 每次重连重读 DevToolsActivePort 不缓存 + 自愈状态机（指数退避 3 次/~6s var 化）+ busy 拒绝按「浏览器活着」正交解读 + dropViewer 与 entry 生命周期三处严格挂钩（Close/headless 切换/watchExit）+ SSE error 事件、前端 EventSource 退避重连兜底 |
 | 截图/二进制 content 在转发链静默丢失（类型化出参的自动 Content 装配会丢图 / CLI 纯图返回 null） | 转发 handler 手工构造 `*mcp.CallToolResult` 原样透传 Content 数组 + `--output-dir` 落盘使消费者拿路径（T2.2/T1.2） |
 | prompt injection（网页内容诱导 agent 作恶） | SKILL.md 不可信内容铁律 + 提交类操作复述确认 + `--blocked-origins` 预留 spawn 配置项（T1.2/T3.3） |
@@ -464,7 +464,7 @@
 
 #### T4.1 前置 spike：CDP 观察通道实测（本地项）
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：编码前实测四项无法靠源码核实的承重行为，结论作为 T4.2–T4.7 的事实输入。
 
@@ -481,6 +481,15 @@
 **依赖**：无（T3.5 staging 就绪即可）
 
 **验收**：S1–S4 结论明确记录，本文档 T4.3/T4.5 对应设计段已更新为实测事实
+
+**实施定稿**：测试族落 `server/internal/browser/real_cdp_test.go`（卫门 `OCEAN_BROWSER_REAL_SMOKE=1`；staging 缺省 `app/resources/acp-adapters`，`OCEAN_ACP_RESOURCES_DIR` 可覆盖）。注入相对方案的偏离：EnsureEngineConfig 幂等漂移覆写使预置 engine.json 不可行，spike 经 withDialFunc 测试钩子在配置落盘之后、引擎进程 Start 之前覆写 `<Root()>/engine.json`（launchOptions.args 追加 `--remote-debugging-port=0`，语义与方案同——仍走 `--config`），产品代码零改动；T4.2 常态化为 pin.go 常量。S1–S4 结论（两轮全量复跑可复现）：
+
+- **S1（gate 通过）**：pipe+port 双 flag 并存成立——4 个 Chrome 进程均带双 flag（playwright 把 launchOptions.args 原样追加，与 pipe 无互斥）；MCP 全链 navigate/snapshot/evaluate 正常（click 实测在 S3）；DevToolsActivePort 落盘。contingency（pnpm patch playwright-core）不需要。
+- **S2**：文件在 LaunchEngine 返回时刻不存在（浏览器惰性拉起，engine ready ≠ browser 活）；LaunchEngine 返回后 ~210–273ms 写入（锚点为握手完成返回、非进程 spawn 时刻；首次页面级调用触发浏览器启动期间，navigate 返回前已就绪）；port=0 时内容两行 = 实际端口 + `/devtools/browser/<uuid>` 路径；**Chrome 进程树全退后文件残留不删**（pipe EOF 自退路径无清理）——文件存在不证活性，live.go 必须每次重读 + 以拨号成败为活性判据。
+- **S3**：第二 CDP 客户端（browser 级 ws + `Target.attachToTarget{flatten:true}`）attach 并持续收帧期间，引擎 navigate/snapshot/click 正常（耗时不高于冷启动基准），域隔离成立。
+- **S4**：`Page.captureScreenshot` 可作初始帧（jpeg ~46KB）；about:blank 真零帧（1.5s 排空后 5s 窗口 0 帧）；损伤驱动推帧确认（evaluate 触发重绘 → 恰 1 帧）；**真实动画页（baidu）持续 ~60fps 推帧**（~16ms 间隔）——帧率预算按动画页 60fps 上界，带宽控制靠 keep-latest + 即时 ack；流控 = 不 ack 连收 3 帧后停推（`maxFramesInFlight` 默认 3），ack 恢复续推；metadata 全字段完整（deviceWidth/Height、pageScaleFactor、scrollOffsetX/Y、offsetTop、timestamp）。
+- **协议事实（Chromium 155 / CfT 155.0.8059.12）**：`screencastFrame` payload 与 `screencastFrameAck` 的帧号字段已由 frameNumber 更名 `sessionId`（语义仍是帧号，ack = `{sessionId: <帧号>}`；protocol.d.ts 注释遗留 "Frame number." 不可信）；`Page.startScreencast` 新增 `maxFramesInFlight`（协议层背压窗）与 `sendLastFrame`（协议级 keep-latest）。0.0.83 click schema：`target`（必填 ref）+ `element`（可选人类描述），snapshot ref 形如 `ref=e2`/`ref=f1e2`。
+- **依赖变化**：gorilla/websocket indirect→direct（go.mod）；spike 以 gorilla 手写胶水已覆盖全部所需命令/事件面，cdproto 是否引入留 T4.3 按此基线决策。
 
 #### T4.2 引擎注入与默认无头
 
@@ -504,9 +513,10 @@
 **功能**：per-profile CDP viewer——拨号、screencast 帧订阅（keep-latest mailbox）、输入分发、自愈重试、target 匹配。
 
 **技术方案**：
-- 依赖：`github.com/chromedp/cdproto`（协议结构体，不引 chromedp 全家桶——executor 框架与长驻订阅生命周期相拧、自动 enable 域面大扰动面大）+ `github.com/gorilla/websocket`（indirect→direct）。手写 ~200 行 JSON-RPC 会话胶水（flatten attach、id 配对、事件分发）；命令面仅 6 个（Target.attachToTarget / Page.startScreencast / screencastFrameAck / captureScreenshot / Input.dispatch* / insertText）、事件面仅 screencastFrame / targetDestroyed
+- 依赖：`github.com/chromedp/cdproto`（协议结构体，不引 chromedp 全家桶——executor 框架与长驻订阅生命周期相拧、自动 enable 域面大扰动面大）+ `github.com/gorilla/websocket`（T4.1 已转 direct）。手写 ~200 行 JSON-RPC 会话胶水（flatten attach、id 配对、事件分发）——T4.1 spike 已验证 gorilla 手写胶水覆盖全部所需命令/事件面；命令面仅 6 个（Target.attachToTarget / Page.startScreencast / screencastFrameAck / captureScreenshot / Input.dispatch* / insertText）、事件面仅 screencastFrame / targetDestroyed
+- T4.1 实测事实（协议基线）：① screencastFrame payload 与 screencastFrameAck 的帧号字段实名 `sessionId`（原 frameNumber 更名，语义不变，ack = `{sessionId: <帧号>}`）；② `maxFramesInFlight`（未 ack 帧上限，默认 3）即协议层背压窗——pump 须逐帧即时回 ack，否则 3 帧后停推；`sendLastFrame` 为协议级 keep-latest；③ 真实动画页持续 ~60fps 推帧、损伤驱动、about:blank 真零帧——mailbox keep-latest + 即时 ack 是带宽控制双承重，帧率预算按 60fps 上界
 - 新增 `server/internal/browser/live.go`：
-  - `readDevToolsPort(profileDir)`：读 `<profileDir>/DevToolsActivePort` 两行（端口 + browser ws path）；文件缺失 = 浏览器未活（engine ready ≠ browser 活——首次工具调用才惰性拉起；引擎 `--idle-timeout` 到期也只关窗口）；**不缓存端口**，每次重连重读
+  - `readDevToolsPort(profileDir)`：读 `<profileDir>/DevToolsActivePort` 两行（端口 + browser ws path）；文件缺失 = 浏览器未活（engine ready ≠ browser 活——首次工具调用才惰性拉起；引擎 `--idle-timeout` 到期也只关窗口）；**不缓存端口**，每次重连重读；文件在浏览器退出后**残留不删**（T4.1 S2），故文件存在同样不证活性——活性唯一判据是拨号成败（失败走自愈唤醒重读重拨）
   - 拨号序：readDevToolsPort → `GET http://127.0.0.1:<port>/json/version` 取 browser 级 webSocketDebuggerUrl → ws dial → `Target.attachToTarget{flatten:true}`；失败自愈 = 触发一次 `Forward(browser_tabs list)` 唤醒浏览器（复用 Ensure + callMu；busy 拒绝按「浏览器活着」正交解读，直接重读端口重试）→ 重读 → 重拨；指数退避 3 次/~6s（var 化）
   - `matchPageTarget` 纯函数：view 投影 pages（index/title/url）匹配 `/json/list` page targets（过滤 type=="page"）；歧义取首个 + 调用方经 SSE `target` 事件回显实际 url/title 供前端消歧；未命中显式错误
   - `frameMailbox`：keep-latest 单槽覆盖 + cap-1 notify 信号——视频流语义，慢订户跳帧不断连，无 seq 无补帧；断线重连 = captureScreenshot 初始帧重放（免 seq 的合法性来源）
@@ -541,7 +551,7 @@
 **功能**：SSE 帧流端点 + 输入注入端点；截图轮询端点退役。
 
 **技术方案**：
-- `dal/types/browser_session.go`：新增 `BrowserInputRequest`（profile/kind: mouse|wheel|key|text/action/x/y/button/clickCount/modifiers/deltaX/deltaY/key/code/vk/text）与 SSE 事件 DTO（frame: data base64 + metadata；target: url/title；error；closed）
+- `dal/types/browser_session.go`：新增 `BrowserInputRequest`（profile/kind: mouse|wheel|key|text/action/x/y/button/clickCount/modifiers/deltaX/deltaY/key/code/vk/text）与 SSE 事件 DTO（frame: data base64 + metadata；target: url/title；error；closed）；事件契约经 T4.1 实测确认不变——metadata 实测含 deviceWidth/Height、pageScaleFactor、scrollOffsetX/Y、offsetTop、timestamp 全字段，T4.6 坐标换算入参齐备
 - `controller/browser_session.go` 新增：
   - `GET /api/browserSession/stream?profile=&pageId=`（SSE，复用 Events 写循环范式）：订阅 SubscribeLive → 循环写帧；事件四型 frame/target/error/closed（error 可恢复——后端自愈中，closed 终态）；15s ping 注释行防御性保活；请求 ctx Done 即退订驱动 refs 减
   - `POST /api/browserSession/input`：校验后转 `DispatchInput`；错误全中文（未在投送/会话未运行/分发失败）
