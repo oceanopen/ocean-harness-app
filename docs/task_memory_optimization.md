@@ -84,11 +84,23 @@
 - 修复后复跑验证链全绿（go test ./... / server:fmt / web:lint / web:test 54 例 / web:build）
 - 规范/分层审查修复三项：① starting 分支同样渲染订阅失败横幅 + 重试订阅——与已修 failed 分支死路同构（订阅拒绝落在缓存 starting 窗口——sidecar 重启清内存/discard/进程夭折/serverUrl 失败——时无 SSE 帧刷新、ensure 守卫拒绝覆写、getInfo 无自动 refetch，视图死转圈无信号无控件）；三处同款横幅抽同文件 `SubscriptionFailedAlert` 组件（starting/failed/idle+ready 分支共用，按钮文案统一「重试订阅」；会话消亡类拒绝重试恒败，整页重挂重新受理兜底）；② acp handler 级测试补临时库连接池收尾（对齐 launch_settings_test.go newTestDB 先例）；③ server/README.md「响应」段补 JsonFailWithStatus 例外登记（SSE 订阅前置失败真实状态码，REST 仍统一 200+code）。其余维度（导入三段式、命名对称性、(int,error) 模式、attempt-retry 先例同构、表驱动测试风格、预检纯函数落 controller 层、global 直读惯例、state 域职责切分）审查确认无发现；修复后复跑验证链全绿
 
-**任务 T4：ACP 适配器闲置回收** ⬜
+**任务 T4：ACP 适配器闲置回收** ✅
 - 功能：空闲任务的适配器 node 进程自动退出，多任务并行内存从 N×150MB 有界化
 - 技术方案：按 D4 实施；`manager.go` per-entry idle 计时（Prompt/Subscribe 重置），到期 `client.Close()`；`Ensure` 既有锚点重建路径恢复会话；新 appConfig key 进 `appConfig.ts` SSOT
 - 依赖：无
 - 验收：idle 超时后对应 node 进程退出；重开该 issue 会话恢复（上下文延续，恢复延迟可接受）；阈值改配置即时生效；进行中 turn 不被误杀
+
+**实施定稿**：
+- Go 落地面：新增 `server/internal/appdb/`（app.db 只读访问中立包——key 常量、哨兵 `ErrAppDbNotInjected`/`ErrAppDbMissing`、`database/sql` 短连接 mode=ro + busy_timeout、key 未设返回 `("", nil)`；不依赖 global，dbPath 由调用方注入，规避 global → acpsession → appdb 成环）；`mcp_util/app_config_reader.go` 迁为薄包装（`%w` 保留哨兵 errors.Is 链）。`acp/client.go` 增 `LoadSession`（acp-go 能力协商）+ `registerSession` 抽取（New/Load 共用运行时注册与早到帧回放）+ `newOrResumedSession` 决策函数（非空锚走恢复，失败 Warn 降级全新会话）。`acpsession/manager.go` per-entry idle 计时：完全空闲判据 `fullyIdleLocked`（就绪 + 无活动回合 + 等位队列空 + 无订户，released/discarded 恒否），起表于回合终态/退订/就绪落态，停表于受理/新订户；到期 `reclaimIdle` 按当前配置重算剩余时长（改长顺延）复查后置 released → 摘 entry → Close，pump 终结哨兵见 released 早退（不落态、不清锚、不广播）；`Ensure` Peek 锚点 → spawn 链 `newOrResumedSession` 恢复同 id 会话；joinable 判据与 `readyError` 拒绝 released entry（重建路径以 map 身份检查与 reclaim 安全交接）。`binding.go` 增只读 `Peek`；`hub.subscriberCount`/`turnqueue.pending` 窄观测面
+- 配置链：key `acp_session_idle_timeout_minutes`（snake_case 对齐 `github_pat` 既有键）——Rust `app_config.rs` 常量 + `.constant()` → `pnpm gen:bindings` → `appConfig.ts` re-export + `ACP_SESSION_IDLE_TIMEOUT_OPTIONS`/`parseAcpSessionIdleTimeoutMinutes`；Go 侧 `appdb` 字符串常量手动同步（注释标明两端同步义务）；`main.go` 注入 `cfg.AppDbPath`
+- 前端落地面：AppConfigPage 第三行「ACP 会话闲置回收」（图标 + 说明文案 + Select），沿用草稿态范式纳入 dirty/reset/cancel/save；`settingOption.ts` 增 `acpSessionIdleTimeoutOptions`（`{{minutes}} 分钟` 插值）；i18n 中英对称
+- 判据与呈现落定（相对 D4 细化）：判据比方案多等位队列维（bot 排队回合不持订户，漏判会杀排队回合）与 discarded/released 维；回收呈现 = 静默摘除归 idle、重开自动 resume（无 terminated 广播）
+- 风险变化：风险 1 代码级降级——vendored adapter 0.84.0 声明 `loadSession:true` 且 `readResumedSession` 读 claude CLI 会话文件后 `replaySessionHistory` 以帧重放历史（上下文延续 + UI 历史恢复均成立；真机实测仍为手测项）；风险 2 解除——accessor 以中立 appdb 包落地
+- 保守边界：`SweepSessionIDs` 保留（重启后清锚归零——重启 resume 留待评审，避免孤儿适配器进程）；阈值生效边界 = 改长立即顺延、改短在已闲置会话的下一次到期判定生效（≤旧期限；Go 无配置推送通道，不引入轮询）
+- 测试落地面：fakeagent 增 `load` 脚本（声明 LoadSession 能力 + 回放「历史-1/历史-2」+ Prompt 与 happy 共支）；acp 包增能力拒绝/历史重放与恢复后回合两用例；manager_test 增三态决策/锚点接线/Peek/SubscriberCount/Pending 用例；idle_test 五用例——parse 同口径、真实 app.db 现读回落、阈值改长顺延回归锁、回收闭环（锚保留 → 重开 resume 同 id）、三守卫逐项隔离负例
+- 质量审查修复四组：① 关键（锁序成环）——idle 判据在 entry.mu 内取 hub.mu，经快照闭包（hub.mu → m.mu）与 Ensure（m.mu → entry.mu）闭合成三方环，修复为订户数在 entry.mu 外预读作参数传入；② 重要（顺延死代码）——停表误清空闲起点致「改长顺延」分支不可达，修复为停表只停计时器、起点归属当前空闲段（起表设/离开清），并补顺延回归锁；③ 重要（回收窗口竞态）——released 置位到摘除之间 join/受理可命中将死 entry，修复为 joinable 与 readyError 拒绝 released；④ 测试有效性——闭环用例锚点断言前加回收收尾宽限。其余：判据收敛 `fullyIdleLocked`（收编 discarded 漂移）、`%s`→`%w`、测试装配参数化；race 检测揪出并修复两处测试自身阈值翻转竞态
+- 验收实证：`go test ./...` 18 包全绿（acpsession 整包 `-race` 通过）、`gofmt`/`go vet` 干净、`pnpm web:lint` 零报错、`pnpm web:test` 54 例全绿、`pnpm web:build` 通过、`pnpm verify:bindings` 仅剩未提交 diff（内容恰为新增两常量，提交后即过）；实机四项手测（进程退出 / 重开恢复 / 阈值改 5 分钟即时生效 / 进行中 turn 不误杀）与 adapter 历史重放超 `earlyFrameCap=64` 完整性观察项留待 tauri:dev
+- 规范/分层审查：导入三段式、Locked 后缀与注入点命名惯例、appdb 绕过 gorm 的合理性（app.db 归 Rust 所有）、前端草稿态/options 数组/SSOT 分层同轨、锁外预读自证、跨端常量同步风险四处标明——三维度零高置信度发现
 
 ### 第二批（B 组：治本）
 

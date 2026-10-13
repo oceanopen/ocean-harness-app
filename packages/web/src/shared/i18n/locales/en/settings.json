@@ -17,14 +17,19 @@
   "app": {
     "row": {
       "language": "Language",
-      "appearance": "Appearance"
+      "appearance": "Appearance",
+      "acpIdleTimeout": "ACP idle session reclaim"
+    },
+    "help": {
+      "acpIdleTimeout": "Sessions idle beyond this duration exit automatically and restore on reopen"
     },
     "option": {
       "followSystem": "Follow system",
       "chinese": "中文",
       "english": "English",
       "light": "Light",
-      "dark": "Dark"
+      "dark": "Dark",
+      "idleMinutes": "{{minutes}} min"
     }
   },
   "terminal": {

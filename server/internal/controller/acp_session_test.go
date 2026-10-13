@@ -66,7 +66,7 @@ func TestAcpEventsHandlerReject(t *testing.T) {
 	if sqlDB, err := db.DB(); err == nil {
 		t.Cleanup(func() { _ = sqlDB.Close() })
 	}
-	mgr, err := acpsession.NewManager(db, acpsession.Dirs{}, 0, nil)
+	mgr, err := acpsession.NewManager(db, acpsession.Dirs{}, 0, "", nil)
 	if err != nil {
 		t.Fatalf("装配 Manager: %v", err)
 	}

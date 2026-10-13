@@ -192,10 +192,54 @@ func (c *AgentClient) NewSession(ctx context.Context, params NewSessionParams) (
 	if err != nil {
 		return nil, fmt.Errorf("ACP 建会话失败: %w", err)
 	}
+	return c.registerSession(session)
+}
+
+// LoadSessionParams 恢复既有会话参数（锚点 resume 的 wire 入口）。
+type LoadSessionParams struct {
+	// Cwd 会话工作目录；缺省回落进程 Cwd（均须绝对路径，库校验）。
+	Cwd string
+	// SessionID 待恢复的 ACP 会话 id（claude 侧会话文件按此定位；load 响应不含 id，
+	// 会话以请求 id 注册）。
+	SessionID string
+}
+
+// LoadSession 恢复既有会话（ACP session/load，库内能力协商——agent 未声明即报错，由
+// 调用方降级 NewSession）。agent 侧从其 SDK 会话文件读回上下文，历史以 session/update
+// 重放（响应前的重放推送经早到帧缓冲承接，注册后回放，与 session/new 抢跑同轨）。
+func (c *AgentClient) LoadSession(ctx context.Context, params LoadSessionParams) (*Session, error) {
+	init, err := c.Initialize(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("ACP 握手失败: %w", err)
+	}
+	tctx, cancel := context.WithTimeout(ctx, newSessionTimeout)
+	defer cancel()
+
+	directory := params.Cwd
+	if directory == "" {
+		directory = c.proc.cwd
+	}
+	loaded, err := c.conn.LoadSession(tctx, init, schema.LoadSessionRequest{
+		Cwd:        directory,
+		SessionID:  schema.SessionId(params.SessionID),
+		MCPServers: []schema.McpServer{},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ACP 恢复会话失败: %w", err)
+	}
+	return c.registerSession(acpgo.Session{
+		SessionID:     schema.SessionId(params.SessionID),
+		ConfigOptions: loaded.ConfigOptions,
+		Modes:         loaded.Modes,
+	})
+}
+
+// registerSession 会话注册收口（NewSession/LoadSession 共用）：运行时装配 + 会话表登记
+// + 早到帧回放（锁外：dispatchUpdate 入队可能因通道满阻塞，不得拖住 sessMu 的路由）。
+func (c *AgentClient) registerSession(session acpgo.Session) (*Session, error) {
 	if session.SessionID == "" {
 		return nil, errors.New("ACP agent 返回空 sessionId")
 	}
-
 	runtime := newSessionRuntime(session.SessionID, c, session)
 	c.sessMu.Lock()
 	if _, exists := c.sessions[session.SessionID]; exists {
@@ -206,7 +250,6 @@ func (c *AgentClient) NewSession(ctx context.Context, params NewSessionParams) (
 	early := c.early[session.SessionID]
 	delete(c.early, session.SessionID)
 	c.sessMu.Unlock()
-	// 回放早到帧（锁外：dispatchUpdate 入队可能因通道满阻塞，不得拖住 sessMu 的路由）。
 	for _, frame := range early {
 		runtime.dispatchUpdate(frame.update)
 	}

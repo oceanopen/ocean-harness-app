@@ -1,10 +1,12 @@
 import type { YesNo } from './bindings';
-import { commands } from './bindings';
+import { commands, DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES } from './bindings';
 import { unwrap } from './commands';
 
 // —— Rust 单源常量 re-export（SSOT：app/src/shared/app_config.rs 等，经
 // .constant() 生成于 bindings.ts）。值类型为字面量类型（as const），消费方类型安全。 ——
 export {
+  ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY,
+  DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
   DEFAULT_ITERM2_SPLIT_DIRECTION,
   DEFAULT_POLL_INTERVAL_SECS,
   DEFAULT_TERMINAL_POST_OPEN_COMMAND,
@@ -138,6 +140,18 @@ export const DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH = 600;
 // 工作区目录默认打开工具（开发工作台标题栏胶囊按钮）。
 // 值域/默认值/decode 在 OpenWorkspaceDir/openTools.tsx。
 export const WORKSPACE_OPEN_TOOL_KEY = 'workspace_open_tool';
+
+// ACP 会话闲置回收阈值（分钟）。key/默认值在 Rust 单源（Go sidecar 到期判定时现读），
+// 值域与脏值回落在此（Go 侧 parse 对齐同一值域）。
+export const ACP_SESSION_IDLE_TIMEOUT_OPTIONS = [5, 15, 30, 60] as const;
+export type AcpSessionIdleTimeoutMinutes = (typeof ACP_SESSION_IDLE_TIMEOUT_OPTIONS)[number];
+
+export function parseAcpSessionIdleTimeoutMinutes(value: string | null): AcpSessionIdleTimeoutMinutes {
+  const parsed = value != null ? Number.parseInt(value, 10) : Number.NaN;
+  return (ACP_SESSION_IDLE_TIMEOUT_OPTIONS as readonly number[]).includes(parsed)
+    ? (parsed as AcpSessionIdleTimeoutMinutes)
+    : DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES;
+}
 
 // commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，
 // 保持 getAppConfig/setAppConfig 的对外 API 不变（错误时 throw）。

@@ -1,7 +1,8 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { Appearance, Language } from '@src/shared/appConfig';
+import type { AcpSessionIdleTimeoutMinutes, Appearance, Language } from '@src/shared/appConfig';
 import LanguageIcon from '@mui/icons-material/Language';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import {
   Box,
   Button,
@@ -12,14 +13,18 @@ import {
   Typography,
 } from '@mui/material';
 import {
+  ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY,
   APPEARANCE_KEY,
+  DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
   DEFAULT_APPEARANCE,
   DEFAULT_LANGUAGE,
   getAppConfig,
   LANGUAGE_KEY,
+  parseAcpSessionIdleTimeoutMinutes,
   setAppConfig,
 } from '@src/shared/appConfig';
 import {
+  acpSessionIdleTimeoutOptions,
   appearanceOptions,
   languageOptions,
 } from '@src/shared/settingOption';
@@ -33,12 +38,15 @@ function AppConfigPage() {
   const [draftLanguage, setDraftLanguage] = useState<Language>(DEFAULT_LANGUAGE);
   const [savedAppearance, setSavedAppearance] = useState<Appearance>(DEFAULT_APPEARANCE);
   const [draftAppearance, setDraftAppearance] = useState<Appearance>(DEFAULT_APPEARANCE);
+  const [savedAcpIdle, setSavedAcpIdle] = useState<AcpSessionIdleTimeoutMinutes>(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
+  const [draftAcpIdle, setDraftAcpIdle] = useState<AcpSessionIdleTimeoutMinutes>(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
 
   useEffect(() => {
     Promise.all([
       getAppConfig(LANGUAGE_KEY),
       getAppConfig(APPEARANCE_KEY),
-    ]).then(([lang, appearance]) => {
+      getAppConfig(ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY),
+    ]).then(([lang, appearance, idleMinutes]) => {
       if (lang === 'system' || lang === 'zh-CN' || lang === 'en') {
         setSavedLanguage(lang);
         setDraftLanguage(lang);
@@ -47,27 +55,36 @@ function AppConfigPage() {
         setSavedAppearance(appearance);
         setDraftAppearance(appearance);
       }
+      const acpIdle = parseAcpSessionIdleTimeoutMinutes(idleMinutes);
+      setSavedAcpIdle(acpIdle);
+      setDraftAcpIdle(acpIdle);
     });
   }, []);
 
   const dirty
-    = draftLanguage !== savedLanguage || draftAppearance !== savedAppearance;
+    = draftLanguage !== savedLanguage
+      || draftAppearance !== savedAppearance
+      || draftAcpIdle !== savedAcpIdle;
 
   const handleReset = () => {
     setDraftLanguage(DEFAULT_LANGUAGE);
     setDraftAppearance(DEFAULT_APPEARANCE);
+    setDraftAcpIdle(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
   };
   const handleCancel = () => {
     setDraftLanguage(savedLanguage);
     setDraftAppearance(savedAppearance);
+    setDraftAcpIdle(savedAcpIdle);
   };
   const handleSave = async () => {
     await Promise.all([
       setAppConfig(LANGUAGE_KEY, draftLanguage),
       setAppConfig(APPEARANCE_KEY, draftAppearance),
+      setAppConfig(ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY, String(draftAcpIdle)),
     ]);
     setSavedLanguage(draftLanguage);
     setSavedAppearance(draftAppearance);
+    setSavedAcpIdle(draftAcpIdle);
   };
 
   return (
@@ -135,6 +152,42 @@ function AppConfigPage() {
                 {appearanceOptions.map(opt => (
                   <MenuItem key={opt.value} value={opt.value}>
                     {t(opt.labelKey)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          <Divider />
+
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              px: 2,
+              py: 1.5,
+              gap: 2,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+              <TimerOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: 0.5 }} />
+              <Box>
+                <Typography>{t('settings:app.row.acpIdleTimeout')}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t('settings:app.help.acpIdleTimeout')}
+                </Typography>
+              </Box>
+            </Box>
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <Select
+                value={draftAcpIdle}
+                onChange={(e: SelectChangeEvent<AcpSessionIdleTimeoutMinutes>) =>
+                  setDraftAcpIdle(e.target.value as AcpSessionIdleTimeoutMinutes)}
+              >
+                {acpSessionIdleTimeoutOptions.map(opt => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {t(opt.labelKey, { minutes: opt.value })}
                   </MenuItem>
                 ))}
               </Select>

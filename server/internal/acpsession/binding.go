@@ -38,6 +38,22 @@ func (s *BindingStore) GetOrCreate(ctx context.Context, issueID string) (*model.
 	return row, nil
 }
 
+// Peek 只读锚点 acpSessionId（重建路径的 resume 依据：非空即可经适配器 session/load 恢复
+// 会话）。不动行、不建行；行不存在返回空串（无锚语义与 GetOrCreate 建行的空值一致）。
+func (s *BindingStore) Peek(ctx context.Context, issueID string) (string, error) {
+	q := query.Use(s.DB)
+	row, err := q.IssueAcpSession.WithContext(ctx).Where(
+		q.IssueAcpSession.IssueID.Eq(issueID),
+	).First()
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return row.AcpSessionID, nil
+}
+
 // SaveReady 会话就绪落锚：记 agentCode + acpSessionId 并清 last_error（新锚生效即旧错失效）。
 func (s *BindingStore) SaveReady(ctx context.Context, issueID, agentCode, acpSessionID string) error {
 	q := query.Use(s.DB)

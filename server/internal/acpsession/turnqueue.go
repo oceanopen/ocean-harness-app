@@ -42,6 +42,13 @@ func (q *turnQueue) depart(w <-chan struct{}) {
 	}
 }
 
+// pending 当前等位人数（idle 回收判据之一：等位回合未受理，会话不可回收）。
+func (q *turnQueue) pending() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.waiters)
+}
+
 // release 弹队首唤醒（空队列 / 已关闭 no-op）。由回合收尾路径（acceptTurn 的后台
 // goroutine）在 endTurn 之后调用——endTurn 置 turnActive=false 与 release 的先后即
 // 「槽位释放」时序：被唤醒者重试闸门要么看到已释放的槽位，要么被 UI 即时受理插队后

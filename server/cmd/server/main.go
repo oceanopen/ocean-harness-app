@@ -61,14 +61,14 @@ func main() {
 	// 反向依赖 config/global，由组装根在拉起 bot 前装配。
 	agentcatalog.SetVendoredDirs(cfg.AcpResourcesDir, cfg.AcpAdaptersDir)
 
-	// 5.5) ACP 会话域装配（T1.5）：启动清扫运行时锚（无 resume 语义，重启后旧锚全部失效
-	// 归零），随后经 global.AcpSessions 承接 issue 级会话生命周期（ensure/prompt/respond/
-	// discard）与 SSE 事件流；vendored 目录语义与 doctor 探测同源。先于 bot 装配——
-	// supervisor 装配引擎路由时消费本实例。
+	// 5.5) ACP 会话域装配（T1.5）：启动清扫运行时锚（重启后旧锚全部失效归零），随后经
+	// global.AcpSessions 承接 issue 级会话生命周期（ensure/prompt/respond/discard）与 SSE
+	// 事件流；vendored 目录语义与 doctor 探测同源。app.db 路径注入（T4 闲置回收阈值读取）。
+	// 先于 bot 装配——supervisor 装配引擎路由时消费本实例。
 	acpSessions, err := acpsession.NewManager(global.SqliteDB, acpsession.Dirs{
 		Resources: cfg.AcpResourcesDir,
 		Adapters:  cfg.AcpAdaptersDir,
-	}, cfg.Port, global.Logger)
+	}, cfg.Port, cfg.AppDbPath, global.Logger)
 	if err != nil {
 		global.Logger.Fatal("acp-session manager init failed", zap.Error(err))
 	}

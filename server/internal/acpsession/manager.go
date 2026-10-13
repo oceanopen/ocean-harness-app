@@ -13,7 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	acpgo "github.com/BrokkAi/acp-go"
 	"github.com/BrokkAi/acp-go/schema"
@@ -22,6 +24,7 @@ import (
 
 	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/agentcatalog"
+	"ocean-harness/server/internal/appdb"
 )
 
 // authRequiredHint claude 未登录的统一提示（握手步 -32000 特判；与 acpdoctor 的同款提示
@@ -37,33 +40,37 @@ type Dirs struct {
 
 // Manager ACP 会话域门面：per-issue 会话生命周期（ensure / prompt / cancel / respond /
 // discard）、事件流订阅（SSE hub）与绑定锚点落库。进程模型 = per-issue 独立 AgentClient
-// 进程（会话失败互不牵连；进程退出即会话终结，无 resume）。
+// 进程（会话失败互不牵连；idle 回收后重开经锚点 resume 恢复，见 Ensure）。
 type Manager struct {
-	db       *gorm.DB
-	dirs     Dirs
-	port     int // sidecar 自身 HTTP 端口（spawn env 注入 OCEAN_HARNESS_PORT，会话内插件工具链用）
-	log      *zap.Logger
-	bindings *BindingStore
-	hub      *hub
+	db        *gorm.DB
+	dirs      Dirs
+	port      int    // sidecar 自身 HTTP 端口（spawn env 注入 OCEAN_HARNESS_PORT，会话内插件工具链用）
+	appDbPath string // Rust 共享 app.db 路径（闲置回收阈值读取；空 = 未注入，配置读失败回落默认）
+	log       *zap.Logger
+	bindings  *BindingStore
+	hub       *hub
 
 	mu      sync.Mutex
 	entries map[string]*sessionEntry
 }
 
-// NewManager 装配会话域（main 步骤 5.5）：启动清扫运行时锚（无 resume 语义，重启后旧锚
-// 全部失效归零）。port 为 sidecar 自身 HTTP 端口。
-func NewManager(db *gorm.DB, dirs Dirs, port int, log *zap.Logger) (*Manager, error) {
+// NewManager 装配会话域（main 步骤 5.5）：启动清扫运行时锚——重启后运行时进程已不存在，
+// 锚归零即重开走全新会话（会话文件在 claude 侧仍可 resume，重启恢复留待后续评审，本域
+// 现阶段只在进程内 idle 回收场景 resume）。port 为 sidecar 自身 HTTP 端口；appDbPath 为
+// Rust 共享 app.db 路径（可空：闲置回收阈值读失败回落默认）。
+func NewManager(db *gorm.DB, dirs Dirs, port int, appDbPath string, log *zap.Logger) (*Manager, error) {
 	if log == nil {
 		log = zap.NewNop()
 	}
 	m := &Manager{
-		db:       db,
-		dirs:     dirs,
-		port:     port,
-		log:      log,
-		bindings: &BindingStore{DB: db},
-		hub:      newHub(),
-		entries:  map[string]*sessionEntry{},
+		db:        db,
+		dirs:      dirs,
+		port:      port,
+		appDbPath: appDbPath,
+		log:       log,
+		bindings:  &BindingStore{DB: db},
+		hub:       newHub(),
+		entries:   map[string]*sessionEntry{},
 	}
 	if err := m.bindings.SweepSessionIDs(context.Background()); err != nil {
 		return nil, fmt.Errorf("清扫 ACP 会话锚点失败: %w", err)
@@ -71,9 +78,10 @@ func NewManager(db *gorm.DB, dirs Dirs, port int, log *zap.Logger) (*Manager, er
 	return m, nil
 }
 
-// sessionEntry 单 issue 的运行时会话宿主。mu 守护 state / client / session / discarded；
-// 锁序：entry.mu → view 内部锁（绝不反向，view 不感知 entry）；turnQueue 的 q.mu 独立
-// （约定见 turnqueue.go）。
+// sessionEntry 单 issue 的运行时会话宿主。mu 守护 state / client / session / discarded /
+// idle 计时字段；锁序：entry.mu → view 内部锁（绝不反向，view 不感知 entry）；turnQueue
+// 的 q.mu 独立（约定见 turnqueue.go）；entry.mu → hub.mu / q.mu 均单向（hub、队列绝不
+// 反拿 entry.mu）。
 type sessionEntry struct {
 	issueID string
 	mu      sync.Mutex
@@ -84,10 +92,14 @@ type sessionEntry struct {
 	view      *sessionView
 	turnQueue *turnQueue // 跨入口回合等位队列（T2.2）：PromptQueued 排队受理的槽位等待
 	discarded bool       // Discard 已受理：后台 spawn 完成后发现即自清（不落锚、不注册 pump）
+
+	idleTimer *time.Timer // 闲置回收倒计时（完全空闲判据通过时起表；离开空闲停表）
+	idleSince time.Time   // 本次空闲起点（到期回调按当前配置重算剩余时长，改阈值即时生效）
+	released  bool        // 闲置回收已受理：pump 终结哨兵见此早退（不落态、不清锚、不广播）
 }
 
 // spawnFunc 测试替换点（对齐 acpdoctor probeFunc 惯例）：catalog 条目 → vendored 拉起链
-// → spawn env 注入 → 握手 → 建会话 → 下发权限模式。
+// → spawn env 注入 → 握手 → 建/恢复会话（resumeSessionID 非空走 LoadSession）→ 下发权限模式。
 var spawnFunc = spawnAgentSession
 
 // Ensure 幂等受理会话创建：同步解析配置（校验失败立即反馈）→ starting/ready 态 join 返回
@@ -103,14 +115,16 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 	m.mu.Lock()
 	if old, ok := m.entries[issueID]; ok {
 		old.mu.Lock()
-		joinable := old.state == StatusStarting || old.state == StatusReady
+		// released（闲置回收已受理）不可 join——join 返回的 ready 快照会随即进程被回收。
+		joinable := !old.released && (old.state == StatusStarting || old.state == StatusReady)
 		old.mu.Unlock()
 		if joinable {
 			m.mu.Unlock()
 			return old.view.snapshot(), nil
 		}
 		// failed/terminated：重建。旧 entry 已终态且无在途写者（spawn 失败路径在置态前
-		// 已完整收尾；pump 终结路径置态后仅剩一次 hub 广播），直接替换。
+		// 已完整收尾；pump 终结路径置态后仅剩一次 hub 广播），直接替换。released（回收
+		// 在途）同走此路：reclaim 的 map 身份检查防误摘新 entry，旧 client 由其 Close。
 		// 等位者随旧 entry 终结退出（close 广播）——旧等待不跨 entry 续接新会话。
 		delete(m.entries, issueID)
 		old.turnQueue.close()
@@ -125,16 +139,24 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 		m.mu.Unlock()
 		return ViewSnapshot{}, err
 	}
+	// 锚点只读预取：非空即可恢复（idle 回收后的重建路径）；读取异常按全新会话受理（恢复
+	// 尽力而为，不因锚点读失败阻塞受理）。
+	resumeID, err := m.bindings.Peek(ctx, issueID)
+	if err != nil {
+		m.log.Warn("读取会话锚点失败，按全新会话受理", zap.String("issueId", issueID), zap.Error(err))
+		resumeID = ""
+	}
 	m.hub.broadcast(issueID, entry.view.setStarting(cfg))
-	go m.runSpawn(entry, cfg)
+	go m.runSpawn(entry, cfg, resumeID)
 	return entry.view.snapshot(), nil
 }
 
 // runSpawn 后台 spawn 链（Ensure 受理的后续）：拉起就绪 → 落锚 + 注册 pump；失败 → 落态
 // 落因（last_error 跨重启可见）。不捕获请求 ctx（Ensure 已返回）；发现 discarded（受理后
-// issue 被删）直接自清。
-func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig) {
-	client, session, err := spawnFunc(cfg, m.dirs, m.port, m.log)
+// issue 被删）直接自清。resumeID 非空时拉起链以 LoadSession 恢复既有会话（失败内部降级
+// 全新会话，不阻塞受理）。
+func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID string) {
+	client, session, err := spawnFunc(cfg, m.dirs, m.port, m.log, resumeID)
 	entry.mu.Lock()
 	if entry.discarded {
 		entry.mu.Unlock()
@@ -161,15 +183,16 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig) {
 		m.log.Warn("ACP 会话锚点落库失败", zap.String("issueId", entry.issueID), zap.Error(err))
 	}
 	m.hub.broadcast(entry.issueID, frames)
+	m.resetIdleCheck(entry) // 就绪即重估：无人订阅且无回合则开始闲置倒计时
 	go m.pump(entry)
 }
 
 // spawnAgentSession 生产拉起链（与 acpdoctor.CheckEntry 逐段同源：vendored 安装 → vendored
-// claude 定位 → spawn env 注入 → Launch → 握手 → 建会话 → 下发权限模式；「探测通过」与
+// claude 定位 → spawn env 注入 → Launch → 握手 → 建/恢复会话 → 下发权限模式；「探测通过」与
 // 「生产拉起」同一条链，差别仅在探测后清理、本链长期持有）。node 预检不复制——那是
 // doctor 的 stage 级定位面职责，本链 node 缺失在 EnsureVendored/VendoredSpawnConfig 显式
 // 报错。任一后置步失败回收已拉起进程。
-func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger) (*acp.AgentClient, *acp.Session, error) {
+func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, resumeSessionID string) (*acp.AgentClient, *acp.Session, error) {
 	entry, ok := agentcatalog.GetAgentCatalogInfoByCode(cfg.AgentCode)
 	if !ok {
 		return nil, nil, fmt.Errorf("agent catalog 无 %q 条目", cfg.AgentCode)
@@ -209,7 +232,7 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger) 
 		}
 		return nil, nil, fmt.Errorf("ACP 握手失败: %w", err)
 	}
-	session, err := client.NewSession(context.Background(), acp.NewSessionParams{Cwd: cfg.Cwd})
+	session, err := newOrResumedSession(context.Background(), client, cfg, resumeSessionID, log)
 	if err != nil {
 		client.Close()
 		if hint, authed := authRequired(err); authed {
@@ -222,6 +245,20 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger) 
 		return nil, nil, fmt.Errorf("下发权限模式失败: %w", err)
 	}
 	return client, session, nil
+}
+
+// newOrResumedSession 建/恢复会话收口：锚点非空走 LoadSession（适配器读回 claude 会话
+// 文件并重放历史）；恢复失败（能力未声明/会话文件丢失等）降级全新会话——恢复尽力而为，
+// 不因锚点失效阻塞受理，降级后 SaveReady 以新 id 覆盖锚点。
+func newOrResumedSession(ctx context.Context, client *acp.AgentClient, cfg SessionConfig, resumeSessionID string, log *zap.Logger) (*acp.Session, error) {
+	if resumeSessionID != "" {
+		session, err := client.LoadSession(ctx, acp.LoadSessionParams{Cwd: cfg.Cwd, SessionID: resumeSessionID})
+		if err == nil {
+			return session, nil
+		}
+		log.Warn("ACP 会话恢复失败，降级全新会话", zap.String("resumeSessionId", resumeSessionID), zap.Error(err))
+	}
+	return client.NewSession(ctx, acp.NewSessionParams{Cwd: cfg.Cwd})
 }
 
 // authRequired 判定握手步失败是否为 -32000（claude 未登录；判定与 acpdoctor.authRequired
@@ -252,7 +289,9 @@ func (m *Manager) pump(entry *sessionEntry) {
 // Err() 证据（含 stderr 摘要）。
 func (m *Manager) finishTerminated(entry *sessionEntry) {
 	entry.mu.Lock()
-	if entry.state == StatusTerminated {
+	if entry.state == StatusTerminated || entry.released {
+		// released（闲置回收已摘 entry）：主动收尾不是会话终结——不落态、不清锚（锚点
+		// 供重开 resume）、不广播（无订户）。
 		entry.mu.Unlock()
 		return
 	}
@@ -286,12 +325,24 @@ func (m *Manager) Get(issueID string) ViewSnapshot {
 }
 
 // Subscribe 订阅 issue 事件流：首帧即当前快照（无会话 = idle 空快照），返回帧通道与退订
-// 函数（SSE handler defer 调用）。
+// 函数（SSE handler defer 调用）。订户在场即离开空闲（停表）；退订后重估闲置倒计时。
 func (m *Manager) Subscribe(issueID string) (<-chan Frame, func()) {
-	return m.hub.subscribe(issueID, func() *ViewSnapshot {
+	m.mu.Lock()
+	entry, ok := m.entries[issueID]
+	m.mu.Unlock()
+	frames, cancel := m.hub.subscribe(issueID, func() *ViewSnapshot {
 		snap := m.Get(issueID)
 		return &snap
 	})
+	if ok {
+		m.stopIdleTimer(entry)
+	}
+	return frames, func() {
+		cancel()
+		if ok {
+			m.resetIdleCheck(entry)
+		}
+	}
 }
 
 // Prompt 即时受理一轮回合（UI 入口语义）：视图侧串行闸门（活动回合拒绝，acp.ErrTurnActive
@@ -353,6 +404,7 @@ func (m *Manager) PromptQueued(ctx context.Context, issueID, text string, meta P
 // 后台阻塞至 agent 终态 → 合成 turnEnded 广播 → 释放回合槽位（唤醒等位队首）。回合
 // 终态先落视图再 release——被唤醒者重试闸门时槽位必然已释放。
 func (m *Manager) acceptTurn(entry *sessionEntry, frames []Frame, text string) {
+	m.stopIdleTimer(entry) // 回合受理即离开空闲（判据复查兜底停表前的窗口）
 	m.hub.broadcast(entry.issueID, frames)
 	entry.mu.Lock()
 	client, session := entry.client, entry.session
@@ -361,6 +413,7 @@ func (m *Manager) acceptTurn(entry *sessionEntry, frames []Frame, text string) {
 		stop, promptErr := client.PromptText(context.Background(), session, text)
 		m.hub.broadcast(entry.issueID, entry.view.endTurn(string(stop), errorText(promptErr)))
 		entry.turnQueue.release()
+		m.resetIdleCheck(entry) // 回合终态：重新评估闲置倒计时
 	}()
 }
 
@@ -461,6 +514,7 @@ func (m *Manager) StopAll() {
 	for _, entry := range entries {
 		entry.mu.Lock()
 		client := entry.client
+		m.stopIdleTimerLocked(entry) // 关停不再回收计时
 		entry.mu.Unlock()
 		entry.turnQueue.close() // 排队回合随关停退出
 		if client != nil {
@@ -468,6 +522,128 @@ func (m *Manager) StopAll() {
 		}
 	}
 	m.hub.closeAll()
+}
+
+// —— 闲置回收（T4）——
+//
+// 完全空闲判据：就绪态 + 无活动回合 + 无等位回合 + 无订户（等位者不持订户，漏判会杀掉
+// 排队回合）。判据通过起表倒计时，离开空闲停表；到期回调以空闲起点 + 当前配置重算剩余
+// 时长（改阈值即时生效）后复查判据，仍满足才回收：置 released + 摘 entry + Close（进程
+// 退出，node 内存释放）。回收路径与意外死亡分流——pump 终结哨兵见 released 直接退出，
+// 不落态、不清锚（acpSessionId 保留供重开 resume）、不广播（无订户无人感知）。
+
+// acpSessionIdleTimeoutOptions 与前端 ACP_SESSION_IDLE_TIMEOUT_OPTIONS（appConfig.ts）
+// 对齐的值域；脏值回落默认（Rust DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES 单源）。
+var acpSessionIdleTimeoutOptions = map[int]bool{5: true, 15: true, 30: true, 60: true}
+
+const defaultAcpSessionIdleTimeoutMinutes = 30
+
+// parseIdleTimeoutMinutes 配置值解析（与前端 parseAcpSessionIdleTimeoutMinutes 同口径：
+// 非法或不在值域回落默认 30）。
+func parseIdleTimeoutMinutes(value string) int {
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || !acpSessionIdleTimeoutOptions[parsed] {
+		return defaultAcpSessionIdleTimeoutMinutes
+	}
+	return parsed
+}
+
+// idleTimeoutMinutes 现读配置（无缓存：改设置下一次起表/到期即生效；读失败回落默认——
+// air 自测等无 app.db 场景不受阻）。
+func (m *Manager) idleTimeoutMinutes() int {
+	value, err := appdb.ReadAppConfigValue(m.appDbPath, appdb.KeyAcpSessionIdleTimeoutMinutes)
+	if err != nil {
+		return defaultAcpSessionIdleTimeoutMinutes
+	}
+	return parseIdleTimeoutMinutes(value)
+}
+
+// idleTimeout 阈值时长（测试替换点：短阈值驱动回收用例；生产 = 配置分钟转时长）。
+var idleTimeout = (*Manager).idleTimeoutDuration
+
+// idleTimeoutDuration 配置分钟 → 时长。
+func (m *Manager) idleTimeoutDuration() time.Duration {
+	return time.Duration(m.idleTimeoutMinutes()) * time.Minute
+}
+
+// fullyIdleLocked 完全空闲判据（须持 entry.mu）：未回收未删除 + 就绪态 + 无活动回合 +
+// 无等位回合 + 无订户（等位者不持订户，漏判会杀掉排队回合）。idleSubs 为锁外预读的订户数。
+func (m *Manager) fullyIdleLocked(entry *sessionEntry, idleSubs int) bool {
+	return !entry.released && !entry.discarded && entry.state == StatusReady &&
+		!entry.view.snapshot().TurnActive && entry.turnQueue.pending() == 0 && idleSubs == 0
+}
+
+// resetIdleTimerLocked 重估空闲计时（须持 entry.mu）：先停表；判据通过则以当前配置起表
+// 并记空闲起点，离开空闲清起点（起点只归属当前空闲段，是到期重算的依据）。判据复查与
+// 起表同锁完成，到期回调的判据复查兜底两者之间的竞态。
+func (m *Manager) resetIdleTimerLocked(entry *sessionEntry, idleSubs int) {
+	m.stopIdleTimerLocked(entry)
+	if !m.fullyIdleLocked(entry, idleSubs) {
+		entry.idleSince = time.Time{}
+		return
+	}
+	entry.idleSince = time.Now()
+	entry.idleTimer = time.AfterFunc(idleTimeout(m), func() {
+		m.reclaimIdle(entry)
+	})
+}
+
+// stopIdleTimerLocked 停表（须持 entry.mu；nil 幂等）。不清空闲起点——到期回调以其重算
+// 剩余时长；清零由 resetIdleTimerLocked 的离开空闲分支负责。
+func (m *Manager) stopIdleTimerLocked(entry *sessionEntry) {
+	if entry.idleTimer != nil {
+		entry.idleTimer.Stop()
+		entry.idleTimer = nil
+	}
+}
+
+// resetIdleCheck 空闲状态迁移点的重估入口（回合终态/退订/就绪落态后调用）。订户数须在
+// entry.mu 外预读——锁内嵌套 hub.mu 会经快照闭包（hub.mu → m.mu）与 Ensure 的
+// m.mu → entry.mu 构成环；预读到起表之间的新订户由 Subscribe 的停表兜底。
+func (m *Manager) resetIdleCheck(entry *sessionEntry) {
+	idleSubs := m.hub.subscriberCount(entry.issueID)
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	m.resetIdleTimerLocked(entry, idleSubs)
+}
+
+// stopIdleTimer 离开空闲（回合受理/新订户）的停表入口；released/已终结 entry 幂等。
+func (m *Manager) stopIdleTimer(entry *sessionEntry) {
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	m.stopIdleTimerLocked(entry)
+}
+
+// reclaimIdle 倒计时到期：先按当前配置重算剩余时长（改阈值即时生效——阈值改长则按空闲
+// 起点顺延），判据仍满足才回收。订户数锁外预读（锁序约定，同 resetIdleCheck）。摘 entry
+// 先于 Close——pump 的终结哨兵经 released 早退，不会再走 finishTerminated。
+func (m *Manager) reclaimIdle(entry *sessionEntry) {
+	idleSubs := m.hub.subscriberCount(entry.issueID)
+	entry.mu.Lock()
+	m.stopIdleTimerLocked(entry)
+	if !m.fullyIdleLocked(entry, idleSubs) {
+		entry.mu.Unlock()
+		return
+	}
+	remaining := idleTimeout(m)
+	if idle := time.Since(entry.idleSince); idle < remaining {
+		// 阈值改长：按空闲起点顺延剩余时长继续等（起点不变，下个到期继续重算）。
+		entry.idleTimer = time.AfterFunc(remaining-idle, func() { m.reclaimIdle(entry) })
+		entry.mu.Unlock()
+		return
+	}
+	entry.released = true
+	client := entry.client
+	entry.mu.Unlock()
+	m.mu.Lock()
+	if m.entries[entry.issueID] == entry {
+		delete(m.entries, entry.issueID)
+	}
+	m.mu.Unlock()
+	m.log.Info("ACP 会话闲置回收", zap.String("issueId", entry.issueID), zap.String("acpSessionId", entry.view.snapshot().AcpSessionID))
+	if client != nil {
+		client.Close() // 有界（结算 + 连接关闭 + 进程组回收）；pump 哨兵经 released 早退
+	}
 }
 
 // readyEntry 取就绪态 entry（无 entry / 非就绪统一业务错误，错误文案带当前状态）。
@@ -485,10 +661,13 @@ func (m *Manager) readyEntry(issueID string) (*sessionEntry, error) {
 }
 
 // readyError 就绪态校验。readyEntry 之外，PromptQueued 在每次等位唤醒后复验持有的
-// entry：等位期间终结/重建后，旧 entry 不得续接受理。
+// entry：等位期间终结/重建/回收后，旧 entry 不得续接受理。
 func (e *sessionEntry) readyError() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.released {
+		return errors.New("ACP 会话已闲置回收，重新打开后自动恢复")
+	}
 	if e.state != StatusReady {
 		return fmt.Errorf("ACP 会话未就绪（当前 %s）", e.state)
 	}

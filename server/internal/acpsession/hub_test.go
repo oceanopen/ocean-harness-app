@@ -138,3 +138,23 @@ func TestHubUnsubscribeAndCloseAll(t *testing.T) {
 	// 关停后广播静默（不再有订户，也不 panic）。
 	h.broadcast("i-2", []Frame{{Type: FrameEntry}})
 }
+
+func TestHubSubscriberCount(t *testing.T) {
+	h := newHub()
+	if got := h.subscriberCount("i-1"); got != 0 {
+		t.Fatalf("初始订户数应为 0，got %d", got)
+	}
+	_, cancelA := h.subscribe("i-1", nil)
+	_, cancelB := h.subscribe("i-1", nil)
+	if got := h.subscriberCount("i-1"); got != 2 {
+		t.Fatalf("两订户应为 2，got %d", got)
+	}
+	if got := h.subscriberCount("i-other"); got != 0 {
+		t.Fatalf("无关 issue 应为 0，got %d", got)
+	}
+	cancelA()
+	if got := h.subscriberCount("i-1"); got != 1 {
+		t.Fatalf("退订一个后应为 1，got %d", got)
+	}
+	cancelB()
+}

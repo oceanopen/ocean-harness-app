@@ -45,6 +45,25 @@ func TestTurnQueueDepart(t *testing.T) {
 	q.release() // 空队列 no-op
 }
 
+func TestTurnQueuePending(t *testing.T) {
+	q := newTurnQueue()
+	if got := q.pending(); got != 0 {
+		t.Fatalf("初始等位数应为 0，got %d", got)
+	}
+	w1, _ := q.join(), q.join()
+	if got := q.pending(); got != 2 {
+		t.Fatalf("两等位者应为 2，got %d", got)
+	}
+	q.depart(w1)
+	if got := q.pending(); got != 1 {
+		t.Fatalf("depart 后应为 1，got %d", got)
+	}
+	q.release() // 弹出 w2
+	if got := q.pending(); got != 0 {
+		t.Fatalf("release 后应为 0，got %d", got)
+	}
+}
+
 func TestTurnQueueClose(t *testing.T) {
 	q := newTurnQueue()
 	w1, w2 := q.join(), q.join()

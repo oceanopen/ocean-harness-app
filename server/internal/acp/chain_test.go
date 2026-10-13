@@ -439,3 +439,57 @@ func TestEarlyFrameReplay(t *testing.T) {
 	}
 	waitForChunk(t, session.Events(), "late")
 }
+
+// launchFakeClient 只拉起不建会话（LoadSession 用例的前置）。
+func launchFakeClient(t *testing.T, script string) *AgentClient {
+	t.Helper()
+	client, err := Launch(context.Background(), SpawnConfig{
+		Command: []string{fakeAgentBin, script},
+		Cwd:     t.TempDir(),
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Launch(%s): %v", script, err)
+	}
+	t.Cleanup(client.Close)
+	return client
+}
+
+// LoadSession 能力协商：agent 未声明 session/load 即报错（T4 降级路径的触发形态）。
+func TestLoadSessionCapabilityRejected(t *testing.T) {
+	client := launchFakeClient(t, "happy")
+	if _, err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	_, err := client.LoadSession(context.Background(), LoadSessionParams{SessionID: "fake-nope"})
+	if err == nil || !strings.Contains(err.Error(), "session/load") {
+		t.Fatalf("未声明能力应报 session/load 错误，got %v", err)
+	}
+}
+
+// LoadSession 全链：历史重放（响应前推送经早到帧缓冲，注册后按序回放）+ 请求 id 注册 +
+// Modes 合装 + 恢复后 prompt 正常推进。
+func TestLoadSessionReplayAndPrompt(t *testing.T) {
+	client := launchFakeClient(t, "load")
+	if _, err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	session, err := client.LoadSession(context.Background(), LoadSessionParams{SessionID: "fake-load-1"})
+	if err != nil {
+		t.Fatalf("LoadSession: %v", err)
+	}
+	if session.ID() != "fake-load-1" {
+		t.Fatalf("应以请求 id 注册会话，got %q", session.ID())
+	}
+	if session.Modes() == nil || len(session.Modes().AvailableModes) != 1 {
+		t.Fatalf("load 响应的 Modes 应合装，got %+v", session.Modes())
+	}
+	events := session.Events()
+	if text := waitForChunk(t, events, "历史-1"); text != "历史-1" {
+		t.Fatalf("重放历史应最先回放，got %q", text)
+	}
+	waitForChunk(t, events, "历史-2")
+	if _, err := client.PromptText(context.Background(), session, "恢复后第一句"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	waitForChunk(t, events, "你好，")
+}

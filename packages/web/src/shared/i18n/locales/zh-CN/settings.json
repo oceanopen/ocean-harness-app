@@ -17,14 +17,19 @@
   "app": {
     "row": {
       "language": "界面语言",
-      "appearance": "外观"
+      "appearance": "外观",
+      "acpIdleTimeout": "ACP 会话闲置回收"
+    },
+    "help": {
+      "acpIdleTimeout": "空闲超过该时长的会话自动退出，重开时自动恢复"
     },
     "option": {
       "followSystem": "跟随系统",
       "chinese": "简体中文",
       "english": "English",
       "light": "浅色",
-      "dark": "深色"
+      "dark": "深色",
+      "idleMinutes": "{{minutes}} 分钟"
     }
   },
   "terminal": {

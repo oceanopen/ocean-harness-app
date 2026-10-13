@@ -1,4 +1,4 @@
-import type { Appearance, Iterm2SplitDirection, Language } from './appConfig';
+import type { AcpSessionIdleTimeoutMinutes, Appearance, Iterm2SplitDirection, Language } from './appConfig';
 
 export interface LanguageOption {
   value: Language;
@@ -20,6 +20,18 @@ export const appearanceOptions: AppearanceOption[] = [
   { value: 'system', labelKey: 'settings:app.option.followSystem' },
   { value: 'light', labelKey: 'settings:app.option.light' },
   { value: 'dark', labelKey: 'settings:app.option.dark' },
+];
+
+export interface AcpSessionIdleTimeoutOption {
+  value: AcpSessionIdleTimeoutMinutes;
+  labelKey: string;
+}
+
+export const acpSessionIdleTimeoutOptions: AcpSessionIdleTimeoutOption[] = [
+  { value: 5, labelKey: 'settings:app.option.idleMinutes' },
+  { value: 15, labelKey: 'settings:app.option.idleMinutes' },
+  { value: 30, labelKey: 'settings:app.option.idleMinutes' },
+  { value: 60, labelKey: 'settings:app.option.idleMinutes' },
 ];
 
 export interface Iterm2SplitDirectionOption {

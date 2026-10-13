@@ -38,6 +38,13 @@ pub const DEFAULT_TERMINAL_POST_OPEN_COMMAND: &str = "";
 /// 敏感值：设置页不回显明文（仅示「已配置」），写入即生效（无缓存）。
 pub const GITHUB_PAT_KEY: &str = "github_pat";
 
+/// ACP 会话闲置回收阈值（分钟）。空闲（就绪态、无进行中回合、无订阅者、无排队回合）超过
+/// 该时长的 ACP 会话由 Go sidecar 回收（node 进程退出），重开时经锚点 resume 恢复上下文。
+/// Go sidecar 经 GO_SERVER_APP_DB 指向的本表只读此 key，到期判定时现读（改配置即时生效）。
+/// 值域（5/15/30/60）与脏值回落默认由前端 appConfig.ts 与 Go 侧 parse 对齐约定。
+pub const ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY: &str = "acp_session_idle_timeout_minutes";
+pub const DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES: u64 = 30;
+
 pub struct AppConfigState(pub Mutex<Connection>);
 
 pub fn init(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {

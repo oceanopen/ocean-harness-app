@@ -130,6 +130,13 @@ func (h *hub) broadcast(issueID string, frames []Frame) {
 	}
 }
 
+// subscriberCount 当前订户数（idle 回收判据之一：有订户即有人在看，不可回收）。
+func (h *hub) subscriberCount(issueID string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subs[issueID])
+}
+
 // unsubscribe 退订（SSE handler defer 调用；幂等）。
 func (h *hub) unsubscribe(sub *subscriber) {
 	h.mu.Lock()

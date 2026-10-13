@@ -11,6 +11,8 @@
 //	slow-cancel      持续推送 chunk 直至收到 session/cancel，以 cancelled 终止
 //	doctor-happy     session/new 响应后 200ms 推送 available_commands（T1.4 doctor 握手门槛）
 //	early-push       session/new 响应前抢跑推送 chunk（早到帧缓冲回放路径）+ prompt 补推一段
+//	load             session/load：响应前同步重放两段历史 chunk（早到帧缓冲承接），恢复后
+//	                 prompt 正常回合；无 SessionLoader 之外的差异
 //	crash            session/new 响应后 200ms 整进程退出 1（意外死亡路径：EOF → 收敛序 →
 //	                 消费方收到 Terminated 哨兵且 Err() 携带异常退出证据）
 package main
@@ -35,6 +37,7 @@ const (
 	scriptSlowCancel     = "slow-cancel"
 	scriptDoctorHappy    = "doctor-happy"
 	scriptEarlyPush      = "early-push"
+	scriptLoad           = "load"
 	scriptCrash          = "crash"
 )
 
@@ -53,7 +56,7 @@ func main() {
 	if _, ok := map[string]bool{
 		scriptHappy: true, scriptPermission: true, scriptLatePermission: true,
 		scriptElicitation: true, scriptSlowCancel: true, scriptDoctorHappy: true,
-		scriptEarlyPush: true, scriptCrash: true,
+		scriptEarlyPush: true, scriptLoad: true, scriptCrash: true,
 	}[os.Args[1]]; !ok {
 		fmt.Fprintf(os.Stderr, "fakeagent: 未知脚本 %q\n", os.Args[1])
 		os.Exit(2)
@@ -66,7 +69,13 @@ func main() {
 }
 
 func (a *fakeAgent) Initialize(_ context.Context, _ agent.Client, _ schema.InitializeRequest) (schema.InitializeResponse, error) {
-	return schema.InitializeResponse{ProtocolVersion: 1, AgentCapabilities: &schema.AgentCapabilities{}}, nil
+	caps := &schema.AgentCapabilities{}
+	// 仅 load 脚本声明 session/load 能力：其余脚本保持空能力，保留「能力未声明 →
+	// 客户端 requireCapability 拒绝」的可测路径。
+	if os.Args[1] == scriptLoad {
+		caps.LoadSession = boolPtr(true)
+	}
+	return schema.InitializeResponse{ProtocolVersion: 1, AgentCapabilities: caps}, nil
 }
 
 func (a *fakeAgent) NewSession(_ context.Context, client agent.Client, _ schema.NewSessionRequest) (schema.NewSessionResponse, error) {
@@ -136,7 +145,7 @@ func (a *fakeAgent) SetMode(_ context.Context, client agent.Client, request sche
 
 func (a *fakeAgent) Prompt(ctx context.Context, client agent.Client, request schema.PromptRequest, updates agent.SessionUpdater) (schema.PromptResponse, error) {
 	switch os.Args[1] {
-	case scriptHappy:
+	case scriptHappy, scriptLoad: // load：恢复后回合与 happy 同款（回声两段 + end_turn）
 		if err := a.chunk(updates, request.SessionID, "你好，"); err != nil {
 			return schema.PromptResponse{}, err
 		}
@@ -257,3 +266,29 @@ func elicitationParams(sessionID schema.SessionId) map[string]any {
 }
 
 func strPtr(s string) *string { return &s }
+
+func boolPtr(b bool) *bool { return &b }
+
+// LoadSession load 脚本：响应前同步重放两段历史 chunk（模拟适配器 replaySessionHistory
+// 时序——重放推送先于 load 响应到达客户端，走早到帧缓冲）；恢复后的会话 prompt 正常回合。
+func (a *fakeAgent) LoadSession(_ context.Context, client agent.Client, request schema.LoadSessionRequest) (schema.LoadSessionResponse, error) {
+	if os.Args[1] != scriptLoad {
+		return schema.LoadSessionResponse{}, fmt.Errorf("fakeagent: 脚本 %q 未启用 load", os.Args[1])
+	}
+	for _, text := range []string{"历史-1", "历史-2"} {
+		if err := client.Notify(context.Background(), schema.SessionUpdateMethodName, schema.SessionNotification{
+			SessionID: request.SessionID,
+			Update: schema.SessionUpdate{AgentMessageChunk: &schema.ContentChunk{
+				Content: schema.ContentBlock{Text: &schema.TextContent{Text: text}},
+			}},
+		}); err != nil {
+			return schema.LoadSessionResponse{}, err
+		}
+	}
+	return schema.LoadSessionResponse{
+		Modes: &schema.SessionModeState{
+			AvailableModes: []schema.SessionMode{{ID: "default", Name: "Default"}},
+			CurrentModeID:  "default",
+		},
+	}, nil
+}

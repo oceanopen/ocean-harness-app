@@ -1058,7 +1058,7 @@ func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
 	if err := q.ProjectIssue.WithContext(context.Background()).Create(issue); err != nil {
 		t.Fatalf("建 issue: %v", err)
 	}
-	mgr, err := acpsession.NewManager(db, acpsession.Dirs{}, 0, zap.NewNop())
+	mgr, err := acpsession.NewManager(db, acpsession.Dirs{}, 0, "", zap.NewNop())
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
