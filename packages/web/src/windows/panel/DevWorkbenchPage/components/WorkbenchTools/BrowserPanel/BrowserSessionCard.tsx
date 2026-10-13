@@ -20,6 +20,7 @@ import {
   Typography,
 } from '@mui/material';
 import { commands } from '@src/shared/bindings';
+import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
   useAnalyzeBrowserSession,
   useBrowserFrameStream,
@@ -108,8 +109,10 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   const analyzeMutation = useAnalyzeBrowserSession();
 
   const ready = session.status === 'ready';
-  // 预览订阅闸门：激活期停订（该 profile 的实时订阅归操作台 Stage——单 profile 单订阅）。
-  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight && !activated;
+  // 预览订阅闸门：激活期停订（该 profile 的实时订阅归操作台 Stage——单 profile 单订阅）；
+  // 窗口隐藏（关托盘/最小化）停订——webview 隐藏不卸载组件树，隐藏期订阅纯空转。
+  const visible = useDocumentVisible();
+  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight && !activated && visible;
   // 观看页码：点选页优先，未选 = 当前页（分析目标与观看页码同一语义）；pages 未就绪
   // 以 0 起步，首帧即真实页。
   const pageId = selectedPageId ?? (session.pages ?? []).find(page => page.current)?.index ?? 0;
@@ -354,7 +357,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                           '&:hover > div': { borderColor: 'primary.main' },
                         }}
                       >
-                        <MiniPreview frameRef={stream.frameRef} tick={stream.tick} height={MINI_PREVIEW_HEIGHT} />
+                        <MiniPreview frameRef={stream.frameRef} hasFrame={stream.hasFrame} height={MINI_PREVIEW_HEIGHT} />
                       </Box>
                     </Tooltip>
                   )}

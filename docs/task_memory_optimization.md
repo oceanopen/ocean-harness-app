@@ -1,6 +1,6 @@
 # 内存优化——任务清单
 
-> 状态：待实施
+> 状态：实施中
 > 范围：内存占用优化六个任务——操作台帧流双层节流与可见性闸门、ToolCallItem 折叠卸载与载荷懒渲染、SSE 订阅失败终态、ACP 适配器闲置回收、MessageList 虚拟化、ACP 消息落库与分页。本文档自含全部设计事实，是进度唯一 SSOT。
 >
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
@@ -43,11 +43,19 @@
 
 ### 第一批（A 组：CPU 与 DOM 止血）
 
-**任务 T1：操作台帧流双层节流 + 可见性闸门** ⬜
+**任务 T1：操作台帧流双层节流 + 可见性闸门** ✅
 - 功能：操作台浮层打开时帧率有上限、不可见时零帧，CPU 占用大幅下降
 - 技术方案：`BrowserStageOverlay.tsx:42` 传 `throttleMs=300`；`useFramePaint.ts` 改 rAF 消费循环（frameRef 单槽不变，effect 事件分派只置脏标记，rAF 中取最新帧绘制）；`DevWorkbenchPage.tsx:567` 挂载点与 Overlay 内部补可见性判定驱动 `streamEnabled`
 - 依赖：无
 - 验收：Stage 打开期间 SSE 有效帧率 ≤ ~3fps；浮层关闭/不可见时无帧订阅；xterm 操作等交互不受影响
+
+**实施定稿**：
+- 落地面：新增 `packages/web/src/shared/useDocumentVisible.ts`（visibilitychange 订阅，同步初值）；`useBrowserFrameStream` 的 `tick: number` 改为 `hasFrame: boolean`（帧事件 `setHasFrame(true)` 同值跳过重渲染，仅首帧/清帧真正触发——消灭每帧一次 React 重渲染）；`useFramePaint` 改 rAF 消费循环（签名去 tick：循环以帧对象引用比对感知新帧，绘制中到达的帧不重入、下一轮取 frameRef 最新帧——合并跳帧语义天然成立；rAF 在 webview 隐藏时暂停，为可见性闸门之外的兜底）
+- Stage 接线：`useBrowserFrameStream(profile, pageId, ready && visible, 300)`——写侧 300ms 节流（~3.3fps，验收口径 ~3fps 档达标）+ 窗口隐藏断流（面板关托盘/最小化即停订，恢复显示重订回放首帧）
+- 闸门覆盖扩展（相对方案的补充，同问题两面）：`BrowserSessionCard` 的 `streamEnabled` 追加 `&& visible`——面板窗口隐藏时会话卡迷你预览（2s 节流档）同停；面板收起（panelVisible）闸门原样保留
+- 适配面：`LiveViewport`/`MiniPreview` props tick→hasFrame（占位态切换由 hasFrame 驱动，绘制不再依赖 React 重渲染）；导入序经 lint:fix 修正
+- 验收实证：`pnpm web:lint` 零报错、`pnpm web:test` 47 例全绿、`pnpm web:build`（tsc -b + vite）通过；实机帧率/CPU 观察项（Stage 打开期间风扇、窗口隐藏停订）留待用户 tauri:dev 观察
+- 质量审查修复两处（均在 `useFramePaint.ts`）：① 致命——rAF 循环原在 effect 建立时判空 canvas 即返回，而消费组件按 hasFrame 条件渲染 canvas（占位态不挂载）且 effect 依赖为稳定 ref 永不重跑，循环永不启动；且 paint 闭包捕获 canvas 实例，重挂后向脱离 DOM 的旧元素绘制。定稿为**循环无条件启动 + 每轮现读 canvasRef.current**（null 跳过本轮，重挂天然落新元素）。② 防御——atob 对非法 base64 同步抛错会使 painting 旗标永久卡死（.catch 兜不住同步 throw），paint 同步段整体 try/catch。审查其余维度（清帧与引用比对交互、hasFrame 语义、闸门组合、输入路由、useDocumentVisible、DRY）均无发现
 
 **任务 T2：ToolCallItem 折叠卸载 + 载荷懒渲染** ⬜
 - 功能：折叠的工具调用不占 DOM，长会话 DOM 节点数降一个量级

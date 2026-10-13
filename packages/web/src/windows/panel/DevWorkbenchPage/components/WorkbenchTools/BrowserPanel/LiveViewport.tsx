@@ -11,10 +11,10 @@ type InputDispatch = Omit<BrowserSessionInputRequest, 'profile'>;
 
 interface LiveViewportProps {
   profile: string;
-  /** keep-latest 帧箱（useBrowserFrameStream 持有），tick 驱动重绘。 */
+  /** keep-latest 帧箱（useBrowserFrameStream 持有），useFramePaint rAF 循环消费。 */
   frameRef: RefObject<LiveViewportFrame | null>;
-  /** 帧到达序号（重订清帧也 +1，驱动占位态切换与重绘）。 */
-  tick: number;
+  /** 是否已有帧（占位态切换；首帧置 true、重订清帧置 false）。 */
+  hasFrame: boolean;
   /** live 态才受理输入（未首帧/自愈/终态不投送）。 */
   interactive: boolean;
 }
@@ -37,10 +37,9 @@ interface LiveViewportProps {
  * 与按键经 viewportInput 纯函数换算后 POST /input，换算基准为 canvas 自身实测 rect
  *（contain 留白天然在矩形之外，无需补偿）。
  */
-export default function LiveViewport({ profile, frameRef, tick, interactive }: LiveViewportProps) {
+export default function LiveViewport({ profile, frameRef, hasFrame, interactive }: LiveViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const hasFrame = frameRef.current != null && frameRef.current.data !== '';
   // 串行发送队列：buffer 保序、pump 单飞逐个投送；背压期队列尾 move 被最新 move 覆写。
   const bufferRef = useRef<InputDispatch[]>([]);
   const pumpingRef = useRef(false);
@@ -94,8 +93,8 @@ export default function LiveViewport({ profile, frameRef, tick, interactive }: L
     });
   };
 
-  // 帧绘制（tick 驱动）：backing 尺寸与帧尺寸一致（公共 hook，与迷你预览同源）。
-  useFramePaint(frameRef, tick, canvasRef);
+  // 帧绘制（rAF 消费循环，与帧事件解耦）：backing 尺寸与帧尺寸一致（公共 hook，与迷你预览同源）。
+  useFramePaint(frameRef, canvasRef);
 
   // 滚轮须原生绑定 passive:false——React 合成 onWheel 为被动监听，preventDefault 失效。
   useEffect(() => {

@@ -7,19 +7,20 @@ import { useFramePaint } from './useFramePaint';
 interface MiniPreviewProps {
   /** keep-latest 帧箱（卡片经 useBrowserFrameStream 节流档订阅持有）。 */
   frameRef: RefObject<LiveViewportFrame | null>;
-  tick: number;
+  /** 是否已有帧（占位态切换；首帧置 true、重订清帧置 false）。 */
+  hasFrame: boolean;
   /** 预览区固定高度（px）。 */
   height: number;
 }
 
 /**
  * MiniPreview：会话卡迷你预览（纯展示，无输入监听——操作收敛在操作台 Stage）。帧源为
- * 后端 throttleMs 节流流（约 0.5fps）；contain 缩放同 Stage（canvas max 约束 + 留白）。
+ * 后端 throttleMs 节流流（约 0.5fps）；绘制 rAF 消费循环同 Stage（useFramePaint 共用）；
+ * contain 缩放同 Stage（canvas max 约束 + 留白）。
  */
-export default function MiniPreview({ frameRef, tick, height }: MiniPreviewProps) {
+export default function MiniPreview({ frameRef, hasFrame, height }: MiniPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  useFramePaint(frameRef, tick, canvasRef);
-  const hasFrame = frameRef.current != null && frameRef.current.data !== '';
+  useFramePaint(frameRef, canvasRef);
 
   const boxSx = {
     height,

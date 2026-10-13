@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 
 /**
  * 视口帧（keep-latest 视频流语义）：jpeg base64 + screencast metadata——仅最新帧有意义，
- * 慢消费跳帧不断连；落 ref 不进 TanStack Query 缓存（高频帧不配缓存写放大），tick 驱动
- * 重绘。
+ * 慢消费跳帧不断连；落 ref 不进 TanStack Query 缓存（高频帧不配缓存写放大），绘制由
+ * useFramePaint 的 rAF 消费循环驱动（与帧到达事件解耦）。
  */
 export interface LiveViewportFrame {
   data: string;
@@ -21,8 +21,8 @@ export type LiveStreamPhase = 'connecting' | 'live' | 'healing' | 'closed';
 export interface BrowserFrameStream {
   /** keep-latest 帧箱（终态保留末帧不清屏）。 */
   frameRef: React.RefObject<LiveViewportFrame | null>;
-  /** 帧到达序号：每帧 +1（含重订清帧），视口以它驱动重绘 effect。 */
-  tick: number;
+  /** 是否已有帧（首帧置 true、重订清帧置 false）：占位态切换驱动；同值 set 不触发重渲染。 */
+  hasFrame: boolean;
   phase: LiveStreamPhase;
   /** 最近一次 target 回显（实际投送目标 url/title，多开同址消歧）。 */
   target: { url: string; title: string } | null;
@@ -39,11 +39,11 @@ export interface BrowserFrameStream {
  * 终态主动停订。生命周期：enabled 为闸门链（expanded && panelVisible && ready &&
  * !restoreInFlight）——收起/恢复编排即断流，重开重订（重订即清帧回到占位态，帧箱
  * 不跨订阅保留旧页面残影）。throttleMs 为帧写侧最小间隔（后端参数，>0 时透传；
- * 0/缺省不节流——操作台实时档不传，迷你预览档传 2000）。
+ * 0/缺省不节流——操作台实时档传 300，迷你预览档传 2000）。
  */
 export function useBrowserFrameStream(profile: string, pageId: number, enabled: boolean, throttleMs = 0): BrowserFrameStream {
   const frameRef = useRef<LiveViewportFrame | null>(null);
-  const [tick, setTick] = useState(0);
+  const [hasFrame, setHasFrame] = useState(false);
   const [phase, setPhase] = useState<LiveStreamPhase>('connecting');
   const [target, setTarget] = useState<{ url: string; title: string } | null>(null);
   const [healingMessage, setHealingMessage] = useState<string | null>(null);
@@ -74,7 +74,7 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
       switch (evt.type) {
         case 'frame':
           frameRef.current = { data: evt.data ?? '', metadata: evt.metadata };
-          setTick(t => t + 1);
+          setHasFrame(true); // 同值 set 跳过重渲染：仅首帧真正触发（占位态切换）
           setPhase('live');
           setHealingMessage(null);
           break;
@@ -113,7 +113,7 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
       }
       // （重）订阅激活前清帧复位：新页码/重开闸门不允许旧页残影与上一轮终态残留。
       frameRef.current = null;
-      setTick(t => t + 1);
+      setHasFrame(false);
       setPhase('connecting');
       setTarget(null);
       setHealingMessage(null);
@@ -130,5 +130,5 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
     };
   }, [profile, pageId, enabled, throttleMs]);
 
-  return { frameRef, tick, phase, target, healingMessage, closedReason };
+  return { frameRef, hasFrame, phase, target, healingMessage, closedReason };
 }

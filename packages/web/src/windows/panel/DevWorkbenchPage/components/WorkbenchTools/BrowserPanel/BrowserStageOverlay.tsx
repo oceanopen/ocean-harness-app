@@ -1,5 +1,6 @@
 import type { BrowserSessionView } from '@src/services';
 import { Alert, Box, CircularProgress, Typography, useTheme } from '@mui/material';
+import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
   useBrowserFrameStream,
   useBrowserSessionEvents,
@@ -39,7 +40,11 @@ function StageContent({ profile }: { profile: string }) {
   const ready = session?.status === 'ready';
   // 观看页码：卡内点选优先，未选 = 当前页；pages 未就绪以 0 起步，首帧即真实页。
   const pageId = selectedPageId ?? (session?.pages ?? []).find(page => page.current)?.index ?? 0;
-  const stream = useBrowserFrameStream(profile, pageId, ready);
+  // 帧流闸门：ready && 窗口可见（面板关托盘/最小化时 webview 隐藏但组件树不卸载，
+  // 隐藏即断流，恢复显示重订回放首帧）；throttleMs 300 = 写侧节流档（~3fps，迷你
+  // 预览 2000 同机制），绘制侧 rAF 合帧见 useFramePaint。
+  const visible = useDocumentVisible();
+  const stream = useBrowserFrameStream(profile, pageId, ready && visible, 300);
 
   // Esc 关浮层：焦点在画面画布（远端页面键盘交互）时让位；沉浸全屏下让位页面级退出
   // （getState 现读，不建渲染订阅，范式同 FilePreviewOverlay）。
@@ -111,7 +116,7 @@ function StageContent({ profile }: { profile: string }) {
         )}
         {ready && session != null && (
           <>
-            <LiveViewport profile={profile} frameRef={stream.frameRef} tick={stream.tick} interactive={stream.phase === 'live'} />
+            <LiveViewport profile={profile} frameRef={stream.frameRef} hasFrame={stream.hasFrame} interactive={stream.phase === 'live'} />
             {stream.healingMessage != null && (
               <Alert severity="warning" sx={{ fontSize: 12, flexShrink: 0 }}>
                 {stream.healingMessage}
