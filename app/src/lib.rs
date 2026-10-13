@@ -1,3 +1,4 @@
+mod browser;
 mod pty;
 mod sessions;
 mod shared;
@@ -18,6 +19,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
     use crate::terminal::NavErr;
     Builder::<tauri::Wry>::new()
         .commands(collect_commands![
+            browser::focus_browser_window,
             windows::panel::show_panel_window,
             windows::panel::get_claude_sessions,
             windows::panel::refresh_sessions,

@@ -1,6 +1,6 @@
 # 浏览器自动化基础设施——方案与任务清单
 
-> 状态：实施中
+> 状态：已完结
 > 范围：为 Ocean Harness 构建浏览器自动化基础设施——vendored playwright-mcp 引擎、browser_* MCP 工具面、登录态活引擎拉取（零持久化）、SSE 实时面板、面板嵌入实时画面（CDP screencast 帧流 + 输入注入）与 skill 双入口；本拆分覆盖方案全部实施面，不含后续演进项（见 §5 扩展点）。本文档自含全部设计事实，是唯一 SSOT。
 >
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
@@ -420,7 +420,7 @@
 
 #### T3.4 面板「聚焦窗口」：一键前置对应 profile 的 Chrome 窗口
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：会话卡片提供「聚焦窗口」按钮，把该 profile 对应的 Chrome 窗口组前置到桌面最前——有头模式下介入场景（登录/验证码）窗口被埋没时的一键定位。人工介入主通道是 D9 的面板实时画面（无头默认零弹窗），本任务为有头模式下的便利增强，非介入通道本身。
 
@@ -433,6 +433,12 @@
 **验收**：
 - macOS/Windows 手动验证：多 Chrome 窗口（多 profile）场景下前置目标 profile 窗口组正确；目标 profile 未运行时显式中文报错，无误前置
 - `pnpm tauri:dev` 下面板按钮链路可用；`GOOS=windows` 侧 Rust 编译通过
+
+**实施定稿**：
+- 落地：`app/src/browser.rs`（新模块，**零新增依赖**）——`focus_browser_window(profile)`：profile 名防御校验 → `~/.ocean-harness/browser/profiles/<profile>` 反查。macOS：`pgrep -f`（路径 ERE 转义）取全树 PIDs → `ps` 查 ppid 判主进程（树根）→ osascript System Events 按 unix id 前置该 Chrome 实例（per-profile 独立实例，窗口组整体前置）；**时序固定：先解最小化（遍历进程窗口置 `AXMinimized=false`）再 set frontmost**——frontmost 不还原 miniaturized 窗口（初版实机发现「最小化点了没反应」即修，与 Windows 侧 SW_RESTORE 同语义）。Windows：单次 PowerShell 完成 `Get-CimInstance Win32_Process` cmdline 匹配 → 树根判定 → user32 `EnumWindows` + `IsIconic→ShowWindow(SW_RESTORE)` + `SetForegroundWindow`；退出码 0/2/3 由 Rust 侧映射中文错误（-Command 不传中文，防代码页问题）
+- 前端：BrowserSessionCard **ready 且有头**态展示「聚焦窗口」按钮（较方案「ready 可点」收敛——无头会话无桌面窗口，展示必失败）；`commands.focusBrowserWindow` 经 `pnpm gen:bindings` 生成；失败 inline Alert（独立错误位）
+- 方案偏离：EnumWindows/SetForegroundWindow 经 PowerShell 内嵌实现，不引 windows/sysinfo crate（对齐 Go recoverOrphans「shell 工具探查 Windows 进程」先例）；Windows 侧交叉编译卫门本地不可行（ring C 依赖需 MSVC C 工具链），Windows 编译归 CI/tag 构建既有口径
+- 验收实录：macOS 实机通过（非最小化前置正确、最小化修复后还原并前置、按钮收敛）；`cargo check`/`cargo test`（51 例）/`cargo fmt` 干净、web lint/tsc/test/build 全绿、bindings 再生无漂移
 
 #### T3.5 嵌入 Chromium 分发切换（D2 修订落地）
 

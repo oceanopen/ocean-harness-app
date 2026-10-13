@@ -7,6 +7,7 @@ import { invoke as __TAURI_INVOKE, Channel } from "@tauri-apps/api/core";
 
 /** Commands */
 export const commands = {
+	focusBrowserWindow: (profile: string) => typedError<null, string>(__TAURI_INVOKE("focus_browser_window", { profile })),
 	showPanelWindow: (navigateTo: string | null) => typedError<null, string>(__TAURI_INVOKE("show_panel_window", { navigateTo })),
 	getClaudeSessions: () => typedError<ClaudeSessionInfo[], string>(__TAURI_INVOKE("get_claude_sessions")),
 	/**

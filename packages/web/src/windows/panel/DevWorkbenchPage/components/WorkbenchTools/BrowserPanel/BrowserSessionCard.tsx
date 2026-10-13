@@ -19,6 +19,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { commands } from '@src/shared/bindings';
 import {
   useAnalyzeBrowserSession,
   useBrowserFrameStream,
@@ -97,6 +98,9 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   const [restoreInFlight, setRestoreInFlight] = useState(false);
   // 释放按钮的独立错误位（closeMutation 与无头切换共用，弹窗关闭时释放失败也要可见）。
   const [releaseError, setReleaseError] = useState<string | null>(null);
+  // 聚焦窗口：独立 pending/错误位（OS 层动作，不经 mutations）。
+  const [focusing, setFocusing] = useState(false);
+  const [focusError, setFocusError] = useState<string | null>(null);
 
   const ensureMutation = useEnsureBrowserSession();
   const closeMutation = useCloseBrowserSession();
@@ -119,6 +123,17 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
     setReleaseError(null);
     closeMutation.mutate({ profile: session.profile }, {
       onError: err => setReleaseError(errorMessage(err)),
+    });
+  };
+
+  const focus = () => {
+    setFocusError(null);
+    setFocusing(true);
+    void commands.focusBrowserWindow(session.profile).then((r) => {
+      setFocusing(false);
+      if (r.status === 'error') {
+        setFocusError(r.error);
+      }
     });
   };
 
@@ -214,6 +229,22 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
             <Chip size="small" variant="outlined" label={session.lastIssueTag} sx={{ fontSize: 12, color: 'text.secondary' }} />
           </Tooltip>
         )}
+        {ready && !session.headless && (
+          <Tooltip title="把该 profile 的 Chrome 窗口组前置到桌面最前（多窗口实例场景的一键定位）">
+            <Button
+              size="small"
+              variant="text"
+              onClick={(e) => {
+                e.stopPropagation();
+                focus();
+              }}
+              disabled={focusing}
+              sx={{ ml: 'auto', flexShrink: 0, fontSize: 12, minWidth: 0, px: 1, color: 'text.secondary' }}
+            >
+              {focusing ? <CircularProgress size={12} color="inherit" /> : '聚焦窗口'}
+            </Button>
+          </Tooltip>
+        )}
         {session.status !== 'idle' && (
           <Tooltip title="立即释放浏览器（引擎与 Chrome 进程即刻收敛，登录态保留在 profile 目录）">
             <Button
@@ -224,7 +255,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 release();
               }}
               disabled={closeMutation.isPending}
-              sx={{ ml: 'auto', flexShrink: 0, fontSize: 12, minWidth: 0, px: 1, color: 'text.secondary' }}
+              sx={{ ml: ready && !session.headless ? 0 : 'auto', flexShrink: 0, fontSize: 12, minWidth: 0, px: 1, color: 'text.secondary' }}
             >
               {closeMutation.isPending ? <CircularProgress size={12} color="inherit" /> : '释放'}
             </Button>
@@ -253,6 +284,11 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
           {releaseError != null && (
             <Alert severity="error" onClose={() => setReleaseError(null)} sx={{ fontSize: 12 }}>
               {`释放失败：${releaseError}`}
+            </Alert>
+          )}
+          {focusError != null && (
+            <Alert severity="error" onClose={() => setFocusError(null)} sx={{ fontSize: 12 }}>
+              {`聚焦失败：${focusError}`}
             </Alert>
           )}
           {session.status === 'failed' && (
