@@ -40,3 +40,6 @@ app/binaries
 # ACP adapter vendoring staging（构建产物，prepare-vendor-staging.ts 生成；node_modules 已由全局规则忽略）。
 app/resources/acp-adapters/*
 !app/resources/acp-adapters/.gitkeep
+
+# TypeScript 增量编译缓存（tsc -b 机器生成产物）
+*.tsbuildinfo

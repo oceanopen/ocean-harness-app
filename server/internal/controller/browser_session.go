@@ -178,17 +178,45 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 		api.Context.SSEvent("message", evt)
 		writer.Flush()
 	}
+	// 帧写侧节流（throttleMs>0 时生效，迷你预览档）：mailbox 只保留最新帧，跳帧不丢
+	// 末帧——节流窗口内到达的帧被跳过后，延迟定时器在窗口到期补写 mailbox 最新帧
+	//（gen 未推进则无写），静态页最后一帧不因节流永久滞留。
+	throttle := max(time.Duration(req.ThrottleMs)*time.Millisecond, 0)
+	var lastFrameAt time.Time
+	var catchup *time.Timer
+	var catchupC <-chan time.Time
+	writeLatest := func() {
+		if f, gen, ok := stream.LatestFrame(); ok && gen > seen.Load() {
+			seen.Store(gen)
+			writeEvent(browser.LiveEvent{
+				Type:     browser.LiveEventFrame,
+				Data:     base64.StdEncoding.EncodeToString(f.Data),
+				Metadata: &f.Metadata,
+			})
+			lastFrameAt = time.Now()
+		}
+	}
+	defer func() {
+		if catchup != nil {
+			catchup.Stop()
+		}
+	}()
 	for {
 		select {
 		case <-notify:
-			if f, gen, ok := stream.LatestFrame(); ok && gen > seen.Load() {
-				seen.Store(gen)
-				writeEvent(browser.LiveEvent{
-					Type:     browser.LiveEventFrame,
-					Data:     base64.StdEncoding.EncodeToString(f.Data),
-					Metadata: &f.Metadata,
-				})
+			if throttle <= 0 {
+				writeLatest()
+				break
 			}
+			if elapsed := time.Since(lastFrameAt); elapsed >= throttle {
+				writeLatest()
+			} else if catchupC == nil {
+				catchup = time.NewTimer(throttle - elapsed)
+				catchupC = catchup.C
+			}
+		case <-catchupC:
+			catchupC = nil
+			writeLatest()
 		case t := <-stream.Targets():
 			writeEvent(browser.LiveEvent{Type: browser.LiveEventTarget, URL: t.URL, Title: t.Title, Closed: t.Closed})
 			if t.Closed {

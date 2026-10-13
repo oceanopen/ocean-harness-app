@@ -39,10 +39,12 @@ type BrowserAnalyzeRequest struct {
 
 // BrowserStreamRequest 是 GET /api/browserSession/stream 的入参（query 绑定；CDP 观察
 // 通道实时画面帧流）。PageID 为页面投影行 Index（PageView.Index），指针承 required：
-// 页码 0 合法，缺失才校验失败。
+// 页码 0 合法，缺失才校验失败。ThrottleMs 为帧写侧最小间隔（0/缺省不节流；负值按 0
+// 处理）——面板迷你预览档订阅（mailbox keep-latest 语义不变，慢档拿到的仍是最新帧）。
 type BrowserStreamRequest struct {
-	Profile string `form:"profile" binding:"required"`
-	PageID  *int   `form:"pageId" binding:"required"`
+	Profile    string `form:"profile" binding:"required"`
+	PageID     *int   `form:"pageId" binding:"required"`
+	ThrottleMs int    `form:"throttleMs"`
 }
 
 // BrowserInputRequest 是 POST /api/browserSession/input 的入参（远程桌面输入分发，

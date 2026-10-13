@@ -38,9 +38,10 @@ export interface BrowserFrameStream {
  * BrowserLiveEvent 契约；连接层断开交 EventSource 自动重连（后端自愈中），仅 closed
  * 终态主动停订。生命周期：enabled 为闸门链（expanded && panelVisible && ready &&
  * !restoreInFlight）——收起/恢复编排即断流，重开重订（重订即清帧回到占位态，帧箱
- * 不跨订阅保留旧页面残影）。
+ * 不跨订阅保留旧页面残影）。throttleMs 为帧写侧最小间隔（后端参数，>0 时透传；
+ * 0/缺省不节流——操作台实时档不传，迷你预览档传 2000）。
  */
-export function useBrowserFrameStream(profile: string, pageId: number, enabled: boolean): BrowserFrameStream {
+export function useBrowserFrameStream(profile: string, pageId: number, enabled: boolean, throttleMs = 0): BrowserFrameStream {
   const frameRef = useRef<LiveViewportFrame | null>(null);
   const [tick, setTick] = useState(0);
   const [phase, setPhase] = useState<LiveStreamPhase>('connecting');
@@ -97,8 +98,12 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
 
     async function connect() {
       let url: string;
+      const query: Record<string, string> = { profile, pageId: String(pageId) };
+      if (throttleMs > 0) {
+        query.throttleMs = String(throttleMs);
+      }
       try {
-        url = await serverUrl('/api/browserSession/stream', { profile, pageId: String(pageId) });
+        url = await serverUrl('/api/browserSession/stream', query);
       } catch {
         // go-server 未运行：不建连（会话投影读端同报错，由其错误态呈现）。
         return;
@@ -123,7 +128,7 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
       es?.removeEventListener('message', onMessage);
       close();
     };
-  }, [profile, pageId, enabled]);
+  }, [profile, pageId, enabled, throttleMs]);
 
   return { frameRef, tick, phase, target, healingMessage, closedReason };
 }

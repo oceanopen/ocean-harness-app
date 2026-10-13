@@ -112,7 +112,7 @@
 ## 4. 任务清单（进度 SSOT）
 
 > 任务粒度：模块 + 功能 + 技术方案，一个任务 ≈ 一次可独立验收的交付。
-> 执行顺序：T0 → T1.1 → T1.2 → T1.3 → T1.4 →（T2.1、T2.2 并列）→ T3.1 → T3.2 → T3.5 → T4.1 → T4.2 →（T4.3 → T4.4 → T4.5 与 T4.6 并行；T3.4 可与阶段 4 并列）→ T4.7 → T3.3
+> 执行顺序：T0 → T1.1 → T1.2 → T1.3 → T1.4 →（T2.1、T2.2 并列）→ T3.1 → T3.2 → T3.5 → T4.1 → T4.2 →（T4.3 → T4.4 → T4.5 与 T4.6 并行；T3.4 可与阶段 4 并列）→ T4.7（自动化学项）→ T4.8 → T4.7 实机复验收口 → T3.3
 
 ### 阶段 0：依赖升级（先行）
 
@@ -591,19 +591,54 @@
 
 #### T4.7 端到端验收与文档收口
 
-**状态**：⬜
+**状态**：✅
 
 **功能**：全链路验收 + 状态回写。
 
 **技术方案**：验收清单驱动的整链实测 + 本文档状态回写。
 
-**依赖**：T4.2–T4.6
+**依赖**：T4.2–T4.6（T4.8 完成后实机复验收口）
 
 **验收**：
 - `pnpm tauri:dev`：输入 URL → 实时画面出现（无桌面弹窗）；鼠标点击/滚轮/中文 IME 输入在面板内生效且与 AI 操作同一页面同一登录态；AI 并发操作时画面持续；页面切换/无头切换断流重连；观看期 idle 不释放、收起面板/末订退订恢复计时；登录场景全程面板内完成
 - 整仓 `go build`/`go vet`/`gofmt` + `GOOS=windows go build` + `go test -race` 全绿
 - `pnpm web:lint/test/build` 全绿
 - 本文档任务状态回写 + 「实施定稿」补记
+
+**实施定稿**：
+- 自动化学项全绿：整仓 `go build`/`go vet`（gofmt 仅剩 agentcatalog/vendored_test.go 既有遗留）+ `GOOS=windows go build` + `go test -race ./...` 全部通过；`pnpm web:lint`（零报错）/ `web:test`（47 例）/ `web:build` 全过
+- 实机验收发现交互问题派生 T4.8（预览/操作解耦与输入可靠性），T4.8 落地后实机复验全项通过：会话卡迷你预览低频刷新并点击激活操作台、鼠标点击/拖拽连续操作无丢步（原间歇失效经输入串行化根治）、滚轮/中文 IME 生效、拖拽面板宽度画面等比缩放且坐标准确、释放按钮立即回 idle 且重开登录态保留、AI 并发操作同页同登录态画面持续、无头切换断流重连、观看期 idle 不释放/收起恢复计时
+- 鼠标间歇不生效根因（实施期定位，修复落 T4.8）：坐标换算（`pointToPage` x/y 双轴按实测 rect 对称换算）无错位；真因为 ① 输入走无序 REST——press/release 与 move 并发 POST 到达顺序无保证，release 抢先即丢点击；② 拖拽出画布后 mouseup 失联（无 pointer capture，页面停留「按住」态）；③ 投送失败静默吞错掩盖问题
+- 阶段 0–4（T0/T1.1–T1.4/T2.1/T2.2/T3.1/T3.2/T3.5/T4.1–T4.8）全部 ✅；剩余 T3.3（skill 与三链端到端）、T3.4（聚焦窗口，可选增强）⬜，头部状态保持「实施中」
+
+#### T4.8 面板预览/操作解耦与输入可靠性
+
+**状态**：✅
+
+**功能**：面板交互改造（T4.7 实机验收派生）——会话列表迷你预览（纯展示、低频节流）与操作台 Stage（大画面、contain 等比、全量输入）解耦；输入投送可靠化（串行化/pointer capture/防误选）；会话卡增「释放」按钮。
+
+**技术方案**：
+- **操作台浮层接管工作台内容区**：激活 profile（卡片迷你预览点击）接管工作台终端内容区——BrowserStageOverlay 挂载于 DevWorkbenchPage 终端内容区 Box，与 FilePreviewOverlay 同款接管语义（absolute inset 0 不挤压布局：终端 DOM 尺寸不变、零 SIGWINCH 扰动，会话后端常驻仅视觉遮盖；实色背景防点击穿透；zIndex.mobileStepper）。头部条（profile 名 + 正在投送目标 + 取消激活）+ LiveViewport 大画面；Esc 关浮层（焦点在画面画布时让位——Esc 先服务远端页面；沉浸全屏下让位页面级退出）；BrowserPanel 保持整高会话列表，与浮层解耦（收面板/切工具 tab 不影响浮层）
+- **激活态跨组件树共享（zustand）**：`state/browserSession/activation.ts` 的 `useBrowserStageStore`——activatedProfile + watchPage（per-profile 观看页码 map），激活入口（BrowserPanel 卡片）与浮层挂载点（DevWorkbenchPage）两端消费；切 issue 不重置（激活的是全局单源 profile）
+- **contain 缩放零 JS 布局**：canvas 保留 backing intrinsic 尺寸 + CSS `max-width/max-height:100%`（替换元素自动等比缩放居中，留白天然，类播放器）；拖拽面板宽度/窗口缩放时浏览器原生实时重排；坐标换算不变——每次输入事件实测 canvas 自身 `getBoundingClientRect`（基准即画面矩形，含留白天然正确，`pointToPage` 数学不动）
+- **单 profile 单订阅**（manager 单订槽纪律——同 profile 双订阅页码不符即互踢重建风暴）：激活会话由浮层订阅实时流（不节流；浮层激活期自持投影 SSE 订阅，工具 tab 关闭后仍随帧刷新）；未激活会话由迷你预览订阅 `throttleMs` 节流流（2000ms，纯展示无输入监听，hover 高亮、点击激活）；激活会话的卡停订预览
+- **SSE 帧流节流参数（后端）**：`BrowserStreamRequest` 增可选 `throttleMs`（0/缺省不节流）；SSE 帧写循环按最小帧间隔跳帧——mailbox keep-latest 语义不变，慢档订阅者拿到的仍是最新帧（跳帧在写侧，帧源只保留最新）
+- **输入投送可靠化（LiveViewport）**：① 串行发送队列——Promise 链逐个投送保证 press/release/move 有序（REST 无到达顺序保证是间歇丢点击的根因），排队期连续 mouseMoved 合并仅保留最新一条防延迟堆积；② pointer capture——mousedown `setPointerCapture`（up/cancel 释放），拖拽出画布鼠标事件不断流；③ mousedown `preventDefault` 防面板文本选择抢事件；④ 投送失败 console.warn 留排查痕迹（UI 仍静默，尽力语义）
+- **释放按钮**：会话卡头部「释放」（ready/starting/failed 态可见），立即调既有 `POST close`（无确认弹窗），SSE 投影自动回 idle；后端零改动
+- 激活 profile 为面板级 UI 态，BrowserPanel 本地 state（不进跨窗口 store）
+
+**依赖**：T4.5/T4.6（帧流与视口基线）
+
+**验收**：
+- `pnpm web:lint/test/build` 全过；Go 侧 `go build`/`go test` 全绿（节流参数纯增量）
+- `pnpm tauri:dev` 实机（归入 T4.7 收口）：迷你预览低频刷新、点击激活 Stage、Stage 内鼠标点击/拖拽/滚轮/IME 生效且连续操作无丢步；释放按钮点击即回 idle 态
+
+**实施定稿**：
+- 落地面与方案一致：后端 `BrowserStreamRequest.ThrottleMs` + controller Stream 帧写侧节流（跳帧 + 窗口到期延迟补写 mailbox 最新帧——静态页最后一帧不因节流永久滞留，keep-latest 语义不变）；前端 `useBrowserFrameStream` 增可选 throttleMs 透传 query、`BrowserStageOverlay`（终端内容区接管浮层，挂载 DevWorkbenchPage、FilePreviewOverlay 同款语义；激活期自持投影 SSE 订阅）、`state/browserSession/activation.ts`（激活态 zustand store：activatedProfile + watchPage map）、`BrowserPanel` 整高会话列表、`BrowserSessionCard` 紧凑化（迷你预览 hover 点击激活、释放按钮）、新增 `MiniPreview`（纯展示）与 `useFramePaint`（帧绘制公共 hook，浮层视口与迷你预览同源）
+- 输入可靠性三项落地 LiveViewport：① 串行发送队列（buffer 保序 + 单飞 pump 逐个投送；背压期队列尾 mouseMoved 被最新覆写合并，队列空直入保 hover 实时）；② mousedown `preventDefault` + `setPointerCapture`（down/up/cancel 用 React Pointer 事件取 pointerId；up 释放捕获；pointercancel 补发 release 防页面停留「按住」态，按住键位经 heldRef 记录）；③ 投送失败 console.warn 留排查痕迹。**键盘与 IME 挂隐藏 input 宿主**（canvas 非可编辑元素，浏览器不会在其上启动输入法组合——英文 keydown char 正常而中文 compositionend 永不触发；焦点经 canvas mousedown 显式转入隐藏 input，noVNC 同款；组合期 keydown 不 preventDefault 不转发，compositionend 整体 insertText 并清空 value，浮层 Esc 处理器对画布与该 input 一并让位）。contain 缩放零 JS 布局：canvas 保留 backing intrinsic 尺寸 + `max-width/max-height:100%`（替换元素原生约束表等比居中，小于容器不放大），坐标换算 `pointToPage` 不动（canvas 自身实测 rect 天然含留白语义）
+- **帧绘制必须显式目标尺寸**（`drawImage(bitmap, 0, 0, size.width, size.height)`）：screencast jpeg 受 maxWidth/maxHeight（960×600）等比降采样，位图自然尺寸可小于 metadata 真实视口尺寸——按自然尺寸画铺不满 backing，未覆盖区域露出上一帧（表象为「首帧正常、随后叠加一层偏小画面、双层同页」，点击按整个 rect 换算亦随之错位）；按 backing 尺寸缩放绘制后单帧整覆盖，坐标换算恢复一致
+- 帧流订阅纪律：每 profile 同时最多一个 SSE 订阅——激活会话归 Stage（不节流），未激活会话归其卡片迷你预览（throttleMs 2000）；激活期卡内预览停订（占位提示「已激活到操作台」）
+- 验收实证：`tsc -b`/`pnpm web:lint`（零报错）/`web:test`（47 例）/`web:build` 全绿；Go 侧 `gofmt`（触及文件干净）/`go vet`/`GOOS=windows go build`/`go test -race ./internal/...` 全绿；实机项（迷你预览刷新/Stage 交互无丢步/释放回 idle）归 T4.7 实机复验收口
 
 ## 5. 后续演进扩展点（本期不做，记录防误入）
 

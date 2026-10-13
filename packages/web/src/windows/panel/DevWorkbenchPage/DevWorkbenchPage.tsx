@@ -58,6 +58,7 @@ import TerminalErrorBoundary from './components/EmbeddedTerminal/TerminalErrorBo
 import FilePreviewOverlay from './components/FilePreviewOverlay/FilePreviewOverlay';
 import { TerminalLaunchFlow } from './components/LaunchModePicker';
 import OpenWorkspaceDirButton from './components/OpenWorkspaceDir/OpenWorkspaceDirButton';
+import BrowserStageOverlay from './components/WorkbenchTools/BrowserPanel/BrowserStageOverlay';
 import ToolPanelArea from './components/WorkbenchTools/ToolPanelArea';
 import WorkbenchToolRail from './components/WorkbenchTools/WorkbenchToolRail';
 import WorkspaceInitGate from './components/WorkspaceInitGate/WorkspaceInitGate';
@@ -561,6 +562,9 @@ export default function DevWorkbenchPage() {
             {/* 工作空间文件预览浮层：tabs 按 issue 隔离、非空才可见；与终端
                 内容为兄弟节点，absolute 定位不参与 flex 布局（会话后端常驻仅视觉遮盖）。 */}
             {issue != null && <FilePreviewOverlay issueId={issue.id} />}
+            {/* 浏览器操作台浮层：激活 profile（useBrowserStageStore）接管终端内容区，
+                FilePreviewOverlay 同款接管语义；显隐自派生（未激活渲染 null）。 */}
+            {issue != null && <BrowserStageOverlay />}
           </Box>
         </Box>
         <ToolPanelArea

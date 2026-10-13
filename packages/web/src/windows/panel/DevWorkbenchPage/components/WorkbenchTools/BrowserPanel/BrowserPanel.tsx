@@ -26,15 +26,19 @@ function errorMessage(error: unknown): string {
 interface BrowserPanelProps {
   /** 当前选中 issue id（「AI 分析此页」归因）。 */
   issueId: string;
-  /** 面板区展开态（ToolPanelArea 透传）：实时画面帧流「收起即停」闸门。 */
+  /** 面板区展开态（ToolPanelArea 透传）：迷你预览帧流「收起即停」闸门之一。 */
   panelVisible: boolean;
 }
 
 /**
- * BrowserPanel：浏览器会话面板（工作台互斥工具 tab）——全局 SSE 订阅驱动会话投影，
- * 面板不主动 ensure（会话经「+」新建/打开或卡片「打开会话/重开」拉起，页面切走即卸载
- * 只断订阅、会话后端常驻）。头部：会话数 + 「+」新建/打开 Popover（profile 名 + 无头
- * 声明）+ 刷新。
+ * BrowserPanel：浏览器会话面板（工作台互斥工具 tab）——整高会话列表（紧凑卡：迷你
+ * 预览节流流纯展示、点击激活）。激活经 useBrowserStageStore 上抛：激活 profile 接管
+ * 工作台终端内容区浮层（BrowserStageOverlay，挂载于 DevWorkbenchPage，与面板解耦——
+ * 收面板/切工具 tab 不影响浮层）。单 profile 单订阅纪律：激活会话的实时订阅归浮层，
+ * 其卡内预览停订；未激活会话由各自卡的迷你预览订阅 2s 节流流。全局 SSE 订阅驱动会话
+ * 投影，面板不主动 ensure（会话经「+」新建/打开或卡片「打开会话/重开」拉起，页面切
+ * 走即卸载只断订阅、会话后端常驻）。头部：会话数 + 「+」新建/打开 Popover（profile
+ * 名 + 无头声明）+ 刷新。
  */
 export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProps) {
   const { data: snapshot, isLoading, isFetching, error, refetch } = useBrowserSessionView();

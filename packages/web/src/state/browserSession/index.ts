@@ -1,3 +1,4 @@
+export { useBrowserStageStore } from './activation';
 export { browserSessionKeys } from './keys';
 export {
   useAnalyzeBrowserSession,

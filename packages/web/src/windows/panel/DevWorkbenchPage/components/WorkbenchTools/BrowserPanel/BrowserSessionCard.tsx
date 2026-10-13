@@ -22,13 +22,14 @@ import {
 import {
   useAnalyzeBrowserSession,
   useBrowserFrameStream,
+  useBrowserStageStore,
   useCloseBrowserSession,
   useEnsureBrowserSession,
   useNavigateBrowserSession,
 } from '@src/state/browserSession';
 import { useState } from 'react';
 import { browserCallOutcomeChip, browserSessionStateChip } from './browserSessionStateChip';
-import LiveViewport from './LiveViewport';
+import MiniPreview from './MiniPreview';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -58,24 +59,33 @@ function restoreUrlOf(session: BrowserSessionView): string | null {
   return url !== '' && url !== 'about:blank' ? url : null;
 }
 
+/** 迷你预览固定高度（px，含边框）：低频节流帧的纯展示窗口。 */
+const MINI_PREVIEW_HEIGHT = 150;
+
 interface BrowserSessionCardProps {
   session: BrowserSessionView;
   /** 当前选中 issue id（「AI 分析此页」归因）。 */
   issueId: string;
-  /** 面板区展开态：轮询闸门之一（收起即停，D4 展示侧对偶）。 */
+  /** 面板区展开态：帧流闸门之一（收起即停，D4 展示侧对偶）。 */
   panelVisible: boolean;
 }
 
 /**
- * BrowserSessionCard：单 profile 浏览器会话卡（展开态默认）——实时视口（ready 且面板
- * 可见且无恢复编排才订阅帧流，CDP 观察通道远程桌面语义）、地址栏打开、页面列表
- * （点选 = 分析目标与观看页码）、无头切换/重开（close + ensure 链，成功后按 close 时
- * 捕获的真实当前页恢复现场；确认弹窗保持展示错误）、「AI 分析此页」受理、「最近操作」
- * 流水。会话状态迁移全由 SSE sessions 帧驱动，卡片不维护会话状态副本。
+ * BrowserSessionCard：单 profile 浏览器会话卡（紧凑态）——迷你预览（ready 且面板可见
+ * 且未激活且无恢复编排才订阅 2s 节流帧流，纯展示无输入；hover 高亮点击激活到工作台
+ * 操作台浮层）、地址栏打开、页面列表（点选 = 分析目标与观看页码）、释放按钮（立即
+ * close，免等 idle 计时）、无头切换/重开（close + ensure 链，成功后按 close 时捕获的
+ * 真实当前页恢复现场）、「AI 分析此页」受理、「最近操作」流水。会话状态迁移全由 SSE
+ * sessions 帧驱动，卡片不维护会话状态副本。激活与观看页码读写 useBrowserStageStore
+ *（浮层与面板跨组件树共享，见 activation.ts）。
  */
 export default function BrowserSessionCard({ session, issueId, panelVisible }: BrowserSessionCardProps) {
+  const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
+  const activate = useBrowserStageStore(s => s.activate);
+  const selectedPageId = useBrowserStageStore(s => s.watchPage[session.profile] ?? null);
+  const toggleWatchPage = useBrowserStageStore(s => s.toggleWatchPage);
+  const activated = activatedProfile === session.profile;
   const [expanded, setExpanded] = useState(true);
-  const [selectedPageId, setSelectedPageId] = useState<number | null>(null);
   const [address, setAddress] = useState('');
   // 无头切换确认弹窗（null = 关闭）：headless 在引擎启动时固化、运行中不可改，切换 =
   // close + ensure 传新值；restoreUrl 为打开弹窗时的 pages 快照，仅作确认文案提示
@@ -85,6 +95,8 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   // 恢复编排进行中暂停帧流订阅：编排导航与观察通道同争页面拨号（订阅重建风暴即自愈
   // 抖动）。
   const [restoreInFlight, setRestoreInFlight] = useState(false);
+  // 释放按钮的独立错误位（closeMutation 与无头切换共用，弹窗关闭时释放失败也要可见）。
+  const [releaseError, setReleaseError] = useState<string | null>(null);
 
   const ensureMutation = useEnsureBrowserSession();
   const closeMutation = useCloseBrowserSession();
@@ -92,20 +104,29 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   const analyzeMutation = useAnalyzeBrowserSession();
 
   const ready = session.status === 'ready';
-  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight;
+  // 预览订阅闸门：激活期停订（该 profile 的实时订阅归操作台 Stage——单 profile 单订阅）。
+  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight && !activated;
   // 观看页码：点选页优先，未选 = 当前页（分析目标与观看页码同一语义）；pages 未就绪
   // 以 0 起步，首帧即真实页。
   const pageId = selectedPageId ?? (session.pages ?? []).find(page => page.current)?.index ?? 0;
-  const stream = useBrowserFrameStream(session.profile, pageId, streamEnabled);
+  const stream = useBrowserFrameStream(session.profile, pageId, streamEnabled, 2000);
 
   const recentCalls = session.recentCalls ?? [];
   const chip = browserSessionStateChip(session.status);
   const toggling = closeMutation.isPending || ensureMutation.isPending || navigateMutation.isPending;
 
+  const release = () => {
+    setReleaseError(null);
+    closeMutation.mutate({ profile: session.profile }, {
+      onError: err => setReleaseError(errorMessage(err)),
+    });
+  };
+
   const askToggleHeadless = (next: boolean) => {
     closeMutation.reset();
     ensureMutation.reset();
     navigateMutation.reset();
+    setReleaseError(null);
     setPendingToggle({ headless: next, restoreUrl: restoreUrlOf(session) });
   };
 
@@ -193,6 +214,22 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
             <Chip size="small" variant="outlined" label={session.lastIssueTag} sx={{ fontSize: 12, color: 'text.secondary' }} />
           </Tooltip>
         )}
+        {session.status !== 'idle' && (
+          <Tooltip title="立即释放浏览器（引擎与 Chrome 进程即刻收敛，登录态保留在 profile 目录）">
+            <Button
+              size="small"
+              variant="text"
+              onClick={(e) => {
+                e.stopPropagation();
+                release();
+              }}
+              disabled={closeMutation.isPending}
+              sx={{ ml: 'auto', flexShrink: 0, fontSize: 12, minWidth: 0, px: 1, color: 'text.secondary' }}
+            >
+              {closeMutation.isPending ? <CircularProgress size={12} color="inherit" /> : '释放'}
+            </Button>
+          </Tooltip>
+        )}
         <IconButton
           size="small"
           aria-label={expanded ? '收起会话' : '展开会话'}
@@ -200,7 +237,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
             e.stopPropagation();
             setExpanded(v => !v);
           }}
-          sx={{ 'ml': 'auto', 'p': 0.25, 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
+          sx={{ 'p': 0.25, 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' }, ...(session.status !== 'idle' ? null : { ml: 'auto' }) }}
         >
           {expanded ? <ExpandLessOutlinedIcon sx={{ fontSize: 16 }} /> : <ExpandMoreOutlinedIcon sx={{ fontSize: 16 }} />}
         </IconButton>
@@ -211,6 +248,11 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
           {pendingToggle == null && ensureMutation.error && (
             <Alert severity="error" onClose={() => ensureMutation.reset()} sx={{ fontSize: 12 }}>
               {`打开失败：${errorMessage(ensureMutation.error)}`}
+            </Alert>
+          )}
+          {releaseError != null && (
+            <Alert severity="error" onClose={() => setReleaseError(null)} sx={{ fontSize: 12 }}>
+              {`释放失败：${releaseError}`}
             </Alert>
           )}
           {session.status === 'failed' && (
@@ -248,21 +290,43 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
 
           {ready && (
             <>
-              <LiveViewport profile={session.profile} frameRef={stream.frameRef} tick={stream.tick} interactive={stream.phase === 'live'} />
-              {stream.target && (
-                <Typography sx={{ fontSize: 12, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {`正在投送：${stream.target.title || stream.target.url}`}
-                </Typography>
-              )}
+              {activated
+                ? (
+                    <Box
+                      sx={{
+                        height: MINI_PREVIEW_HEIGHT,
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: 1,
+                        borderColor: 'primary.main',
+                        borderRadius: 1,
+                        bgcolor: 'action.hover',
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>已在工作台操作台打开（实时画面投送中）</Typography>
+                    </Box>
+                  )
+                : (
+                    <Tooltip title="点击接管工作台内容区，打开可鼠标/键盘操作的实时画面">
+                      <Box
+                        onClick={() => activate(session.profile)}
+                        sx={{
+                          'cursor': 'pointer',
+                          // MiniPreview 内层 bordered 盒（占位/画面两态）统一 hover 高亮。
+                          '&:hover > div': { borderColor: 'primary.main' },
+                        }}
+                      >
+                        <MiniPreview frameRef={stream.frameRef} tick={stream.tick} height={MINI_PREVIEW_HEIGHT} />
+                      </Box>
+                    </Tooltip>
+                  )}
               {stream.healingMessage != null && (
-                <Alert severity="warning" sx={{ fontSize: 12 }}>
-                  {stream.healingMessage}
-                </Alert>
+                <Typography sx={{ fontSize: 12, color: 'warning.main' }}>{stream.healingMessage}</Typography>
               )}
               {stream.closedReason != null && (
-                <Alert severity="warning" sx={{ fontSize: 12 }}>
-                  {`实时画面已停止：${stream.closedReason}（选择其他页面可重新订阅）`}
-                </Alert>
+                <Typography sx={{ fontSize: 12, color: 'warning.main' }}>{`实时画面已停止：${stream.closedReason}`}</Typography>
               )}
 
               <Box sx={{ display: 'flex', gap: 0.5 }}>
@@ -298,14 +362,14 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
 
               <Box>
                 <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>
-                  页面（点选行 = 指定分析目标，未选 = 当前页）
+                  页面（点选行 = 指定分析目标与观看页码，未选 = 当前页）
                 </Typography>
                 {(session.pages ?? []).length === 0
                   ? <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>暂无页面</Typography>
                   : (session.pages ?? []).map(page => (
                       <Box
                         key={page.index}
-                        onClick={() => setSelectedPageId(prev => (prev === page.index ? null : page.index))}
+                        onClick={() => toggleWatchPage(session.profile, page.index)}
                         sx={{
                           'display': 'flex',
                           'alignItems': 'center',
