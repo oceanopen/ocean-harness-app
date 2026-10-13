@@ -33,7 +33,7 @@
 | # | 决策 | 理由 |
 |---|---|---|
 | D1 | 帧流双层节流：Go 写侧 `throttleMs=300`（Stage 订阅参数）+ 前端 rAF 合帧消费（帧到只更新 frameRef，rAF 循环取最新帧绘制，绘制与 SSE 事件解耦）；浮层不可见时 `streamEnabled=false` 断流 | 写侧降帧率治 CPU 总量，rAF 合帧消灭「每帧一次 React 重渲染」，两层各自独立生效；rAF 是渲染闸门（keep-latest 语义），非时间性补丁，不违反编码规则 1 |
-| D2 | ToolCallItem：Collapse 加 `unmountOnExit` + 展开态状态提升到折叠子树之外 + 载荷懒渲染（首次展开才 pretty 化）+ 超长截断（>32KB 折叠展示 + 展开全文按钮） | 折叠即释放 DOM 是内存主治点；展开态不随卸载丢失；截断防单条超大载荷 |
+| D2 | ToolCallItem：Collapse 加 `unmountOnExit` + 展开态状态提升到折叠子树之外 + 载荷懒渲染（展开才渲染，挂载期内 memo，折叠零残留）+ 超长截断（>32768 UTF-16 码元（`tcPayloadMaxChars`）折叠展示 + 展开全文按钮） | 折叠即释放 DOM 是内存主治点；展开态不随卸载丢失；截断防单条超大载荷（按码元计：DOM 内存随码元线性，字节口径需 TextEncoder 切割无收益） |
 | D3 | SSE 失败终态：events 端点订阅失败改真实 HTTP 状态码（会话不存在 404 / 已关闭 409），前端 phase 增加 failed 终态 + 手动重试；EventSource 对非 200 不自动重连（浏览器规范行为） | 治本消灭 3s 空转循环；browserSession/stream、acpSession/events、browserSession/events 同病同治 |
 | D4 | 适配器闲置回收阈值走 appConfig 可配置（key `acpSessionIdleTimeoutMinutes`，默认 30），Go 侧经 app.db 直读；idle 判定 = 无进行中 turn 且 hub 无订户（对齐 browser 域先例） | 阈值属运营调优面，入配置体系是项目惯例；回收后 `Ensure` 走锚点重建 |
 | D5 | 虚拟化库 = virtua（动态高度一等支持、体积小、维护活跃、React 19 兼容） | 对齐技术选型评估标准（流行度/稳定性/维护活跃度） |
@@ -57,11 +57,17 @@
 - 验收实证：`pnpm web:lint` 零报错、`pnpm web:test` 47 例全绿、`pnpm web:build`（tsc -b + vite）通过；实机帧率/CPU 观察项（Stage 打开期间风扇、窗口隐藏停订）留待用户 tauri:dev 观察
 - 质量审查修复两处（均在 `useFramePaint.ts`）：① 致命——rAF 循环原在 effect 建立时判空 canvas 即返回，而消费组件按 hasFrame 条件渲染 canvas（占位态不挂载）且 effect 依赖为稳定 ref 永不重跑，循环永不启动；且 paint 闭包捕获 canvas 实例，重挂后向脱离 DOM 的旧元素绘制。定稿为**循环无条件启动 + 每轮现读 canvasRef.current**（null 跳过本轮，重挂天然落新元素）。② 防御——atob 对非法 base64 同步抛错会使 painting 旗标永久卡死（.catch 兜不住同步 throw），paint 同步段整体 try/catch。审查其余维度（清帧与引用比对交互、hasFrame 语义、闸门组合、输入路由、useDocumentVisible、DRY）均无发现
 
-**任务 T2：ToolCallItem 折叠卸载 + 载荷懒渲染** ⬜
+**任务 T2：ToolCallItem 折叠卸载 + 载荷懒渲染** ✅
 - 功能：折叠的工具调用不占 DOM，长会话 DOM 节点数降一个量级
 - 技术方案：按 D2 实施（unmountOnExit + expanded 状态提升 + 懒渲染 + 32KB 截断）
 - 依赖：无
 - 验收：折叠后对应子树从 DOM 移除；重开会话历史中未展开条目零载荷 DOM；展开/收起状态切换无闪烁
+
+**实施定稿**：
+- 落地面：新增 `payloadText.ts`（pretty 化 + 截断纯函数，`tcPayloadMaxChars = 32768`，截断点落高代理时回退一位防孤立半对）+ `payloadText.test.ts`（6 例：直显/pretty/循环引用兜底/截断边界/代理对）；`ToolCallItem.tsx` 的 `Collapse` 加 `unmountOnExit`（保留收起动画后卸载），`PayloadBlock` 改 `useMemo(prettyPayloadText)` + 截断态「展开全文/收起」切换（块内局部态随收起重置）+ 尾注「已截断，共 N 字符」
+- D2 口径修订（实施前置已回写 D2 段落）：截断阈值由「>32KB」落定为「>32768 UTF-16 码元」（DOM 内存随码元线性，字节口径需 TextEncoder 切割无收益）；懒渲染语义落定为「展开才渲染 + 挂载期内 memo」——不在卸载子树外跨周期缓存 pretty 文本（跨周期缓存会把截断省下的等量文本顶回 JS 堆，破坏「折叠零残留」）
+- 「展开态状态提升」项：现状 `expanded` 已在折叠子树之外（组件根），保持不动即满足 D2
+- 验收实证：`pnpm web:lint` 零报错、`pnpm web:test` 53 例全绿（原 47 + 新增 6）、`pnpm web:build`（tsc -b + vite）通过；使用方两处（MessageList 历史列表 + PendingCard 权限卡）自动受益；DOM 节点数量级下降与展开/收起无闪烁留待实机 tauri:dev 观察
 
 **任务 T3：SSE 订阅失败终态** ⬜
 - 功能：订阅不存在/已关闭会话不再无限重连空转
