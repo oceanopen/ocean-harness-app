@@ -104,6 +104,11 @@ func (api Api) JsonOK(data interface{}) { JsonOK(api.Context, data) }
 // JsonFail 失败响应（err.Error() 作为 msg，code=失败）。
 func (api Api) JsonFail(err error) { JsonFail(api.Context, err) }
 
+// JsonFailWithStatus 指定 HTTP 状态码的失败响应（SSE 订阅前置失败专用，转调本包同名函数）。
+func (api Api) JsonFailWithStatus(httpStatus int, err error) {
+	JsonFailWithStatus(api.Context, httpStatus, err)
+}
+
 // JsonPageOK 是 controller 侧便捷方法（用 api.Context）。
 func (api Api) JsonPageOK(list interface{}, pageInfo *PageInfo) {
 	JsonPageOK(api.Context, list, pageInfo)

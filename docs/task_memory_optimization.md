@@ -34,7 +34,7 @@
 |---|---|---|
 | D1 | 帧流双层节流：Go 写侧 `throttleMs=300`（Stage 订阅参数）+ 前端 rAF 合帧消费（帧到只更新 frameRef，rAF 循环取最新帧绘制，绘制与 SSE 事件解耦）；浮层不可见时 `streamEnabled=false` 断流 | 写侧降帧率治 CPU 总量，rAF 合帧消灭「每帧一次 React 重渲染」，两层各自独立生效；rAF 是渲染闸门（keep-latest 语义），非时间性补丁，不违反编码规则 1 |
 | D2 | ToolCallItem：Collapse 加 `unmountOnExit` + 展开态状态提升到折叠子树之外 + 载荷懒渲染（展开才渲染，挂载期内 memo，折叠零残留）+ 超长截断（>32768 UTF-16 码元（`tcPayloadMaxChars`）折叠展示 + 展开全文按钮） | 折叠即释放 DOM 是内存主治点；展开态不随卸载丢失；截断防单条超大载荷（按码元计：DOM 内存随码元线性，字节口径需 TextEncoder 切割无收益） |
-| D3 | SSE 失败终态：events 端点订阅失败改真实 HTTP 状态码（会话不存在 404 / 已关闭 409），前端 phase 增加 failed 终态 + 手动重试；EventSource 对非 200 不自动重连（浏览器规范行为） | 治本消灭 3s 空转循环；browserSession/stream、acpSession/events、browserSession/events 同病同治 |
+| D3 | SSE 失败终态：订阅端点失败改真实 HTTP 状态码（不存在 404 / 已关闭 409），前端 phase 增加 failed 终态 + 手动重试；EventSource 对非 200 不自动重连（浏览器规范行为）。实施细化：browserSession/stream 订阅前预检 Row().Status（空串→404、idle/failed→409）；acpSession/events 预检 Get().Status（idle→404、terminated→409，failed 照常订阅），前端订阅加闸门（快照可订阅状态才连，治首开订阅先于 ensure 的竞态），ensure 受理回包在缓存为终态（idle/terminated）时落快照——终态无活流覆盖安全，保「重新启动」后闸门可重开；browserSession/events 全局单源订阅、无失败判定面，服务端与前端 hook 均零改动；Bind/Validate 参数错误维持 200 现状 | 治本消灭 3s 空转循环（预检在订阅之前，每次重连变成无副作用的即时 404/409）；404/409 为防御纵深，正常流由前端闸门保证 |
 | D4 | 适配器闲置回收阈值走 appConfig 可配置（key `acpSessionIdleTimeoutMinutes`，默认 30），Go 侧经 app.db 直读；idle 判定 = 无进行中 turn 且 hub 无订户（对齐 browser 域先例） | 阈值属运营调优面，入配置体系是项目惯例；回收后 `Ensure` 走锚点重建 |
 | D5 | 虚拟化库 = virtua（动态高度一等支持、体积小、维护活跃、React 19 兼容） | 对齐技术选型评估标准（流行度/稳定性/维护活跃度） |
 | D6 | 消息落库：新增 entries 表（issue_id + seq + entry JSON），**直接编辑原迁移文件** + `pnpm server:gorm:gen`（不新建迁移、不考虑历史数据，项目拍板惯例）；Go 内存只留热窗口（最近 N 条，命名对齐 `iwFileMaxEntries` 惯例），SSE 快照仅带热窗口，分页 REST 供上滑加载 | 治本 Go 堆线性涨 + 全量快照下发；迁移策略遵循既有拍板 |
@@ -69,11 +69,20 @@
 - 「展开态状态提升」项：现状 `expanded` 已在折叠子树之外（组件根），保持不动即满足 D2
 - 验收实证：`pnpm web:lint` 零报错、`pnpm web:test` 53 例全绿（原 47 + 新增 6）、`pnpm web:build`（tsc -b + vite）通过；使用方两处（MessageList 历史列表 + PendingCard 权限卡）自动受益；DOM 节点数量级下降与展开/收起无闪烁留待实机 tauri:dev 观察
 
-**任务 T3：SSE 订阅失败终态** ⬜
+**任务 T3：SSE 订阅失败终态** ✅
 - 功能：订阅不存在/已关闭会话不再无限重连空转
 - 技术方案：按 D3 实施，三端点同治（browserSession/stream、acpSession/events、browserSession/events）；前端 `useBrowserFrameStream`/`useAcpSessionEvents` 补 failed 终态与手动重试
 - 依赖：无
 - 验收：对已关闭会话发起订阅 = 单次失败 + failed 终态呈现；网络恢复手动重试可达；正常流不回归
+
+**实施定稿**：
+- 服务端落地面：`apis/response.go` 新增 `JsonFailWithStatus`（`AbortWithStatusJSON` 真实状态码 + `Response{code!=0}`）+ `apis/api.go` Api wrapper（对齐 JsonFail 范式）；`controller/browser_session.go` Stream 订阅前预检 `browserStreamReject`（`Row().Status`：空串→404、idle→409、failed→409）；`controller/acp_session.go` Events 订阅前预检 `acpEventsReject`（`Get().Status`：idle→404、terminated→409）；两 reject 均纯函数 + 表驱动单测（新文件 `browser_session_test.go`/`acp_session_test.go`）
+- 前端落地面：`useBrowserFrameStream` phase 增 failed 终态 + `failedMessage` + attempt/retry（连接层 error 仅在 `readyState === CLOSED` 时置终态，CONNECTING 瞬态自动重连不置；serverUrl 获取失败同为 failed）；`useAcpSessionEvents` 由「挂载即订、返回 void」重写为闸门式有状态订阅（签名加 `enabled`，返回 `AcpEventsStream`）；`reducer.ts` 新增 `isAcpSessionSubscribable` 纯函数（starting/ready/failed 可订阅，undefined/idle/terminated 不可）+ 单测；`queries.ts` ensure 受理回包在缓存为终态（idle/terminated）时落快照（D3 细化已前置回写）；UI 三处接线——Stage 浮层与 BrowserSessionCard 各加 failed Alert + 重试按钮、AcpSessionView hook 重排（view 先于 events）+ 会话视图顶部订阅失败横幅（不阻断历史呈现）
+- 相对方案偏离：① browserSession/events 端点零改动——全局单源订阅、无失败判定面（D3 细化段已前置回写），任务清单「三端点同治」落定为两端点；② browser hook 的 readyState 判定内联于 onError（一行规范调用，抽离仪式化），仅 acp 闸门 `isAcpSessionSubscribable` 因承载竞态治理语义而抽离 + 测试；③ EventSource 非 200 → CLOSED 双平台（WKWebView/WebView2）实测留待实机（风险 #3）
+- 验收实证：`go -C server test ./...` 全绿、`pnpm server:fmt` 通过（新增 wrapper 格式带正；`vendored_test.go` 为既有格式漂移被全仓 gofmt 顺手带正）、`pnpm web:lint` 零报错、`pnpm web:test` 54 例全绿（原 53 + 订阅闸门 1）、`pnpm web:build`（tsc -b + vite）通过；「对已关闭会话订阅 = 单次失败 + failed 终态 + 手动重试可达」的行为验收留待实机 tauri:dev 观察
+- 质量审查修复三组：① 重要（ACP 重启死路）——缓存 failed + 订阅已终态失败时，「重新启动」的 setStarting 帧无人订阅收不到、onSuccess 不覆写 failed 缓存，且 failed/terminated 分支不渲染订阅失败横幅——无故障信号、无恢复控件，唯一切菜单整页重挂可解围；修复为 failed 分支补渲染订阅失败横幅 + 重试订阅（retry 重订后 setStarting 帧经订阅归约进缓存，链路打通；terminated 为闸门关闭态，ensure 回包翻闸自动重订，无需横幅；仅把 failed 加进覆写集不够——覆写后闸门布尔 true→true 不变、effect 不重跑，只会变成无限转圈）。② 低（接线测试）——acp Events 补 handler 级 httptest（装配临时 sqlite + NewManager，断言不存在会话 404 + code!=0 落线，预检被删/挪位即退化告警）；browser Stream 不加同款：NewManager 构造含真实孤儿清扫（扫 Root()/profiles 杀进程），测试装配不安全，状态映射已由 reject 纯函数表测覆盖。③ 简洁性三处——gap 断档分支冗余 setPhase('connecting') 删除（connect 复位段同值）、ensure 落快照条件合并为 `!isAcpSessionSubscribable(prev?.status)`（与订阅闸门同一 SSOT）、browserStreamReject 注释尾句修复叙事修剪
+- 修复后复跑验证链全绿（go test ./... / server:fmt / web:lint / web:test 54 例 / web:build）
+- 规范/分层审查修复三项：① starting 分支同样渲染订阅失败横幅 + 重试订阅——与已修 failed 分支死路同构（订阅拒绝落在缓存 starting 窗口——sidecar 重启清内存/discard/进程夭折/serverUrl 失败——时无 SSE 帧刷新、ensure 守卫拒绝覆写、getInfo 无自动 refetch，视图死转圈无信号无控件）；三处同款横幅抽同文件 `SubscriptionFailedAlert` 组件（starting/failed/idle+ready 分支共用，按钮文案统一「重试订阅」；会话消亡类拒绝重试恒败，整页重挂重新受理兜底）；② acp handler 级测试补临时库连接池收尾（对齐 launch_settings_test.go newTestDB 先例）；③ server/README.md「响应」段补 JsonFailWithStatus 例外登记（SSE 订阅前置失败真实状态码，REST 仍统一 200+code）。其余维度（导入三段式、命名对称性、(int,error) 模式、attempt-retry 先例同构、表驱动测试风格、预检纯函数落 controller 层、global 直读惯例、state 域职责切分）审查确认无发现；修复后复跑验证链全绿
 
 **任务 T4：ACP 适配器闲置回收** ⬜
 - 功能：空闲任务的适配器 node 进程自动退出，多任务并行内存从 N×150MB 有界化
@@ -91,7 +100,7 @@
 
 **任务 T6：ACP 消息落库 + 分页 + 快照窗口** ⬜
 - 功能：Go 内存不随会话长度线性涨；sidecar 重启后消息可回看
-- 技术方案：按 D6 实施——改原迁移文件加 entries 表 → `pnpm server:gorm:gen`；`view.go` 写穿落库 + 内存热窗口；SSE 快照仅带热窗口；新增分页接口（issueId + beforeSeq + limit）；前端 MessageList 上滑拉历史 append 缓存
+- 技术方案：按 D6 实施——改原迁移文件加 entries 表 → `pnpm server:gorm:gen`；`view.go` 写穿落库 + 内存热窗口；SSE 快照仅带热窗口；新增分页接口（issueId + pageInfo{pageSize, currentPage}）；前端 MessageList 上滑拉历史 append 缓存
 - 依赖：T5
 - 验收：长会话 Go RSS 平稳；快照体积有界；重启 sidecar 后历史消息经分页可回看；新旧数据切换按「无历史数据」惯例处理
 

@@ -7,5 +7,6 @@ export {
   useRespondAcpElicitation,
   useRespondAcpPermission,
 } from './queries';
-export { applyFrame, isFrameSequenceBroken } from './reducer';
+export { applyFrame, isAcpSessionSubscribable, isFrameSequenceBroken } from './reducer';
+export type { AcpEventsPhase, AcpEventsStream } from './useAcpSessionEvents';
 export { useAcpSessionEvents } from './useAcpSessionEvents';

@@ -1,11 +1,13 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 
+	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/dal/types"
 	"ocean-harness/server/internal/global"
@@ -110,6 +112,21 @@ func (api AcpSession) RespondElicitation(ctx *gin.Context) {
 	api.JsonOK(nil)
 }
 
+// acpEventsReject 事件流订阅前置判定：idle=会话不存在→404、terminated=已结束→409；
+// starting/ready/failed 可订阅（failed 是可观察状态，快照含失败原因供前端呈现）。
+// 真实状态码使 EventSource 不自动重连；前端另有订阅闸门（可订阅状态才连），此处为
+// 防御纵深。
+func acpEventsReject(status acpsession.SessionStatus) (int, error) {
+	switch status {
+	case acpsession.StatusIdle:
+		return http.StatusNotFound, errors.New("ACP 会话不存在")
+	case acpsession.StatusTerminated:
+		return http.StatusConflict, errors.New("ACP 会话已结束")
+	default:
+		return 0, nil
+	}
+}
+
 // Events GET /api/acpSession/events?issueId=...：SSE 事件流。建连首帧即当前快照（seq
 // 连续，杜绝快照与增量帧之间的缝隙）；帧协议见 acpsession.Frame。断连/退订/服务收尾
 // （hub 关停关闭通道）任一发生即返回。长驻期间持有 *gin.Context 是安全的——gin 仅在
@@ -119,6 +136,10 @@ func (api AcpSession) Events(ctx *gin.Context) {
 	svc := service.AcpSession{}
 	if err := api.MakeContext(ctx).Bind(req, binding.Query).Validate(req).MakeService(&svc.Service).Errors; err != nil {
 		api.JsonFail(err)
+		return
+	}
+	if httpStatus, err := acpEventsReject(global.AcpSessions.Get(req.IssueID).Status); err != nil {
+		api.JsonFailWithStatus(httpStatus, err)
 		return
 	}
 	frames, cancel := global.AcpSessions.Subscribe(req.IssueID)

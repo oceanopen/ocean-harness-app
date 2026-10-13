@@ -1,5 +1,5 @@
 import type { BrowserSessionView } from '@src/services';
-import { Alert, Box, CircularProgress, Typography, useTheme } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Typography, useTheme } from '@mui/material';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
   useBrowserFrameStream,
@@ -125,6 +125,19 @@ function StageContent({ profile }: { profile: string }) {
             {stream.closedReason != null && (
               <Alert severity="warning" sx={{ fontSize: 12, flexShrink: 0 }}>
                 {`实时画面已停止：${stream.closedReason}（选择其他页面可重新订阅）`}
+              </Alert>
+            )}
+            {stream.phase === 'failed' && (
+              <Alert
+                severity="error"
+                sx={{ fontSize: 12, flexShrink: 0 }}
+                action={(
+                  <Button color="inherit" size="small" onClick={stream.retry}>
+                    重试
+                  </Button>
+                )}
+              >
+                {`实时画面连接失败：${stream.failedMessage ?? '请稍后重试'}`}
               </Alert>
             )}
           </>

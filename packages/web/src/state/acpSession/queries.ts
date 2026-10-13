@@ -2,6 +2,7 @@ import type { AcpSessionCancelRequest, AcpSessionEnsureRequest, AcpSessionPrompt
 import { AcpSessionService } from '@src/services';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { acpSessionKeys } from './keys';
+import { isAcpSessionSubscribable } from './reducer';
 
 /** 会话视图快照读端：与 SSE 首帧/增量共用同一缓存，推送驱动更新，本查询不依赖 refetch。 */
 export function useAcpSessionView(issueId: string) {
@@ -12,15 +13,18 @@ export function useAcpSessionView(issueId: string) {
 }
 
 /**
- * 幂等受理会话创建：受理即返回受理时刻快照——仅在缓存为空时落地（避免覆盖 SSE 已送达
- * 的更新快照），后续状态迁移（starting → ready/failed）经 SSE 跟进。
+ * 幂等受理会话创建：受理即返回受理时刻快照——仅在缓存不可订阅（空/idle/terminated，
+ * 与订阅闸门 isAcpSessionSubscribable 同口径）时落地（终态无活流覆盖安全，且保
+ * 「重新启动」后订阅闸门可重开）；可订阅态说明 SSE 在流，保持缓存优先不覆盖已送达的
+ * 更新快照，后续状态迁移（starting → ready/failed）经 SSE 跟进。
  */
 export function useEnsureAcpSession() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (req: AcpSessionEnsureRequest) => AcpSessionService.ensure(req),
     onSuccess: (snapshot, req) => {
-      queryClient.setQueryData<AcpViewSnapshot>(acpSessionKeys.view(req.issueId), prev => prev ?? snapshot);
+      queryClient.setQueryData<AcpViewSnapshot>(acpSessionKeys.view(req.issueId), prev =>
+        !isAcpSessionSubscribable(prev?.status) ? snapshot : prev);
     },
   });
 }

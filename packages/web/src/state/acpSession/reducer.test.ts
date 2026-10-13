@@ -1,6 +1,6 @@
 import type { AcpFrame, AcpViewSnapshot } from '@src/services';
 import { describe, expect, it } from 'vitest';
-import { applyFrame, isFrameSequenceBroken } from './reducer';
+import { applyFrame, isAcpSessionSubscribable, isFrameSequenceBroken } from './reducer';
 
 // applyFrame 归约单测：12 帧型语义 + 帧序无关性（内容帧与回合终态帧并发交错的两种顺序
 // 收敛同一终态）+ seq 断档判定。chat 模式退役后前端测试自此重建（vite.config test 段）。
@@ -148,5 +148,16 @@ describe('isFrameSequenceBroken', () => {
   it('连续 seq 正常，断档报断', () => {
     expect(isFrameSequenceBroken(7, { seq: 8, issueId: 'i-1', type: 'entry' })).toBe(false);
     expect(isFrameSequenceBroken(7, { seq: 9, issueId: 'i-1', type: 'entry' })).toBe(true);
+  });
+});
+
+describe('isAcpSessionSubscribable', () => {
+  it('starting/ready/failed 可订阅，idle/terminated 与快照未就绪不可订阅', () => {
+    expect(isAcpSessionSubscribable('starting')).toBe(true);
+    expect(isAcpSessionSubscribable('ready')).toBe(true);
+    expect(isAcpSessionSubscribable('failed')).toBe(true);
+    expect(isAcpSessionSubscribable('idle')).toBe(false);
+    expect(isAcpSessionSubscribable('terminated')).toBe(false);
+    expect(isAcpSessionSubscribable(undefined)).toBe(false);
   });
 });

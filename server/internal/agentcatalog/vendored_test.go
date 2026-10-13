@@ -138,7 +138,7 @@ func TestEnsureVendoredStaleMarkerReinstalls(t *testing.T) {
 	}
 	// 旧格式（仅版本号，marker 带 triple 前的历史产物）与异平台 triple 两种不匹配形态。
 	for name, stale := range map[string]string{
-		"旧格式仅版本号": "1.0.0",
+		"旧格式仅版本号":   "1.0.0",
 		"异平台triple": "1.0.0@sunos-sparc",
 	} {
 		t.Run(name, func(t *testing.T) {

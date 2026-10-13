@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -133,6 +134,22 @@ func (api BrowserSession) Events(ctx *gin.Context) {
 // 防御性保活。
 const liveSSEPingInterval = 15 * time.Second
 
+// browserStreamReject 实时画面帧流的订阅前置判定：投影行状态不可订阅即返回 HTTP 状态码
+// 与原因（空串=未知 profile 404；idle/failed=会话已关闭/引擎未运行 409；starting/ready
+// 可订阅返回 nil）。真实状态码使 EventSource 按规范 fail the connection 不自动重连。
+func browserStreamReject(status browser.SessionStatus) (int, error) {
+	switch status {
+	case "":
+		return http.StatusNotFound, errors.New("浏览器会话不存在")
+	case browser.StatusIdle:
+		return http.StatusConflict, errors.New("浏览器会话已关闭")
+	case browser.StatusFailed:
+		return http.StatusConflict, errors.New("浏览器引擎未运行")
+	default:
+		return 0, nil
+	}
+}
+
 // Stream GET /api/browserSession/stream?profile=&pageId=：CDP 观察通道实时画面帧流
 // （远程桌面语义，per-profile 单订——页码变更即重建，旧流经 done 感知重订）。事件四型
 // frame/target/error/closed（LiveEvent.type 判别载荷）：error=自然断连可重订自愈、
@@ -144,6 +161,10 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 	svc := service.BrowserSession{}
 	if err := api.MakeContext(ctx).Bind(req, binding.Query).Validate(req).MakeService(&svc.Service).Errors; err != nil {
 		api.JsonFail(err)
+		return
+	}
+	if httpStatus, err := browserStreamReject(global.Browser.Row(req.Profile).Status); err != nil {
+		api.JsonFailWithStatus(httpStatus, err)
 		return
 	}
 	stream, err := svc.Stream(req)

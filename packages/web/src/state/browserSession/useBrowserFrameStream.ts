@@ -1,6 +1,6 @@
 import type { BrowserLiveEvent, BrowserLiveFrameMeta } from '@src/services';
 import { serverUrl } from '@src/services/http';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * 视口帧（keep-latest 视频流语义）：jpeg base64 + screencast metadata——仅最新帧有意义，
@@ -14,9 +14,10 @@ export interface LiveViewportFrame {
 
 /**
  * 帧流相位：connecting 订阅中未首帧 → live 推帧中；healing 流内 error（后端自愈，
- * 连接保持，新帧到达即回 live）；closed 终态（页面关闭/管理面强拆），不重订。
+ * 连接保持，新帧到达即回 live）；failed 终态（订阅被服务端拒绝/连接永久失败，
+ * EventSource 已放弃，待手动重试）；closed 终态（页面关闭/管理面强拆），不重订。
  */
-export type LiveStreamPhase = 'connecting' | 'live' | 'healing' | 'closed';
+export type LiveStreamPhase = 'connecting' | 'live' | 'healing' | 'failed' | 'closed';
 
 export interface BrowserFrameStream {
   /** keep-latest 帧箱（终态保留末帧不清屏）。 */
@@ -30,16 +31,21 @@ export interface BrowserFrameStream {
   healingMessage: string | null;
   /** 终态原因（closed 事件 reason；非终态为 null）。 */
   closedReason: string | null;
+  /** failed 终态原因（EventSource error 事件不暴露 HTTP 状态码，仅通用文案/异常 message）。 */
+  failedMessage: string | null;
+  /** failed 终态手动重试（attempt 自增触发重订）。 */
+  retry: () => void;
 }
 
 /**
  * useBrowserFrameStream 订阅单页面实时画面 SSE（/api/browserSession/stream，per
  * (profile, pageId)：页码变更即重建，旧流经 done 感知重订）。事件四型分派见
- * BrowserLiveEvent 契约；连接层断开交 EventSource 自动重连（后端自愈中），仅 closed
- * 终态主动停订。生命周期：enabled 为闸门链（expanded && panelVisible && ready &&
- * !restoreInFlight）——收起/恢复编排即断流，重开重订（重订即清帧回到占位态，帧箱
- * 不跨订阅保留旧页面残影）。throttleMs 为帧写侧最小间隔（后端参数，>0 时透传；
- * 0/缺省不节流——操作台实时档传 300，迷你预览档传 2000）。
+ * BrowserLiveEvent 契约；连接层瞬态断线交 EventSource 自动重连（后端自愈中），永久
+ * 失败（readyState CLOSED，含服务端 404/409 订阅拒绝——非 200 规范不自动重连）置
+ * failed 终态待手动重试，仅 closed 终态主动停订。生命周期：enabled 为闸门链
+ * （expanded && panelVisible && ready && !restoreInFlight）——收起/恢复编排即断流，
+ * 重开重订（重订即清帧回到占位态，帧箱不跨订阅保留旧页面残影）。throttleMs 为帧写侧
+ * 最小间隔（后端参数，>0 时透传；0/缺省不节流——操作台实时档传 300，迷你预览档传 2000）。
  */
 export function useBrowserFrameStream(profile: string, pageId: number, enabled: boolean, throttleMs = 0): BrowserFrameStream {
   const frameRef = useRef<LiveViewportFrame | null>(null);
@@ -48,6 +54,9 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
   const [target, setTarget] = useState<{ url: string; title: string } | null>(null);
   const [healingMessage, setHealingMessage] = useState<string | null>(null);
   const [closedReason, setClosedReason] = useState<string | null>(null);
+  const [failedMessage, setFailedMessage] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt(n => n + 1), []);
 
   useEffect(() => {
     if (!enabled) {
@@ -96,6 +105,17 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
       }
     }
 
+    // 连接层 error：readyState CLOSED = EventSource 已放弃（非 200 订阅拒绝等永久
+    // 失败，规范不自动重连）→ failed 终态待手动重试；CONNECTING = 瞬态断线自动重连
+    // 中（后端自愈期间），不置终态。
+    function onError() {
+      if (es && es.readyState === EventSource.CLOSED) {
+        setPhase('failed');
+        setFailedMessage('订阅被服务端拒绝或连接中断');
+        close();
+      }
+    }
+
     async function connect() {
       let url: string;
       const query: Record<string, string> = { profile, pageId: String(pageId) };
@@ -104,31 +124,39 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
       }
       try {
         url = await serverUrl('/api/browserSession/stream', query);
-      } catch {
-        // go-server 未运行：不建连（会话投影读端同报错，由其错误态呈现）。
+      } catch (e) {
+        // go-server 未运行：无自动恢复方，直接 failed 终态待手动重试。
+        if (disposed) {
+          return;
+        }
+        setPhase('failed');
+        setFailedMessage(e instanceof Error ? e.message : '服务地址获取失败');
         return;
       }
       if (disposed) {
         return;
       }
-      // （重）订阅激活前清帧复位：新页码/重开闸门不允许旧页残影与上一轮终态残留。
+      // （重）订阅激活前清帧复位：新页码/重开闸门/手动重试不允许旧页残影与上一轮终态残留。
       frameRef.current = null;
       setHasFrame(false);
       setPhase('connecting');
       setTarget(null);
       setHealingMessage(null);
       setClosedReason(null);
+      setFailedMessage(null);
       es = new EventSource(url);
       es.addEventListener('message', onMessage);
+      es.addEventListener('error', onError);
     }
 
     void connect();
     return () => {
       disposed = true;
       es?.removeEventListener('message', onMessage);
+      es?.removeEventListener('error', onError);
       close();
     };
-  }, [profile, pageId, enabled, throttleMs]);
+  }, [profile, pageId, enabled, throttleMs, attempt]);
 
-  return { frameRef, hasFrame, phase, target, healingMessage, closedReason };
+  return { frameRef, hasFrame, phase, target, healingMessage, closedReason, failedMessage, retry };
 }

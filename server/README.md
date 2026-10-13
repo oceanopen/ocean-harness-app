@@ -93,7 +93,7 @@ func (svc Workspace) GetInfo(req *types.WorkspaceGetInfoRequest) (*model.Workspa
 }
 ```
 
-**响应**：`apis.JsonOK(ctx, data)` / `apis.JsonFail(ctx, err)` / `apis.JsonFailWithCode(ctx, code, msg)`，结构 `{code,msg,data}`（成功 0 / 失败 1，业务错误统一 HTTP 200）。
+**响应**：`apis.JsonOK(ctx, data)` / `apis.JsonFail(ctx, err)` / `apis.JsonFailWithCode(ctx, code, msg)`，结构 `{code,msg,data}`（成功 0 / 失败 1，业务错误统一 HTTP 200）。例外：SSE 端点的订阅前置失败用 `apis.JsonFailWithStatus(ctx, httpStatus, err)` 返真实状态码（不存在 404 / 已关闭 409 等）——EventSource 对非 200 按规范 fail the connection 不自动重连，杜绝失败订阅的无限重连空转。
 
 **分页**：**大列表**（如 issue，可能上千条）用 `getListByPage`——请求 DTO 内嵌 `apis.PageInfo{pageSize, currentPage}`，service 用 gen `q.Xxx.WithContext(ctx).FindByPage(pageInfo.GetOffset(), pageInfo.GetPageSize())` 返 `(list, count, err)`、回填 `pageInfo.TotalCount` 后返 `(list, *apis.PageInfo, error)`，controller `api.JsonPageOK(list, pageInfo)`（data=`{list, pageInfo}`）。**小列表**（如 workspace，个位数）用 `getList` 返全量、不分页。
 

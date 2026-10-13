@@ -1,6 +1,7 @@
 import type { AcpViewSnapshot } from '@src/services';
-import { Box, Button, CircularProgress, Typography } from '@mui/material';
-import { useAcpSessionEvents, useAcpSessionView, useEnsureAcpSession } from '@src/state/acpSession';
+import type { AcpEventsStream } from '@src/state/acpSession';
+import { Alert, Box, Button, CircularProgress, Typography } from '@mui/material';
+import { isAcpSessionSubscribable, useAcpSessionEvents, useAcpSessionView, useEnsureAcpSession } from '@src/state/acpSession';
 import { useEffect, useRef } from 'react';
 import MessageList from './MessageList';
 import PendingCard from './PendingCard';
@@ -12,8 +13,10 @@ import PromptComposer from './PromptComposer';
  * join 返现状，failed/terminated 重建；受理显式携带 pickedLaunchMode='acp'——视图即
  * acp 意图载体，配置 acp 与临场选择 acp 统一声明，后端门禁以此放行且不落库）→ SSE
  * 订阅建连首帧全量快照 → 视图按快照 status 分支渲染；受理同步失败（配置校验拒绝等）
- * 先于快照分支渲染失败态 + 重新启动，绝不落死输入框。挂起审批/表单在 MessageList 与
- * 输入区之间的固定挂起区平铺 PendingCard 应答（卡片移除由 SSE pendingClosed 帧驱动）。
+ * 先于快照分支渲染失败态 + 重新启动，绝不落死输入框。订阅经 isAcpSessionSubscribable
+ * 闸门（D3）：快照可订阅状态才建连，订阅失败置 failed 终态横幅手动重试。挂起审批/
+ * 表单在 MessageList 与输入区之间的固定挂起区平铺 PendingCard 应答（卡片移除由 SSE
+ * pendingClosed 帧驱动）。
  */
 export default function AcpSessionView({ issueId }: { issueId: string }) {
   const ensure = useEnsureAcpSession();
@@ -29,10 +32,13 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
     ensure.mutate({ issueId, pickedLaunchMode: 'acp' });
   }, [ensure, issueId]);
 
-  // SSE 订阅：首帧快照入缓存，增量帧归约更新；卸载即断，重挂载重建连自愈。
-  useAcpSessionEvents(issueId);
-
   const { data: snapshot, isPending, error, refetch } = useAcpSessionView(issueId);
+
+  // SSE 订阅（D3 闸门）：快照可订阅状态（starting/ready/failed）才建连——idle（从未
+  // 受理）/terminated（已终结）不订阅，治首开订阅先于 ensure 的 404 竞态；terminated
+  // 随「重新启动」受理回包迁回 starting，闸门重开自动重订。首帧快照入缓存，增量帧归约
+  // 更新；闸门关闭即断，重开重建连。
+  const events = useAcpSessionEvents(issueId, isAcpSessionSubscribable(snapshot?.status));
 
   // 受理同步失败优先呈现（配置校验拒绝等）：先于快照分支，杜绝 idle 死输入框。
   if (ensure.isError) {
@@ -64,13 +70,14 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
       </FullCenter>
     );
   }
-  return <StatusBranch issueId={issueId} snapshot={snapshot} onRestart={() => ensure.mutate({ issueId, pickedLaunchMode: 'acp' })} ensurePending={ensure.isPending} />;
+  return <StatusBranch issueId={issueId} snapshot={snapshot} events={events} onRestart={() => ensure.mutate({ issueId, pickedLaunchMode: 'acp' })} ensurePending={ensure.isPending} />;
 }
 
 /** 按快照 status 分支：starting 启动中 / failed+terminated 原因与重启 / idle+ready 会话视图。 */
-function StatusBranch({ issueId, snapshot, onRestart, ensurePending }: {
+function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
   issueId: string;
   snapshot: AcpViewSnapshot;
+  events: AcpEventsStream;
   onRestart: () => void;
   ensurePending: boolean;
 }) {
@@ -82,6 +89,9 @@ function StatusBranch({ issueId, snapshot, onRestart, ensurePending }: {
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
             正在启动 ACP 会话{snapshot.agentCode ? `（${snapshot.agentCode}）` : ''}…
           </Typography>
+          {/* starting 同为闸门开启态：订阅终态失败时启动帧无人送达，视图死转圈——横幅给出
+              信号与重试订阅（会话消亡类拒绝重试恒败，整页重挂重新受理兜底）。 */}
+          <SubscriptionFailedAlert events={events} sx={{ mt: 1.5 }} />
         </FullCenter>
       );
     case 'failed':
@@ -91,6 +101,11 @@ function StatusBranch({ issueId, snapshot, onRestart, ensurePending }: {
           <Typography variant="body2" color="error">
             {snapshot.status === 'failed' ? '会话启动失败' : '会话已结束'}{snapshot.error ? `：${snapshot.error}` : ''}
           </Typography>
+          {snapshot.status === 'failed' && (
+            // failed 缓存闸门开着：重启的 setStarting 帧依赖订阅送达，订阅终态失败时须先
+            // 重试订阅恢复链路（terminated 闸门已关，ensure 回包翻闸自动重订，无需此横幅）。
+            <SubscriptionFailedAlert events={events} sx={{ mt: 1.5 }} />
+          )}
           <Button variant="outlined" size="small" onClick={onRestart} loading={ensurePending} sx={{ mt: 1.5 }}>
             重新启动
           </Button>
@@ -100,6 +115,9 @@ function StatusBranch({ issueId, snapshot, onRestart, ensurePending }: {
     case 'ready':
       return (
         <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+          {/* 订阅失败横幅不阻断会话视图（REST 快照已呈现历史）；终态（terminated/failed）
+              呈现仍由快照 status 分支驱动，此处只管订阅通道本身的失败。 */}
+          <SubscriptionFailedAlert events={events} sx={{ flexShrink: 0 }} />
           <MessageList entries={snapshot.entries} />
           {snapshot.pendings.length > 0 && (
             // 固定挂起区（MessageList 与输入区之间）：pending 逐项平铺卡片，全部应答
@@ -122,5 +140,25 @@ function FullCenter({ children }: { children: React.ReactNode }) {
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2 }}>
       {children}
     </Box>
+  );
+}
+
+/** 订阅失败横幅（闸门开启态分支共用）：订阅通道终态失败的信号 + 重试订阅。 */
+function SubscriptionFailedAlert({ events, sx }: { events: AcpEventsStream; sx: React.ComponentProps<typeof Alert>['sx'] }) {
+  if (events.phase !== 'failed') {
+    return null;
+  }
+  return (
+    <Alert
+      severity="error"
+      sx={sx}
+      action={(
+        <Button color="inherit" size="small" onClick={events.retry}>
+          重试订阅
+        </Button>
+      )}
+    >
+      {`实时消息订阅失败：${events.failedMessage ?? '请稍后重试'}`}
+    </Alert>
   );
 }

@@ -367,6 +367,19 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
               {stream.closedReason != null && (
                 <Typography sx={{ fontSize: 12, color: 'warning.main' }}>{`实时画面已停止：${stream.closedReason}`}</Typography>
               )}
+              {stream.phase === 'failed' && (
+                <Alert
+                  severity="error"
+                  sx={{ fontSize: 12 }}
+                  action={(
+                    <Button color="inherit" size="small" onClick={stream.retry}>
+                      重试
+                    </Button>
+                  )}
+                >
+                  {`实时画面连接失败：${stream.failedMessage ?? '请稍后重试'}`}
+                </Alert>
+              )}
 
               <Box sx={{ display: 'flex', gap: 0.5 }}>
                 <TextField
