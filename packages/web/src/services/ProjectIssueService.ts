@@ -5,8 +5,10 @@ import { request } from './http';
 
 export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
 
-// issue 关联的单个「仓库+分支」项（多选）。localRepositoryId 须属于 issue 所属项目的关联仓库；
-// repositoryBranch 为分支名（freeSolo 可手输）。
+/**
+ * issue 关联的单个「仓库+分支」项（多选）。localRepositoryId 须属于 issue 所属项目的关联仓库；
+ * repositoryBranch 为分支名（freeSolo 可手输）。
+ */
 export interface IssueRepositoryBranchModel {
   localRepositoryId: number;
   repositoryBranch: string;

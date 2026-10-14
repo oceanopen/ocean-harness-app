@@ -16,17 +16,16 @@ import (
 	"ocean-harness/server/internal/gitutil"
 )
 
-// issueWorkspace archive：归档/取消工作空间（T3.2，docs/agent_dev_01_tasks.md §T3.2）。
-// 归档与取消同为工程化确定性操作（不依赖 AI）：删除 {baseDir}/{issueId}/ 目录 + 流转
-// issue 状态（archive→DONE / cancel→CANCELLED，父子解耦不级联子任务，见 project_issue.go
-// 文件头注释）。两段式契约（类型注释见 types/issue_workspace.go）：force=false 仅安全
-// 检查返回警告不执行；force=true 跳过检查直接执行。
-//
-// 同域文件分工：入口/校验在本文件；并发准入见 issue_workspace_registry.go；状态文件
-// 读写见 issue_workspace_state.go；git 检查函数见 gitutil/status.go。
+/*
+ * issueWorkspace archive：归档/取消工作空间（T3.2，docs/agent_dev_01_tasks.md §T3.2）。归档与取消同为工程化确定性操作（不依赖 AI）：删除 {baseDir}/{issueId}/ 目录 + 流转 issue 状态（archive→DONE / cancel→CANCELLED，父子解耦不级联子任务，见 project_issue.go 文件头注释）。
+ * 两段式契约（类型注释见 types/issue_workspace.go）：force=false 仅安全检查返回警告不执行；force=true 跳过检查直接执行。
+ * 同域文件分工：入口/校验在本文件；并发准入见 issue_workspace_registry.go；状态文件读写见 issue_workspace_state.go；git 检查函数见 gitutil/status.go。
+ */
 
-// Archive 归档/取消 issue 工作空间。执行序：入参校验 → 解析目录（含 issue 存在性）→ 并发防护
-// （init 进行中拒绝）→ force=false 安全检查 / force=true 删目录 + 事务流转状态（Move 范式）。
+/*
+ * Archive 归档/取消 issue 工作空间。执行序：入参校验 → 解析目录（含 issue 存在性）→ 并发防护
+ * （init 进行中拒绝）→ force=false 安全检查 / force=true 删目录 + 事务流转状态（Move 范式）。
+ */
 func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*types.IssueWorkspaceArchiveResponseData, error) {
 	if !issueWorkspaceValidIssueID(req.IssueID) {
 		return nil, errors.New("issueId 非法")
@@ -57,14 +56,18 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 		return &types.IssueWorkspaceArchiveResponseData{Executed: false, Warnings: warnings}, nil
 	}
 
-	// 删目录（外部副作用不可回滚，置于事务前：失败即中止不流转状态；目录不存在返回 nil，
-	// 天然幂等——未初始化/重复归档均安全）。终端会话已由前端在调本段前 ptyShutdownIssue。
+	/*
+	 * 删目录（外部副作用不可回滚，置于事务前：失败即中止不流转状态；目录不存在返回 nil，
+	 * 天然幂等——未初始化/重复归档均安全）。终端会话已由前端在调本段前 ptyShutdownIssue。
+	 */
 	if err := os.RemoveAll(filepath.Join(baseDir, req.IssueID)); err != nil {
 		return nil, fmt.Errorf("删除工作空间目录失败: %w", err)
 	}
 
-	// 状态流转（Move 范式）：applyStateTransition + Save；同值 no-op（重复归档幂等）。
-	// 父自动完成联动仅在「本次变为完成」时尝试（归档目标若是子任务且兄弟全完成）。
+	/*
+	 * 状态流转（Move 范式）：applyStateTransition + Save；同值 no-op（重复归档幂等）。
+	 * 父自动完成联动仅在「本次变为完成」时尝试（归档目标若是子任务且兄弟全完成）。
+	 */
 	issueSvc := ProjectIssue{Service: svc.Service}
 	var issue *model.ProjectIssue
 	if err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -96,11 +99,11 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 	return &types.IssueWorkspaceArchiveResponseData{Executed: true, Warnings: []string{}}, nil
 }
 
-// issueWorkspaceArchiveWarnings 安全检查（force=false 段）：遍历状态文件 cloneRepos 步骤
-// 的仓库清单，逐仓库探测未提交变更（git status --porcelain）与未推送提交（本地 ref 对照
-// origin/{targetBranch}..HEAD，不联网 fetch；origin 引用不存在 = 分支从未推送）。检查失败的
-// 仓库记警告不中止——force 段才是删除决策点，宁可多警告不可漏警告。状态文件缺失/损坏
-// 返回空列表（无可检查项，未初始化工作空间可直接归档）。
+/*
+ * issueWorkspaceArchiveWarnings 安全检查（force=false 段）：遍历状态文件 cloneRepos 步骤的仓库清单，逐仓库探测未提交变更（git status --porcelain）与未推送提交（本地 ref 对照 origin/{targetBranch}..HEAD，不联网 fetch；origin 引用不存在 = 分支从未推送）。
+ * 检查失败的仓库记警告不中止——force 段才是删除决策点，宁可多警告不可漏警告。
+ * 状态文件缺失/损坏返回空列表（无可检查项，未初始化工作空间可直接归档）。
+ */
 func issueWorkspaceArchiveWarnings(baseDir, issueID string) ([]string, error) {
 	state, err := loadIssueWorkspaceState(baseDir, issueID)
 	if err != nil || state == nil {
@@ -118,8 +121,10 @@ func issueWorkspaceArchiveWarnings(baseDir, issueID string) ([]string, error) {
 	return warnings, nil
 }
 
-// appendArchiveRepoWarnings 单仓库安全检查：目录缺失（未 clone 成功）跳过；未提交/未推送
-// 各记一条警告（repoName 前缀区分多仓库）。
+/*
+ * appendArchiveRepoWarnings 单仓库安全检查：目录缺失（未 clone 成功）跳过；未提交/未推送
+ * 各记一条警告（repoName 前缀区分多仓库）。
+ */
 func appendArchiveRepoWarnings(warnings []string, baseDir, issueID string, repo *types.IssueWorkspaceRepoState) []string {
 	dir := filepath.Join(baseDir, issueID, "repo", repo.Name)
 	if !gitutil.IsRepo(dir) {

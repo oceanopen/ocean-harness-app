@@ -1,9 +1,9 @@
 package types
 
-// 每 action 一个独立 Request 类型（不复用，便于各自演进与校验）。
-// workspaceType 只挂 workspace（所有项目共享一套通用类型），无 project 级归属；
-// sort_order 由 service 自算（同 workspace MAX+10000），故 Create 不含 sortOrder。
-// 原「标签」（workspaceLabel）域，2026-09-24 更名为「类型」。
+/*
+ * 每 action 一个独立 Request 类型（不复用，便于各自演进与校验）：workspaceType 只挂 workspace（所有项目共享一套通用类型），无 project 级归属；
+ * sort_order 由 service 自算（同 workspace MAX+10000），故 Create 不含 sortOrder。
+ */
 
 // WorkspaceTypeGetListRequest 是 POST /api/tracker/workspaceType/getList 的入参（按 workspaceId 查全部）。
 type WorkspaceTypeGetListRequest struct {

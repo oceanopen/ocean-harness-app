@@ -10,9 +10,11 @@ import (
 	"ocean-harness/server/internal/dal/model"
 )
 
-// TestParseIssueCommand 表驱动覆盖 #任务 指令解析的形态域（统一卡片化口径）：非指令
-// 放行、裸指令、关键词整段（旧正文切分与 ID 通道退役、解绑子指令退役归关键词）、全角
-// 空格分隔（首 rune 解码回归）、旧 token 退役（#issue 不再是指令）。
+/*
+ * TestParseIssueCommand 表驱动覆盖 #任务 指令解析的形态域（统一卡片化口径）：非指令
+ * 放行、裸指令、关键词整段（旧正文切分与 ID 通道退役、解绑子指令退役归关键词）、全角
+ * 空格分隔（首 rune 解码回归）、旧 token 退役（#issue 不再是指令）。
+ */
 func TestParseIssueCommand(t *testing.T) {
 	cases := []struct {
 		name string
@@ -51,9 +53,11 @@ func TestParseIssueCommand(t *testing.T) {
 	}
 }
 
-// TestParseIssueUnbindCommand 解绑指令恰等判定（同 #帮助 惯例）：裸 token（含首尾空白）
-// 命中；带后缀/粘连/中部出现/其它指令一律不命中（带参数形态无解绑语义，按普通文本走
-// 主路径）。
+/*
+ * TestParseIssueUnbindCommand 解绑指令恰等判定（同 #帮助 惯例）：裸 token（含首尾空白）
+ * 命中；带后缀/粘连/中部出现/其它指令一律不命中（带参数形态无解绑语义，按普通文本走
+ * 主路径）。
+ */
 func TestParseIssueUnbindCommand(t *testing.T) {
 	cases := []struct {
 		name string
@@ -76,8 +80,10 @@ func TestParseIssueUnbindCommand(t *testing.T) {
 	}
 }
 
-// TestParseWorkspaceCommand 表驱动覆盖 #工作空间 指令解析的形态域（与 #任务 同款惯例；
-// 无子指令——解绑词也是普通关键词；旧 token 退役）。
+/*
+ * TestParseWorkspaceCommand 表驱动覆盖 #工作空间 指令解析的形态域（与 #任务 同款惯例；
+ * 无子指令——解绑词也是普通关键词；旧 token 退役）。
+ */
 func TestParseWorkspaceCommand(t *testing.T) {
 	cases := []struct {
 		name string
@@ -111,8 +117,10 @@ func TestParseWorkspaceCommand(t *testing.T) {
 	}
 }
 
-// TestParseHelpCommand 帮助指令恰等于判定：裸 token（含首尾空白）命中；带后缀/粘连/中部
-// 出现/其它指令一律不命中（带参数形态无帮助语义，按普通文本走主路径）。
+/*
+ * TestParseHelpCommand 帮助指令恰等于判定：裸 token（含首尾空白）命中；带后缀/粘连/中部
+ * 出现/其它指令一律不命中（带参数形态无帮助语义，按普通文本走主路径）。
+ */
 func TestParseHelpCommand(t *testing.T) {
 	cases := []struct {
 		name string
@@ -147,8 +155,10 @@ func TestNormalizeBindingKeyword(t *testing.T) {
 	}
 }
 
-// newIssueTestDB 内存 sqlite + issue 表 + 会话映射表（绑定指令链路两张表都触达：候选查
-// issue、解绑写会话行——编排层用例的 SaveBoundIssueID 依赖后者在场）。
+/*
+ * newIssueTestDB 内存 sqlite + issue 表 + 会话映射表（绑定指令链路两张表都触达：候选查
+ * issue、解绑写会话行——编排层用例的 SaveBoundIssueID 依赖后者在场）。
+ */
 func newIssueTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	return newBotTestDB(t, &model.ProjectIssue{}, &model.ImBotConversation{})
@@ -167,8 +177,10 @@ func mkIssue(t *testing.T, db *gorm.DB, workspaceID int, id, name string, sortOr
 	}
 }
 
-// TestIssueUnbindTextHelpers 解绑文案契约（触发侧与点击侧断言引用同款语义，锁死关键短语
-// 防漂移）。
+/*
+ * TestIssueUnbindTextHelpers 解绑文案契约（触发侧与点击侧断言引用同款语义，锁死关键短语
+ * 防漂移）。
+ */
 func TestIssueUnbindTextHelpers(t *testing.T) {
 	if !strings.Contains(issueNotBoundText(), "未绑定任务") {
 		t.Fatalf("未绑定教学文案应含「未绑定任务」: %s", issueNotBoundText())

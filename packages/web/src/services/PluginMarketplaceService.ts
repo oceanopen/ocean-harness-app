@@ -1,8 +1,10 @@
 import { request } from './http';
 
-// 插件市场域 service：对齐后端 types.PluginMarketplaceListData 的 JSON 形态（手工镜像，无生成器）。
-// 后端无本地表——市场注册表与安装状态的 SSOT 恒为 claude 侧，本域全部为实时投影；
-// 所有写操作返回最新列表投影，前端一次往返即完成刷新。
+/**
+ * 插件市场域 service：对齐后端 types.PluginMarketplaceListData 的 JSON 形态（手工镜像，无生成器）。
+ * 后端无本地表——市场注册表与安装状态的 SSOT 恒为 claude 侧，本域全部为实时投影；
+ * 所有写操作返回最新列表投影，前端一次往返即完成刷新。
+ */
 
 // 插件组件构成统计（按官方标准布局扫描插件目录）。
 export interface PluginComponentsModel {
@@ -65,8 +67,10 @@ export interface PluginMarketplaceUpdateRequest {
   name: string;
 }
 
-// /api/plugin/<action> 的操作目标（cli 由本 service 注入，v1 恒 claude；
-// 多 CLI 扩展时前端按市场 supportedClis 分流传入）。
+/**
+ * /api/plugin/<action> 的操作目标（cli 由本 service 注入，v1 恒 claude；
+ * 多 CLI 扩展时前端按市场 supportedClis 分流传入）。
+ */
 export interface PluginOperationRequest {
   name: string;
   marketplace: string;

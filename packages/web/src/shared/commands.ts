@@ -1,7 +1,8 @@
-// tauri-specta commands.xxx() 的返回类型分两类：
-//   - 命令返回 Result<T, E>：包装为 CommandResult 联合类型（status: 'ok' | 'error'）
-//   - 命令返回裸 T（无 Result）：直接 Promise<T>，错误时 invoke 抛 reject
-// unwrap / logOnError 处理前者；后者直接 .catch 处理。
+/**
+ * tauri-specta commands.xxx() 的返回类型分两类：命令返回 Result<T, E> 时包装为 CommandResult
+ * 联合类型（status: 'ok' | 'error'）；命令返回裸 T（无 Result）时直接 Promise<T>，错误时
+ * invoke 抛 reject。unwrap / logOnError 处理前者；后者直接 .catch 处理。
+ */
 
 export type CommandResult<T, E = string>
   = | { status: 'ok'; data: T }

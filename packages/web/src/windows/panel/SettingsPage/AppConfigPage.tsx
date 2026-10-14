@@ -89,11 +89,11 @@ function AppConfigPage() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Box sx={{ p: 3, flex: 1, overflow: 'auto' }}>
+      <Box sx={{ p: '24px', flex: 1, overflow: 'auto' }}>
         <Box
           sx={{
-            borderRadius: 2,
-            border: 1,
+            borderRadius: '8px',
+            border: '1px solid',
             borderColor: 'divider',
             overflow: 'hidden',
           }}
@@ -103,16 +103,16 @@ function AppConfigPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              px: 2,
-              py: 1.5,
-              gap: 2,
+              px: '16px',
+              py: '12px',
+              gap: '16px',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <LanguageIcon fontSize="small" sx={{ color: 'text.secondary' }} />
               <Typography>{t('settings:app.row.language')}</Typography>
             </Box>
-            <FormControl size="small" sx={{ minWidth: 140 }}>
+            <FormControl size="small" sx={{ minWidth: '140px' }}>
               <Select
                 value={draftLanguage}
                 onChange={(e: SelectChangeEvent<Language>) =>
@@ -134,16 +134,16 @@ function AppConfigPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              px: 2,
-              py: 1.5,
-              gap: 2,
+              px: '16px',
+              py: '12px',
+              gap: '16px',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <PaletteOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
               <Typography>{t('settings:app.row.appearance')}</Typography>
             </Box>
-            <FormControl size="small" sx={{ minWidth: 140 }}>
+            <FormControl size="small" sx={{ minWidth: '140px' }}>
               <Select
                 value={draftAppearance}
                 onChange={(e: SelectChangeEvent<Appearance>) =>
@@ -165,13 +165,13 @@ function AppConfigPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              px: 2,
-              py: 1.5,
-              gap: 2,
+              px: '16px',
+              py: '12px',
+              gap: '16px',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
-              <TimerOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: 0.5 }} />
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              <TimerOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: '4px' }} />
               <Box>
                 <Typography>{t('settings:app.row.acpIdleTimeout')}</Typography>
                 <Typography variant="caption" color="text.secondary">
@@ -179,7 +179,7 @@ function AppConfigPage() {
                 </Typography>
               </Box>
             </Box>
-            <FormControl size="small" sx={{ minWidth: 140 }}>
+            <FormControl size="small" sx={{ minWidth: '140px' }}>
               <Select
                 value={draftAcpIdle}
                 onChange={(e: SelectChangeEvent<AcpSessionIdleTimeoutMinutes>) =>
@@ -198,12 +198,12 @@ function AppConfigPage() {
 
       <Box
         sx={{
-          p: 2,
-          borderTop: 1,
+          p: '16px',
+          borderTop: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           justifyContent: 'flex-end',
-          gap: 1,
+          gap: '8px',
         }}
       >
         <Button onClick={handleReset} color="inherit">

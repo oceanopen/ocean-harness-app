@@ -1,9 +1,8 @@
-// Package acpdoctor ACP agent doctor 探测（T1.4）：以「真实握手跑通」为可用性判据——
-// preflight 短路链（node 解析与版本下限 → vendored 安装 → vendored claude 二进制定位）
-// 后真拉起子进程跑 initialize → session/new → 等 available_commands 推送（硬门槛）再清理。
-// 依赖方向：本包 → acp + agentcatalog（不反向，维持 agentcatalog → acp 单向；clibin 的
-// login PATH 经 acp 注入间接消费）。
-// 结论三态（healthy/unhealthy/unknown）的进程内缓存、受理单飞与启动后台探测见 state.go。
+/*
+ * Package acpdoctor ACP agent doctor 探测（T1.4）：以「真实握手跑通」为可用性判据——preflight 短路链（node 解析与版本下限 → vendored 安装 → vendored claude 二进制定位）后真拉起子进程跑 initialize → session/new → 等 available_commands 推送（硬门槛）再清理。
+ * 依赖方向：本包 → acp + agentcatalog（不反向，维持 agentcatalog → acp 单向；clibin 的 login PATH 经 acp 注入间接消费）。
+ * 结论三态（healthy/unhealthy/unknown）的进程内缓存、受理单飞与启动后台探测见 state.go。
+ */
 package acpdoctor
 
 import (
@@ -24,18 +23,24 @@ import (
 )
 
 const (
-	// probeBudget 单条目探测总预算：preflight 毫秒级（login shell 首探数百毫秒），
-	// 真握手各步上限（spawn/initialize/session 60s + 命令窗口 10s + 回收 5s）被本预算
-	// 硬截断——探测必在预算内出结论，不存在无限挂起。异步受理模型下仅影响后台探测时长。
+	/*
+	 * probeBudget 单条目探测总预算：preflight 毫秒级（login shell 首探数百毫秒），
+	 * 真握手各步上限（spawn/initialize/session 60s + 命令窗口 10s + 回收 5s）被本预算
+	 * 硬截断——探测必在预算内出结论，不存在无限挂起。异步受理模型下仅影响后台探测时长。
+	 */
 	probeBudget = 90 * time.Second
 
-	// commandsWindow available_commands 推送等待窗口（硬门槛）：claude-acp 在 session/new
-	// 后即刻推送，通常 <1s 到达；等不到即 unhealthy（推送时序变化属 agent 侧回归，如实暴露）。
+	/*
+	 * commandsWindow available_commands 推送等待窗口（硬门槛）：claude-acp 在 session/new
+	 * 后即刻推送，通常 <1s 到达；等不到即 unhealthy（推送时序变化属 agent 侧回归，如实暴露）。
+	 */
 	commandsWindow = 10 * time.Second
 )
 
-// Status 条目四态（HTTP 投影形态）：healthy/unhealthy/unknown 是探测结论三态，checking
-// 是「受理在跑」的派生态（由 Snapshot 推导，永不写入 Report）。
+/*
+ * Status 条目四态（HTTP 投影形态）：healthy/unhealthy/unknown 是探测结论三态，checking
+ * 是「受理在跑」的派生态（由 Snapshot 推导，永不写入 Report）。
+ */
 type Status string
 
 const (
@@ -61,8 +66,10 @@ const (
 // authRequiredHint claude 未登录的统一提示（initialize/session 阶段 -32000 特判）。
 const authRequiredHint = "claude 未登录：请先在终端运行 claude 完成登录，再重新检测"
 
-// Report 单条目探测结论快照（结论只存 healthy/unhealthy/unknown；探测进行中由
-// Snapshot 以 checking 呈现，不写本结构）。
+/*
+ * Report 单条目探测结论快照（结论只存 healthy/unhealthy/unknown；探测进行中由
+ * Snapshot 以 checking 呈现，不写本结构）。
+ */
 type Report struct {
 	AgentCode string
 	Status    Status
@@ -75,15 +82,19 @@ type Report struct {
 	NodeVersion string
 }
 
-// Dirs vendoring 目录对（config 的 AcpResourcesDir / AcpAdaptersDir，均可选空 = 未配置；
-// 空值在 EnsureVendored 调用期显式报错，落为 unhealthy 而非绕过）。
+/*
+ * Dirs vendoring 目录对（config 的 AcpResourcesDir / AcpAdaptersDir，均可选空 = 未配置；
+ * 空值在 EnsureVendored 调用期显式报错，落为 unhealthy 而非绕过）。
+ */
 type Dirs struct {
 	Resources string
 	Adapters  string
 }
 
-// CheckEntry 对单个 catalog 条目执行完整探测（preflight 短路链 + 真握手），返回结论。
-// 纯函数：不触碰进程内缓存与在跑集合（state.go 职责）；总预算 probeBudget 内必出结论。
+/*
+ * CheckEntry 对单个 catalog 条目执行完整探测（preflight 短路链 + 真握手），返回结论。
+ * 纯函数：不触碰进程内缓存与在跑集合（state.go 职责）；总预算 probeBudget 内必出结论。
+ */
 func CheckEntry(ctx context.Context, entry agentcatalog.Entry, dirs Dirs, log *zap.Logger) Report {
 	if log == nil {
 		log = zap.NewNop()
@@ -119,15 +130,19 @@ func CheckEntry(ctx context.Context, entry agentcatalog.Entry, dirs Dirs, log *z
 		return fail(StageNode, "%s", reason)
 	}
 
-	// 探测项 2：vendored 安装（EnsureVendored 幂等；目录未配置在此显式落败，
-	// 与生产拉起路径零差异——「能探测通过」即「能按生产链路拉起」）。
+	/*
+	 * 探测项 2：vendored 安装（EnsureVendored 幂等；目录未配置在此显式落败，
+	 * 与生产拉起路径零差异——「能探测通过」即「能按生产链路拉起」）。
+	 */
 	installDir, err := agentcatalog.EnsureVendored(entry, dirs.Resources, dirs.Adapters)
 	if err != nil {
 		return fail(StageVendored, "%v", err)
 	}
 
-	// 探测项 3：vendored 自带 claude 二进制定位（P5 定稿终态：claude 消费 vendored
-	// 自带二进制，无独立本机探测项；文案 agentcatalog 已用户可读）。
+	/*
+	 * 探测项 3：vendored 自带 claude 二进制定位（P5 定稿终态：claude 消费 vendored
+	 * 自带二进制，无独立本机探测项；文案 agentcatalog 已用户可读）。
+	 */
 	claudeBin, err := agentcatalog.VendoredClaudeBin(installDir)
 	if err != nil {
 		return fail(StageClaude, "%v", err)
@@ -143,8 +158,10 @@ func CheckEntry(ctx context.Context, entry agentcatalog.Entry, dirs Dirs, log *z
 	if err != nil {
 		return fail(StageVendored, "%v", err)
 	}
-	// claude 路径一致性注入（T1.3/P5 定稿终态）：CLAUDE_CODE_EXECUTABLE = vendored
-	// 二进制 + login PATH，消费方拼装。
+	/*
+	 * claude 路径一致性注入（T1.3/P5 定稿终态）：CLAUDE_CODE_EXECUTABLE = vendored
+	 * 二进制 + login PATH，消费方拼装。
+	 */
 	if cfg.Env, err = acp.ClaudeEnvOverrides(cfg.Env, claudeBin); err != nil {
 		return fail(StageClaude, "%v", err)
 	}
@@ -160,10 +177,11 @@ func CheckEntry(ctx context.Context, entry agentcatalog.Entry, dirs Dirs, log *z
 	return report
 }
 
-// handshakeProbe 真握手最小生命周期（CheckEntry 与假 agent 集成测试共用的纯握手段，
-// 不含 preflight）：spawn → initialize → session/new → 等 available_commands 推送。
-// window 为推送等待窗口（生产传 commandsWindow，测试收窄）。返回命令数量；失败返回
-// 阶段与已用户可读的错误（进程异常退出时附 Err() 证据摘要）。
+/*
+ * handshakeProbe 真握手最小生命周期（CheckEntry 与假 agent 集成测试共用的纯握手段，不含 preflight）：spawn → initialize → session/new → 等 available_commands 推送。
+ * window 为推送等待窗口（生产传 commandsWindow，测试收窄）。返回命令数量；
+ * 失败返回阶段与已用户可读的错误（进程异常退出时附 Err() 证据摘要）。
+ */
 func handshakeProbe(ctx context.Context, cfg acp.SpawnConfig, window time.Duration, log *zap.Logger) (int, Stage, error) {
 	client, err := acp.Launch(ctx, cfg, log)
 	if err != nil {
@@ -191,8 +209,10 @@ func handshakeProbe(ctx context.Context, cfg acp.SpawnConfig, window time.Durati
 	return commands, "", nil
 }
 
-// authRequired 判定握手步失败是否为 -32000（claude 未登录），是则给出统一用户提示
-// （纯函数，单元可测——假 agent 侧无法回指定错误码）。
+/*
+ * authRequired 判定握手步失败是否为 -32000（claude 未登录），是则给出统一用户提示
+ * （纯函数，单元可测——假 agent 侧无法回指定错误码）。
+ */
 func authRequired(err error) (string, bool) {
 	if acpgo.IsAuthRequired(err) {
 		return authRequiredHint, true
@@ -200,8 +220,10 @@ func authRequired(err error) (string, bool) {
 	return "", false
 }
 
-// waitAvailableCommands 硬门槛等待：排空事件流直至 available_commands 推送到达（持续
-// 排空是 events.go 的背压契约——慢消费会拖住连接层读循环），窗口耗尽/会话终结/取消即败。
+/*
+ * waitAvailableCommands 硬门槛等待：排空事件流直至 available_commands 推送到达（持续
+ * 排空是 events.go 的背压契约——慢消费会拖住连接层读循环），窗口耗尽/会话终结/取消即败。
+ */
 func waitAvailableCommands(ctx context.Context, events <-chan acp.SessionEvent, window time.Duration) (int, error) {
 	timer := time.NewTimer(window)
 	defer timer.Stop()
@@ -225,8 +247,10 @@ func waitAvailableCommands(ctx context.Context, events <-chan acp.SessionEvent, 
 	}
 }
 
-// withProcessEvidence 握手失败时追加进程死亡证据（stderr 摘要，Err() 在主动 Close 前
-// 可查；进程仍在收尾时 Err() 为 nil 则原样返回）。
+/*
+ * withProcessEvidence 握手失败时追加进程死亡证据（stderr 摘要，Err() 在主动 Close 前
+ * 可查；进程仍在收尾时 Err() 为 nil 则原样返回）。
+ */
 func withProcessEvidence(client *acp.AgentClient, err error) error {
 	if derr := client.Err(); derr != nil {
 		return fmt.Errorf("%w（进程诊断: %v）", err, derr)
@@ -234,8 +258,10 @@ func withProcessEvidence(client *acp.AgentClient, err error) error {
 	return err
 }
 
-// nodeVersion 执行 `node --version`（以解析到的绝对路径执行，防 PATH 漂移），返回形如
-// v22.14.0 的版本串。
+/*
+ * nodeVersion 执行 `node --version`（以解析到的绝对路径执行，防 PATH 漂移），返回形如
+ * v22.14.0 的版本串。
+ */
 func nodeVersion(ctx context.Context, nodeBin string) (string, error) {
 	out, err := exec.CommandContext(ctx, nodeBin, "--version").Output()
 	if err != nil {
@@ -244,9 +270,11 @@ func nodeVersion(ctx context.Context, nodeBin string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// checkNodeMinVersion 主版本下限校验：返回空串 = 通过；非空 = 用户可读原因。
-// min 为空 = 不校验（catalog 条目语义）；任一侧无法解析即落败（宁失败不静默，
-// 与 catalog parse 同哲学——产物缺陷不该被静默放行）。
+/*
+ * checkNodeMinVersion 主版本下限校验：返回空串 = 通过；非空 = 用户可读原因。
+ * min 为空 = 不校验（catalog 条目语义）；任一侧无法解析即落败（宁失败不静默，
+ * 与 catalog parse 同哲学——产物缺陷不该被静默放行）。
+ */
 func checkNodeMinVersion(version, min string) string {
 	if min == "" {
 		return ""
@@ -265,8 +293,10 @@ func checkNodeMinVersion(version, min string) string {
 	return ""
 }
 
-// majorFromVersion 取主版本号（容忍 v 前缀与任意后缀，如 v22.14.0 → 22）；无法解析
-// 返回 false。
+/*
+ * majorFromVersion 取主版本号（容忍 v 前缀与任意后缀，如 v22.14.0 → 22）；无法解析
+ * 返回 false。
+ */
 func majorFromVersion(version string) (int, bool) {
 	v := strings.TrimPrefix(strings.TrimSpace(version), "v")
 	if dot := strings.IndexByte(v, '.'); dot >= 0 {

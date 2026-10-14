@@ -1,5 +1,7 @@
-// access_log.go 记录每个 HTTP 请求的访问日志到 zap（path / method / status / latency），按状态码分级。
-// 仅打印不落库、不记录请求/响应体（本地旁路服务、访问量低，结构化字段足够排障）。
+/*
+ * access_log.go 记录每个 HTTP 请求的访问日志到 zap（path / method / status / latency），按状态码分级。
+ * 仅打印不落库、不记录请求/响应体（本地旁路服务、访问量低，结构化字段足够排障）。
+ */
 package middleware
 
 import (
@@ -11,13 +13,11 @@ import (
 	"ocean-harness/server/internal/global"
 )
 
-// AccessLog 记录每个请求的访问日志，按 HTTP 状态码分级：
-//   - ≥500：Error（同时进 app.error.log，便于告警/排障）
-//   - ≥400：Warn
-//   - 其他：Info
-//
-// 须注册在 Recovery 之前：handler panic 被 Recovery 兜住返回 500 后，本中间件的后置日志
-// 仍能执行，记录到 500 状态码与完整 latency（若注册在内层，panic 时访问日志会丢失）。
+/*
+ * AccessLog 记录每个请求的访问日志，按 HTTP 状态码分级：≥500 Error（同时进 app.error.log，便于告警/排障）、≥400 Warn、其他 Info。
+ * 须注册在 Recovery 之前：handler panic 被 Recovery 兜住返回 500 后，本中间件的后置日志
+ * 仍能执行，记录到 500 状态码与完整 latency（若注册在内层，panic 时访问日志会丢失）。
+ */
 func AccessLog() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()

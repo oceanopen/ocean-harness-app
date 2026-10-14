@@ -37,7 +37,7 @@ const MODE_LABEL: Record<string, string> = {
 type ToastSeverity = 'warning' | 'error' | 'success';
 
 // 标签列统一样式（固定宽度 + 轻底色，便于扫读）。
-const labelCellSx = { fontWeight: 600, width: 140, bgcolor: 'action.hover', whiteSpace: 'nowrap' } as const;
+const labelCellSx = { fontWeight: 600, width: '140px', bgcolor: 'action.hover', whiteSpace: 'nowrap' } as const;
 
 // 把路径转成 shell 可直接 cd 的形式：双引号包裹。
 // 双引号在 bash/zsh（macOS、Linux）与 cmd/PowerShell（Windows）下均可用，跨平台通用、无需关心空格转义差异。
@@ -192,7 +192,7 @@ function ServerStatusPage() {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: 2, pt: 1 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: '16px', pt: '8px' }}>
         <IconButton
           onClick={handleRefresh}
           disabled={refreshing || toggling}
@@ -202,16 +202,16 @@ function ServerStatusPage() {
         </IconButton>
       </Box>
 
-      <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 2 }}>
+      <Box sx={{ flex: 1, minHeight: '0px', overflow: 'auto', p: '16px' }}>
         {!loaded && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: '32px' }}>
             <CircularProgress />
           </Box>
         )}
 
         {loaded && (
           <Stack spacing={2}>
-            <TableContainer sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
+            <TableContainer sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '4px' }}>
               <Table size="medium">
                 <TableBody>
                   {/* 第一行：服务状态 + Switch 开关（控制服务启停） */}
@@ -252,7 +252,7 @@ function ServerStatusPage() {
                         >
                           <CopyIcon fontSize="small" />
                         </IconButton>
-                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 12 }}>
+                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '12px' }}>
                           {runInfo?.serverInfo.sqliteDir ?? '-'}
                         </Typography>
                       </Stack>
@@ -270,7 +270,7 @@ function ServerStatusPage() {
                         >
                           <CopyIcon fontSize="small" />
                         </IconButton>
-                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 12 }}>
+                        <Typography variant="inherit" sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '12px' }}>
                           {runInfo?.serverInfo.logDir ?? '-'}
                         </Typography>
                       </Stack>
@@ -299,20 +299,20 @@ function ServerStatusPage() {
             {/* 启动日志：渲染 Rust 累积的本次启动 stdout/stderr 快照（status.startRecentLog）。
                 启动成功/失败均有内容；仅 state-changed 事件到达时刷新（Starting 期间不逐行推送，非实时）。 */}
             {status?.startRecentLog && (
-              <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '4px', p: '12px' }}>
+                <Typography variant="subtitle2" sx={{ mb: '8px' }}>
                   启动日志
                 </Typography>
                 <Box
                   component="pre"
                   sx={{
-                    m: 0,
+                    m: '0px',
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-all',
                     fontFamily: 'monospace',
-                    fontSize: 12,
+                    fontSize: '12px',
                     lineHeight: 1.4,
-                    maxHeight: 280,
+                    maxHeight: '280px',
                     overflow: 'auto',
                   }}
                 >

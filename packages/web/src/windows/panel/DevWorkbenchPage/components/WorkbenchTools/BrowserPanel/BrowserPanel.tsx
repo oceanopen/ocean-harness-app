@@ -73,7 +73,7 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
   let body: ReactNode;
   if (error != null) {
     body = (
-      <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+      <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
         <Alert
           severity="error"
           action={(
@@ -94,8 +94,8 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
     );
   } else if (sessions.length === 0) {
     body = (
-      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-        <LanguageOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled' }} />
+      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <LanguageOutlinedIcon sx={{ fontSize: '36px', color: 'text.disabled' }} />
         <Typography variant="body2" color="text.secondary">暂无浏览器会话</Typography>
         <Typography variant="caption" color="text.secondary">
           右上角「+」新建 / 打开（会话后端常驻，切换任务不中断）
@@ -109,7 +109,7 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
   }
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: '0px' }}>
       <PanelToolbar
         left={<Typography variant="caption" color="text.secondary">{`会话 ${sessions.length}`}</Typography>}
         right={(
@@ -126,7 +126,7 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
           </>
         )}
       />
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <Box sx={{ flex: 1, minHeight: '0px', overflowY: 'auto', p: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {body}
       </Box>
 
@@ -141,7 +141,7 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Box sx={{ width: 280, p: 1.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <Box sx={{ width: '280px', p: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <TextField
             size="small"
             label="Profile 名称"
@@ -157,13 +157,13 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
           <FormControlLabel
             control={<Switch size="small" checked={headless} onChange={e => setHeadless(e.target.checked)} />}
             label="无头模式（无窗口，面板实时画面）"
-            sx={{ '& .MuiFormControlLabel-label': { fontSize: 12 } }}
+            sx={{ '& .MuiFormControlLabel-label': { fontSize: '12px' } }}
           />
           <Typography variant="caption" color="text.secondary">
             已存在的名称直接复用会话（登录态保留）；无头/有头以本次选择覆写该 profile 偏好。
           </Typography>
           {ensureMutation.error && (
-            <Alert severity="error" sx={{ fontSize: 12 }}>{errorMessage(ensureMutation.error)}</Alert>
+            <Alert severity="error" sx={{ fontSize: '12px' }}>{errorMessage(ensureMutation.error)}</Alert>
           )}
           <Button
             variant="contained"

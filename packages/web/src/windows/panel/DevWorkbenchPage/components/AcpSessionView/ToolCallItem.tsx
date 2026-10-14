@@ -19,36 +19,36 @@ export default function ToolCallItem({ toolCall, expanded, onToggle }: {
   const hasPayload = toolCall.rawInput !== undefined || toolCall.rawOutput !== undefined;
 
   return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '4px', overflow: 'hidden' }}>
       <Box
         onClick={hasPayload ? onToggle : undefined}
         sx={{
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
-          px: 1.25,
-          py: 0.75,
+          gap: '8px',
+          px: '10px',
+          py: '6px',
           bgcolor: 'action.hover',
           ...(hasPayload && { cursor: 'pointer' }),
         }}
       >
         {hasPayload
           ? (expanded ? <ExpandLessIcon fontSize="small" color="action" /> : <ExpandMoreIcon fontSize="small" color="action" />)
-          : <Box sx={{ width: 20 }} />}
-        <Typography variant="body2" sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          : <Box sx={{ width: '20px' }} />}
+        <Typography variant="body2" sx={{ minWidth: '0px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
           {title}
           {toolCall.name && toolCall.title && toolCall.name !== toolCall.title && (
-            <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+            <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: '8px' }}>
               {toolCall.name}
             </Typography>
           )}
         </Typography>
         {toolCall.status === 'in_progress' && <CircularProgress size={14} />}
-        {meta && <Chip size="small" label={meta.label} color={meta.color} sx={{ height: 20, fontSize: 12 }} />}
+        {meta && <Chip size="small" label={meta.label} color={meta.color} sx={{ height: '20px', fontSize: '12px' }} />}
       </Box>
       {hasPayload && (
         <Collapse in={expanded} unmountOnExit>
-          <Box sx={{ px: 1.25, py: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ px: '10px', py: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {toolCall.rawInput !== undefined && <PayloadBlock label="输入" value={toolCall.rawInput} />}
             {toolCall.rawOutput !== undefined && <PayloadBlock label="输出" value={toolCall.rawOutput} />}
           </Box>
@@ -69,16 +69,16 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
       <Box
         component="pre"
         sx={{
-          m: 0,
-          mt: 0.5,
-          p: 1,
+          m: '0px',
+          mt: '4px',
+          p: '8px',
           overflowX: 'auto',
-          border: 1,
+          border: '1px solid',
           borderColor: 'divider',
-          borderRadius: 0.5,
+          borderRadius: '2px',
           bgcolor: 'background.default',
           fontFamily: 'inherit',
-          fontSize: 12,
+          fontSize: '12px',
           lineHeight: 1.6,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
@@ -88,11 +88,11 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
         {truncated && !full && '…'}
       </Box>
       {truncated && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', mt: '4px' }}>
           {!full && (
             <Typography variant="caption" color="text.disabled">已截断，共 {pretty.length} 字符</Typography>
           )}
-          <Button size="small" sx={{ minWidth: 0, px: 0.75 }} onClick={() => setFull(v => !v)}>
+          <Button size="small" sx={{ minWidth: '0px', px: '6px' }} onClick={() => setFull(v => !v)}>
             {full ? '收起' : '展开全文'}
           </Button>
         </Box>

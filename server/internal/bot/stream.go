@@ -10,33 +10,35 @@ import (
 	"go.uber.org/zap"
 )
 
-// streamTickInterval 流式推送节奏（协议固定编排，非时间性补丁）：企微流式中间帧 ack 有约 5s
-// 固有延迟，200ms ticker 单写者既保证刷新密度又自动跳过积压帧（wecom-aibot-go-sdk
-// examples/agent 同款节奏）。
+/*
+ * streamTickInterval 流式推送节奏（协议固定编排，非时间性补丁）：企微流式中间帧 ack 有约 5s
+ * 固有延迟，200ms ticker 单写者既保证刷新密度又自动跳过积压帧（wecom-aibot-go-sdk
+ * examples/agent 同款节奏）。
+ */
 const streamTickInterval = 200 * time.Millisecond
 
-// OverflowSink 超长全文落盘回调：回复超过渠道 ByteLimit 时被调用一次，回调负责把全文写入
-// 持久位置并返回展示在截断提示里的路径（如 "<workspace>/.bot-outbox/<ts>-<msgid>.md"）。
-// 返回空串则截断提示不附路径。落盘放编排器（知道 msgid/工作目录），泵只负责拼帧。
+/*
+ * OverflowSink 超长全文落盘回调：回复超过渠道 ByteLimit 时被调用一次，回调负责把全文写入
+ * 持久位置并返回展示在截断提示里的路径（如 "<workspace>/.bot-outbox/<ts>-<msgid>.md"）。
+ * 返回空串则截断提示不附路径。落盘放编排器（知道 msgid/工作目录），泵只负责拼帧。
+ */
 type OverflowSink func(fullText string) string
 
-// TurnOutcome 一次回合推送的终态。SessionID 为 init/result 捕获的 claude 会话 id
-// （可能为空，如 spawn 即失败）；Err 非 nil = 回合失败（终帧已写失败文案）。
+/*
+ * TurnOutcome 一次回合推送的终态。SessionID 为 init/result 捕获的 claude 会话 id
+ * （可能为空，如 spawn 即失败）；Err 非 nil = 回合失败（终帧已写失败文案）。
+ */
 type TurnOutcome struct {
 	FinalText string
 	SessionID string
 	Err       error
 }
 
-// PumpReply 回复泵：消费 TurnEvent 流 → 覆写式流式回复。时序固定（两写者一次交接零并发写）：
-// 主 goroutine 消费事件累积状态；ticker goroutine 周期取快照 Flush 中间帧（唯一周期写者）；
-// 事件流关闭后停 ticker，由主 goroutine 写 finish=true 终帧。tool_use 到达时清空已累计文本、
-// 置「正在执行 …」状态行（丢弃工具前泄漏文本，SDK agent 示例同款）；result 终文本优先于增量累计。
-// 回合失败同样以终帧收尾（失败文案），保证每条流式消息恰好一个 finish 帧。
-// 卡片（T3.2 审批卡）：TurnStatus 携带的 Card 入 mu 保护状态，由 ticker 周期写者随中间帧
-// SendCard 一并下发（保住单写者纪律；200ms 节奏下延迟无感）。卡是一次性消费——本 tick 发卡
-// 尝试（含失败回落）或回合收尾后不再附发；收尾时未发出的卡直接丢弃（挂起随回合终态结算，
-// 再发即置灰态误导）。流无卡能力（未实现 CardReplyStream）自动回落纯文本帧。
+/*
+ * PumpReply 回复泵：消费 TurnEvent 流 → 覆写式流式回复。时序固定（两写者一次交接零并发写）：主 goroutine 消费事件累积状态；ticker goroutine 周期取快照 Flush 中间帧（唯一周期写者）；事件流关闭后停 ticker，由主 goroutine 写 finish=true 终帧。
+ * tool_use 到达时清空已累计文本、置「正在执行 …」状态行（丢弃工具前泄漏文本，SDK agent 示例同款）；result 终文本优先于增量累计。回合失败同样以终帧收尾（失败文案），保证每条流式消息恰好一个 finish 帧。卡片（T3.2 审批卡）：TurnStatus 携带的 Card 入 mu 保护状态，由 ticker 周期写者随中间帧 SendCard 一并下发（保住单写者纪律；
+ * 200ms 节奏下延迟无感）。卡是一次性消费——本 tick 发卡尝试（含失败回落）或回合收尾后不再附发；收尾时未发出的卡直接丢弃（挂起随回合终态结算，再发即置灰态误导）。流无卡能力（未实现 CardReplyStream）自动回落纯文本帧。
+ */
 func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sink OverflowSink, log *zap.Logger) TurnOutcome {
 	var mu sync.Mutex
 	var statusText, currentText, sessionID string
@@ -62,8 +64,10 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 		return card
 	}
 
-	// 卡能力探测一次：headless 引擎不产卡、纯文本渠道不实现 CardReplyStream，两种场景都
-	// 无需分支处理（无卡即回落 Flush）。
+	/*
+	 * 卡能力探测一次：headless 引擎不产卡、纯文本渠道不实现 CardReplyStream，两种场景都
+	 * 无需分支处理（无卡即回落 Flush）。
+	 */
 	cardStream, hasCard := rs.(CardReplyStream)
 
 	done := make(chan struct{})
@@ -79,8 +83,10 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 				cur := truncateForFrame(snapshot(), rs.ByteLimit(), nil)
 				if cur != "" && cur != lastSent {
 					if card := takePendingCard(); card != nil && hasCard {
-						// 卡随状态行一并下发（渠道侧自定帧形态，无卡渠道的降级文案不丢失）；
-						// 发送失败回落纯文本帧（卡通道故障不吞状态行）。
+						/*
+						 * 卡随状态行一并下发（渠道侧自定帧形态，无卡渠道的降级文案不丢失）；
+						 * 发送失败回落纯文本帧（卡通道故障不吞状态行）。
+						 */
 						err := cardStream.SendCard(*card, cur, false)
 						if err == nil {
 							lastSent = cur
@@ -146,8 +152,10 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	final := currentText
 	mu.Unlock()
 
-	// 终帧文案单点决策：Err 三态（nil 成功 / errTurnFailed 中断 / 其他失败）各一条路径，
-	// 失败文案保留诊断首行（含 resume 失效信号）与失败前已产出的部分文本。
+	/*
+	 * 终帧文案单点决策：Err 三态（nil 成功 / errTurnFailed 中断 / 其他失败）各一条路径，
+	 * 失败文案保留诊断首行（含 resume 失效信号）与失败前已产出的部分文本。
+	 */
 	out := TurnOutcome{SessionID: sessionID}
 	switch {
 	case turnErr != nil:
@@ -178,8 +186,10 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 // errTurnFailed result 帧标记 is_error（回合被 max-turns 等中断，进程本身正常退出）。
 var errTurnFailed = errors.New("claude 回合被中断")
 
-// truncateForFrame 把内容截到 limit 字节内（rune 边界安全）。超限时调用 sink 落盘全文并把
-// 路径附进截断提示（数据不丢：全文始终可取）；sink 为 nil 或中间帧场景只做静默截断。
+/*
+ * truncateForFrame 把内容截到 limit 字节内（rune 边界安全）。超限时调用 sink 落盘全文并把
+ * 路径附进截断提示（数据不丢：全文始终可取）；sink 为 nil 或中间帧场景只做静默截断。
+ */
 func truncateForFrame(content string, limit int, sink OverflowSink) string {
 	if limit <= 0 || len(content) <= limit {
 		return content

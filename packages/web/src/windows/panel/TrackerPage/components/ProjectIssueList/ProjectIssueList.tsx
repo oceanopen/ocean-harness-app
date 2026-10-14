@@ -254,13 +254,13 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
       {/* 工具栏：搜索 + 优先级筛选 + 状态筛选 + 新建 */}
       <Box
         sx={{
-          p: 1.5,
-          borderBottom: 1,
+          p: '12px',
+          borderBottom: '1px solid',
           borderColor: 'divider',
           bgcolor: 'action.hover',
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
+          gap: '8px',
           flexWrap: 'wrap',
         }}
       >
@@ -289,21 +289,21 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
               placeholder={t('tracker:projectIssue.search')}
               value={keyword}
               onChange={e => setKeyword(e.target.value)}
-              sx={{ flexGrow: 1, minWidth: 120 }}
+              sx={{ flexGrow: 1, minWidth: '120px' }}
             />
             <PrioritySelect
               value={priorityFilter}
               onChange={setPriorityFilter}
               label={t('tracker:projectIssue.filter.priority')}
               allOption={t('tracker:projectIssue.filter.all')}
-              sx={{ minWidth: 110 }}
+              sx={{ minWidth: '110px' }}
             />
             <ProjectStateSelect
               value={stateFilter}
               onChange={setStateFilter}
               label={t('tracker:projectIssue.filter.state')}
               allOption={t('tracker:projectIssue.filter.allStates')}
-              sx={{ minWidth: 120 }}
+              sx={{ minWidth: '120px' }}
             />
           </>
         )}
@@ -340,7 +340,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
           </Box>
         )}
         {isError && (
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: '16px' }}>
             <Alert
               severity="error"
               action={(
@@ -368,19 +368,19 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
               alignItems: 'center',
               justifyContent: 'center',
               height: '100%',
-              gap: 1.5,
-              px: 3,
-              py: 4,
+              gap: '12px',
+              px: '24px',
+              py: '32px',
             }}
           >
-            <AssignmentOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+            <AssignmentOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
               {t('tracker:projectIssue.empty.title')}
             </Typography>
             <Typography variant="body2" color="text.secondary" align="center">
               {t('tracker:projectIssue.empty.desc')}
             </Typography>
-            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()} sx={{ mt: 1 }}>
+            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()} sx={{ mt: '8px' }}>
               {t('tracker:projectIssue.actions.add')}
             </Button>
           </Box>
@@ -407,7 +407,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
           </Box>
         )}
         {ready && viewMode === 'list' && totalCount > 0 && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, p: 1.5 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px', p: '12px' }}>
             {STATE_ORDER.map((code) => {
               const arr = grouped.get(code) ?? [];
               if (arr.length === 0) {
@@ -419,9 +419,9 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
                 <Paper
                   key={code}
                   variant="outlined"
-                  sx={{ display: 'flex', flexDirection: 'column', borderRadius: 1, bgcolor: 'background.default' }}
+                  sx={{ display: 'flex', flexDirection: 'column', borderRadius: '4px', bgcolor: 'background.default' }}
                 >
-                  <Box sx={{ px: 2, py: 1, cursor: 'pointer' }} onClick={() => toggleGroup(code)}>
+                  <Box sx={{ px: '16px', py: '8px', cursor: 'pointer' }} onClick={() => toggleGroup(code)}>
                     <StateGroupCard
                       leading={isCollapsed
                         ? <ExpandMoreOutlinedIcon fontSize="small" color="action" />
@@ -433,7 +433,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
                     />
                   </Box>
                   <Collapse in={!isCollapsed}>
-                    <Box sx={{ p: 1, pt: 0 }}>
+                    <Box sx={{ p: '8px', pt: '0px' }}>
                       {arr.map(projectIssue => (
                         <IssueCard
                           key={projectIssue.id}

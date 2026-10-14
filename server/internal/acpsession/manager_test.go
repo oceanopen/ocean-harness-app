@@ -20,8 +20,10 @@ import (
 	"ocean-harness/server/internal/dal/model"
 )
 
-// fakeAgentBin TestMain 现场编译的假 agent 二进制（复用 internal/acp 的 fakeagent：真实
-// stdio + agent.New().Serve，manager 集成测试以它顶替 vendored 生产链）。
+/*
+ * fakeAgentBin TestMain 现场编译的假 agent 二进制（复用 internal/acp 的 fakeagent：真实
+ * stdio + agent.New().Serve，manager 集成测试以它顶替 vendored 生产链）。
+ */
 var fakeAgentBin string
 
 func TestMain(m *testing.M) {
@@ -42,9 +44,11 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// fakeSpawn 顶替 spawnAgentSession 的测试实现：固定脚本拉起 fakeagent（wantErr 非 nil 时
-// 直接失败，模拟 vendored/握手链报错）；calls 统计实际调用次数（join 幂等断言用）；
-// resumeIDs 记录每次收到的 resumeID（Ensure 锚点接线断言用，可 nil）。
+/*
+ * fakeSpawn 顶替 spawnAgentSession 的测试实现：固定脚本拉起 fakeagent（wantErr 非 nil 时
+ * 直接失败，模拟 vendored/握手链报错）；calls 统计实际调用次数（join 幂等断言用）；
+ * resumeIDs 记录每次收到的 resumeID（Ensure 锚点接线断言用，可 nil）。
+ */
 func fakeSpawn(script string, wantErr error, calls *atomic.Int64, resumeIDs *[]string) func(SessionConfig, Dirs, int, *zap.Logger, string) (*acp.AgentClient, *acp.Session, error) {
 	return func(cfg SessionConfig, _ Dirs, _ int, log *zap.Logger, resumeID string) (*acp.AgentClient, *acp.Session, error) {
 		calls.Add(1)
@@ -74,8 +78,10 @@ func fakeSpawn(script string, wantErr error, calls *atomic.Int64, resumeIDs *[]s
 	}
 }
 
-// newManagerWithIssue 装配被测 Manager + 种子 issue + 预订阅帧流（Ensure 前订阅，从
-// idle 快照起全帧可见）。spawnFunc 已替换为 fakeSpawn，测试结束恢复。
+/*
+ * newManagerWithIssue 装配被测 Manager + 种子 issue + 预订阅帧流（Ensure 前订阅，从
+ * idle 快照起全帧可见）。spawnFunc 已替换为 fakeSpawn，测试结束恢复。
+ */
 func newManagerWithIssue(t *testing.T, script string, wantErr error) (*Manager, *gorm.DB, string, <-chan Frame, *atomic.Int64) {
 	t.Helper()
 	db := newTestDB(t)
@@ -122,9 +128,11 @@ func statusFrameIs(want SessionStatus) func(Frame) bool {
 	}
 }
 
-// waitFirstTick 等首个 tick 条目（slow-cancel 脚本：回合已推进、acp 层 turnCancel 必已
-// 注册）——过早取消会在后台回合尚未注册时静默丢失（对齐 acp 包 TestCancelTurnSoftCancel
-// 惯例）。取消类用例的前置步骤。
+/*
+ * waitFirstTick 等首个 tick 条目（slow-cancel 脚本：回合已推进、acp 层 turnCancel 必已
+ * 注册）——过早取消会在后台回合尚未注册时静默丢失（对齐 acp 包 TestCancelTurnSoftCancel
+ * 惯例）。取消类用例的前置步骤。
+ */
 func waitFirstTick(t *testing.T, frames <-chan Frame) {
 	t.Helper()
 	waitFrame(t, frames, "首个 tick 条目", func(f Frame) bool {
@@ -198,9 +206,11 @@ func TestEnsureReadyPromptAndAnchor(t *testing.T) {
 		t.Fatalf("turnEnded 应 end_turn 收敛，got %+v", ended.Turn)
 	}
 
-	// 会话视图终态：agent 条目由 pump 异步积累，可能晚于 turnEnded 帧广播且聚合分段
-	// 到齐（轮询等文本完整）；stopReason/turnActive 在 endTurn 内先于广播同步落视图，
-	// 帧到达即终值。
+	/*
+	 * 会话视图终态：agent 条目由 pump 异步积累，可能晚于 turnEnded 帧广播且聚合分段
+	 * 到齐（轮询等文本完整）；stopReason/turnActive 在 endTurn 内先于广播同步落视图，
+	 * 帧到达即终值。
+	 */
 	waitForCondition(t, "agent 条目聚合完成", func() bool {
 		snap = mgr.Get(issueID)
 		return len(snap.Entries) == 2 && strings.Contains(snap.Entries[1].Text, "ACP 回合完成")
@@ -306,8 +316,10 @@ func TestPromptTurnGateAndCancel(t *testing.T) {
 	if err := mgr.Prompt(issueID, "并发回合"); !errors.Is(err, acp.ErrTurnActive) {
 		t.Fatalf("并发回合应 ErrTurnActive，got %v", err)
 	}
-	// 等首个 tick（acp 层 cancel 必已注册）再取消——过早 Cancel 会在后台回合尚未注册时
-	// 静默丢失。
+	/*
+	 * 等首个 tick（acp 层 cancel 必已注册）再取消——过早 Cancel 会在后台回合尚未注册时
+	 * 静默丢失。
+	 */
 	waitFirstTick(t, frames)
 	if err := mgr.Cancel(issueID); err != nil {
 		t.Fatalf("Cancel: %v", err)
@@ -316,8 +328,10 @@ func TestPromptTurnGateAndCancel(t *testing.T) {
 	if ended.Turn.StopReason != string(schema.StopReasonCancelled) {
 		t.Fatalf("取消应 cancelled 收敛，got %+v", ended.Turn)
 	}
-	// 取消后回合闸门释放：再受理成功即证明（fakeagent 的 canceled 标记残留，第二轮
-	// 不再推 tick、立即以 cancelled 收敛）。
+	/*
+	 * 取消后回合闸门释放：再受理成功即证明（fakeagent 的 canceled 标记残留，第二轮
+	 * 不再推 tick、立即以 cancelled 收敛）。
+	 */
 	if err := mgr.Prompt(issueID, "再来一轮"); err != nil {
 		t.Fatalf("取消后应可再受理回合，got %v", err)
 	}
@@ -352,8 +366,10 @@ func TestRespondPermissionFlow(t *testing.T) {
 	if pendings := mgr.Get(issueID).Pendings; len(pendings) != 1 {
 		t.Fatalf("未知选项不应消耗挂起，got %+v", pendings)
 	}
-	// 合法应答 → pendingClosed → 回合 end_turn 收敛 + 决策回显条目。source=bot 模拟
-	// IM 快路径先到（first-writer-wins 先手方）。
+	/*
+	 * 合法应答 → pendingClosed → 回合 end_turn 收敛 + 决策回显条目。source=bot 模拟
+	 * IM 快路径先到（first-writer-wins 先手方）。
+	 */
 	if err := mgr.RespondPermission(issueID, pendingID, "allow", PendingSourceBot); err != nil {
 		t.Fatalf("RespondPermission: %v", err)
 	}
@@ -363,8 +379,10 @@ func TestRespondPermissionFlow(t *testing.T) {
 	if closed.PendingID != pendingID {
 		t.Fatalf("pendingClosed 应带 pendingId，got %d", closed.PendingID)
 	}
-	// 决策回显条目（pump 广播）与回合终态（回合收尾 goroutine 广播）并发，到达顺序
-	// 不定：双谓词合并等待，不做顺序假设。
+	/*
+	 * 决策回显条目（pump 广播）与回合终态（回合收尾 goroutine 广播）并发，到达顺序
+	 * 不定：双谓词合并等待，不做顺序假设。
+	 */
 	var sawEcho, sawEnd bool
 	deadline := time.After(20 * time.Second)
 	for !sawEcho || !sawEnd {
@@ -386,8 +404,10 @@ func TestRespondPermissionFlow(t *testing.T) {
 	if pendings := mgr.Get(issueID).Pendings; len(pendings) != 0 {
 		t.Fatalf("应答后挂起应清空，got %+v", pendings)
 	}
-	// 重复应答（后到方，source=panel）：命中 closed-history 回判别哨兵，文案带先手方
-	// 入口与选项（T2.4 收敛语义——「已在另一端处理」而非笼统的「不存在」）。
+	/*
+	 * 重复应答（后到方，source=panel）：命中 closed-history 回判别哨兵，文案带先手方
+	 * 入口与选项（T2.4 收敛语义——「已在另一端处理」而非笼统的「不存在」）。
+	 */
 	err := mgr.RespondPermission(issueID, pendingID, "allow", PendingSourcePanel)
 	if !errors.Is(err, ErrPendingAlreadyHandled) {
 		t.Fatalf("后到方应答应回 ErrPendingAlreadyHandled，got %v", err)
@@ -510,8 +530,10 @@ func TestRespondKindMismatch(t *testing.T) {
 	}
 }
 
-// 回合收尾结算后的迟到应答（T2.4）：endTurn 把残余挂起登记为 settled——迟到方拿到
-// 「已随回合结束自动结算」判别哨兵，而非笼统的「不存在或已关闭」。
+/*
+ * 回合收尾结算后的迟到应答（T2.4）：endTurn 把残余挂起登记为 settled——迟到方拿到
+ * 「已随回合结束自动结算」判别哨兵，而非笼统的「不存在或已关闭」。
+ */
 func TestRespondAfterTurnSettled(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "permission", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
@@ -523,8 +545,10 @@ func TestRespondAfterTurnSettled(t *testing.T) {
 	}
 	opened := waitFrame(t, frames, "pendingOpened", func(f Frame) bool { return f.Type == FramePendingOpened })
 	pendingID := opened.Pending.PendingID
-	// pendingOpened 已证明回合与挂起注册在案（permission 脚本无 tick，无需等 tick），
-	// 直接软取消，回合以 cancelled 收敛。
+	/*
+	 * pendingOpened 已证明回合与挂起注册在案（permission 脚本无 tick，无需等 tick），
+	 * 直接软取消，回合以 cancelled 收敛。
+	 */
 	if err := mgr.Cancel(issueID); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
@@ -561,8 +585,10 @@ func TestDiscardCascade(t *testing.T) {
 
 // —— T2.2 per-session 跨入口回合锁（PromptQueued 排队受理）——
 
-// queuedWaiters 测试观察点：等位队列当前长度（集成测试以「入队完成」做确定性时序同步，
-// 不依赖 sleep）。
+/*
+ * queuedWaiters 测试观察点：等位队列当前长度（集成测试以「入队完成」做确定性时序同步，
+ * 不依赖 sleep）。
+ */
 func queuedWaiters(mgr *Manager, issueID string) int {
 	mgr.mu.Lock()
 	entry, ok := mgr.entries[issueID]
@@ -587,8 +613,10 @@ func queueResult(t *testing.T, ch <-chan error, what string) error {
 	}
 }
 
-// TestPromptQueuedAutoStartAfterTurn 主链路：活动回合中排队受理阻塞等位（不开新回合），
-// 回合终态释放槽位后自动开跑（受理式：受理即返回，终态经帧流/视图可见）。
+/*
+ * TestPromptQueuedAutoStartAfterTurn 主链路：活动回合中排队受理阻塞等位（不开新回合），
+ * 回合终态释放槽位后自动开跑（受理式：受理即返回，终态经帧流/视图可见）。
+ */
 func TestPromptQueuedAutoStartAfterTurn(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
@@ -627,8 +655,10 @@ func TestPromptQueuedAutoStartAfterTurn(t *testing.T) {
 		snap := mgr.Get(issueID)
 		return !snap.TurnActive && len(snap.Entries) >= 2 && snap.Entries[len(snap.Entries)-1].Text == "排队消息"
 	})
-	// 双入口来源装配（T1.1）：Prompt 恒 panel，PromptQueued 透传 meta.Source（首轮
-	// cancelled 前的 tick 条目落在两 user 条目之间，按文本定位各自的 user 条目）。
+	/*
+	 * 双入口来源装配（T1.1）：Prompt 恒 panel，PromptQueued 透传 meta.Source（首轮
+	 * cancelled 前的 tick 条目落在两 user 条目之间，按文本定位各自的 user 条目）。
+	 */
 	sourceOf := func(text string) string {
 		for _, e := range mgr.Get(issueID).Entries {
 			if e.Kind == entryKindUser && e.Text == text {
@@ -642,8 +672,10 @@ func TestPromptQueuedAutoStartAfterTurn(t *testing.T) {
 	}
 }
 
-// TestPromptQueuedFIFOOrder 两个等位者按入队序依次开跑：A 先受理，其回合终态释放后 B
-// 才受理（用户条目落视图顺序即受理顺序）。
+/*
+ * TestPromptQueuedFIFOOrder 两个等位者按入队序依次开跑：A 先受理，其回合终态释放后 B
+ * 才受理（用户条目落视图顺序即受理顺序）。
+ */
 func TestPromptQueuedFIFOOrder(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
@@ -689,8 +721,10 @@ func TestPromptQueuedFIFOOrder(t *testing.T) {
 	})
 }
 
-// TestPromptQueuedContextCancelSelfRemoves ctx 取消自摘：等位者取消后出队不占槽——回合
-// 结束的 release 不误投（若自摘失败，幽灵等位者会在释放后开跑并落出「排队消息」条目）。
+/*
+ * TestPromptQueuedContextCancelSelfRemoves ctx 取消自摘：等位者取消后出队不占槽——回合
+ * 结束的 release 不误投（若自摘失败，幽灵等位者会在释放后开跑并落出「排队消息」条目）。
+ */
 func TestPromptQueuedContextCancelSelfRemoves(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
@@ -729,8 +763,10 @@ func TestPromptQueuedContextCancelSelfRemoves(t *testing.T) {
 	}
 }
 
-// TestPromptQueuedDiscardAborts 等位中会话删除：close 广播 → 受理失败退出（回合未发生，
-// 语义 = 受理被拒）。
+/*
+ * TestPromptQueuedDiscardAborts 等位中会话删除：close 广播 → 受理失败退出（回合未发生，
+ * 语义 = 受理被拒）。
+ */
 func TestPromptQueuedDiscardAborts(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
@@ -751,8 +787,10 @@ func TestPromptQueuedDiscardAborts(t *testing.T) {
 	}
 }
 
-// TestPromptQueuedReadyRecheckAfterWake 等位唤醒后的就绪复验（白盒）：等位期间会话终结
-// 收尾完成（白盒置态模拟 pump 哨兵路径），槽位释放唤醒后旧 entry 不得续接受理。
+/*
+ * TestPromptQueuedReadyRecheckAfterWake 等位唤醒后的就绪复验（白盒）：等位期间会话终结
+ * 收尾完成（白盒置态模拟 pump 哨兵路径），槽位释放唤醒后旧 entry 不得续接受理。
+ */
 func TestPromptQueuedReadyRecheckAfterWake(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
@@ -779,9 +817,11 @@ func TestPromptQueuedReadyRecheckAfterWake(t *testing.T) {
 	}
 }
 
-// TestPromptQueuedDeathReleasesAllWaiters 进程死亡释放全部等位者（回归锁）：终结收尾
-// 必须关等位队列——release 只弹队首，不 close 会让其余等位者无限滞留（堵死编排器会话
-// 队列并占住全局并发槽位）。
+/*
+ * TestPromptQueuedDeathReleasesAllWaiters 进程死亡释放全部等位者（回归锁）：终结收尾
+ * 必须关等位队列——release 只弹队首，不 close 会让其余等位者无限滞留（堵死编排器会话
+ * 队列并占住全局并发槽位）。
+ */
 func TestPromptQueuedDeathReleasesAllWaiters(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
@@ -892,8 +932,10 @@ func launchACPClient(t *testing.T, script string) *acp.AgentClient {
 	return client
 }
 
-// TestNewOrResumedSession 建/恢复决策三态：空锚走 NewSession（fake 自生成 id）；锚点恢复
-// 以请求 id 注册；能力未声明降级 NewSession（id 为 fake 自生成，非请求值）。
+/*
+ * TestNewOrResumedSession 建/恢复决策三态：空锚走 NewSession（fake 自生成 id）；锚点恢复
+ * 以请求 id 注册；能力未声明降级 NewSession（id 为 fake 自生成，非请求值）。
+ */
 func TestNewOrResumedSession(t *testing.T) {
 	ctx := context.Background()
 	cfg := SessionConfig{Cwd: t.TempDir()}
@@ -930,8 +972,10 @@ func TestNewOrResumedSession(t *testing.T) {
 	})
 }
 
-// TestEnsureResumeAnchorPassthrough 锚点接线：非空锚 → spawn 收到原 id 且恢复同 id 会话；
-// 空锚 → spawn 收到空串（全新会话）。
+/*
+ * TestEnsureResumeAnchorPassthrough 锚点接线：非空锚 → spawn 收到原 id 且恢复同 id 会话；
+ * 空锚 → spawn 收到空串（全新会话）。
+ */
 func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 	cases := []struct {
 		name       string

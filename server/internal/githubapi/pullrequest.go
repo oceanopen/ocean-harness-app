@@ -6,9 +6,10 @@ import (
 	"net/url"
 )
 
-// PullRequest 是 GitHub PR 响应的最小字段集（**wire format**：snake_case + head/base
-// 嵌套对象——tag 必须与 GitHub REST v3 实际响应逐字段对齐，出参平铺由 mcp_tool 转换层
-// 承担）。HeadRef/BaseRef 是 head.ref / base.ref 的平铺只读视图（MCP 出参消费）。
+/*
+ * PullRequest 是 GitHub PR 响应的最小字段集（wire format：snake_case + head/base 嵌套对象，tag 必须与 GitHub REST v3 实际响应逐字段对齐，出参平铺由 mcp_tool 转换层承担）；
+ * HeadRef/BaseRef 是 head.ref/base.ref 的平铺只读视图（MCP 出参消费）。
+ */
 type PullRequest struct {
 	Number  int      `json:"number"`
 	Title   string   `json:"title"`
@@ -44,8 +45,10 @@ func (c *Client) CreatePullRequest(owner, repo string, in CreatePullRequestInput
 	return &out, nil
 }
 
-// ListPullRequests 列出仓库 PR（GET /repos/{owner}/{repo}/pulls）。state 取 open/closed/all
-// （空串按 GitHub 默认 open）；最多返回 50 条（MCP 出参裁剪，防大仓库刷屏）。
+/*
+ * ListPullRequests 列出仓库 PR（GET /repos/{owner}/{repo}/pulls）；
+ * state 取 open/closed/all（空串按 GitHub 默认 open），最多返回 50 条（MCP 出参裁剪，防大仓库刷屏）。
+ */
 func (c *Client) ListPullRequests(owner, repo, state string) ([]PullRequest, error) {
 	if state == "" {
 		state = "open"
@@ -58,17 +61,18 @@ func (c *Client) ListPullRequests(owner, repo, state string) ([]PullRequest, err
 	return out, nil
 }
 
-// CIStatus 是 PR 提交点的 CI 汇总结论：State 为两体系归并结果
-// （success/failure/pending），Checks 为逐项检查（GitHub Actions check runs 与旧 commit
-// status 归并为同一形态）。归并规则见 mergeCIState。
+/*
+ * CIStatus 是 PR 提交点的 CI 汇总结论：State 为两体系归并结果（success/failure/pending），Checks 为逐项检查（GitHub Actions check runs 与旧 commit status 归并同一形态），归并规则见 mergeCIState。
+ */
 type CIStatus struct {
 	PullNumber int
 	State      string     `json:"state"` // success / failure / pending（pending 含「无任何 CI」）
 	Checks     []CIRecord `json:"checks"`
 }
 
-// CIRecord 是单条检查项（check run 与旧 status 归并：Status 取 check run 的
-// queued/in_progress/completed，Conclusion 取其结论；旧体系恒 completed + state 作结论）。
+/*
+ * CIRecord 是单条检查项（check run 与旧 status 归并：Status 取 check run 的 queued/in_progress/completed，Conclusion 取其结论，旧体系恒 completed + state 作结论）。
+ */
 type CIRecord struct {
 	Name       string `json:"name"`
 	Status     string `json:"status"`
@@ -76,10 +80,10 @@ type CIRecord struct {
 	HTMLURL    string `json:"htmlUrl"`
 }
 
-// GetPullRequestCIStatus 获取指定 PR 的 CI 检查状态。链路：PR → head sha →
-// combined status（旧体系）+ check runs（新体系，GitHub Actions）并行取并集。
-// 单体系查询失败不阻断（另一体系仍可用）；两体系都失败返回错误（不把「查询失败」
-// 伪装成「CI 进行中」）。
+/*
+ * GetPullRequestCIStatus 获取指定 PR 的 CI 检查状态：PR → head sha → combined status（旧体系）与 check runs（新体系）并行取并集；
+ * 单体系查询失败不阻断，两体系都失败才返回错误（不把「查询失败」伪装成「CI 进行中」）。
+ */
 func (c *Client) GetPullRequestCIStatus(owner, repo string, pullNumber int) (*CIStatus, error) {
 	// ① PR 详情取 head sha（head.sha 不在 PullRequest 最小集，单独声明）。
 	var prDetail struct {
@@ -111,8 +115,9 @@ func (c *Client) GetPullRequestCIStatus(owner, repo string, pullNumber int) (*CI
 	if combinedErr == nil {
 		combinedState = combined.State
 		if len(combined.Statuses) == 0 {
-			// 空集归一为无数据：GitHub 对无任何 commit status 的提交也返回 pending，
-			// 但「旧体系无 CI」不应拖累纯 Actions 仓库的 success 判定。
+			/*
+			 * 空集归一为无数据：GitHub 对无任何 commit status 的提交也返回 pending，但「旧体系无 CI」不应拖累纯 Actions 仓库的 success 判定。
+			 */
 			combinedState = ""
 		}
 		for _, s := range combined.Statuses {
@@ -144,14 +149,11 @@ func (c *Client) GetPullRequestCIStatus(owner, repo string, pullNumber int) (*CI
 	return status, nil
 }
 
-// mergeCIState 归并两体系的 CI 结论（combined status 的 state + check runs 逐项）：
-//
-//	两体系均无数据（combinedState 空串 = 查询失败或空集归一，且 checks 为空）→ pending（无 CI）
-//	failure/error 任一命中（旧体系 state 或任一 check run 非中性失败结论）→ failure
-//	存在未完成 check run（queued/in_progress），或旧体系有数据的 pending → pending
-//	全部完成且无失败 → success（旧体系无数据不拖累纯 Actions 仓库）
-//
-// neutral/skipped 视为中性不阻断 success。
+/*
+ * mergeCIState 归并两体系 CI 结论：均无数据（combinedState 空串且 checks 空）→ pending；
+ * failure/error 任一命中 → failure；有未完成 check run 或旧体系有数据的 pending → pending；
+ * 全部完成且无失败 → success（旧体系无数据不拖累纯 Actions 仓库）。neutral/skipped 视为中性不阻断 success。
+ */
 func mergeCIState(combinedState string, checks []CIRecord) string {
 	if combinedState == "" && len(checks) == 0 {
 		return "pending" // 无任何 CI

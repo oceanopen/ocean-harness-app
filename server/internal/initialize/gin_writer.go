@@ -18,9 +18,11 @@ func (w *zapWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// InitGinLoggerWriter 把 gin 的默认输出/错误输出桥接到 zap，
-// 使 gin 自身日志（路由注册、启动 banner 等）也走统一的文件 + 控制台通道。
-// DefaultWriter 与 DefaultErrorWriter 均桥接（默认仅 DefaultWriter 会漏掉错误流）。
+/*
+ * InitGinLoggerWriter 把 gin 的默认输出/错误输出桥接到 zap，
+ * 使 gin 自身日志（路由注册、启动 banner 等）也走统一的文件 + 控制台通道。
+ * DefaultWriter 与 DefaultErrorWriter 均桥接（默认仅 DefaultWriter 会漏掉错误流）。
+ */
 func InitGinLoggerWriter() {
 	w := &zapWriter{logger: global.Logger}
 	gin.DefaultWriter = w

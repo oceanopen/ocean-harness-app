@@ -1,17 +1,8 @@
-// 全量重扫：discover → enrich → git 判定（GitPending）→ 写 ClaudeSessionStore → emit。
-//
-// 保证 Dead 会话立即从列表消失。emit 失败 / write 失败不阻塞主流程——
-// 下一轮 watcher / poller 会重新执行，对齐现有容错风格。
-//
-// GitPending 的"空闲判断 + 缓存复用"策略（见 finalize_status）：
-//   - 仅 base status == Idle 的会话才跑 git（Busy/Waiting 不跑）。
-//   - fs watcher 高频触发（force_git=false）时，已是 idle 基线的会话复用上次缓存的
-//     status，避免每次 fs 抖动都跑 git。GitPending 有界过期——poll(60s)/手动刷新
-//     (force_git=true) 强制重算，最长延迟 60s。
-//
-// 显隐联动不再在此触发：pet 前端收到 claude-sessions:changed payload 后基于 count
-// 自行调 show_pet_session_task_window / hide_pet_session_task_window，后端不做自动联动。
-
+/*
+ * 全量重扫：discover → enrich → git 判定（GitPending）→ 写 ClaudeSessionStore → emit。保证 Dead 会话立即从列表消失；emit 失败 / write 失败不阻塞主流程——下一轮 watcher / poller 会重新执行，对齐现有容错风格。
+ * GitPending 的"空闲判断 + 缓存复用"策略（见 finalize_status）：仅 base status == Idle 的会话才跑 git（Busy/Waiting 不跑）；fs watcher 高频触发（force_git=false）时 idle 基线会话复用上次缓存 status 避免每次 fs 抖动都跑 git；GitPending 有界过期——poll(60s)/手动刷新（force_git=true）强制重算，最长延迟 60s。
+ * 显隐联动不再在此触发：pet 前端收到 claude-sessions:changed payload 后基于 count 自行调 show/hide_pet_session_task_window，后端不做自动联动。
+ */
 use std::collections::HashMap;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -23,27 +14,17 @@ use crate::shared::state::claude_sessions::{
 };
 use crate::shared::types::{ClaudeSessionInfo, ClaudeSessionStatus, TerminalApp};
 
-/// 全量重扫会话目录并刷新前端。
-///
-/// `force_git` 控制 GitPending 判定策略：
-///   - false（fs watcher，高频）：Idle 会话若上次也是 Idle/GitPending，复用缓存的 status，
-///     避免每次 fs 抖动都跑 git。
-///   - true（poll / 手动刷新 / 启动）：所有 Idle 会话强制重跑 git，保证徽章新鲜。
-///
-/// 调用点：
-///   - lib.rs setup 末尾（force_git=true，启动时初始化）
-///   - sessions::watch 收到 fs 事件后（force_git=false）
-///   - sessions::poll 周期触发（force_git=true）
-///   - windows::panel::refresh_sessions 手动刷新（force_git=true）
-///
-/// 并发：用 RescanLock 互斥，避免 watcher/poll/命令三线程同时跑 git 串行堆积。
-/// 仅输出数量日志：调用方高频触发，详情日志会刷屏。
+/*
+ * 全量重扫会话目录并刷新前端。`force_git` 控制 GitPending 判定策略：false（fs watcher，高频）时 Idle 会话若上次也是 Idle/GitPending 复用缓存的 status，避免每次 fs 抖动都跑 git；true（poll / 手动刷新 / 启动）时所有 Idle 会话强制重跑 git，保证徽章新鲜。
+ * 调用点：lib.rs setup 末尾（force_git=true，启动时初始化）/ sessions::watch 收到 fs 事件后（force_git=false）/ sessions::poll 周期触发（force_git=true）/ windows::panel::refresh_sessions 手动刷新（force_git=true）。
+ * 并发：用 RescanLock 互斥，避免 watcher/poll/命令三线程同时跑 git 串行堆积；仅输出数量日志（调用方高频触发，详情日志会刷屏）。
+ */
 pub fn rescan(app: &AppHandle, force_git: bool) {
-    // 临界区：读旧快照 → 跑 git → 写回，整体串行化。
-    // 持锁期间最坏约 N×100ms（N 个 idle 会话各跑一次 git），watcher 1s 去抖可吸收。
-    // 先绑定 rescan_lock 再 lock：State 需存活到函数末以维持 MutexGuard 借用
-    //（临时量在语句末释放会让 guard 悬垂，E0716）。
-    // state() 而非 try_state()：lib.rs setup 必先 manage RescanLock 再启动 watcher/poll。
+    /*
+     * 临界区：读旧快照 → 跑 git → 写回，整体串行化。持锁期间最坏约 N×100ms（N 个 idle 会话各跑一次 git），watcher 1s 去抖可吸收。
+     * 先绑定 rescan_lock 再 lock：State 需存活到函数末以维持 MutexGuard 借用（临时量在语句末释放会让 guard 悬垂，E0716）；
+     * state() 而非 try_state()：lib.rs setup 必先 manage RescanLock 再启动 watcher/poll。
+     */
     let rescan_lock = app.state::<RescanLock>();
     let _guard = rescan_lock
         .0
@@ -51,8 +32,10 @@ pub fn rescan(app: &AppHandle, force_git: bool) {
         .expect("RescanLock mutex poisoned");
 
     let raws = discover::list_active();
-    // 过滤 Unknown 宿主：终端被关闭后孤立的 claude 进程 parent chain 爬到 launchd
-    // 也匹配不到已知终端，跳转按钮本来就是禁用的，留在列表里只会误导用户。
+    /*
+     * 过滤 Unknown 宿主：终端被关闭后孤立的 claude 进程 parent chain 爬到 launchd
+     * 也匹配不到已知终端，跳转按钮本来就是禁用的，留在列表里只会误导用户。
+     */
     let enriched: Vec<ClaudeSessionInfo> = raws
         .iter()
         .map(enrich::enrich)
@@ -101,16 +84,11 @@ pub fn rescan(app: &AppHandle, force_git: bool) {
     );
 }
 
-/// 根据本次 enrich 的 base status、上次快照 prev、force_git 决定最终 status。
-///
-/// 规则：
-///   - base != Idle → 原样返回（Busy/Waiting，git 无关；Dead 已被 discover 过滤不会进入）。
-///   - base == Idle：
-///     - prev 不存在（新会话）/ prev 非 idle 基线（刚从 Busy/Waiting 转入）/ force_git
-///       → 跑 git，dirty 则 GitPending 否则 Idle。
-///     - prev 是 idle 基线（Idle 或 GitPending）且 !force_git → 复用 prev.status（不跑 git）。
-///
-/// 抽成独立纯函数便于单元测试（参数为值/引用，不依赖 AppHandle）。
+/*
+ * 根据本次 enrich 的 base status、上次快照 prev、force_git 决定最终 status。
+ * base != Idle → 原样返回（Busy/Waiting，git 无关；Dead 已被 discover 过滤不会进入）；base == Idle 且 prev 不存在（新会话）/ prev 非 idle 基线（刚从 Busy/Waiting 转入）/ force_git → 跑 git，dirty 则 GitPending 否则 Idle；prev 是 idle 基线（Idle 或 GitPending）且 !force_git → 复用 prev.status 不跑 git。
+ * 抽成独立纯函数便于单元测试（参数为值/引用，不依赖 AppHandle）。
+ */
 fn finalize_status(
     cur: &ClaudeSessionInfo,
     prev: Option<&ClaudeSessionInfo>,
@@ -137,8 +115,10 @@ fn finalize_status(
             Idle
         }
     } else {
-        // need_git == false ⟹ !force_git && prev.is_some() && was_idle_base，
-        // 故 prev 必 Some，且其 status 为 Idle 或 GitPending。
+        /*
+         * need_git == false ⟹ !force_git && prev.is_some() && was_idle_base，
+         * 故 prev 必 Some，且其 status 为 Idle 或 GitPending。
+         */
         prev.expect("need_git=false requires prev=Some")
             .status
     }
@@ -149,7 +129,7 @@ mod tests {
     use super::*;
     use crate::shared::types::{ClaudeSessionInfo, ClaudeSessionStatus::*, TerminalApp};
 
-    /// 构造测试用 ClaudeSessionInfo，仅填 status 相关字段。
+    // 构造测试用 ClaudeSessionInfo，仅填 status 相关字段。
     fn mock_info(pid: u32, status: ClaudeSessionStatus, cwd: &str) -> ClaudeSessionInfo {
         ClaudeSessionInfo {
             pid,
@@ -165,8 +145,10 @@ mod tests {
         }
     }
 
-    // transition 决策单测：cur.cwd 用不存在的绝对路径，让 git::is_dirty 必然返回
-    // false（黑盒化 git），从而专注 finalize_status 的分支逻辑，不依赖真实仓库状态。
+    /*
+     * transition 决策单测：cur.cwd 用不存在的绝对路径，让 git::is_dirty 必然返回
+     * false（黑盒化 git），从而专注 finalize_status 的分支逻辑，不依赖真实仓库状态。
+     */
     const FAKE_CWD: &str = "/nonexistent/test/path/12345";
 
     #[test]

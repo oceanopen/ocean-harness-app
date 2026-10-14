@@ -8,8 +8,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// LocalRepository 对应 /api/localRepository 命名空间下的接口（本地仓库 CRUD + git 刷新）。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * LocalRepository 对应 /api/localRepository 命名空间下的接口（本地仓库 CRUD + git 刷新）。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type LocalRepository struct {
 	apis.Api
 }

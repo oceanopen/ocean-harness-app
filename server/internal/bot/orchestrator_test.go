@@ -13,8 +13,10 @@ import (
 	"ocean-harness/server/internal/dal/query"
 )
 
-// fakeReplyStream 测试替身：顺序记录帧（content/final），恒成功。写入方在 worker
-// goroutine（回合泵），读取方在测试 goroutine——互斥保护，跨 goroutine 断言走 snapshot。
+/*
+ * fakeReplyStream 测试替身：顺序记录帧（content/final），恒成功。写入方在 worker
+ * goroutine（回合泵），读取方在测试 goroutine——互斥保护，跨 goroutine 断言走 snapshot。
+ */
 type fakeReplyStream struct {
 	mu     sync.Mutex
 	frames []fakeFrame
@@ -41,9 +43,11 @@ func (f *fakeReplyStream) snapshot() []fakeFrame {
 
 func (f *fakeReplyStream) ByteLimit() int { return 20480 }
 
-// fakeCardReplyStream 卡能力流替身（CardReplyStream 实现）：帧记录之上追加卡事件记录
-// （SendCard 附卡帧 / UpdateCard 卡更新），可注入 SendCard 失败（无卡/发送失败回落纯文本
-// 路径）。
+/*
+ * fakeCardReplyStream 卡能力流替身（CardReplyStream 实现）：帧记录之上追加卡事件记录
+ * （SendCard 附卡帧 / UpdateCard 卡更新），可注入 SendCard 失败（无卡/发送失败回落纯文本
+ * 路径）。
+ */
 type fakeCardReplyStream struct {
 	fakeReplyStream
 	mu      sync.Mutex
@@ -82,9 +86,11 @@ func (f *fakeCardReplyStream) cardSnapshot() []fakeCardMsg {
 	return append([]fakeCardMsg(nil), f.cards...)
 }
 
-// newOrchestratorWithDB 空引擎编排器（指令步/门禁/探针步只消费 store 与 driver 探针，
-// 主路径未触达时 driver nil 安全）；夹具为 #任务 链路双表，store.DB 供预置会话行与建
-// issue。
+/*
+ * newOrchestratorWithDB 空引擎编排器（指令步/门禁/探针步只消费 store 与 driver 探针，
+ * 主路径未触达时 driver nil 安全）；夹具为 #任务 链路双表，store.DB 供预置会话行与建
+ * issue。
+ */
 func newOrchestratorWithDB(t *testing.T) (*Orchestrator, *ConversationStore) {
 	t.Helper()
 	store := &ConversationStore{DB: newIssueTestDB(t)}
@@ -98,9 +104,11 @@ func newOrchestratorWithDriver(t *testing.T, driver ClaudeDriver) (*Orchestrator
 	return NewOrchestrator(store, driver, nil, nil, zap.NewNop()), store
 }
 
-// stubProberDriver 探针步替身：ClaudeDriver + routeProber 双角色，注入探针结论与回合
-// 调用计数（断言「探针出卡不出回合」）。calls 由 worker goroutine 写、测试 goroutine
-// 读（waitFor 轮询），互斥保护。
+/*
+ * stubProberDriver 探针步替身：ClaudeDriver + routeProber 双角色，注入探针结论与回合
+ * 调用计数（断言「探针出卡不出回合」）。calls 由 worker goroutine 写、测试 goroutine
+ * 读（waitFor 轮询），互斥保护。
+ */
 type stubProberDriver struct {
 	mu    sync.Mutex
 	calls int
@@ -144,9 +152,11 @@ func queryIssueByID(t *testing.T, db *gorm.DB, id string) (*model.ProjectIssue, 
 	return pi.WithContext(context.Background()).Where(pi.ID.Eq(id)).First()
 }
 
-// TestSendUnbindCard 解绑确认卡出口矩阵：已绑定出单选项确认卡（卡锚与同帧文本同源、
-// 不清锚——解绑动作唯一入口是 taskunbind 卡点击）；未绑定回教学终帧不出卡；悬空锚
-// （issue 行缺失）按未绑定收口；无卡能力回落纯文本。
+/*
+ * TestSendUnbindCard 解绑确认卡出口矩阵：已绑定出单选项确认卡（卡锚与同帧文本同源、
+ * 不清锚——解绑动作唯一入口是 taskunbind 卡点击）；未绑定回教学终帧不出卡；悬空锚
+ * （issue 行缺失）按未绑定收口；无卡能力回落纯文本。
+ */
 func TestSendUnbindCard(t *testing.T) {
 	t.Run("已绑定出确认卡不清锚", func(t *testing.T) {
 		o, store := newOrchestratorWithDB(t)
@@ -228,8 +238,10 @@ func TestSendUnbindCard(t *testing.T) {
 	})
 }
 
-// TestSendBindingCardIssueCards 搜索出卡矩阵（T2.2 统一模型）：裸指令全列表 / 关键词子集 /
-// 唯一命中同样出卡；零命中回纯文本教学；出卡恒终帧且不写绑定（绑定唯一入口是卡点击）。
+/*
+ * TestSendBindingCardIssueCards 搜索出卡矩阵（T2.2 统一模型）：裸指令全列表 / 关键词子集 /
+ * 唯一命中同样出卡；零命中回纯文本教学；出卡恒终帧且不写绑定（绑定唯一入口是卡点击）。
+ */
 func TestSendBindingCardIssueCards(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
 	db := store.DB
@@ -290,8 +302,10 @@ func TestSendBindingCardIssueCards(t *testing.T) {
 	})
 }
 
-// TestSendBindingCardIssueNoCardFallback 流无卡能力：出卡路径回落纯文本（同帧完整名称列表
-// 文本不丢）。
+/*
+ * TestSendBindingCardIssueNoCardFallback 流无卡能力：出卡路径回落纯文本（同帧完整名称列表
+ * 文本不丢）。
+ */
 func TestSendBindingCardIssueNoCardFallback(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
 	mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
@@ -305,8 +319,10 @@ func TestSendBindingCardIssueNoCardFallback(t *testing.T) {
 	}
 }
 
-// TestRunTurnWorkspaceCommandCard #工作空间 指令步全链路（置于门禁之前）：未选工作空间
-// 的 bot 也能出卡（未选域恰是该指令要解决的场景）；占位帧后接终帧卡，不出回合。
+/*
+ * TestRunTurnWorkspaceCommandCard #工作空间 指令步全链路（置于门禁之前）：未选工作空间
+ * 的 bot 也能出卡（未选域恰是该指令要解决的场景）；占位帧后接终帧卡，不出回合。
+ */
 func TestRunTurnWorkspaceCommandCard(t *testing.T) {
 	store := &ConversationStore{DB: newBindingTestDB(t)}
 	mkWorkspace(t, store.DB, "前端仓A")
@@ -334,9 +350,11 @@ func TestRunTurnWorkspaceCommandCard(t *testing.T) {
 	}
 }
 
-// TestRunTurnUnbindCommandCard #任务解绑 指令步全链路（置于门禁之前）：未选工作空间的
-// bot 也能解绑历史锚点（若置于门禁之后则被 workspace 卡拦截）；占位帧后接终帧确认卡，
-// 不清锚不出回合。
+/*
+ * TestRunTurnUnbindCommandCard #任务解绑 指令步全链路（置于门禁之前）：未选工作空间的
+ * bot 也能解绑历史锚点（若置于门禁之后则被 workspace 卡拦截）；占位帧后接终帧确认卡，
+ * 不清锚不出回合。
+ */
 func TestRunTurnUnbindCommandCard(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
@@ -376,8 +394,10 @@ func TestRunTurnUnbindCommandCard(t *testing.T) {
 	}
 }
 
-// TestRunTurnGateCard 门禁附卡：指引文本与 workspace 卡同帧（lead 前置 + 完整名称列表）；
-// 无可选 workspace（库空）保纯文本指引。
+/*
+ * TestRunTurnGateCard 门禁附卡：指引文本与 workspace 卡同帧（lead 前置 + 完整名称列表）；
+ * 无可选 workspace（库空）保纯文本指引。
+ */
 func TestRunTurnGateCard(t *testing.T) {
 	newGateOrch := func(t *testing.T) (*Orchestrator, *fakeCardReplyStream) {
 		store := &ConversationStore{DB: newBindingTestDB(t)}
@@ -426,8 +446,10 @@ func TestRunTurnGateCard(t *testing.T) {
 	})
 }
 
-// TestRunTurnProbeCard ACP 未绑探针步全链路：出任务卡终帧收口、不出回合（driver 零调用）；
-// 探针报错或已绑定不拦截，落回主路径照常出回合；流无卡能力回落纯文本。
+/*
+ * TestRunTurnProbeCard ACP 未绑探针步全链路：出任务卡终帧收口、不出回合（driver 零调用）；
+ * 探针报错或已绑定不拦截，落回主路径照常出回合；流无卡能力回落纯文本。
+ */
 func TestRunTurnProbeCard(t *testing.T) {
 	msg := InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "跑一下测试"}
 
@@ -494,8 +516,10 @@ func TestRunTurnProbeCard(t *testing.T) {
 	})
 }
 
-// TestRunTurnIssueCommandFullPath #任务 指令步全链路：占位帧后终帧卡收口，不出回合
-// （nil driver 不 panic 即证明主路径未触达）。
+/*
+ * TestRunTurnIssueCommandFullPath #任务 指令步全链路：占位帧后终帧卡收口，不出回合
+ * （nil driver 不 panic 即证明主路径未触达）。
+ */
 func TestRunTurnIssueCommandFullPath(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
 	mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
@@ -517,8 +541,10 @@ func TestRunTurnIssueCommandFullPath(t *testing.T) {
 	}
 }
 
-// TestRunTurnMarkSeenGate 门禁前的 #工作空间 指令同样过幂等复查：MarkSeen 落库
-// （SeenMessageIds 滚窗，经 HasSeen 读回验证——防「指令步绕过受理路径副作用」回归）。
+/*
+ * TestRunTurnMarkSeenGate 门禁前的 #工作空间 指令同样过幂等复查：MarkSeen 落库
+ * （SeenMessageIds 滚窗，经 HasSeen 读回验证——防「指令步绕过受理路径副作用」回归）。
+ */
 func TestRunTurnMarkSeenGate(t *testing.T) {
 	store := &ConversationStore{DB: newBindingTestDB(t)}
 	mkWorkspace(t, store.DB, "仓")
@@ -533,9 +559,11 @@ func TestRunTurnMarkSeenGate(t *testing.T) {
 	}
 }
 
-// TestRunTurnHelpCommand #帮助 指令步全链路（置于绑定指令与门禁之前——未选工作空间时恰是
-// 最需要指令列表的时刻）：占位帧后纯文本指令列表终帧收口，不出卡不出回合（nil driver
-// 不 panic 即证明主路径未触达）。
+/*
+ * TestRunTurnHelpCommand #帮助 指令步全链路（置于绑定指令与门禁之前——未选工作空间时恰是
+ * 最需要指令列表的时刻）：占位帧后纯文本指令列表终帧收口，不出卡不出回合（nil driver
+ * 不 panic 即证明主路径未触达）。
+ */
 func TestRunTurnHelpCommand(t *testing.T) {
 	o, _ := newOrchestratorWithDB(t) // 无 workspace 数据：帮助步须先于门禁收口
 	rs := &fakeCardReplyStream{}

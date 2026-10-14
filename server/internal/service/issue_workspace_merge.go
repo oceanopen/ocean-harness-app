@@ -7,13 +7,17 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// issueWorkspace 状态派生/合并/幂等辅助：由 DB 查询输入（issueWorkspaceRepoInput）与旧状态文件
-// 构造本轮待执行状态（PENDING），派生 status 顶层结论，并提供幂等对比与响应快照深拷贝。
-// 均为纯函数，不碰 DB 与文件系统（状态文件读写见 issue_workspace_state.go）。
+/*
+ * issueWorkspace 状态派生/合并/幂等辅助：由 DB 查询输入（issueWorkspaceRepoInput）与旧状态文件
+ * 构造本轮待执行状态（PENDING），派生 status 顶层结论，并提供幂等对比与响应快照深拷贝。
+ * 均为纯函数，不碰 DB 与文件系统（状态文件读写见 issue_workspace_state.go）。
+ */
 
-// issueWorkspaceDeriveStatusResponse 读状态文件并派生顶层 serverStatus：无文件→NOT_INITIALIZED；
-// 解析失败→CORRUPTED；文件 RUNNING 但 registry 无活跃任务→INTERRUPTED（上次进程中断，可重试）；
-// 否则原样返回文件状态。init 的「重复触发」路径同样复用本派生。
+/*
+ * issueWorkspaceDeriveStatusResponse 读状态文件并派生顶层 serverStatus：无文件→NOT_INITIALIZED；
+ * 解析失败→CORRUPTED；文件 RUNNING 但 registry 无活跃任务→INTERRUPTED（上次进程中断，可重试）；
+ * 否则原样返回文件状态。init 的「重复触发」路径同样复用本派生。
+ */
 func issueWorkspaceDeriveStatusResponse(baseDir, issueID string) (*types.IssueWorkspaceStatusResponseData, error) {
 	state, err := loadIssueWorkspaceState(baseDir, issueID)
 	if err != nil {
@@ -28,8 +32,10 @@ func issueWorkspaceDeriveStatusResponse(baseDir, issueID string) (*types.IssueWo
 	return &types.IssueWorkspaceStatusResponseData{ServerStatus: state.Status, State: state}, nil
 }
 
-// issueWorkspaceCloneState 深拷贝状态（Steps/Repos 逐元素复制，切片 nil 性保持）。
-// Init 响应返回快照、原 state 交给后台 goroutine 持续 mutate，两者不共享可变内存。
+/*
+ * issueWorkspaceCloneState 深拷贝状态（Steps/Repos 逐元素复制，切片 nil 性保持）。
+ * Init 响应返回快照、原 state 交给后台 goroutine 持续 mutate，两者不共享可变内存。
+ */
 func issueWorkspaceCloneState(src *types.IssueWorkspaceState) *types.IssueWorkspaceState {
 	dst := *src
 	if src.Steps != nil {
@@ -53,8 +59,10 @@ func issueWorkspaceCloneState(src *types.IssueWorkspaceState) *types.IssueWorksp
 	return &dst
 }
 
-// issueWorkspaceHasSkipped 判断状态中是否存在 SKIPPED 步骤/仓库（本期占位结果）。
-// 幂等短路据此放行「含占位结果的旧 SUCCESS」走 merge 重跑，后续任务注册实现后自动接续执行。
+/*
+ * issueWorkspaceHasSkipped 判断状态中是否存在 SKIPPED 步骤/仓库（本期占位结果）。
+ * 幂等短路据此放行「含占位结果的旧 SUCCESS」走 merge 重跑，后续任务注册实现后自动接续执行。
+ */
 func issueWorkspaceHasSkipped(state *types.IssueWorkspaceState) bool {
 	for _, s := range state.Steps {
 		if s.Status == types.IW_STATUS_SKIPPED {
@@ -104,13 +112,11 @@ func issueWorkspaceManifestEqual(a, b []types.IssueWorkspaceRepoRef) bool {
 	return true
 }
 
-// issueWorkspaceMergeState 把 issue 当前关联仓库合并进旧状态，产出本轮待执行状态（PENDING）。
-// 规则：
-//   - 全局步骤：旧状态中 SUCCESS 的步骤保留成功结论（幂等跳过重跑）；SKIPPED 不保留——占位结果
-//     每次重跑时重新推导，T1.2/T1.3/T1.4 实现注册后可自动接续执行；
-//   - cloneRepos 仓库级：关联与基准分支未变且旧结果 SUCCESS 的仓库保留（增量跳过），新增/分支变更/
-//     旧结果非 SUCCESS 的仓库重置 PENDING，已移除的仓库剔除；全部仓库有既有成功结果且步骤曾成功才保留成功；
-//   - manifest 全量重建为当前关联集合；顶层 error 清空（旧失败原因已吸收进重试）。
+/*
+ * issueWorkspaceMergeState 把 issue 当前关联仓库合并进旧状态，产出本轮待执行状态（PENDING）。
+ * 规则：全局步骤——旧状态中 SUCCESS 的步骤保留成功结论（幂等跳过重跑）；SKIPPED 不保留——占位结果每次重跑时重新推导，T1.2/T1.3/T1.4 实现注册后可自动接续执行。cloneRepos 仓库级——关联与基准分支未变且旧结果 SUCCESS 的仓库保留（增量跳过），新增/分支变更/旧结果非 SUCCESS 的仓库重置 PENDING，已移除的仓库剔除；全部仓库有既有成功结果且步骤曾成功才保留成功。
+ * manifest 全量重建为当前关联集合；顶层 error 清空（旧失败原因已吸收进重试）。
+ */
 func issueWorkspaceMergeState(old *types.IssueWorkspaceState, baseDir, issueID string, repos []issueWorkspaceRepoInput) *types.IssueWorkspaceState {
 	state := &types.IssueWorkspaceState{
 		Version:   issueWorkspaceStateVersion,
@@ -164,9 +170,11 @@ func issueWorkspaceRepoStates(repos []issueWorkspaceRepoInput, issueID string) [
 	return out
 }
 
-// issueWorkspaceMergeRepoStates 把新仓库清单合并进旧结果：键见 issueWorkspaceRepoKey，
-// 关联与分支未变且旧结果为 SUCCESS 的仓库保留，其余（新增/分支变更/旧结果非 SUCCESS）重置 PENDING
-// 待（重）执行。返回顺序对齐新清单。
+/*
+ * issueWorkspaceMergeRepoStates 把新仓库清单合并进旧结果：键见 issueWorkspaceRepoKey，
+ * 关联与分支未变且旧结果为 SUCCESS 的仓库保留，其余（新增/分支变更/旧结果非 SUCCESS）重置 PENDING
+ * 待（重）执行。返回顺序对齐新清单。
+ */
 func issueWorkspaceMergeRepoStates(prev, next []*types.IssueWorkspaceRepoState) []*types.IssueWorkspaceRepoState {
 	prevKeys := make(map[string]*types.IssueWorkspaceRepoState, len(prev))
 	for _, p := range prev {

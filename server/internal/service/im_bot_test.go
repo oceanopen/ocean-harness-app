@@ -37,8 +37,10 @@ func newImBotTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// mkImBotFixture 建 2 workspace（本域/外域）+ 2 issue + 2 bot（绑 ws1 / 无 ws）+ 3 会话行
-// （绑本域 issue 的活跃单聊 / 带 headless 续聊锚的较早群聊 / 从未活跃单聊）。
+/*
+ * mkImBotFixture 建 2 workspace（本域/外域）+ 2 issue + 2 bot（绑 ws1 / 无 ws）+ 3 会话行
+ * （绑本域 issue 的活跃单聊 / 带 headless 续聊锚的较早群聊 / 从未活跃单聊）。
+ */
 func mkImBotFixture(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	q := query.Use(db)
@@ -80,8 +82,10 @@ func mkImBotFixture(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// TestImBotGetConversations 会话列表装配：排序（活跃倒序 + 从未活跃殿后）/ chatType 前缀派生 /
-// 绑定任务名批量 join / bot 不存在拒绝。
+/*
+ * TestImBotGetConversations 会话列表装配：排序（活跃倒序 + 从未活跃殿后）/ chatType 前缀派生 /
+ * 绑定任务名批量 join / bot 不存在拒绝。
+ */
 func TestImBotGetConversations(t *testing.T) {
 	db := newImBotTestDB(t)
 	mkImBotFixture(t, db)
@@ -113,8 +117,10 @@ func TestImBotGetConversations(t *testing.T) {
 	}
 }
 
-// TestImBotBindConversationIssue 绑定/解绑主链路：落库生效（含列表口径回读）+ claude_session_id
-// 不受扰动 + 解绑清锚。
+/*
+ * TestImBotBindConversationIssue 绑定/解绑主链路：落库生效（含列表口径回读）+ claude_session_id
+ * 不受扰动 + 解绑清锚。
+ */
 func TestImBotBindConversationIssue(t *testing.T) {
 	db := newImBotTestDB(t)
 	mkImBotFixture(t, db)
@@ -156,8 +162,10 @@ func TestImBotBindConversationIssue(t *testing.T) {
 	}
 }
 
-// TestImBotBindConversationIssueRejects 校验矩阵：issue 不存在 / 跨工作空间 / bot 无工作空间 /
-// 会话行不在场（绑定与解绑同拒）/ bot 不存在。
+/*
+ * TestImBotBindConversationIssueRejects 校验矩阵：issue 不存在 / 跨工作空间 / bot 无工作空间 /
+ * 会话行不在场（绑定与解绑同拒）/ bot 不存在。
+ */
 func TestImBotBindConversationIssueRejects(t *testing.T) {
 	db := newImBotTestDB(t)
 	mkImBotFixture(t, db)

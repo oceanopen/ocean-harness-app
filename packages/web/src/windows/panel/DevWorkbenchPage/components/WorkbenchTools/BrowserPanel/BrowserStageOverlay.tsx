@@ -72,45 +72,45 @@ function StageContent({ profile }: { profile: string }) {
     <Box
       sx={{
         position: 'absolute',
-        inset: 0,
+        inset: '0px',
         zIndex: theme.zIndex.mobileStepper,
         bgcolor: 'background.paper',
         display: 'flex',
         flexDirection: 'column',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, height: 40, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{`操作台：${profile}`}</Typography>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '12px', height: '40px', flexShrink: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
+        <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>{`操作台：${profile}`}</Typography>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {stream.target != null
             ? `正在投送：${stream.target.title || stream.target.url}`
             : (ready ? '正在连接实时画面…' : '')}
         </Typography>
         <Typography
           onClick={deactivate}
-          sx={{ 'ml': 'auto', 'flexShrink': 0, 'fontSize': 12, 'color': 'text.secondary', 'cursor': 'pointer', '&:hover': { color: 'text.primary' } }}
+          sx={{ 'ml': 'auto', 'flexShrink': 0, 'fontSize': '12px', 'color': 'text.secondary', 'cursor': 'pointer', '&:hover': { color: 'text.primary' } }}
         >
           取消激活（Esc）
         </Typography>
       </Box>
 
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1, p: 1 }}>
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '8px', p: '8px' }}>
         {!ready && (
-          <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, border: 1, borderColor: 'divider', borderRadius: 1 }}>
+          <Box sx={{ flex: 1, minHeight: '0px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', border: '1px solid', borderColor: 'divider', borderRadius: '4px' }}>
             {session == null && (
-              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>会话投影加载中…</Typography>
+              <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>会话投影加载中…</Typography>
             )}
             {session?.status === 'starting' && (
               <>
                 <CircularProgress size={16} sx={{ color: 'text.secondary' }} />
-                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>浏览器正在准备中…</Typography>
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>浏览器正在准备中…</Typography>
               </>
             )}
             {session?.status === 'idle' && (
-              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>会话已释放，在右侧会话卡「打开会话」后恢复画面</Typography>
+              <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>会话已释放，在右侧会话卡「打开会话」后恢复画面</Typography>
             )}
             {session?.status === 'failed' && (
-              <Typography sx={{ fontSize: 12, color: 'error.main' }}>{session.error ?? '浏览器拉起失败'}</Typography>
+              <Typography sx={{ fontSize: '12px', color: 'error.main' }}>{session.error ?? '浏览器拉起失败'}</Typography>
             )}
           </Box>
         )}
@@ -118,19 +118,19 @@ function StageContent({ profile }: { profile: string }) {
           <>
             <LiveViewport profile={profile} frameRef={stream.frameRef} hasFrame={stream.hasFrame} interactive={stream.phase === 'live'} />
             {stream.healingMessage != null && (
-              <Alert severity="warning" sx={{ fontSize: 12, flexShrink: 0 }}>
+              <Alert severity="warning" sx={{ fontSize: '12px', flexShrink: 0 }}>
                 {stream.healingMessage}
               </Alert>
             )}
             {stream.closedReason != null && (
-              <Alert severity="warning" sx={{ fontSize: 12, flexShrink: 0 }}>
+              <Alert severity="warning" sx={{ fontSize: '12px', flexShrink: 0 }}>
                 {`实时画面已停止：${stream.closedReason}（选择其他页面可重新订阅）`}
               </Alert>
             )}
             {stream.phase === 'failed' && (
               <Alert
                 severity="error"
-                sx={{ fontSize: 12, flexShrink: 0 }}
+                sx={{ fontSize: '12px', flexShrink: 0 }}
                 action={(
                   <Button color="inherit" size="small" onClick={stream.retry}>
                     重试

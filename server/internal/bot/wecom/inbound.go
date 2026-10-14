@@ -17,8 +17,10 @@ import (
 // quoteMaxRunes 引用文本抽取上限（rune）：引用是参考数据不是任务本体，截断防 prompt 膨胀。
 const quoteMaxRunes = 8000
 
-// submitMsg 入站构建任务的标准包装：先填公共字段（含 Route），再执行类型专属填充
-// （下载等重活发生在处理通道消费 goroutine，不阻塞 ws readLoop）。
+/*
+ * submitMsg 入站构建任务的标准包装：先填公共字段（含 Route），再执行类型专属填充
+ * （下载等重活发生在处理通道消费 goroutine，不阻塞 ws readLoop）。
+ */
 func (r *channelRuntime) submitMsg(
 	headers aibottypes.WsFrameHeaders,
 	base aibottypes.BaseMessage,
@@ -30,8 +32,10 @@ func (r *channelRuntime) submitMsg(
 	})
 }
 
-// submitInteractionMsg submitMsg 的交互快车道变体（T3.2）：归一链同源（fillCommon + 专属
-// 填充），仅投递通道不同——点击事件不排附件下载队，保住置灰 5 秒窗口。
+/*
+ * submitInteractionMsg submitMsg 的交互快车道变体（T3.2）：归一链同源（fillCommon + 专属
+ * 填充），仅投递通道不同——点击事件不排附件下载队，保住置灰 5 秒窗口。
+ */
 func (r *channelRuntime) submitInteractionMsg(
 	headers aibottypes.WsFrameHeaders,
 	base aibottypes.BaseMessage,
@@ -43,11 +47,15 @@ func (r *channelRuntime) submitInteractionMsg(
 	})
 }
 
-// fillCommon BaseMessage → InboundMessage 公共字段 + 引用抽取。路由载荷统一 wsRoute 消息流
-// （event=false：文本终帧走 respond_msg 保流式，推送面供卡解耦用）。
+/*
+ * fillCommon BaseMessage → InboundMessage 公共字段 + 引用抽取。路由载荷统一 wsRoute 消息流
+ * （event=false：文本终帧走 respond_msg 保流式，推送面供卡解耦用）。
+ */
 func (r *channelRuntime) fillCommon(headers aibottypes.WsFrameHeaders, base aibottypes.BaseMessage, in *bot.InboundMessage) {
-	// 入站延迟定标（DEBUG）：企微侧时间戳与本机到达时刻的秒级差（含时钟偏差），拆「企微→
-	// 本机」投递延迟与客户端首绘延迟的归属（真机体感 8s+ vs 服务端处理 ~1.1s，差额在哪段）。
+	/*
+	 * 入站延迟定标（DEBUG）：企微侧时间戳与本机到达时刻的秒级差（含时钟偏差），拆「企微→
+	 * 本机」投递延迟与客户端首绘延迟的归属（真机体感 8s+ vs 服务端处理 ~1.1s，差额在哪段）。
+	 */
 	if base.CreateTime > 0 && r.log != nil {
 		r.log.Debug("bot 入站延迟定标",
 			zap.Int64("age_s", time.Now().Unix()-int64(base.CreateTime)),
@@ -67,8 +75,10 @@ func (r *channelRuntime) fillCommon(headers aibottypes.WsFrameHeaders, base aibo
 	in.Quote = extractQuote(base.Quote)
 }
 
-// extractQuote 引用内容抽取：text/voice（转写文本）直接提取；image/file/mixed 引用不做下载
-// （引用是参考上下文，占位说明引导用户直接重发该附件——确定性语义，不做隐式下载魔法）。
+/*
+ * extractQuote 引用内容抽取：text/voice（转写文本）直接提取；image/file/mixed 引用不做下载
+ * （引用是参考上下文，占位说明引导用户直接重发该附件——确定性语义，不做隐式下载魔法）。
+ */
 func extractQuote(q *aibottypes.QuoteContent) *bot.QuoteRef {
 	if q == nil {
 		return nil
@@ -106,8 +116,10 @@ func quoteKindName(msgType string) string {
 	}
 }
 
-// buildWithAttachment 带附件消息（image/file）填充：同步下载解密到工作目录（URL 五分钟有效，
-// 必须先落地后编排），失败不阻断正文（正文照发 + 附件缺失说明）。
+/*
+ * buildWithAttachment 带附件消息（image/file）填充：同步下载解密到工作目录（URL 五分钟有效，
+ * 必须先落地后编排），失败不阻断正文（正文照发 + 附件缺失说明）。
+ */
 func (r *channelRuntime) buildWithAttachment(in *bot.InboundMessage, url, aesKey, kind, fallbackName string) {
 	if url == "" {
 		return
@@ -140,8 +152,10 @@ func (r *channelRuntime) buildMixed(mixed aibottypes.MixedContent, in *bot.Inbou
 	in.Text = strings.Join(texts, "\n")
 }
 
-// downloadAttachment 下载解密并落盘到 <workspaceDir>/.wecom-attachments/<msgId>/<n>-<name>。
-// 返回 (绝对路径, 展示文件名, 是否成功)。
+/*
+ * downloadAttachment 下载解密并落盘到 <workspaceDir>/.wecom-attachments/<msgId>/<n>-<name>。
+ * 返回 (绝对路径, 展示文件名, 是否成功)。
+ */
 func (r *channelRuntime) downloadAttachment(msgID string, index int, url, aesKey, kind, fallbackName string) (string, string, bool) {
 	r.mu.Lock()
 	client := r.client

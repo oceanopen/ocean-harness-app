@@ -17,9 +17,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// BrowserSession 对应 /api/browserSession 命名空间下的接口（浏览器会话域：会话/页面
-// 操作 + SSE 投影事件流）。嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/
-// MakeService）与 JsonOK/JsonFail。
+/*
+ * BrowserSession 对应 /api/browserSession 命名空间下的接口（浏览器会话域：会话/页面操作 + SSE 投影事件流）。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/ MakeService）与 JsonOK/JsonFail。
+ */
 type BrowserSession struct {
 	apis.Api
 }
@@ -35,8 +36,10 @@ func (api BrowserSession) GetInfo(ctx *gin.Context) {
 	api.JsonOK(svc.GetInfo())
 }
 
-// Ensure POST /api/browserSession/ensure：拉起/复用 profile 会话（同步等就绪，headless
-// D10 覆盖）。
+/*
+ * Ensure POST /api/browserSession/ensure：
+ * 拉起/复用 profile 会话（同步等就绪，headless D10 覆盖）。
+ */
 func (api BrowserSession) Ensure(ctx *gin.Context) {
 	req := &types.BrowserEnsureRequest{}
 	svc := service.BrowserSession{}
@@ -52,8 +55,10 @@ func (api BrowserSession) Ensure(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Close POST /api/browserSession/close：释放会话（幂等），响应携带释放后的投影行
-// （收尾前已捕获真实当前页，供前端恢复现场）。
+/*
+ * Close POST /api/browserSession/close：
+ * 释放会话（幂等），响应携带释放后的投影行（收尾前已捕获真实当前页，供前端恢复现场）。
+ */
 func (api BrowserSession) Close(ctx *gin.Context) {
 	req := &types.BrowserCloseRequest{}
 	svc := service.BrowserSession{}
@@ -85,8 +90,10 @@ func (api BrowserSession) Navigate(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Analyze POST /api/browserSession/analyze：即时受理「AI 分析此页」入 issue 绑定的
-// ACP 会话（会话缺失/回合进行中即中文报错，不排队）。
+/*
+ * Analyze POST /api/browserSession/analyze：
+ * 即时受理「AI 分析此页」入 issue 绑定的 ACP 会话（会话缺失/回合进行中即中文报错，不排队）。
+ */
 func (api BrowserSession) Analyze(ctx *gin.Context) {
 	req := &types.BrowserAnalyzeRequest{}
 	svc := service.BrowserSession{}
@@ -101,11 +108,11 @@ func (api BrowserSession) Analyze(ctx *gin.Context) {
 	api.JsonOK(nil)
 }
 
-// Events GET /api/browserSession/events：SSE 投影事件流（无 query 绑定——会话后端全局
-// 单源，全部 profile 的 snapshot/sessions 帧同一流，前端无需按 profile 建连）。建连首帧
-// 即当前全量快照（seq 连续，杜绝快照与增量帧之间的缝隙）；帧协议见 browser.Frame。
-// 断连/退订/服务收尾（hub 关停关闭通道）任一发生即返回。长驻期间持有 *gin.Context 是
-// 安全的——gin 仅在 handler 返回后回收复用。
+/*
+ * Events GET /api/browserSession/events：SSE 投影事件流（无 query 绑定——会话后端全局单源，
+ * 全部 profile 的 snapshot/sessions 帧同一流，前端无需按 profile 建连）。建连首帧即当前全量快照（seq 连续，杜绝快照与增量帧之间的缝隙）；
+ * 帧协议见 browser.Frame。断连/退订/服务收尾（hub 关停关闭通道）任一发生即返回。长驻期间持有 *gin.Context 是安全的——gin 仅在 handler 返回后回收复用。
+ */
 func (api BrowserSession) Events(ctx *gin.Context) {
 	api.MakeContext(ctx)
 	frames, cancel := global.Browser.Subscribe()
@@ -130,13 +137,16 @@ func (api BrowserSession) Events(ctx *gin.Context) {
 	}
 }
 
-// liveSSEPingInterval 帧流 ping 周期：静态页零推帧时代理/客户端可能闲置断连，注释行
-// 防御性保活。
+/*
+ * liveSSEPingInterval 帧流 ping 周期：静态页零推帧时代理/客户端可能闲置断连，注释行防御性保活。
+ */
 const liveSSEPingInterval = 15 * time.Second
 
-// browserStreamReject 实时画面帧流的订阅前置判定：投影行状态不可订阅即返回 HTTP 状态码
-// 与原因（空串=未知 profile 404；idle/failed=会话已关闭/引擎未运行 409；starting/ready
-// 可订阅返回 nil）。真实状态码使 EventSource 按规范 fail the connection 不自动重连。
+/*
+ * browserStreamReject 实时画面帧流的订阅前置判定：投影行状态不可订阅即返回 HTTP
+ * 状态码与原因（空串=未知 profile 404；idle/failed=会话已关闭/引擎未运行 409；
+ * starting/ready 可订阅返回 nil）。真实状态码使 EventSource 按规范 fail the connection 不自动重连。
+ */
 func browserStreamReject(status browser.SessionStatus) (int, error) {
 	switch status {
 	case "":
@@ -150,12 +160,11 @@ func browserStreamReject(status browser.SessionStatus) (int, error) {
 	}
 }
 
-// Stream GET /api/browserSession/stream?profile=&pageId=：CDP 观察通道实时画面帧流
-// （远程桌面语义，per-profile 单订——页码变更即重建，旧流经 done 感知重订）。事件四型
-// frame/target/error/closed（LiveEvent.type 判别载荷）：error=自然断连可重订自愈、
-// closed=终态（管理面强拆/页面关闭）不重订。请求 ctx Done 即退订驱动 refs 减一（末订
-// 拆连接恢复 idle 计时）。长驻期间持有 *gin.Context 是安全的——gin 仅在 handler 返回
-// 后回收复用。
+/*
+ * Stream GET /api/browserSession/stream?profile=&pageId=：CDP 观察通道实时画面帧流（远程桌面语义，per-profile 单订——页码变更即重建，
+ * 旧流经 done 感知重订）。事件四型 frame/target/error/closed（LiveEvent.type 判别载荷）：error=自然断连可重订自愈、
+ * closed=终态（管理面强拆/页面关闭）不重订。请求 ctx Done 即退订驱动 refs 减一（末订拆连接恢复 idle 计时）。长驻期间持有 *gin.Context 是安全的——gin 仅在 handler 返回后回收复用。
+ */
 func (api BrowserSession) Stream(ctx *gin.Context) {
 	req := &types.BrowserStreamRequest{}
 	svc := service.BrowserSession{}
@@ -183,8 +192,10 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 	hctx := api.Context.Request.Context()
 	ping := time.NewTicker(liveSSEPingInterval)
 	defer ping.Stop()
-	// 帧源是 keep-latest 单槽 mailbox 而非 channel：waiter 以 gen 感知等待转成通知信号
-	// （满即合并丢信号——主循环醒来按 gen 补读，无丢唤醒），gen 随写入推进防重复帧。
+	/*
+	 * 帧源是 keep-latest 单槽 mailbox 而非 channel：waiter 以 gen
+	 * 感知等待转成通知信号（满即合并丢信号——主循环醒来按 gen 补读，无丢唤醒），gen 随写入推进防重复帧。
+	 */
 	notify := make(chan struct{}, 1)
 	var seen atomic.Uint64
 	go func() {
@@ -199,9 +210,10 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 		api.Context.SSEvent("message", evt)
 		writer.Flush()
 	}
-	// 帧写侧节流（throttleMs>0 时生效，迷你预览档）：mailbox 只保留最新帧，跳帧不丢
-	// 末帧——节流窗口内到达的帧被跳过后，延迟定时器在窗口到期补写 mailbox 最新帧
-	//（gen 未推进则无写），静态页最后一帧不因节流永久滞留。
+	/*
+	 * 帧写侧节流（throttleMs>0 时生效，迷你预览档）：mailbox 只保留最新帧，
+	 * 跳帧不丢末帧——节流窗口内到达的帧被跳过后，延迟定时器在窗口到期补写 mailbox 最新帧（gen 未推进则无写），静态页最后一帧不因节流永久滞留。
+	 */
 	throttle := max(time.Duration(req.ThrottleMs)*time.Millisecond, 0)
 	var lastFrameAt time.Time
 	var catchup *time.Timer
@@ -260,8 +272,10 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 	}
 }
 
-// Input POST /api/browserSession/input：远程桌面输入分发（kind→CDP 映射在 service 层）。
-// 要求活跃观察面存在（未建实时画面即中文报错）；分发预算与失败口径随 DispatchInput。
+/*
+ * Input POST /api/browserSession/input：远程桌面输入分发（kind→CDP 映射在
+ * service 层）。要求活跃观察面存在（未建实时画面即中文报错）；分发预算与失败口径随 DispatchInput。
+ */
 func (api BrowserSession) Input(ctx *gin.Context) {
 	req := &types.BrowserInputRequest{}
 	svc := service.BrowserSession{}

@@ -28,20 +28,20 @@ import { buildFileTree } from './buildFileTree';
 import { allDirsExpanded, buildGitChangesTree } from './buildGitChangesTree';
 import FileTree from './FileTree';
 
-/// 默认展开目录集（repo/——展开即直见各仓库名）。仅作「该 issue 从未 toggle 过」时的
-/// 渲染期回落，不随持久化流转（与 store.toggleDirExpanded 的基底一致）。
+// 默认展开目录集（repo/——展开即直见各仓库名）。仅作「该 issue 从未 toggle 过」时的
+// 渲染期回落，不随持久化流转（与 store.toggleDirExpanded 的基底一致）。
 const DEFAULT_EXPANDED_DIRS: ReadonlySet<string> = new Set([DEFAULT_EXPANDED_DIR]);
 
 interface WorkspaceFilePanelProps {
   issueId: string;
 }
 
-/// WorkspaceFilePanel：开发工作台工具面板区的「文件」tab 内容（T5.1，经 toolRegistry
-/// 挂载）。双模式：全部文件（一次性全目录树）/ Git 变更（未提交变更文件树 + 状态徽标 +
-/// +N/-N 行数）。头部模式切换 + 计数 + 刷新按钮（手动刷新口径——无 watcher 无轮询，与
-/// 子任务面板 T3.1 同决策）。点击文件行 → openPreviewTab（两模式统一，tab id = 文件路径）
-/// → 终端内容区浮层预览，tab 内容形态（文件内容/diff）由浮层按「面板模式 + 变更集」渲染
-/// 期派生。模式存域 store（按 issue 会话级，预览浮层同读；切工具 tab 重挂载不丢）。
+// WorkspaceFilePanel：开发工作台工具面板区的「文件」tab 内容（T5.1，经 toolRegistry
+// 挂载）。双模式：全部文件（一次性全目录树）/ Git 变更（未提交变更文件树 + 状态徽标 +
+// +N/-N 行数）。头部模式切换 + 计数 + 刷新按钮（手动刷新口径——无 watcher 无轮询，与
+// 子任务面板 T3.1 同决策）。点击文件行 → openPreviewTab（两模式统一，tab id = 文件路径）
+// → 终端内容区浮层预览，tab 内容形态（文件内容/diff）由浮层按「面板模式 + 变更集」渲染
+// 期派生。模式存域 store（按 issue 会话级，预览浮层同读；切工具 tab 重挂载不丢）。
 export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps) {
   const qc = useQueryClient();
   const mode = useFilePanelMode(issueId);
@@ -134,15 +134,15 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
           </Typography>
         )}
         right={(
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <ToggleButtonGroup
               size="small"
               exclusive
               value={mode}
               onChange={(_, v) => v != null && setFilePanelMode(issueId, v)}
             >
-              <ToggleButton value="all" sx={{ py: 0.25, px: 1 }}>全部文件</ToggleButton>
-              <ToggleButton value="git" sx={{ py: 0.25, px: 1 }}>Git 变更</ToggleButton>
+              <ToggleButton value="all" sx={{ py: '2px', px: '8px' }}>全部文件</ToggleButton>
+              <ToggleButton value="git" sx={{ py: '2px', px: '8px' }}>Git 变更</ToggleButton>
             </ToggleButtonGroup>
             <RefreshIconButton
               onClick={refresh}
@@ -156,7 +156,7 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
       {/* 内容区四分支骨架（错误/加载/空态/树）单份渲染，模式只提供差异描述。 */}
       {view.error != null
         ? (
-            <Box sx={{ p: 1.5 }}>
+            <Box sx={{ p: '12px' }}>
               <Alert
                 severity="error"
                 action={<Button color="inherit" size="small" onClick={() => void view.refetch()}>重试</Button>}
@@ -167,7 +167,7 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
           )
         : view.isLoading
           ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: '16px' }}>
                 <CircularProgress size={20} />
               </Box>
             )
@@ -180,12 +180,12 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: 1,
-                    p: 2,
+                    gap: '8px',
+                    p: '16px',
                     textAlign: 'center',
                   }}
                 >
-                  <FolderOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+                  <FolderOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>{view.emptyTitle}</Typography>
                   <Typography variant="body2" color="text.secondary">{view.emptyDesc}</Typography>
                 </Box>

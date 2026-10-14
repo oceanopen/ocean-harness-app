@@ -132,7 +132,7 @@ function MarketplacePluginsDrawer({ marketplace, showToast, onClose }: Marketpla
     <ResizableDrawer open onClose={onClose} defaultWidthPct={44}>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部：市场名 + 来源 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 600, ...truncateSx }}>
               {marketplace.name}
@@ -147,7 +147,7 @@ function MarketplacePluginsDrawer({ marketplace, showToast, onClose }: Marketpla
         </Box>
 
         {/* 内容：扫描异常 / 支持性提示 / 插件行列表 */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {marketplace.scanError && <Alert severity="warning">{marketplace.scanError}</Alert>}
           {marketplace.supportedClis.length === 0 && !marketplace.scanError && (
             <Alert severity="info">
@@ -155,7 +155,7 @@ function MarketplacePluginsDrawer({ marketplace, showToast, onClose }: Marketpla
             </Alert>
           )}
           {marketplace.plugins.length === 0 && !marketplace.scanError && (
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 6 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: '48px' }}>
               <Typography variant="body2" color="text.secondary">
                 该市场暂无插件
               </Typography>
@@ -168,17 +168,17 @@ function MarketplacePluginsDrawer({ marketplace, showToast, onClose }: Marketpla
               <Box
                 key={p.name}
                 sx={{
-                  border: 1,
+                  border: '1px solid',
                   borderColor: 'divider',
-                  borderRadius: 1,
-                  p: 1.5,
+                  borderRadius: '4px',
+                  p: '12px',
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 0.75,
+                  gap: '6px',
                 }}
               >
                 {/* 行头：插件名 + 版本 + 状态 */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '0px' }}>
                   <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 0, ...truncateSx }} title={p.name}>
                     {p.name}
                   </Typography>
@@ -210,7 +210,7 @@ function MarketplacePluginsDrawer({ marketplace, showToast, onClose }: Marketpla
                     任一操作进行中全局禁用（配合服务端串行锁，防误并发）。 */}
                 {actions.length > 0
                   ? (
-                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         {actions.map(({ action, variant, color }) => (
                           <Button
                             key={action}

@@ -7,8 +7,10 @@ import (
 	"testing"
 )
 
-// manifest_test.go：marketplace 包纯函数的表驱动测试（清单解析 / source 分类 / CLI 探测 /
-// 复合 id）。不调外部 CLI，全部用临时目录 fixture——解析边界是前端投影正确性的源头。
+/*
+ * manifest_test.go：marketplace 包纯函数的表驱动测试（清单解析 / source 分类 / CLI 探测 / 复合 id）；
+ * 不调外部 CLI，全部用临时目录 fixture——解析边界是前端投影正确性的源头。
+ */
 
 func TestPluginRef(t *testing.T) {
 	if got := PluginRef("ocean-code", "ocean-claude-plugins"); got != "ocean-code@ocean-claude-plugins" {

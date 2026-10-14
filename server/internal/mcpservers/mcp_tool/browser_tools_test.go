@@ -10,9 +10,10 @@ import (
 	mcpdto "ocean-harness/server/internal/mcpservers/mcp_dto"
 )
 
-// browser 工具面纯函数单测：profile 归一、引擎入参抽取（剥服务端自有字段）、归因元数据
-// 追加、逃生舱黑名单前置拒绝（后者走 handler 真实入口——黑名单校验先于链式装配，无需
-// 测试环境装配）。
+/*
+ * browser 工具面纯函数单测：profile 归一、引擎入参抽取（剥服务端自有字段）、归因元数据追加、
+ * 逃生舱黑名单前置拒绝（后者走 handler 真实入口——黑名单校验先于链式装配，无需测试环境装配）。
+ */
 
 func TestResolveProfile(t *testing.T) {
 	if got := resolveProfile(""); got != defaultBrowserProfile {

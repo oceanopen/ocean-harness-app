@@ -1,20 +1,8 @@
-// fakeagent 是 internal/acp 集成测试的进程内假 agent：经真实 stdio 跑 agent.New().Serve，
-// 行为由 argv[1] 脚本驱动。TestMain 会将其编译为独立二进制供 acp.Launch 拉起。
-//
-// 脚本一览：
-//
-//	happy            两段 agent_message_chunk 后 end_turn
-//	permission       prompt 中发起 request_permission，把结果回显进 message chunk
-//	late-permission  prompt 立即 end_turn，300ms 后再发起 request_permission（无活动回合路径）
-//	elicitation      prompt 中发起 elicitation/create（线上扁平格式直发，含 requestedSchema），
-//	                 把结果回显进 message chunk
-//	slow-cancel      持续推送 chunk 直至收到 session/cancel，以 cancelled 终止
-//	doctor-happy     session/new 响应后 200ms 推送 available_commands（T1.4 doctor 握手门槛）
-//	early-push       session/new 响应前抢跑推送 chunk（早到帧缓冲回放路径）+ prompt 补推一段
-//	load             session/load：响应前同步重放两段历史 chunk（早到帧缓冲承接），恢复后
-//	                 prompt 正常回合；无 SessionLoader 之外的差异
-//	crash            session/new 响应后 200ms 整进程退出 1（意外死亡路径：EOF → 收敛序 →
-//	                 消费方收到 Terminated 哨兵且 Err() 携带异常退出证据）
+/*
+ * fakeagent 是 internal/acp 集成测试的进程内假 agent：经真实 stdio 跑 agent.New().Serve，行为由 argv[1] 脚本驱动。TestMain 会将其编译为独立二进制供 acp.Launch 拉起。脚本一览：
+ * happy 两段 chunk 后 end_turn；permission 发起 request_permission 并回显结果；late-permission 立即 end_turn 300ms 后再发起权限（无活动回合路径）；elicitation 线上扁平格式直发 elicitation/create（含 requestedSchema）并回显；slow-cancel 持续推送 chunk 直至收到 session/cancel 以 cancelled 终止；
+ * doctor-happy 响应后 200ms 推送 available_commands（T1.4 握手门槛）；early-push 响应前抢跑推送 chunk（早到帧缓冲回放）+ prompt 补推一段；load 响应前重放两段历史 chunk（早到帧缓冲承接）恢复后正常回合；crash 响应后 200ms 整进程退出 1（意外死亡路径：EOF → 收敛序 → Terminated 哨兵 + Err() 证据）。
+ */
 package main
 
 import (
@@ -41,8 +29,10 @@ const (
 	scriptCrash          = "crash"
 )
 
-// fakeAgent 全脚本共用的 agent 骨架：广告三档权限模式目录，SetMode 就地回写并补发
-// current_mode_update 通知（客户端据此验证本地模式视图维护）。
+/*
+ * fakeAgent 全脚本共用的 agent 骨架：广告三档权限模式目录，SetMode 就地回写并补发
+ * current_mode_update 通知（客户端据此验证本地模式视图维护）。
+ */
 type fakeAgent struct {
 	mu       sync.Mutex
 	canceled map[string]bool
@@ -70,8 +60,10 @@ func main() {
 
 func (a *fakeAgent) Initialize(_ context.Context, _ agent.Client, _ schema.InitializeRequest) (schema.InitializeResponse, error) {
 	caps := &schema.AgentCapabilities{}
-	// 仅 load 脚本声明 session/load 能力：其余脚本保持空能力，保留「能力未声明 →
-	// 客户端 requireCapability 拒绝」的可测路径。
+	/*
+	 * 仅 load 脚本声明 session/load 能力：其余脚本保持空能力，保留「能力未声明 →
+	 * 客户端 requireCapability 拒绝」的可测路径。
+	 */
 	if os.Args[1] == scriptLoad {
 		caps.LoadSession = boolPtr(true)
 	}
@@ -80,8 +72,10 @@ func (a *fakeAgent) Initialize(_ context.Context, _ agent.Client, _ schema.Initi
 
 func (a *fakeAgent) NewSession(_ context.Context, client agent.Client, _ schema.NewSessionRequest) (schema.NewSessionResponse, error) {
 	id := schema.SessionId("fake-" + strconv.Itoa(int(time.Now().UnixNano())))
-	// doctor-happy：响应落 wire 后再推送 available_commands——客户端在处理完 session/new
-	// 响应才注册会话运行时，早于响应的推送会被当作早期帧丢弃（session.go 收帧过滤）。
+	/*
+	 * doctor-happy：响应落 wire 后再推送 available_commands——客户端在处理完 session/new
+	 * 响应才注册会话运行时，早于响应的推送会被当作早期帧丢弃（session.go 收帧过滤）。
+	 */
 	if os.Args[1] == scriptDoctorHappy {
 		go func() {
 			time.Sleep(200 * time.Millisecond)
@@ -95,8 +89,10 @@ func (a *fakeAgent) NewSession(_ context.Context, client agent.Client, _ schema.
 			})
 		}()
 	}
-	// early-push：响应落 wire 前同步抢跑推送——通知帧先于 session/new 响应到达客户端，
-	// 命中「早于会话注册」路径（客户端缓冲后于 NewSession 返回时回放）。
+	/*
+	 * early-push：响应落 wire 前同步抢跑推送——通知帧先于 session/new 响应到达客户端，
+	 * 命中「早于会话注册」路径（客户端缓冲后于 NewSession 返回时回放）。
+	 */
 	if os.Args[1] == scriptEarlyPush {
 		_ = client.Notify(context.Background(), schema.SessionUpdateMethodName, schema.SessionNotification{
 			SessionID: id,
@@ -247,10 +243,11 @@ func permissionOptions() []schema.PermissionOption {
 	}
 }
 
-// elicitationParams 构造 form 模式 elicitation 的线上扁平格式（真适配器 wire 形态：
-// mode/sessionId/message/requestedSchema 平铺）。经 agent.Client.Call 扩展通道直发——
-// typed client.CreateElicitation 会被 acp-go 生成模型丢掉 requestedSchema（上游生成
-// 缺口，见客户端 elicitation.go 补偿），fixture 必须走 raw 才能覆盖投影全保真链路。
+/*
+ * elicitationParams 构造 form 模式 elicitation 的线上扁平格式（真适配器 wire 形态：mode/sessionId/message/requestedSchema 平铺）。经 agent.Client.Call 扩展通道直发——
+ * typed client.CreateElicitation 会被 acp-go 生成模型丢掉 requestedSchema（上游生成缺口，见客户端 elicitation.go 补偿），
+ * fixture 必须走 raw 才能覆盖投影全保真链路。
+ */
 func elicitationParams(sessionID schema.SessionId) map[string]any {
 	return map[string]any{
 		"mode":      "form",
@@ -269,8 +266,10 @@ func strPtr(s string) *string { return &s }
 
 func boolPtr(b bool) *bool { return &b }
 
-// LoadSession load 脚本：响应前同步重放两段历史 chunk（模拟适配器 replaySessionHistory
-// 时序——重放推送先于 load 响应到达客户端，走早到帧缓冲）；恢复后的会话 prompt 正常回合。
+/*
+ * LoadSession load 脚本：响应前同步重放两段历史 chunk（模拟适配器 replaySessionHistory
+ * 时序——重放推送先于 load 响应到达客户端，走早到帧缓冲）；恢复后的会话 prompt 正常回合。
+ */
 func (a *fakeAgent) LoadSession(_ context.Context, client agent.Client, request schema.LoadSessionRequest) (schema.LoadSessionResponse, error) {
 	if os.Args[1] != scriptLoad {
 		return schema.LoadSessionResponse{}, fmt.Errorf("fakeagent: 脚本 %q 未启用 load", os.Args[1])

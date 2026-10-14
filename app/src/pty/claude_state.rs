@@ -1,21 +1,20 @@
-// claude 运行态探测：判定某 PTY 会话的 shell 子进程树内是否跑着 claude
-// （「启动 claude」按钮置灰驱动）。
-//
-// 手段：`~/.claude/sessions/<pid>.json`（存活过滤即当前全部 claude 进程）→
-// 沿 `ps -o ppid=` 逐级向上爬父链 → 任一级 pid 命中目标会话的 shell pid 即命中。
-// 进程树匹配精确到具体终端（多 pane 同 cwd 也能区分）。
-//
-// 前端驱动（useClaudeRunning）：会话 active 即查 + EVENT_CLAUDE_SESSIONS_CHANGED
-// + 60s 轮询兜底退出恢复（Dead 会话 json 保留、watch 不触发，只能轮询感知）。
-
+/*
+ * claude 运行态探测：判定某 PTY 会话的 shell 子进程树内是否跑着 claude（「启动 claude」按钮置灰驱动）。
+ * 手段：`~/.claude/sessions/<pid>.json`（存活过滤即当前全部 claude 进程）→ 沿 `ps -o ppid=` 逐级向上爬父链 → 任一级 pid 命中目标会话 shell pid 即命中；进程树匹配精确到具体终端（多 pane 同 cwd 也能区分）。
+ * 前端驱动（useClaudeRunning）：会话 active 即查 + EVENT_CLAUDE_SESSIONS_CHANGED + 60s 轮询兜底退出恢复（Dead 会话 json 保留、watch 不触发，只能轮询感知）。
+ */
 use super::state::PtySessionStore;
 
-/// 父链爬取上限：claude → node → zsh →（本 app）足以覆盖；再深属异常进程树
-/// （孤儿重挂 init 等），防环/防长循环硬停。
+/*
+ * 父链爬取上限：claude → node → zsh →（本 app）足以覆盖；再深属异常进程树
+ * （孤儿重挂 init 等），防环/防长循环硬停。
+ */
 const MAX_ANCESTRY_DEPTH: usize = 8;
 
-/// `ps -p <pid> -o ppid=`，失败返回 None（进程已死 / ps 不可用）。
-/// 与 sessions/enrich.rs ps_field 同范式（零 nix/libc 依赖）。
+/*
+ * `ps -p <pid> -o ppid=`，失败返回 None（进程已死 / ps 不可用）。
+ * 与 sessions/enrich.rs ps_field 同范式（零 nix/libc 依赖）。
+ */
 fn parent_pid(pid: u32) -> Option<u32> {
     let output = std::process::Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "ppid="])
@@ -30,7 +29,7 @@ fn parent_pid(pid: u32) -> Option<u32> {
     text.parse::<u32>().ok()
 }
 
-/// 本会话 shell 的 pid（child.process_id()；已退出/句柄异常返回 None）。
+// 本会话 shell 的 pid（child.process_id()；已退出/句柄异常返回 None）。
 fn shell_pid(store: &PtySessionStore, session_id: &str) -> Option<u32> {
     let map = store
         .0
@@ -40,8 +39,10 @@ fn shell_pid(store: &PtySessionStore, session_id: &str) -> Option<u32> {
     session.child.lock().ok()?.process_id()
 }
 
-/// 某 claude 进程到目标 shell pid 的父链深度（0 = 直接子进程）。
-/// 不在 shell 子进程树内返回 None。
+/*
+ * 某 claude 进程到目标 shell pid 的父链深度（0 = 直接子进程）。
+ * 不在 shell 子进程树内返回 None。
+ */
 fn ancestry_depth(claude_pid: u32, shell: u32) -> Option<usize> {
     let mut pid = claude_pid;
     for depth in 0..MAX_ANCESTRY_DEPTH {
@@ -56,8 +57,10 @@ fn ancestry_depth(claude_pid: u32, shell: u32) -> Option<usize> {
     None
 }
 
-/// 会话是否跑着 claude：遍历全部活跃 claude 进程，任一父链命中本会话 shell
-/// 即 true。shell pid 未知（会话不在/已退出）恒 false。
+/*
+ * 会话是否跑着 claude：遍历全部活跃 claude 进程，任一父链命中本会话 shell
+ * 即 true。shell pid 未知（会话不在/已退出）恒 false。
+ */
 pub fn claude_running(store: &PtySessionStore, session_id: &str) -> bool {
     let Some(shell) = shell_pid(store, session_id) else {
         // debug 级：会话不在 store 属非预期（调用方通常先 spawn），静默降级不刷屏。
@@ -86,8 +89,10 @@ pub fn claude_running(store: &PtySessionStore, session_id: &str) -> bool {
 mod tests {
     use super::*;
 
-    // parent_pid / ancestry_depth 依赖真实进程树，仅 MAX_ANCESTRY_DEPTH 常量与
-    // 防环边界可离线断言；进程匹配逻辑真机验证（任务 5 验证项）。
+    /*
+     * parent_pid / ancestry_depth 依赖真实进程树，仅 MAX_ANCESTRY_DEPTH 常量与
+     * 防环边界可离线断言；进程匹配逻辑真机验证（任务 5 验证项）。
+     */
 
     #[test]
     fn ancestry_depth_is_tight() {

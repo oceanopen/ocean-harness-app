@@ -5,8 +5,10 @@ import { PRIORITY_COLOR, PRIORITY_ORDER } from '@src/components/priorityMeta';
 import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// 受控优先级下拉：5 档（色点 + 本地化文案）。仅改本地值，不发请求。
-// label 提供时包 FormControl+InputLabel（查询表单复用）；allOption 提供时渲染"全部"项（value='all'）。
+/**
+ * 受控优先级下拉：5 档（色点 + 本地化文案）。仅改本地值，不发请求。
+ * label 提供时包 FormControl+InputLabel（查询表单复用）；allOption 提供时渲染"全部"项（value='all'）。
+ */
 interface PrioritySelectProps<V extends Priority | 'all' = Priority> {
   value: V;
   onChange: (p: V) => void;
@@ -27,8 +29,8 @@ function PrioritySelect<V extends Priority | 'all' = Priority>({
   const { t } = useTranslation();
   const labelId = useId();
   const renderPriority = (p: Priority) => (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-      <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: PRIORITY_COLOR[p], flexShrink: 0 }} />
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <Box sx={{ width: '10px', height: '10px', borderRadius: '50%', bgcolor: PRIORITY_COLOR[p], flexShrink: 0 }} />
       <Typography variant="body2" noWrap>{t(`tracker:projectIssue.priority.${p}`)}</Typography>
     </Box>
   );

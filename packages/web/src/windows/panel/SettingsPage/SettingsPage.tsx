@@ -43,9 +43,9 @@ function SettingsPage() {
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       <Box
         sx={{
-          width: 200,
+          width: '200px',
           flexShrink: 0,
-          borderRight: 1,
+          borderRight: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           flexDirection: 'column',
@@ -53,7 +53,7 @@ function SettingsPage() {
           overflow: 'hidden',
         }}
       >
-        <List sx={{ px: 1 }}>
+        <List sx={{ px: '8px' }}>
           {SECTION_MENUS.map(item => (
             <MenuListItemButton
               key={item.key}

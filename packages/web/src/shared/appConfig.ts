@@ -2,8 +2,10 @@ import type { YesNo } from './bindings';
 import { commands, DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES } from './bindings';
 import { unwrap } from './commands';
 
-// —— Rust 单源常量 re-export（SSOT：app/src/shared/app_config.rs 等，经
-// .constant() 生成于 bindings.ts）。值类型为字面量类型（as const），消费方类型安全。 ——
+/**
+ * —— Rust 单源常量 re-export（SSOT：app/src/shared/app_config.rs 等，经
+ * .constant() 生成于 bindings.ts）。值类型为字面量类型（as const），消费方类型安全。 ——
+ */
 export {
   ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY,
   DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
@@ -22,10 +24,11 @@ export {
 // GitHub Personal Access Token 默认值：空串 = 未配置（敏感值，设置页不回显明文）。
 export const DEFAULT_GITHUB_PAT = '';
 
-// 本文件是前端配置项消费的统一出口。两类来源：
-// 1. 后端读取的 key：SSOT 在 app/src/shared/app_config.rs，经 .constant()
-//    导出到 bindings.ts，此处仅 re-export。
-// 2. 纯前端 key：本文件定义即 SSOT，后端不读取。
+/**
+ * 本文件是前端配置项消费的统一出口。两类来源：
+ * 1. 后端读取的 key：SSOT 在 app/src/shared/app_config.rs，经 .constant() 导出到 bindings.ts，此处仅 re-export。
+ * 2. 纯前端 key：本文件定义即 SSOT，后端不读取。
+ */
 
 // Y/N 布尔风格配置值（satisfies 关联后端 YesNo 类型，值漂移编译报错）。
 export const YES_NO = {
@@ -56,8 +59,10 @@ export type ResolvedLanguage = Exclude<Language, 'system'>;
 
 export const DEFAULT_LANGUAGE: Language = 'system';
 
-// iTerm2 分屏方向。horizontal = 上下分屏，vertical = 左右分屏，none = 不分屏。
-// 类型与默认值均为字面量联合，默认值从 Rust 单源 re-export（as const 兼容）。
+/**
+ * iTerm2 分屏方向。horizontal = 上下分屏，vertical = 左右分屏，none = 不分屏。
+ * 类型与默认值均为字面量联合，默认值从 Rust 单源 re-export（as const 兼容）。
+ */
 export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
 
 // 嵌入式终端字号。离散选项：脏值一律回落默认 12。
@@ -118,8 +123,10 @@ export function parseTerminalLineHeight(value: string | null): TerminalLineHeigh
     : DEFAULT_TERMINAL_LINE_HEIGHT;
 }
 
-// HTTP 本地服务端口已彻底固化（Rust 编译期常量：dev=9000/release=9100），无前端配置项；
-// 前端消费服务地址一律走 http_server_status 实时获取，不持有端口字面量。
+/**
+ * HTTP 本地服务端口已彻底固化（Rust 编译期常量：dev=9000/release=9100），无前端配置项；
+ * 前端消费服务地址一律走 http_server_status 实时获取，不持有端口字面量。
+ */
 
 // panel 窗口侧边栏折叠状态：YesNo，缺失视为 NO（默认展开）。
 export const PANEL_SIDEBAR_COLLAPSED_KEY = 'panel_sidebar_collapsed';
@@ -137,12 +144,16 @@ export const DEFAULT_PANEL_DEV_TOOL_AREA_COLLAPSED = YES_NO.YES;
 export const PANEL_DEV_TOOL_AREA_WIDTH_KEY = 'panel_dev_tool_area_width';
 export const DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH = 600;
 
-// 工作区目录默认打开工具（开发工作台标题栏胶囊按钮）。
-// 值域/默认值/decode 在 OpenWorkspaceDir/openTools.tsx。
+/**
+ * 工作区目录默认打开工具（开发工作台标题栏胶囊按钮）。
+ * 值域/默认值/decode 在 OpenWorkspaceDir/openTools.tsx。
+ */
 export const WORKSPACE_OPEN_TOOL_KEY = 'workspace_open_tool';
 
-// ACP 会话闲置回收阈值（分钟）。key/默认值在 Rust 单源（Go sidecar 到期判定时现读），
-// 值域与脏值回落在此（Go 侧 parse 对齐同一值域）。
+/**
+ * ACP 会话闲置回收阈值（分钟）。key/默认值在 Rust 单源（Go sidecar 到期判定时现读），
+ * 值域与脏值回落在此（Go 侧 parse 对齐同一值域）。
+ */
 export const ACP_SESSION_IDLE_TIMEOUT_OPTIONS = [5, 15, 30, 60] as const;
 export type AcpSessionIdleTimeoutMinutes = (typeof ACP_SESSION_IDLE_TIMEOUT_OPTIONS)[number];
 
@@ -153,8 +164,10 @@ export function parseAcpSessionIdleTimeoutMinutes(value: string | null): AcpSess
     : DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES;
 }
 
-// commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，
-// 保持 getAppConfig/setAppConfig 的对外 API 不变（错误时 throw）。
+/**
+ * commands.xxx() 返回 tauri-specta 的 typedError 包装。unwrap 展开为 throw 风格，
+ * 保持 getAppConfig/setAppConfig 的对外 API 不变（错误时 throw）。
+ */
 export async function getAppConfig(key: string): Promise<string | null> {
   return unwrap(commands.getAppConfig(key));
 }

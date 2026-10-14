@@ -5,9 +5,11 @@ import (
 	"sync"
 )
 
-// stderr 行三分类（Gold-Band 行为语义，仅行为参照）：噪音计数不逐行打日志、失败信号
-// Warn 级、其余诊断 Debug 级。tail 始终接收全部 stderr（崩溃栈未必带 npm 前缀，
-// 诊断完整性优先），分类只决定日志级别。
+/*
+ * stderr 行三分类（Gold-Band 行为语义，仅行为参照）：噪音计数不逐行打日志、失败信号
+ * Warn 级、其余诊断 Debug 级。tail 始终接收全部 stderr（崩溃栈未必带 npm 前缀，
+ * 诊断完整性优先），分类只决定日志级别。
+ */
 type stderrKind int
 
 const (
@@ -16,8 +18,10 @@ const (
 	stderrDiagnostic                   // 其余诊断输出：Debug 级
 )
 
-// stderrFailureMarkers 命中即归失败信号的子串（统一小写匹配；errno 码在
-// node 输出中为大写，故大小写不敏感以免枚举两种形态）。
+/*
+ * stderrFailureMarkers 命中即归失败信号的子串（统一小写匹配；errno 码在
+ * node 输出中为大写，故大小写不敏感以免枚举两种形态）。
+ */
 var stderrFailureMarkers = []string{
 	"npm error", "npm err!",
 	"enospc", "enoent", "eacces", "eperm",
@@ -53,17 +57,21 @@ func truncateRunes(s string, max int) string {
 	return s
 }
 
-// StderrTail 有界字节环：只保留尾部 cap 字节，并发安全；Text 输出合法 UTF-8
-// （环裁剪落在多字节字符中间时，残缺前缀字节经 ToValidUTF8 替换为 U+FFFD）。
-// 导出供 browser 域引擎子进程复用（配合 PumpStderr，单一 SSOT）。
+/*
+ * StderrTail 有界字节环：只保留尾部 cap 字节，并发安全；Text 输出合法 UTF-8
+ * （环裁剪落在多字节字符中间时，残缺前缀字节经 ToValidUTF8 替换为 U+FFFD）。
+ * 导出供 browser 域引擎子进程复用（配合 PumpStderr，单一 SSOT）。
+ */
 type StderrTail struct {
 	mu  sync.Mutex
 	buf []byte
 	cap int
 }
 
-// NewStderrTail 构造指定容量的 stderr tail（容量 = 尾部保留字节数），配合 PumpStderr
-// 使用（导出供 browser 域引擎子进程复用）。
+/*
+ * NewStderrTail 构造指定容量的 stderr tail（容量 = 尾部保留字节数），配合 PumpStderr
+ * 使用（导出供 browser 域引擎子进程复用）。
+ */
 func NewStderrTail(capacity int) *StderrTail {
 	return &StderrTail{cap: capacity}
 }

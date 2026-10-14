@@ -8,8 +8,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// Doctor 对应 /api/doctor 命名空间下的接口（ACP agent doctor 探测：受理 + 四态投影）。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * Doctor 对应 /api/doctor 命名空间下的接口（ACP agent doctor 探测：受理 + 四态投影）。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type Doctor struct {
 	apis.Api
 }

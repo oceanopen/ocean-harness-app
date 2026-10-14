@@ -217,19 +217,19 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   };
 
   return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
+    <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: '4px' }}>
       <Box
         onClick={() => setExpanded(v => !v)}
-        sx={{ 'display': 'flex', 'alignItems': 'center', 'gap': 1, 'px': 1.5, 'py': 1, 'cursor': 'pointer', 'bgcolor': 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}
+        sx={{ 'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'px': '12px', 'py': '8px', 'cursor': 'pointer', 'bgcolor': 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}
       >
-        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{session.profile}</Typography>
-        <Chip size="small" variant="outlined" label={chip.label} color={chip.color} sx={{ fontSize: 12 }} />
+        <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>{session.profile}</Typography>
+        <Chip size="small" variant="outlined" label={chip.label} color={chip.color} sx={{ fontSize: '12px' }} />
         <Tooltip title={session.headless ? '无头模式：无窗口，面板实时画面即页面' : '有头模式：桌面真实 Chrome 窗口（人工介入通道）'}>
-          <Chip size="small" variant="outlined" label={session.headless ? '无头' : '有头'} sx={{ fontSize: 12, color: 'text.secondary' }} />
+          <Chip size="small" variant="outlined" label={session.headless ? '无头' : '有头'} sx={{ fontSize: '12px', color: 'text.secondary' }} />
         </Tooltip>
         {session.lastIssueTag && (
           <Tooltip title="最近操作的关联任务">
-            <Chip size="small" variant="outlined" label={session.lastIssueTag} sx={{ fontSize: 12, color: 'text.secondary' }} />
+            <Chip size="small" variant="outlined" label={session.lastIssueTag} sx={{ fontSize: '12px', color: 'text.secondary' }} />
           </Tooltip>
         )}
         {ready && !session.headless && (
@@ -242,7 +242,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 focus();
               }}
               disabled={focusing}
-              sx={{ ml: 'auto', flexShrink: 0, fontSize: 12, minWidth: 0, px: 1, color: 'text.secondary' }}
+              sx={{ ml: 'auto', flexShrink: 0, fontSize: '12px', minWidth: '0px', px: '8px', color: 'text.secondary' }}
             >
               {focusing ? <CircularProgress size={12} color="inherit" /> : '聚焦窗口'}
             </Button>
@@ -258,7 +258,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 release();
               }}
               disabled={closeMutation.isPending}
-              sx={{ ml: ready && !session.headless ? 0 : 'auto', flexShrink: 0, fontSize: 12, minWidth: 0, px: 1, color: 'text.secondary' }}
+              sx={{ ml: ready && !session.headless ? '0px' : 'auto', flexShrink: 0, fontSize: '12px', minWidth: '0px', px: '8px', color: 'text.secondary' }}
             >
               {closeMutation.isPending ? <CircularProgress size={12} color="inherit" /> : '释放'}
             </Button>
@@ -271,26 +271,26 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
             e.stopPropagation();
             setExpanded(v => !v);
           }}
-          sx={{ 'p': 0.25, 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' }, ...(session.status !== 'idle' ? null : { ml: 'auto' }) }}
+          sx={{ 'p': '2px', 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' }, ...(session.status !== 'idle' ? null : { ml: 'auto' }) }}
         >
-          {expanded ? <ExpandLessOutlinedIcon sx={{ fontSize: 16 }} /> : <ExpandMoreOutlinedIcon sx={{ fontSize: 16 }} />}
+          {expanded ? <ExpandLessOutlinedIcon sx={{ fontSize: '16px' }} /> : <ExpandMoreOutlinedIcon sx={{ fontSize: '16px' }} />}
         </IconButton>
       </Box>
 
       {expanded && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25, px: 1.5, py: 1.25 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '10px', px: '12px', py: '10px' }}>
           {pendingToggle == null && ensureMutation.error && (
-            <Alert severity="error" onClose={() => ensureMutation.reset()} sx={{ fontSize: 12 }}>
+            <Alert severity="error" onClose={() => ensureMutation.reset()} sx={{ fontSize: '12px' }}>
               {`打开失败：${errorMessage(ensureMutation.error)}`}
             </Alert>
           )}
           {releaseError != null && (
-            <Alert severity="error" onClose={() => setReleaseError(null)} sx={{ fontSize: 12 }}>
+            <Alert severity="error" onClose={() => setReleaseError(null)} sx={{ fontSize: '12px' }}>
               {`释放失败：${releaseError}`}
             </Alert>
           )}
           {focusError != null && (
-            <Alert severity="error" onClose={() => setFocusError(null)} sx={{ fontSize: 12 }}>
+            <Alert severity="error" onClose={() => setFocusError(null)} sx={{ fontSize: '12px' }}>
               {`聚焦失败：${focusError}`}
             </Alert>
           )}
@@ -307,14 +307,14 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
             </Alert>
           )}
           {session.status === 'starting' && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <CircularProgress size={14} sx={{ color: 'text.secondary' }} />
-              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>浏览器正在准备中…</Typography>
+              <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>浏览器正在准备中…</Typography>
             </Box>
           )}
           {session.status === 'idle' && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>会话已释放（登录态保留）</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>会话已释放（登录态保留）</Typography>
               <Button
                 size="small"
                 variant="outlined"
@@ -338,13 +338,13 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        border: 1,
+                        border: '1px solid',
                         borderColor: 'primary.main',
-                        borderRadius: 1,
+                        borderRadius: '4px',
                         bgcolor: 'action.hover',
                       }}
                     >
-                      <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>已在工作台操作台打开（实时画面投送中）</Typography>
+                      <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>已在工作台操作台打开（实时画面投送中）</Typography>
                     </Box>
                   )
                 : (
@@ -362,15 +362,15 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                     </Tooltip>
                   )}
               {stream.healingMessage != null && (
-                <Typography sx={{ fontSize: 12, color: 'warning.main' }}>{stream.healingMessage}</Typography>
+                <Typography sx={{ fontSize: '12px', color: 'warning.main' }}>{stream.healingMessage}</Typography>
               )}
               {stream.closedReason != null && (
-                <Typography sx={{ fontSize: 12, color: 'warning.main' }}>{`实时画面已停止：${stream.closedReason}`}</Typography>
+                <Typography sx={{ fontSize: '12px', color: 'warning.main' }}>{`实时画面已停止：${stream.closedReason}`}</Typography>
               )}
               {stream.phase === 'failed' && (
                 <Alert
                   severity="error"
-                  sx={{ fontSize: 12 }}
+                  sx={{ fontSize: '12px' }}
                   action={(
                     <Button color="inherit" size="small" onClick={stream.retry}>
                       重试
@@ -381,7 +381,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 </Alert>
               )}
 
-              <Box sx={{ display: 'flex', gap: 0.5 }}>
+              <Box sx={{ display: 'flex', gap: '4px' }}>
                 <TextField
                   size="small"
                   fullWidth
@@ -394,7 +394,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                       submitNavigate();
                     }
                   }}
-                  slotProps={{ input: { sx: { fontSize: 12 } } }}
+                  slotProps={{ input: { sx: { fontSize: '12px' } } }}
                 />
                 <Button
                   size="small"
@@ -407,17 +407,17 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 </Button>
               </Box>
               {navigateMutation.error && (
-                <Alert severity="error" sx={{ fontSize: 12 }}>
+                <Alert severity="error" sx={{ fontSize: '12px' }}>
                   {`打开失败：${errorMessage(navigateMutation.error)}`}
                 </Alert>
               )}
 
               <Box>
-                <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: '4px' }}>
                   页面（点选行 = 指定分析目标与观看页码，未选 = 当前页）
                 </Typography>
                 {(session.pages ?? []).length === 0
-                  ? <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>暂无页面</Typography>
+                  ? <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>暂无页面</Typography>
                   : (session.pages ?? []).map(page => (
                       <Box
                         key={page.index}
@@ -425,20 +425,20 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                         sx={{
                           'display': 'flex',
                           'alignItems': 'center',
-                          'gap': 1,
-                          'px': 0.75,
-                          'py': 0.5,
-                          'borderRadius': 1,
+                          'gap': '8px',
+                          'px': '6px',
+                          'py': '4px',
+                          'borderRadius': '4px',
                           'cursor': 'pointer',
                           'bgcolor': selectedPageId === page.index ? 'action.selected' : 'transparent',
                           '&:hover': { bgcolor: 'action.hover' },
                         }}
                       >
                         {page.current
-                          ? <Chip size="small" label="当前" color="primary" variant="outlined" sx={{ fontSize: 12 }} />
-                          : <Typography sx={{ fontSize: 12, color: 'text.secondary', width: 24, textAlign: 'center' }}>{page.index}</Typography>}
+                          ? <Chip size="small" label="当前" color="primary" variant="outlined" sx={{ fontSize: '12px' }} />
+                          : <Typography sx={{ fontSize: '12px', color: 'text.secondary', width: '24px', textAlign: 'center' }}>{page.index}</Typography>}
                         <Tooltip title={page.url}>
-                          <Typography sx={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <Typography sx={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {page.title || page.url}
                           </Typography>
                         </Tooltip>
@@ -446,11 +446,11 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                     ))}
               </Box>
 
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <FormControlLabel
                   control={<Switch size="small" checked={session.headless} onChange={e => askToggleHeadless(e.target.checked)} />}
                   label="无头模式（无窗口，面板实时画面）"
-                  sx={{ '& .MuiFormControlLabel-label': { fontSize: 12 } }}
+                  sx={{ '& .MuiFormControlLabel-label': { fontSize: '12px' } }}
                 />
                 <Button
                   size="small"
@@ -463,7 +463,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 </Button>
               </Box>
               {analyzeMutation.error && (
-                <Alert severity="error" sx={{ fontSize: 12 }}>
+                <Alert severity="error" sx={{ fontSize: '12px' }}>
                   {`分析受理失败：${errorMessage(analyzeMutation.error)}`}
                 </Alert>
               )}
@@ -472,14 +472,14 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
 
           {recentCalls.length > 0 && (
             <Box>
-              <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 0.5 }}>最近操作</Typography>
+              <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: '4px' }}>最近操作</Typography>
               {recentCallRows(recentCalls).map(({ call, key }) => {
                 const outcome = browserCallOutcomeChip(call.outcome);
                 return (
-                  <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 0.5, py: 0.25 }}>
-                    <Chip size="small" variant="outlined" label={outcome.label} color={outcome.color} sx={{ fontSize: 12 }} />
+                  <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '4px', py: '2px' }}>
+                    <Chip size="small" variant="outlined" label={outcome.label} color={outcome.color} sx={{ fontSize: '12px' }} />
                     <Tooltip title={call.error ?? call.tool}>
-                      <Typography sx={{ fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Typography sx={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {call.tool.replace(/^browser_/, '')}{call.issueTag ? ` · ${call.issueTag}` : ''}
                       </Typography>
                     </Tooltip>
@@ -499,13 +499,13 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
           }
         }}
       >
-        <DialogTitle sx={{ fontSize: 16 }}>{`切换为${pendingToggle?.headless ? '无头' : '有头'}模式`}</DialogTitle>
+        <DialogTitle sx={{ fontSize: '16px' }}>{`切换为${pendingToggle?.headless ? '无头' : '有头'}模式`}</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ fontSize: 13 }}>
+          <DialogContentText sx={{ fontSize: '13px' }}>
             {`将关闭并重新打开会话「${session.profile}」（约 1–3 秒）。登录态保存在本地 profile 目录，不会丢失。${pendingToggle?.restoreUrl != null ? '完成后将自动恢复上次打开的页面。' : ''}`}
           </DialogContentText>
           {(closeMutation.error || ensureMutation.error) && (
-            <Alert severity="error" sx={{ mt: 1.5, fontSize: 12 }}>
+            <Alert severity="error" sx={{ mt: '12px', fontSize: '12px' }}>
               {errorMessage(closeMutation.error ?? ensureMutation.error)}
             </Alert>
           )}

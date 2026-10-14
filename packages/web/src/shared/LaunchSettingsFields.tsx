@@ -50,8 +50,10 @@ export default function LaunchSettingsFields({
         onChange={e => onModeChange(e.target.value as LaunchMode)}
         fullWidth
         disabled={disabled}
-        // 空串（跟随工作空间）是有效选项：displayEmpty 渲染选中项文本；InputBase 的
-        // filled 判定不含空串，label 需显式常驻收缩，否则与内容重影。
+        /**
+         * 空串（跟随工作空间）是有效选项：displayEmpty 渲染选中项文本；InputBase 的
+         * filled 判定不含空串，label 需显式常驻收缩，否则与内容重影。
+         */
         slotProps={showFollowOption
           ? { select: { displayEmpty: true }, inputLabel: { shrink: true } }
           : undefined}

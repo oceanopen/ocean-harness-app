@@ -8,9 +8,10 @@ import (
 	"testing"
 )
 
-// newBareRemote 构造 clone 测试源：work 仓库（main 分支初始提交 + feature/base 分支追加提交），
-// 末尾 checkout main 后 clone --bare 生成 bare（HEAD 指向 main，默认分支语义正确）。
-// 返回 (work, bare)。git 子命令局部设置 user.name/email，不依赖全局配置。
+/*
+ * newBareRemote 构造 clone 测试源：work 仓库（main 分支初始提交 + feature/base 分支追加提交），末尾 checkout main 后 clone --bare 生成 bare（HEAD 指向 main）；
+ * 返回 (work, bare)，git 子命令局部设置 user.name/email 不依赖全局配置。
+ */
 func newBareRemote(t *testing.T) (work, bare string) {
 	t.Helper()
 	work, bare = t.TempDir(), t.TempDir()
@@ -36,8 +37,9 @@ func newBareRemote(t *testing.T) (work, bare string) {
 func TestClone(t *testing.T) {
 	_, bare := newBareRemote(t)
 
-	// 指定分支 + 浅克隆：HEAD 落在基准分支，.git/shallow 存在。--depth 仅在非本地传输生效，
-	// 测试源须走 file:// 协议（本地裸路径 clone 时 git 直接忽略 --depth）。
+	/*
+	 * 指定分支 + 浅克隆：HEAD 落在基准分支，.git/shallow 存在；--depth 仅在非本地传输生效，测试源须走 file:// 协议（本地裸路径 clone 时 git 直接忽略 --depth）。
+	 */
 	dir := filepath.Join(t.TempDir(), "repo")
 	if err := Clone("file://"+bare, dir, "feature/base", 1, nil); err != nil {
 		t.Fatalf("clone 出错: %v", err)

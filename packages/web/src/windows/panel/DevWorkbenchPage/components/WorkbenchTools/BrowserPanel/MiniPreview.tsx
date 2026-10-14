@@ -28,9 +28,9 @@ export default function MiniPreview({ frameRef, hasFrame, height }: MiniPreviewP
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    border: 1,
+    border: '1px solid',
     borderColor: 'divider',
-    borderRadius: 1,
+    borderRadius: '4px',
     overflow: 'hidden',
     lineHeight: 0,
   } as const;
@@ -38,7 +38,7 @@ export default function MiniPreview({ frameRef, hasFrame, height }: MiniPreviewP
   if (!hasFrame) {
     return (
       <Box sx={{ ...boxSx, bgcolor: 'action.hover' }}>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>等待画面…</Typography>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>等待画面…</Typography>
       </Box>
     );
   }

@@ -11,9 +11,11 @@ import (
 	"ocean-harness/server/internal/bot"
 )
 
-// replyClient 回复流出站面：replyStream（Flush/SendCard/UpdateCard）消费的 SDK 客户端
-// 接口。生产实现 *aibot.WsClient；接缝为单测注入 fake——SendCard 拆帧顺序与失败语义
-// （组合 msgtype 被企微静默丢卡事故的回归面）据此可测。
+/*
+ * replyClient 回复流出站面：replyStream（Flush/SendCard/UpdateCard）消费的 SDK 客户端
+ * 接口。生产实现 *aibot.WsClient；接缝为单测注入 fake——SendCard 拆帧顺序与失败语义
+ * （组合 msgtype 被企微静默丢卡事故的回归面）据此可测。
+ */
 type replyClient interface {
 	ReplyStream(frame aibottypes.WsFrameHeaders, streamId, content string, finish bool, msgItem []aibottypes.ReplyMsgItem, feedback *aibottypes.ReplyFeedback) (*aibottypes.WsFrame[json.RawMessage], error)
 	ReplyStreamNonBlocking(frame aibottypes.WsFrameHeaders, streamId, content string, finish bool, msgItem []aibottypes.ReplyMsgItem, feedback *aibottypes.ReplyFeedback) (*aibottypes.WsFrame[json.RawMessage], error)
@@ -22,10 +24,10 @@ type replyClient interface {
 	SendMessage(chatid string, body any) (*aibottypes.WsFrame[json.RawMessage], error)
 }
 
-// OpenReply 实现 bot.ChannelRuntime：由入站帧路由开一条覆写式流（同 streamId 多次
-// ReplyStream = 服务端整条覆盖刷新）。streamId 每消息独立（aibot.GenerateReqId）。载荷
-// 统一为 wsRoute（消息流/事件流均带推送面，卡解耦推送共用；事件流终帧另走推送——见
-// wsRoute 注释）；旧 headers 载荷保留兼容（无推送面，卡与终帧全回落 respond_msg）。
+/*
+ * OpenReply 实现 bot.ChannelRuntime：由入站帧路由开一条覆写式流（同 streamId 多次 ReplyStream = 服务端整条覆盖刷新），streamId 每消息独立（aibot.GenerateReqId）。
+ * 载荷统一为 wsRoute（消息流/事件流均带推送面，卡解耦推送共用；事件流终帧另走推送——见 wsRoute 注释）；旧 headers 载荷保留兼容（无推送面，卡与终帧全回落 respond_msg）。
+ */
 func (r *channelRuntime) OpenReply(route bot.RouteInfo) (bot.ReplyStream, error) {
 	switch p := route.Payload.(type) {
 	case wsRoute:
@@ -38,12 +40,10 @@ func (r *channelRuntime) OpenReply(route bot.RouteInfo) (bot.ReplyStream, error)
 	}
 }
 
-// replyStream bot.ReplyStream 的企微落地。终帧恰好一次由核心回复泵保证；本层只做
-// 客户端快照与 finished 幂等防御。cardAttached 标记本流已发过卡（一回合一卡，重复调用
-// 报错，见 card.go 的 SendCard）。push 非 nil 即带推送面（wsRoute 开出）：卡一律在流收尾
-// 后走 aibot_send_msg 独立推送（不占回复流）；终帧通道由 viaEvent 分流——事件流（事件
-// req_id 不可用于 respond_msg，真机 errcode=846605 实证）走推送，消息流仍走
-// aibot_respond_msg 覆写流（保流式）。
+/*
+ * replyStream bot.ReplyStream 的企微落地：终帧恰好一次由核心回复泵保证，本层只做客户端快照与 finished 幂等防御；cardAttached 标记本流已发过卡（一回合一卡，重复调用报错，见 card.go 的 SendCard）。
+ * push 非 nil 即带推送面（wsRoute 开出）：卡一律在流收尾后走 aibot_send_msg 独立推送（不占回复流）；终帧通道由 viaEvent 分流——事件流（事件 req_id 不可用于 respond_msg，真机 errcode=846605 实证）走推送，消息流仍走 aibot_respond_msg 覆写流（保流式）。
+ */
 type replyStream struct {
 	rt       *channelRuntime
 	headers  aibottypes.WsFrameHeaders
@@ -62,10 +62,10 @@ type pushTarget struct {
 	chatType int
 }
 
-// pushMarkdownBody aibot_send_msg 的 markdown 消息体（官方字段规范；markdown 渲染与流式
-// 文本一致）。SDK 的 SendMarkdownMsgBody 缺 chat_type 字段（不填时企微优先按群聊解析，
-// 单聊 userid 会被误解析），SendMessage(chatid, body any) 接口开放，适配器自构造零 SDK
-// 改动。
+/*
+ * pushMarkdownBody aibot_send_msg 的 markdown 消息体（官方字段规范；markdown 渲染与流式文本一致）。
+ * SDK 的 SendMarkdownMsgBody 缺 chat_type 字段（不填时企微优先按群聊解析，单聊 userid 会被误解析），SendMessage(chatid, body any) 接口开放，适配器自构造零 SDK 改动。
+ */
 type pushMarkdownBody struct {
 	ChatType int    `json:"chat_type"`
 	MsgType  string `json:"msgtype"` // 固定 markdown
@@ -81,10 +81,10 @@ type pushCardBody struct {
 	TemplateCard aibottypes.TemplateCard `json:"template_card"`
 }
 
-// Flush 实现 bot.ReplyStream。final=false 走 NonBlocking（上一帧未 ack 时跳过——协议固有
-// ~5s ack 延迟下这是官方背压姿势）；final=true 阻塞保证送达。事件流（viaEvent）final 恒
-// 走主动推送（编排器交互步对点击恰发一次终帧，无中间帧面）；消息流（含带推送面的）走
-// aibot_respond_msg 保流式。
+/*
+ * Flush 实现 bot.ReplyStream：final=false 走 NonBlocking（上一帧未 ack 时跳过——协议固有 ~5s ack 延迟下这是官方背压姿势）；final=true 阻塞保证送达。
+ * 事件流（viaEvent）final 恒走主动推送（编排器交互步对点击恰发一次终帧，无中间帧面）；消息流（含带推送面的）走 aibot_respond_msg 保流式。
+ */
 func (s *replyStream) Flush(content string, final bool) error {
 	s.mu.Lock()
 	if s.finished {

@@ -1,8 +1,10 @@
 package browser
 
-// live.go 单测：DevToolsActivePort 解析、target 匹配、帧箱跳帧/多订户、拨号自愈预算
-// 与协议基线（帧号字段 sessionId、逐帧 ack）——httptest 模拟 DevTools HTTP/ws 面，
-// 不依赖真实浏览器（真实链路冒烟归 spike 族 real_cdp_test.go）。
+/*
+ * live.go 单测：DevToolsActivePort 解析、target 匹配、帧箱跳帧/多订户、拨号自愈预算
+ * 与协议基线（帧号字段 sessionId、逐帧 ack）——httptest 模拟 DevTools HTTP/ws 面，
+ * 不依赖真实浏览器（真实链路冒烟归 spike 族 real_cdp_test.go）。
+ */
 
 import (
 	"context"
@@ -121,8 +123,10 @@ func TestFrameMailbox(t *testing.T) {
 	}
 }
 
-// cdpTestServer 模拟 DevTools HTTP 面（/json/version、/json/list）与 ws JSON-RPC 面
-// （按 method 罐头应答 + acks/calls 记账 + 事件注入通道）。
+/*
+ * cdpTestServer 模拟 DevTools HTTP 面（/json/version、/json/list）与 ws JSON-RPC 面
+ * （按 method 罐头应答 + acks/calls 记账 + 事件注入通道）。
+ */
 type cdpTestServer struct {
 	srv    *httptest.Server
 	port   int
@@ -361,8 +365,10 @@ func TestConnectLiveE2E(t *testing.T) {
 	}
 }
 
-// TestConnectLiveSelfHealWake 残档/缺失自愈：首次失败唤醒浏览器（wake 落盘端口文件）
-// 后重拨成功，busy 拒绝按「浏览器活着」正交解读不阻断重试。
+/*
+ * TestConnectLiveSelfHealWake 残档/缺失自愈：首次失败唤醒浏览器（wake 落盘端口文件）
+ * 后重拨成功，busy 拒绝按「浏览器活着」正交解读不阻断重试。
+ */
 func TestConnectLiveSelfHealWake(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

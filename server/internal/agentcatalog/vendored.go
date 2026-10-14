@@ -19,27 +19,26 @@ import (
 	"ocean-harness/server/internal/acp"
 )
 
-// Vendoring（T1.3）：adapter 依赖在构建期 pnpm 安装随应用打包（资源源，
-// scripts/prepare-vendor-staging.ts 产出），运行期按需复制进受管目录后以
-// `node <vendored 入口>` 拉起——运行时零 npm / registry 依赖（公司网络约束），
-// 版本由 catalog pin 在构建期锁定。两目录布局同构，均 <root>/<id>/<version>/：
-//
-//	资源源 GO_SERVER_ACP_RESOURCES_DIR：打包只读内容
-//	受管根 GO_SERVER_ACP_ADAPTERS_DIR：EnsureVendored 自建并保持卫生
+/*
+ * Vendoring（T1.3）：adapter 依赖在构建期 pnpm 安装随应用打包（资源源，scripts/prepare-vendor-staging.ts 产出），运行期按需复制进受管目录后以 `node <vendored 入口>` 拉起——运行时零 npm / registry 依赖（公司网络约束），版本由 catalog pin 在构建期锁定。
+ * 两目录布局同构，均 <root>/<id>/<version>/：资源源 GO_SERVER_ACP_RESOURCES_DIR（打包只读内容）、受管根 GO_SERVER_ACP_ADAPTERS_DIR（EnsureVendored 自建并保持卫生）。
+ */
 
 // vendoredMarker 安装完整性 marker，位于安装目录根部，内容见 vendoredMarkerContent。
 const vendoredMarker = ".ocean-vendored"
 
-// vendoredMarkerContent marker 内容 = <版本号>@<运行时平台 triple>（如 0.84.0@darwin-x64，
-// triple 与 VendoredClaudeBin 的 SDK 平台包命名同口径）。带 triple 使跨架构错配的安装
-// （如 CI arm64 runner 打出的 darwin-arm64 资源被 amd64 sidecar 复用）不命中——旧格式
-// / 版本漂移 / 平台漂移一律整树重制，错配目录无法永久存续。
+/*
+ * vendoredMarkerContent marker 内容 = <版本号>@<运行时平台 triple>（如 0.84.0@darwin-x64，triple 与 VendoredClaudeBin 的 SDK 平台包命名同口径）。
+ * 带 triple 使跨架构错配的安装（如 CI arm64 runner 打出的 darwin-arm64 资源被 amd64 sidecar 复用）不命中——旧格式 / 版本漂移 / 平台漂移一律整树重制，错配目录无法永久存续。
+ */
 func vendoredMarkerContent(entry Entry) string {
 	return entry.Version + "@" + claudePlatformTriple()
 }
 
-// markerMatches 校验 marker 内容与写入方期望（vendoredMarkerContent）全等——reader 由
-// writer 派生，格式永不漂移；空 triple 平台写出 "ver@" 亦自洽命中复用，不触发反复重制。
+/*
+ * markerMatches 校验 marker 内容与写入方期望（vendoredMarkerContent）全等——reader 由 writer 派生，格式永不漂移。
+ * 空 triple 平台写出 "ver@" 亦自洽命中复用，不触发反复重制。
+ */
 func markerMatches(data []byte, entry Entry) bool {
 	return strings.TrimSpace(string(data)) == vendoredMarkerContent(entry)
 }
@@ -47,13 +46,11 @@ func markerMatches(data []byte, entry Entry) bool {
 // vendoredMu 序列化 EnsureVendored：并发拉起会话时避免对同一受管树并行安装。
 var vendoredMu sync.Mutex
 
-// EnsureVendored 确保条目 adapter 在受管目录就绪，返回安装目录 <dstRoot>/<id>/<version>。
-//
-// 幂等：marker「版本+平台」双匹配即命中复用；缺失或不符（半成品、内容漂移、跨架构
-// 错配）整树重制。安装走「临时目录 + rename」原子落地，marker 先于 rename 写入
-// （rename 可见即完整安装）。成功后清理同 id 下其它版本目录与临时残留（受管目录恒只
-// 保留当前 pin 版本）。仅支持 npx-adapter 策略；srcRoot / dstRoot 为空 = 未配置，
-// 显式报错（config 可选字段语义：不阻断启动，本函数调用期拦截）。
+/*
+ * EnsureVendored 确保条目 adapter 在受管目录就绪，返回安装目录 <dstRoot>/<id>/<version>。
+ * 幂等：marker「版本+平台」双匹配即命中复用；缺失或不符（半成品、内容漂移、跨架构错配）整树重制；安装走「临时目录 + rename」原子落地，marker 先于 rename 写入（rename 可见即完整安装）；成功后清理同 id 下其它版本目录与临时残留（受管目录恒只保留当前 pin 版本）。
+ * 仅支持 npx-adapter 策略；srcRoot / dstRoot 为空 = 未配置，显式报错（config 可选字段语义：不阻断启动，本函数调用期拦截）。
+ */
 func EnsureVendored(entry Entry, srcRoot, dstRoot string) (string, error) {
 	if entry.Strategy != StrategyNpxAdapter {
 		return "", fmt.Errorf("agent %q 策略 %s 无 vendoring 形态", entry.ID, entry.Strategy)
@@ -110,11 +107,11 @@ func EnsureVendored(entry Entry, srcRoot, dstRoot string) (string, error) {
 	return dst, nil
 }
 
-// VendoredSpawnConfig 将 npx-adapter 条目翻译为指向 vendored 入口的 acp.SpawnConfig
-// （argv = node <包 bin 入口>，installDir 为 EnsureVendored 返回值；node 经 resolveNodeBin
-// 落成绝对路径）。claude 专属注入（可执行文件指定 / login PATH）仍归调用方经 Env 追加，
-// 与 SpawnConfig 同约定（D5）。native-acp 条目无 vendored 形态（走 SpawnConfig 直连），
-// 此处显式报错防误用。
+/*
+ * VendoredSpawnConfig 将 npx-adapter 条目翻译为指向 vendored 入口的 acp.SpawnConfig（argv = node <包 bin 入口>，installDir 为 EnsureVendored 返回值；node 经 resolveNodeBin 落成绝对路径）。
+ * claude 专属注入（可执行文件指定 / login PATH）仍归调用方经 Env 追加，与 SpawnConfig 同约定（D5）。
+ * native-acp 条目无 vendored 形态（走 SpawnConfig 直连），此处显式报错防误用。
+ */
 func (e Entry) VendoredSpawnConfig(installDir, cwd string) (acp.SpawnConfig, error) {
 	if e.Strategy != StrategyNpxAdapter {
 		return acp.SpawnConfig{}, fmt.Errorf("agent %q 策略 %s 无 vendored 入口形态", e.ID, e.Strategy)
@@ -143,11 +140,10 @@ func (e Entry) VendoredSpawnConfig(installDir, cwd string) (acp.SpawnConfig, err
 	}, nil
 }
 
-// ResolveNodeBin 解析 node 可执行文件绝对路径（vendored spawn 翻译与 T1.4 doctor 探测
-// 共用，单一 SSOT）：exec.Command 对相对 argv[0] 按 sidecar 自身 PATH 查找，
-// SpawnConfig.Env 的覆盖不影响查找——GUI 拉起的 sidecar PATH 又常缺 nvm/volta 目录
-// （claude 同源问题），故 LookPath 失败后沿 login PATH 逐目录兜底。落成绝对路径后，
-// 拉起不受 spawn env 的 PATH 覆盖影响。
+/*
+ * ResolveNodeBin 解析 node 可执行文件绝对路径（vendored spawn 翻译与 T1.4 doctor 探测共用，单一 SSOT）：exec.Command 对相对 argv[0] 按 sidecar 自身 PATH 查找，SpawnConfig.Env 的覆盖不影响查找——GUI 拉起的 sidecar PATH 又常缺 nvm/volta 目录（claude 同源问题），故 LookPath 失败后沿 login PATH 逐目录兜底。
+ * 落成绝对路径后，拉起不受 spawn env 的 PATH 覆盖影响。
+ */
 func ResolveNodeBin() (string, error) {
 	if p, err := exec.LookPath("node"); err == nil {
 		return p, nil
@@ -163,8 +159,9 @@ func ResolveNodeBin() (string, error) {
 	return bin, nil
 }
 
-// nodeBinFromDirs 沿目录列表找首个可执行 node（Windows 命中 node.exe；执行位判定
-// 对齐 clibin 的安装位置兜底）。
+/*
+ * nodeBinFromDirs 沿目录列表找首个可执行 node（Windows 命中 node.exe；执行位判定对齐 clibin 的安装位置兜底）。
+ */
 func nodeBinFromDirs(dirs []string) (string, error) {
 	names := []string{"node"}
 	if runtime.GOOS == "windows" {
@@ -181,8 +178,10 @@ func nodeBinFromDirs(dirs []string) (string, error) {
 	return "", errors.New("未找到可执行 node")
 }
 
-// adapterPkgName 从条目 spawn args 还原 npm 包名（scripts/vendor-claude-adapters.ts 同款
-// 规则：最后一个非 flag 参数为安装 spec，去掉 @版本尾缀）。条目形如 ["-y", "@scope/pkg@1.2.3"]。
+/*
+ * adapterPkgName 从条目 spawn args 还原 npm 包名（scripts/vendor-claude-adapters.ts 同款规则：最后一个非 flag 参数为安装 spec，去掉 @版本尾缀）。
+ * 条目形如 ["-y", "@scope/pkg@1.2.3"]。
+ */
 func adapterPkgName(args []string) (string, error) {
 	spec := ""
 	for i := len(args) - 1; i >= 0; i-- {
@@ -200,8 +199,10 @@ func adapterPkgName(args []string) (string, error) {
 	return spec, nil
 }
 
-// readPkgBinEntry 读安装包 package.json 的 bin 字段并解析出相对入口路径。支持 npm 两种
-// 形态：字符串（唯一 bin）；map 单键直取、多键取与包名尾段同名键（npm 命名惯例）。
+/*
+ * readPkgBinEntry 读安装包 package.json 的 bin 字段并解析出相对入口路径。
+ * 支持 npm 两种形态：字符串（唯一 bin）；map 单键直取、多键取与包名尾段同名键（npm 命名惯例）。
+ */
 func readPkgBinEntry(pkgDir, pkgName string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(pkgDir, "package.json"))
 	if err != nil {
@@ -236,8 +237,9 @@ func readPkgBinEntry(pkgDir, pkgName string) (string, error) {
 	return "", fmt.Errorf("vendored 包 %s bin 为多键 map 且无同名键: %v", pkgName, keys)
 }
 
-// copyTree 递归复制目录树：目录与文件按源权限位重建，symlink 原样重建（npm 的 .bin
-// 为相对链，两端布局同构即有效）；其余类型（socket 等）跳过。
+/*
+ * copyTree 递归复制目录树：目录与文件按源权限位重建，symlink 原样重建（npm 的 .bin 为相对链，两端布局同构即有效）；其余类型（socket 等）跳过。
+ */
 func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

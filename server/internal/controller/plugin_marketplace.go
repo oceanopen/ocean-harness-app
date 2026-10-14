@@ -8,8 +8,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// PluginMarketplace 对应 /api/pluginMarketplace 命名空间下的接口（插件市场投影与注册表操作）。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * PluginMarketplace 对应 /api/pluginMarketplace 命名空间下的接口（插件市场投影与注册表操作）。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type PluginMarketplace struct {
 	apis.Api
 }
@@ -62,8 +64,10 @@ func (api PluginMarketplace) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Remove POST /api/pluginMarketplace/remove：注销插件市场（连带卸载其全部已装插件），
-// 返回最新列表投影。
+/*
+ * Remove POST /api/pluginMarketplace/remove：
+ * 注销插件市场（连带卸载其全部已装插件），返回最新列表投影。
+ */
 func (api PluginMarketplace) Remove(ctx *gin.Context) {
 	req := &types.PluginMarketplaceRemoveRequest{}
 	svc := service.PluginMarketplace{}

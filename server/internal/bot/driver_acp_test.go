@@ -18,14 +18,11 @@ import (
 	"ocean-harness/server/internal/dal/query"
 )
 
-// fakeSessions acpSessions 的帧脚本替身：每次 Subscribe 返回独立通道（对齐真实 hub 的
-// 「受理后重开干净订阅」——RunTurn 建两段订阅，脚本帧按投递时点落位），Ensure/PromptQueued
-// 行为与错误按字段注入，调用留痕供断言。
-// push 时序无关：订阅建立前入 pending（Subscribe 时灌入新通道首部，模拟真实 hub「订阅
-// 首帧快照 + 预推状态帧」），有订阅则推最新订阅通道。
-// PromptQueued 替身默认即到即返（等位语义由 acpsession 包的 Manager 测试承载）；置
-// promptBlockOnCtx 模拟等位阻塞（驱动应透传生命周期 ctx）；promptHook 在受理返回前
-// 调用（模拟等位窗口内往首段订阅灌阻塞回合的帧）。
+/*
+ * fakeSessions acpSessions 的帧脚本替身：每次 Subscribe 返回独立通道（对齐真实 hub 的「受理后重开干净订阅」——RunTurn 建两段订阅，脚本帧按投递时点落位），Ensure/PromptQueued 行为与错误按字段注入，调用留痕供断言。
+ * push 时序无关：订阅建立前入 pending（Subscribe 时灌入新通道首部，模拟真实 hub「订阅首帧快照 + 预推状态帧」），有订阅则推最新订阅通道。
+ * PromptQueued 替身默认即到即返（等位语义由 acpsession 包的 Manager 测试承载）；置 promptBlockOnCtx 模拟等位阻塞（驱动应透传生命周期 ctx）；promptHook 在受理返回前调用（模拟等位窗口内往首段订阅灌阻塞回合的帧）。
+ */
 type fakeSessions struct {
 	mu               sync.Mutex
 	snap             acpsession.ViewSnapshot
@@ -152,8 +149,10 @@ func (f *fakeSessions) RespondElicitation(_ string, pendingID uint64, action str
 	return f.elicitRespondErr
 }
 
-// push 投递脚本帧：订阅建立前入 pending（Subscribe 灌入，时序无关）；有订阅则推最新
-// 订阅通道（缓冲远大于脚本帧数，满即阻塞为测试编写错误）。
+/*
+ * push 投递脚本帧：订阅建立前入 pending（Subscribe 灌入，时序无关）；有订阅则推最新
+ * 订阅通道（缓冲远大于脚本帧数，满即阻塞为测试编写错误）。
+ */
 func (f *fakeSessions) push(t *testing.T, frame acpsession.Frame) {
 	t.Helper()
 	f.mu.Lock()
@@ -214,9 +213,11 @@ func (f *fakeSessions) elicitResponds() []elicitRespondCall {
 	return append([]elicitRespondCall(nil), f.elicitRespondCalls...)
 }
 
-// boundDriver 测试构造：引擎是纯执行者（T2.3 起目标 issue 由路由层经 TurnRequest.IssueID
-// 回填，解析缝已删），替身不再持有绑定知识；绑定路径用例的请求已批量携带 issue-acp，
-// unbound 分支由 TestAcpDriverTurnUnboundConversation 单测覆盖。
+/*
+ * boundDriver 测试构造：引擎是纯执行者（T2.3 起目标 issue 由路由层经 TurnRequest.IssueID
+ * 回填，解析缝已删），替身不再持有绑定知识；绑定路径用例的请求已批量携带 issue-acp，
+ * unbound 分支由 TestAcpDriverTurnUnboundConversation 单测覆盖。
+ */
 func boundDriver(sessions acpSessions) acpDriver {
 	return acpDriver{sessions: sessions}
 }
@@ -354,10 +355,11 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 	}
 }
 
-// TestAcpDriverImContextInjection 回合级守则注入（T1.2，D3；人设已随 T5.1 退役，现为纯固定
-// 段——中和防线为未来提示词管理模块保留）：SystemPrompt 经 </ 中和后尾附 <im_context> 块于
-// 围栏 prompt——仅本引擎（IM 来源回合）生效；空则防御性跳过（受理原文不加块，存量无
-// SystemPrompt 的用例零扰动）。
+/*
+ * TestAcpDriverImContextInjection 回合级守则注入（T1.2，D3；
+ * 人设已随 T5.1 退役，现为纯固定段——中和防线为未来提示词管理模块保留）：SystemPrompt 经 </ 中和后尾附 <im_context> 块于围栏 prompt——仅本引擎（IM 来源回合）生效；
+ * 空则防御性跳过（受理原文不加块，存量无 SystemPrompt 的用例零扰动）。
+ */
 func TestAcpDriverImContextInjection(t *testing.T) {
 	const fenced = "<user_message>\n帮我看看构建\n</user_message>"
 
@@ -408,8 +410,10 @@ func TestAcpDriverImContextInjection(t *testing.T) {
 	})
 }
 
-// TestAcpDriverPromptMetaDisplay Display 透传（T1.2）：TurnRequest.Display 原指针随
-// PromptMeta 落受理（Source 恒 bot）——panel 显示链路据此渲染正文原文与引用/附件。
+/*
+ * TestAcpDriverPromptMetaDisplay Display 透传（T1.2）：TurnRequest.Display 原指针随
+ * PromptMeta 落受理（Source 恒 bot）——panel 显示链路据此渲染正文原文与引用/附件。
+ */
 func TestAcpDriverPromptMetaDisplay(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -430,9 +434,11 @@ func TestAcpDriverPromptMetaDisplay(t *testing.T) {
 	}
 }
 
-// TestAcpDriverTurnTextStreaming 差分流式（T3.4）：agentMessage 帧携带本回合累计全量，
-// 差分转 TurnText 增量序列；多字节文本不切半个字符（sent 恒为上次完整串的完整前缀，
-// len(sent) 落字符边界）。
+/*
+ * TestAcpDriverTurnTextStreaming 差分流式（T3.4）：agentMessage 帧携带本回合累计全量，
+ * 差分转 TurnText 增量序列；多字节文本不切半个字符（sent 恒为上次完整串的完整前缀，
+ * len(sent) 落字符边界）。
+ */
 func TestAcpDriverTurnTextStreaming(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -457,8 +463,10 @@ func TestAcpDriverTurnTextStreaming(t *testing.T) {
 	}
 }
 
-// TestAcpDriverTurnTextAfterToolUse 工具调用后续流：泵在 TurnToolUse 清屏，差分基线不回退
-// ——后续增量只含工具后的新文本（与 headless 同构），终态 Result 仍为回合全文。
+/*
+ * TestAcpDriverTurnTextAfterToolUse 工具调用后续流：泵在 TurnToolUse 清屏，差分基线不回退
+ * ——后续增量只含工具后的新文本（与 headless 同构），终态 Result 仍为回合全文。
+ */
 func TestAcpDriverTurnTextAfterToolUse(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -487,9 +495,11 @@ func TestAcpDriverTurnTextAfterToolUse(t *testing.T) {
 	}
 }
 
-// TestAcpDriverThoughtScrollingSummary 思考滚动摘要（T4.1，D4）：agentThought 帧携带本回合
-// 累计全量，水位线差分仅在增长时覆写状态行「💭 + 尾部摘要」——≤72 rune 原样直出、超限截
-// 尾部 72 rune 且以省略号前缀标识（多字节安全），重复帧不重发；正文 TurnText 到来自然让位。
+/*
+ * TestAcpDriverThoughtScrollingSummary 思考滚动摘要（T4.1，D4）：agentThought 帧携带本回合
+ * 累计全量，水位线差分仅在增长时覆写状态行「💭 + 尾部摘要」——≤72 rune 原样直出、超限截
+ * 尾部 72 rune 且以省略号前缀标识（多字节安全），重复帧不重发；正文 TurnText 到来自然让位。
+ */
 func TestAcpDriverThoughtScrollingSummary(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -520,9 +530,11 @@ func TestAcpDriverThoughtScrollingSummary(t *testing.T) {
 	}
 }
 
-// TestAcpDriverThoughtWatermarkReset 思考水位线前缀校验（T4.1，范式同 agentMessage 的
-// TestAcpDriverWatermarkPrefixMismatchReset）：已发前缀串与帧文本错配（条目覆写换内容的
-// 理论态）即重置全量重发摘要；前缀恢复后续接差分。
+/*
+ * TestAcpDriverThoughtWatermarkReset 思考水位线前缀校验（T4.1，范式同 agentMessage 的
+ * TestAcpDriverWatermarkPrefixMismatchReset）：已发前缀串与帧文本错配（条目覆写换内容的
+ * 理论态）即重置全量重发摘要；前缀恢复后续接差分。
+ */
 func TestAcpDriverThoughtWatermarkReset(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -550,8 +562,10 @@ func TestAcpDriverThoughtWatermarkReset(t *testing.T) {
 	}
 }
 
-// TestAcpDriverSnapshotBaselineArmed 快照基线衔接（T3.4 加固）：armed 快照 entries 已含
-// 本回合产出正文（订阅建立前的理论窗口），基线装填后后续帧差分只发增量，终态全文完整。
+/*
+ * TestAcpDriverSnapshotBaselineArmed 快照基线衔接（T3.4 加固）：armed 快照 entries 已含
+ * 本回合产出正文（订阅建立前的理论窗口），基线装填后后续帧差分只发增量，终态全文完整。
+ */
 func TestAcpDriverSnapshotBaselineArmed(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -578,9 +592,11 @@ func TestAcpDriverSnapshotBaselineArmed(t *testing.T) {
 	}
 }
 
-// TestAcpDriverSnapshotStaleEntriesExcluded 基线 user 锚过滤（审查修复回归）：armed 快照
-// 含上回合完整问答 + 本回合 user 锚（受理同步写、其后无产出是常态）——上回合条目不进
-// 基线，本回合首帧即全量发出。
+/*
+ * TestAcpDriverSnapshotStaleEntriesExcluded 基线 user 锚过滤（审查修复回归）：armed 快照
+ * 含上回合完整问答 + 本回合 user 锚（受理同步写、其后无产出是常态）——上回合条目不进
+ * 基线，本回合首帧即全量发出。
+ */
 func TestAcpDriverSnapshotStaleEntriesExcluded(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -612,9 +628,11 @@ func TestAcpDriverSnapshotStaleEntriesExcluded(t *testing.T) {
 	}
 }
 
-// TestAcpDriverZeroTextTurnNotContaminated 零正文终态不串回合（审查修复回归）：本回合
-// 零 agentMessage 帧取消收尾时终态 Result 为空——快照里的上回合回复不得被当作本回合
-// 已产出文本交付（Result 与水位线均经 user 锚过滤装填）。
+/*
+ * TestAcpDriverZeroTextTurnNotContaminated 零正文终态不串回合（审查修复回归）：本回合
+ * 零 agentMessage 帧取消收尾时终态 Result 为空——快照里的上回合回复不得被当作本回合
+ * 已产出文本交付（Result 与水位线均经 user 锚过滤装填）。
+ */
 func TestAcpDriverZeroTextTurnNotContaminated(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -642,9 +660,11 @@ func TestAcpDriverZeroTextTurnNotContaminated(t *testing.T) {
 	}
 }
 
-// TestAcpDriverWatermarkPrefixMismatchReset 水位线前缀校验（审查修复回归）：已发前缀串与
-// 帧文本错配（条目覆写换回合的理论态——更短/等长不同/头部不一致）即重置全量重发，
-// 不切中段、不静默丢首块；前缀恢复后差分正常续接。
+/*
+ * TestAcpDriverWatermarkPrefixMismatchReset 水位线前缀校验（审查修复回归）：已发前缀串与
+ * 帧文本错配（条目覆写换回合的理论态——更短/等长不同/头部不一致）即重置全量重发，
+ * 不切中段、不静默丢首块；前缀恢复后差分正常续接。
+ */
 func TestAcpDriverWatermarkPrefixMismatchReset(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -696,8 +716,10 @@ func TestAcpDriverTurnArmedWindowIgnoresStale(t *testing.T) {
 func TestAcpDriverTurnWaitReadyViaSnapshotFrame(t *testing.T) {
 	sessions := newFakeSessions(startingSnap())
 	driver := boundDriver(sessions)
-	// 订阅后置于 Ensure 受理：预推的 snapshot 帧即真实 hub 的「订阅首帧快照」（新于受理
-	// 时点，模拟 spawn 在订阅完成前已就绪），waitSessionReady 以其为状态基线直接放行。
+	/*
+	 * 订阅后置于 Ensure 受理：预推的 snapshot 帧即真实 hub 的「订阅首帧快照」（新于受理
+	 * 时点，模拟 spawn 在订阅完成前已就绪），waitSessionReady 以其为状态基线直接放行。
+	 */
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSnapshot, Snapshot: &acpsession.ViewSnapshot{Status: acpsession.StatusReady}})
 	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
@@ -716,14 +738,18 @@ func TestAcpDriverTurnWaitReadyViaSnapshotFrame(t *testing.T) {
 	}
 }
 
-// TestAcpDriverTurnRebuildWaitReady 重建路径回归：Ensure 受理重建（starting）后订阅，
-// 状态推进只认受理之后的 sessionStatus 帧——旧会话的失败态不得误报为本回合失败（旧因
-// 回归用例，对应订阅后置修复）。
+/*
+ * TestAcpDriverTurnRebuildWaitReady 重建路径回归：Ensure 受理重建（starting）后订阅，
+ * 状态推进只认受理之后的 sessionStatus 帧——旧会话的失败态不得误报为本回合失败（旧因
+ * 回归用例，对应订阅后置修复）。
+ */
 func TestAcpDriverTurnRebuildWaitReady(t *testing.T) {
 	sessions := newFakeSessions(startingSnap())
 	driver := boundDriver(sessions)
-	// 受理重建（starting）后订阅；等就绪是 RunTurn 内同步步骤，sessionStatus ready 帧
-	// 先入订阅通道缓冲，模拟 spawn 完成的状态帧在等待期到达（旧会话失败态无从混入）。
+	/*
+	 * 受理重建（starting）后订阅；等就绪是 RunTurn 内同步步骤，sessionStatus ready 帧
+	 * 先入订阅通道缓冲，模拟 spawn 完成的状态帧在等待期到达（旧会话失败态无从混入）。
+	 */
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameSessionStatus, Status: &acpsession.StatusPayload{Status: acpsession.StatusReady}})
 	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
@@ -810,9 +836,11 @@ func TestAcpDriverTurnEnsureFails(t *testing.T) {
 	}
 }
 
-// TestAcpDriverTurnPromptRejected 排队受理被拒（T2.2：等位中会话终结 / 重建，Manager 侧
-// 「排队回合未受理」）同步报错并退订——ErrTurnActive 即时拒绝语义已被排队取代，驱动不再
-// 有回合冲突的专属文案映射。
+/*
+ * TestAcpDriverTurnPromptRejected 排队受理被拒（T2.2：等位中会话终结 / 重建，Manager 侧
+ * 「排队回合未受理」）同步报错并退订——ErrTurnActive 即时拒绝语义已被排队取代，驱动不再
+ * 有回合冲突的专属文案映射。
+ */
 func TestAcpDriverTurnPromptRejected(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	sessions.promptErr = errors.New("ACP 会话已终结，排队回合未受理")
@@ -825,8 +853,10 @@ func TestAcpDriverTurnPromptRejected(t *testing.T) {
 	assertClosed(t, sessions.lastFrames(), "受理失败应退订")
 }
 
-// TestAcpDriverTurnPromptQueuedContextCancel 等位期 ctx 取消（编排器 Stop 级联）：受理
-// 同步报错且退订，不进入帧循环收集。
+/*
+ * TestAcpDriverTurnPromptQueuedContextCancel 等位期 ctx 取消（编排器 Stop 级联）：受理
+ * 同步报错且退订，不进入帧循环收集。
+ */
 func TestAcpDriverTurnPromptQueuedContextCancel(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	sessions.promptBlockOnCtx = true
@@ -851,9 +881,11 @@ func TestAcpDriverTurnPromptQueuedContextCancel(t *testing.T) {
 	assertClosed(t, sessions.lastFrames(), "受理失败应退订")
 }
 
-// TestAcpDriverTurnQueuedWindowFramesDiscarded 等位窗口帧作废（T2.2 回归锁）：阻塞 bot
-// 的桌面回合完整生命周期帧积压在首段订阅缓冲，受理后重开的干净订阅不得让它误终止本
-// 回合（修复前：外来 turnEnded 提前 emitTurnDone，bot 交付外来回合文本、自身产出丢失）。
+/*
+ * TestAcpDriverTurnQueuedWindowFramesDiscarded 等位窗口帧作废（T2.2 回归锁）：阻塞 bot
+ * 的桌面回合完整生命周期帧积压在首段订阅缓冲，受理后重开的干净订阅不得让它误终止本
+ * 回合（修复前：外来 turnEnded 提前 emitTurnDone，bot 交付外来回合文本、自身产出丢失）。
+ */
 func TestAcpDriverTurnQueuedWindowFramesDiscarded(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	sessions.promptHook = func() {
@@ -882,8 +914,10 @@ func TestAcpDriverTurnQueuedWindowFramesDiscarded(t *testing.T) {
 	}
 }
 
-// TestAcpDriverTurnArmedFromSnapshotFrame 首帧快照装填 armed：本回合 turnStarted 帧
-// 广播早于重开订阅建立，collectTurn 收不到——armed 由快照 TurnActive 装填后正常收集。
+/*
+ * TestAcpDriverTurnArmedFromSnapshotFrame 首帧快照装填 armed：本回合 turnStarted 帧
+ * 广播早于重开订阅建立，collectTurn 收不到——armed 由快照 TurnActive 装填后正常收集。
+ */
 func TestAcpDriverTurnArmedFromSnapshotFrame(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -906,8 +940,10 @@ func TestAcpDriverTurnArmedFromSnapshotFrame(t *testing.T) {
 	}
 }
 
-// TestAcpDriverTurnInstantTurnFromSnapshot 极快收敛（快照 TurnActive=false）：受理的
-// 回合在重开订阅建立前已终态，从快照直接合成终态（entries 末条 agentMessage 即全文）。
+/*
+ * TestAcpDriverTurnInstantTurnFromSnapshot 极快收敛（快照 TurnActive=false）：受理的
+ * 回合在重开订阅建立前已终态，从快照直接合成终态（entries 末条 agentMessage 即全文）。
+ */
 func TestAcpDriverTurnInstantTurnFromSnapshot(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -1041,9 +1077,11 @@ func TestAcpDriverTurnContextCancel(t *testing.T) {
 	}
 }
 
-// TestAcpDriverRealManagerSpawnFailure 真实 Manager 链路验收：temp sqlite 种 workspace/issue
-// （mode=acp）、空 vendored 目录 → Ensure 受理成功，spawn 链失败落 failed 帧 → 同步报错
-// 「启动失败 + 落因」（受理模型、帧流、failed 落因三者的跨域联动各验一遍）。
+/*
+ * TestAcpDriverRealManagerSpawnFailure 真实 Manager 链路验收：temp sqlite 种 workspace/issue
+ * （mode=acp）、空 vendored 目录 → Ensure 受理成功，spawn 链失败落 failed 帧 → 同步报错
+ * 「启动失败 + 落因」（受理模型、帧流、failed 落因三者的跨域联动各验一遍）。
+ */
 func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
 	db := newBotTestDB(t, &model.Workspace{}, &model.ProjectIssue{}, &model.IssueAcpSession{})
 	q := query.Use(db)
@@ -1071,8 +1109,10 @@ func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
 	}
 }
 
-// pendingOpenedFrame / pendingClosedFrame 挂起帧脚本辅助（审批选项复用 pending_gate_test
-// 的 permOptions——同包共享，不另造轮子）。
+/*
+ * pendingOpenedFrame / pendingClosedFrame 挂起帧脚本辅助（审批选项复用 pending_gate_test
+ * 的 permOptions——同包共享，不另造轮子）。
+ */
 func pendingOpenedFrame(p acpsession.PendingView) acpsession.Frame {
 	return acpsession.Frame{Type: acpsession.FramePendingOpened, Pending: &p}
 }
@@ -1081,8 +1121,10 @@ func pendingClosedFrame(pendingID uint64) acpsession.Frame {
 	return acpsession.Frame{Type: acpsession.FramePendingClosed, PendingID: pendingID}
 }
 
-// TestAcpDriverPendingStatusLine 审批挂起的回合内呈现（T2.4）：pendingOpened 出编号状态行
-// （文案与数字快路径同源），pendingClosed 切「已处理，继续执行…」，随后正文与终态不受扰。
+/*
+ * TestAcpDriverPendingStatusLine 审批挂起的回合内呈现（T2.4）：pendingOpened 出编号状态行
+ * （文案与数字快路径同源），pendingClosed 切「已处理，继续执行…」，随后正文与终态不受扰。
+ */
 func TestAcpDriverPendingStatusLine(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -1118,8 +1160,10 @@ func TestAcpDriverPendingStatusLine(t *testing.T) {
 	}
 }
 
-// TestAcpDriverElicitationPendingStatus 表单挂起呈现（不可表示形态）：指回桌面，关闭帧
-// 同步状态行。
+/*
+ * TestAcpDriverElicitationPendingStatus 表单挂起呈现（不可表示形态）：指回桌面，关闭帧
+ * 同步状态行。
+ */
 func TestAcpDriverElicitationPendingStatus(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -1145,8 +1189,10 @@ func TestAcpDriverElicitationPendingStatus(t *testing.T) {
 	}
 }
 
-// elicitPendingFrame 表单挂起帧夹具（携带可分类 schema；view 构造同包共用于
-// elicitation_card_test.go 的 elicitPendingView）。
+/*
+ * elicitPendingFrame 表单挂起帧夹具（携带可分类 schema；view 构造同包共用于
+ * elicitation_card_test.go 的 elicitPendingView）。
+ */
 func elicitPendingFrame(pendingID uint64, schema json.RawMessage) acpsession.Frame {
 	return pendingOpenedFrame(elicitPendingView(pendingID, schema))
 }
@@ -1158,8 +1204,10 @@ func anchoredReadySnap() acpsession.ViewSnapshot {
 	return snap
 }
 
-// TestAcpDriverElicitationCardEmission 表单卡出卡（T3.3）：可表示 schema 随状态行附卡
-// （Submit 语义 + elicit TaskID marker + 选项面），状态行指向卡上提交。
+/*
+ * TestAcpDriverElicitationCardEmission 表单卡出卡（T3.3）：可表示 schema 随状态行附卡
+ * （Submit 语义 + elicit TaskID marker + 选项面），状态行指向卡上提交。
+ */
 func TestAcpDriverElicitationCardEmission(t *testing.T) {
 	sessions := newFakeSessions(anchoredReadySnap())
 	driver := boundDriver(sessions)
@@ -1189,8 +1237,10 @@ func TestAcpDriverElicitationCardEmission(t *testing.T) {
 	}
 }
 
-// TestAcpDriverElicitationCardUnrepresentableWithAnchor 代锚在场但 schema 不可表示：不出卡，
-// 状态行指回桌面（分类失败不判错）。
+/*
+ * TestAcpDriverElicitationCardUnrepresentableWithAnchor 代锚在场但 schema 不可表示：不出卡，
+ * 状态行指回桌面（分类失败不判错）。
+ */
 func TestAcpDriverElicitationCardUnrepresentableWithAnchor(t *testing.T) {
 	sessions := newFakeSessions(anchoredReadySnap())
 	driver := boundDriver(sessions)
@@ -1211,8 +1261,10 @@ func TestAcpDriverElicitationCardUnrepresentableWithAnchor(t *testing.T) {
 	}
 }
 
-// TestAcpDriverElicitationCardAfterPermissionCard 卡位占用：审批卡先出后表单挂起打开
-// （可表示）——不再出卡，表单行指回桌面。
+/*
+ * TestAcpDriverElicitationCardAfterPermissionCard 卡位占用：审批卡先出后表单挂起打开
+ * （可表示）——不再出卡，表单行指回桌面。
+ */
 func TestAcpDriverElicitationCardAfterPermissionCard(t *testing.T) {
 	sessions := newFakeSessions(anchoredReadySnap())
 	driver := boundDriver(sessions)
@@ -1240,9 +1292,11 @@ func TestAcpDriverElicitationCardAfterPermissionCard(t *testing.T) {
 	}
 }
 
-// TestAcpDriverElicitationSuccessorAfterAnswered 首表单已答后的接续表单（串行逐题阻塞的
-// 正常产物）：卡位已被首卡占用，次表单虽可表示也不出卡，状态行按挂起粒度指回桌面——
-// 不得指向已置灰首卡（误导用户点旧卡，decline 探测虽安全但次表单悬空）。
+/*
+ * TestAcpDriverElicitationSuccessorAfterAnswered 首表单已答后的接续表单（串行逐题阻塞的
+ * 正常产物）：卡位已被首卡占用，次表单虽可表示也不出卡，状态行按挂起粒度指回桌面——
+ * 不得指向已置灰首卡（误导用户点旧卡，decline 探测虽安全但次表单悬空）。
+ */
 func TestAcpDriverElicitationSuccessorAfterAnswered(t *testing.T) {
 	sessions := newFakeSessions(anchoredReadySnap())
 	driver := boundDriver(sessions)
@@ -1270,8 +1324,10 @@ func TestAcpDriverElicitationSuccessorAfterAnswered(t *testing.T) {
 	}
 }
 
-// TestAcpDriverMixedPendingStatus 混合挂起：审批打开后表单再开，状态行合并展示——审批的
-// 数字应答指引不被表单提示覆写。
+/*
+ * TestAcpDriverMixedPendingStatus 混合挂起：审批打开后表单再开，状态行合并展示——审批的
+ * 数字应答指引不被表单提示覆写。
+ */
 func TestAcpDriverMixedPendingStatus(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -1298,8 +1354,10 @@ func TestAcpDriverMixedPendingStatus(t *testing.T) {
 	}
 }
 
-// TestAcpDriverMultiPendingNumbering 多挂起编号：跨挂起全局顺序（第二挂起选项编号续接），
-// 关闭一挂起后重编（与快路径 Get 快照剩余序一致）。
+/*
+ * TestAcpDriverMultiPendingNumbering 多挂起编号：跨挂起全局顺序（第二挂起选项编号续接），
+ * 关闭一挂起后重编（与快路径 Get 快照剩余序一致）。
+ */
 func TestAcpDriverMultiPendingNumbering(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)

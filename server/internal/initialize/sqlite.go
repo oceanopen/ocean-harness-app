@@ -16,9 +16,11 @@ import (
 // sqlite 库文件名（落在 cfg.SqliteDir 目录下）。
 const sqliteFileName = "server.db"
 
-// MustInitSQLite 初始化 sqlite（gorm + 纯 Go 驱动 glebarez/sqlite，无 CGO，CI 交叉编译友好）。
-// 数据目录来自环境变量（cfg.SqliteDir），库文件固定为 <dir>/server.db。
-// 仅初始化连接 + ping 验活；表结构迁移由 MustRunMigrations 在启动时自动执行。
+/*
+ * MustInitSQLite 初始化 sqlite（gorm + 纯 Go 驱动 glebarez/sqlite，无 CGO，CI 交叉编译友好）。
+ * 数据目录来自环境变量（cfg.SqliteDir），库文件固定为 <dir>/server.db。
+ * 仅初始化连接 + ping 验活；表结构迁移由 MustRunMigrations 在启动时自动执行。
+ */
 func MustInitSQLite(cfg *config.Config) {
 	dsn := filepath.Join(cfg.SqliteDir, sqliteFileName)
 

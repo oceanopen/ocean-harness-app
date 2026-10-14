@@ -14,22 +14,19 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// IssueWorkspace 对应 /api/issueWorkspace 命名空间：issue 运行工作空间初始化编排
-// （docs/agent_dev_01_tasks.md T1.1）。
-//
-// 模型：init 受理 → 同步生成/合并状态文件（.workspace-init-state.json，唯一持久真相，见
-// issue_workspace_state.go）→ 立即返回 → 后台 goroutine 串行执行步骤、逐步落盘（见
-// issue_workspace_runner.go）→ status 轮询读文件。执行阶段纯状态文件驱动（仓库清单在受理时
-// 已从 DB 解析入文件），不碰 DB 与请求 ctx，天然支持崩溃后按文件判定 INTERRUPTED 并重试。
-//
-// 同域文件分工：本文件仅服务入口（受理/查询/DB 解析）；准入控制见 issue_workspace_registry.go；
-// 状态派生/合并/幂等辅助见 issue_workspace_merge.go。
+/*
+ * IssueWorkspace 对应 /api/issueWorkspace 命名空间：issue 运行工作空间初始化编排（docs/agent_dev_01_tasks.md T1.1）。
+ * 模型：init 受理 → 同步生成/合并状态文件（.workspace-init-state.json，唯一持久真相，见 issue_workspace_state.go）→ 立即返回 → 后台 goroutine 串行执行步骤、逐步落盘（见 issue_workspace_runner.go）→ status 轮询读文件。执行阶段纯状态文件驱动（仓库清单在受理时已从 DB 解析入文件），不碰 DB 与请求 ctx，天然支持崩溃后按文件判定 INTERRUPTED 并重试。
+ * 同域文件分工：本文件仅服务入口（受理/查询/DB 解析）；准入控制见 issue_workspace_registry.go；状态派生/合并/幂等辅助见 issue_workspace_merge.go。
+ */
 type IssueWorkspace struct {
 	apis.Service
 }
 
-// Init 受理 issue 工作空间初始化：解析目录 → 查关联仓库 → 准入控制（同 issue 执行中重复触发返回当前进度）
-// → 幂等短路（上次 SUCCESS 且关联未变）→ 增量合并状态文件并同步落盘（RUNNING）→ 后台串行执行。
+/*
+ * Init 受理 issue 工作空间初始化：解析目录 → 查关联仓库 → 准入控制（同 issue 执行中重复触发返回当前进度）
+ * → 幂等短路（上次 SUCCESS 且关联未变）→ 增量合并状态文件并同步落盘（RUNNING）→ 后台串行执行。
+ */
 func (svc IssueWorkspace) Init(req *types.IssueWorkspaceInitRequest) (*types.IssueWorkspaceStatusResponseData, error) {
 	if !issueWorkspaceValidIssueID(req.IssueID) {
 		return nil, errors.New("issueId 非法")
@@ -56,8 +53,10 @@ func (svc IssueWorkspace) Init(req *types.IssueWorkspaceInitRequest) (*types.Iss
 		old = nil
 	}
 
-	// 幂等短路：上次已全部成功、无任何占位（SKIPPED）结果且关联仓库/基准分支集合未变 → 不再执行。
-	// 含 SKIPPED 的旧 SUCCESS 须放行走 merge 重跑——T1.2/T1.3/T1.4 注册实现后自动接续执行。
+	/*
+	 * 幂等短路：上次已全部成功、无任何占位（SKIPPED）结果且关联仓库/基准分支集合未变 → 不再执行。
+	 * 含 SKIPPED 的旧 SUCCESS 须放行走 merge 重跑——T1.2/T1.3/T1.4 注册实现后自动接续执行。
+	 */
 	if old != nil && old.Status == types.IW_STATUS_SUCCESS && !issueWorkspaceHasSkipped(old) &&
 		issueWorkspaceManifestEqual(old.Manifest, issueWorkspaceRepoRefs(repos)) {
 		issueWorkspaceRelease(req.IssueID)
@@ -71,11 +70,15 @@ func (svc IssueWorkspace) Init(req *types.IssueWorkspaceInitRequest) (*types.Iss
 		return nil, err
 	}
 
-	// 响应快照必须在启动 goroutine 之前深拷贝：go 语句建立 happens-before，此后 state 归后台
-	// 写者独占；若先启动再拷贝，拷贝动作本身就会与 goroutine 的首步写（置 SKIPPED/RUNNING）竞争。
+	/*
+	 * 响应快照必须在启动 goroutine 之前深拷贝：go 语句建立 happens-before，此后 state 归后台
+	 * 写者独占；若先启动再拷贝，拷贝动作本身就会与 goroutine 的首步写（置 SKIPPED/RUNNING）竞争。
+	 */
 	snapshot := issueWorkspaceCloneState(state)
-	// 后台执行：不捕获请求 ctx 与整个 svc（*gin.Context 请求结束即回收）——仅取 Logger
-	// （进程级 *zap.Logger 单例，跨请求安全）传入，让隔离成为结构性而非注释性的。
+	/*
+	 * 后台执行：不捕获请求 ctx 与整个 svc（*gin.Context 请求结束即回收）——仅取 Logger
+	 * （进程级 *zap.Logger 单例，跨请求安全）传入，让隔离成为结构性而非注释性的。
+	 */
 	logger := svc.Logger
 	go func() {
 		defer issueWorkspaceRelease(req.IssueID)
@@ -96,8 +99,10 @@ func (svc IssueWorkspace) Status(req *types.IssueWorkspaceStatusRequest) (*types
 	return issueWorkspaceDeriveStatusResponse(baseDir, req.IssueID)
 }
 
-// resolveIssueBaseDir 由 issueId 解析其所属工作空间的目录（issue → workspace_id → t_workspaces.dir）。
-// 目录是后端 SSOT（工作空间表），HTTP 入参不携带路径；顺带完成 issue 存在性校验。
+/*
+ * resolveIssueBaseDir 由 issueId 解析其所属工作空间的目录（issue → workspace_id → t_workspaces.dir）。
+ * 目录是后端 SSOT（工作空间表），HTTP 入参不携带路径；顺带完成 issue 存在性校验。
+ */
 func (svc IssueWorkspace) resolveIssueBaseDir(issueID string) (string, error) {
 	q := query.Use(svc.Orm)
 	issue, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(issueID)).First()
@@ -120,9 +125,11 @@ func (svc IssueWorkspace) resolveIssueBaseDir(issueID string) (string, error) {
 	return ws.Dir, nil
 }
 
-// issueWorkspaceValidIssueID 校验 issueId 可安全拼入文件路径（正常值为 uuid v7 文本）：
-// 拒绝空串、路径分隔符与 Clean 后会变化的值（防 "../x" 路径穿越）。Init/Status 共用
-// （Init 另有 DB 存在性校验，Status 不查库故依赖本校验）。
+/*
+ * issueWorkspaceValidIssueID 校验 issueId 可安全拼入文件路径（正常值为 uuid v7 文本）：
+ * 拒绝空串、路径分隔符与 Clean 后会变化的值（防 "../x" 路径穿越）。Init/Status 共用
+ * （Init 另有 DB 存在性校验，Status 不查库故依赖本校验）。
+ */
 func issueWorkspaceValidIssueID(issueID string) bool {
 	return issueID != "" &&
 		issueID != "." && issueID != ".." &&
@@ -138,9 +145,11 @@ type issueWorkspaceRepoInput struct {
 	BaseBranch        string
 }
 
-// findIssueRepos 查 issue 关联的仓库+基准分支（t_issue_local_repositories → t_local_repositories
-// 两步批查）。baseBranch 取关联时选定的 repository_branch（freeSolo 可为空，T1.4 clone 时再回退
-// 仓库默认分支）；仓库已被删除（级联清理的正常时序差）的关联跳过。
+/*
+ * findIssueRepos 查 issue 关联的仓库+基准分支（t_issue_local_repositories → t_local_repositories
+ * 两步批查）。baseBranch 取关联时选定的 repository_branch（freeSolo 可为空，T1.4 clone 时再回退
+ * 仓库默认分支）；仓库已被删除（级联清理的正常时序差）的关联跳过。
+ */
 func (svc IssueWorkspace) findIssueRepos(issueID string) ([]issueWorkspaceRepoInput, error) {
 	q := query.Use(svc.Orm)
 	links, err := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.Eq(issueID)).Find()

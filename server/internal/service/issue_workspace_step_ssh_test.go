@@ -11,8 +11,10 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// globalSSHConfigFixture 模拟全局 ~/.ssh/config：文件头裸配置（隐式 Host *）+ 精确/通配符
-// 多 pattern 段 + 无关段，覆盖 T1.2 的匹配面。
+/*
+ * globalSSHConfigFixture 模拟全局 ~/.ssh/config：文件头裸配置（隐式 Host *）+ 精确/通配符
+ * 多 pattern 段 + 无关段，覆盖 T1.2 的匹配面。
+ */
 const globalSSHConfigFixture = `AddKeysToAgent yes
 
 Host github.com *.weoa.com
@@ -86,8 +88,10 @@ func TestIssueWorkspaceBuildSSHConfig(t *testing.T) {
 		}
 	}
 
-	// 文件头裸配置（隐式 Host *）匹配一切 host：example.org 也命中该段（设计内行为，
-	// 保留用户全局默认），但其余具体段不出现。
+	/*
+	 * 文件头裸配置（隐式 Host *）匹配一切 host：example.org 也命中该段（设计内行为，
+	 * 保留用户全局默认），但其余具体段不出现。
+	 */
 	content, matched, err = issueWorkspaceBuildSSHConfig([]byte(globalSSHConfigFixture), []string{"example.org"})
 	if err != nil {
 		t.Fatalf("build 出错: %v", err)

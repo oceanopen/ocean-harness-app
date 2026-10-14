@@ -7,10 +7,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// TestMcpOceanHarnessServerRegistered 守护 init() 的工具注册：go test 加载本包即执行
-// init()，全部工具的入出参 schema 在 AddTool 时同步推导——任何 DTO 的 jsonschema tag
-// 违反 go-sdk 禁令（首词含 '='，报 "tag must not begin with 'WORD='"）都会在此 panic
-// 暴露，而非等到 server 启动。
+/*
+ * TestMcpOceanHarnessServerRegistered 守护 init() 的工具注册：go test 加载本包即执行
+ * init()，全部工具的入出参 schema 在 AddTool 时同步推导——任何 DTO 的 jsonschema tag 违反 go-sdk
+ * 禁令（首词含 '='，报 "tag must not begin with 'WORD='"）都会在此 panic 暴露，而非等到 server 启动。
+ */
 func TestMcpOceanHarnessServerRegistered(t *testing.T) {
 	if mcpServerOceanHarness == nil {
 		t.Fatal("mcpServerOceanHarness 单例未初始化")
@@ -48,8 +49,10 @@ var browserToolsRegistered = []string{
 	"browser_tool_call",
 }
 
-// TestMcpOceanHarnessBrowserToolsRegistered 经 in-memory 会话拉 tools/list，守护
-// browser_* 24 工具全数注册且无多余 browser_ 前缀工具（拼错名/漏注册在此显式暴露）。
+/*
+ * TestMcpOceanHarnessBrowserToolsRegistered 经 in-memory 会话拉
+ * tools/list，守护 browser_* 24 工具全数注册且无多余 browser_ 前缀工具（拼错名/漏注册在此显式暴露）。
+ */
 func TestMcpOceanHarnessBrowserToolsRegistered(t *testing.T) {
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 	if _, err := mcpServerOceanHarness.Connect(context.Background(), serverTransport, nil); err != nil {

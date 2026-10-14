@@ -1,9 +1,7 @@
-// Package apis 提供 controller/service 的公共基类与链式依赖注入，统一所有 API 模块的运行期装配。
-//
-// 业务 controller/service 以「嵌入」方式获得该能力：
-//
-//	type Workspace  struct { apis.Api }     // controller
-//	type Workspace  struct { apis.Service } // service
+/*
+ * Package apis 提供 controller/service 的公共基类与链式依赖注入，统一所有 API 模块的运行期装配。
+ * 业务 controller/service 以「嵌入」方式获得该能力：controller 嵌 apis.Api、service 嵌 apis.Service（如 type Workspace struct { apis.Api }）。
+ */
 package apis
 
 import (
@@ -42,8 +40,10 @@ func (api *Api) AddError(err error) {
 	}
 }
 
-// MakeContext 注入 gin 上下文、全局 logger 与 sqlite 句柄（链式第一步，须先于 Bind/Validate/MakeService）。
-// 三者皆为进程级单例、无按请求变化，故合并为一步；事务场景如需换 DB，可在链中之后直接覆写 api.Orm。
+/*
+ * MakeContext 注入 gin 上下文、全局 logger 与 sqlite 句柄（链式第一步，须先于 Bind/Validate/MakeService）。
+ * 三者皆为进程级单例、无按请求变化，故合并为一步；事务场景如需换 DB，可在链中之后直接覆写 api.Orm。
+ */
 func (api *Api) MakeContext(ctx *gin.Context) *Api {
 	api.Context = ctx
 	api.Logger = global.Logger
@@ -51,8 +51,10 @@ func (api *Api) MakeContext(ctx *gin.Context) *Api {
 	return api
 }
 
-// Bind 绑定请求参数：默认 binding.JSON（全 POST 约定）；显式传 binding.Query/Form 可覆盖、传 nil 走 URI。
-// Body 类绑定用 ShouldBindBodyWith 缓存原始 body，支持一次请求内重复 Bind。
+/*
+ * Bind 绑定请求参数：默认 binding.JSON（全 POST 约定）；显式传 binding.Query/Form 可覆盖、传 nil 走 URI。
+ * Body 类绑定用 ShouldBindBodyWith 缓存原始 body，支持一次请求内重复 Bind。
+ */
 func (api *Api) Bind(data interface{}, bindings ...binding.Binding) *Api {
 	var b binding.Binding = binding.JSON // 显式声明为 Binding 接口，以便下面 type-assert 到 BindingBody
 	if len(bindings) > 0 {
@@ -78,8 +80,10 @@ func (api *Api) Bind(data interface{}, bindings ...binding.Binding) *Api {
 	return api
 }
 
-// Validate 走 go-tagexpr vd：仅对带 vd tag 的字段生效（常规 DTO 用 binding tag，此处为 no-op）。
-// 用于跨字段/复杂表达式校验（如二选一必填），错误格式 "参数校验失败, field: <f>, msg: <中文>"。
+/*
+ * Validate 走 go-tagexpr vd：仅对带 vd tag 的字段生效（常规 DTO 用 binding tag，此处为 no-op）。
+ * 用于跨字段/复杂表达式校验（如二选一必填），错误格式 "参数校验失败, field: <f>, msg: <中文>"。
+ */
 func (api *Api) Validate(data interface{}) *Api {
 	vd.SetErrorFactory(func(fieldSelector, msg string) error {
 		return fmt.Errorf("参数校验失败, field: %s, msg: %s", fieldSelector, msg)

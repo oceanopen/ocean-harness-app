@@ -1,13 +1,15 @@
 package types
 
-// ACP 会话域（/api/acpSession）的请求 DTO。响应 shape SSOT 是 acpsession.ViewSnapshot
-//（嵌套 ACP wire 结构原样透传，镜像到 types 只会双份维护，见 view.go 的 SSOT 注释）。
+/*
+ * ACP 会话域（/api/acpSession）的请求 DTO：响应 shape SSOT 是 acpsession.ViewSnapshot（嵌套 ACP wire 结构原样透传，镜像到 types 只会双份维护，见 view.go 的 SSOT 注释）。
+ */
 
 // AcpSessionEnsureRequest 是 POST /api/acpSession/ensure 的入参（幂等受理，异步建模）。
 type AcpSessionEnsureRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
-	// PickedLaunchMode 临场启动覆盖（LaunchModePicker 三选一受理；仅声明本次会话以
-	// acp 运行，不落库不记忆，与 workspace/issue 持久化配置的门禁语义互补）。
+	/*
+	 * PickedLaunchMode 临场启动覆盖（LaunchModePicker 三选一受理；仅声明本次会话以 acp 运行，不落库不记忆，与 workspace/issue 持久化配置的门禁语义互补）。
+	 */
 	PickedLaunchMode string `json:"pickedLaunchMode,omitempty" binding:"omitempty,oneof=acp"`
 }
 
@@ -27,16 +29,19 @@ type AcpSessionCancelRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
 }
 
-// AcpSessionRespondPermissionRequest 是 POST /api/acpSession/respondPermission 的入参
-// （pendingId 为会话域本地序号，自 1 起）。
+/*
+ * AcpSessionRespondPermissionRequest 是 POST /api/acpSession/respondPermission 的入参（pendingId 为会话域本地序号，自 1 起）。
+ */
 type AcpSessionRespondPermissionRequest struct {
 	IssueID   string `json:"issueId" binding:"required"`
 	PendingID uint64 `json:"pendingId" binding:"required"`
 	OptionID  string `json:"optionId" binding:"required"`
 }
 
-// AcpSessionRespondElicitationRequest 是 POST /api/acpSession/respondElicitation 的入参
-// （action 三态；content 仅 accept 时有意义，键值对透传 ACP wire）。
+/*
+ * AcpSessionRespondElicitationRequest 是 POST /api/acpSession/respondElicitation 的入参（action 三态；
+ * content 仅 accept 时有意义，键值对透传 ACP wire）。
+ */
 type AcpSessionRespondElicitationRequest struct {
 	IssueID   string         `json:"issueId" binding:"required"`
 	PendingID uint64         `json:"pendingId" binding:"required"`

@@ -8,8 +8,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// ProjectIssue 对应 /api/tracker/projectIssue 命名空间下的接口。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * ProjectIssue 对应 /api/tracker/projectIssue 命名空间下的接口。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type ProjectIssue struct {
 	apis.Api
 }

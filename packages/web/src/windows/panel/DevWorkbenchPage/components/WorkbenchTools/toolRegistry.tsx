@@ -1,14 +1,8 @@
-// 开发工作台右侧工具注册表：右侧工具条（WorkbenchToolRail）图标与工具面板区
-// （ToolPanelArea）tab 内容的唯一扩展点——新增工具在 WORKBENCH_TOOLS 追加一项
-// （icon/title/exclusive/render），rail 与 tab 自动出现。
-//
-// exclusive 语义：true = 同类工具全局单 tab（子任务列表/文件目录/浏览器——内容后端全局
-// 单源，多 tab 只会倍增 SSE 连接）；false = 可并存多实例 tab。状态域 openTool 按此分派。
-//
-// ⚠️ 工具会话架构红线（终端链路同款铁律）：render 只是「视口」——有状态的工具会话
-// （浏览器页面/自动化 driver 等）必须后端常驻，前端 tab 卸载（切 issue/收面板/非激活）
-// 只断渲染流不销毁会话，重挂载 reattach。纯前端持有状态的实现（如 iframe 直嵌）会
-// 在切 issue 时丢失页面/自动化状态，禁止。
+/**
+ * 开发工作台右侧工具注册表：右侧工具条（WorkbenchToolRail）图标与工具面板区（ToolPanelArea）tab 内容的唯一扩展点——
+ * 新增工具在 WORKBENCH_TOOLS 追加一项（icon/title/exclusive/render），rail 与 tab 自动出现；exclusive：true = 同类工具全局单 tab（内容后端全局单源），false = 可并存多实例 tab。
+ * ⚠️ 架构红线（终端链路同款铁律）：render 只是「视口」——有状态的工具会话必须后端常驻，tab 卸载只断渲染流、重挂载 reattach；纯前端持有状态禁止。
+ */
 import type { SvgIconComponent } from '@mui/icons-material';
 import type { ProjectIssueResponseData } from '@src/services';
 import type { ReactNode } from 'react';
@@ -18,22 +12,26 @@ import IssueSubTaskPanel from '../IssueSubTaskPanel/IssueSubTaskPanel';
 import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
 import BrowserPanel from './BrowserPanel/BrowserPanel';
 
-/// 工具渲染上下文：当前选中 issue（面板内容均围绕选中任务；hasSelection 已由外层保证非空）。
-/// 回调由页面层注入（ToolPanelArea 透传）：issue 编辑抽屉/新建子任务抽屉均挂页面层
-/// （共享 ProjectIssueDrawer，与项目事项管理同组件），工具内容内只发意图不挂抽屉。
+/**
+ * 工具渲染上下文：当前选中 issue（面板内容均围绕选中任务；hasSelection 已由外层保证非空）。
+ * 回调由页面层注入（ToolPanelArea 透传）：issue 编辑抽屉/新建子任务抽屉均挂页面层
+ * （共享 ProjectIssueDrawer，与项目事项管理同组件），工具内容内只发意图不挂抽屉。
+ */
 export interface WorkbenchToolRenderCtx {
   issue: ProjectIssueResponseData;
   projectId: number;
-  /// 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：轮询类视口的暂停闸门
-  /// （浏览器面板截图轮询「收起即停」，D4 展示侧对偶）。
+  /**
+   * 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：轮询类视口的暂停闸门
+   * （浏览器面板截图轮询「收起即停」，D4 展示侧对偶）。
+   */
   panelVisible: boolean;
-  /// 打开指定 issue 的编辑抽屉（如子任务卡片点击）。
+  // 打开指定 issue 的编辑抽屉（如子任务卡片点击）。
   onEditIssue: (issue: ProjectIssueResponseData) => void;
-  /// 新建当前 issue 的子任务（create+parentIssue 抽屉，父 = ctx.issue）。
+  // 新建当前 issue 的子任务（create+parentIssue 抽屉，父 = ctx.issue）。
   onCreateSubIssue: () => void;
 }
 
-/// 工具定义：id 唯一；title 为 tab 头文案；exclusive 见文件头注释；render 渲染 tab 内容。
+// 工具定义：id 唯一；title 为 tab 头文案；exclusive 见文件头注释；render 渲染 tab 内容。
 export interface WorkbenchToolDef {
   id: string;
   title: string;
@@ -80,7 +78,7 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
   },
 ];
 
-/// 按 id 查注册表项（rail/tab 渲染用）；未知 id 返回 undefined（渲染层过滤遗留 tab）。
+// 按 id 查注册表项（rail/tab 渲染用）；未知 id 返回 undefined（渲染层过滤遗留 tab）。
 export function toolDefById(id: string): WorkbenchToolDef | undefined {
   return WORKBENCH_TOOLS.find(t => t.id === id);
 }

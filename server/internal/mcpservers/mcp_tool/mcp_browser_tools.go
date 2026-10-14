@@ -1,8 +1,8 @@
-// browser 工具 handler（T2.2，23+1）：原生 6（status / profile_open / session_close /
-// auth_state / auth_request / tool_list，ToolHandlerFor 三返回值范式，SDK 自动装配）+
-// 转发 17（统一 forwardTool 管道，手工透传引擎 Content 数组——含 ImageContent，类型化
-// 出参自动装配会丢图）+ 逃生舱 1（tool_call 原样直通）。业务逻辑全部复用 service 层
-// （与 REST 端共享 forwardOK/manager 门面），本文件只做参数搬运与出参整形。
+/*
+ * browser 工具 handler（T2.2，23+1）：原生 6（status / profile_open / session_close / auth_state / auth_request / tool_list，
+ * ToolHandlerFor 三返回值范式，SDK 自动装配）+ 转发 17（统一 forwardTool 管道，手工透传引擎 Content 数组——含 ImageContent，
+ * 类型化出参自动装配会丢图）+ 逃生舱 1（tool_call 原样直通）。业务逻辑全部复用 service 层（与 REST 端共享 forwardOK/manager 门面），本文件只做参数搬运与出参整形。
+ */
 package mcptool
 
 import (
@@ -24,8 +24,10 @@ type McpBrowserTool struct {
 	mcputil.McpTool
 }
 
-// defaultBrowserProfile profile 缺省值（MCP 入参 profile 留空的归一口径；REST 端为
-// binding:required 无缺省，两侧差异属刻意——MCP 消费者是 AI，省一次必填参数）。
+/*
+ * defaultBrowserProfile profile 缺省值（MCP 入参 profile 留空的归一口径；
+ * REST 端为 binding:required 无缺省，两侧差异属刻意——MCP 消费者是 AI，省一次必填参数）。
+ */
 const defaultBrowserProfile = "default"
 
 // resolveProfile MCP 入参 profile 归一：留空用 default。
@@ -36,10 +38,11 @@ func resolveProfile(profile string) string {
 	return profile
 }
 
-// engineArgs 引擎转发入参构造：入参 DTO 整体 JSON 往返成 map 后剥掉 profile/issueId
-// 两个服务端自有字段。DTO 引擎参数段的字段名与引擎 schema 一致（逐字段镜像），零手写
-// 映射——引擎拒绝非法值时错误文案的字段名与工具 schema 天然对齐。JSON 往返对纯数据
-// DTO 不会失败（全为可序列化类型），失败分支兜底空 map，由引擎侧报缺参显式暴露。
+/*
+ * engineArgs 引擎转发入参构造：入参 DTO 整体 JSON 往返成 map 后剥掉 profile/issueId
+ * 两个服务端自有字段。DTO 引擎参数段的字段名与引擎 schema 一致（逐字段镜像），
+ * 零手写映射——引擎拒绝非法值时错误文案的字段名与工具 schema 天然对齐。JSON 往返对纯数据 DTO 不会失败（全为可序列化类型），失败分支兜底空 map，由引擎侧报缺参显式暴露。
+ */
 func engineArgs(input any) map[string]any {
 	raw, err := json.Marshal(input)
 	if err != nil {
@@ -54,10 +57,11 @@ func engineArgs(input any) map[string]any {
 	return m
 }
 
-// withForwardMeta 归因元数据 TextContent 尾部追加（[profile: x] 或 [profile: x,
-// issueId: y]）：浏览器会话全局单源，多消费方（面板/bot/终端）共用 profile，结果需
-// 可辨识来源。引擎自有 Content 不动、顺序不变（CLI 等首文本消费者拿到的仍是引擎正文，
-// 归因行不夺位），仅追加。
+/*
+ * withForwardMeta 归因元数据 TextContent 尾部追加（[profile: x] 或
+ * [profile: x,issueId: y]）：浏览器会话全局单源，多消费方（面板/bot/终端）共用 profile，
+ * 结果需可辨识来源。引擎自有 Content 不动、顺序不变（CLI 等首文本消费者拿到的仍是引擎正文，归因行不夺位），仅追加。
+ */
 func withForwardMeta(res *mcp.CallToolResult, profile, issueID string) *mcp.CallToolResult {
 	meta := "[profile: " + profile
 	if issueID != "" {
@@ -68,10 +72,11 @@ func withForwardMeta(res *mcp.CallToolResult, profile, issueID string) *mcp.Call
 	return res
 }
 
-// forwardTool 转发 17 工具的统一管道：链式装配（ctx/vd 校验/日志注入）→ service 中文
-// fail 收敛转发 → 归因元数据追加。成功返回 (res, nil, nil)——go-sdk 对非 nil result 且
-// nil out 跳过全部出参装配，引擎 Content 数组（含 ImageContent 与落盘路径文本）原样
-// 到达客户端。
+/*
+ * forwardTool 转发 17 工具的统一管道：链式装配（ctx/vd 校验/日志注入）→ service 中文
+ * fail 收敛转发 → 归因元数据追加。成功返回 (res, nil, nil)——go-sdk 对非 nil result
+ * 且 nil out 跳过全部出参装配，引擎 Content 数组（含 ImageContent 与落盘路径文本）原样到达客户端。
+ */
 func forwardTool[A any](mt *McpBrowserTool, ctx context.Context, input *A, profile, issueID, engineTool, action string) (*mcp.CallToolResult, any, error) {
 	browserSvc := service.BrowserSession{}
 	if err := mt.MakeContext(ctx).Validate(input).MakeService(&browserSvc.Service).Errors; err != nil {
@@ -102,8 +107,10 @@ func (mt McpBrowserTool) Status(ctx context.Context, _ *mcp.CallToolRequest,
 	return nil, out, nil
 }
 
-// ProfileOpen 拉起/复用会话并同步等就绪（headless 留空读 profile 偏好，显式传入覆写
-// 回存；切换模式会关掉重开）。
+/*
+ * ProfileOpen 拉起/复用会话并同步等就绪（headless
+ * 留空读 profile 偏好，显式传入覆写回存；切换模式会关掉重开）。
+ */
 func (mt McpBrowserTool) ProfileOpen(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserProfileOpenArgs) (*mcp.CallToolResult, mcpdto.BrowserSessionContent, error) {
 
@@ -119,8 +126,10 @@ func (mt McpBrowserTool) ProfileOpen(ctx context.Context, _ *mcp.CallToolRequest
 	return nil, *newSessionContent(&view), nil
 }
 
-// SessionClose 释放引擎进程（幂等，登录态在 profile 目录续存）。与 browser_close
-// （关当前页 tab）语义不同，工具描述已注明。
+/*
+ * SessionClose 释放引擎进程（幂等，
+ * 登录态在 profile 目录续存）。与 browser_close（关当前页 tab）语义不同，工具描述已注明。
+ */
 func (mt McpBrowserTool) SessionClose(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserSessionCloseArgs) (*mcp.CallToolResult, mcpdto.BrowserSessionCloseContent, error) {
 
@@ -137,8 +146,10 @@ func (mt McpBrowserTool) SessionClose(ctx context.Context, _ *mcp.CallToolReques
 	}, nil
 }
 
-// AuthState 拉取当前登录态双源（cookies + 当前页 localStorage；凭据仅用于本次
-// browser_auth_request 入参，勿外传勿落盘）。
+/*
+ * AuthState 拉取当前登录态双源（cookies + 当前页
+ * localStorage；凭据仅用于本次 browser_auth_request 入参，勿外传勿落盘）。
+ */
 func (mt McpBrowserTool) AuthState(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserAuthStateArgs) (*mcp.CallToolResult, mcpdto.BrowserAuthStateContent, error) {
 
@@ -306,9 +317,10 @@ func (mt McpBrowserTool) HandleDialog(ctx context.Context, _ *mcp.CallToolReques
 
 // —— 逃生舱 1 ——
 
-// ToolCall 名单外引擎工具原样直通：黑名单前置拒绝；引擎结果不转换不包装、isError 原样
-// 传导，亦不加归因元数据（直通语义）。args 经 map 型 In 宽松透传（additionalProperties:
-// true，T0 实测）。
+/*
+ * ToolCall 名单外引擎工具原样直通：黑名单前置拒绝；
+ * 引擎结果不转换不包装、isError 原样传导，亦不加归因元数据（直通语义）。args 经 map 型 In 宽松透传（additionalProperties:true，T0 实测）。
+ */
 func (mt McpBrowserTool) ToolCall(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserToolCallArgs) (*mcp.CallToolResult, any, error) {
 

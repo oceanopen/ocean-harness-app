@@ -59,9 +59,11 @@ func TestDriverRouteResolverErrorFailClosed(t *testing.T) {
 	}
 }
 
-// TestDriverRouteAcpErrorsMarkedNotAccepted 锚点保护契约：ACP 引擎同步失败与路由解析
-// 失败包 turnNotAcceptedError（编排器据此跳过清锚）；headless 引擎失败不包（自愈语义
-// 保持不变）。
+/*
+ * TestDriverRouteAcpErrorsMarkedNotAccepted 锚点保护契约：ACP 引擎同步失败与路由解析
+ * 失败包 turnNotAcceptedError（编排器据此跳过清锚）；headless 引擎失败不包（自愈语义
+ * 保持不变）。
+ */
 func TestDriverRouteAcpErrorsMarkedNotAccepted(t *testing.T) {
 	ctx := context.Background()
 	isNotAccepted := func(err error) bool {
@@ -97,9 +99,11 @@ func TestDriverRouteAcpErrorsMarkedNotAccepted(t *testing.T) {
 	}
 }
 
-// TestDriverRouteWorkspaceModeResolution 真 DB 解析验收：逐行断言 launch_settings 各形态
-// 的 mode 判定（acp / 终端档 / 空配置 / 损坏 JSON = 未配置语义 / 行缺失）。acp 档在无会话
-// 行时仍路由 ACP（未绑定交引擎回引导文案，路由层不阻断）。
+/*
+ * TestDriverRouteWorkspaceModeResolution 真 DB 解析验收：逐行断言 launch_settings 各形态
+ * 的 mode 判定（acp / 终端档 / 空配置 / 损坏 JSON = 未配置语义 / 行缺失）。acp 档在无会话
+ * 行时仍路由 ACP（未绑定交引擎回引导文案，路由层不阻断）。
+ */
 func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
 	db := newBotTestDB(t, &model.Workspace{}, &model.ImBotConversation{})
 	q := query.Use(db)
@@ -137,8 +141,10 @@ func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
 	}
 }
 
-// mkRouteBindingFixture 建路由绑定解析的三表夹具，返回 (wsID, issueID, 存活 helper)。
-// launchSettings 可为空串（未配置语义）。
+/*
+ * mkRouteBindingFixture 建路由绑定解析的三表夹具，返回 (wsID, issueID, 存活 helper)。
+ * launchSettings 可为空串（未配置语义）。
+ */
 func mkRouteBindingFixture(t *testing.T, wsSettings, issueSettings string) (int, string, *gorm.DB) {
 	t.Helper()
 	db := newBotTestDB(t, &model.Workspace{}, &model.ImBotConversation{}, &model.ProjectIssue{})
@@ -167,10 +173,11 @@ func setConvBinding(t *testing.T, db *gorm.DB, botID int, convKey, issueID strin
 	}
 }
 
-// TestDriverRouteBindingResolution 绑定解析验收（T2.3 融合方案定稿的语义矩阵）：
-// 有效绑定回填 IssueID；未绑定/空锚/挂空绑定/跨 workspace 绑定全部降级为「ACP+无目标」
-// （引擎回引导文案，路由层不阻断不报错）；issue 级 mode 显式覆盖 workspace 级（双向：
-// "none" 否决、"acp" 启用）；读库失败 fail closed。
+/*
+ * TestDriverRouteBindingResolution 绑定解析验收（T2.3 融合方案定稿的语义矩阵）：有效绑定回填 IssueID；
+ * 未绑定/空锚/挂空绑定/跨 workspace 绑定全部降级为「ACP+无目标」（引擎回引导文案，路由层不阻断不报错）；
+ * issue 级 mode 显式覆盖 workspace 级（双向："none" 否决、"acp" 启用）；读库失败 fail closed。
+ */
 func TestDriverRouteBindingResolution(t *testing.T) {
 	const acpSettings = `{"mode":"acp"}`
 	const botID = 1
@@ -242,10 +249,10 @@ func TestDriverRouteBindingResolution(t *testing.T) {
 	})
 }
 
-// TestDriverRouteProbeTarget 探针契约（T2.2 触发链消费面）：ProbeTarget 与 resolve 同源
-// ——ACP 未绑（探针步出任务卡的判据）、ACP 已绑回填锚、终端档非 ACP 三形态对齐路由
-// 实际判定；读库失败原样透传 err（调用方不拦截落回主路径，引擎侧 RunTurn 同款错误
-// fail closed 收口）。
+/*
+ * TestDriverRouteProbeTarget 探针契约（T2.2 触发链消费面）：ProbeTarget 与 resolve 同源——ACP 未绑（探针步出任务卡的判据）、ACP 已绑回填锚、终端档非 ACP 三形态对齐路由实际判定；
+ * 读库失败原样透传 err（调用方不拦截落回主路径，引擎侧 RunTurn 同款错误 fail closed 收口）。
+ */
 func TestDriverRouteProbeTarget(t *testing.T) {
 	const acpSettings = `{"mode":"acp"}`
 	const botID = 1

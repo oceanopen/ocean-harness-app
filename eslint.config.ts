@@ -15,6 +15,7 @@ export default await antfu(
       'packages/web/src/shared/bindings.ts',
       'docs',
       'plugins',
+      'CLAUDE.md',
     ],
     stylistic: {
       indent: 2,

@@ -7,19 +7,15 @@ import PreviewContent from './PreviewContent';
 import PreviewTabsBar from './PreviewTabsBar';
 
 interface FilePreviewOverlayProps {
-  /// 当前选中 issue（浮层 tabs 按 issue 隔离；null = 未选中，恒空浮层）。
+  // 当前选中 issue（浮层 tabs 按 issue 隔离；null = 未选中，恒空浮层）。
   issueId: string | null;
 }
 
-/// 工作空间文件预览浮层：铺满终端内容区（挂载于 DevWorkbenchPage 终端内容区 Box，其
-/// 补了 position:relative）。浮层铁律：absolute inset 0 不挤压布局——终端 DOM 尺寸不变，
-/// 零 SIGWINCH 扰动，会话后端常驻仅视觉遮盖；zIndex 取 theme.zIndex.mobileStepper
-/// 压过 xterm 内部层；实色背景完整接收 pointerEvents（防点击穿透被 xterm preventDefault 吞掉）。
-///
-/// 显隐派生自 tabs 非空（无独立开关）；Escape 关激活 tab（关最后一个 = 浮层整体消失）——
-/// 工作台沉浸模式（全屏）下让位：Esc 直退全屏（页面级处理器），不关 tab。生命周期语义：
-/// 切 issue 浮层自动切到该 issue 的 tab 集（可能为空）；收工具面板/切工具 tab 不影响浮层
-/// （树面板只是入口，浮层独立于终端内容区）。
+/**
+ * 工作空间文件预览浮层：铺满终端内容区（挂载于 DevWorkbenchPage 终端内容区 Box，其补了 position:relative）。
+ * 浮层铁律：absolute inset 0 不挤压布局——终端 DOM 尺寸不变、零 SIGWINCH 扰动、会话后端常驻仅视觉遮盖；实色背景完整接收 pointerEvents（防点击穿透被吞）。
+ * 显隐派生自 tabs 非空（无独立开关）；Escape 关激活 tab（工作台沉浸模式下 Esc 直退全屏不关 tab）；切 issue 自动切到该 issue 的 tab 集，收工具面板/切工具 tab 不影响浮层。
+ */
 export default function FilePreviewOverlay({ issueId }: FilePreviewOverlayProps) {
   const theme = useTheme();
   const queryClient = useQueryClient();
@@ -39,9 +35,10 @@ export default function FilePreviewOverlay({ issueId }: FilePreviewOverlayProps)
     return null;
   }
 
-  // 刷新激活 tab：按渲染期派生决策分流 invalidate（激活文件在变更集 → fileDiff query；
-  // 否则 content query）——text 原位重取（SWR 语义，先显旧值后替换），image 经 dataUpdatedAt
-  // 版本令牌换 URL 强制重载。
+  /**
+   * 刷新激活 tab：按渲染期派生决策分流 invalidate（激活文件在变更集 → fileDiff query；
+   * 否则 content query）——text 原位重取（SWR 语义，先显旧值后替换），image 经 dataUpdatedAt 版本令牌换 URL 强制重载。
+   */
   const refreshActive = () => {
     if (issueId != null && activeTabId != null) {
       const key = changedPaths.has(activeTabId)
@@ -55,7 +52,7 @@ export default function FilePreviewOverlay({ issueId }: FilePreviewOverlayProps)
     <Box
       sx={{
         position: 'absolute',
-        inset: 0,
+        inset: '0px',
         zIndex: theme.zIndex.mobileStepper,
         bgcolor: 'background.paper',
         display: 'flex',

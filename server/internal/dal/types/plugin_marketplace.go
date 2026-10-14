@@ -1,19 +1,25 @@
 package types
 
-// 插件市场域 DTO：无本地表，全部字段为「claude CLI 输出 × 市场清单扫描」的实时投影。
-// 手写镜像前端 PluginMarketplaceService 的 TS interface（项目约定，无生成器）。
+/*
+ * 插件市场域 DTO：无本地表，全部字段为「claude CLI 输出 × 市场清单扫描」的实时投影；
+ * 手写镜像前端 PluginMarketplaceService 的 TS interface（项目约定，无生成器）。
+ */
 
 // PluginMarketplaceGetListRequest 是 POST /api/pluginMarketplace/getList 的入参（无筛选）。
 type PluginMarketplaceGetListRequest struct{}
 
-// PluginMarketplaceAddRequest 是 POST /api/pluginMarketplace/add 的入参。
-// source 为 claude CLI 认可的三种形式：本地绝对路径 / GitHub owner/repo / git URL。
+/*
+ * PluginMarketplaceAddRequest 是 POST /api/pluginMarketplace/add 的入参；
+ * source 为 claude CLI 认可的三种形式：本地绝对路径 / GitHub owner/repo / git URL。
+ */
 type PluginMarketplaceAddRequest struct {
 	Source string `json:"source" binding:"required"`
 }
 
-// PluginMarketplaceRemoveRequest 是 POST /api/pluginMarketplace/remove 的入参。
-// claude 语义：移除会连带卸载该市场已安装的全部插件（前端确认弹窗已告知）。
+/*
+ * PluginMarketplaceRemoveRequest 是 POST /api/pluginMarketplace/remove 的入参；
+ * claude 语义：移除会连带卸载该市场已安装的全部插件（前端确认弹窗已告知）。
+ */
 type PluginMarketplaceRemoveRequest struct {
 	Name string `json:"name" binding:"required"`
 }
@@ -23,17 +29,19 @@ type PluginMarketplaceUpdateRequest struct {
 	Name string `json:"name" binding:"required"`
 }
 
-// PluginOperationRequest 是 /api/plugin/<action>（install/uninstall/enable/disable/update）
-// 的统一入参。cli 为开发工具维度（v1 仅接受 "claude"，其余返回「暂不支持」）——
-// 预留多 CLI 扩展口子：新增 CLI 时在 service.Operate 的分发处增分支。
+/*
+ * PluginOperationRequest 是 /api/plugin/<action>（install/uninstall/enable/disable/update）的统一入参；
+ * cli 为开发工具维度（v1 仅接受 "claude"，其余返回「暂不支持」），预留多 CLI 扩展口子：新增 CLI 时在 service.Operate 的分发处增分支。
+ */
 type PluginOperationRequest struct {
 	CLI         string `json:"cli" binding:"required"`
 	Name        string `json:"name" binding:"required"`
 	Marketplace string `json:"marketplace" binding:"required"`
 }
 
-// PluginMarketplaceListResponseData 是 getList 与全部写操作（add/remove/update/operate）的统一响应：
-// 写操作成功后回读投影返回最新列表，前端一次往返即完成刷新。
+/*
+ * PluginMarketplaceListResponseData 是 getList 与全部写操作（add/remove/update/operate）的统一响应：写操作成功后回读投影返回最新列表，前端一次往返即完成刷新。
+ */
 type PluginMarketplaceListResponseData struct {
 	Clis         []string                        `json:"clis"` // 本域支持安装操作的 CLI 清单（v1：["claude"]）
 	Marketplaces []PluginMarketplaceResponseData `json:"marketplaces"`

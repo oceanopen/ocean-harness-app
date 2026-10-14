@@ -81,8 +81,10 @@ func TestIdleTimeoutFromConfig(t *testing.T) {
 	}
 }
 
-// newIdleTestManager 装配被测 Manager + 种子 issue。spawn 顶替按用例定制：script 定
-// fakeagent 脚本；resumeIDs 非 nil 时记录每次收到的 resumeID（回收闭环断言用）。
+/*
+ * newIdleTestManager 装配被测 Manager + 种子 issue。spawn 顶替按用例定制：script 定
+ * fakeagent 脚本；resumeIDs 非 nil 时记录每次收到的 resumeID（回收闭环断言用）。
+ */
 func newIdleTestManager(t *testing.T, script string, resumeIDs *[]string) (*Manager, *gorm.DB, string) {
 	t.Helper()
 	db := newTestDB(t)
@@ -98,8 +100,10 @@ func newIdleTestManager(t *testing.T, script string, resumeIDs *[]string) (*Mana
 	return mgr, db, issueID
 }
 
-// TestReclaimIdlePostponesOnThresholdIncrease 阈值改长顺延（I1 回归锁）：计时中途改长
-// 阈值，到期回调按空闲起点重算剩余时长——原期限到期不得回收，顺延至新期限后才回收。
+/*
+ * TestReclaimIdlePostponesOnThresholdIncrease 阈值改长顺延（I1 回归锁）：计时中途改长
+ * 阈值，到期回调按空闲起点重算剩余时长——原期限到期不得回收，顺延至新期限后才回收。
+ */
 func TestReclaimIdlePostponesOnThresholdIncrease(t *testing.T) {
 	old := idleTimeout
 	idleTimeout = func(*Manager) time.Duration { return 250 * time.Millisecond }
@@ -121,8 +125,10 @@ func TestReclaimIdlePostponesOnThresholdIncrease(t *testing.T) {
 		defer entry.mu.Unlock()
 		return entry.idleTimer != nil
 	})
-	// 翻转阈值（写侧持同一 entry.mu——生产两处读取都在 entry.mu 临界区内，同锁建立
-	// happens-before，直接写包级变量与到期回调竞态，race 检测实锤）。
+	/*
+	 * 翻转阈值（写侧持同一 entry.mu——生产两处读取都在 entry.mu 临界区内，同锁建立
+	 * happens-before，直接写包级变量与到期回调竞态，race 检测实锤）。
+	 */
 	flip := func(d time.Duration) {
 		mgr.mu.Lock()
 		entry := mgr.entries[issueID]
@@ -148,8 +154,10 @@ func TestReclaimIdlePostponesOnThresholdIncrease(t *testing.T) {
 	})
 }
 
-// TestReclaimIdleKeepsAnchorAndResumes 回收闭环（T4 核心验收）：完全空闲到期 → entry 摘除
-// + 进程回收 + 锚点保留 → Ensure 重开走 resume（同 id 恢复）。
+/*
+ * TestReclaimIdleKeepsAnchorAndResumes 回收闭环（T4 核心验收）：完全空闲到期 → entry 摘除
+ * + 进程回收 + 锚点保留 → Ensure 重开走 resume（同 id 恢复）。
+ */
 func TestReclaimIdleKeepsAnchorAndResumes(t *testing.T) {
 	// 阈值远大于就绪快照读取窗口（firstID 在回收前必读到），又足够短让回收必然发生。
 	overrideIdleTimeout(t, 400*time.Millisecond)
@@ -173,8 +181,10 @@ func TestReclaimIdleKeepsAnchorAndResumes(t *testing.T) {
 		_, ok := mgr.entries[issueID]
 		return !ok
 	})
-	// 宽限等回收收尾：pump 终结哨兵若被回归破坏将在此窗口落 SaveError 清锚——锚点断言
-	// 必须落在「若回归存在则已发生」之后，否则对 released 早退路径不设防。
+	/*
+	 * 宽限等回收收尾：pump 终结哨兵若被回归破坏将在此窗口落 SaveError 清锚——锚点断言
+	 * 必须落在「若回归存在则已发生」之后，否则对 released 早退路径不设防。
+	 */
 	time.Sleep(300 * time.Millisecond)
 	if row := bindingRow(t, db, issueID); row.AcpSessionID != firstID {
 		t.Fatalf("回收必须保留锚点（resume 依据），got %q want %q", row.AcpSessionID, firstID)
@@ -193,9 +203,11 @@ func TestReclaimIdleKeepsAnchorAndResumes(t *testing.T) {
 	}
 }
 
-// TestReclaimIdleGuards 完全空闲判据逐项负例：回合进行中 / 有订户 / 有等位者，任一为真
-// 即不回收。预订阅挡住就绪等待期的倒计时，判据搭建完成、撤预订阅后观察——守卫隔离，
-// 不因其他判据在场而假通过。
+/*
+ * TestReclaimIdleGuards 完全空闲判据逐项负例：回合进行中 / 有订户 / 有等位者，任一为真
+ * 即不回收。预订阅挡住就绪等待期的倒计时，判据搭建完成、撤预订阅后观察——守卫隔离，
+ * 不因其他判据在场而假通过。
+ */
 func TestReclaimIdleGuards(t *testing.T) {
 	cases := []struct {
 		name  string

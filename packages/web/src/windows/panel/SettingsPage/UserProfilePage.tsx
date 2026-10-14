@@ -41,10 +41,10 @@ function UserProfilePage() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Box sx={{ p: 3, flex: 1, overflow: 'auto' }}>
+      <Box sx={{ p: '24px', flex: 1, overflow: 'auto' }}>
         {/* GitHub 凭据卡片：标题行（图标 + 名称 + 配置状态）+ Token 录入 + 说明 */}
-        <Box sx={{ borderRadius: 2, border: 1, borderColor: 'divider', overflow: 'hidden' }}>
-          <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+          <Box sx={{ px: '16px', py: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <GitHubIcon fontSize="small" sx={{ color: 'text.secondary' }} />
             <Typography>{t('settings:userProfile.github.row.pat')}</Typography>
             {patConfigured
@@ -69,7 +69,7 @@ function UserProfilePage() {
                   />
                 )}
           </Box>
-          <Box sx={{ px: 2, pb: 2, pt: 0.5, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ px: '16px', pb: '16px', pt: '4px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <TextField
               size="small"
               type="password"
@@ -90,12 +90,12 @@ function UserProfilePage() {
 
       <Box
         sx={{
-          p: 2,
-          borderTop: 1,
+          p: '16px',
+          borderTop: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           justifyContent: 'flex-end',
-          gap: 1,
+          gap: '8px',
         }}
       >
         <Button onClick={handleClear} color="inherit" disabled={!patConfigured}>

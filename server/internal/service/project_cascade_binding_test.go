@@ -16,8 +16,10 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// newCascadeBindingTestDB 内存 sqlite + 级联链路四表（project / issue / issue 仓库关联 /
-// IM 会话映射）。
+/*
+ * newCascadeBindingTestDB 内存 sqlite + 级联链路四表（project / issue / issue 仓库关联 /
+ * IM 会话映射）。
+ */
 func newCascadeBindingTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
@@ -30,8 +32,10 @@ func newCascadeBindingTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// mkCascadeFixture 建 project + 父 issue + 子 issue + 三个会话行（绑父、绑子、绑外部 issue
-// 且带 headless 续聊锚），返回 (projectID, parentID, childID, otherIssueID)。
+/*
+ * mkCascadeFixture 建 project + 父 issue + 子 issue + 三个会话行（绑父、绑子、绑外部 issue
+ * 且带 headless 续聊锚），返回 (projectID, parentID, childID, otherIssueID)。
+ */
 func mkCascadeFixture(t *testing.T, db *gorm.DB) (int, string, string, string) {
 	t.Helper()
 	q := query.Use(db)
@@ -93,8 +97,10 @@ func assertBindings(t *testing.T, db *gorm.DB, otherID string) {
 	}
 }
 
-// TestProjectIssueDeleteClearsBinding 删 issue（含子任务）事务内清绑：被删 issue 的绑定
-// 锚清空、行保留、外部绑定与续聊锚不动。
+/*
+ * TestProjectIssueDeleteClearsBinding 删 issue（含子任务）事务内清绑：被删 issue 的绑定
+ * 锚清空、行保留、外部绑定与续聊锚不动。
+ */
 func TestProjectIssueDeleteClearsBinding(t *testing.T) {
 	db := newCascadeBindingTestDB(t)
 	_, parentID, _, otherID := mkCascadeFixture(t, db)
@@ -111,8 +117,10 @@ func TestProjectIssueDeleteClearsBinding(t *testing.T) {
 	assertBindings(t, db, otherID)
 }
 
-// TestProjectDeleteCascadeClearsBinding 删 project 级联（deleteProjectCascade）同款清绑
-// 契约：两入口（单删/项目级联）语义一致。
+/*
+ * TestProjectDeleteCascadeClearsBinding 删 project 级联（deleteProjectCascade）同款清绑
+ * 契约：两入口（单删/项目级联）语义一致。
+ */
 func TestProjectDeleteCascadeClearsBinding(t *testing.T) {
 	db := newCascadeBindingTestDB(t)
 	projectID, _, _, otherID := mkCascadeFixture(t, db)

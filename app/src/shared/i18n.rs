@@ -24,8 +24,10 @@ pub fn resolve(raw: Option<&str>) -> ResolvedLanguage {
     }
 }
 
-/// 读取持久化语言配置解析为后端语言（托盘菜单 / pet 右键菜单共用）。
-/// 无配置或读取失败时回退系统语言检测。
+/*
+ * 读取持久化语言配置解析为后端语言（托盘菜单 / pet 右键菜单共用）。
+ * 无配置或读取失败时回退系统语言检测。
+ */
 pub fn current_language(app: &AppHandle) -> ResolvedLanguage {
     let Some(state) = app.try_state::<AppConfigState>() else {
         return resolve(None);
@@ -34,8 +36,10 @@ pub fn current_language(app: &AppHandle) -> ResolvedLanguage {
     resolve(raw.as_deref())
 }
 
-/// 后端文案仅覆盖托盘菜单与 pet 右键菜单（业务文案在前端 react-i18next）。
-/// 加 key 时同步 refresh_menu_texts 与 setup 的菜单构建。
+/*
+ * 后端文案仅覆盖托盘菜单与 pet 右键菜单（业务文案在前端 react-i18next）。
+ * 加 key 时同步 refresh_menu_texts 与 setup 的菜单构建。
+ */
 pub fn menu_text(lang: ResolvedLanguage, key: &str) -> &'static str {
     match (lang, key) {
         (ResolvedLanguage::ZhCn, "panel") => "控制台",

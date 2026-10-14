@@ -11,12 +11,10 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// issueWorkspace 状态文件读写：文件（.workspace-init-state.json）是工作空间初始化的唯一持久真相，
-// init 受理时同步生成、后台执行中逐步落盘、status 接口直接读它——Go 侧不落库。
-//
-// 写入用「临时文件 + os.Rename」原子替换：单写者（registry 准入控制保证同一 issue 至多一个写者
-// goroutine）多读者（前端轮询 status）场景下，读者要么看到旧完整文件要么看到新完整文件，
-// 永远读不到 truncate 后的半截内容；进程崩溃也只残留 .tmp（下次写入覆盖），目标文件始终完整。
+/*
+ * issueWorkspace 状态文件读写：文件（.workspace-init-state.json）是工作空间初始化的唯一持久真相，init 受理时同步生成、后台执行中逐步落盘、status 接口直接读它——Go 侧不落库。
+ * 写入用「临时文件 + os.Rename」原子替换：单写者（registry 准入控制保证同一 issue 至多一个写者 goroutine）多读者（前端轮询 status）场景下，读者要么看到旧完整文件要么看到新完整文件，永远读不到 truncate 后的半截内容；进程崩溃也只残留 .tmp（下次写入覆盖），目标文件始终完整。
+ */
 
 const (
 	issueWorkspaceStateFileName = ".workspace-init-state.json" // 位于 {baseDir}/{issueId}/ 下
@@ -28,8 +26,10 @@ func issueWorkspaceStatePath(baseDir, issueID string) string {
 	return filepath.Join(baseDir, issueID, issueWorkspaceStateFileName)
 }
 
-// loadIssueWorkspaceState 读状态文件：文件不存在返回 (nil, nil)（NOT_INITIALIZED 语义）；
-// 存在但解析失败返回 error（CORRUPTED 语义，init 侧覆盖重建、status 侧原样上报）。
+/*
+ * loadIssueWorkspaceState 读状态文件：文件不存在返回 (nil, nil)（NOT_INITIALIZED 语义）；
+ * 存在但解析失败返回 error（CORRUPTED 语义，init 侧覆盖重建、status 侧原样上报）。
+ */
 func loadIssueWorkspaceState(baseDir, issueID string) (*types.IssueWorkspaceState, error) {
 	raw, err := os.ReadFile(issueWorkspaceStatePath(baseDir, issueID))
 	if err != nil {
@@ -45,8 +45,10 @@ func loadIssueWorkspaceState(baseDir, issueID string) (*types.IssueWorkspaceStat
 	return &state, nil
 }
 
-// saveIssueWorkspaceState 原子写状态文件：先写同目录 .tmp 再 Rename 覆盖（同文件系统 rename 原子）。
-// 幂等创建 {issueId} 目录（init 受理时的首个写入点，目录可能尚不存在）；updatedAt 由本函数统一刷新。
+/*
+ * saveIssueWorkspaceState 原子写状态文件：先写同目录 .tmp 再 Rename 覆盖（同文件系统 rename 原子）。
+ * 幂等创建 {issueId} 目录（init 受理时的首个写入点，目录可能尚不存在）；updatedAt 由本函数统一刷新。
+ */
 func saveIssueWorkspaceState(state *types.IssueWorkspaceState) error {
 	dir := filepath.Join(state.BaseDir, state.IssueID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

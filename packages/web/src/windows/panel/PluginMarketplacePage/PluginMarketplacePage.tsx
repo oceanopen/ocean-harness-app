@@ -130,12 +130,12 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
       {/* 顶栏：统计 + 搜索 + 操作栏 */}
       <Box
         sx={{
-          p: 2,
-          borderBottom: 1,
+          p: '16px',
+          borderBottom: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           alignItems: 'center',
-          gap: 1.5,
+          gap: '12px',
           flexWrap: 'wrap',
         }}
       >
@@ -147,9 +147,9 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
           placeholder="搜索市场名称 / 描述 / 来源"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: 160 }}
+          sx={{ flexGrow: 1, minWidth: '160px' }}
         />
-        <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+        <Box sx={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
           <Button
             variant="contained"
             size="small"
@@ -188,7 +188,7 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
           </Box>
         )}
         {status === 'error' && (
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: '16px' }}>
             <Alert
               severity="error"
               action={(
@@ -204,8 +204,8 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
               {error != null && (
                 <Typography
                   sx={{
-                    mt: 1,
-                    fontSize: 12,
+                    mt: '8px',
+                    fontSize: '12px',
                     color: 'text.secondary',
                     userSelect: 'text',
                     wordBreak: 'break-all',
@@ -225,12 +225,12 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
               alignItems: 'center',
               justifyContent: 'center',
               height: '100%',
-              gap: 1.5,
-              px: 3,
-              py: 4,
+              gap: '12px',
+              px: '24px',
+              py: '32px',
             }}
           >
-            <StorefrontOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+            <StorefrontOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
               暂无插件市场
             </Typography>
@@ -238,7 +238,7 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
               添加本地插件仓库路径、GitHub 仓库（owner/repo）或 git 地址，
               将通过 Claude Code CLI 注册并保持与命令行一致
             </Typography>
-            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setAddDrawerOpen(true)} sx={{ mt: 1 }}>
+            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setAddDrawerOpen(true)} sx={{ mt: '8px' }}>
               添加插件市场
             </Button>
           </Box>
@@ -253,9 +253,9 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
         {status === 'ready' && displayed.length > 0 && (
           <Box
             sx={{
-              p: 2,
+              p: '16px',
               display: 'grid',
-              gap: 2,
+              gap: '16px',
               gridTemplateColumns: {
                 xs: '1fr',
                 sm: 'repeat(1, 1fr)',
@@ -310,7 +310,7 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
           <Typography>
             {`确定移除市场「${removeTarget?.name ?? ''}」吗？`}
           </Typography>
-          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1 }}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: '8px' }}>
             移除将同时卸载该市场已安装的全部插件（与 claude plugin marketplace remove 行为一致）。
           </Typography>
         </DialogContent>

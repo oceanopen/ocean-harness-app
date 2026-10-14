@@ -1,9 +1,8 @@
-// 文件树图标映射（纯数据）：按扩展名映射 vscode-icons 彩色图标，经 unplugin-icons 的
-// ~icons/ 虚拟模块引入（构建期 tree-shake，仅打进用到的图标；Halo ui 同款链路，接入见
-// vite.config.ts）。立场与 viewerKind.ts 一致：未命中一律回落 DefaultFileIcon，刻意不做
-// 近似映射（没有准确图标就通用文件）。目录图标开合两态由 FileTree 按展开态取用。
-// 呈形为模块级 record 而非函数：消费方渲染期做纯引用查找（无函数调用产出组件，
-// react/static-components 规则要求的形态）。
+/**
+ * 文件树图标映射（纯数据）：按扩展名映射 vscode-icons 彩色图标，经 unplugin-icons 的 ~icons/ 虚拟模块引入
+ * （构建期 tree-shake，仅打进用到的图标；Halo ui 同款链路，接入见 vite.config.ts）。立场与 viewerKind.ts 一致：
+ * 未命中一律回落 DefaultFileIcon，刻意不做近似映射；目录开合两态由 FileTree 按展开态取用；呈形为模块级 record 而非函数（react/static-components 形态要求）。
+ */
 import DefaultFile from '~icons/vscode-icons/default-file';
 import DefaultFolder from '~icons/vscode-icons/default-folder';
 import DefaultFolderOpened from '~icons/vscode-icons/default-folder-opened';
@@ -50,8 +49,10 @@ export { DefaultFile as DefaultFileIcon, DefaultFolder as FolderClosedIcon, Defa
 
 export type FileIcon = typeof DefaultFile;
 
-/// 扩展名 → 文件图标。key 兼收文件扩展名（ts/go）与 dotfile 名段（gitignore——
-/// .gitignore 的 extOf 即 gitignore）。
+/**
+ * 扩展名 → 文件图标。key 兼收文件扩展名（ts/go）与 dotfile 名段（gitignore——
+ * .gitignore 的 extOf 即 gitignore）。
+ */
 export const FILE_ICONS: Readonly<Record<string, FileIcon>> = {
   'js': FileTypeJs,
   'mjs': FileTypeJs,

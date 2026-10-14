@@ -8,8 +8,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// ImBot 对应 /api/imBot 命名空间下的接口（IM 渠道数字人 bot CRUD + 重启连接）。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * ImBot 对应 /api/imBot 命名空间下的接口（IM 渠道数字人 bot CRUD + 重启连接）。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type ImBot struct {
 	apis.Api
 }
@@ -108,8 +110,10 @@ func (api ImBot) Restart(ctx *gin.Context) {
 	api.JsonOK(nil)
 }
 
-// GetConversations POST /api/imBot/getConversations：返回 bot 会话列表（绑定锚 + 活跃时间，
-// 最近活跃在前；工具栏会话明细数据链）。
+/*
+ * GetConversations
+ * POST /api/imBot/getConversations：返回 bot 会话列表（绑定锚 + 活跃时间，最近活跃在前；工具栏会话明细数据链）。
+ */
 func (api ImBot) GetConversations(ctx *gin.Context) {
 	req := &types.ImBotGetConversationsRequest{}
 	svc := service.ImBot{}
@@ -125,8 +129,10 @@ func (api ImBot) GetConversations(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// BindIssue POST /api/imBot/bindIssue：会话级绑定/解绑（issueId 空 = 解绑；绑定每回合现读，
-// 不热重载连接）。
+/*
+ * BindIssue POST /api/imBot/bindIssue：
+ * 会话级绑定/解绑（issueId 空 = 解绑；绑定每回合现读，不热重载连接）。
+ */
 func (api ImBot) BindIssue(ctx *gin.Context) {
 	req := &types.ImBotBindIssueRequest{}
 	svc := service.ImBot{}

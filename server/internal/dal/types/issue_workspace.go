@@ -2,16 +2,15 @@ package types
 
 import "time"
 
-// issueWorkspace 相关类型分两部分：
-//  1. HTTP 入参/出参（Request/ResponseData，与其他模块 DTO 风格一致）；
-//  2. 状态文件 schema（.workspace-init-state.json 的持久化结构）——该文件是工作空间初始化的
-//     唯一持久真相（记录步骤/仓库级进度与幂等 manifest），Go 侧不落库，status 接口直接读它。
-//
-// 注意：issueWorkspace（issue 运行工作空间）与 tracker 的 workspace（任务管理容器）是两个概念。
+/*
+ * issueWorkspace 相关类型分两部分：HTTP 入参/出参（Request/ResponseData，与其他模块 DTO 风格一致）；
+ * 状态文件 schema（.workspace-init-state.json 的持久化结构）——该文件是工作空间初始化的唯一持久真相（记录步骤/仓库级进度与幂等 manifest），Go 侧不落库，status 接口直接读它。
+ * 注意：issueWorkspace（issue 运行工作空间）与 tracker 的 workspace（任务管理容器）是两个概念。
+ */
 
-// IssueWorkspaceStatus 工作空间初始化状态（同一套取值用于两个层面）：
-// 服务态（status 接口派生的顶层结论，含状态文件之外的 NOT_INITIALIZED/CORRUPTED/INTERRUPTED）
-// 与步骤/仓库级状态（steps[].status、repos[].status，多一个 SKIPPED 表示本期占位未实现）。
+/*
+ * IssueWorkspaceStatus 工作空间初始化状态（同一套取值用于两个层面）：服务态（status 接口派生的顶层结论，含状态文件之外的 NOT_INITIALIZED/CORRUPTED/INTERRUPTED）与步骤/仓库级状态（steps[].status、repos[].status，多一个 SKIPPED 表示本期占位未实现）。
+ */
 type IssueWorkspaceStatus string
 
 const (
@@ -25,17 +24,20 @@ const (
 	IW_STATUS_SKIPPED         IssueWorkspaceStatus = "SKIPPED"         // 步骤/仓库级：本期占位未实现（后续任务接入）
 )
 
-// 初始化步骤 key（固定顺序执行：createDirs → sshConfig → cloneRepos）。
-// 注：曾规划的 mcpConfig 步骤已取消——MCP 配置由 ocean-harness 插件捆绑提供（T1.3 方案变更，
-// 见 docs/agent_dev_01_tasks.md），未来需要 workspace 级单独支持时再加回骨架。
+/*
+ * 初始化步骤 key（固定顺序执行：createDirs → sshConfig → cloneRepos）；
+ * 曾规划的 mcpConfig 步骤已取消——MCP 配置由 ocean-harness 插件捆绑提供（T1.3 方案变更，见 docs/agent_dev_01_tasks.md），未来需要 workspace 级单独支持时再加回骨架。
+ */
 const (
 	IW_STEP_KEY_CREATE_DIRS = "createDirs" // 创建 {issueId}/.ssh、{issueId}/repo 目录结构
 	IW_STEP_KEY_SSH_CONFIG  = "sshConfig"  // 生成 .ssh/config（T1.2）
 	IW_STEP_KEY_CLONE_REPOS = "cloneRepos" // clone 各仓库 + agent_{issueId} 分支（T1.4）
 )
 
-// IssueWorkspaceInitRequest 是 POST /api/issueWorkspace/init 的入参。
-// 目录不入参，service 由 issueId 解析其所属工作空间的目录（后端 SSOT）；issueId 为 t_project_issues.id（uuid）。
+/*
+ * IssueWorkspaceInitRequest 是 POST /api/issueWorkspace/init 的入参：目录不入参，service 由 issueId 解析其所属工作空间的目录（后端 SSOT）；
+ * issueId 为 t_project_issues.id（uuid）。
+ */
 type IssueWorkspaceInitRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
 }
@@ -45,40 +47,48 @@ type IssueWorkspaceStatusRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
 }
 
-// 归档/取消动作（T3.2）：archive → issue 置 DONE；cancel → issue 置 CANCELLED。
-// 两者同为工程化确定性操作：删 {issueId}/ 目录 + 流转 issue 状态（父子解耦，不级联子任务）。
+/*
+ * 归档/取消动作（T3.2）：archive → issue 置 DONE；cancel → issue 置 CANCELLED；
+ * 两者同为工程化确定性操作：删 {issueId}/ 目录 + 流转 issue 状态（父子解耦，不级联子任务）。
+ */
 const (
 	IW_ARCHIVE_ACTION_ARCHIVE = "archive"
 	IW_ARCHIVE_ACTION_CANCEL  = "cancel"
 )
 
-// IssueWorkspaceArchiveRequest 是 POST /api/issueWorkspace/archive 的入参。两段式契约：
-// force=false 仅做安全检查（未提交变更 + 未推送提交）返回警告不执行；force=true 跳过检查
-// 直接执行（前端二次确认后携带——「删目录前先关终端会话」由前端执行段前置 ptyShutdownIssue
-// 保证，Go 侧不触碰 PTY）。目录由 service 经 issueId 解析（同 init/status）。
+/*
+ * IssueWorkspaceArchiveRequest 是 POST /api/issueWorkspace/archive 的入参，两段式契约：force=false 仅做安全检查（未提交变更 + 未推送提交）返回警告不执行；
+ * force=true 跳过检查直接执行（前端二次确认后携带——「删目录前先关终端会话」由前端执行段前置 ptyShutdownIssue 保证，Go 侧不触碰 PTY）；
+ * 目录由 service 经 issueId 解析（同 init/status）。
+ */
 type IssueWorkspaceArchiveRequest struct {
 	IssueID string `json:"issueId" binding:"required"`
 	Action  string `json:"action" binding:"required,oneof=archive cancel"` // 归档 / 取消
 	Force   bool   `json:"force"`                                          // true = 跳过检查直接执行
 }
 
-// IssueWorkspaceArchiveResponseData 是 archive 的响应：force=false 时 executed 恒 false，
-// warnings 为空表示检查干净（前端可直接续发执行段）；force=true 执行成功 executed=true。
+/*
+ * IssueWorkspaceArchiveResponseData 是 archive 的响应：force=false 时 executed 恒 false，warnings 为空表示检查干净（前端可直接续发执行段）；
+ * force=true 执行成功 executed=true。
+ */
 type IssueWorkspaceArchiveResponseData struct {
 	Executed bool     `json:"executed"`
 	Warnings []string `json:"warnings"` // 安全检查警告（每仓库一条；空 = 干净）
 }
 
-// IssueWorkspaceStatusResponseData 是 init/status 共用的响应：serverStatus 为顶层结论，
-// state 为状态文件全文（未初始化时为 null）。
+/*
+ * IssueWorkspaceStatusResponseData 是 init/status 共用的响应：serverStatus 为顶层结论，state 为状态文件全文（未初始化时为 null）。
+ */
 type IssueWorkspaceStatusResponseData struct {
 	ServerStatus IssueWorkspaceStatus `json:"serverStatus"`
 	State        *IssueWorkspaceState `json:"state"`
 }
 
-// IssueWorkspaceState 是 .workspace-init-state.json 的 schema（位于 {baseDir}/{issueId}/ 下）。
-// status 为顶层状态；steps 为固定顺序步骤及各自进度；manifest 为幂等键（已初始化的仓库+基准分支
-// 集合，与 issue 当前关联一致且 status=SUCCESS 时跳过重复初始化）；error 为顶层失败原因。
+/*
+ * IssueWorkspaceState 是 .workspace-init-state.json 的 schema（位于 {baseDir}/{issueId}/ 下）：status 为顶层状态；
+ * steps 为固定顺序步骤及各自进度；manifest 为幂等键（已初始化的仓库+基准分支集合，与 issue 当前关联一致且 status=SUCCESS 时跳过重复初始化）；
+ * error 为顶层失败原因。
+ */
 type IssueWorkspaceState struct {
 	Version   int                     `json:"version"`
 	IssueID   string                  `json:"issueId"`
@@ -91,8 +101,10 @@ type IssueWorkspaceState struct {
 	UpdatedAt time.Time               `json:"updatedAt"`
 }
 
-// IssueWorkspaceStep 是单个全局步骤的进度。repos 仅 cloneRepos 步骤使用（仓库级子状态，
-// clone 进度载体）；message 为步骤级说明（如 SKIPPED 的降级原因）。
+/*
+ * IssueWorkspaceStep 是单个全局步骤的进度：repos 仅 cloneRepos 步骤使用（仓库级子状态，clone 进度载体）；
+ * message 为步骤级说明（如 SKIPPED 的降级原因）。
+ */
 type IssueWorkspaceStep struct {
 	Key     string                     `json:"key"`
 	Title   string                     `json:"title"`

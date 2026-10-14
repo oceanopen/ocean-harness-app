@@ -13,8 +13,10 @@ import (
 	"ocean-harness/server/internal/acpsession"
 )
 
-// gateTestRoute 快路径单测构造：resolve 与 sessions 均为注入替身（headless/acp 引擎
-// 不参与快路径，置 nil 安全）。
+/*
+ * gateTestRoute 快路径单测构造：resolve 与 sessions 均为注入替身（headless/acp 引擎
+ * 不参与快路径，置 nil 安全）。
+ */
 func gateTestRoute(resolve func(botID, workspaceID int, conversationKey string) (routeTarget, error), sessions acpSessions) *driverRoute {
 	return &driverRoute{resolve: resolve, sessions: sessions}
 }
@@ -58,8 +60,10 @@ func gateSnap(pendings ...acpsession.PendingView) acpsession.ViewSnapshot {
 	return acpsession.ViewSnapshot{Status: acpsession.StatusReady, Pendings: pendings}
 }
 
-// 数字命中：按全局顺序编号应答（双挂起四选项，回复 3 = 第二挂起的 allow），source=bot，
-// 确认文案带中文标签与工具标题。
+/*
+ * 数字命中：按全局顺序编号应答（双挂起四选项，回复 3 = 第二挂起的 allow），source=bot，
+ * 确认文案带中文标签与工具标题。
+ */
 func TestPendingGateDigitRespond(t *testing.T) {
 	sessions := newFakeSessions(gateSnap(permPendingView(11), permPendingView(12)))
 	route := gateTestRoute(acpResolve, sessions)
@@ -133,8 +137,10 @@ func TestPendingGateOnlyElicitation(t *testing.T) {
 	}
 }
 
-// 未命中回落主路径的五种情形：非数字 / 非 ACP 会话 / 路由读库失败 / 无任何挂起 /
-// 会话未就绪（视图残留挂起不可应答，交主路径重建）。
+/*
+ * 未命中回落主路径的五种情形：非数字 / 非 ACP 会话 / 路由读库失败 / 无任何挂起 /
+ * 会话未就绪（视图残留挂起不可应答，交主路径重建）。
+ */
 func TestPendingGateMisses(t *testing.T) {
 	sessions := newFakeSessions(gateSnap(permPendingView(11)))
 	route := gateTestRoute(acpResolve, sessions)
@@ -257,8 +263,10 @@ func TestOrchestratorPendingGateHit(t *testing.T) {
 	}
 }
 
-// 编排器接线——重投幂等（快路径产生变更性动作却不入队，幂等前置到判定之前）：同 msgid
-// 的数字消息二次推送不再进快路径判定，回「已处理过」终帧。
+/*
+ * 编排器接线——重投幂等（快路径产生变更性动作却不入队，幂等前置到判定之前）：同 msgid
+ * 的数字消息二次推送不再进快路径判定，回「已处理过」终帧。
+ */
 func TestOrchestratorPendingGateRedelivery(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	driver := &stubTurnDriver{}

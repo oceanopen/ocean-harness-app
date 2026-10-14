@@ -18,8 +18,10 @@ import (
 	"ocean-harness/server/internal/agentcatalog"
 )
 
-// fakeAgentBin TestMain 现场编译 acp 包的假 agent 二进制（doctor 握手测试复用其
-// doctor-happy / happy 脚本，经真实 stdio 跑全链路）。
+/*
+ * fakeAgentBin TestMain 现场编译 acp 包的假 agent 二进制（doctor 握手测试复用其
+ * doctor-happy / happy 脚本，经真实 stdio 跑全链路）。
+ */
 var fakeAgentBin string
 
 func TestMain(m *testing.M) {
@@ -145,8 +147,10 @@ func TestWaitAvailableCommandsClosed(t *testing.T) {
 }
 
 func TestCheckEntryStrategyGate(t *testing.T) {
-	// doctor 一期只覆盖 npx-adapter 条目；native-acp 在 preflight 之前即短路（不依赖
-	// claude/node 环境，确定性断言）。
+	/*
+	 * doctor 一期只覆盖 npx-adapter 条目；native-acp 在 preflight 之前即短路（不依赖
+	 * claude/node 环境，确定性断言）。
+	 */
 	report := CheckEntry(context.Background(), agentcatalog.Entry{
 		Code:     "x",
 		Strategy: agentcatalog.StrategyNativeACP,
@@ -192,10 +196,11 @@ func TestHandshakeProbeSpawnFailure(t *testing.T) {
 	}
 }
 
-// TestRealHandshakeDoctor 生产链路全真探测（CheckEntry：clibin → node → vendored →
-// claude-acp 真握手）。依赖真实环境，双门槛 gating：OCEAN_ACP_REAL_HANDSHAKE=1 且
-// GO_SERVER_ACP_RESOURCES_DIR / GO_SERVER_ACP_ADAPTERS_DIR 均已配置（vendoring 资源源
-// 与受管根，dev 自测由 scripts/prepare-vendor-staging.ts 产出前者）。
+/*
+ * TestRealHandshakeDoctor 生产链路全真探测（CheckEntry：clibin → node → vendored → claude-acp 真握手）。依赖真实环境，双门槛 gating：
+ * OCEAN_ACP_REAL_HANDSHAKE=1 且 GO_SERVER_ACP_RESOURCES_DIR / GO_SERVER_ACP_ADAPTERS_DIR 均已配置
+ * （vendoring 资源源与受管根，dev 自测由 scripts/prepare-vendor-staging.ts 产出前者）。
+ */
 func TestRealHandshakeDoctor(t *testing.T) {
 	if os.Getenv("OCEAN_ACP_REAL_HANDSHAKE") != "1" {
 		t.Skip("需要 OCEAN_ACP_REAL_HANDSHAKE=1（真实 claude 环境）")

@@ -1,8 +1,8 @@
-// 终端主题（用户自选暗色主题目录，不跟随 app 明暗）。
-// 色值来源 orca terminal-themes/popular-dark-core.ts。
-// dimOpacity 渲染期消费（exited 置灰），不进 xterm options。
-// 独立文件：TerminalView.tsx 是 fast-refresh 组件文件，导出非组件会被
-// react-refresh/only-export-components 拦截。
+/**
+ * 终端主题（用户自选暗色主题目录，不跟随 app 明暗）。色值来源 orca terminal-themes/popular-dark-core.ts；
+ * dimOpacity 渲染期消费（exited 置灰），不进 xterm options。
+ * 独立文件：TerminalView.tsx 是 fast-refresh 组件文件，导出非组件会被 react-refresh/only-export-components 拦截。
+ */
 
 export interface TerminalViewTheme {
   background: string;
@@ -31,10 +31,11 @@ export interface TerminalViewTheme {
   dimOpacity: number;
 }
 
-// 主题目录（全部暗色高频）。默认 we-dark = Dracula × halo 暗色融合（2026-08-20
-// 用户定稿）：底色取 halo 深黑档与 Dracula 的插值（#1a1a1f，比 Dracula 更沉）、
-// 前景亮化（#f5f5f0）、ANSI 彩色全保 Dracula（鲜活来源）、black 压暗一档保层次、
-// 选区紫基调（Dracula 识别度）偏 halo 蓝。其余五套 orca popular-dark-core 照抄。
+/**
+ * 主题目录（全部暗色高频）。默认 we-dark = Dracula × halo 暗色融合（2026-08-20 用户定稿）：
+ * 底色取 halo 深黑档与 Dracula 的插值（#1a1a1f，比 Dracula 更沉）、前景亮化（#f5f5f0）、
+ * ANSI 彩色全保 Dracula、black 压暗一档保层次、选区紫基调偏 halo 蓝。其余五套 orca popular-dark-core 照抄。
+ */
 export const TERMINAL_THEME_IDS = [
   'we-dark',
   'dracula',

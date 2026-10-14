@@ -35,8 +35,7 @@ export function useEnsureBrowserSession() {
 
 /**
  * 释放会话（幂等，无头/有头切换 = close + ensure 传新值的前半程）：响应 = 释放后的投影
- * 行（收尾前服务端已捕获引擎真实当前页，切换恢复现场的权威源）；缓存由 SSE sessions 帧
- * 驱动回写，本地不动。
+ * 行（收尾前服务端已捕获引擎真实当前页，切换恢复现场的权威源）；缓存由 SSE sessions 帧驱动回写，本地不动。
  */
 export function useCloseBrowserSession() {
   return useMutation({

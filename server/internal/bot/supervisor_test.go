@@ -14,8 +14,10 @@ import (
 	"ocean-harness/server/internal/dal/query"
 )
 
-// stubChannelRuntime 渠道运行时替身：只记 Start 次数（ApplyBotAsync 的可观测面是
-// 「延迟后渠道被重新拉起」，连接语义本身不进本测试域）。
+/*
+ * stubChannelRuntime 渠道运行时替身：只记 Start 次数（ApplyBotAsync 的可观测面是
+ * 「延迟后渠道被重新拉起」，连接语义本身不进本测试域）。
+ */
 type stubChannelRuntime struct {
 	mu     sync.Mutex
 	starts int
@@ -57,8 +59,10 @@ func shortenApplyDelay(t *testing.T) {
 	t.Cleanup(func() { applyBotAsyncDelay = old })
 }
 
-// newSupervisorHarness 装配被测 supervisor + 已注册渠道替身（bot 行恒 ID 1，
-// WorkspaceID 0 = 不触工作空间表，故夹具库只建 ImBot 表）。
+/*
+ * newSupervisorHarness 装配被测 supervisor + 已注册渠道替身（bot 行恒 ID 1，
+ * WorkspaceID 0 = 不触工作空间表，故夹具库只建 ImBot 表）。
+ */
 func newSupervisorHarness(t *testing.T) (*Supervisor, *stubChannelRuntime) {
 	t.Helper()
 	db := newBotTestDB(t, &model.ImBot{})
@@ -69,8 +73,10 @@ func newSupervisorHarness(t *testing.T) (*Supervisor, *stubChannelRuntime) {
 	return s, rt
 }
 
-// TestApplyBotAsyncReload 启用行：延迟后重读行 → ApplyBot → 渠道被拉起；附带装配断言
-// （supervisor 以 botApplier 第四依赖注入路由驱动）。
+/*
+ * TestApplyBotAsyncReload 启用行：延迟后重读行 → ApplyBot → 渠道被拉起；附带装配断言
+ * （supervisor 以 botApplier 第四依赖注入路由驱动）。
+ */
 func TestApplyBotAsyncReload(t *testing.T) {
 	shortenApplyDelay(t)
 	s, rt := newSupervisorHarness(t)
@@ -84,8 +90,10 @@ func TestApplyBotAsyncReload(t *testing.T) {
 	waitFor(t, "延迟热重载拉起渠道", func() bool { return rt.startCount() == 1 })
 }
 
-// TestApplyBotAsyncBotDeleted 行已删：静默跳过（NotFound 不拉渠道不报错）。负向断言，
-// 有界等待（约 15× 延迟窗）后收口。
+/*
+ * TestApplyBotAsyncBotDeleted 行已删：静默跳过（NotFound 不拉渠道不报错）。负向断言，
+ * 有界等待（约 15× 延迟窗）后收口。
+ */
 func TestApplyBotAsyncBotDeleted(t *testing.T) {
 	shortenApplyDelay(t)
 	s, rt := newSupervisorHarness(t)
@@ -101,8 +109,10 @@ func TestApplyBotAsyncBotDeleted(t *testing.T) {
 	}
 }
 
-// TestApplyBotAsyncDisabled 停用行：对齐 service 层 applyRuntime 语义走 StopBot
-// （未在跑为 no-op），不拉渠道。
+/*
+ * TestApplyBotAsyncDisabled 停用行：对齐 service 层 applyRuntime 语义走 StopBot
+ * （未在跑为 no-op），不拉渠道。
+ */
 func TestApplyBotAsyncDisabled(t *testing.T) {
 	shortenApplyDelay(t)
 	s, rt := newSupervisorHarness(t)
@@ -119,9 +129,11 @@ func TestApplyBotAsyncDisabled(t *testing.T) {
 	}
 }
 
-// TestApplyBotAsyncDisabledWithinWindow 核心语义回归防护：行变更落在延迟窗口内——
-// goroutine 醒来后须重读行（非调用时点快照）走停用分支不拉渠道（若实现退化为调用时
-// 快照，调用时行启用 → 拉渠道 → 本测试失败）。
+/*
+ * TestApplyBotAsyncDisabledWithinWindow 核心语义回归防护：行变更落在延迟窗口内——
+ * goroutine 醒来后须重读行（非调用时点快照）走停用分支不拉渠道（若实现退化为调用时
+ * 快照，调用时行启用 → 拉渠道 → 本测试失败）。
+ */
 func TestApplyBotAsyncDisabledWithinWindow(t *testing.T) {
 	old := applyBotAsyncDelay
 	applyBotAsyncDelay = 50 * time.Millisecond // 留足窗口内改行余量
@@ -140,8 +152,10 @@ func TestApplyBotAsyncDisabledWithinWindow(t *testing.T) {
 	}
 }
 
-// TestApplyBotAsyncAfterStopAll StopAll 后 applier 不得复活渠道（stopped 生命周期守卫；
-// 渠道工厂注册表不清空，无守卫时渠道会被重新拉起——本测试即失败）。
+/*
+ * TestApplyBotAsyncAfterStopAll StopAll 后 applier 不得复活渠道（stopped 生命周期守卫；
+ * 渠道工厂注册表不清空，无守卫时渠道会被重新拉起——本测试即失败）。
+ */
 func TestApplyBotAsyncAfterStopAll(t *testing.T) {
 	shortenApplyDelay(t)
 	s, rt := newSupervisorHarness(t)

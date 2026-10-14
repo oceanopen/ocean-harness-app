@@ -8,7 +8,7 @@ use tauri::{
 use crate::shared::i18n::{current_language, menu_text};
 use crate::windows::pet_session_summary::get_pet_session_summary_visibility_state;
 
-/// 已构建的托盘菜单项引用，用于后续动态更新文案。
+// 已构建的托盘菜单项引用，用于后续动态更新文案。
 struct TrayMenuItems {
     panel: MenuItem<tauri::Wry>,
     settings: MenuItem<tauri::Wry>,
@@ -17,7 +17,7 @@ struct TrayMenuItems {
     quit: MenuItem<tauri::Wry>,
 }
 
-/// 桌宠当前显隐 → menu text key。隐藏时显示"显示桌宠"，显示时显示"隐藏桌宠"。
+// 桌宠当前显隐 → menu text key。隐藏时显示"显示桌宠"，显示时显示"隐藏桌宠"。
 fn pet_session_summary_menu_key(app: &AppHandle) -> &'static str {
     if get_pet_session_summary_visibility_state(app.clone()) {
         "pet-hide"
@@ -26,20 +26,18 @@ fn pet_session_summary_menu_key(app: &AppHandle) -> &'static str {
     }
 }
 
-/// 查询当前 Control 键是否被按下。
-///
-/// Tauri 2.11.2 / tray-icon 0.23.1 的 TrayIconEvent::Click 不携带任何修饰键信息，
-/// 因此托盘左键单击时无法从事件本身判断 Ctrl 状态，必须在触发瞬间主动查询键盘状态。
-///
-/// 平台说明：
-/// - macOS：CGEventSourceFlagsState 读取硬件级修饰键状态（查询式 API，无需辅助功能权限）。
-/// - Windows：GetAsyncKeyState 异步读取按键状态，最高位为 1 表示当前按下。
-/// - Linux：Tauri 托盘 show_menu 本身不支持，返回 false，维持原左键行为。
+/*
+ * 查询当前 Control 键是否被按下。
+ * Tauri 2.11.2 / tray-icon 0.23.1 的 TrayIconEvent::Click 不携带任何修饰键信息，因此托盘左键单击时无法从事件本身判断 Ctrl 状态，必须在触发瞬间主动查询键盘状态。
+ * 平台说明：macOS 用 CGEventSourceFlagsState 读取硬件级修饰键状态（查询式 API，无需辅助功能权限）；Windows 用 GetAsyncKeyState 异步读取按键状态（最高位为 1 表示当前按下）；Linux 的 Tauri 托盘 show_menu 本身不支持，返回 false 维持原左键行为。
+ */
 fn control_key_pressed() -> bool {
     #[cfg(target_os = "macos")]
     {
-        // kCGEventSourceStateHIDSystemState = 1（硬件级状态，最即时）；
-        // kCGEventFlagMaskControl = 1 << 18 = 0x40000。
+        /*
+         * kCGEventSourceStateHIDSystemState = 1（硬件级状态，最即时）；
+         * kCGEventFlagMaskControl = 1 << 18 = 0x40000。
+         */
         #[link(name = "CoreGraphics", kind = "framework")]
         unsafe extern "C" {
             fn CGEventSourceFlagsState(state_id: i32, flags: u64) -> u64;
@@ -66,9 +64,11 @@ fn control_key_pressed() -> bool {
 }
 
 pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    // dev 模式用带 DEV 角标的图标，避免本地调试版与正式安装版在状态栏混淆。
-    // include_bytes! 返回编译期固定大小数组 &[u8; N]，两套图标字节数不同，
-    // 用 as_slice 统一为 &[u8]，cfg!(debug_assertions) 在编译期求值后编译器只保留对应分支。
+    /*
+     * dev 模式用带 DEV 角标的图标，避免本地调试版与正式安装版在状态栏混淆。
+     * include_bytes! 返回编译期固定大小数组 &[u8; N]，两套图标字节数不同，
+     * 用 as_slice 统一为 &[u8]，cfg!(debug_assertions) 在编译期求值后编译器只保留对应分支。
+     */
     let icon_bytes: &[u8] = if cfg!(debug_assertions) {
         include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -147,10 +147,11 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
-            // 左键单击打开控制台窗口；右键由系统默认弹出菜单（无需处理）。
-            // Ctrl+左键单击：与原生右键效果一致，弹出托盘菜单。click 事件本身不带修饰键，
-            // 故在触发瞬间查询 Control 键状态：按下则走弹菜单分支，否则走打开控制台分支。
-            // 注意：本回调首参是 &TrayIcon（非 &AppHandle），需经 app_handle() 取得句柄。
+            /*
+             * 左键单击打开控制台窗口；右键由系统默认弹出菜单（无需处理）。
+             * Ctrl+左键单击：与原生右键效果一致，弹出托盘菜单。click 事件本身不带修饰键，故在触发瞬间查询 Control 键状态：按下则走弹菜单分支，否则走打开控制台分支。
+             * 注意：本回调首参是 &TrayIcon（非 &AppHandle），需经 app_handle() 取得句柄。
+             */
             if let TrayIconEvent::Click {
                 button: MouseButton::Left,
                 button_state: MouseButtonState::Up,
@@ -158,10 +159,11 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             } = event
             {
                 if control_key_pressed() {
-                    // with_inner_tray_icon → show_menu 是弹菜单的唯一入口；其内部用
-                    // run_on_main_thread + 同步阻塞等待结果。本回调可能在主线程触发，
-                    // 直接调用会死锁。故 clone 后在独立后台线程触发：后台线程阻塞等待，
-                    // 主线程不被阻塞即可正常派发 show_menu。
+                    /*
+                     * with_inner_tray_icon → show_menu 是弹菜单的唯一入口；其内部用
+                     * run_on_main_thread + 同步阻塞等待结果。本回调可能在主线程触发，直接调用会死锁。
+                     * 故 clone 后在独立后台线程触发：后台线程阻塞等待，主线程不被阻塞即可正常派发 show_menu。
+                     */
                     let tray = tray.clone();
                     std::thread::spawn(move || {
                         if let Err(e) = tray.with_inner_tray_icon(|inner| {
@@ -192,13 +194,17 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 {
                     log::warn!("failed to toggle pet window: {e}");
                 }
-                // 切换后立刻刷新菜单文案（pet 文案依赖显隐态；隐藏路径在
-                // pet_session_summary::hide_and_persist 内已刷新，此处兜底显示路径）。
+                /*
+                 * 切换后立刻刷新菜单文案（pet 文案依赖显隐态；隐藏路径在
+                 * pet_session_summary::hide_and_persist 内已刷新，此处兜底显示路径）。
+                 */
                 crate::windows::tray::refresh_menu_texts(app);
             }
             "settings" => {
-                // 设置页已并入 panel（隐藏菜单页）：经 panel:navigate 闭环跳转，
-                // 前端 goMenu 走 PATH_MEMORY_MENUS 路径记忆，保留上次分区。
+                /*
+                 * 设置页已并入 panel（隐藏菜单页）：经 panel:navigate 闭环跳转，
+                 * 前端 goMenu 走 PATH_MEMORY_MENUS 路径记忆，保留上次分区。
+                 */
                 if let Err(e) =
                     crate::windows::panel::show_panel_window(app.clone(), Some("settings".into()))
                 {
@@ -206,9 +212,11 @@ pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             "restart" => {
-                // 托盘菜单事件在主线程派发——正因如此必须经统一入口重启（机制说明见
-                // shared::app_info::request_clean_restart，直调 restart() 会跳过
-                // RunEvent::Exit 清理致 sidecar 孤儿化占端口）。
+                /*
+                 * 托盘菜单事件在主线程派发——正因如此必须经统一入口重启（机制说明见
+                 * shared::app_info::request_clean_restart，直调 restart() 会跳过
+                 * RunEvent::Exit 清理致 sidecar 孤儿化占端口）。
+                 */
                 crate::shared::app_info::request_clean_restart(app);
             }
             "quit" => {

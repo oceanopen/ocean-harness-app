@@ -85,26 +85,26 @@ function ChannelCard(props: { channel: ImBotChannelMeta; total: number; online: 
     <Box
       onClick={onSelect}
       sx={{
-        'borderRadius': 2,
-        'border': 1,
+        'borderRadius': '8px',
+        'border': '1px solid',
         'borderColor': selected ? 'primary.main' : 'divider',
         'bgcolor': selected ? 'action.selected' : 'background.paper',
-        'px': 1.5,
-        'py': 1.25,
+        'px': '12px',
+        'py': '10px',
         'display': 'flex',
         'alignItems': 'center',
-        'gap': 1.25,
+        'gap': '10px',
         'cursor': 'pointer',
         '&:hover': { bgcolor: 'action.hover' },
       }}
     >
-      <ForumOutlinedIcon sx={{ '& svg': { fontSize: 20 }, 'fontSize': 20, 'color': selected ? 'primary.main' : 'text.secondary' }} />
-      <Typography sx={{ fontSize: 13, fontWeight: selected ? 600 : 400 }}>{channel.label}</Typography>
+      <ForumOutlinedIcon sx={{ '& svg': { fontSize: '20px' }, 'fontSize': '20px', 'color': selected ? 'primary.main' : 'text.secondary' }} />
+      <Typography sx={{ fontSize: '13px', fontWeight: selected ? 600 : 400 }}>{channel.label}</Typography>
       <Chip
         size="small"
         label={`${online}/${total}`}
         variant="outlined"
-        sx={{ ml: 'auto', fontSize: 12, minWidth: 44 }}
+        sx={{ ml: 'auto', fontSize: '12px', minWidth: '44px' }}
       />
     </Box>
   );
@@ -122,9 +122,9 @@ function ImBotCard(props: {
   const chip = imBotStateChip(bot.connState);
 
   return (
-    <Box sx={{ borderRadius: 2, border: 1, borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
-      <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-        <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{bot.name}</Typography>
+    <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
+      <Box sx={{ px: '16px', py: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>{bot.name}</Typography>
         <Tooltip title={bot.lastError || undefined}>
           <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
         </Tooltip>
@@ -135,10 +135,10 @@ function ImBotCard(props: {
         )}
         {bot.workspaceId <= 0 && (
           <Tooltip title="尚未选择工作空间，对话时将收到补选提醒">
-            <Chip size="small" label="待配置" color="warning" variant="outlined" sx={{ fontSize: 12 }} />
+            <Chip size="small" label="待配置" color="warning" variant="outlined" sx={{ fontSize: '12px' }} />
           </Tooltip>
         )}
-        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Tooltip title="重启连接">
             {/* 停用不提供重启（重启 = 以落库配置拉起，停用态应先打开开关）；pending 禁用防双击并发重启。
                 图标用 RestartAlt 与右上角整体刷新（Refresh）区分——本按钮是销毁性重启，非读取刷新。 */}
@@ -146,7 +146,7 @@ function ImBotCard(props: {
               size="small"
               disabled={!bot.enabled || restartMutation.isPending}
               onClick={() => restartMutation.mutate({ id: bot.id })}
-              sx={{ '& svg': { fontSize: 18 } }}
+              sx={{ '& svg': { fontSize: '18px' } }}
             >
               <RestartAltOutlinedIcon />
             </IconButton>
@@ -155,16 +155,16 @@ function ImBotCard(props: {
           <Button size="small" color="error" onClick={onDeleteAsk}>删除</Button>
         </Box>
       </Box>
-      <Box sx={{ px: 2, pb: 1.5, display: 'flex', gap: 3, alignItems: 'center' }}>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', flex: 2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <Box sx={{ px: '16px', pb: '12px', display: 'flex', gap: '24px', alignItems: 'center' }}>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary', flex: 2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {bot.workspaceId > 0 ? `工作空间：${bot.workspaceName || `#${bot.workspaceId}`}` : '工作空间：未选择'}
         </Typography>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', flex: 1 }}>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary', flex: 1 }}>
           {bot.accessPolicy.mode === 'open'
             ? '开放模式（所有人可用）'
             : `白名单 ${bot.accessPolicy.allowUsers.length} 人`}
         </Typography>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', flexShrink: 0 }}>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary', flexShrink: 0 }}>
           {bot.enabled ? '已启用' : '已停用'}
         </Typography>
       </Box>
@@ -205,19 +205,19 @@ function ImBotsPage() {
       {/* 左栏：渠道列表（小卡片） */}
       <Box
         sx={{
-          width: 220,
+          width: '220px',
           flexShrink: 0,
-          borderRight: 1,
+          borderRight: '1px solid',
           borderColor: 'divider',
           bgcolor: 'background.paper',
-          p: 1.5,
+          p: '12px',
           display: 'flex',
           flexDirection: 'column',
-          gap: 1,
+          gap: '8px',
           overflow: 'auto',
         }}
       >
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', px: 1 }}>渠道</Typography>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary', px: '8px' }}>渠道</Typography>
         {IM_BOT_CHANNELS.map(ch => (
           <ChannelCard
             key={ch.key}
@@ -232,9 +232,9 @@ function ImBotsPage() {
 
       {/* 右栏：当前渠道机器人列表（满行卡片）+ 双接入入口 */}
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <Box sx={{ px: 3, py: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography sx={{ fontSize: 15, fontWeight: 600 }}>{channel.label}</Typography>
-          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ px: '24px', py: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Typography sx={{ fontSize: '15px', fontWeight: 600 }}>{channel.label}</Typography>
+          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {/* 检测 Agent（T3.5）：受理全局 doctor 探测（doctor 结论 per-agentCode 全局共享，同
                 agent 的 bot 共用一份），受理与探测异步解耦，收敛经四态轮询自动呈现于徽标。 */}
             <Tooltip title="检测 Agent 运行环境（node / claude / 适配器握手）">
@@ -242,7 +242,7 @@ function ImBotsPage() {
                 size="small"
                 onClick={() => checkDoctor.mutate(undefined)}
                 loading={checkDoctor.isPending}
-                sx={{ '& svg': { fontSize: 20 } }}
+                sx={{ '& svg': { fontSize: '20px' } }}
               >
                 <MonitorHeartOutlinedIcon />
               </IconButton>
@@ -252,21 +252,21 @@ function ImBotsPage() {
                 size="small"
                 onClick={() => refetch()}
                 disabled={isFetching}
-                sx={{ '& svg': { fontSize: 20 } }}
+                sx={{ '& svg': { fontSize: '20px' } }}
               >
                 <RefreshOutlinedIcon />
               </IconButton>
             </Tooltip>
             <Button
               variant="outlined"
-              startIcon={<QrCode2OutlinedIcon sx={{ '& svg': { fontSize: 18 } }} />}
+              startIcon={<QrCode2OutlinedIcon sx={{ '& svg': { fontSize: '18px' } }} />}
               onClick={() => setProvisionOpen(true)}
             >
               扫码接入
             </Button>
             <Button
               variant="contained"
-              startIcon={<AddOutlinedIcon sx={{ '& svg': { fontSize: 18 } }} />}
+              startIcon={<AddOutlinedIcon sx={{ '& svg': { fontSize: '18px' } }} />}
               onClick={() => setDrawer({ bot: null, channelKey })}
             >
               手动接入
@@ -274,19 +274,19 @@ function ImBotsPage() {
           </Box>
         </Box>
 
-        <Box sx={{ px: 3, pb: 3, flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+        <Box sx={{ px: '24px', pb: '24px', flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
             接入企业微信智能机器人：消息驱动本机 Claude Code 会话，流式回复，支持引用与附件。
           </Typography>
 
-          {isLoading && <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>…</Typography>}
+          {isLoading && <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>…</Typography>}
           {!isLoading && error && (
-            <Typography sx={{ fontSize: 12, color: 'error.main' }}>
+            <Typography sx={{ fontSize: '12px', color: 'error.main' }}>
               {`机器人列表加载失败：${error.message}（点右上角刷新重试）`}
             </Typography>
           )}
           {!isLoading && !error && channelBots.length === 0 && (
-            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+            <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
               还没有机器人：推荐「扫码接入」（企业微信 App 授权自动创建），或「手动接入」填写后台凭据。
             </Typography>
           )}
@@ -322,7 +322,7 @@ function ImBotsPage() {
       <Dialog open={deleteTarget != null} onClose={() => setDeleteTarget(null)}>
         <DialogTitle>删除机器人</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ fontSize: 13 }}>
+          <DialogContentText sx={{ fontSize: '13px' }}>
             {`将删除「${deleteTarget?.name ?? ''}」及其全部会话映射，且不可恢复。确认删除？`}
           </DialogContentText>
         </DialogContent>

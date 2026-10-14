@@ -1,16 +1,8 @@
-// LocalPtyProvider：本机 PTY 后端（portable-pty）。
-//
-// spawn 细节：
-//   - shell 显式取 $SHELL 回退 /bin/zsh，加 -i（交互式）。不能用
-//     CommandBuilder::new_default_prog()——它在无 tty 的环境会永久挂起。
-//   - direct_command：无 shell 中转，PTY 直接 exec CLI；解析失败回落普通裸 shell。
-//   - cwd 不存在时 spawn_command 直接报错，由前端捕获展示「任务目录不存在」。
-//
-// spawn 即启动 reader 线程：输出经 UTF-8 边界切分后推 listener Channel；
-// EOF 置 exited + Exit 事件。重复 spawn 语义：
-//   - 未退出会话：复用，换装新 listener（webview 刷新后旧 Channel 失效）
-//   - 已退出会话：移除旧会话重起 shell（前端「重开」按钮路径）
-
+/*
+ * LocalPtyProvider：本机 PTY 后端（portable-pty）。
+ * spawn 细节：shell 显式取 $SHELL 回退 /bin/zsh 加 -i（不能用 CommandBuilder::new_default_prog()——无 tty 环境会永久挂起）；direct_command 无 shell 中转直接 exec CLI，解析失败回落普通裸 shell；cwd 不存在时 spawn_command 直接报错由前端捕获展示。
+ * spawn 即启动 reader 线程：输出经 UTF-8 边界切分后推 listener Channel，EOF 置 exited + Exit 事件。重复 spawn：未退出复用换装新 listener（webview 刷新后旧 Channel 失效）；已退出移除重起 shell（「重开」路径）。
+ */
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -22,7 +14,7 @@ use super::provider::{PtyProvider, PtyReattached, PtySessionInfo, PtySpawned, Sp
 use super::session::{PtyEvent, PtySession, SessionIo, spawn_reader_thread};
 use super::state::PtySessionStore;
 
-/// 本机 PTY 后端。持有全局会话存储。
+// 本机 PTY 后端。持有全局会话存储。
 pub struct LocalPtyProvider {
     pub store: PtySessionStore,
 }
@@ -34,14 +26,16 @@ impl LocalPtyProvider {
         }
     }
 
-    /// 会话存储访问（与 spawn 写入侧同一实例，命令查询统一走此处）。
+    // 会话存储访问（与 spawn 写入侧同一实例，命令查询统一走此处）。
     pub fn store(&self) -> &PtySessionStore {
         &self.store
     }
 
-    /// 起一个新 shell 会话并入库（不检查已存在——调用方 spawn 决定复用/重起）。
-    /// envs 为业务环境变量，统一在 spawn 前注入（plain shell 与 CLI 直启两分支都生效，
-    /// shell 内手动跑 claude 同样受益）。
+    /*
+     * 起一个新 shell 会话并入库（不检查已存在——调用方 spawn 决定复用/重起）。
+     * envs 为业务环境变量，统一在 spawn 前注入（plain shell 与 CLI 直启两分支都生效，
+     * shell 内手动跑 claude 同样受益）。
+     */
     fn spawn_fresh(
         &self,
         opts: &SpawnOpts,
@@ -65,23 +59,27 @@ impl LocalPtyProvider {
         }
         cmd.cwd(&opts.cwd);
 
-        // direct_command 分支（T5.1，唯一自动执行路径；P5 终态：token=claude 走
-        // vendored 自带二进制）：直启——整体替换 cmd（重建 CommandBuilder），无
-        // shell 中转。解析失败（token 不在白名单 / vendored 资源缺失）回落普通
-        // 裸 shell（上方已构造好），用户可手动启动。
+        /*
+         * direct_command 分支（T5.1，唯一自动执行路径；P5 终态：token=claude 走 vendored 自带二进制）：
+         * 直启——整体替换 cmd（重建 CommandBuilder），无 shell 中转；解析失败（token 不在白名单 / vendored 资源缺失）回落普通裸 shell（上方已构造好），用户可手动启动。
+         */
         if let Some(direct) = &opts.direct_command {
             let token = direct.split_whitespace().next().unwrap_or("");
             match cli_bin::resolve_direct_bin(token) {
                 Some((bin, login_path)) => {
-                    // 首 token（CLI 名）由 vendored 绝对路径顶替；余参原样透传
-                    //（含 flag 形态，如 --model xxx）。
+                    /*
+                     * 首 token（CLI 名）由 vendored 绝对路径顶替；余参原样透传
+                     *（含 flag 形态，如 --model xxx）。
+                     */
                     cmd = CommandBuilder::new(&bin);
                     for arg in direct.split_whitespace().skip(1) {
                         cmd.arg(arg);
                     }
-                    // login PATH best-effort 注入（None = 探测失败，保留 app 继承
-                    // PATH）：vendored claude 为原生二进制不依赖 node，注入只服务
-                    // 其派生的工具子进程（Bash 工具跑 npm 等）。
+                    /*
+                     * login PATH best-effort 注入（None = 探测失败，保留 app 继承
+                     * PATH）：vendored claude 为原生二进制不依赖 node，注入只服务
+                     * 其派生的工具子进程（Bash 工具跑 npm 等）。
+                     */
                     if let Some(path) = &login_path {
                         cmd.env("PATH", path);
                     }
@@ -102,9 +100,11 @@ impl LocalPtyProvider {
             }
         }
 
-        // env 注入（终端基座 + OCEAN_HARNESS_PORT，构造见 mod.rs child_envs）：统一
-        // 在此点注入，两条构造分支（裸 shell / CLI 直启重建的 cmd）都覆盖。
-        // portable-pty CommandBuilder 默认继承父进程 env，env() 在其上追加/覆盖。
+        /*
+         * env 注入（终端基座 + OCEAN_HARNESS_PORT，构造见 mod.rs child_envs）：统一
+         * 在此点注入，两条构造分支（裸 shell / CLI 直启重建的 cmd）都覆盖。
+         * portable-pty CommandBuilder 默认继承父进程 env，env() 在其上追加/覆盖。
+         */
         for (k, v) in envs {
             cmd.env(k, v);
         }
@@ -143,9 +143,11 @@ impl LocalPtyProvider {
                 .0
                 .lock()
                 .expect("PtySessionStore mutex poisoned");
-            // 二次确认：并发 spawn 同 issueId 的败者 kill 刚起的 shell 让位，不覆盖先入会话，
-            // 但把现有会话的 listener 换成自己的——败者（如 StrictMode 第二遍挂载）才是
-            // 存活的前端，不换装则现有会话持续向已销毁的旧 Channel 推流（数据全丢）。
+            /*
+             * 二次确认：并发 spawn 同 issueId 的败者 kill 刚起的 shell 让位，不覆盖先入会话，
+             * 但把现有会话的 listener 换成自己的——败者（如 StrictMode 第二遍挂载）才是
+             * 存活的前端，不换装则现有会话持续向已销毁的旧 Channel 推流（数据全丢）。
+             */
             if let Some(existing) = map.get_mut(&opts.session_id) {
                 if !existing.exited() {
                     existing.io.set_listener(listener.clone());
@@ -172,7 +174,7 @@ impl LocalPtyProvider {
         })
     }
 
-    /// 从现有会话生成快照荷载（scrollback 由调用方按需覆写）。
+    // 从现有会话生成快照荷载（scrollback 由调用方按需覆写）。
     fn snapshot(&self, s: &PtySession) -> PtySpawned {
         PtySpawned {
             session_id: s.session_id.clone(),
@@ -195,24 +197,28 @@ impl Default for LocalPtyProvider {
     }
 }
 
-/// 解析用户 shell：$SHELL 优先，缺失回退 /bin/zsh（macOS 默认）。
-/// 返回 (程序, 参数)——交互式 shell 需要 -i。
+/*
+ * 解析用户 shell：$SHELL 优先，缺失回退 /bin/zsh（macOS 默认）。
+ * 返回 (程序, 参数)——交互式 shell 需要 -i。
+ */
 fn resolve_shell() -> (String, Vec<String>) {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
     (shell, vec!["-i".to_string()])
 }
 
 impl PtyProvider for LocalPtyProvider {
-    /// 启动会话（幂等）：未退出复用 + 换装 listener；已退出移除重起（重开语义）。
+    // 启动会话（幂等）：未退出复用 + 换装 listener；已退出移除重起（重开语义）。
     fn spawn(
         &self,
         opts: SpawnOpts,
         listener: Channel<PtyEvent>,
         envs: &[(String, String)],
     ) -> Result<PtySpawned, String> {
-        // 目录预检：portable-pty 对不存在的 cwd 不报错而是静默回退到父进程 cwd
-        // （实测 shell 会起在家目录），违背「spawn 失败自然暴露」的设计预期。
-        // 显式校验让前端走「任务目录不存在」错误态。
+        /*
+         * 目录预检：portable-pty 对不存在的 cwd 不报错而是静默回退到父进程 cwd
+         * （实测 shell 会起在家目录），违背「spawn 失败自然暴露」的设计预期。
+         * 显式校验让前端走「任务目录不存在」错误态。
+         */
         if !std::path::Path::new(&opts.cwd).is_dir() {
             return Err(format!("任务目录不存在：{}", opts.cwd));
         }
@@ -225,9 +231,11 @@ impl PtyProvider for LocalPtyProvider {
             map.get(&opts.session_id).map(|s| !s.exited())
         };
         match existing {
-            // 未退出：复用。同一临界区内快照 ring + 换装 listener——StrictMode 双挂载
-            // 场景第二遍 spawn 复用会话时，prompt 等早期输出已随第一遍（已死的）
-            // listener 丢弃，须回放 ring 才不空白。
+            /*
+             * 未退出：复用。同一临界区内快照 ring + 换装 listener——StrictMode 双挂载
+             * 场景第二遍 spawn 复用会话时，prompt 等早期输出已随第一遍（已死的）
+             * listener 丢弃，须回放 ring 才不空白。
+             */
             Some(true) => {
                 let mut map = self
                     .store
@@ -387,9 +395,11 @@ mod tests {
     use super::*;
     use std::time::{Duration, Instant};
 
-    /// Channel 不可在测试外构造（on_message 绑 webview eval），测试用裸 on_message 构造
-    ///（send 走 no-op 丢弃）；输出断言统一走 ring snapshot，不与 reader 线程抢 fd。
-    /// 冒烟：spawn → 幂等复用（fresh=false）→ 写 echo → resize → ring 见回显 → shutdown 清空。
+    /*
+     * Channel 不可在测试外构造（on_message 绑 webview eval），测试用裸 on_message 构造
+     *（send 走 no-op 丢弃）；输出断言统一走 ring snapshot，不与 reader 线程抢 fd。
+     * 冒烟：spawn → 幂等复用（fresh=false）→ 写 echo → resize → ring 见回显 → shutdown 清空。
+     */
     #[test]
     fn spawn_write_read_shutdown() {
         let provider = LocalPtyProvider::new();
@@ -424,8 +434,10 @@ mod tests {
             .unwrap();
         provider.resize(&session_id, 100, 30).unwrap();
 
-        // 不再 clone 第二个 reader（与 reader 线程竞争同一 fd 会各读走一半字节）。
-        // 输出断言改走 ring：reader 线程把全部输出入 ring，轮询 snapshot 直到含回显。
+        /*
+         * 不再 clone 第二个 reader（与 reader 线程竞争同一 fd 会各读走一半字节）。
+         * 输出断言改走 ring：reader 线程把全部输出入 ring，轮询 snapshot 直到含回显。
+         */
         let deadline = Instant::now() + Duration::from_secs(8);
         let mut out = String::new();
         while Instant::now() < deadline {
@@ -446,8 +458,10 @@ mod tests {
         assert!(provider.list().is_empty());
     }
 
-    /// reattach 全链路：spawn 产出输出后 exists=true；reattach 返回 scrollback 含
-    /// 之前输出且 exited=false；不存在的会话 reattach 返回 None、exists=false。
+    /*
+     * reattach 全链路：spawn 产出输出后 exists=true；reattach 返回 scrollback 含
+     * 之前输出且 exited=false；不存在的会话 reattach 返回 None、exists=false。
+     */
     #[test]
     fn reattach_via_provider() {
         let provider = LocalPtyProvider::new();
@@ -510,8 +524,10 @@ mod tests {
         provider.shutdown(&session_id).unwrap();
     }
 
-    /// shutdown_issue 前缀全关（T0.1）：store 放 `a::main`、`a::p1`、`a::p2`、`b::main`，
-    /// shutdown_issue("a") 后仅剩 `b::main`；不存在 key 幂等 Ok。
+    /*
+     * shutdown_issue 前缀全关（T0.1）：store 放 `a::main`、`a::p1`、`a::p2`、`b::main`，
+     * shutdown_issue("a") 后仅剩 `b::main`；不存在 key 幂等 Ok。
+     */
     #[test]
     fn shutdown_issue_closes_all_panes() {
         let provider = LocalPtyProvider::new();
@@ -552,18 +568,21 @@ mod tests {
 
     // ---------- direct_command 直启分支（T5.1；P5 终态 vendored claude）----------
 
-    /// direct 冒烟（vendored 链路）：TEST_RESOURCES_ROOT 注入临时 fake staging
-    ///（内含当前平台二进制形态的 stub 脚本），token=claude 直启执行 stub——ring
-    /// 出现标记，随后会话自然退出（CLI 退出即 pane 退出语义，无 shell 回落）。
-    /// 测试结束复位注入与缓存（进程级状态不跨测试漂移）。
+    /*
+     * direct 冒烟（vendored 链路）：TEST_RESOURCES_ROOT 注入临时 fake staging（内含当前平台二进制形态的 stub 脚本），
+     * token=claude 直启执行 stub——ring 出现标记，随后会话自然退出（CLI 退出即 pane 退出语义，无 shell 回落）。
+     * 测试结束复位注入与缓存（进程级状态不跨测试漂移）。
+     */
     #[test]
     fn direct_spawn_runs_vendored_claude_and_exits() {
         if std::env::consts::OS == "windows" {
             // stub 脚本形态（#!/bin/sh）不适用于 Windows，跳过。
             return;
         }
-        // fake staging：<root>/claude-acp/0.84.0/node_modules/@anthropic-ai/
-        // claude-agent-sdk-<triple>/<bin>（布局同真实 vendored 安装）。
+        /*
+         * fake staging：<root>/claude-acp/0.84.0/node_modules/@anthropic-ai/
+         * claude-agent-sdk-<triple>/<bin>（布局同真实 vendored 安装）。
+         */
         let Some(triple) = cli_bin::platform_triple() else {
             return;
         };
@@ -581,16 +600,20 @@ mod tests {
             .join(cli_bin::claude_bin_name());
         std::fs::create_dir_all(stub.parent().unwrap()).unwrap();
         std::fs::write(&stub, "#!/bin/sh\necho VENDORED_DIRECT_OK\n").unwrap();
-        // `use` 是编译期声明，函数内运行时 Windows 早退守不住它——cfg 门控到 unix，
-        // Windows target 下测试构建不再编译失败（该路径在 Windows 下本不可达）。
+        /*
+         * `use` 是编译期声明，函数内运行时 Windows 早退守不住它——cfg 门控到 unix，
+         * Windows target 下测试构建不再编译失败（该路径在 Windows 下本不可达）。
+         */
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
 
-        // 直启解析带进程级成功缓存：先清缓存 + 注入测试 staging 根（cfg(test) 静态，
-        // 不触进程 env——并行测试下 set_var 与其它测试的 env 读取存在数据竞争）。
+        /*
+         * 直启解析带进程级成功缓存：先清缓存 + 注入测试 staging 根（cfg(test) 静态，
+         * 不触进程 env——并行测试下 set_var 与其它测试的 env 读取存在数据竞争）。
+         */
         *cli_bin::DIRECT_BIN_CACHE
             .lock()
             .expect("cli_bin direct bin cache mutex poisoned") = None;
@@ -663,9 +686,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// direct 回落：token 不在白名单（echo）→ 回落普通裸 shell：命令不执行
-    ///（ring 无输出标记）且会话存活（交互 shell 等输入；direct 成功路径的
-    /// CLI 早已退出）。
+    /*
+     * direct 回落：token 不在白名单（echo）→ 回落普通裸 shell：命令不执行
+     *（ring 无输出标记）且会话存活（交互 shell 等输入；direct 成功路径的
+     * CLI 早已退出）。
+     */
     #[test]
     fn direct_spawn_fallback_to_plain_shell() {
         let provider = LocalPtyProvider::new();

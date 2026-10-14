@@ -69,11 +69,11 @@ function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }
       sx={{
         display: 'flex',
         alignItems: 'center',
-        gap: 1.5,
-        px: 2,
-        py: 1.5,
+        gap: '12px',
+        px: '16px',
+        py: '12px',
         bgcolor: 'action.hover',
-        borderBottom: 1,
+        borderBottom: '1px solid',
         borderColor: 'divider',
       }}
     >
@@ -88,7 +88,7 @@ function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }
 // 单个模块段卡片容器（标题栏 + 内容）。
 function SectionCard({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
   return (
-    <Box sx={{ borderRadius: 2, border: 1, borderColor: 'divider', overflow: 'hidden' }}>
+    <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
       {header}
       {children}
     </Box>
@@ -237,8 +237,8 @@ function TerminalConfigPage() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Box sx={{ p: 3, flex: 1, overflow: 'auto' }}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <Box sx={{ p: '24px', flex: 1, overflow: 'auto' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <SectionCard
             header={(
               <SectionHeader
@@ -247,21 +247,21 @@ function TerminalConfigPage() {
               />
             )}
           >
-            <Box sx={{ px: 2, py: 2 }}>
+            <Box sx={{ px: '16px', py: '16px' }}>
               <Box
                 sx={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  gap: 2,
+                  gap: '16px',
                 }}
               >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <SensorsOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                   <Typography>{t('settings:terminal.row.pollInterval')}</Typography>
                 </Box>
                 <Typography
-                  sx={{ minWidth: 48, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
+                  sx={{ minWidth: '48px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}
                 >
                   {draftInterval}
                   {t('settings:terminal.unit.seconds')}
@@ -275,29 +275,29 @@ function TerminalConfigPage() {
                 max={MAX_POLL_INTERVAL_SECS}
                 step={5}
                 marks={marks}
-                sx={{ mt: 1 }}
+                sx={{ mt: '8px' }}
               />
 
               <FormHelperText>{t('settings:terminal.help.pollInterval')}</FormHelperText>
             </Box>
 
-            <Divider sx={{ my: 1.5 }} />
+            <Divider sx={{ my: '12px' }} />
 
             <Box
               sx={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                px: 2,
-                py: 1.5,
-                gap: 2,
+                px: '16px',
+                py: '12px',
+                gap: '16px',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <CallSplitOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography>{t('settings:terminal.row.iterm2SplitDirection')}</Typography>
               </Box>
-              <FormControl size="small" sx={{ minWidth: 140 }}>
+              <FormControl size="small" sx={{ minWidth: '140px' }}>
                 <Select
                   value={draftSplitDirection}
                   onChange={(e: SelectChangeEvent<Iterm2SplitDirection>) =>
@@ -312,7 +312,7 @@ function TerminalConfigPage() {
               </FormControl>
             </Box>
 
-            <Divider sx={{ my: 1.5 }} />
+            <Divider sx={{ my: '12px' }} />
 
             {/* 追加命令：标签左、输入框右（同一行——短命令右侧放得下，不为它单占一行）。
                 卡片末行：上方有 Divider my 叠加，下方贴卡片边缘——pb 补齐同视觉节奏 */}
@@ -321,13 +321,13 @@ function TerminalConfigPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                px: 2,
-                pt: 1.5,
-                pb: 3,
-                gap: 2,
+                px: '16px',
+                pt: '12px',
+                pb: '24px',
+                gap: '16px',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px', flexShrink: 0 }}>
                 <PlayArrowOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography>{t('settings:terminal.row.terminalPostOpenCommand')}</Typography>
               </Box>
@@ -336,7 +336,7 @@ function TerminalConfigPage() {
                 placeholder="add_proxy"
                 value={draftTerminalPostOpenCommand}
                 onChange={e => setDraftTerminalPostOpenCommand(e.target.value)}
-                sx={{ width: 300, flexShrink: 0 }}
+                sx={{ width: '300px', flexShrink: 0 }}
               />
             </Box>
 
@@ -355,17 +355,17 @@ function TerminalConfigPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                px: 2,
-                pt: 3,
-                pb: 1.5,
-                gap: 2,
+                px: '16px',
+                pt: '24px',
+                pb: '12px',
+                gap: '16px',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <FormatSizeOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography>{t('settings:terminal.row.fontSize')}</Typography>
               </Box>
-              <FormControl size="small" sx={{ minWidth: 100 }}>
+              <FormControl size="small" sx={{ minWidth: '100px' }}>
                 <Select
                   value={draftFontSize}
                   onChange={(e: SelectChangeEvent<TerminalFontSize>) =>
@@ -378,23 +378,23 @@ function TerminalConfigPage() {
               </FormControl>
             </Box>
 
-            <Divider sx={{ my: 1.5 }} />
+            <Divider sx={{ my: '12px' }} />
 
             <Box
               sx={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                px: 2,
-                py: 1.5,
-                gap: 2,
+                px: '16px',
+                py: '12px',
+                gap: '16px',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <HistoryOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography>{t('settings:terminal.row.scrollbackRows')}</Typography>
               </Box>
-              <FormControl size="small" sx={{ minWidth: 120 }}>
+              <FormControl size="small" sx={{ minWidth: '120px' }}>
                 <Select
                   value={draftScrollbackRows}
                   onChange={(e: SelectChangeEvent<TerminalScrollbackRows>) =>
@@ -406,9 +406,9 @@ function TerminalConfigPage() {
                 </Select>
               </FormControl>
             </Box>
-            <FormHelperText sx={{ px: 2, pb: 1.5 }}>{t('settings:terminal.help.scrollbackRows')}</FormHelperText>
+            <FormHelperText sx={{ px: '16px', pb: '12px' }}>{t('settings:terminal.help.scrollbackRows')}</FormHelperText>
 
-            <Divider sx={{ my: 1.5 }} />
+            <Divider sx={{ my: '12px' }} />
 
             {/* 主题（terminal_05）：用户自选暗色主题，不跟随 app 明暗 */}
             <Box
@@ -416,16 +416,16 @@ function TerminalConfigPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                px: 2,
-                py: 1.5,
-                gap: 2,
+                px: '16px',
+                py: '12px',
+                gap: '16px',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <PaletteOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography>{t('settings:terminal.row.theme')}</Typography>
               </Box>
-              <FormControl size="small" sx={{ minWidth: 180 }}>
+              <FormControl size="small" sx={{ minWidth: '180px' }}>
                 <Select
                   value={draftThemeId}
                   onChange={(e: SelectChangeEvent<TerminalThemeId>) =>
@@ -438,7 +438,7 @@ function TerminalConfigPage() {
               </FormControl>
             </Box>
 
-            <Divider sx={{ my: 1.5 }} />
+            <Divider sx={{ my: '12px' }} />
 
             {/* 光标样式 + 闪烁（terminal_05） */}
             <Box
@@ -446,17 +446,17 @@ function TerminalConfigPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                px: 2,
-                py: 1.5,
-                gap: 2,
+                px: '16px',
+                py: '12px',
+                gap: '16px',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <TerminalOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography>{t('settings:terminal.row.cursorStyle')}</Typography>
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <FormControl size="small" sx={{ minWidth: 110 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <FormControl size="small" sx={{ minWidth: '110px' }}>
                   <Select
                     value={draftCursorBlink}
                     onChange={(e: SelectChangeEvent<YesNo>) =>
@@ -466,7 +466,7 @@ function TerminalConfigPage() {
                     <MenuItem value={YES_NO.NO}>{t('settings:terminal.option.cursorBlinkOff')}</MenuItem>
                   </Select>
                 </FormControl>
-                <FormControl size="small" sx={{ minWidth: 130 }}>
+                <FormControl size="small" sx={{ minWidth: '130px' }}>
                   <Select
                     value={draftCursorStyle}
                     onChange={(e: SelectChangeEvent<TerminalCursorStyle>) =>
@@ -482,7 +482,7 @@ function TerminalConfigPage() {
               </Box>
             </Box>
 
-            <Divider sx={{ my: 1.5 }} />
+            <Divider sx={{ my: '12px' }} />
 
             {/* 行高（terminal_05） */}
             <Box
@@ -490,16 +490,16 @@ function TerminalConfigPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                px: 2,
-                py: 1.5,
-                gap: 2,
+                px: '16px',
+                py: '12px',
+                gap: '16px',
               }}
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <FormatSizeOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography>{t('settings:terminal.row.lineHeight')}</Typography>
               </Box>
-              <FormControl size="small" sx={{ minWidth: 110 }}>
+              <FormControl size="small" sx={{ minWidth: '110px' }}>
                 <Select
                   value={draftLineHeight}
                   onChange={(e: SelectChangeEvent<TerminalLineHeight>) =>
@@ -512,16 +512,16 @@ function TerminalConfigPage() {
               </FormControl>
             </Box>
 
-            <Divider sx={{ my: 1.5 }} />
+            <Divider sx={{ my: '12px' }} />
 
             {/* 实时预览（terminal_05）：36x15 真 xterm，随 draft 值变（未保存即所见）。
                 行结构与其他设置项同构（标题行 + 内容），预览方块在标题下方。 */}
-            <Box sx={{ px: 2, py: 1.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ px: '16px', py: '12px' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <VisibilityOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />
                 <Typography>{t('settings:terminal.row.preview')}</Typography>
               </Box>
-              <Box sx={{ mt: 1, mb: 1, display: 'flex', justifyContent: 'center' }}>
+              <Box sx={{ mt: '8px', mb: '8px', display: 'flex', justifyContent: 'center' }}>
                 <TerminalPreview
                   theme={buildTerminalTheme(draftThemeId)}
                   fontSize={draftFontSize}
@@ -537,12 +537,12 @@ function TerminalConfigPage() {
 
       <Box
         sx={{
-          p: 2,
-          borderTop: 1,
+          p: '16px',
+          borderTop: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           justifyContent: 'flex-end',
-          gap: 1,
+          gap: '8px',
         }}
       >
         <Button onClick={handleReset} color="inherit">

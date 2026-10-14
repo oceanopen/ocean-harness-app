@@ -64,17 +64,18 @@ function decodeYesNo(raw: string | null): boolean {
   return raw == null ? true : isYes(raw);
 }
 
-// 初始尺寸占位：仅作 usePtySession spawn 的兜底（容器不可见等边缘场景 fit 无
-// 实测值时）。正常时序下 attach 直接用 TerminalView fit 实测尺寸。
+/**
+ * 初始尺寸占位：仅作 usePtySession spawn 的兜底（容器不可见等边缘场景 fit 无
+ * 实测值时）。正常时序下 attach 直接用 TerminalView fit 实测尺寸。
+ */
 const INITIAL_COLS = 80;
 const INITIAL_ROWS = 24;
 
-// 终端挂载前置配置集：这两个 key 决定字符度量（fontSize/lineHeight → fit 结果
-// 与 spawn 尺寸）。就绪前挂载会走「默认值 → 异步到达纠正」路径——二次 refit 与
-// 几何失配重复 resize，每次纠正都是一次打在已绘制提示符上的 SIGWINCH 重绘伪影。
-// 启动直启值（startupCli）不在此列：T0.3 起由父层从 workspace 启动设置解析下传
-// （null = 解析中），经 props 闸门与 enabled 双闸保证首值即终值，不走全局配置闸门。
-// 模块级常量保证引用稳定（useConfigReady 依赖项要求）。
+/**
+ * 终端挂载前置配置集：这两个 key 决定字符度量（fontSize/lineHeight → fit 结果与 spawn 尺寸），
+ * 就绪前挂载会走「默认值 → 异步到达纠正」路径——二次 refit 与几何失配重复 resize，每次纠正都是一次打在已绘制提示符上的 SIGWINCH 重绘伪影。
+ * 启动直启值（startupCli）不在此列：T0.3 起由父层从 workspace 启动设置解析下传（null = 解析中），经 props 闸门与 enabled 双闸保证首值即终值。模块级常量保证引用稳定。
+ */
 const TERMINAL_MOUNT_CONFIG_KEYS: readonly string[] = [
   TERMINAL_FONT_SIZE_KEY,
   TERMINAL_LINE_HEIGHT_KEY,
@@ -84,25 +85,20 @@ interface EmbeddedTerminalProps {
   issueId: string;
   // 当前工作空间的工作区目录（页面经 issue.workspaceId 解析下传；null = 解析中）。
   workspaceDir: string | null;
-  // 终端直启值（DevWorkbenchPage 从 workspace 启动设置解析下传；非 null = 主 pane
-  // 直接启动该命令；null = 解析中或不自动启动）。解析中经 enabled 闸门哑会话等待。
+  /**
+   * 终端直启值（DevWorkbenchPage 从 workspace 启动设置解析下传；非 null = 主 pane
+   * 直接启动该命令；null = 解析中或不自动启动）。解析中经 enabled 闸门哑会话等待。
+   */
   startupCli: string | null;
   // pane id：'main'（主 pane）| 8 位 uuid（附加 pane）。锚点统一 `issueId::<paneId>`。
   paneId?: string;
 }
 
-// EmbeddedTerminal：开发工作台右侧嵌入式终端容器。
-// 职责：由工作空间目录派生 cwd（`${dir}/${issueId}`）、错误态（任务目录不存在——
-// 目录创建属 skills 集成，仅提示）、组装 TerminalView + usePtySession。
-// 父层以 issueId 为 key 挂载本组件，
-// 切换 issue 即重挂载（unmount 仅断订阅，后端会话/ring 常驻，回切 reattach 重载）。
-//
-// 数据通路（函数式，两条单向线，无响应式层）：
-//   输出：Channel → usePtySession(onData) → writeDataRef → terminal.write
-//   输入：xterm onData → session.write → ptyWrite → shell
-// writeDataRef 是全链唯一 ref 桥：Channel 数据可在任何时刻到达（含 StrictMode
-// 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下
-// 实测出现「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
+/**
+ * EmbeddedTerminal：开发工作台右侧嵌入式终端容器。由工作空间目录派生 cwd（`${dir}/${issueId}`）、错误态（任务目录不存在——目录创建属 skills 集成，仅提示）、组装 TerminalView + usePtySession。
+ * 父层以 issueId 为 key 挂载，切 issue 即重挂载（unmount 仅断订阅，后端会话/ring 常驻，回切 reattach 重载）。数据通路（函数式两条单向线，无响应式层）：输出 Channel → usePtySession(onData) → writeDataRef → terminal.write；输入 xterm onData → session.write → ptyWrite → shell。
+ * writeDataRef 是全链唯一 ref 桥：Channel 数据可在任何时刻到达（含 StrictMode 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下实测「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
+ */
 export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, paneId = 'main' }: EmbeddedTerminalProps) {
   const isMain = paneId === 'main';
   const { show: showToast, snack: toastSnack } = useToast();
@@ -139,15 +135,19 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
     decodeTerminalLineHeight,
     DEFAULT_TERMINAL_LINE_HEIGHT,
   );
-  // 度量/编排相关配置就绪闸门（见 TERMINAL_MOUNT_CONFIG_KEYS 注释）：就绪后才
-  // 挂载 TerminalView 并放行 usePtySession 编排，首帧即真实字号、spawn 即实测
-  // 尺寸，一步到位无纠正步骤。
+  /**
+   * 度量/编排相关配置就绪闸门（见 TERMINAL_MOUNT_CONFIG_KEYS 注释）：就绪后才
+   * 挂载 TerminalView 并放行 usePtySession 编排，首帧即真实字号、spawn 即实测
+   * 尺寸，一步到位无纠正步骤。
+   */
   const configReady = useConfigReady(TERMINAL_MOUNT_CONFIG_KEYS);
   // main 关闭确认弹窗开关（附加 pane 关闭直处理，无确认）。
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
-  // main 已关闭态：true = 不渲染 TerminalView，整块换占位视图（无蒙层）。
-  // 「重新打开终端」清标志 + session.reopen()（ptyShutdown 已移除会话 →
-  // exists=false → 全新 spawn，配置直启时重新 direct spawn）。
+  /**
+   * main 已关闭态：true = 不渲染 TerminalView，整块换占位视图（无蒙层）。
+   * 「重新打开终端」清标志 + session.reopen()（ptyShutdown 已移除会话 →
+   * exists=false → 全新 spawn，配置直启时重新 direct spawn）。
+   */
   const [mainClosed, setMainClosed] = useState(false);
 
   const writeDataRef = useRef<((text: string, replay?: boolean) => void) | null>(null);
@@ -165,25 +165,28 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
   }, []);
 
   const cwd = workspaceDir != null ? issueWorkspacePath(workspaceDir, issueId) : null;
-  // 会话锚点派生：统一 `issueId::<paneId>`（main → `issueId::main`，split → `issueId::<uuid>`）。
-  // 后端 store 对 key 透明，仅 pty_shutdown_issue 前缀扫描感知 `::`。
+  /**
+   * 会话锚点派生：统一 `issueId::<paneId>`（main → `issueId::main`，split → `issueId::<uuid>`）。
+   * 后端 store 对 key 透明，仅 pty_shutdown_issue 前缀扫描感知 `::`。
+   */
   const sessionId = `${issueId}::${paneId}`;
 
-  // hooks 顶层无条件调用（React 规则）；cwd=null（目录解析中）时 usePtySession 返回
-  // 哑会话（不发 spawn，status 恒 'connecting'），下方引导分支先于 spinner 渲染，不会
-  // 闪错态。startupCli 不参与 enabled：null = 明确不直启（none 档临场选择后/手动/ACP 档），
-  // 正常 spawn 裸 shell；「列表解析中」的等待语义在父层消化（TerminalLaunchFlow 不挂载），
-  // 挂载即终值，directCommand（attachKey 成分）无中途变化路径。
+  /**
+   * hooks 顶层无条件调用（React 规则）；cwd=null（目录解析中）时 usePtySession 返回哑会话（不发 spawn，
+   * status 恒 'connecting'），引导分支先于 spinner 渲染，不闪错态。startupCli 不参与 enabled：
+   * null = 明确不直启（none 档临场选择后/手动/ACP 档），正常 spawn 裸 shell；「列表解析中」的等待语义在父层消化（TerminalLaunchFlow 不挂载），挂载即终值，directCommand（attachKey 成分）无中途变化路径。
+   */
   const session = usePtySession({
     sessionId,
     cwd,
     enabled: configReady,
     cols: INITIAL_COLS,
     rows: INITIAL_ROWS,
-    // CLI 直启（唯一自动执行路径）：主 pane + workspace 启动设置为终端 - 自动启动
-    // → PTY 直接 spawn 所选 Agent，无 shell 中转；附加 pane / 其余档位恒 null（裸
-    // shell）。直启失败（CLI 未安装等）由 Rust 侧回落普通 shell（warn log），用户可
-    // 手动启动。
+    /**
+     * CLI 直启（唯一自动执行路径）：主 pane + workspace 启动设置为终端 - 自动启动
+     * → PTY 直接 spawn 所选 Agent，无 shell 中转；附加 pane / 其余档位恒 null（裸 shell）。
+     * 直启失败（CLI 未安装等）由 Rust 侧回落普通 shell（warn log），用户可手动启动。
+     */
     directCommand: isMain ? startupCli : null,
     onData: handleTerminalData,
   });
@@ -202,26 +205,34 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
     });
   }, [cwd, session, showToast]);
 
-  // 关闭语义分流（terminal_02 §3.5 + 用户交互反馈）：附加 pane 直处理（ptyShutdown
-  // 断会话 + store 树剪枝，pane 从树上消失）；main pane 先二次确认，确认后仅杀会话
-  // （树保单 main leaf）+ 进 mainClosed 占位态（不卸载组件，保留重新打开出口）。
+  /**
+   * 关闭语义分流（terminal_02 §3.5 + 用户交互反馈）：附加 pane 直处理（ptyShutdown
+   * 断会话 + store 树剪枝，pane 从树上消失）；main pane 先二次确认，确认后仅杀会话
+   * （树保单 main leaf）+ 进 mainClosed 占位态（不卸载组件，保留重新打开出口）。
+   */
   const closePaneTree = useTerminalPanesStore(s => s.closePane);
-  // 分割本 pane（工具栏左右/上下分屏按钮）：目标 pane 由 props 闭包自识别（同 onClose
-  // 模式），不依赖焦点记录——原 activePanes 焦点追踪机制随按钮迁入 pane 工具栏而删除。
+  /**
+   * 分割本 pane（工具栏左右/上下分屏按钮）：目标 pane 由 props 闭包自识别（同 onClose
+   * 模式），不依赖焦点记录——原 activePanes 焦点追踪机制随按钮迁入 pane 工具栏而删除。
+   */
   const splitPane = useTerminalPanesStore(s => s.splitPane);
   const handleSplit = useCallback((direction: SplitDirection) => {
     splitPane(issueId, paneId, direction);
   }, [splitPane, issueId, paneId]);
 
-  // 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 写入 claude\r。
-  // 运行态探测（按钮置灰）走 useClaudeRunning——进程真相（pid 父链匹配），
-  // 非输出流启发式。
+  /**
+   * 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 写入 claude\r。
+   * 运行态探测（按钮置灰）走 useClaudeRunning——进程真相（pid 父链匹配），
+   * 非输出流启发式。
+   */
   const claudeRunning = useClaudeRunning(sessionId, session.status);
   const startClaude = useCallback(() => {
     session.write('claude\r');
   }, [session]);
-  // 润色命令注入编排（T3.3）：main pane 专属，消费「AI 润色」按钮写入的一次性意图
-  // 标志（工作空间闸门放行、会话 active 后自治编排，见 useRefineInjection 注释）。
+  /**
+   * 润色命令注入编排（T3.3）：main pane 专属，消费「AI 润色」按钮写入的一次性意图
+   * 标志（工作空间闸门放行、会话 active 后自治编排，见 useRefineInjection 注释）。
+   */
   useRefineInjection({
     issueId,
     enabled: isMain,
@@ -250,34 +261,42 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
     setMainClosed(true);
   }, [session]);
 
-  // 重新打开 main 终端：清占位态 + reopen（attempt 自增 → 重新编排 → exists=false
-  // 走全新 spawn，配置直启时重新 direct spawn）。
+  /**
+   * 重新打开 main 终端：清占位态 + reopen（attempt 自增 → 重新编排 → exists=false
+   * 走全新 spawn，配置直启时重新 direct spawn）。
+   */
   const reopenMain = useCallback(() => {
     setMainClosed(false);
     session.reopen();
   }, [session]);
 
-  // 工作空间目录解析中：哑会话（不发 spawn）+ 空占位，就绪后一次性以终值编排。
-  // startupCli 的 null 是「明确不直启」（none 临场选择后/手动/ACP 档）而非解析中——
-  // 正常渲染终端（裸 shell）；解析中的等待语义在父层（TerminalLaunchFlow 不挂载）。
+  /**
+   * 工作空间目录解析中：哑会话（不发 spawn）+ 空占位，就绪后一次性以终值编排。
+   * startupCli 的 null 是「明确不直启」（none 临场选择后/手动/ACP 档）而非解析中——
+   * 正常渲染终端（裸 shell）；解析中的等待语义在父层（TerminalLaunchFlow 不挂载）。
+   */
   if (cwd == null) {
     return <Box sx={{ height: '100%' }} />;
   }
 
-  // 度量配置未就绪：哑会话（不发 spawn）+ 空占位。一次性等待（本地 IPC，
-  // ~ms 级），就绪后 TerminalView 以真实字号首帧 fit、spawn 用实测尺寸——避免
-  // 「默认值挂载 → 配置到达 refit」的二次 resize（SIGWINCH 伪影）。
+  /**
+   * 度量配置未就绪：哑会话（不发 spawn）+ 空占位。一次性等待（本地 IPC，
+   * ~ms 级），就绪后 TerminalView 以真实字号首帧 fit、spawn 用实测尺寸——避免
+   * 「默认值挂载 → 配置到达 refit」的二次 resize（SIGWINCH 伪影）。
+   */
   if (!configReady) {
     return <Box sx={{ height: '100%' }} />;
   }
 
-  // 错误态：spawn 失败（典型为任务目录不存在）。
-  // 两出口：创建目录（mkdir -p 后自动重试）/ 重试（目录已被外部建好）。
+  /**
+   * 错误态：spawn 失败（典型为任务目录不存在）。
+   * 两出口：创建目录（mkdir -p 后自动重试）/ 重试（目录已被外部建好）。
+   */
   if (session.status === 'error') {
     return (
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', p: '16px' }}>
         <Typography variant="body2" color="text.secondary">{session.errorMessage ?? `任务目录不存在：${cwd}`}</Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: '8px' }}>
           <Button size="small" startIcon={<CreateNewFolderOutlinedIcon />} onClick={handleCreateDirectory}>创建目录</Button>
           <Button size="small" onClick={reopenPlain}>重试</Button>
         </Box>
@@ -288,19 +307,23 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
   // main 已关闭占位视图：整块替换 TerminalView（无蒙层），提示工作目录 + 重新打开出口。
   if (mainClosed) {
     return (
-      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5, p: 2 }}>
+      <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', p: '16px' }}>
         <Typography variant="body2" color="text.secondary">当前任务工作目录为：{cwd}</Typography>
         <Button size="small" onClick={reopenMain}>重新打开终端</Button>
       </Box>
     );
   }
 
-  // 完整终端主题（terminal_05）：按用户自选主题 id 构建（暗色目录，不跟随 app
-  // 明暗）。id 变化 → 新对象 → TerminalView 主题 effect 运行时赋值（热切换）。
+  /**
+   * 完整终端主题（terminal_05）：按用户自选主题 id 构建（暗色目录，不跟随 app
+   * 明暗）。id 变化 → 新对象 → TerminalView 主题 effect 运行时赋值（热切换）。
+   */
   const terminalTheme = buildTerminalTheme(themeId);
 
-  // 相对定位容器：connecting 态在终端之上叠加载蒙层（TerminalView 必须保持挂载
-  // 跑 fit 实测——spawn 尺寸链路不动，蒙层纯视觉且 pointer-events none 不拦交互）。
+  /**
+   * 相对定位容器：connecting 态在终端之上叠加载蒙层（TerminalView 必须保持挂载
+   * 跑 fit 实测——spawn 尺寸链路不动，蒙层纯视觉且 pointer-events none 不拦交互）。
+   */
   return (
     <Box sx={{ position: 'relative', height: '100%' }}>
       <TerminalView
@@ -326,11 +349,11 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
         <Box
           sx={{
             position: 'absolute',
-            inset: 0,
+            inset: '0px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 1.5,
+            gap: '12px',
             pointerEvents: 'none',
           }}
         >

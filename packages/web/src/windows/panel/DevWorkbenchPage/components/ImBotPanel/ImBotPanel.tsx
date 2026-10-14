@@ -78,20 +78,14 @@ function confirmSpec(action: PendingAction, issue: ProjectIssueResponseData): { 
 }
 
 interface ImBotPanelProps {
-  /// 当前选中任务（挂载方经 toolRegistry ctx 保证非空；workspaceId 决定 bot 过滤域）。
+  // 当前选中任务（挂载方经 toolRegistry ctx 保证非空；workspaceId 决定 bot 过滤域）。
   issue: ProjectIssueResponseData;
 }
 
 /**
  * ImBotPanel：开发工作台工具面板区的「IM 机器人」tab 内容（T3.2，经 toolRegistry 挂载）。
- * 展示当前任务所属工作空间的 bot 聚合卡（连接徽标 + 「N 个会话已关联」chip + 会话明细），
- * 桌面侧闭环入口：会话级「关联当前任务 / 切换 / 解除关联」与「+」补绑（把其他工作空间/
- * 未配置的 bot 迁入本工作空间）。写操作统一面板级确认弹窗 + 单飞行中操作（在飞请求经
- * bindPending 下传 bot 卡做行级 loading）。文案中文直出（对齐 ImBotsPage 约定）。
- *
- * 数据：useImBots 共享列表缓存按 issue.workspaceId 过滤；会话明细 per-bot query
- * （useImBotConversations）。IM 侧卡片绑定（T2.2）与 MCP 写库后端均不推事件，实时性靠
- * 头部刷新按钮手动 invalidate 整域（子任务面板同款口径，T3.1 定稿）。
+ * 展示当前任务所属工作空间的 bot 聚合卡（连接徽标 + 「N 个会话已关联」chip + 会话明细），桌面侧闭环入口：会话级「关联当前任务 / 切换 / 解除关联」与「+」补绑（把其他工作空间/未配置的 bot 迁入本工作空间）。
+ * 写操作统一面板级确认弹窗 + 单飞行中操作（在飞请求经 bindPending 下传 bot 卡做行级 loading），文案中文直出（对齐 ImBotsPage 约定）；数据：useImBots 共享列表缓存按 issue.workspaceId 过滤 + 会话明细 per-bot query，IM 侧绑定与 MCP 写库均不推事件，实时性靠头部刷新按钮手动 invalidate 整域（T3.1 定稿口径）。
  */
 export default function ImBotPanel({ issue }: ImBotPanelProps) {
   const qc = useQueryClient();
@@ -198,7 +192,7 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
       {/* 内容区：错误 / 加载中 / 空态引导 / bot 聚合卡列表 */}
       {error
         ? (
-            <Box sx={{ p: 1.5 }}>
+            <Box sx={{ p: '12px' }}>
               <Alert
                 severity="error"
                 action={<Button color="inherit" size="small" onClick={refresh}>重试</Button>}
@@ -209,7 +203,7 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
           )
         : isLoading
           ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: '16px' }}>
                 <CircularProgress size={20} />
               </Box>
             )
@@ -222,12 +216,12 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
                     flexDirection: 'column',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: 1,
-                    p: 2,
+                    gap: '8px',
+                    p: '16px',
                     textAlign: 'center',
                   }}
                 >
-                  <SmartToyOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+                  <SmartToyOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>本工作空间暂无 IM 机器人</Typography>
                   <Typography variant="body2" color="text.secondary">
                     在左侧菜单「IM 机器人」页接入机器人，或点右上角「+」把已有机器人加入本工作空间
@@ -235,7 +229,7 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
                 </Box>
               )
             : (
-                <Box sx={{ flex: 1, overflow: 'auto', pt: 1.5, pb: 0.5, px: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                <Box sx={{ flex: 1, overflow: 'auto', pt: '12px', pb: '4px', px: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {workspaceBots.map(bot => (
                     <ImBotBotCard
                       key={bot.id}
@@ -256,7 +250,7 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <MenuList dense sx={{ minWidth: 240, maxHeight: 320, overflow: 'auto' }}>
+        <MenuList dense sx={{ minWidth: '240px', maxHeight: '320px', overflow: 'auto' }}>
           {candidateBots.length === 0
             ? <MenuItem disabled>暂无其他机器人可加入</MenuItem>
             : candidateBots.map(bot => (
@@ -274,9 +268,9 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
       <Dialog open={pendingAction != null} onClose={actionPending ? undefined : () => setPendingAction(null)}>
         <DialogTitle>{spec?.title}</DialogTitle>
         <DialogContent>
-          <DialogContentText sx={{ fontSize: 13 }}>{spec?.text}</DialogContentText>
+          <DialogContentText sx={{ fontSize: '13px' }}>{spec?.text}</DialogContentText>
           {actionError && (
-            <Alert severity="error" sx={{ mt: 1.5, fontSize: 12 }}>{actionError.message}</Alert>
+            <Alert severity="error" sx={{ mt: '12px', fontSize: '12px' }}>{actionError.message}</Alert>
           )}
         </DialogContent>
         <DialogActions>

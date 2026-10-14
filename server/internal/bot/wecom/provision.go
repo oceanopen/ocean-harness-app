@@ -15,17 +15,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// 企微智能机器人「扫码授权接入」协议客户端 + 进程级 attempt 状态机。
-//
-// 协议（腾讯官方端点，无需任何中转服务；同 dsh-im 的 wecom qr-auth 实现）：
-//  1. GET  {qrGenerateURL}?source=<qrSource>&plat=<1|2|3> → data.scode（一次性连接码）+ data.auth_url
-//     （授权页 URL，即二维码内容；必须强校验为 work.weixin.qq.com 域——防钓鱼）
-//  2. 用户用企业微信 App 扫码并在授权页确认创建智能机器人
-//  3. GET  {qrQueryURL}?scode=<scode> → data.status: success（携带 data.bot_info{botid,secret}）
-//     / expired|timeout / fail|failed|error / 其余一律视为 waiting
-//
-// 凭据走轮询不走回调：无需公网入口。secret 仅经 ProvisionActivator 回调落库（sqlite，项目
-// 既定口径），不进日志、不回前端——AttemptView 只出 qrContent/expiresAt 等公开字段。
+/*
+ * 企微智能机器人「扫码授权接入」协议客户端 + 进程级 attempt 状态机（腾讯官方端点，无需任何中转服务；同 dsh-im 的 wecom qr-auth 实现）。
+ * 协议：GET {qrGenerateURL}?source=<qrSource>&plat=<1|2|3> → data.scode（一次性连接码）+ data.auth_url（授权页 URL，即二维码内容；必须强校验为 work.weixin.qq.com 域——防钓鱼）；用户用企业微信 App 扫码并在授权页确认创建智能机器人；GET {qrQueryURL}?scode=<scode> → data.status: success（携带 data.bot_info{botid,secret}）/ expired|timeout / fail|failed|error / 其余一律视为 waiting。
+ * 凭据走轮询不走回调：无需公网入口；secret 仅经 ProvisionActivator 回调落库（sqlite，项目既定口径），不进日志、不回前端——AttemptView 只出 qrContent/expiresAt 等公开字段。
+ */
 
 const (
 	qrGenerateURL = "https://work.weixin.qq.com/ai/qc/generate"
@@ -99,8 +93,10 @@ func normalizeTencentStatus(raw string) qrPollStatus {
 	}
 }
 
-// safeAuthURL 授权页 URL 强校验：scheme/host（含端口）必须与协议端点完全一致（生产即
-// https+work.weixin.qq.com，防钓鱼+防异端口仿冒，同 dsh-im）；测试注入伪端点时随之对照。
+/*
+ * safeAuthURL 授权页 URL 强校验：scheme/host（含端口）必须与协议端点完全一致（生产即
+ * https+work.weixin.qq.com，防钓鱼+防异端口仿冒，同 dsh-im）；测试注入伪端点时随之对照。
+ */
 func safeAuthURL(raw string) (string, error) {
 	base, err := url.Parse(qrBase())
 	if err != nil {
@@ -213,9 +209,11 @@ const (
 	provCancelled  provisionState = "cancelled"
 )
 
-// ProvisionActivator 扫码成功后的激活回调：落库新 bot 并拉起连接，返回 bot 行 id。
-// 由 main 装配注入（service 层实现）——wecom 包不反向依赖 service。
-// 实现方保证：secret 仅落库，不进日志、不回传。
+/*
+ * ProvisionActivator 扫码成功后的激活回调：落库新 bot 并拉起连接，返回 bot 行 id。
+ * 由 main 装配注入（service 层实现）——wecom 包不反向依赖 service。
+ * 实现方保证：secret 仅落库，不进日志、不回传。
+ */
 type ProvisionActivator func(remoteBotID, secret string) (botRowID int, err error)
 
 // AttemptView attempt 对外投影（剥除 scode/secret；qrContent 为授权页 URL=二维码内容，公开可回传）。
@@ -229,8 +227,10 @@ type AttemptView struct {
 	BotID          int    `json:"botId,omitempty"`   // connected 后的新 bot 行 id
 }
 
-// provisionAttempt 单个扫码会话。ctx 与 cancel 配对：cancel 终止在途腾讯请求
-// （含轮询）——用户取消后，在途 poll 返回错误而非 success，杜绝「取消后凭据照落库」。
+/*
+ * provisionAttempt 单个扫码会话。ctx 与 cancel 配对：cancel 终止在途腾讯请求
+ * （含轮询）——用户取消后，在途 poll 返回错误而非 success，杜绝「取消后凭据照落库」。
+ */
 type provisionAttempt struct {
 	mu             sync.Mutex
 	id             string
@@ -295,8 +295,10 @@ func StartProvisioning() (AttemptView, error) {
 	return attempt.view(), nil
 }
 
-// RegistrationStatus 惰性单飞轮询：每次调用至多触发一轮真实腾讯请求（polling 标记去重），
-// pending 本地过期直接置 expired；success → connecting（激活回调完成建 bot+连接）→ connected/failed。
+/*
+ * RegistrationStatus 惰性单飞轮询：每次调用至多触发一轮真实腾讯请求（polling 标记去重），
+ * pending 本地过期直接置 expired；success → connecting（激活回调完成建 bot+连接）→ connected/failed。
+ */
 func RegistrationStatus(attemptID string) (AttemptView, error) {
 	provisionMu.Lock()
 	attempt := activeAttempt

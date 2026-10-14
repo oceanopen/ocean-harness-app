@@ -11,36 +11,39 @@ import { useQueries } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-// DevTaskTree：开发工作台左任务树——跨所有工作空间展示非终态（BACKLOG/TODO/IN_PROGRESS）的顶级 issue。
-// 三级：workspace → project → dev issue。workspace/project 层级复用 MUI List 组件族（ListSubheader / ListItemButton / Chip）内置样式，
-// issue 卡片复用共享 IssueCard（无拖拽/无操作列/隐藏 id 尾 8 位，点击选中 issue），与项目事项管理列表/看板视觉交互一致。
-// 数据复用 tracker 缓存；过滤走 filterDevIssues（非终态顶级，T3.3 放宽）。选中 issue → useDevWorkbenchStore。
+/**
+ * DevTaskTree：开发工作台左任务树——跨所有工作空间展示非终态（BACKLOG/TODO/IN_PROGRESS）的顶级 issue。三级：workspace → project → dev issue。
+ * workspace/project 层级复用 MUI List 组件族（ListSubheader / ListItemButton / Chip）内置样式；issue 卡片复用共享 IssueCard（无拖拽/无操作列/隐藏 id 尾 8 位，点击选中 issue），与项目事项管理列表/看板视觉交互一致。
+ * 数据复用 tracker 缓存；过滤走 filterDevIssues（非终态顶级，T3.3 放宽）。选中 issue → useDevWorkbenchStore。
+ */
 export default function DevTaskTree() {
   const { data: workspaces = [], isLoading } = useWorkspaces();
 
   if (isLoading && workspaces.length === 0) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'center', p: '16px' }}>
         <CircularProgress size={20} />
       </Box>
     );
   }
   if (workspaces.length === 0) {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: '16px' }}>
         <Typography variant="body2" color="text.secondary">暂无任务</Typography>
       </Box>
     );
   }
   return (
-    <List dense component="nav" sx={{ flex: 1, overflow: 'auto', py: 0.5 }}>
+    <List dense component="nav" sx={{ flex: 1, overflow: 'auto', py: '4px' }}>
       {workspaces.map(ws => <WorkspaceNode key={ws.id} workspace={ws} />)}
     </List>
   );
 }
 
-// workspace 段标题（ListSubheader）+ 其下 project 列表。
-// 预判是否有 dev issue（useQueries 复用缓存），无则整体不渲染，避免孤立分组头。
+/**
+ * workspace 段标题（ListSubheader）+ 其下 project 列表。
+ * 预判是否有 dev issue（useQueries 复用缓存），无则整体不渲染，避免孤立分组头。
+ */
 function WorkspaceNode({ workspace }: { workspace: WorkspaceModel }) {
   const { data: projects = [] } = useWorkspaceProjects(workspace.id);
   const issuesQueries = useQueries({
@@ -62,7 +65,7 @@ function WorkspaceNode({ workspace }: { workspace: WorkspaceModel }) {
 
   return (
     <>
-      <ListSubheader disableSticky sx={{ pt: 1.5, pb: 1.8, color: 'text.secondary', lineHeight: 1.4 }}>
+      <ListSubheader disableSticky sx={{ pt: '12px', pb: '14.4px', color: 'text.secondary', lineHeight: 1.4 }}>
         {workspace.name}
       </ListSubheader>
       {projects.map((p, i) => (devProjectFlags[i] ? <ProjectNode key={p.id} project={p} /> : null))}
@@ -85,9 +88,9 @@ function ProjectNode({ project }: { project: WorkspaceProjectModel }) {
   const emoji = project.emoji.trim();
   return (
     <>
-      {/* pl 0.5 覆写 MUI 默认 pl 16px：整列左缘留白收紧一档（项目名文字起于 32px）。 */}
-      <ListItemButton onClick={() => setOpen(o => !o)} sx={{ mx: 0.5, borderRadius: 1, pl: 0.5, pr: 1 }}>
-        <ListItemIcon sx={{ minWidth: 'auto', justifyContent: 'center', mr: 0.5, color: 'text.secondary' }}>
+      {/* pl '4px' 覆写 MUI 默认 pl 16px：整列左缘留白收紧一档（项目名文字起于 32px）。 */}
+      <ListItemButton onClick={() => setOpen(o => !o)} sx={{ mx: '4px', borderRadius: '4px', pl: '4px', pr: '8px' }}>
+        <ListItemIcon sx={{ minWidth: 'auto', justifyContent: 'center', mr: '4px', color: 'text.secondary' }}>
           {open
             ? <KeyboardArrowDownRoundedIcon fontSize="small" />
             : <KeyboardArrowRightRoundedIcon fontSize="small" />}
@@ -102,8 +105,8 @@ function ProjectNode({ project }: { project: WorkspaceProjectModel }) {
 
 // dev issue 卡片：复用共享 IssueCard viewScene="devWorkbench"（无拖拽/无操作列/隐藏 id 尾 8 位/三行顶格左对齐，
 // onCardClick 选中 issue，选中态高亮边框）。
-// 外层 Box 提供层级缩进（ml 2 = 16px，卡缘居 project 折叠头箭头区间中点：折叠头 mx 0.5 +
-// pl 0.5 + 箭头 20px + mr 0.5，项目名文字起于 32px）。
+// 外层 Box 提供层级缩进（ml '16px' = 16px，卡缘居 project 折叠头箭头区间中点：折叠头 mx '4px' +
+// pl '4px' + 箭头 20px + mr '4px'，项目名文字起于 32px）。
 // 整卡 Tooltip 右侧展示完整名称（左缘元素约定 placement="right"）。点击选中/取消。
 function DevIssueRow({ issue, subtaskStats }: { issue: ProjectIssueResponseData; subtaskStats: SubtaskStats }) {
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
@@ -112,7 +115,7 @@ function DevIssueRow({ issue, subtaskStats }: { issue: ProjectIssueResponseData;
   const selected = selectedIssueId === issue.id;
 
   const card = (
-    <Box sx={{ mt: 1.5, ml: 2, mr: 1 }}>
+    <Box sx={{ mt: '12px', ml: '16px', mr: '8px' }}>
       <IssueCard
         issue={issue}
         viewScene="devWorkbench"
@@ -136,7 +139,7 @@ function DevIssueRow({ issue, subtaskStats }: { issue: ProjectIssueResponseData;
     <Tooltip
       title={issue.name}
       placement="right"
-      slotProps={{ tooltip: { sx: { maxWidth: 320, whiteSpace: 'pre-wrap' } } }}
+      slotProps={{ tooltip: { sx: { maxWidth: '320px', whiteSpace: 'pre-wrap' } } }}
     >
       {card}
     </Tooltip>

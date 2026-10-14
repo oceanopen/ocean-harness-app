@@ -10,9 +10,11 @@ export interface KanbanColumns {
   orderedStates: StateCode[];
 }
 
-// useKanbanColumns 把扁平 projectIssues 按 stateCode 分列，供看板视图渲染（与列表模式分组一致）。
-// 列固定为 5 个状态（含 0 issue 的空列，否则无法拖入）；列内按纯 sortOrder 升序——看板位置完全由用户拖动决定。
-// 子任务（parentId 非空）不入列。
+/**
+ * useKanbanColumns 把扁平 projectIssues 按 stateCode 分列，供看板视图渲染（与列表模式分组一致）。
+ * 列固定为 5 个状态（含 0 issue 的空列，否则无法拖入）；列内按纯 sortOrder 升序——看板位置完全由用户拖动决定。
+ * 子任务（parentId 非空）不入列。
+ */
 export function useKanbanColumns(projectIssues: ProjectIssueResponseData[]): KanbanColumns {
   return useMemo(() => {
     const columnsByState = new Map<StateCode, ProjectIssueResponseData[]>();

@@ -1,11 +1,8 @@
-// Streamdown 插件懒加载（模式移植自 hello-halo 的 streamdown-plugins.ts）：
-// KaTeX 属重依赖，动态 import 首用加载并模块级缓存——不进首屏 bundle，会话内至多
-// 构建一次（多渲染器共享缓存）。
-// 注：Shiki 代码高亮插件（@streamdown/code）已弃用——streamdown 2.6 的代码块配色/背景
-// 只通过 tailwind 任意值类生效（本项目无 tailwind，全失效），且 context 未给 shikiTheme
-// 时其 highlight 会同步崩溃；md 代码块改走 renderers 自绘（见 MarkdownViewer）：配色由
-// shiki github 双主题 CSS var 承载（见 shikiHighlighter.ts），仅全屏 Dialog 内按需挂
-// CM6（与源码模式同观感）。
+/**
+ * Streamdown 插件懒加载（模式移植自 hello-halo 的 streamdown-plugins.ts）：
+ * KaTeX 属重依赖，动态 import 首用加载并模块级缓存——不进首屏 bundle，会话内至多构建一次。
+ * 注：Shiki 高亮插件（@streamdown/code）已弃用（tailwind 类失效 + shikiTheme 缺失同步崩溃），md 代码块改走 renderers 自绘（见 MarkdownViewer）。
+ */
 import type { DiagramPlugin, MathPlugin } from 'streamdown';
 import { useEffect, useState } from 'react';
 
@@ -15,8 +12,10 @@ function createLazyPluginHook<T>(loader: () => Promise<T>): () => T | undefined 
 
   const load = (): Promise<T> => {
     if (!loadPromise) {
-      // 失败可重试（同 shikiHighlighter.getHighlighter 语义）：rejected promise 滞留模块
-      // 级变量会让本会话插件静默失效——置空待下次挂载重建。
+      /**
+       * 失败可重试（同 shikiHighlighter.getHighlighter 语义）：rejected promise 滞留模块
+       * 级变量会让本会话插件静默失效——置空待下次挂载重建。
+       */
       loadPromise = loader().then(
         (plugin) => {
           cached = plugin;
@@ -32,8 +31,10 @@ function createLazyPluginHook<T>(loader: () => Promise<T>): () => T | undefined 
   };
 
   return function useLazyPlugin(): T | undefined {
-    // 初值懒读缓存（本会话已加载过的实例首帧即终值）；未缓存时 effect 发起异步加载，
-    // 回填 setState 在异步回调中（非 effect 同步段）。
+    /**
+     * 初值懒读缓存（本会话已加载过的实例首帧即终值）；未缓存时 effect 发起异步加载，
+     * 回填 setState 在异步回调中（非 effect 同步段）。
+     */
     const [plugin, setPlugin] = useState<T | undefined>(() => cached ?? undefined);
     useEffect(() => {
       if (cached != null) {
@@ -47,8 +48,10 @@ function createLazyPluginHook<T>(loader: () => Promise<T>): () => T | undefined 
   };
 }
 
-/// KaTeX 数学插件（$...$ 行内与 $$...$$ 块级公式）。Streamdown 声明了 MathPlugin 却不注入
-/// 样式——katex css 随插件一并懒加载引入（halo 验证过的必要补充）。
+/**
+ * KaTeX 数学插件（$...$ 行内与 $$...$$ 块级公式）。Streamdown 声明了 MathPlugin 却不注入
+ * 样式——katex css 随插件一并懒加载引入（halo 验证过的必要补充）。
+ */
 export const useMathPlugin = createLazyPluginHook<MathPlugin>(async () => {
   await import('katex/dist/katex.min.css');
   const [remarkMath, rehypeKatex] = await Promise.all([
@@ -58,10 +61,11 @@ export const useMathPlugin = createLazyPluginHook<MathPlugin>(async () => {
   return { name: 'katex', type: 'math', remarkPlugin: remarkMath, rehypePlugin: rehypeKatex };
 });
 
-/// Mermaid 图表插件（```mermaid 围栏渲染为图）。mermaid 属重依赖（MB 级），经适配包动态
-/// import 首用加载并模块级缓存——不进首屏 bundle。主题不在此处固化：适配包的
-/// getMermaid(config) 每次渲染时 initialize 合并配置，由调用方经 Streamdown 的 mermaid
-/// prop 按当前明暗传 theme（见 MarkdownViewer）。
+/**
+ * Mermaid 图表插件（```mermaid 围栏渲染为图）。mermaid 属重依赖（MB 级），经适配包动态
+ * import 首用加载并模块级缓存——不进首屏 bundle。主题不在此处固化：适配包的 getMermaid(config)
+ * 每次渲染时 initialize 合并配置，由调用方经 Streamdown 的 mermaid prop 按当前明暗传 theme（见 MarkdownViewer）。
+ */
 export const useMermaidPlugin = createLazyPluginHook<DiagramPlugin>(async () => {
   const { createMermaidPlugin } = await import('@streamdown/mermaid');
   return createMermaidPlugin();

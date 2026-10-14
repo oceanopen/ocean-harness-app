@@ -17,8 +17,10 @@ export interface WorkspaceProjectGetListRequest {
   workspaceId: number;
 }
 
-// POST /api/tracker/project/create 的入参。
-// localRepositoryIds 为关联仓库最终列表（全量，随项目一起保存，后端事务内全量写入）。
+/**
+ * POST /api/tracker/project/create 的入参。
+ * localRepositoryIds 为关联仓库最终列表（全量，随项目一起保存，后端事务内全量写入）。
+ */
 export interface WorkspaceProjectCreateRequest {
   workspaceId: number;
   name: string;
@@ -27,8 +29,10 @@ export interface WorkspaceProjectCreateRequest {
   localRepositoryIds?: number[];
 }
 
-// POST /api/tracker/project/update 的入参。
-// localRepositoryIds 为关联仓库最终列表（全量覆盖：后端先删后插，无 diff）。
+/**
+ * POST /api/tracker/project/update 的入参。
+ * localRepositoryIds 为关联仓库最终列表（全量覆盖：后端先删后插，无 diff）。
+ */
 export interface WorkspaceProjectUpdateRequest {
   id: number;
   name: string;

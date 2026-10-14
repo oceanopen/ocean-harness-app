@@ -8,8 +8,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// AgentCatalog 对应 /api/agentCatalog 命名空间下的接口（ACP agent 目录投影，只读）。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * AgentCatalog 对应 /api/agentCatalog 命名空间下的接口（ACP agent 目录投影，只读）。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type AgentCatalog struct {
 	apis.Api
 }

@@ -63,7 +63,7 @@ function AddMarketplaceDrawer({ onClose }: AddMarketplaceDrawerProps) {
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
             添加插件市场
           </Typography>
@@ -73,7 +73,7 @@ function AddMarketplaceDrawer({ onClose }: AddMarketplaceDrawerProps) {
         </Box>
 
         {/* 内容 */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <TextField
             label="插件市场地址"
             placeholder="/path/to/plugin-repo、owner/repo 或 https://git.example.com/repo.git"
@@ -105,7 +105,7 @@ function AddMarketplaceDrawer({ onClose }: AddMarketplaceDrawerProps) {
         </Box>
 
         {/* 底部操作栏：一律左对齐 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderTop: '1px solid', borderColor: 'divider' }}>
           <Button color="inherit" onClick={onClose} disabled={submitting}>
             取消
           </Button>

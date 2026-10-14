@@ -1,17 +1,20 @@
 import type { AcpFrame, AcpSessionStatus, AcpViewSnapshot } from '@src/services';
 
-// applyFrame 将一帧 SSE 增量归约进当前快照（纯函数，返回新快照，不 mutate 入参）。
-// 帧序注记（T1.5 定稿）：内容帧经 pump、回合终态帧经收尾 goroutine 并发广播——归约只
-// 依赖单帧自洽语义（entry 覆写式 upsert、快照类最新替换、回合两端置位），不依赖帧间
-// 顺序；乱序只允许发生在语义无因果的重排上（见 reducer.test.ts 的乱序一致性用例）。
+/**
+ * applyFrame 将一帧 SSE 增量归约进当前快照（纯函数，返回新快照，不 mutate 入参）。
+ * 帧序注记（T1.5 定稿）：内容帧经 pump、回合终态帧经收尾 goroutine 并发广播——归约只依赖单帧
+ * 自洽语义（entry 覆写式 upsert、快照类最新替换、回合两端置位），不依赖帧间顺序，乱序仅限语义无因果的重排（见 reducer.test.ts）。
+ */
 export function applyFrame(snapshot: AcpViewSnapshot, frame: AcpFrame): AcpViewSnapshot {
   switch (frame.type) {
     case 'snapshot':
       // 建连首帧：整体替换（快照即全量投影，无合并语义）。
       return frame.snapshot ?? snapshot;
     case 'sessionStatus': {
-      // 状态迁移（starting/ready/failed）：身份字段以载荷为准（defined 覆盖）；迁入
-      // 非 failed 态清残留 error（failed-terminated 重建链路的旧因不带到新会话）。
+      /**
+       * 状态迁移（starting/ready/failed）：身份字段以载荷为准（defined 覆盖）；迁入
+       * 非 failed 态清残留 error（failed-terminated 重建链路的旧因不带到新会话）。
+       */
       const payload = frame.status;
       if (!payload) {
         return snapshot;
@@ -25,8 +28,10 @@ export function applyFrame(snapshot: AcpViewSnapshot, frame: AcpFrame): AcpViewS
       });
     }
     case 'entry': {
-      // 条目 upsert：按 entryId 原位覆写（chunk 聚合与工具调用部分更新均整条下发），
-      // 新条目追加尾部——与后端 entries 顺序保持一致。
+      /**
+       * 条目 upsert：按 entryId 原位覆写（chunk 聚合与工具调用部分更新均整条下发），
+       * 新条目追加尾部——与后端 entries 顺序保持一致。
+       */
       const entry = frame.entry;
       if (!entry) {
         return snapshot;
@@ -88,23 +93,28 @@ export function applyFrame(snapshot: AcpViewSnapshot, frame: AcpFrame): AcpViewS
   }
 }
 
-// isFrameSequenceBroken 判定帧流是否断档（seq gap）：prevSeq 为 null 表示建连首帧
-// （hub 保证首帧即快照，seq 任意值都接受）；此后 seq 必须严格 +1，断档即由调用方重建
-// 连接取全新快照（无 Last-Event-ID 续传，后端契约 hub.go）。
+/**
+ * isFrameSequenceBroken 判定帧流是否断档（seq gap）：prevSeq 为 null 表示建连首帧
+ * （hub 保证首帧即快照，seq 任意值都接受）；此后 seq 必须严格 +1，断档即由调用方重建
+ * 连接取全新快照（无 Last-Event-ID 续传，后端契约 hub.go）。
+ */
 export function isFrameSequenceBroken(prevSeq: number | null, frame: AcpFrame): boolean {
   return prevSeq !== null && frame.seq !== prevSeq + 1;
 }
 
-// isAcpSessionSubscribable 订阅闸门判定（D3）：快照处于可订阅状态才建连——idle（从未
-// 受理）与 terminated（已终结）不可订阅，治首开订阅先于 ensure 的 404 竞态；terminated
-// 随「重新启动」受理回包落快照迁回 starting，闸门重开自动恢复订阅。快照未就绪
-// （undefined）一律不可订阅。
+/**
+ * isAcpSessionSubscribable 订阅闸门判定（D3）：快照处于可订阅状态才建连——idle（从未受理）
+ * 与 terminated（已终结）不可订阅，治首开订阅先于 ensure 的 404 竞态；terminated 随「重新启动」
+ * 受理回包落快照迁回 starting，闸门重开自动恢复订阅。快照未就绪（undefined）一律不可订阅。
+ */
 export function isAcpSessionSubscribable(status: AcpSessionStatus | undefined): boolean {
   return status === 'starting' || status === 'ready' || status === 'failed';
 }
 
-// applyDefined 将 patch 中非 undefined 字段覆盖进 base（浅合并，返回新对象）——对齐
-// Go omitempty 载荷「未携带 = 无变化」的语义，避免空字段误清已有值。
+/**
+ * applyDefined 将 patch 中非 undefined 字段覆盖进 base（浅合并，返回新对象）——对齐
+ * Go omitempty 载荷「未携带 = 无变化」的语义，避免空字段误清已有值。
+ */
 function applyDefined<T extends object>(base: T, patch: Partial<T>): T {
   const out = { ...base };
   for (const [key, value] of Object.entries(patch)) {

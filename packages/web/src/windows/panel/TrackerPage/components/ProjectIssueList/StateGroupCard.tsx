@@ -22,15 +22,15 @@ interface StateGroupCardProps {
 function StateGroupCard({ color, name, count, onAdd, leading }: StateGroupCardProps) {
   const { t } = useTranslation();
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
       {leading && (
         <Box sx={{ width: GUTTER_WIDTH, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {leading}
         </Box>
       )}
-      <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: color || 'text.disabled', flexShrink: 0 }} />
+      <Box sx={{ width: '10px', height: '10px', borderRadius: '50%', bgcolor: color || 'text.disabled', flexShrink: 0 }} />
       <Typography variant="subtitle2" sx={{ flex: 1, minWidth: 0, fontWeight: 600, ...truncateSx }}>{name}</Typography>
-      <Chip label={count} size="small" sx={{ height: 20, fontSize: 12 }} />
+      <Chip label={count} size="small" sx={{ height: '20px', fontSize: '12px' }} />
       <IconButton
         size="small"
         aria-label={t('tracker:projectIssue.actions.add')}

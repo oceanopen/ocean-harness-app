@@ -27,12 +27,11 @@ import ClaudeIcon from './ClaudeIcon';
 import TerminalSearch from './TerminalSearch';
 import '@xterm/xterm/css/xterm.css';
 
-// —— 链接点击（terminal_03 §3.4）——
-// 单行正则匹配（URL + 绝对文件路径），无存在性探测/跨行重组（orca 裁剪对照 §5.4）。
-// hover 反馈走 ILink 默认 decorations（underline + pointer cursor）。
-// 打开交互：修饰键 + Click——macOS Cmd（Ctrl+Click 是右键语义）、Windows/Linux Ctrl。
-// 普通点击静默无动作（防误触——终端里链接混在输出流中，单击常是选区/聚焦意图），
-// hover 下划线保留作为「此处可 Cmd/Ctrl+Click」的暗示。
+/**
+ * —— 链接点击（terminal_03 §3.4）——单行正则匹配（URL + 绝对文件路径），无存在性探测/跨行重组（orca 裁剪对照 §5.4）；hover 反馈走 ILink 默认 decorations（underline + pointer cursor）。
+ * 打开交互：修饰键 + Click——macOS Cmd（Ctrl+Click 是右键语义）、Windows/Linux Ctrl。
+ * 普通点击静默无动作（防误触——终端里链接混在输出流中，单击常是选区/聚焦意图），hover 下划线保留作为「此处可 Cmd/Ctrl+Click」的暗示。
+ */
 
 // 打开修饰键判定：metaKey（macOS Cmd）|| ctrlKey（Windows/Linux）。
 function hasOpenModifier(event: MouseEvent): boolean {
@@ -41,25 +40,26 @@ function hasOpenModifier(event: MouseEvent): boolean {
 
 // URL：http(s) 起到空白止。global 正则复用（lastIndex 状态跨调用维护，exec 循环驱动）。
 const URL_PATTERN = /https?:\/\/\S+/g;
-// 文件路径：/ 开头的绝对路径（不含空格段）+ 常见源码/文档扩展名，可选 :行号(:列) 后缀
-// （编译器/claude 输出的 file.rs:42:7 形态）。不匹配裸目录（无扩展名，误报率高——
-// ls 输出里到处是）。
+/**
+ * 文件路径：/ 开头的绝对路径（不含空格段）+ 常见源码/文档扩展名，可选 :行号(:列) 后缀
+ * （编译器/claude 输出的 file.rs:42:7 形态）。不匹配裸目录（无扩展名，误报率高——
+ * ls 输出里到处是）。
+ */
 const FILE_PATH_PATTERN = /(\/[\w.@+-]+)*\/[\w.-]+\.(?:rs|ts|tsx|js|jsx|go|py|java|kt|c|h|cpp|hpp|json|toml|yaml|yml|md|txt|log|sh|sql|html|css)(?::\d+(?::\d+)?)?/g;
 
-// 工具栏高度统一走共享常量 PANEL_TOOLBAR_HEIGHT（../PanelToolbar，与右侧工具面板
-// 头部对齐；exited 覆盖层 top 偏移同源引用）。
+/**
+ * 工具栏高度统一走共享常量 PANEL_TOOLBAR_HEIGHT（../PanelToolbar，与右侧工具面板
+ * 头部对齐；exited 覆盖层 top 偏移同源引用）。
+ */
 
-// 工具栏 IconButton 统一 sx：text.secondary 色调 + 禁用态半透明 + icon 尺寸 16px。
-// 尺寸必须走 '& svg' 后代选择器——SvgIcon 的 width/height = 1em 跟随自身 font-size，
-// 而该值由其 variant class 显式设定（fontSize="small" → 20px、缺省 medium → 24px），
-// 在 IconButton 上直接设 fontSize 只改按钮、svg 不继承、完全无效（实测教训）。
-// 后代选择器（.css-xxx svg）优先级高于 variant class，且一个常量管住按钮内全部
-// icon（含 ClaudeIcon 自定义 svg）。显式 color 的优先级高于 MUI 默认 .Mui-disabled
-// 灰（不补则禁用与启用视觉无差，用户反馈「启动 claude」置灰看不出来）。
-// 主窗口标识复用 disabled 态：不可点 + 半透明置灰，无需专属样式。
+/**
+ * 工具栏 IconButton 统一 sx：text.secondary 色调 + 禁用态半透明 + icon 尺寸 16px。尺寸必须走 '& svg' 后代选择器——SvgIcon 的 width/height = 1em 跟随自身 font-size，而该值由其 variant class 显式设定（fontSize="small" → 20px、缺省 medium → 24px），在 IconButton 上直接设 fontSize 只改按钮、svg 不继承、完全无效（实测教训）。
+ * 后代选择器（.css-xxx svg）优先级高于 variant class，且一个常量管住按钮内全部 icon（含 ClaudeIcon 自定义 svg）；显式 color 优先级高于 MUI 默认 .Mui-disabled 灰（不补则禁用与启用视觉无差，用户反馈「启动 claude」置灰看不出来）。
+ * 主窗口标识复用 disabled 态：不可点 + 半透明置灰，无需专属样式。
+ */
 const TOOLBAR_ICON_SX = {
   'color': 'text.secondary',
-  '& svg': { fontSize: 16 },
+  '& svg': { fontSize: '16px' },
   '&.Mui-disabled': { opacity: 0.5 },
 } as const;
 
@@ -101,20 +101,28 @@ function buildLinks(
   return links;
 }
 
-// 终端主题定义与构建在 ./terminalTheme.ts（独立文件：组件文件导出非组件会被
-// react-refresh/only-export-components 拦截）。
+/**
+ * 终端主题定义与构建在 ./terminalTheme.ts（独立文件：组件文件导出非组件会被
+ * react-refresh/only-export-components 拦截）。
+ */
 export type { TerminalViewTheme } from './terminalTheme';
 
 interface TerminalViewProps {
   theme: TerminalViewTheme;
-  // 终端字号（terminal_font_size 配置）：运行时生效（options.fontSize 赋值 +
-  // refit，不重建实例）——首个运行时可变的 option，见组件头注释。
+  /**
+   * 终端字号（terminal_font_size 配置）：运行时生效（options.fontSize 赋值 +
+   * refit，不重建实例）——首个运行时可变的 option，见组件头注释。
+   */
   fontSize: number;
-  // 主窗口标识（main pane 专属）：工具栏左侧渲染房子 icon + Tooltip「主窗口」
-  // （关闭语义/会话锚点均以 main 为特殊位，识别它对「关闭后重开」等操作有价值）。
+  /**
+   * 主窗口标识（main pane 专属）：工具栏左侧渲染房子 icon + Tooltip「主窗口」
+   * （关闭语义/会话锚点均以 main 为特殊位，识别它对「关闭后重开」等操作有价值）。
+   */
   isMain?: boolean;
-  // 回滚缓冲行数（terminal_scrollback_rows 配置，terminal_04）：运行时纯
-  // options.scrollback 赋值（不 refit 不通知 PTY——缓冲容量与尺寸无关）。
+  /**
+   * 回滚缓冲行数（terminal_scrollback_rows 配置，terminal_04）：运行时纯
+   * options.scrollback 赋值（不 refit 不通知 PTY——缓冲容量与尺寸无关）。
+   */
   scrollbackRows: number;
   // 光标样式（terminal_05）：block/bar/underline，运行时 options 赋值。
   cursorStyle: 'block' | 'bar' | 'underline';
@@ -129,37 +137,41 @@ interface TerminalViewProps {
   // 会话已退出：终端交互禁用 + 整块居中「会话已结束」覆盖层 + 新开终端按钮
   exited: boolean;
   onReopen: () => void;
-  // 本终端 claude 运行态（pid 父链匹配探测，useClaudeRunning）：跑着→按钮置灰；
-  // 退出→恢复可用。驱动「启动 claude」按钮禁用态。
+  /**
+   * 本终端 claude 运行态（pid 父链匹配探测，useClaudeRunning）：跑着→按钮置灰；
+   * 退出→恢复可用。驱动「启动 claude」按钮禁用态。
+   */
   claudeRunning: boolean;
   // 启动 claude（工具条按钮）：对活跃 shell 注入 claude\r。
   onStartClaude: () => void;
   // 关闭终端（工具栏）
   onClose: () => void;
-  // 输出写入桥：mount 时上抛 write(text, replay?)，unmount 置 null。父层存 ref
-  // 直读（勿走 state）。replay=true 表示历史回放（reattach scrollback）——写入
-  // 期间抑制 onData（见 replayDepth 注释），防止回放流里的 DA1/CPR 查询被新 xterm
-  // 实例解析并应答、应答写回 PTY 成乱码。
+  /**
+   * 输出写入桥：mount 时上抛 write(text, replay?)，unmount 置 null。父层存 ref 直读（勿走 state）。
+   * replay=true 表示历史回放（reattach scrollback）——写入期间抑制 onData（见 replayDepth 注释），
+   * 防止回放流里的 DA1/CPR 查询被新 xterm 实例解析并应答、应答写回 PTY 成乱码。
+   */
   onWriteReady: (write: ((text: string, replay?: boolean) => void) | null) => void;
-  // 分割本 pane（工具栏左右/上下分屏按钮，新增 pane 在分割方向后位——右/下）。
-  // 方向语义：horizontal = 左右分（split 树水平排列）、vertical = 上下分。目标 pane
-  // 由父层 props 闭包自识别（同 onClose），本组件不感知 paneId/store。
+  /**
+   * 分割本 pane（工具栏左右/上下分屏按钮，新增 pane 在分割方向后位——右/下）。
+   * 方向语义：horizontal = 左右分（split 树水平排列）、vertical = 上下分。目标 pane
+   * 由父层 props 闭包自识别（同 onClose），本组件不感知 paneId/store。
+   */
   onSplitPane: (direction: SplitDirection) => void;
 }
 
-// TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——
-// panel 窗口主题切换通常伴随整页刷新，可接受）。fontSize 例外：运行时赋值生效
-// （terminal_03 §3.3，首个运行时可变 option——字号改动须配 refit，theme 无此要求）。
-//
-// 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open →
-// 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。回调直接用 props
-// （父层保证稳定引用），不做 ref 转发层。
+/**
+ * TerminalView：xterm 封装。生命周期内单 Terminal 实例（theme 变化不重建，仅初值生效——panel 窗口主题切换通常伴随整页刷新，可接受）。fontSize 例外：运行时赋值生效（terminal_03 §3.3，首个运行时可变 option——字号改动须配 refit，theme 无此要求）。
+ * 事件处理全部函数式：mount effect 按显式顺序一次性建齐（terminal → addon → open → 事件接线 → focus → observer → 初始 fit），cleanup 严格逆序。
+ * 回调直接用 props（父层保证稳定引用），不做 ref 转发层。
+ */
 export default function TerminalView({ theme, fontSize, scrollbackRows, cursorStyle, cursorBlink, lineHeight, isMain, onData, onResize, exited, onReopen, claudeRunning, onStartClaude, onClose, onWriteReady, onSplitPane }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
-  // 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props
-  // 下发命令对象——按钮与实例同组件，ref 直读是最近路径。fitAddon 供字号 effect
-  // 运行时 refit（options.fontSize 赋值不重算 cols/rows，须手动 fit）。
+  /**
+   * 实例句柄 ref 桥（effect 闭包 → JSX 回调直读）：terminal / searchAddon / fitAddon。
+   * 工具条按钮与搜索条需要实例（clear/selection/paste/findNext），不经 props 下发命令对象——按钮与实例同组件，ref 直读是最近路径。
+   * fitAddon 供字号 effect 运行时 refit（options.fontSize 赋值不重算 cols/rows，须手动 fit）。
+   */
   const terminalRef = useRef<Terminal | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -170,10 +182,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
   // 复制/粘贴失败 toast（成功静默）
   const { show: showToast, snack: toastSnack } = useToast();
 
-  // 链接 activate 分流：URL 走 plugin-shell（window.open 被 Tauri webview 拦截），
-  // 路径走 Rust open_path（系统默认应用）。useToast 的 show 是 useCallback([]) 稳定引用，
-  // 本回调 deps 只挂它，供构造 options.linkHandler（OSC 8 链接）与自建 provider
-  // （正则匹配）两路共用。
+  /**
+   * 链接 activate 分流：URL 走 plugin-shell（window.open 被 Tauri webview 拦截），路径走 Rust open_path（系统默认应用）。
+   * useToast 的 show 是 useCallback([]) 稳定引用，本回调 deps 只挂它，
+   * 供构造 options.linkHandler（OSC 8 链接）与自建 provider（正则匹配）两路共用。
+   */
   const activateLink = useCallback((text: string) => {
     if (/^https?:\/\//.test(text)) {
       openExternalUrl(text).catch((e: unknown) => {
@@ -194,11 +207,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       return;
     }
 
-    // 1. 建实例（theme 仅初值生效，见组件头注释）。allowProposedApi：搜索装饰
-    //    （SearchAddon decorations 分支）依赖 registerDecoration 等 proposed API，
-    //    不开则带 decorations 的 findNext/findPrevious 直接抛错、搜索全面失效
-    //    （jsdom + 同版本依赖实证：You must set the allowProposedApi option to
-    //    true to use proposed API）。
+    /**
+     * 1. 建实例（theme 仅初值生效，见组件头注释）。allowProposedApi：搜索装饰（SearchAddon decorations 分支）
+     * 依赖 registerDecoration 等 proposed API，不开则带 decorations 的 findNext/findPrevious 直接抛错、
+     * 搜索全面失效（jsdom + 同版本依赖实证：You must set the allowProposedApi option to true to use proposed API）。
+     */
     const terminal = new Terminal({
       allowProposedApi: true,
       convertEol: false,
@@ -208,11 +221,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       lineHeight,
       scrollback: scrollbackRows,
       fontFamily: 'menlo, monaco, courier-new, monospace',
-      // OSC 8 终端超链接（claude/zsh 等现代 CLI 输出的 URL 走此转义序列，与自建
-      // 正则 provider 是两条独立路径）兜底接管：不配 linkHandler 则点击走 xterm
-      // 默认 confirm() + window.open()——Tauri 下双失败（confirm 映射的 dialog.confirm
-      // IPC 未授权 + window.open 被拦截）。activate 转发 activateLink 与正则路径
-      // 同分流，含修饰键守卫（Cmd/Ctrl+Click 才打开，见 hasOpenModifier）。
+      /**
+       * OSC 8 终端超链接（claude/zsh 等现代 CLI 输出的 URL 走此转义序列，与自建正则 provider 是两条独立路径）兜底接管：
+       * 不配 linkHandler 则点击走 xterm 默认 confirm() + window.open()——Tauri 下双失败（confirm 映射的 dialog.confirm IPC 未授权 + window.open 被拦截）。
+       * activate 转发 activateLink 与正则路径同分流，含修饰键守卫（Cmd/Ctrl+Click 才打开，见 hasOpenModifier）。
+       */
       linkHandler: {
         activate: (event: MouseEvent, text: string) => {
           if (!hasOpenModifier(event)) {
@@ -250,8 +263,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       },
     });
 
-    // 2. fit + webgl + open。webgl 渲染器（高频输出性能）；创建失败或运行期上下文
-    //    丢失均回落 dom 渲染。
+    /**
+     * 2. fit + webgl + open。webgl 渲染器（高频输出性能）；创建失败或运行期上下文
+     * 丢失均回落 dom 渲染。
+     */
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
     terminal.open(container);
@@ -266,14 +281,18 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     } catch (e) {
       console.warn('[TerminalView] webgl unavailable, fallback to dom renderer:', e);
     }
-    // 搜索 addon（官方 @xterm/addon-search，terminal_03 任务 1 spike 通过）。
-    // 生命周期随 terminal.dispose() 连带（同 fit/webgl 范式，无显式 dispose）。
+    /**
+     * 搜索 addon（官方 @xterm/addon-search，terminal_03 任务 1 spike 通过）。
+     * 生命周期随 terminal.dispose() 连带（同 fit/webgl 范式，无显式 dispose）。
+     */
     const searchAddon = new SearchAddon();
     terminal.loadAddon(searchAddon);
 
-    // 3. 事件接线（props 由父层保证稳定，直接引用）。
-    //    onData 经 replayDepth 闸门：回放写入期间 xterm 对回放流里 DA1/CPR 查询
-    //    生成的应答被丢弃（不应写回 PTY——历史查询早已过期）；实时流窗口为 0 全放行。
+    /**
+     * 3. 事件接线（props 由父层保证稳定，直接引用）。
+     * onData 经 replayDepth 闸门：回放写入期间 xterm 对回放流里 DA1/CPR 查询
+     * 生成的应答被丢弃（不应写回 PTY——历史查询早已过期）；实时流窗口为 0 全放行。
+     */
     let replayDepth = 0;
     terminal.onData((data) => {
       if (replayDepth > 0) {
@@ -287,10 +306,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       setHasSelection(terminal.hasSelection());
     });
 
-    // 4. 输出桥上抛。守卫非字符串输入（null/undefined）：xterm.write 内部直接取
-    //    .length 会抛 TypeError 并在 React 19 下卸载整树（白屏），宁可丢包不可崩页。
-    //    replay 写入：write 回调在该块解析完毕后触发，配对递减 replayDepth——
-    //    解析期间（含触发查询应答的时刻）窗口恒开。
+    /**
+     * 4. 输出桥上抛。守卫非字符串输入（null/undefined）：xterm.write 内部直接取 .length 会抛 TypeError
+     * 并在 React 19 下卸载整树（白屏），宁可丢包不可崩页。replay 写入：write 回调在该块解析完毕后触发，
+     * 配对递减 replayDepth——解析期间（含触发查询应答的时刻）窗口恒开。
+     */
     onWriteReady((text: string, replay?: boolean) => {
       if (typeof text === 'string' && text.length > 0) {
         if (replay) {
@@ -306,16 +326,19 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       }
     });
 
-    // 5. 聚焦：xterm 6 open() 后不自动聚焦；macOS WebKit 点击聚焦也可能被外层容器吃掉，
-    //    挂载即 focus + 点击兜底，保证键盘直接可用。
+    /**
+     * 5. 聚焦：xterm 6 open() 后不自动聚焦；macOS WebKit 点击聚焦也可能被外层容器吃掉，
+     * 挂载即 focus + 点击兜底，保证键盘直接可用。
+     */
     const focusTerminal = () => terminal.focus();
     terminal.focus();
     container.addEventListener('mousedown', focusTerminal);
 
-    // 5.5 链接点击：provideLinks 按行回调（行号 1-based 绝对值，取行 -1），命中构造
-    // ILink；activate 走组件体 activateLink（URL 走 plugin-shell，路径走 Rust open_path
-    // 系统默认应用）。OSC 8 超链接不经此 provider，由构造 options 的 linkHandler
-    // 同路分流（见上注释）。
+    /**
+     * 5.5 链接点击：provideLinks 按行回调（行号 1-based 绝对值，取行 -1），命中构造 ILink；activate 走组件体
+     * activateLink（URL 走 plugin-shell，路径走 Rust open_path 系统默认应用）。
+     * OSC 8 超链接不经此 provider，由构造 options 的 linkHandler 同路分流（见上注释）。
+     */
     const linkDisposable = terminal.registerLinkProvider({
       provideLinks(bufferLineNumber: number, callback: (links: ILink[] | undefined) => void) {
         const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
@@ -324,8 +347,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       },
     });
 
-    // 6. 容器尺寸变化 → fit（cols/rows 经 onResize 同步后端）；折叠动画期间宽高为 0
-    //    时 fit 会 panic，守卫。
+    /**
+     * 6. 容器尺寸变化 → fit（cols/rows 经 onResize 同步后端）；折叠动画期间宽高为 0
+     * 时 fit 会 panic，守卫。
+     */
     const observer = new ResizeObserver(() => {
       if (container.clientWidth > 0 && container.clientHeight > 0) {
         fitAddon.fit();
@@ -341,9 +366,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     searchAddonRef.current = searchAddon;
     fitAddonRef.current = fitAddon;
 
-    // cleanup 严格逆序：observer → 监听 → 桥置空 → dispose → 清残留 DOM。
-    // xterm dispose 不保证移除容器内 DOM，StrictMode/HMR 重挂载后旧实例 DOM 层
-    // 会叠在新实例上面，显式清空容器（实测教训）。
+    /**
+     * cleanup 严格逆序：observer → 监听 → 桥置空 → dispose → 清残留 DOM。
+     * xterm dispose 不保证移除容器内 DOM，StrictMode/HMR 重挂载后旧实例 DOM 层
+     * 会叠在新实例上面，显式清空容器（实测教训）。
+     */
     return () => {
       observer.disconnect();
       linkDisposable.dispose();
@@ -357,11 +384,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     };
   }, []);
 
-  // 字号运行时生效（terminal_03 §3.3）：options.fontSize 赋值 + refit，不重建实例
-  // （webgl 渲染器监听 char size 变化自动重建字形 atlas，官方支持运行时改）。fit 后
-  // cols/rows 经 mount effect 接线的 terminal.onResize 自动同步后端 PTY。容器折叠
-  // 期间宽高为 0 时 fit 会 panic（同 ResizeObserver 守卫），跳过——展开时 observer
-  // 会再 fit，字号赋值不丢失（options 已生效）。
+  /**
+   * 字号运行时生效（terminal_03 §3.3）：options.fontSize 赋值 + refit，不重建实例（webgl 渲染器监听 char size 变化自动重建字形 atlas，官方支持运行时改）。
+   * fit 后 cols/rows 经 mount effect 接线的 terminal.onResize 自动同步后端 PTY。
+   * 容器折叠期间宽高为 0 时 fit 会 panic（同 ResizeObserver 守卫），跳过——展开时 observer 会再 fit，字号赋值不丢失（options 已生效）。
+   */
   useEffect(() => {
     const terminal = terminalRef.current;
     const fitAddon = fitAddonRef.current;
@@ -375,9 +402,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     }
   }, [fontSize]);
 
-  // scrollback 运行时生效（terminal_04）：纯 options 赋值——缓冲容量与 cols/rows
-  // 无关，不 refit 不通知 PTY（orca 实证同款约束）。调大即刻能多往回翻，调小立即
-  // 截尾（xterm 自身裁剪），无闪烁。
+  /**
+   * scrollback 运行时生效（terminal_04）：纯 options 赋值——缓冲容量与 cols/rows
+   * 无关，不 refit 不通知 PTY（orca 实证同款约束）。调大即刻能多往回翻，调小立即
+   * 截尾（xterm 自身裁剪），无闪烁。
+   */
   useEffect(() => {
     const terminal = terminalRef.current;
     if (terminal != null) {
@@ -394,8 +423,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     }
   }, [cursorStyle, cursorBlink]);
 
-  // 行高运行时生效（terminal_05）：行高改变字符度量 → 须 refit 重算 cols/rows
-  // （同字号范式，含折叠期守卫）。
+  /**
+   * 行高运行时生效（terminal_05）：行高改变字符度量 → 须 refit 重算 cols/rows
+   * （同字号范式，含折叠期守卫）。
+   */
   useEffect(() => {
     const terminal = terminalRef.current;
     const fitAddon = fitAddonRef.current;
@@ -409,9 +440,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     }
   }, [lineHeight]);
 
-  // 主题运行时生效（hello-halo 调研移植）：options.theme 赋值即时重绘，不重建实例
-  // ——推翻原「theme 仅初值生效、切换靠刷新」的取舍。dimOpacity 渲染期消费，
-  // 不在此赋值。theme 对象每次渲染新建，用 JSON 串比较避免重复赋值。
+  /**
+   * 主题运行时生效（hello-halo 调研移植）：options.theme 赋值即时重绘，不重建实例
+   * ——推翻原「theme 仅初值生效、切换靠刷新」的取舍。dimOpacity 渲染期消费，
+   * 不在此赋值。theme 对象每次渲染新建，用 JSON 串比较避免重复赋值。
+   */
   const lastThemeJsonRef = useRef<string>('');
   useEffect(() => {
     const terminal = terminalRef.current;
@@ -424,10 +457,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
     terminal.options.theme = xtermTheme;
   }, [theme]);
 
-  // 基础操作组（terminal_03 §3.1）。清屏仅写 \x0c（等价用户按 Ctrl+L，交互程序
-  // 自己处理重绘，双管 clear()+\x0c 会两次清屏闪烁——用户确认裁剪）；复制空选
-  // 禁用；粘贴走 terminal.paste（bracketed paste 由 xterm 内部处理，回环 onData
-  // 与键盘输入同路）；仅失败 toast（成功静默，选区消失即反馈）。
+  /**
+   * 基础操作组（terminal_03 §3.1）。清屏仅写 \x0c（等价用户按 Ctrl+L，交互程序自己处理重绘，双管 clear()+\x0c 会两次清屏闪烁——用户确认裁剪）。
+   * 复制空选禁用；粘贴走 terminal.paste（bracketed paste 由 xterm 内部处理，回环 onData 与键盘输入同路）。
+   * 仅失败 toast（成功静默，选区消失即反馈）。
+   */
   const handleClear = () => {
     onData('\x0C');
   };
@@ -479,27 +513,24 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
 
   return (
     <Box sx={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 工具栏：左侧主窗口标识（main pane 专属房子 icon）+ 基础操作组 + 右侧分割本 pane
-          （左右/上下分屏）+ 关闭终端。全部挂 Tooltip（全局默认上方展示；禁用态按钮
-          包 <span>——MUI Tooltip 对 disabled 元素不触发）。exited 禁用策略：清屏/粘贴
-          对死会话无意义；复制/搜索保留——scrollback 检索与历史复制仍有价值；分屏
-          始终可用——新 pane 是全新会话，与本 pane 存活状态无关。
-          禁用可见性：显式 sx color（text.secondary）优先级高于 MUI 默认 .Mui-disabled
-          灰，禁用态与启用态视觉无差——统一补半透明（用户反馈「启动 claude」置灰
-          看不出来）。 */}
+      {/*
+      工具栏：左侧主窗口标识（main pane 专属房子 icon）+ 基础操作组 + 右侧分割本 pane（左右/上下分屏）+ 关闭终端。全部挂 Tooltip（全局默认上方展示；禁用态按钮包 <span>——MUI Tooltip 对 disabled 元素不触发）。
+      exited 禁用策略：清屏/粘贴对死会话无意义；复制/搜索保留——scrollback 检索与历史复制仍有价值；分屏始终可用——新 pane 是全新会话，与本 pane 存活状态无关。
+      禁用可见性：显式 sx color（text.secondary）优先级高于 MUI 默认 .Mui-disabled 灰，禁用态与启用态视觉无差——统一补半透明（用户反馈「启动 claude」置灰看不出来）。
+      */}
       <PanelToolbar
         left={(
           <>
             {isMain && (
               <Tooltip title="主窗口">
                 <span>
-                  <IconButton size="small" disabled aria-label="主窗口" sx={{ ...TOOLBAR_ICON_SX, '& svg': { fontSize: 20 } }}>
+                  <IconButton size="small" disabled aria-label="主窗口" sx={{ ...TOOLBAR_ICON_SX, '& svg': { fontSize: '20px' } }}>
                     <HomeOutlinedIcon />
                   </IconButton>
                 </span>
               </Tooltip>
             )}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
               <Tooltip title="清屏">
                 <span>
                   <IconButton size="small" onClick={handleClear} disabled={exited} aria-label="清屏" sx={TOOLBAR_ICON_SX}>
@@ -528,8 +559,10 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
                   </IconButton>
                 </span>
               </Tooltip>
-              {/* 启动 claude（terminal_03 §3.2）：跑着置灰（探测驱动）、退出恢复、
-                  exited 禁用（shell 已死注入无意义） */}
+              {/*
+              启动 claude（terminal_03 §3.2）：跑着置灰（探测驱动）、退出恢复、
+              exited 禁用（shell 已死注入无意义）
+              */}
               <Tooltip title="启动 claude">
                 <span>
                   <IconButton
@@ -547,9 +580,11 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
           </>
         )}
         right={(
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-            {/* 分割本 pane：图标与方向刻意交叉（VerticalSplitIcon = 左右分、
-                HorizontalSplitIcon = 上下分），沿用原标题栏按钮组的语义映射 */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+            {/*
+            分割本 pane：图标与方向刻意交叉（VerticalSplitIcon = 左右分、
+            HorizontalSplitIcon = 上下分），沿用原标题栏按钮组的语义映射
+            */}
             <Tooltip title="终端左右分屏">
               <span>
                 <IconButton size="small" onClick={() => onSplitPane('horizontal')} aria-label="终端左右分屏" sx={TOOLBAR_ICON_SX}>
@@ -578,29 +613,31 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
       {searchOpen && searchAddonRef.current != null && (
         <TerminalSearch searchAddon={searchAddonRef.current} background={theme.background} onClose={closeSearch} />
       )}
-      {/* 会话已结束覆盖层（体验优化）：整块实色覆盖（background.paper）+ 垂直居中，
-          对齐 mainClosed「重新打开终端」占位视图形态；工具栏保留（关闭按钮仍可达），
-          底部 canvas 被完全遮盖（其 dim/pointerEvents 逻辑维持不变，无副作用）。 */}
+      {/*
+      会话已结束覆盖层（体验优化）：整块实色覆盖（background.paper）+ 垂直居中，
+      对齐 mainClosed「重新打开终端」占位视图形态；工具栏保留（关闭按钮仍可达），
+      底部 canvas 被完全遮盖（其 dim/pointerEvents 逻辑维持不变，无副作用）。
+      */}
       {exited && (
         <Box
           sx={{
             position: 'absolute',
-            top: PANEL_TOOLBAR_HEIGHT,
-            left: 0,
-            right: 0,
-            bottom: 0,
+            top: `${PANEL_TOOLBAR_HEIGHT}px`,
+            left: '0px',
+            right: '0px',
+            bottom: '0px',
             zIndex: 1,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: 1.5,
-            p: 2,
+            gap: '12px',
+            p: '16px',
             bgcolor: 'background.paper',
           }}
         >
           <Typography variant="body2" color="text.secondary">会话已结束</Typography>
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: '8px' }}>
             <Button size="small" onClick={onReopen}>新开终端</Button>
           </Box>
         </Box>
@@ -609,9 +646,9 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
         ref={containerRef}
         sx={{
           flex: 1,
-          minHeight: 0,
-          px: 0.5,
-          pb: 0.5,
+          minHeight: '0px',
+          px: '4px',
+          pb: '4px',
           opacity: exited ? theme.dimOpacity : 1,
           pointerEvents: exited ? 'none' : 'auto',
         }}

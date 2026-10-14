@@ -1,6 +1,8 @@
-// issue 状态固定常量（扁平模型：无 state_group/子状态层级、无 state_id、无 sortorder）。
-// 固定 5 个状态，顺序即数组序（BACKLOG→TODO→IN_PROGRESS→DONE→CANCELLED）。
-// 与后端 enums.StateCatalog 双端常量对齐（无 catalog 接口）；name 为中文硬编码（不走 i18n，数据层不国际化）。
+/**
+ * issue 状态固定常量（扁平模型：无 state_group/子状态层级、无 state_id、无 sortorder）。
+ * 固定 5 个状态，顺序即数组序（BACKLOG→TODO→IN_PROGRESS→DONE→CANCELLED）。
+ * 与后端 enums.StateCatalog 双端常量对齐（无 catalog 接口）；name 为中文硬编码（不走 i18n，数据层不国际化）。
+ */
 export type StateCode = 'BACKLOG' | 'TODO' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED';
 
 // 状态展示元数据（列表分组头/徽章/看板列头用）。

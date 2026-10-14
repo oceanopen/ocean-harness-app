@@ -1,11 +1,8 @@
-// Package mcptool 存放 MCP 工具 handler 实现（单 server 归口：全部工具注册在
-// mcpservers/mcp_ocean_harness.go，文件按业务域命名——issue/workspace 工具在
-// mcp_ocean_harness_tools.go、github 工具在 mcp_github_tools.go，后续业务域同理）。
-// handler 嵌入 mcputil.McpTool 获得链式装配（MakeContext → Validate → MakeService，
-// 链尾读 .Errors），内部复用既有 service 层（与 HTTP controller 完全共享业务逻辑，
-// 含事务与状态联动）；签名遵循 go-sdk ToolHandlerFor 三返回值形态——成功返回
-// (nil, 出参, nil)（SDK 自动双挂载 StructuredContent 与 TextContent），失败返回
-// (nil, 零值, mt.Fail(err))（SDK 自动装配 IsError 中文文案，Fail 只补日志）。
+/*
+ * Package mcptool 存放 MCP 工具 handler 实现（单 server 归口：全部工具注册在 mcpservers/mcp_ocean_harness.go，文件按业务域命名——issue/workspace 工具在 mcp_ocean_harness_tools.go、
+ * github 工具在 mcp_github_tools.go，后续业务域同理）。handler 嵌入 mcputil.McpTool 获得链式装配（MakeContext → Validate → MakeService，链尾读 .Errors），内部复用既有 service 层（与 HTTP controller 完全共享业务逻辑，
+ * 含事务与状态联动）；签名遵循 go-sdk ToolHandlerFor 三返回值形态——成功返回 (nil, 出参, nil)（SDK 自动双挂载 StructuredContent 与 TextContent），失败返回 (nil, 零值, mt.Fail(err))（SDK 自动装配 IsError 中文文案，Fail 只补日志）。
+ */
 package mcptool
 
 import (
@@ -41,8 +38,10 @@ func (mt McpOceanHarnessTool) IssueGetInfo(ctx context.Context, _ *mcp.CallToolR
 	return nil, newIssueContent(data), nil
 }
 
-// IssueUpdate 部分更新 issue：先 GetInfo 取现值，非空入参覆盖、空值保留，再走既有全量
-// Update（stateCode 流转/父子联动/事务语义与 HTTP 端完全一致）。
+/*
+ * IssueUpdate 部分更新 issue：先 GetInfo 取现值，非空入参覆盖、空值保留，
+ * 再走既有全量 Update（stateCode 流转/父子联动/事务语义与 HTTP 端完全一致）。
+ */
 func (mt McpOceanHarnessTool) IssueUpdate(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.IssueUpdateArgs) (*mcp.CallToolResult, mcpdto.IssueContent, error) {
 
@@ -57,8 +56,10 @@ func (mt McpOceanHarnessTool) IssueUpdate(ctx context.Context, _ *mcp.CallToolRe
 	return nil, newIssueContent(data), nil
 }
 
-// IssueChildList 列出某 issue 的全部一级子任务：GetInfo（父校验）→ GetList（项目扁平
-// 列表，单用户本地量级）→ 按 parentId 过滤。刻意不改 service/DTO，MCP 层纯组合。
+/*
+ * IssueChildList 列出某 issue 的全部一级子任务：GetInfo（父校验）→
+ * GetList（项目扁平列表，单用户本地量级）→ 按 parentId 过滤。刻意不改 service/DTO，MCP 层纯组合。
+ */
 func (mt McpOceanHarnessTool) IssueChildList(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.IssueChildListArgs) (*mcp.CallToolResult, mcpdto.IssueChildListContent, error) {
 
@@ -86,8 +87,10 @@ func (mt McpOceanHarnessTool) IssueChildList(ctx context.Context, _ *mcp.CallToo
 	return nil, mcpdto.IssueChildListContent{Children: children}, nil
 }
 
-// IssueChildCreate 为父 issue 创建一级子任务（ProjectID/WorkspaceID 继承父任务）。
-// service.Create 会再次校验父存在/同项目/仅一层；此处前置守卫仅为更早给出定向中文提示。
+/*
+ * IssueChildCreate 为父 issue 创建一级子任务（ProjectID/WorkspaceID
+ * 继承父任务）。service.Create 会再次校验父存在/同项目/仅一层；此处前置守卫仅为更早给出定向中文提示。
+ */
 func (mt McpOceanHarnessTool) IssueChildCreate(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.IssueChildCreateArgs) (*mcp.CallToolResult, mcpdto.IssueContent, error) {
 
@@ -119,8 +122,10 @@ func (mt McpOceanHarnessTool) IssueChildCreate(ctx context.Context, _ *mcp.CallT
 	return nil, newIssueContent(data), nil
 }
 
-// IssueChildUpdate 部分更新子任务（与 IssueUpdate 同构），差异仅：目标必须是子任务
-// （AI 用错工具时给出定向纠正提示）。
+/*
+ * IssueChildUpdate 部分更新子任务（与
+ * IssueUpdate 同构），差异仅：目标必须是子任务（AI 用错工具时给出定向纠正提示）。
+ */
 func (mt McpOceanHarnessTool) IssueChildUpdate(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.IssueUpdateArgs) (*mcp.CallToolResult, mcpdto.IssueContent, error) {
 
@@ -142,8 +147,10 @@ func (mt McpOceanHarnessTool) IssueChildUpdate(ctx context.Context, _ *mcp.CallT
 	return nil, newIssueContent(data), nil
 }
 
-// WorkspaceStatus 查询 issue 工作空间初始化状态：目录由 service 经 issueId 从工作空间解析
-// （后端 SSOT），复用既有 IssueWorkspace.Status（读状态文件派生）。
+/*
+ * WorkspaceStatus 查询 issue 工作空间初始化状态：目录由 service 经
+ * issueId 从工作空间解析（后端 SSOT），复用既有 IssueWorkspace.Status（读状态文件派生）。
+ */
 func (mt McpOceanHarnessTool) WorkspaceStatus(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.WorkspaceStatusArgs) (*mcp.CallToolResult, mcpdto.WorkspaceStatusContent, error) {
 
@@ -168,10 +175,11 @@ func (mt McpOceanHarnessTool) partialUpdate(issueSvc *service.ProjectIssue, args
 	return issueSvc.Update(buildIssueUpdateRequest(cur, args))
 }
 
-// buildIssueUpdateRequest 把部分更新入参合并到现值，产出 service.Update 的全量请求。
-// 现有 Update 是全量覆盖语义（Name/Description/StartDate/TargetDate 无条件覆写；typeId 与
-// 关联仓库分支传空会清空），故须从 GetInfo 结果完整回填，仅覆盖显式给出的非空字段。
-// 空串语义即「不改」（不支持经 MCP 置空字段，已写入工具描述）。
+/*
+ * buildIssueUpdateRequest 把部分更新入参合并到现值，产出 service.Update 的全量请求。
+ * 现有 Update 是全量覆盖语义（Name/Description/StartDate/TargetDate 无条件覆写；
+ * typeId 与关联仓库分支传空会清空），故须从 GetInfo 结果完整回填，仅覆盖显式给出的非空字段。空串语义即「不改」（不支持经 MCP 置空字段，已写入工具描述）。
+ */
 func buildIssueUpdateRequest(cur *types.ProjectIssueResponseData, args *mcpdto.IssueUpdateArgs) *types.ProjectIssueUpdateRequest {
 	req := &types.ProjectIssueUpdateRequest{
 		ID:                   cur.ID,

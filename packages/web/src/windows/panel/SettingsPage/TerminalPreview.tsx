@@ -109,7 +109,7 @@ export default function TerminalPreview({ theme, fontSize, cursorStyle, cursorBl
   return (
     <Box
       ref={containerRef}
-      sx={{ width: 'fit-content', borderRadius: 1, overflow: 'hidden', border: 1, borderColor: 'divider' }}
+      sx={{ width: 'fit-content', borderRadius: '4px', overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}
     />
   );
 }

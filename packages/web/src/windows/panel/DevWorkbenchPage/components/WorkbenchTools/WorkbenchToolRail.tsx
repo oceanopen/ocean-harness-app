@@ -5,22 +5,22 @@ import { WORKBENCH_TITLEBAR_HEIGHT } from '../../workbenchLayout';
 import { WORKBENCH_TOOLS } from './toolRegistry';
 
 interface WorkbenchToolRailProps {
-  /// 选中 issue id；null = 未选中（工具图标禁用；方格开关保持可用——面板区可见性与
-  /// 选中态解耦后，未选中时也须能收起面板）。
+  // 选中 issue id；null = 未选中（工具图标禁用；方格开关保持可用——面板区可见性与
+  // 选中态解耦后，未选中时也须能收起面板）。
   issueId: string | null;
-  /// 面板区折叠态（config SSOT 订阅值，由页面传入；rail 不直接订阅 config）。
+  // 面板区折叠态（config SSOT 订阅值，由页面传入；rail 不直接订阅 config）。
   panelCollapsed: boolean;
-  /// 方格点击：切面板区折叠（页面写 config）。
+  // 方格点击：切面板区折叠（页面写 config）。
   onTogglePanel: () => void;
-  /// 工具图标点击后面板区仍收起时展开（页面写 config）。
+  // 工具图标点击后面板区仍收起时展开（页面写 config）。
   onExpandPanel: () => void;
 }
 
-/// WorkbenchToolRail：开发工作台最右侧常驻工具条（40px 竖条）。
-/// 顶部方格（40×40，与中栏标题栏同高对齐）= 面板区总开关（切 config 折叠态，不动 tabs）；
-/// 下方为工具图标列（注册表驱动，点击 = openTool + 面板区未展开则展开）。激活 tab 所属
-/// 工具高亮（并存工具任一实例激活即高亮；有 tab 非激活不作次级态，保持两态简单）。
-/// tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
+// WorkbenchToolRail：开发工作台最右侧常驻工具条（40px 竖条）。
+// 顶部方格（40×40，与中栏标题栏同高对齐）= 面板区总开关（切 config 折叠态，不动 tabs）；
+// 下方为工具图标列（注册表驱动，点击 = openTool + 面板区未展开则展开）。激活 tab 所属
+// 工具高亮（并存工具任一实例激活即高亮；有 tab 非激活不作次级态，保持两态简单）。
+// tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
 export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePanel, onExpandPanel }: WorkbenchToolRailProps) {
   const openTool = useWorkbenchToolsStore(s => s.openTool);
   const { tabs, activeTabId } = useToolTabs(issueId);
@@ -45,7 +45,7 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'stretch',
-        borderLeft: 1,
+        borderLeft: '1px solid',
         borderColor: 'divider',
         bgcolor: 'background.paper',
       }}
@@ -57,13 +57,13 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
           <IconButton
             onClick={onTogglePanel}
             aria-label={panelCollapsed ? '展开工具面板区' : '收起工具面板区'}
-            sx={{ width: WORKBENCH_TITLEBAR_HEIGHT, height: WORKBENCH_TITLEBAR_HEIGHT, borderRadius: 0, color: 'text.secondary' }}
+            sx={{ width: WORKBENCH_TITLEBAR_HEIGHT, height: WORKBENCH_TITLEBAR_HEIGHT, borderRadius: '0px', color: 'text.secondary' }}
           >
             {panelCollapsed ? <ChevronLeftIcon /> : <ChevronRightIcon />}
           </IconButton>
         </span>
       </Tooltip>
-      <Box sx={{ borderBottom: 1, borderColor: 'divider' }} />
+      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />
 
       {/* 工具图标列：注册表驱动；激活 tab 所属工具高亮；Tooltip 同贴右缘向左展开 */}
       {WORKBENCH_TOOLS.map((tool) => {
@@ -78,7 +78,7 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
                 sx={{
                   'width': WORKBENCH_TITLEBAR_HEIGHT,
                   'height': WORKBENCH_TITLEBAR_HEIGHT,
-                  'borderRadius': 0,
+                  'borderRadius': '0px',
                   'color': active ? 'primary.main' : 'text.secondary',
                   '&:hover': { bgcolor: 'action.hover' },
                 }}

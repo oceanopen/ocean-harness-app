@@ -11,8 +11,10 @@ import (
 	"ocean-harness/server/internal/agentcatalog"
 )
 
-// resetDoctorState 清空包级缓存与在跑集合并恢复 probeFunc（测试间隔离；包级状态为
-// 进程内单例，测试串行运行、不复用 t.Parallel）。
+/*
+ * resetDoctorState 清空包级缓存与在跑集合并恢复 probeFunc（测试间隔离；包级状态为
+ * 进程内单例，测试串行运行、不复用 t.Parallel）。
+ */
 func resetDoctorState(t *testing.T) {
 	t.Helper()
 	clearDoctorState()
@@ -68,8 +70,10 @@ func TestRequestCheckUnknownCode(t *testing.T) {
 
 func TestRequestCheckAcceptsEnabledEntries(t *testing.T) {
 	resetDoctorState(t)
-	// 即时替身：本测试只关心受理范围编排；真实 CheckEntry 预检耗数百毫秒，若放任其
-	// 跨测试存续，会在后续测试中途 delete(inflight)/写缓存（孤儿探测污染 + data race）。
+	/*
+	 * 即时替身：本测试只关心受理范围编排；真实 CheckEntry 预检耗数百毫秒，若放任其
+	 * 跨测试存续，会在后续测试中途 delete(inflight)/写缓存（孤儿探测污染 + data race）。
+	 */
 	var calls atomic.Int64
 	probeFunc = healthyProbe(&calls)
 	accepted, err := RequestCheck("", Dirs{}, zap.NewNop())
@@ -170,8 +174,10 @@ func TestSnapshotCheckingCarriesStaleReport(t *testing.T) {
 		Stage: StageSpawn, Reason: "旧结论"}
 	stateMu.Unlock()
 
-	// 受理在跑（gate 挂起）：Snapshot 必为 checking，且旧结论字段原样带出——
-	// 若被旧 status 覆盖，前端轮询条件（checking/unknown）永不命中，新结论不可达。
+	/*
+	 * 受理在跑（gate 挂起）：Snapshot 必为 checking，且旧结论字段原样带出——
+	 * 若被旧 status 覆盖，前端轮询条件（checking/unknown）永不命中，新结论不可达。
+	 */
 	release := make(chan struct{})
 	probeFunc = func(_ context.Context, entry agentcatalog.Entry, _ Dirs, _ *zap.Logger) Report {
 		<-release

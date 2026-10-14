@@ -12,33 +12,31 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// 工作空间文件浏览（T5.1 本期：列表 + 预览）。方法挂在 IssueWorkspace 上（同包多文件分工
-// 惯例，见 issue_workspace.go 头注释）：只读访问 {issueId}/（目录经 issueId 从 DB 解析）。
-//
-// 设计要点：
-//   - 一次性全树：忽略构建产物后典型工作空间为数千节点，本机单次遍历毫秒级；懒加载的
-//     逐目录增量合并是「先占位后回填」式复杂度，不做。节点上限兜底病态目录。
-//   - 忽略名单同时约束两个接口——getFileTree 看不见的文件，getFileContent 点名也拿不到。
-//     .ssh 按用户决策移出名单（工作空间内 ssh 配置需在树中可见可查，2026-09-04）。
-//   - symlink：树遍历跳过（不进树）；内容读取经 EvalSymlinks 全链解析 + root 前缀断言，
-//     逃出 root 一律拒绝（指向 root 内的 symlink 解析后可读——树不展示 symlink，此路
-//     仅兜直接点名读取）。
+/*
+ * 工作空间文件浏览（T5.1 本期：列表 + 预览）。方法挂在 IssueWorkspace 上（同包多文件分工惯例，见 issue_workspace.go 头注释）：只读访问 {issueId}/（目录经 issueId 从 DB 解析）。
+ * 设计要点：一次性全树——忽略构建产物后典型工作空间数千节点，本机单次遍历毫秒级；懒加载逐目录增量合并是「先占位后回填」式复杂度，不做，节点上限兜底病态目录。忽略名单同时约束两个接口——getFileTree 看不见的文件，getFileContent 点名也拿不到；.ssh 按用户决策移出名单（树中可见可查）。
+ * symlink：树遍历跳过（不进树）；内容读取经 EvalSymlinks 全链解析 + root 前缀断言，逃出 root 一律拒绝（指向 root 内的 symlink 解析后可读——树不展示 symlink，此路仅兜直接点名读取）。
+ */
 
 const (
 	iwFileMaxEntries = 20000   // 树节点上限（超出置 Truncated，前端提示）
 	iwFileMaxText    = 2 << 20 // 文本预览上限 2MB（fileRaw 图片直连不走此限）
 )
 
-// 忽略名单：名字精确匹配、任意深度、目录与文件混判。收录工作空间状态文件与常见构建
-// 产物目录——否则单仓库即可打爆节点上限。.ssh 已按用户决策移出（树中可见）。
+/*
+ * 忽略名单：名字精确匹配、任意深度、目录与文件混判。收录工作空间状态文件与常见构建
+ * 产物目录——否则单仓库即可打爆节点上限。.ssh 已按用户决策移出（树中可见）。
+ */
 var issueWorkspaceIgnoredNames = map[string]struct{}{
 	".git": {}, ".DS_Store": {}, "node_modules": {},
 	".workspace-init-state.json": {}, "__pycache__": {}, "target": {},
 	"dist": {}, "build": {}, "out": {}, ".next": {}, ".venv": {}, "venv": {},
 }
 
-// 图片扩展名 → mime（getFileContent 回元信息；fileRaw 按此白名单直连返回原始字节，
-// 前端 <img src> 加载——svg 亦走 <img>，脚本天然不执行）。
+/*
+ * 图片扩展名 → mime（getFileContent 回元信息；fileRaw 按此白名单直连返回原始字节，
+ * 前端 <img src> 加载——svg 亦走 <img>，脚本天然不执行）。
+ */
 var issueWorkspaceImageMimes = map[string]string{
 	".png":  "image/png",
 	".jpg":  "image/jpeg",
@@ -48,8 +46,10 @@ var issueWorkspaceImageMimes = map[string]string{
 	".svg":  "image/svg+xml",
 }
 
-// FileTree POST /api/issueWorkspace/getFileTree：一次性返回工作空间全部文件/目录的
-// 扁平节点表（WalkDir 词法序，父目录天然先于其内条目），前端纯函数组树。
+/*
+ * FileTree POST /api/issueWorkspace/getFileTree：一次性返回工作空间全部文件/目录的
+ * 扁平节点表（WalkDir 词法序，父目录天然先于其内条目），前端纯函数组树。
+ */
 func (svc IssueWorkspace) FileTree(req *types.IssueWorkspaceFileTreeRequest) (*types.IssueWorkspaceFileTreeResponseData, error) {
 	root, err := svc.issueWorkspaceRoot(req.IssueID)
 	if err != nil {
@@ -106,9 +106,11 @@ func (svc IssueWorkspace) FileTree(req *types.IssueWorkspaceFileTreeRequest) (*t
 	return data, nil
 }
 
-// FileContent POST /api/issueWorkspace/getFileContent：读取单个文件内容并定夺传输 kind。
-// 判定次序（先 stat 后 read，超大文件不产生读取 IO）：安全链 → Lstat regular → 扩展名
-// 图片分派（base64）→ 文本上限 → 整读嗅探（NUL / 非 UTF-8 → binary）→ text 全文。
+/*
+ * FileContent POST /api/issueWorkspace/getFileContent：读取单个文件内容并定夺传输 kind。
+ * 判定次序（先 stat 后 read，超大文件不产生读取 IO）：安全链 → Lstat regular → 扩展名
+ * 图片分派（base64）→ 文本上限 → 整读嗅探（NUL / 非 UTF-8 → binary）→ text 全文。
+ */
 func (svc IssueWorkspace) FileContent(req *types.IssueWorkspaceFileContentRequest) (*types.IssueWorkspaceFileContentResponseData, error) {
 	root, err := svc.issueWorkspaceRoot(req.IssueID)
 	if err != nil {
@@ -127,8 +129,10 @@ func (svc IssueWorkspace) FileContent(req *types.IssueWorkspaceFileContentReques
 	}
 
 	if mime, ok := issueWorkspaceImageMimes[strings.ToLower(filepath.Ext(req.Path))]; ok {
-		// 图片字节经 fileRaw URL 直连加载（<img src>，类静态资源），此处仅回元信息
-		//（stat-only——不整读、不 base64，大小上限对图片不再适用）。
+		/*
+		 * 图片字节经 fileRaw URL 直连加载（<img src>，类静态资源），此处仅回元信息
+		 * （stat-only——不整读、不 base64，大小上限对图片不再适用）。
+		 */
 		return &types.IssueWorkspaceFileContentResponseData{
 			Kind:     types.IW_FILE_KIND_IMAGE,
 			Size:     info.Size(),
@@ -154,9 +158,11 @@ func (svc IssueWorkspace) FileContent(req *types.IssueWorkspaceFileContentReques
 	}, nil
 }
 
-// FileRaw GET /api/issueWorkspace/fileRaw：图片原始字节直连（<img src> 消费，类静态资源
-// 服务）。校验链与 getFileContent 完全一致（issueId/rel 路径/忽略名单/symlink
-// 解析断言）+ 扩展名白名单（仅图片——本端点为 <img> 服务，不做通用文件下载）。
+/*
+ * FileRaw GET /api/issueWorkspace/fileRaw：图片原始字节直连（<img src> 消费，类静态资源
+ * 服务）。校验链与 getFileContent 完全一致（issueId/rel 路径/忽略名单/symlink
+ * 解析断言）+ 扩展名白名单（仅图片——本端点为 <img> 服务，不做通用文件下载）。
+ */
 func (svc IssueWorkspace) FileRaw(issueID, rel string) ([]byte, string, error) {
 	root, err := svc.issueWorkspaceRoot(issueID)
 	if err != nil {
@@ -177,8 +183,10 @@ func (svc IssueWorkspace) FileRaw(issueID, rel string) ([]byte, string, error) {
 	return raw, mime, nil
 }
 
-// issueWorkspaceRoot 服务入口统一换算：issueId → 工作空间目录 → {dir}/{issueId} 根
-// （目录经 resolveIssueBaseDir 校验为绝对路径，此处仅拼接）。
+/*
+ * issueWorkspaceRoot 服务入口统一换算：issueId → 工作空间目录 → {dir}/{issueId} 根
+ * （目录经 resolveIssueBaseDir 校验为绝对路径，此处仅拼接）。
+ */
 func (svc IssueWorkspace) issueWorkspaceRoot(issueID string) (string, error) {
 	if !issueWorkspaceValidIssueID(issueID) {
 		return "", errors.New("issueId 非法")
@@ -190,12 +198,11 @@ func (svc IssueWorkspace) issueWorkspaceRoot(issueID string) (string, error) {
 	return filepath.Join(baseDir, issueID), nil
 }
 
-// issueWorkspaceFilePath 校验相对路径并解析为 root 下的绝对路径：拒绝空串/绝对路径/
-// NUL/反斜杠/Clean 后逃逸 root（".." 与 "../x"）；逐段对照忽略名单（getFileTree 看不见
-// 的文件点名也拿不到）。最后经 EvalSymlinks 全链解析并断言仍在 root 内——字符串校验
-// 与 Lstat 均拦不住「中间组件是指向 root 外的 symlink 目录」（git checkout 会如实落盘
-// 仓库内 symlink，终端 agent 也可 ln -s）；返回 resolved，调用方的 Lstat/ReadFile 落在
-// 已验证路径上（顺带消除 Lstat→ReadFile 的替换竞态）。
+/*
+ * issueWorkspaceFilePath 校验相对路径并解析为 root 下的绝对路径：拒绝空串/绝对路径/NUL/反斜杠/Clean 后逃逸 root（".." 与 "../x"）；逐段对照忽略名单（getFileTree 看不见的文件点名也拿不到）。
+ * 最后经 EvalSymlinks 全链解析并断言仍在 root 内——字符串校验与 Lstat 均拦不住「中间组件是指向 root 外的 symlink 目录」（git checkout 会如实落盘仓库内 symlink，终端 agent 也可 ln -s）。
+ * 返回 resolved，调用方的 Lstat/ReadFile 落在已验证路径上（顺带消除 Lstat→ReadFile 的替换竞态）。
+ */
 func issueWorkspaceFilePath(root, rel string) (string, error) {
 	if rel == "" {
 		return "", errors.New("path 不能为空")

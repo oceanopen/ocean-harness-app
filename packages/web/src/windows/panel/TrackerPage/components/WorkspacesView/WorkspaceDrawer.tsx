@@ -108,7 +108,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
             {isEdit ? t('tracker:workspace.edit.title') : t('tracker:workspace.add.title')}
           </Typography>
@@ -118,7 +118,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
         </Box>
 
         {/* 内容 */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {isEdit && (
             <TextField
               label={t('tracker:workspace.edit.idLabel')}
@@ -206,7 +206,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
         </Box>
 
         {/* 底部操作栏：一律左对齐 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderTop: '1px solid', borderColor: 'divider' }}>
           <Button color="inherit" onClick={onClose} disabled={submitting}>
             {t('tracker:workspace.add.cancel')}
           </Button>

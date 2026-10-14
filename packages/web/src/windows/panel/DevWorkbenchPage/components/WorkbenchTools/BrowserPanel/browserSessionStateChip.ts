@@ -1,8 +1,10 @@
 import type { ChipProps } from '@mui/material';
 import type { BrowserCallOutcome, BrowserSessionStatus } from '@src/services';
 
-// 浏览器面板 chip 文案/配色 SSOT（镜像 imBotStateChip 范式）：状态行与操作流水行共用，
-// 面板内不散落 switch。
+/**
+ * 浏览器面板 chip 文案/配色 SSOT（镜像 imBotStateChip 范式）：状态行与操作流水行共用，
+ * 面板内不散落 switch。
+ */
 
 type ChipColor = NonNullable<ChipProps['color']>;
 

@@ -5,12 +5,16 @@ import (
 	"ocean-harness/server/internal/dal/model"
 )
 
-// 每 action 一个独立 Request 类型。issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，
-// Create 时由 service 生成 uuid v7）；stateCode 为固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，新建默认 BACKLOG）；
-// sortOrder 由 service 自算（不入参）；priority 为 typed 枚举（前端传，空值由 service 规范为 none）。
+/*
+ * 每 action 一个独立 Request 类型：issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，Create 时由 service 生成 uuid v7）；
+ * stateCode 为固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，新建默认 BACKLOG）；
+ * sortOrder 由 service 自算（不入参）；priority 为 typed 枚举（前端传，空值由 service 规范为 none）。
+ */
 
-// ProjectIssueGetListRequest 是 POST /api/tracker/projectIssue/getList 的入参。
-// 分组由前端对扁平列表自行分组，后端不接收；orderBy 不传则按 sort_order 升序（id 无数值序，按 id 排序请传 created_at）。
+/*
+ * ProjectIssueGetListRequest 是 POST /api/tracker/projectIssue/getList 的入参：分组由前端对扁平列表自行分组，后端不接收；
+ * orderBy 不传则按 sort_order 升序（id 无数值序，按 id 排序请传 created_at）。
+ */
 type ProjectIssueGetListRequest struct {
 	ProjectID int             `json:"projectId" binding:"required"`
 	OrderBy   string          `json:"orderBy"` // created_at/sort_order/priority，空则 sort_order
@@ -31,9 +35,10 @@ type IssueRepositoryBranch struct {
 	RepositoryBranch  string `json:"repositoryBranch"`  // 分支名（freeSolo 可手输，不校验存在性）
 }
 
-// ProjectIssueCreateRequest 是 POST /api/tracker/projectIssue/create 的入参。
-// stateCode 空值取默认 BACKLOG；sortOrder 不传（后端自算同 project MAX+10000）。
-// parentId 非空时创建为子任务（后端校验父存在 + 同 project + 仅一层）；id 由后端生成 uuid。
+/*
+ * ProjectIssueCreateRequest 是 POST /api/tracker/projectIssue/create 的入参：stateCode 空值取默认 BACKLOG，sortOrder 不传（后端自算同 project MAX+10000）；
+ * parentId 非空时创建为子任务（后端校验父存在 + 同 project + 仅一层）；id 由后端生成 uuid。
+ */
 type ProjectIssueCreateRequest struct {
 	ProjectID            int                      `json:"projectId" binding:"required"`
 	WorkspaceID          int                      `json:"workspaceId" binding:"required"`
@@ -49,10 +54,11 @@ type ProjectIssueCreateRequest struct {
 	LaunchSettings       *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"` // 启动设置覆盖（nil = 未覆盖，消费端回落 workspace）
 }
 
-// ProjectIssueUpdateRequest 是 POST /api/tracker/projectIssue/update 的入参。
-// stateCode 变化触发 completed_at 流转：DONE→写 now，否则清 NULL。
-// typeId 为 *int：nil=保留原值（MCP 部分更新回填现值），非 nil 覆写（0=未分类）。
-// 不变更 projectId/workspaceId/sortOrder（sortOrder 后续拖拽迭代维护）。
+/*
+ * ProjectIssueUpdateRequest 是 POST /api/tracker/projectIssue/update 的入参：stateCode 变化触发 completed_at 流转（DONE→写 now，否则清 NULL）；
+ * typeId 为 *int：nil=保留原值（MCP 部分更新回填现值），非 nil 覆写（0=未分类）；
+ * 不变更 projectId/workspaceId/sortOrder（sortOrder 后续拖拽迭代维护）。
+ */
 type ProjectIssueUpdateRequest struct {
 	ID                   string                   `json:"id" binding:"required"`
 	Name                 string                   `json:"name" binding:"required,max=255"`
@@ -66,9 +72,10 @@ type ProjectIssueUpdateRequest struct {
 	LaunchSettings       *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"` // 启动设置覆盖（nil = 清除覆盖，消费端回落 workspace）
 }
 
-// ProjectIssueMoveRequest 是 POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）。
-// 前端按分数插值算好 sortOrder 传上来后端写库；stateCode 变化触发 completed_at 流转。
-// 不碰 name/description/priority 等业务字段（由 update 维护）。
+/*
+ * ProjectIssueMoveRequest 是 POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）：前端按分数插值算好 sortOrder 传上来后端写库，stateCode 变化触发 completed_at 流转；
+ * 不碰 name/description/priority 等业务字段（由 update 维护）。
+ */
 type ProjectIssueMoveRequest struct {
 	ID        string          `json:"id" binding:"required"`
 	StateCode enums.StateCode `json:"stateCode" binding:"required"`
@@ -80,15 +87,17 @@ type ProjectIssueDeleteRequest struct {
 	ID string `json:"id" binding:"required"`
 }
 
-// ProjectIssueResponseData 是 issue 的响应：嵌入 DO（JSON 平铺 issue 字段）+ 应用层组装的
-// 类型与关联仓库+分支列表（来自 t_issue_local_repositories 批量组装，见 assembleWithType）。
-// completedAt 为 *time.Time：未完成=null / 完成=时间；type 为单值（type_id=0 时为 null）。
-// 注：DO 的 IssueLocalRepositoryList 从不 Preload（手动批量组装），omitempty 恒不输出。
+/*
+ * ProjectIssueResponseData 是 issue 的响应：嵌入 DO（JSON 平铺 issue 字段）+ 应用层组装的类型与关联仓库+分支列表（来自 t_issue_local_repositories 批量组装，见 assembleWithType）；
+ * completedAt 为 *time.Time：未完成=null / 完成=时间，type 为单值（type_id=0 时为 null）；
+ * 注：DO 的 IssueLocalRepositoryList 从不 Preload（手动批量组装），omitempty 恒不输出。
+ */
 type ProjectIssueResponseData struct {
 	*model.ProjectIssue
 	Type                 *model.WorkspaceType    `json:"type"`
 	RepositoryBranchList []IssueRepositoryBranch `json:"repositoryBranchList"`
-	// 启动设置覆盖：浅层同名字段遮蔽嵌入 DO 的 launch_settings string（Go json 浅深度
-	// 胜出），输出解析后的结构（nil = 未覆盖，消费端回落 workspace）。
+	/*
+	 * 启动设置覆盖：浅层同名字段遮蔽嵌入 DO 的 launch_settings string（Go json 浅深度胜出），输出解析后的结构（nil = 未覆盖，消费端回落 workspace）。
+	 */
 	LaunchSettings *WorkspaceLaunchSettings `json:"launchSettings"`
 }

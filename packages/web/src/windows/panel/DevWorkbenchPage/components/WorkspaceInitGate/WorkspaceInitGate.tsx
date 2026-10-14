@@ -29,13 +29,13 @@ function StepStatusIcon({ status }: { status: IssueWorkspaceStatus }) {
     case 'RUNNING':
       return <CircularProgress size={16} />;
     case 'SUCCESS':
-      return <CheckCircleIcon sx={{ fontSize: 18, color: 'success.main' }} />;
+      return <CheckCircleIcon sx={{ fontSize: '18px', color: 'success.main' }} />;
     case 'FAILED':
-      return <CancelIcon sx={{ fontSize: 18, color: 'error.main' }} />;
+      return <CancelIcon sx={{ fontSize: '18px', color: 'error.main' }} />;
     case 'SKIPPED':
-      return <RemoveCircleOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />;
+      return <RemoveCircleOutlinedIcon sx={{ fontSize: '18px', color: 'text.disabled' }} />;
     default:
-      return <RadioButtonUncheckedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />;
+      return <RadioButtonUncheckedIcon sx={{ fontSize: '18px', color: 'text.disabled' }} />;
   }
 }
 
@@ -47,11 +47,11 @@ function StepRow({
   indented,
 }: { status: IssueWorkspaceStatus; title: string; note?: string | null; indented?: boolean }) {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, pl: indented ? 3.5 : 0 }}>
-      <Box sx={{ width: 18, height: 18, flexShrink: 0, mt: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', pl: indented ? '28px' : '0px' }}>
+      <Box sx={{ width: '18px', height: '18px', flexShrink: 0, mt: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <StepStatusIcon status={status} />
       </Box>
-      <Box sx={{ minWidth: 0 }}>
+      <Box sx={{ minWidth: '0px' }}>
         <Typography variant="body2">{title}{status === 'SKIPPED' ? '（暂未接入）' : ''}</Typography>
         {note
           ? <Typography variant="caption" color="text.secondary" sx={{ display: 'block', wordBreak: 'break-all' }}>{note}</Typography>
@@ -124,14 +124,14 @@ export default function WorkspaceInitGate({ issueId, startupCli, terminalTransit
           <Box
             sx={{
               position: 'absolute',
-              inset: 0,
+              inset: '0px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               pointerEvents: 'none',
             }}
           >
-            <Box sx={{ width: '100%', maxWidth: 480, p: 2 }}>
+            <Box sx={{ width: '100%', maxWidth: '480px', p: '16px' }}>
               <InitStepsCard state={state ?? null} terminalStepStatus="RUNNING" terminalStepTitle={terminalStepTitle(startupCli)} />
             </Box>
           </Box>
@@ -207,8 +207,8 @@ export default function WorkspaceInitGate({ issueId, startupCli, terminalTransit
 /** 面板外壳：内容区居中 + 限宽列。 */
 function PanelShell({ children }: { children: ReactNode }) {
   return (
-    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
-      <Box sx={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
+      <Box sx={{ width: '100%', maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         <Typography variant="h6">工作空间初始化</Typography>
         {children}
       </Box>
@@ -237,11 +237,11 @@ function InitStepsCard({
   const dirStep = steps.find(s => s.key === ISSUE_WORKSPACE_STEP_KEY.CREATE_DIRS);
   const engSteps = steps.filter(s => s.key !== ISSUE_WORKSPACE_STEP_KEY.CREATE_DIRS);
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       {dirStep && <StepRow status={dirStep.status} title="初始化工作空间目录" note={dirStep.message} />}
       {engSteps.length > 0 && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ pl: 3.5 }}>工作空间初始化</Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <Typography variant="caption" color="text.secondary" sx={{ pl: '28px' }}>工作空间初始化</Typography>
           {engSteps.map(step => (
             <EngStepRow key={step.key} step={step} />
           ))}
@@ -255,7 +255,7 @@ function InitStepsCard({
 /** 工程化步骤行：全局步骤 + cloneRepos 的仓库级子列表（缩进，含失败原因）。 */
 function EngStepRow({ step }: { step: IssueWorkspaceStep }) {
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <StepRow status={step.status} title={step.title} note={step.message} />
       {step.key === ISSUE_WORKSPACE_STEP_KEY.CLONE_REPOS
         && (step.repos ?? []).map(repo => (

@@ -59,12 +59,9 @@ export type ArchiveIssueWorkspaceResult
     | { status: 'done' };
 
 /**
- * 归档/取消工作空间（T3.2）。force 缺省走两段式：先调检查（force=false），干净则内部
- * 续发执行段、有警告返回 {status:'warnings'} 由 UI 弹警告态，二次确认后携带 force 重发
- * （此时只走执行段）。执行段固定时序：ptyShutdownIssue（删目录前必杀该 issue 全部终端
- * 会话，失败仅告警不阻断——会话可能本就不存在）→ archive(force=true)（删目录 + 后端
- * 流转状态）。成功后失效双缓存：issue 列表（左树/顶栏/子任务面板）与工作空间状态
- * （回 NOT_INITIALIZED）。
+ * 归档/取消工作空间（T3.2）。force 缺省走两段式：先调检查（force=false），干净则内部续发执行段、有警告返回 {status:'warnings'} 由 UI 弹警告态，二次确认后携带 force 重发（此时只走执行段）。
+ * 执行段固定时序：ptyShutdownIssue（删目录前必杀该 issue 全部终端会话，失败仅告警不阻断——会话可能本就不存在）→ archive(force=true)（删目录 + 后端流转状态）。
+ * 成功后失效双缓存：issue 列表（左树/顶栏/子任务面板）与工作空间状态（回 NOT_INITIALIZED）。
  */
 export function useArchiveIssueWorkspace() {
   const qc = useQueryClient();

@@ -1,8 +1,8 @@
-// Package marketplace 插件市场域基础能力：封装 claude plugin CLI 调用（os/exec）与
-// marketplace 清单扫描。全部为纯函数；插件安装状态与市场注册表的 SSOT 恒为 claude 侧
-// （~/.claude/plugins），本包只做投影与透传，不落任何本地状态。
-// 未来接入其他 CLI 开发工具（codex/gemini 等）时：按同包新增 <cli>.go 命令构造文件 +
-// 在 manifest.go 的 DetectSupportedClis 追加该 CLI 的清单目录约定即可。
+/*
+ * Package marketplace 插件市场域基础能力：封装 claude plugin CLI 调用（os/exec）与 marketplace 清单扫描，全部为纯函数；
+ * 插件安装状态与市场注册表的 SSOT 恒为 claude 侧（~/.claude/plugins），本包只做投影与透传不落本地状态。
+ * 未来接入其他 CLI：按同包新增 <cli>.go 命令构造文件 + 在 manifest.go 的 DetectSupportedClis 追加该 CLI 的清单目录约定。
+ */
 package marketplace
 
 import (
@@ -25,16 +25,18 @@ const (
 	timeoutLocal = 60 * time.Second
 )
 
-// ResolveClaudeBin 解析 claude 可执行文件路径（P5 定稿终态：vendored 自带 claude，
-// 全链路 SSOT；vendoring 两目录由 main 启动期注入 agentcatalog，成功进程级缓存）。
+/*
+ * ResolveClaudeBin 解析 claude 可执行文件路径（P5 定稿终态：vendored 自带 claude，全链路 SSOT；
+ * vendoring 两目录由 main 启动期注入 agentcatalog，成功进程级缓存）。
+ */
 func ResolveClaudeBin() (string, error) {
 	return agentcatalog.ResolveVendoredClaudeBin(string(enums.AGENT_CODE_CLAUDE_ACP))
 }
 
-// run 执行 `claude <args...>`：context 超时兜底、分离捕获 stdout/stderr。
-// 非零退出返回中文错误（附 stderr 摘要）；成功返回原始 stdout（JSON 交由调用方解析）。
-// 二进制路径经 agentcatalog 进程级成功缓存：首次解析成功后固定，vendored 版本切换
-// 需重启 sidecar 生效（失败不缓存，安装修复后无需重启）。
+/*
+ * run 执行 `claude <args...>`：context 超时兜底、分离捕获 stdout/stderr，非零退出返回中文错误（附 stderr 摘要），成功返回原始 stdout（JSON 交由调用方解析）；
+ * 二进制路径经 agentcatalog 进程级成功缓存，vendored 版本切换需重启 sidecar 生效（失败不缓存，安装修复后无需重启）。
+ */
 func run(timeout time.Duration, args ...string) (string, error) {
 	bin, err := ResolveClaudeBin()
 	if err != nil {
@@ -43,11 +45,9 @@ func run(timeout time.Duration, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
-	// login PATH 注入（best-effort，对齐 bot driver_claude turnEnv / ACP ClaudeEnvOverrides
-	// 惯例，本函数是 claude 调用方三链路中最后补齐的一个）：GUI 拉起的 sidecar PATH 常缺
-	// nvm/homebrew 等目录，marketplace add/update 派生的 git 等工具子进程同享完整环境；
-	// 探测失败保留原环境，不阻断主流程。替换既有 PATH= 项而非 append（env 重复项语义
-	// 依赖 libc 实现，替换为确定性覆盖）。
+	/*
+	 * login PATH 注入（best-effort，对齐 bot driver_claude turnEnv / ACP ClaudeEnvOverrides 惯例，本函数是 claude 调用方三链路中最后补齐的一个）：GUI 拉起的 sidecar PATH 常缺 nvm/homebrew 等目录，派生 git 子进程同享完整环境；探测失败保留原环境不阻断主流程，替换既有 PATH= 项而非 append（env 重复项语义依赖 libc 实现，替换为确定性覆盖）。
+	 */
 	if loginPath, err := clibin.LoginPath(); err == nil && loginPath != "" {
 		env := os.Environ()
 		replaced := false
@@ -63,10 +63,9 @@ func run(timeout time.Duration, args ...string) (string, error) {
 		}
 		cmd.Env = env
 	}
-	// WaitDelay 收口孙进程管道：ctx 超时只 kill claude 主进程，其内部的 git fetch/clone
-	// 孙进程仍继承 stdout/stderr 管道写端——管道不关则 Run() 永久阻塞（超时分支不可达：
-	// HTTP 挂死、前端无限转圈、包级 mutex 永久占用）。设置后进程退出且管道仍被持有，
-	// os/exec 在 WaitDelay 到期强制关闭管道让 Run() 返回，最坏在超时后 ~5s 内报错收场。
+	/*
+	 * WaitDelay 收口孙进程管道：ctx 超时只 kill claude 主进程，其内部 git fetch/clone 孙进程仍持有 stdout/stderr 管道写端，不关则 Run() 永久阻塞；设置后 os/exec 在 WaitDelay 到期强制关闭管道让 Run() 返回，最坏在超时后 ~5s 内报错收场。
+	 */
 	cmd.WaitDelay = 5 * time.Second
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -1,34 +1,39 @@
-// workbenchTools 域纯函数与按 issue 持久化。
-// 工具 tab 模型：互斥工具（子任务/文件目录/浏览器——内容后端全局单源，多 tab 只会倍增
-// SSE 连接）同类单 tab（tab id = toolId，单例语义）；并存工具每实例一个 tab
-// （tab id = randomUUID 前 8 位，跨重启不撞）。
-// tabs/activeTab 按 issue 隔离：localStorage 按 issue 存 JSON，损坏/缺失回落空 tabs
-// （工具面板为纯展示派生，丢失仅 UI 回落重新手动打开）。
+/**
+ * workbenchTools 域纯函数与按 issue 持久化。工具 tab 模型：互斥工具（子任务/文件目录/浏览器——
+ * 内容后端全局单源）同类单 tab（tab id = toolId，单例语义）；并存工具每实例一个 tab（tab id = randomUUID 前 8 位）。
+ * tabs/activeTab 按 issue 隔离：localStorage 按 issue 存 JSON，损坏/缺失回落空 tabs（纯展示派生，丢失仅 UI 回落）。
+ */
 
-/// 工具 tab：id 为 tab 标识（互斥工具 = toolId；并存工具 = 随机短 id），toolId 指向注册表项。
-/// 渲染层以注册表查 def，查不到的 toolId（已下线工具的遗留 tab）过滤不渲染。
+/**
+ * 工具 tab：id 为 tab 标识（互斥工具 = toolId；并存工具 = 随机短 id），toolId 指向注册表项。
+ * 渲染层以注册表查 def，查不到的 toolId（已下线工具的遗留 tab）过滤不渲染。
+ */
 export interface ToolTab {
   id: string;
   toolId: string;
 }
 
-/// 打开工具的结果（tabs + 激活 tab 成对变更）。
+// 打开工具的结果（tabs + 激活 tab 成对变更）。
 export interface ToolTabsState {
   tabs: ToolTab[];
   activeTabId: string | null;
 }
 
-/// 空 tabs 视图（域级共享常量，对齐 terminalPanes 的 INITIAL_LAYOUT）：store 空位回落、
-/// 读回判废回落、组件 selector fallback 共用同一引用——保证 getSnapshot 引用稳定。
+/**
+ * 空 tabs 视图（域级共享常量，对齐 terminalPanes 的 INITIAL_LAYOUT）：store 空位回落、
+ * 读回判废回落、组件 selector fallback 共用同一引用——保证 getSnapshot 引用稳定。
+ */
 export const EMPTY_TOOL_TABS: ToolTabsState = { tabs: [], activeTabId: null };
 
-/// 并存工具新实例 tab id：randomUUID 前 8 位（对齐 terminalPanes newPaneId 设计）。
+// 并存工具新实例 tab id：randomUUID 前 8 位（对齐 terminalPanes newPaneId 设计）。
 export function newToolTabId(): string {
   return crypto.randomUUID().slice(0, 8);
 }
 
-/// 打开工具。互斥（exclusive=true）：同类 tab 已存在则激活之（已是激活态则原样返回）；
-/// 不存在则追加并激活。并存：总是追加新实例并激活。面板区展开由调用方另行驱动，本函数只管 tabs。
+/**
+ * 打开工具。互斥（exclusive=true）：同类 tab 已存在则激活之（已是激活态则原样返回），
+ * 不存在则追加并激活。并存：总是追加新实例并激活。面板区展开由调用方另行驱动，本函数只管 tabs。
+ */
 export function openToolTabs(state: ToolTabsState, toolId: string, exclusive: boolean): ToolTabsState {
   if (exclusive) {
     const existing = state.tabs.find(t => t.toolId === toolId);
@@ -42,8 +47,10 @@ export function openToolTabs(state: ToolTabsState, toolId: string, exclusive: bo
   return { tabs: [...state.tabs, tab], activeTabId: tab.id };
 }
 
-/// 关闭 tab：移除后若关的是激活 tab 则激活相邻（优先左侧兄弟，无则右侧，清空为 null）。
-/// tabId 不存在时原样返回。
+/**
+ * 关闭 tab：移除后若关的是激活 tab 则激活相邻（优先左侧兄弟，无则右侧，清空为 null）。
+ * tabId 不存在时原样返回。
+ */
 export function closeToolTab(state: ToolTabsState, tabId: string): ToolTabsState {
   const index = state.tabs.findIndex(t => t.id === tabId);
   if (index < 0) {
@@ -57,21 +64,23 @@ export function closeToolTab(state: ToolTabsState, tabId: string): ToolTabsState
   return { tabs, activeTabId: neighbor?.id ?? null };
 }
 
-/// 激活 tab（tab 头点击）：仅改激活态，tabs 不动；已是激活态原样返回（引用不变免重渲染）。
+// 激活 tab（tab 头点击）：仅改激活态，tabs 不动；已是激活态原样返回（引用不变免重渲染）。
 export function setActiveToolTab(state: ToolTabsState, tabId: string): ToolTabsState {
   return state.activeTabId === tabId ? state : { tabs: state.tabs, activeTabId: tabId };
 }
 
 // ---------- 持久化（localStorage 按 issue） ----------
 
-/// localStorage key：workbench_tool_tabs_<issueId>（对齐 terminal_pane_layout_ 命名）。
+// localStorage key：workbench_tool_tabs_<issueId>（对齐 terminal_pane_layout_ 命名）。
 function tabsKey(issueId: string): string {
   return `workbench_tool_tabs_${issueId}`;
 }
 
-/// 结构校验：防手改/版本演进/截断产生的脏数据进渲染层。规则：tabs 为数组且每项
-/// id/toolId 均非空字符串、tab id 无重复；activeTabId 为 null 或在 tabs 内。任何一处
-/// 不满足 → 整体判废（回落空 tabs）。未知 toolId 不在此拦截（注册表在组件层，渲染时过滤）。
+/**
+ * 结构校验：防手改/版本演进/截断产生的脏数据进渲染层。规则：tabs 为数组且每项 id/toolId
+ * 均非空字符串、tab id 无重复；activeTabId 为 null 或在 tabs 内。任何一处不满足 → 整体判废（回落空 tabs）。
+ * 未知 toolId 不在此拦截（注册表在组件层，渲染时过滤）。
+ */
 function isValidTabsState(parsed: unknown): parsed is ToolTabsState {
   if (typeof parsed !== 'object' || parsed == null) {
     return false;
@@ -97,7 +106,7 @@ function isValidTabsState(parsed: unknown): parsed is ToolTabsState {
   return s.activeTabId == null || (typeof s.activeTabId === 'string' && seen.has(s.activeTabId));
 }
 
-/// 读回 issue 的工具 tabs：无记录/JSON 解析失败/结构校验失败 → EMPTY_TOOL_TABS（共享引用）。
+// 读回 issue 的工具 tabs：无记录/JSON 解析失败/结构校验失败 → EMPTY_TOOL_TABS（共享引用）。
 export function loadToolTabs(issueId: string): ToolTabsState {
   try {
     const raw = localStorage.getItem(tabsKey(issueId));
@@ -112,8 +121,10 @@ export function loadToolTabs(issueId: string): ToolTabsState {
   }
 }
 
-/// 写入 issue 的工具 tabs：空 tabs（且无激活）移除 key——localStorage 不积 corpse，
-/// 也保证「关闭全部 tab」后下次打开回到干净空面板。
+/**
+ * 写入 issue 的工具 tabs：空 tabs（且无激活）移除 key——localStorage 不积 corpse，
+ * 也保证「关闭全部 tab」后下次打开回到干净空面板。
+ */
 export function saveToolTabs(issueId: string, state: ToolTabsState): void {
   try {
     if (state.tabs.length === 0 && state.activeTabId == null) {
@@ -127,7 +138,7 @@ export function saveToolTabs(issueId: string, state: ToolTabsState): void {
   }
 }
 
-/// 清理 issue 的工具 tabs 记录（归档/取消 onSuccess 调用——issue 级本地痕迹随任务终结移除）。
+// 清理 issue 的工具 tabs 记录（归档/取消 onSuccess 调用——issue 级本地痕迹随任务终结移除）。
 export function clearToolTabs(issueId: string): void {
   try {
     localStorage.removeItem(tabsKey(issueId));

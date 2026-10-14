@@ -11,14 +11,18 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// IssueWorkspace 对应 /api/issueWorkspace 命名空间下的接口（issue 运行工作空间初始化）。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * IssueWorkspace 对应 /api/issueWorkspace 命名空间下的接口（issue 运行工作空间初始化）。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type IssueWorkspace struct {
 	apis.Api
 }
 
-// Init POST /api/issueWorkspace/init：受理初始化（后台异步执行），返回受理后状态
-// （RUNNING；幂等命中时 SUCCESS；执行中重复触发返回当前进度）。
+/*
+ * Init POST /api/issueWorkspace/init：
+ * 受理初始化（后台异步执行），返回受理后状态（RUNNING；幂等命中时 SUCCESS；执行中重复触发返回当前进度）。
+ */
 func (api IssueWorkspace) Init(ctx *gin.Context) {
 	req := &types.IssueWorkspaceInitRequest{}
 	svc := service.IssueWorkspace{}
@@ -50,8 +54,10 @@ func (api IssueWorkspace) Status(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Archive POST /api/issueWorkspace/archive：归档/取消工作空间（T3.2，两段式——force=false
-// 仅安全检查返回警告不执行；force=true 删 {issueId}/ 目录 + 流转 issue 状态）。
+/*
+ * Archive POST /api/issueWorkspace/archive：归档/取消工作空间（T3.2，
+ * 两段式——force=false 仅安全检查返回警告不执行；force=true 删 {issueId}/ 目录 + 流转 issue 状态）。
+ */
 func (api IssueWorkspace) Archive(ctx *gin.Context) {
 	req := &types.IssueWorkspaceArchiveRequest{}
 	svc := service.IssueWorkspace{}
@@ -67,8 +73,10 @@ func (api IssueWorkspace) Archive(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// FileTree POST /api/issueWorkspace/getFileTree：一次性返回工作空间全部文件/目录的
-// 扁平节点表（T5.1 本期，前端组树渲染文件面板）。
+/*
+ * FileTree POST /api/issueWorkspace/getFileTree：
+ * 一次性返回工作空间全部文件/目录的扁平节点表（T5.1 本期，前端组树渲染文件面板）。
+ */
 func (api IssueWorkspace) FileTree(ctx *gin.Context) {
 	req := &types.IssueWorkspaceFileTreeRequest{}
 	svc := service.IssueWorkspace{}
@@ -84,8 +92,10 @@ func (api IssueWorkspace) FileTree(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// FileContent POST /api/issueWorkspace/getFileContent：读取单个文件内容并定夺传输 kind
-// （text/image/binary/tooLarge，T5.1 本期，前端预览浮层消费）。
+/*
+ * FileContent POST /api/issueWorkspace/getFileContent：
+ * 读取单个文件内容并定夺传输 kind（text/image/binary/tooLarge，T5.1 本期，前端预览浮层消费）。
+ */
 func (api IssueWorkspace) FileContent(ctx *gin.Context) {
 	req := &types.IssueWorkspaceFileContentRequest{}
 	svc := service.IssueWorkspace{}
@@ -101,8 +111,10 @@ func (api IssueWorkspace) FileContent(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// GitChanges POST /api/issueWorkspace/getGitChanges：列出全部仓库的未提交变更
-// （暂存+工作区 vs HEAD + untracked，T5.1「Git 变更」模式）。
+/*
+ * GitChanges POST /api/issueWorkspace/getGitChanges：
+ * 列出全部仓库的未提交变更（暂存+工作区 vs HEAD + untracked，T5.1「Git 变更」模式）。
+ */
 func (api IssueWorkspace) GitChanges(ctx *gin.Context) {
 	req := &types.IssueWorkspaceGitChangesRequest{}
 	svc := service.IssueWorkspace{}
@@ -118,8 +130,10 @@ func (api IssueWorkspace) GitChanges(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// FileDiff POST /api/issueWorkspace/getFileDiff：返回单文件未提交变更的前后内容对
-// （old=HEAD 版本 / new=工作区当前，前端 diff 视图消费）。
+/*
+ * FileDiff POST /api/issueWorkspace/getFileDiff：
+ * 返回单文件未提交变更的前后内容对（old=HEAD 版本 / new=工作区当前，前端 diff 视图消费）。
+ */
 func (api IssueWorkspace) FileDiff(ctx *gin.Context) {
 	req := &types.IssueWorkspaceFileDiffRequest{}
 	svc := service.IssueWorkspace{}
@@ -135,8 +149,10 @@ func (api IssueWorkspace) FileDiff(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// FileRaw GET /api/issueWorkspace/fileRaw：图片原始字节直连（<img src> 消费，类静态资源；
-// 校验链与 getFileContent 一致 + 图片扩展名白名单）。参数走 query（GET 无法 JSON body）。
+/*
+ * FileRaw GET /api/issueWorkspace/fileRaw：图片原始字节直连（<img src> 消费，
+ * 类静态资源；校验链与 getFileContent 一致 + 图片扩展名白名单）。参数走 query（GET 无法 JSON body）。
+ */
 func (api IssueWorkspace) FileRaw(ctx *gin.Context) {
 	svc := service.IssueWorkspace{}
 	api.MakeContext(ctx).MakeService(&svc.Service)

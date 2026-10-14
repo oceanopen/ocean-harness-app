@@ -18,31 +18,31 @@ interface DragContext {
 }
 
 interface ToolPanelAreaProps {
-  /// 选中 issue（null = 未选中/加载中，空态文案兜底）。工具渲染上下文 + tabs 归属 key。
+  // 选中 issue（null = 未选中/加载中，空态文案兜底）。工具渲染上下文 + tabs 归属 key。
   issue: ProjectIssueResponseData | null;
   projectId: number | null;
-  /// 是否存在选中意图（URL 优先 + store 兜底的合成值，非 issue 对象就绪）：空 tab 栏时
-  /// 按此区分文案——无选中「请先选择左侧任务」；有选中（含列表加载瞬态）「在右侧工具条
-  /// 选择工具」。锚定意图而非对象，跨项目切换的加载瞬态不闪文案。
+  // 是否存在选中意图（URL 优先 + store 兜底的合成值，非 issue 对象就绪）：空 tab 栏时
+  // 按此区分文案——无选中「请先选择左侧任务」；有选中（含列表加载瞬态）「在右侧工具条
+  // 选择工具」。锚定意图而非对象，跨项目切换的加载瞬态不闪文案。
   hasSelection: boolean;
-  /// 面板区展开（页面按 config 折叠态传入，与选中态解耦；收起时外层 width 0）。
+  // 面板区展开（页面按 config 折叠态传入，与选中态解耦；收起时外层 width 0）。
   visible: boolean;
-  /// 持久化宽度（config 订阅值，拖拽结束经 onWidthCommit 落盘后回填）。
+  // 持久化宽度（config 订阅值，拖拽结束经 onWidthCommit 落盘后回填）。
   width: number;
-  /// 拖拽结束落盘（up 时一次性回调，写 config——move 高频期只走组件内存态）。
+  // 拖拽结束落盘（up 时一次性回调，写 config——move 高频期只走组件内存态）。
   onWidthCommit: (width: number) => void;
-  /// 工具回调上抛（页面层挂 issue 抽屉）：编辑指定 issue / 新建其子任务，经 render ctx 注入工具内容。
+  // 工具回调上抛（页面层挂 issue 抽屉）：编辑指定 issue / 新建其子任务，经 render ctx 注入工具内容。
   onEditIssue: (issue: ProjectIssueResponseData) => void;
   onCreateSubIssue: () => void;
 }
 
-/// ToolPanelArea：中栏右侧的工具面板区（内容行全高，自标题栏带起）——tab 头（40px，与
-/// 终端列标题栏同高对齐、底边线连通；可滚动 + 每 tab 关闭按钮）+ 当前激活
-/// 工具内容（注册表 render 分发）。宽度默认 600（config），左缘 4px 把手拖拽调整：
-/// pointer capture，down 实测容器宽 → move 内存态（transition 关）→ up 复位并一次落盘
-/// （无防抖）。空 tab 栏保持面板区展开（空态提示）。非激活 tab 的内容组件不渲染——
-/// 工具会话必须后端常驻（见 toolRegistry 架构红线注释），视口卸载不销毁会话。
-/// tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
+// ToolPanelArea：中栏右侧的工具面板区（内容行全高，自标题栏带起）——tab 头（40px，与
+// 终端列标题栏同高对齐、底边线连通；可滚动 + 每 tab 关闭按钮）+ 当前激活
+// 工具内容（注册表 render 分发）。宽度默认 600（config），左缘 4px 把手拖拽调整：
+// pointer capture，down 实测容器宽 → move 内存态（transition 关）→ up 复位并一次落盘
+// （无防抖）。空 tab 栏保持面板区展开（空态提示）。非激活 tab 的内容组件不渲染——
+// 工具会话必须后端常驻（见 toolRegistry 架构红线注释），视口卸载不销毁会话。
+// tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
 export default function ToolPanelArea({ issue, projectId, hasSelection, visible, width, onWidthCommit, onEditIssue, onCreateSubIssue }: ToolPanelAreaProps) {
   const theme = useTheme();
   const closeTab = useWorkbenchToolsStore(s => s.closeTab);
@@ -106,10 +106,10 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
     <Box
       sx={{
         position: 'relative',
-        width: visible ? displayWidth : 0,
+        width: visible ? displayWidth : '0px',
         flexShrink: 0,
         overflow: 'hidden',
-        borderLeft: visible ? 1 : 0,
+        borderLeft: visible ? '1px solid' : '0px',
         borderColor: 'divider',
         bgcolor: 'background.paper',
         display: 'flex',
@@ -124,7 +124,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
       }}
     >
       {/* 内层固定显示宽（外层 overflow hidden 裁切/动画，范式同左栏） */}
-      <Box sx={{ width: displayWidth, height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <Box sx={{ width: displayWidth, height: '100%', display: 'flex', flexDirection: 'column', minWidth: '0px' }}>
         {/* tab 头：可滚动；每 tab 带关闭按钮（stopPropagation 防误切 tab）。
             高度精确对齐终端列标题栏的 40px：Tabs 的 height 收口（border-box 含 1px 底线
             → 内容区 39px），Tab 经 '& .MuiTab-root' 后代选择器同时覆写 minHeight（默认
@@ -146,7 +146,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
             // 根节点也要覆写：MUI Tabs 根默认 minHeight:48，height 压不住 minHeight。
             'minHeight': WORKBENCH_TITLEBAR_HEIGHT,
             'flexShrink': 0,
-            'borderBottom': 1,
+            'borderBottom': '1px solid',
             'borderColor': 'divider',
             '& .MuiTab-root': { minHeight: WORKBENCH_TITLEBAR_HEIGHT, padding: '8px 12px' },
           }}
@@ -156,7 +156,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
               key={tab.id}
               value={tab.id}
               label={(
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                   {def.title}
                   <IconButton
                     size="small"
@@ -167,9 +167,9 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
                         closeTab(issueId, tab.id);
                       }
                     }}
-                    sx={{ 'ml': 0.25, 'p': 0.25, 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
+                    sx={{ 'ml': '2px', 'p': '2px', 'color': 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
                   >
-                    <CloseIcon sx={{ fontSize: 14 }} />
+                    <CloseIcon sx={{ fontSize: '14px' }} />
                   </IconButton>
                 </Box>
               )}
@@ -182,7 +182,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
             也可能没有）提示去右侧工具条选工具。 */}
         {activeEntry == null
           ? (
-              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
                 <Typography variant="body2" color="text.secondary">
                   {hasSelection ? '在右侧工具条选择工具' : '请先选择左侧任务'}
                 </Typography>
@@ -190,7 +190,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
             )
           : issue != null && projectId != null
             ? (
-                <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Box sx={{ flex: 1, minHeight: '0px' }}>
                   <Box sx={{ height: '100%' }}>{activeEntry.def.render({ issue, projectId, onEditIssue, onCreateSubIssue, panelVisible: visible })}</Box>
                 </Box>
               )
@@ -207,10 +207,10 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
           aria-hidden
           sx={{
             'position': 'absolute',
-            'left': 0,
-            'top': 0,
-            'bottom': 0,
-            'width': 4,
+            'left': '0px',
+            'top': '0px',
+            'bottom': '0px',
+            'width': '4px',
             'cursor': 'col-resize',
             'bgcolor': dragging ? 'primary.main' : 'transparent',
             'transition': dragging ? 'none' : 'background-color 0.15s',

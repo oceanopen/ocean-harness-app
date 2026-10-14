@@ -4,8 +4,10 @@ import { isMacOS } from '@src/shared/platform';
 import { useTranslation } from 'react-i18next';
 import { useCommandPalette } from './CommandPaletteContext';
 
-// 顶栏命令面板触发入口：胶囊样式（搜索图标 + 占位文案 + 快捷键徽标），点击打开面板。
-// 快捷键徽标按平台自适应：macOS 显 ⌘K，Windows/Linux 显 Ctrl K（判定见 shared/platform.ts）。
+/**
+ * 顶栏命令面板触发入口：胶囊样式（搜索图标 + 占位文案 + 快捷键徽标），点击打开面板。
+ * 快捷键徽标按平台自适应：macOS 显 ⌘K，Windows/Linux 显 Ctrl K（判定见 shared/platform.ts）。
+ */
 const SHORTCUT_BADGE = isMacOS ? '⌘+K' : 'Ctrl+K';
 
 function CommandPaletteTrigger() {
@@ -19,13 +21,13 @@ function CommandPaletteTrigger() {
       sx={{
         'display': 'flex',
         'alignItems': 'center',
-        'gap': 1,
-        'height': 30,
+        'gap': '8px',
+        'height': '30px',
         // 窄窗收窄、宽窗舒展，避免在小窗顶栏挤掉设置按钮。
-        'width': { xs: 120, sm: 150 },
-        'px': 1.5,
-        'borderRadius': 2,
-        'border': 1,
+        'width': { xs: '120px', sm: '150px' },
+        'px': '12px',
+        'borderRadius': '8px',
+        'border': '1px solid',
         'borderColor': 'divider',
         'color': 'text.secondary',
         'justifyContent': 'flex-start',
@@ -33,8 +35,8 @@ function CommandPaletteTrigger() {
         '&:hover': { bgcolor: 'action.hover' },
       }}
     >
-      <SearchOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />
-      <Typography variant="body2" sx={{ fontSize: 12, flex: 1, color: 'text.disabled', textAlign: 'left' }} noWrap>
+      <SearchOutlinedIcon sx={{ fontSize: '18px', color: 'text.disabled' }} />
+      <Typography variant="body2" sx={{ fontSize: '12px', flex: 1, color: 'text.disabled', textAlign: 'left' }} noWrap>
         {t('panel:commandPalette.searchPlaceholder')}
       </Typography>
       {/* 键帽徽标：与 Dialog 底部 Kbd 同风格（monospace + 描边 + action.hover 底）。 */}
@@ -42,11 +44,11 @@ function CommandPaletteTrigger() {
         component="kbd"
         sx={{
           fontFamily: 'monospace',
-          fontSize: 12,
+          fontSize: '12px',
           lineHeight: 1.4,
-          px: 0.5,
-          borderRadius: 0.5,
-          border: 1,
+          px: '4px',
+          borderRadius: '2px',
+          border: '1px solid',
           borderColor: 'divider',
           bgcolor: 'action.hover',
           flexShrink: 0,

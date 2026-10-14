@@ -19,8 +19,10 @@ import 'streamdown/styles.css';
 const ITEM_SPACING_PX = 10;
 const TOP_MARGIN_PX = 12;
 
-// 条目 wrapper 基础样式（模块级常量避免每次渲染重建）：纵向布局语境 + 条目间距；
-// 工具条显隐由粘滞 hover 态驱动，不在样式层监听鼠标。
+/**
+ * 条目 wrapper 基础样式（模块级常量避免每次渲染重建）：纵向布局语境 + 条目间距；
+ * 工具条显隐由粘滞 hover 态驱动，不在样式层监听鼠标。
+ */
 const entryWrapperSx: SxProps<Theme> = {
   paddingBottom: `${ITEM_SPACING_PX}px`,
   display: 'flex',
@@ -61,7 +63,7 @@ const EntryItem = memo(({ entry, expanded, onToggleToolCall }: {
       );
     case 'agentThought':
       return (
-        <Box sx={{ alignSelf: 'stretch', borderLeft: 2, borderColor: 'divider', pl: 1.25 }}>
+        <Box sx={{ alignSelf: 'stretch', borderLeft: '2px solid', borderColor: 'divider', pl: '10px' }}>
           <Typography variant="caption" color="text.secondary">思考</Typography>
           <MarkdownMessage text={entry.text ?? ''} messageSx={{ color: 'text.secondary' }} />
         </Box>
@@ -109,10 +111,10 @@ export default function MessageList({ entries }: { entries: AcpConversationEntry
 
   if (entries.length === 0) {
     return (
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+      <Box sx={{ flex: 1, minHeight: '0px', display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
         <Box sx={{ textAlign: 'center' }}>
           <Typography variant="body2" color="text.secondary">会话还没有内容</Typography>
-          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: '4px' }}>
             在下方输入任务描述开始与 Agent 协作
           </Typography>
         </Box>
@@ -122,9 +124,9 @@ export default function MessageList({ entries }: { entries: AcpConversationEntry
 
   return (
     // 浏览器原生滚动锚定关闭，定位交由虚拟层负责。
-    <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowAnchor: 'none' }}>
+    <Box ref={scrollRef} sx={{ flex: 1, minHeight: '0px', overflowY: 'auto', overflowAnchor: 'none' }}>
       {/* 顶部留白须真实存在，滚动定位声明才成立；px 一律字符串写法。 */}
-      <Box sx={{ maxWidth: 860, mx: 'auto', width: '100%', px: 2, paddingTop: `${TOP_MARGIN_PX}px` }}>
+      <Box sx={{ maxWidth: '860px', mx: 'auto', width: '100%', px: '16px', paddingTop: `${TOP_MARGIN_PX}px` }}>
         <Virtualizer
           ref={virtRef}
           data={entries}
@@ -172,7 +174,7 @@ function UserEntry({ entry }: { entry: AcpConversationEntry }) {
     return <ImUserBubble display={entry.display} />;
   }
   return (
-    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: 2, px: 1.5, py: 1 }}>
+    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: '8px', px: '12px', py: '8px' }}>
       <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{entry.text}</Typography>
     </Box>
   );
@@ -185,13 +187,13 @@ function UserEntry({ entry }: { entry: AcpConversationEntry }) {
  */
 function ImUserBubble({ display }: { display: AcpEntryDisplay }) {
   return (
-    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: 2, px: 1.5, py: 1, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <ForumOutlinedIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: '8px', px: '12px', py: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <ForumOutlinedIcon sx={{ fontSize: '14px', color: 'text.secondary' }} />
         <Typography variant="caption" color="text.secondary">IM</Typography>
       </Box>
       {display.quote && (
-        <Box sx={{ bgcolor: 'action.hover', borderRadius: 1, px: 1, py: 0.5 }}>
+        <Box sx={{ bgcolor: 'action.hover', borderRadius: '4px', px: '8px', py: '4px' }}>
           <Typography variant="caption" color="text.secondary">
             {display.quote.author ? `${display.quote.author}：` : '引用消息'}
           </Typography>
@@ -204,10 +206,10 @@ function ImUserBubble({ display }: { display: AcpEntryDisplay }) {
         <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{display.text}</Typography>
       )}
       {display.files && display.files.length > 0 && (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {display.files.map(f => (
             <Tooltip key={f.path || f.name} title={f.path ?? ''}>
-              <Chip size="small" icon={<AttachFileOutlinedIcon />} label={f.name || f.path} sx={{ 'height': 20, 'fontSize': 12, '& .MuiChip-icon': { fontSize: 14 } }} />
+              <Chip size="small" icon={<AttachFileOutlinedIcon />} label={f.name || f.path} sx={{ 'height': '20px', 'fontSize': '12px', '& .MuiChip-icon': { fontSize: '14px' } }} />
             </Tooltip>
           ))}
         </Box>

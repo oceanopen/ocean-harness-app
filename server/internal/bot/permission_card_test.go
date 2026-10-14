@@ -73,8 +73,10 @@ func TestPermissionCardTaskIDRoundTrip(t *testing.T) {
 	}
 }
 
-// permissionCardSpec 字段映射：标题/描述（工具标题与空回落）与选项（optionID + 中文标签 SSOT）；
-// TaskID 含会话代锚（前 8 位）。
+/*
+ * permissionCardSpec 字段映射：标题/描述（工具标题与空回落）与选项（optionID + 中文标签 SSOT）；
+ * TaskID 含会话代锚（前 8 位）。
+ */
 func TestPermissionCardSpec(t *testing.T) {
 	pending := permPendingView(7)
 	spec := permissionCardSpec("i-1", testAcpSessionID, pending)
@@ -101,8 +103,10 @@ func TestPermissionCardSpec(t *testing.T) {
 	}
 }
 
-// 点击决策矩阵·miss 两情形（非本域锚 / 对照锚不一致）+ 无勾选提交引导——前两者交兜底
-// 文案，后者为提交语义的引导终帧。
+/*
+ * 点击决策矩阵·miss 两情形（非本域锚 / 对照锚不一致）+ 无勾选提交引导——前两者交兜底
+ * 文案，后者为提交语义的引导终帧。
+ */
 func TestTryHandleInteractionMiss(t *testing.T) {
 	sessions := newFakeSessions(gateSnap(permPendingView(7)))
 	route := gateTestRoute(acpResolve, sessions)
@@ -128,8 +132,10 @@ func TestTryHandleInteractionMiss(t *testing.T) {
 	}
 }
 
-// 点击决策矩阵·跨 sidecar 重启边界（风险 §5.4）：快照未就绪（重启重建/agent 死亡）——失效
-// 文案告知、不置灰、不出错。
+/*
+ * 点击决策矩阵·跨 sidecar 重启边界（风险 §5.4）：快照未就绪（重启重建/agent 死亡）——失效
+ * 文案告知、不置灰、不出错。
+ */
 func TestTryHandleInteractionSessionNotReady(t *testing.T) {
 	sessions := newFakeSessions(acpsession.ViewSnapshot{Status: acpsession.StatusIdle})
 	route := gateTestRoute(acpResolve, sessions)
@@ -140,9 +146,11 @@ func TestTryHandleInteractionSessionNotReady(t *testing.T) {
 	}
 }
 
-// 点击决策矩阵·会话重建撞号（代锚核心用例）：pendingID 是 per-AgentClient 发号（重建后从
-// 1 重记），新会话同号挂起在场时点击旧代卡——代锚不符即失效收口，不触达应答（不得误答
-// 新请求）。
+/*
+ * 点击决策矩阵·会话重建撞号（代锚核心用例）：pendingID 是 per-AgentClient 发号（重建后从
+ * 1 重记），新会话同号挂起在场时点击旧代卡——代锚不符即失效收口，不触达应答（不得误答
+ * 新请求）。
+ */
 func TestTryHandleInteractionSessionRebuilt(t *testing.T) {
 	snap := interactSnap(permPendingView(7)) // 新代会话：同号挂起在场（撞号形态）
 	snap.AcpSessionID = "99999999-0000-4000-8000-abcdef012345"
@@ -159,8 +167,10 @@ func TestTryHandleInteractionSessionRebuilt(t *testing.T) {
 	}
 }
 
-// 点击决策矩阵·命中：按选项下标应答（source=bot）、确认文案与数字快路径同源、置灰为
-// 「原卡全量字段 + Disabled=true」。
+/*
+ * 点击决策矩阵·命中：按选项下标应答（source=bot）、确认文案与数字快路径同源、置灰为
+ * 「原卡全量字段 + Disabled=true」。
+ */
 func TestTryHandleInteractionRespond(t *testing.T) {
 	sessions := newFakeSessions(interactSnap(permPendingView(7)))
 	route := gateTestRoute(acpResolve, sessions)
@@ -225,8 +235,10 @@ func TestTryHandleInteractionRespondError(t *testing.T) {
 	}
 }
 
-// 点击决策矩阵·挂起已关闭出快照（桌面先答 / 回合结算后的迟到点击）：经空 optionID 应答取
-// closed-history 判别文案，不置灰（已关闭挂起重建不出完整卡）。
+/*
+ * 点击决策矩阵·挂起已关闭出快照（桌面先答 / 回合结算后的迟到点击）：经空 optionID 应答取
+ * closed-history 判别文案，不置灰（已关闭挂起重建不出完整卡）。
+ */
 func TestTryHandleInteractionClosedPending(t *testing.T) {
 	sessions := newFakeSessions(interactSnap()) // 快照无该挂起（已摘除），会话代一致
 	sessions.respondErr = &acpsession.PendingAlreadyHandledError{Kind: "审批", Source: acpsession.PendingSourcePanel, Label: "拒绝"}
@@ -256,8 +268,10 @@ func TestTryHandleInteractionActionOutOfRange(t *testing.T) {
 	}
 }
 
-// 回合内出卡条件：本回合首个 permission 挂起随状态行附卡（TaskID 编码 issue+pending），
-// 后续 permission 与 elicitation 挂起回落纯状态行；状态行文案不变（数字通道仍覆盖全部挂起）。
+/*
+ * 回合内出卡条件：本回合首个 permission 挂起随状态行附卡（TaskID 编码 issue+pending），
+ * 后续 permission 与 elicitation 挂起回落纯状态行；状态行文案不变（数字通道仍覆盖全部挂起）。
+ */
 func TestAcpDriverPermissionCardEmission(t *testing.T) {
 	snap := readySnap()
 	snap.AcpSessionID = "sess-acp-1"
@@ -296,8 +310,10 @@ func TestAcpDriverPermissionCardEmission(t *testing.T) {
 	}
 }
 
-// 回合内出卡条件·会话代锚缺失：就绪快照无 AcpSessionID（防御面）不出卡、回落纯状态行，
-// 数字应答通道不受影响。
+/*
+ * 回合内出卡条件·会话代锚缺失：就绪快照无 AcpSessionID（防御面）不出卡、回落纯状态行，
+ * 数字应答通道不受影响。
+ */
 func TestAcpDriverNoCardWithoutSessionAnchor(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
@@ -408,8 +424,10 @@ func TestPumpReplyCardOnPlainStream(t *testing.T) {
 	}
 }
 
-// 泵发卡·收尾丢弃：回合在首个 tick 前终态（挂起随回合结算），未发出的卡直接丢弃——只余
-// 终帧，不出迟到的已结算卡。
+/*
+ * 泵发卡·收尾丢弃：回合在首个 tick 前终态（挂起随回合结算），未发出的卡直接丢弃——只余
+ * 终帧，不出迟到的已结算卡。
+ */
 func TestPumpReplyDropsCardAtTurnEnd(t *testing.T) {
 	rs := &fakeCardStream{}
 	spec := permissionCardSpec("i-1", testAcpSessionID, permPendingView(7))

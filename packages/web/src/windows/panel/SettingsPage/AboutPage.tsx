@@ -185,9 +185,9 @@ function AboutPage() {
         justifyContent: 'center',
         height: '100%',
         overflow: 'auto',
-        gap: 1.5,
-        px: 3,
-        py: 4,
+        gap: '12px',
+        px: '24px',
+        py: '32px',
       }}
     >
       <Box
@@ -195,10 +195,10 @@ function AboutPage() {
         src={appIcon}
         alt={t('common:brand')}
         sx={{
-          width: 80,
-          height: 80,
-          borderRadius: 3,
-          mb: 1,
+          width: '80px',
+          height: '80px',
+          borderRadius: '12px',
+          mb: '8px',
         }}
       />
 
@@ -221,13 +221,13 @@ function AboutPage() {
         size="small"
         startIcon={buttonProps.icon}
         disabled={buttonProps.disabled}
-        sx={{ mt: 1, textTransform: 'none', minWidth: 160 }}
+        sx={{ mt: '8px', textTransform: 'none', minWidth: '160px' }}
         onClick={buttonProps.onClick}
       >
         {buttonProps.label}
       </Button>
 
-      <Typography variant="body2" color="text.secondary" sx={{ minHeight: 20 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ minHeight: '20px' }}>
         {statusText ?? ''}
       </Typography>
 
@@ -240,7 +240,7 @@ function AboutPage() {
           'textDecoration': 'none',
           'cursor': 'pointer',
           '&:hover': { textDecoration: 'underline' },
-          'mt': 1,
+          'mt': '8px',
         }}
         onClick={() => {
           import('@tauri-apps/plugin-shell').then(({ open }) => {
@@ -251,11 +251,11 @@ function AboutPage() {
         GitHub
       </Typography>
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 'auto', pt: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', mt: 'auto', pt: '16px' }}>
         <Typography variant="caption" color="text.secondary">
           {t('about:madeWith')}
         </Typography>
-        <FavoriteIcon sx={{ fontSize: 12, color: 'error.main' }} />
+        <FavoriteIcon sx={{ fontSize: '12px', color: 'error.main' }} />
         <Typography variant="caption" color="text.secondary">
           {t('about:forClaude')}
         </Typography>

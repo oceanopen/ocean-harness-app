@@ -22,8 +22,10 @@ import { trackerKeys } from './keys';
 import { useTrackerStore } from './store';
 
 // ─── 读取（query）───
-// 列表查询：消费方共享同一 queryKey 即共享缓存（命令面板二级页与主页面不会重复请求）。
-// 状态为双端固定常量（stateMeta.ts），无状态相关 query。
+/**
+ * 列表查询：消费方共享同一 queryKey 即共享缓存（命令面板二级页与主页面不会重复请求）；
+ * 状态为双端固定常量（stateMeta.ts），无状态相关 query。
+ */
 
 /** 全部工作空间。 */
 export function useWorkspaces() {
@@ -61,8 +63,10 @@ export function useProjectIssues(projectId: number | null) {
 }
 
 // ─── 写操作（mutation）───
-// 每个 mutation 内部 invalidate 对应 key；消费方只调 mutateAsync/mutate，不关心失效。
-// workspaceId/projectId 入参仅用于失效对应列表缓存。
+/**
+ * 每个 mutation 内部 invalidate 对应 key；消费方只调 mutateAsync/mutate，不关心失效。
+ * workspaceId/projectId 入参仅用于失效对应列表缓存。
+ */
 
 /** 创建工作空间。 */
 export function useCreateWorkspace() {
@@ -131,7 +135,9 @@ export function useDeleteWorkspaceProject(workspaceId: number) {
 }
 
 // ─── 类型写操作（mutation）───
-// workspaceId 入参用于失效该工作空间的类型缓存（issue 抽屉与管理抽屉共享同一份列表）。
+/**
+ * workspaceId 入参用于失效该工作空间的类型缓存（issue 抽屉与管理抽屉共享同一份列表）。
+ */
 
 /** 创建类型（workspaceId 用于失效该工作空间的类型缓存）。 */
 export function useCreateWorkspaceType(workspaceId: number) {
@@ -161,8 +167,10 @@ export function useDeleteWorkspaceType(workspaceId: number) {
 }
 
 // ─── Issue 写操作（mutation）───
-// 每个 mutation 内部 invalidate 对应 key；消费方只调 mutateAsync/mutate，不关心失效。
-// 注：看板拖拽的乐观更新另走 ProjectIssueList.updateProjectIssues（setQueryData），不经过这些 mutation。
+/**
+ * 每个 mutation 内部 invalidate 对应 key；消费方只调 mutateAsync/mutate，不关心失效。
+ * 注：看板拖拽的乐观更新另走 ProjectIssueList.updateProjectIssues（setQueryData），不经过这些 mutation。
+ */
 
 /** 创建 projectIssue。 */
 export function useCreateProjectIssue(projectId: number) {

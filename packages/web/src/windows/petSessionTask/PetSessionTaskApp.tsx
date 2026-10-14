@@ -159,25 +159,25 @@ function PetSessionTaskApp() {
       onMouseLeave={handlers.onMouseLeave}
       onMouseDown={handlers.onMouseDown}
       sx={{
-        width: 280,
+        width: '280px',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        borderRadius: 2,
+        borderRadius: '8px',
         opacity: hovered ? 1 : 0.5,
         transition: 'opacity 0.3s',
       }}
     >
       <Box
         sx={{
-          px: 1.5,
-          py: 1,
-          borderBottom: 1,
+          px: '12px',
+          py: '8px',
+          borderBottom: '1px solid',
           borderColor: 'divider',
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
+          gap: '8px',
         }}
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
@@ -201,7 +201,7 @@ function PetSessionTaskApp() {
             <PetSessionTaskEmptyState />
           )
         : (
-            <List sx={{ flex: 1, overflow: 'auto', p: 0.5 }}>
+            <List sx={{ flex: 1, overflow: 'auto', p: '4px' }}>
               {attentionSessions.map(s => (
                 <ClaudeSessionItem key={s.pid} session={s} onClick={handleOpenTerminal} />
               ))}

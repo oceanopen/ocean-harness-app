@@ -19,9 +19,11 @@ import (
 	"ocean-harness/server/internal/global"
 )
 
-// Workspace 对应 /api/tracker/workspace 命名空间下的业务逻辑。
-// 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger；方法只收 req、用 svc.Orm、
-// 返回 WorkspaceResponseData（launch_settings JSON 列装配为结构，对齐 im_bot 域响应范式）。
+/*
+ * Workspace 对应 /api/tracker/workspace 命名空间下的业务逻辑。
+ * 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger；方法只收 req、用 svc.Orm、
+ * 返回 WorkspaceResponseData（launch_settings JSON 列装配为结构，对齐 im_bot 域响应范式）。
+ */
 type Workspace struct {
 	apis.Service
 }
@@ -114,10 +116,10 @@ func launchSettingsJSON(ls *types.WorkspaceLaunchSettings) string {
 	return string(b)
 }
 
-// Delete 物理删除 workspace（无 DB 外键），事务内级联清理其下全部数据，避免悬挂：
-// project（deleteProjectCascade：issue + 仓库关联 + 项目↔仓库中间表）+ 其下 type（t_workspace_types）
-// + 关联 bot 的 workspace_id 置空（bot 回到未选态）。type 属 workspace 维度（所有项目共享），
-// issue 的 type_id 引用随 issue 行删除自然消失，此处删 type 本体即可。
+/*
+ * Delete 物理删除 workspace（无 DB 外键），事务内级联清理其下全部数据，避免悬挂：project（deleteProjectCascade：issue + 仓库关联 + 项目↔仓库中间表）+ 其下 type（t_workspace_types）+ 关联 bot 的 workspace_id 置空（bot 回到未选态）。
+ * type 属 workspace 维度（所有项目共享），issue 的 type_id 引用随 issue 行删除自然消失，此处删 type 本体即可。
+ */
 func (svc Workspace) Delete(req *types.WorkspaceDeleteRequest) error {
 	var botIDs []int
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -199,8 +201,10 @@ func reapplyBots(orm *gorm.DB, logger *zap.Logger, workspaceID int) {
 	reapplyBotIDs(orm, logger, ids...)
 }
 
-// reapplyBotIDs 按 id 重拉 bot 行并热更新连接（启用 → ApplyBot，停用 → StopBot）。
-// 失败仅日志（DB 已是 SSOT，运行时漂移可经重启连接/重启应用收敛）。
+/*
+ * reapplyBotIDs 按 id 重拉 bot 行并热更新连接（启用 → ApplyBot，停用 → StopBot）。
+ * 失败仅日志（DB 已是 SSOT，运行时漂移可经重启连接/重启应用收敛）。
+ */
 func reapplyBotIDs(orm *gorm.DB, logger *zap.Logger, ids ...int) {
 	if global.BotSupervisor == nil || len(ids) == 0 {
 		return

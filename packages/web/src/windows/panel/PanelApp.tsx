@@ -208,10 +208,10 @@ function PanelApp() {
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
-              gap: 1,
-              px: 2,
+              gap: '8px',
+              px: '16px',
               pl: isMacOS ? `${TRAFFIC_LIGHT_CLEARANCE}px` : 2,
-              borderBottom: 1,
+              borderBottom: '1px solid',
               borderColor: 'divider',
               bgcolor: 'background.paper',
             }}
@@ -221,7 +221,7 @@ function PanelApp() {
               component="img"
               src={appIcon}
               alt={t('common:brand')}
-              sx={{ width: 20, height: 20, borderRadius: 0.5, pointerEvents: 'none' }}
+              sx={{ width: '20px', height: '20px', borderRadius: '2px', pointerEvents: 'none' }}
             />
             <Breadcrumbs aria-label="breadcrumb" sx={{ pointerEvents: 'none' }}>
               {/* 根 crumb = 应用名（原生标题文字已隐藏，这里是唯一的窗口级标识展示） */}
@@ -257,9 +257,9 @@ function PanelApp() {
           {!immersive && (
             <Box
               sx={{
-                width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : 200,
+                width: collapsed ? SIDEBAR_COLLAPSED_WIDTH : '200px',
                 flexShrink: 0,
-                borderRight: 1,
+                borderRight: '1px solid',
                 borderColor: 'divider',
                 display: 'flex',
                 flexDirection: 'column',
@@ -273,7 +273,7 @@ function PanelApp() {
             >
               {/* pt:1.5 与顶栏分隔线留呼吸间距；px 恒 1——收起态项宽 = 56-16 = 40px，
                   与菜单项固定 40px 高构成正方形 hover/选中背景框（左右各留 8px 白边）。 */}
-              <List sx={{ px: 1, pt: 1 }}>
+              <List sx={{ px: '8px', pt: '8px' }}>
                 {menuItems.filter(item => !SIDEBAR_HIDDEN.has(item.key)).map(item => (
                   <MenuListItemButton
                     key={item.key}
@@ -290,11 +290,11 @@ function PanelApp() {
               <Box
                 sx={{
                   mt: 'auto',
-                  borderTop: 1,
+                  borderTop: '1px solid',
                   borderColor: 'divider',
                   display: 'flex',
                   justifyContent: 'center',
-                  py: 0.5,
+                  py: '4px',
                 }}
               >
                 <IconButton

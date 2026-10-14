@@ -1,5 +1,7 @@
-// Package acp 是 ACP（Agent Client Protocol）客户端域：拉起 agent 子进程（进程组 +
-// stderr 分类）→ acp-go 连接装配 → per-session 回合/交互运行时，供会话域与 bot 域消费。
+/*
+ * Package acp 是 ACP（Agent Client Protocol）客户端域：拉起 agent 子进程（进程组 +
+ * stderr 分类）→ acp-go 连接装配 → per-session 回合/交互运行时，供会话域与 bot 域消费。
+ */
 package acp
 
 import (
@@ -20,23 +22,28 @@ import (
 	"ocean-harness/server/internal/buildinfo"
 )
 
-// 握手与会话方法限时（Gold-Band 同款）：初始化/建会话 60s、关会话 10s。prompt 与
-// 交互应答不设超时——回合时长与用户决策时长不可预估，由 ctx 与取消语义驱动。
+/*
+ * 握手与会话方法限时（Gold-Band 同款）：初始化/建会话 60s、关会话 10s。prompt 与
+ * 交互应答不设超时——回合时长与用户决策时长不可预估，由 ctx 与取消语义驱动。
+ */
 const (
 	initializeTimeout   = 60 * time.Second
 	newSessionTimeout   = 60 * time.Second
 	closeSessionTimeout = 10 * time.Second
 
-	// 早到帧缓冲：session/new 响应前 agent 抢跑推送的 update 按 sessionId 暂存，
-	// NewSession 注册会话后按序回放（available_commands 等早期推送不再被丢弃）。
-	// TTL 内未注册即整体过期；单会话容量上限丢最旧（正常 agent 早期推送量级极小，
-	// 上限仅防异常 agent 撑内存）。
+	/*
+	 * 早到帧缓冲：session/new 响应前 agent 抢跑推送的 update 按 sessionId 暂存，NewSession 注册会话后按序回放（available_commands 等早期推送不再被丢弃）。
+	 * TTL 内未注册即整体过期；单会话容量上限丢最旧（正常 agent 早期推送量级极小，
+	 * 上限仅防异常 agent 撑内存）。
+	 */
 	earlyFrameTTL = 5 * time.Second
 	earlyFrameCap = 64
 )
 
-// AgentClient 一个 ACP agent 子进程 + 其协议连接的宿主句柄。一个进程可承载多个
-// ACP session（per issue 一个，T1.5 会话域管理分配）。并发安全。
+/*
+ * AgentClient 一个 ACP agent 子进程 + 其协议连接的宿主句柄。一个进程可承载多个
+ * ACP session（per issue 一个，T1.5 会话域管理分配）。并发安全。
+ */
 type AgentClient struct {
 	proc *AgentProcess
 	conn *acpgo.Connection
@@ -44,8 +51,10 @@ type AgentClient struct {
 
 	closing   chan struct{} // 收敛信号：入队逃生口（主动 Close 与意外死亡路径都关闭）
 	closeOnce sync.Once
-	// closedByCaller 仅 Close() 置位：closing 在意外死亡路径也必须关闭（enqueue
-	// 逃生口不能卡 join），主动收尾判别单独走此标记，Err() 据此区分两种收敛。
+	/*
+	 * closedByCaller 仅 Close() 置位：closing 在意外死亡路径也必须关闭（enqueue
+	 * 逃生口不能卡 join），主动收尾判别单独走此标记，Err() 据此区分两种收敛。
+	 */
 	closedByCaller atomic.Bool
 
 	initMu sync.Mutex
@@ -64,8 +73,10 @@ type earlyFrame struct {
 	at     time.Time
 }
 
-// Launch 拉起 agent 子进程并装配 ACP 连接（进程组 + stderr 分类 + 入站路由）。
-// TODO(T1.4): doctor 握手探测复用本入口前段（Launch → Initialize → 清理）。
+/*
+ * Launch 拉起 agent 子进程并装配 ACP 连接（进程组 + stderr 分类 + 入站路由）。
+ * TODO(T1.4): doctor 握手探测复用本入口前段（Launch → Initialize → 清理）。
+ */
 func Launch(ctx context.Context, cfg SpawnConfig, log *zap.Logger) (*AgentClient, error) {
 	if log == nil {
 		log = zap.NewNop()
@@ -82,10 +93,11 @@ func Launch(ctx context.Context, cfg SpawnConfig, log *zap.Logger) (*AgentClient
 		early:    make(map[acpgo.SessionID][]earlyFrame),
 	}
 
-	// 入站装配（必须先于 Connect——agent 在任何流量前就要能应答）：
-	// onRequest = 权限/elicitation 路由（fs/terminal 未广告不会来，其余方法库回 -32601）；
-	// onNotify = 容错 session/update 分发（单帧解码失败只记日志——库契约：Notifications
-	// 返回 error 会终止整条连接）。
+	/*
+	 * 入站装配（必须先于 Connect——agent 在任何流量前就要能应答）：onRequest = 权限/elicitation 路由（fs/terminal 未广告不会来，其余方法库回 -32601）；
+	 * onNotify = 容错 session/update 分发（单帧解码失败只记日志——库契约：Notifications
+	 * 返回 error 会终止整条连接）。
+	 */
 	sessionUpdates := acpgo.SessionUpdates(c.onUpdate)
 	notifications := acpgo.Notifications(func(method string, raw json.RawMessage) error {
 		// TODO(T1.7+): elicitation/complete（url 模式完成通知）——一期未广告 url 能力不会到达。
@@ -94,17 +106,21 @@ func Launch(ctx context.Context, cfg SpawnConfig, log *zap.Logger) (*AgentClient
 		}
 		return nil
 	})
-	// 入站请求链外包 elicitation wire 拦截（acp-go 生成模型丢 requestedSchema/url 的补偿，
-	// 见 elicitation.go）。
+	/*
+	 * 入站请求链外包 elicitation wire 拦截（acp-go 生成模型丢 requestedSchema/url 的补偿，
+	 * 见 elicitation.go）。
+	 */
 	onRequest := elicitationWireInterceptor(c.log, agent.HandleClientHost(nil, nil, c, c))
 	c.conn = acpgo.Connect(proc.stdout, proc.stdin, onRequest, notifications)
 	go c.awaitProcessExit()
 	return c, nil
 }
 
-// Initialize ACP 握手（连接级一次，由库保证；本层缓存结果幂等）。能力面：不广告
-// fs/terminal（agent 不会发起，无需兜底面）；广告 configOptions（set_mode 新轨）与
-// elicitation form（T1.7 表单交互，url 暂不广告）。
+/*
+ * Initialize ACP 握手（连接级一次，由库保证；本层缓存结果幂等）。能力面：不广告
+ * fs/terminal（agent 不会发起，无需兜底面）；广告 configOptions（set_mode 新轨）与
+ * elicitation form（T1.7 表单交互，url 暂不广告）。
+ */
 func (c *AgentClient) Initialize(ctx context.Context) (acpgo.Initialization, error) {
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
@@ -125,8 +141,10 @@ func (c *AgentClient) Initialize(ctx context.Context) (acpgo.Initialization, err
 		return init, err
 	}
 	c.init = init
-	// 协商结果日志锚点：生产面协议版本与 agent 身份的第一证据。版本判定由库承担
-	//（不支持的版本握手即失败），走到这里即已锚定稳定面。
+	/*
+	 * 协商结果日志锚点：生产面协议版本与 agent 身份的第一证据。版本判定由库承担
+	 * （不支持的版本握手即失败），走到这里即已锚定稳定面。
+	 */
 	fields := []zap.Field{zap.Uint16("protocolVersion", uint16(init.ProtocolVersion))}
 	if init.AgentInfo != nil {
 		fields = append(fields,
@@ -143,9 +161,11 @@ func (c *AgentClient) initialization() acpgo.Initialization {
 	return c.init
 }
 
-// HasClaudeCodeExtension 探测 agent 是否上报 claudeCode _meta 扩展（initialize 响应
-// 顶层 _meta，claude-code-acp 的识别标记）。
-// TODO(T1.3/T1.5): claude 专属启动参数（权限旁路等）经此分支启用。
+/*
+ * HasClaudeCodeExtension 探测 agent 是否上报 claudeCode _meta 扩展（initialize 响应
+ * 顶层 _meta，claude-code-acp 的识别标记）。
+ * TODO(T1.3/T1.5): claude 专属启动参数（权限旁路等）经此分支启用。
+ */
 func HasClaudeCodeExtension(init acpgo.Initialization) bool {
 	if init.Meta == nil {
 		return false
@@ -158,8 +178,10 @@ func HasClaudeCodeExtension(init acpgo.Initialization) bool {
 type NewSessionParams struct {
 	// Cwd 会话工作目录；缺省回落进程 Cwd（均须绝对路径，库校验）。
 	Cwd string
-	// Meta _meta 透传（扩展通道；走通用 Call 序列化）。
-	// TODO(T1.3/T1.5): claudeCode options 注入策略待权限策略扩展后启用。
+	/*
+	 * Meta _meta 透传（扩展通道；走通用 Call 序列化）。
+	 * TODO(T1.3/T1.5): claudeCode options 注入策略待权限策略扩展后启用。
+	 */
 	Meta schema.Meta
 }
 
@@ -199,14 +221,18 @@ func (c *AgentClient) NewSession(ctx context.Context, params NewSessionParams) (
 type LoadSessionParams struct {
 	// Cwd 会话工作目录；缺省回落进程 Cwd（均须绝对路径，库校验）。
 	Cwd string
-	// SessionID 待恢复的 ACP 会话 id（claude 侧会话文件按此定位；load 响应不含 id，
-	// 会话以请求 id 注册）。
+	/*
+	 * SessionID 待恢复的 ACP 会话 id（claude 侧会话文件按此定位；load 响应不含 id，
+	 * 会话以请求 id 注册）。
+	 */
 	SessionID string
 }
 
-// LoadSession 恢复既有会话（ACP session/load，库内能力协商——agent 未声明即报错，由
-// 调用方降级 NewSession）。agent 侧从其 SDK 会话文件读回上下文，历史以 session/update
-// 重放（响应前的重放推送经早到帧缓冲承接，注册后回放，与 session/new 抢跑同轨）。
+/*
+ * LoadSession 恢复既有会话（ACP session/load，库内能力协商——agent 未声明即报错，由
+ * 调用方降级 NewSession）。agent 侧从其 SDK 会话文件读回上下文，历史以 session/update
+ * 重放（响应前的重放推送经早到帧缓冲承接，注册后回放，与 session/new 抢跑同轨）。
+ */
 func (c *AgentClient) LoadSession(ctx context.Context, params LoadSessionParams) (*Session, error) {
 	init, err := c.Initialize(ctx)
 	if err != nil {
@@ -234,8 +260,10 @@ func (c *AgentClient) LoadSession(ctx context.Context, params LoadSessionParams)
 	})
 }
 
-// registerSession 会话注册收口（NewSession/LoadSession 共用）：运行时装配 + 会话表登记
-// + 早到帧回放（锁外：dispatchUpdate 入队可能因通道满阻塞，不得拖住 sessMu 的路由）。
+/*
+ * registerSession 会话注册收口（NewSession/LoadSession 共用）：运行时装配 + 会话表登记
+ * + 早到帧回放（锁外：dispatchUpdate 入队可能因通道满阻塞，不得拖住 sessMu 的路由）。
+ */
 func (c *AgentClient) registerSession(session acpgo.Session) (*Session, error) {
 	if session.SessionID == "" {
 		return nil, errors.New("ACP agent 返回空 sessionId")
@@ -261,8 +289,10 @@ func (c *AgentClient) PromptText(ctx context.Context, s *Session, text string) (
 	return c.Prompt(ctx, s, []acpgo.Content{acpgo.NewTextContent(text)})
 }
 
-// Prompt 发起一轮回合：阻塞至 agent 终态。互斥见 ErrTurnActive；调用方 ctx 取消走
-// 软取消（session/cancel + 结算未决交互），超预算硬取消（以错误返回）。
+/*
+ * Prompt 发起一轮回合：阻塞至 agent 终态。互斥见 ErrTurnActive；调用方 ctx 取消走
+ * 软取消（session/cancel + 结算未决交互），超预算硬取消（以错误返回）。
+ */
 func (c *AgentClient) Prompt(ctx context.Context, s *Session, content []acpgo.Content) (schema.StopReason, error) {
 	return s.runtime.prompt(ctx, content)
 }
@@ -272,8 +302,10 @@ func (c *AgentClient) CancelTurn(s *Session) {
 	s.runtime.cancelCurrentTurn()
 }
 
-// CloseSession 结束会话：先结算未决交互（Gold-Band 顺序：结算先于 session/close），
-// 再协议关闭，最后移除注册 + 终结哨兵。
+/*
+ * CloseSession 结束会话：先结算未决交互（Gold-Band 顺序：结算先于 session/close），
+ * 再协议关闭，最后移除注册 + 终结哨兵。
+ */
 func (c *AgentClient) CloseSession(ctx context.Context, s *Session) error {
 	s.runtime.settlePendings()
 	tctx, cancel := context.WithTimeout(ctx, closeSessionTimeout)
@@ -296,9 +328,11 @@ func (c *AgentClient) removeSession(id acpgo.SessionID) {
 // Done 进程/连接终结信号。
 func (c *AgentClient) Done() <-chan struct{} { return c.proc.Done() }
 
-// Err 进程/连接收敛原因：进程存活返回 nil；主动收尾（Close）后恒为 nil（终结不是
-// 异常）；意外死亡返回带 stderr 摘要的包装错误（「为什么挂」的第一证据面）。判别
-// 走 closedByCaller 而非 closing——后者在意外死亡路径也关闭（入队逃生口）。
+/*
+ * Err 进程/连接收敛原因：进程存活返回 nil；主动收尾（Close）后恒为 nil（终结不是
+ * 异常）；意外死亡返回带 stderr 摘要的包装错误（「为什么挂」的第一证据面）。判别
+ * 走 closedByCaller 而非 closing——后者在意外死亡路径也关闭（入队逃生口）。
+ */
 func (c *AgentClient) Err() error {
 	select {
 	case <-c.proc.Done():
@@ -325,9 +359,11 @@ func (c *AgentClient) Close() {
 	c.converge()
 }
 
-// converge 收敛序（Close 与进程死亡监听共用；并发调用各步均幂等——conn.Close 走
-// sync.Once，proc.Close 的 Kill/cancel/<-done 各自幂等）：逐会话结算未决交互 →
-// 连接关闭（join 全部入站 handler 与读循环）→ 进程组回收 → 逐会话终结哨兵。
+/*
+ * converge 收敛序（Close 与进程死亡监听共用；并发调用各步均幂等——conn.Close 走
+ * sync.Once，proc.Close 的 Kill/cancel/<-done 各自幂等）：逐会话结算未决交互 →
+ * 连接关闭（join 全部入站 handler 与读循环）→ 进程组回收 → 逐会话终结哨兵。
+ */
 func (c *AgentClient) converge() {
 	for _, runtime := range c.snapshotSessions() {
 		runtime.settlePendings()
@@ -339,10 +375,11 @@ func (c *AgentClient) converge() {
 	}
 }
 
-// awaitProcessExit 进程死亡监听：EOF 后读循环自停，此处补齐与 Close 相同的收敛序
-// （不含主动收尾标记——这不是调用方收的账），并落因日志：主动收尾（closedByCaller，
-// doctor 探测回收、StopAll 等设计内死亡）降为 DEBUG——与 Err() 的「主动收尾非异常」
-// 判别同哲学；意外死亡保持 WARN（崩溃/被杀仍是需要暴露的异常）。
+/*
+ * awaitProcessExit 进程死亡监听：EOF 后读循环自停，此处补齐与 Close 相同的收敛序
+ * （不含主动收尾标记——这不是调用方收的账），并落因日志：主动收尾（closedByCaller，doctor 探测回收、StopAll 等设计内死亡）降为 DEBUG——与 Err() 的「主动收尾非异常」
+ * 判别同哲学；意外死亡保持 WARN（崩溃/被杀仍是需要暴露的异常）。
+ */
 func (c *AgentClient) awaitProcessExit() {
 	<-c.proc.Done()
 	c.markClosing()
@@ -373,9 +410,11 @@ func (c *AgentClient) snapshotSessions() []*sessionRuntime {
 	return runtimes
 }
 
-// onUpdate session/update 分发：按 update.SessionID 路由到会话事件通道（锁内完成
-// 查找 + 入队，与 removeSession 的「先摘除后终结」顺序配对，杜绝已终结会话的迟到入队）；
-// 未注册会话的早到帧（session/new 响应前 agent 抢跑推送）进缓冲，注册后回放。
+/*
+ * onUpdate session/update 分发：按 update.SessionID 路由到会话事件通道（锁内完成
+ * 查找 + 入队，与 removeSession 的「先摘除后终结」顺序配对，杜绝已终结会话的迟到入队）；
+ * 未注册会话的早到帧（session/new 响应前 agent 抢跑推送）进缓冲，注册后回放。
+ */
 func (c *AgentClient) onUpdate(update acpgo.Update) error {
 	c.sessMu.Lock()
 	runtime, ok := c.sessions[update.SessionID]
@@ -391,8 +430,10 @@ func (c *AgentClient) onUpdate(update acpgo.Update) error {
 	return nil
 }
 
-// bufferEarlyFrame 早到帧入缓冲（须持 sessMu 调用）：惰性过期清理（整会话最后帧超
-// TTL 即丢弃）+ 单会话容量上限丢最旧。
+/*
+ * bufferEarlyFrame 早到帧入缓冲（须持 sessMu 调用）：惰性过期清理（整会话最后帧超
+ * TTL 即丢弃）+ 单会话容量上限丢最旧。
+ */
 func (c *AgentClient) bufferEarlyFrame(update acpgo.Update) {
 	now := time.Now()
 	for id, frames := range c.early {
@@ -416,10 +457,11 @@ func (c *AgentClient) RequestPermission(ctx context.Context, request schema.Requ
 	return runtime.handlePermission(ctx, request)
 }
 
-// CreateElicitation 实现 agent.Elicitation：按会话路由。会话归属解析 wire 优先（拦截层
-// 全保真解码；url 模式归属 typed 路径不覆盖——elicitationSessionID 只认 form scope），
-// typed form scope 回退（拦截未命中/解析失败路径）；两者皆无（请求级 elicitation）不
-// 支持，拒绝 -32602。
+/*
+ * CreateElicitation 实现 agent.Elicitation：按会话路由。会话归属解析 wire 优先（拦截层全保真解码；url 模式归属 typed 路径不覆盖——elicitationSessionID 只认 form scope），
+ * typed form scope 回退（拦截未命中/解析失败路径）；
+ * 两者皆无（请求级 elicitation）不支持，拒绝 -32602。
+ */
 func (c *AgentClient) CreateElicitation(ctx context.Context, request schema.CreateElicitationRequest) (schema.CreateElicitationResponse, error) {
 	wire := elicitationWireFromContext(ctx)
 	sessionID, ok := elicitationSessionID(request)

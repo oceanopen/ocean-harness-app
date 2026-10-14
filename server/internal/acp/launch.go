@@ -16,9 +16,11 @@ import (
 )
 
 const (
-	// processWaitDelay 进程组回收等待：cmd.Cancel（整组强杀）触发后，WaitDelay 内
-	// 管道未收口则强制关闭。对齐 bot 域 driver_claude 的 5s 先例（工具孙进程可能
-	// 持写端，取消只 kill 主进程时管道不关则 Wait 永久阻塞）。
+	/*
+	 * processWaitDelay 进程组回收等待：cmd.Cancel（整组强杀）触发后，WaitDelay 内
+	 * 管道未收口则强制关闭。对齐 bot 域 driver_claude 的 5s 先例（工具孙进程可能
+	 * 持写端，取消只 kill 主进程时管道不关则 Wait 永久阻塞）。
+	 */
 	processWaitDelay = 5 * time.Second
 
 	// stderrTailCapacity stderr tail 容量（runner 的 osrun.Tail 诊断同款 64KiB）。
@@ -30,10 +32,11 @@ const (
 	stderrMaxLineLen  = 16 * 1024
 )
 
-// SpawnConfig 描述一次 ACP agent 子进程拉起参数。client 只认本结构，不感知 agent：
-// catalog 条目经 agentcatalog.Entry.SpawnConfig 翻译为本结构后驱动（T1.2）；claude
-// 路径一致性注入（CLAUDE_CODE_EXECUTABLE / login PATH）经 ClaudeEnvOverrides 由调用方
-// 拼装进 Env（claude_env.go），本结构不感知 claude。
+/*
+ * SpawnConfig 描述一次 ACP agent 子进程拉起参数。client 只认本结构，不感知 agent：
+ * catalog 条目经 agentcatalog.Entry.SpawnConfig 翻译为本结构后驱动（T1.2）；claude 路径一致性注入（CLAUDE_CODE_EXECUTABLE / login PATH）经 ClaudeEnvOverrides 由调用方
+ * 拼装进 Env（claude_env.go），本结构不感知 claude。
+ */
 type SpawnConfig struct {
 	// Command argv 全量（Command[0] 为可执行文件；vendored 策略下为 vendored 入口）。
 	Command []string
@@ -43,8 +46,10 @@ type SpawnConfig struct {
 	Cwd string
 }
 
-// AgentProcess 一个 ACP agent 子进程 + 进程组句柄。生命周期独立于任何回合 ctx：
-// 回合取消只发 session/cancel，不动进程；进程终结只经 Kill/Close。
+/*
+ * AgentProcess 一个 ACP agent 子进程 + 进程组句柄。生命周期独立于任何回合 ctx：
+ * 回合取消只发 session/cancel，不动进程；进程终结只经 Kill/Close。
+ */
 type AgentProcess struct {
 	cmd    *exec.Cmd
 	cancel context.CancelFunc
@@ -71,8 +76,10 @@ func spawnAgent(cfg SpawnConfig, log *zap.Logger) (*AgentProcess, error) {
 	cmd.Dir = cfg.Cwd
 	cmd.Env = MergeEnv(cfg.Env)
 	cmd.SysProcAttr = ProcessGroupAttr()
-	// ctx 取消 → 整组 SIGKILL；WaitDelay 收口孙进程管道（进程组里有后代持 stdout
-	// 写端时管道不关则 Wait 永久阻塞，driver_claude 同款注释）。
+	/*
+	 * ctx 取消 → 整组 SIGKILL；WaitDelay 收口孙进程管道（进程组里有后代持 stdout
+	 * 写端时管道不关则 Wait 永久阻塞，driver_claude 同款注释）。
+	 */
 	cmd.Cancel = func() error { return KillProcessGroup(cmd) }
 	cmd.WaitDelay = processWaitDelay
 
@@ -110,8 +117,10 @@ func spawnAgent(cfg SpawnConfig, log *zap.Logger) (*AgentProcess, error) {
 	return p, nil
 }
 
-// PumpStderr 逐行读 stderr：全量进 tail（崩溃证据完整性），三分类只决定日志级别。
-// 导出供 browser 域引擎子进程复用（tail 由调用方构造，日志为 nil 时静默）。
+/*
+ * PumpStderr 逐行读 stderr：全量进 tail（崩溃证据完整性），三分类只决定日志级别。
+ * 导出供 browser 域引擎子进程复用（tail 由调用方构造，日志为 nil 时静默）。
+ */
 func PumpStderr(r io.Reader, tail *StderrTail, log *zap.Logger) {
 	if log == nil {
 		log = zap.NewNop()
@@ -177,15 +186,18 @@ func (p *AgentProcess) exitDetail() string {
 	return truncateRunes(detail, stderrSummaryRunes)
 }
 
-// stripEnvKeys 子进程环境剥离键。CLAUDECODE：claude CLI 的嵌套会话守卫标记——
-// sidecar 自身跑在 claude 会话内（开发期在 claude 终端里起 server、经 MCP 调起等路径）
-// 时，该变量沿 spawn 链传入 adapter 再传给子 claude 会触发嵌套误判；剥离优先级高于
-// overrides（调用方无法重新注入），ACP agent 恒以干净环境冷启。
+/*
+ * stripEnvKeys 子进程环境剥离键。CLAUDECODE：claude CLI 的嵌套会话守卫标记——sidecar 自身跑在 claude 会话内（开发期在 claude 终端里起 server、经 MCP 调起等路径）时，
+ * 该变量沿 spawn 链传入 adapter 再传给子 claude 会触发嵌套误判；
+ * 剥离优先级高于 overrides（调用方无法重新注入），ACP agent 恒以干净环境冷启。
+ */
 var stripEnvKeys = []string{"CLAUDECODE"}
 
-// MergeEnv sidecar 环境为底、overrides 按键覆盖、stripEnvKeys 恒剥离。先建 map 去重
-// 再展开，避免 execve 环境里同键双份导致子进程 getenv 取值不确定。
-// 导出供 browser 域引擎子进程复用（单一 SSOT）。
+/*
+ * MergeEnv sidecar 环境为底、overrides 按键覆盖、stripEnvKeys 恒剥离。先建 map 去重
+ * 再展开，避免 execve 环境里同键双份导致子进程 getenv 取值不确定。
+ * 导出供 browser 域引擎子进程复用（单一 SSOT）。
+ */
 func MergeEnv(overrides map[string]string) []string {
 	env := make(map[string]string, len(os.Environ())+len(overrides))
 	for _, kv := range os.Environ() {

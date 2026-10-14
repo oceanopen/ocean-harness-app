@@ -16,8 +16,10 @@ type BaseInfo struct {
 	apis.Service
 }
 
-// GetServerRunInfo 采集系统信息（SysInfo）+ 服务运行信息（ServerInfo）。
-// 服务地址、日志/数据目录一并放在 ServerInfo 返回，前端按接口展示（不依赖 Rust IPC）。
+/*
+ * GetServerRunInfo 采集系统信息（SysInfo）+ 服务运行信息（ServerInfo）。
+ * 服务地址、日志/数据目录一并放在 ServerInfo 返回，前端按接口展示（不依赖 Rust IPC）。
+ */
 func (svc BaseInfo) GetServerRunInfo(_ *types.ServerRunInfoRequest) (*types.ServerRunInfoResponseData, error) {
 	hostname, _ := os.Hostname()
 	return &types.ServerRunInfoResponseData{

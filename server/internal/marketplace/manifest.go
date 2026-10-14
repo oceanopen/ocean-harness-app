@@ -9,9 +9,10 @@ import (
 	"strings"
 )
 
-// manifest.go：marketplace 清单（.claude-plugin/marketplace.json）扫描与 CLI 支持探测。
-// 清单 schema 依据 Claude Code 官方 marketplace-reference（name/owner/plugins[]，可选
-// metadata.description/metadata.version 备选位置）；解析取前端展示所需最小字段集。
+/*
+ * manifest.go：marketplace 清单（.claude-plugin/marketplace.json）扫描与 CLI 支持探测；
+ * 清单 schema 依据 Claude Code 官方 marketplace-reference（name/owner/plugins[]，可选 metadata.description/metadata.version 备选位置），解析取前端展示所需最小字段集。
+ */
 
 // manifestRelPath 是市场清单相对市场根目录的固定位置（官方约定）。
 const manifestRelPath = ".claude-plugin/marketplace.json"
@@ -44,9 +45,10 @@ type PluginComponents struct {
 	McpServers int // .mcp.json 存在计 1
 }
 
-// LoadManifest 读取并解析 root 下的市场清单，并逐插件解析目录与组件统计。
-// root 为 claude 侧 installLocation（本地目录源=原路径；github/git 源=clone 目录），
-// 两条路径下清单均在本地的 <root>/.claude-plugin/marketplace.json。
+/*
+ * LoadManifest 读取并解析 root 下的市场清单，并逐插件解析目录与组件统计；
+ * root 为 claude 侧 installLocation（本地目录源=原路径，github/git 源=clone 目录），两条路径下清单均在本地的 <root>/.claude-plugin/marketplace.json。
+ */
 func LoadManifest(root string) (*MarketplaceManifest, error) {
 	raw, err := os.ReadFile(filepath.Join(root, manifestRelPath))
 	if err != nil {
@@ -95,9 +97,10 @@ func LoadManifest(root string) (*MarketplaceManifest, error) {
 	return mf, nil
 }
 
-// DetectSupportedClis 按清单目录约定探测市场支持的 CLI 开发工具。
-// v1 约定：存在 .claude-plugin/marketplace.json 即支持 claude。未来其他 CLI（codex/gemini
-// 等）在同仓库落自己的清单目录后，在此追加对应探测分支即自动出现在 supportedClis。
+/*
+ * DetectSupportedClis 按清单目录约定探测市场支持的 CLI 开发工具；
+ * v1 约定：存在 .claude-plugin/marketplace.json 即支持 claude，未来其他 CLI 在同仓库落自己的清单目录后，在此追加对应探测分支即自动出现在 supportedClis。
+ */
 func DetectSupportedClis(root string) []string {
 	var clis []string
 	if HasManifest(root) {
@@ -106,21 +109,25 @@ func DetectSupportedClis(root string) []string {
 	return clis
 }
 
-// HasManifest 判断 dir 是否持有市场清单（即是否为合法市场目录形态）。
-// 导出给 service 层做添加预检等场景复用——清单路径约定以本包为单源，勿在包外拼接。
+/*
+ * HasManifest 判断 dir 是否持有市场清单（即是否为合法市场目录形态），导出给 service 层做添加预检等场景复用；清单路径约定以本包为单源，勿在包外拼接。
+ */
 func HasManifest(dir string) bool {
 	return fileExists(filepath.Join(dir, manifestRelPath))
 }
 
-// PluginRef 拼 claude 的复合插件 id：name@marketplace（跨市场同名插件以此消歧）。
-// 导出给 service 层做安装状态 join 复用，id 形态变化时只改此处。
+/*
+ * PluginRef 拼 claude 的复合插件 id：name@marketplace（跨市场同名插件以此消歧），导出给 service 层做安装状态 join 复用，id 形态变化时只改此处。
+ */
 func PluginRef(name, mkName string) string {
 	return name + "@" + mkName
 }
 
-// classifySource 归一化市场条目的 source 字段：字符串形态 = 市场内相对路径（./ 前缀，
-// 解析基准为市场根）；对象形态 = 外部引用（github/git/git-subdir/npm/archive/command），
-// 以紧凑 JSON 返回供展示。空值返回 ("", false) 由调用方跳过目录解析。
+/*
+ * classifySource 归一化市场条目的 source 字段：字符串形态 = 市场内相对路径（./ 前缀，解析基准为市场根）；
+ * 对象形态 = 外部引用（github/git/git-subdir/npm/archive/command），以紧凑 JSON 返回供展示；
+ * 空值返回 ("", false) 由调用方跳过目录解析。
+ */
 func classifySource(raw json.RawMessage) (string, bool) {
 	trimmed := strings.TrimSpace(string(raw))
 	if trimmed == "" {
@@ -141,8 +148,9 @@ func classifySource(raw json.RawMessage) (string, bool) {
 	return buf.String(), true
 }
 
-// countComponents 按官方标准布局统计插件目录组件构成；目录不存在/不可读时全部为 0（不报错，
-// 组件统计是展示性信息，不阻塞列表）。
+/*
+ * countComponents 按官方标准布局统计插件目录组件构成；目录不存在/不可读时全部为 0 不报错（组件统计是展示性信息，不阻塞列表）。
+ */
 func countComponents(dir string) PluginComponents {
 	var c PluginComponents
 	c.Commands = countMdFiles(filepath.Join(dir, "commands"))

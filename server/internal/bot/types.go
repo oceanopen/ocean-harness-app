@@ -1,10 +1,8 @@
-// Package bot 是 IM 渠道数字人 bot 的渠道无关核心层：入站消息规范化 → 幂等/白名单 →
-// 每会话串行队列 → prompt 组装 → claude 回合 → 覆写式流式回复泵。回合引擎有两实现
-// （headless spawn：driver_claude.go；ACP 共享 issue 会话：driver_acp.go），按 workspace
-// 级启动模式逐回合路由（driver_route.go）。
-// 渠道差异（企微/飞书…）全部收窄在 adapter 包（实现本包 channel.go 的 ChannelRuntime 接口），
-// 依赖方向单向：adapter → core，core 不 import 任何渠道 SDK。
-// claude 引擎属核心层：所有渠道共用同一组引擎。
+/*
+ * Package bot 是 IM 渠道数字人 bot 的渠道无关核心层：入站消息规范化 → 幂等/白名单 → 每会话串行队列 → prompt 组装 → claude 回合 → 覆写式流式回复泵。
+ * 回合引擎有两实现（headless spawn：driver_claude.go；ACP 共享 issue 会话：driver_acp.go），按 workspace 级启动模式逐回合路由（driver_route.go）。
+ * 渠道差异（企微/飞书…）全部收窄在 adapter 包（实现本包 channel.go 的 ChannelRuntime 接口），依赖方向单向：adapter → core，core 不 import 任何渠道 SDK。 claude 引擎属核心层：所有渠道共用同一组引擎。
+ */
 package bot
 
 import (
@@ -14,9 +12,11 @@ import (
 	"ocean-harness/server/internal/dal/enums"
 )
 
-// DefaultAllowedTools headless 驱动恒用的工具白名单（--allowedTools）：开发类任务需要 Bash
-// 执行力，安全周界是访问白名单 + 专属工作目录 + acceptEdits（headless 下 Bash 危险命令仍走
-// claude 自身 permission 判定而非自动放行）。
+/*
+ * DefaultAllowedTools headless 驱动恒用的工具白名单（--allowedTools）：开发类任务需要 Bash
+ * 执行力，安全周界是访问白名单 + 专属工作目录 + acceptEdits（headless 下 Bash 危险命令仍走
+ * claude 自身 permission 判定而非自动放行）。
+ */
 func DefaultAllowedTools() []string {
 	return []string{"Read", "Glob", "Grep", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "TodoWrite"}
 }
@@ -38,8 +38,10 @@ const (
 	ChatGroup  ChatType = "group"
 )
 
-// FormatConversationKey 拼装会话键：单聊 single:<userid>（一人一会话）/ 群聊 group:<chatid>
-// （全群共享一个 claude 会话）。前缀自描述，免 chat_type 冗余列；由适配器调用，核心不解析。
+/*
+ * FormatConversationKey 拼装会话键：单聊 single:<userid>（一人一会话）/ 群聊 group:<chatid>
+ * （全群共享一个 claude 会话）。前缀自描述，免 chat_type 冗余列；由适配器调用，核心不解析。
+ */
 func FormatConversationKey(chatType ChatType, id string) string {
 	if chatType == ChatGroup {
 		return "group:" + id
@@ -47,9 +49,11 @@ func FormatConversationKey(chatType ChatType, id string) string {
 	return "single:" + id
 }
 
-// InboundMessage 渠道入站消息的规范化模型（适配器把渠道帧翻译成它，核心只认这个）。
-// 附件必须已由适配器 staging 到本地（Files 只带路径事实，核心不做 I/O）。
-// bot 归属不在消息里（HandleInbound 以 BotRuntimeConfig.BotID 为准，单一事实源）。
+/*
+ * InboundMessage 渠道入站消息的规范化模型（适配器把渠道帧翻译成它，核心只认这个）。
+ * 附件必须已由适配器 staging 到本地（Files 只带路径事实，核心不做 I/O）。
+ * bot 归属不在消息里（HandleInbound 以 BotRuntimeConfig.BotID 为准，单一事实源）。
+ */
 type InboundMessage struct {
 	MessageID       string // 渠道消息 id（幂等键，如企微 msgid）
 	ConversationKey string // FormatConversationKey 产物
@@ -69,9 +73,11 @@ type QuoteRef struct {
 	Truncated bool
 }
 
-// Interaction 卡片交互的规范化事实（企微模板卡点击等）。适配器已把渠道 event_key 解析成
-// 中立产物，核心不感知渠道编码（企微 `delivery_id:action_index` 的编码与反解双向同源，
-// 同守在适配器）。
+/*
+ * Interaction 卡片交互的规范化事实（企微模板卡点击等）。适配器已把渠道 event_key 解析成
+ * 中立产物，核心不感知渠道编码（企微 `delivery_id:action_index` 的编码与反解双向同源，
+ * 同守在适配器）。
+ */
 type Interaction struct {
 	DeliveryID  string                 // 点击目标卡的应用侧投递锚（= 出站 CardSpec.TaskID；解析失败空串）
 	ActionIndex int                    // 选项序号（0 基；-1 = 非选项 key，如提交按钮/未知形态）
@@ -80,15 +86,19 @@ type Interaction struct {
 	Selections  []InteractionSelection // 提交型卡的勾选集（T3.3；纯点击型事件为空）
 }
 
-// InteractionSelection 提交型卡单道题的勾选（企微 selected_items 归一产物）：题目定位键
-// 与选中项下标均为适配器翻译后的中立形态。
+/*
+ * InteractionSelection 提交型卡单道题的勾选（企微 selected_items 归一产物）：题目定位键
+ * 与选中项下标均为适配器翻译后的中立形态。
+ */
 type InteractionSelection struct {
 	QuestionKey   string // 题目定位键（适配器按出卡位置序生成；单题卡 = TaskID，多题卡 = q0/q1/q2）
 	OptionIndexes []int  // 该题选中项下标（0 基，按出卡选项序；适配器已剥渠道选项 id 前缀）
 }
 
-// InboundFile 已落地的附件。Path 为 bot 工作目录内绝对路径（claude 用 Read 等工具按路径读取，
-// 不内联 base64——天然绕开 prompt 体积与模型视觉限制）。
+/*
+ * InboundFile 已落地的附件。Path 为 bot 工作目录内绝对路径（claude 用 Read 等工具按路径读取，
+ * 不内联 base64——天然绕开 prompt 体积与模型视觉限制）。
+ */
 type InboundFile struct {
 	Path string
 	Name string // 原始文件名（manifest 展示用）
@@ -100,9 +110,11 @@ type RouteInfo struct {
 	Payload any
 }
 
-// AccessPolicy 访问白名单（t_im_bots.access_policy JSON 的 Go 形态）。
-// 单 scope 设计：单聊/群聊共用一套白名单（按发送者 userid 判定）；JSON 形态将来可加 group
-// 键扩展为双 scope，免迁移。解析失败按 fail closed 拒绝（access.go）。
+/*
+ * AccessPolicy 访问白名单（t_im_bots.access_policy JSON 的 Go 形态）。
+ * 单 scope 设计：单聊/群聊共用一套白名单（按发送者 userid 判定）；JSON 形态将来可加 group
+ * 键扩展为双 scope，免迁移。解析失败按 fail closed 拒绝（access.go）。
+ */
 type AccessPolicy struct {
 	Mode       string   `json:"mode"`       // "open" | "allowlist"
 	AllowUsers []string `json:"allowUsers"` // 渠道 userid，allowlist 模式生效
@@ -124,8 +136,10 @@ type BotRuntimeConfig struct {
 	Port         int // sidecar HTTP 端口，driver 注入 claude 子进程 OCEAN_HARNESS_PORT
 }
 
-// TurnRequest 一次 claude 回合的请求。SessionID 为 headless 语义（空 = 新会话，非空 =
-// --resume 续聊）；ACP 驱动不消费它（共享会话无 resume，bot 侧不写会话锚点）。
+/*
+ * TurnRequest 一次 claude 回合的请求。SessionID 为 headless 语义（空 = 新会话，非空 =
+ * --resume 续聊）；ACP 驱动不消费它（共享会话无 resume，bot 侧不写会话锚点）。
+ */
 type TurnRequest struct {
 	BotID           int // bot 行 id（与 ConversationKey 组成绑定查询键 (bot_id, conversation_key)；headless 不消费）
 	WorkspaceID     int // 工作空间行 id（引擎路由解析合并后 launch_settings.mode 的键之一）
@@ -151,10 +165,11 @@ const (
 	TurnError   TurnEventType = "error"    // 进程非零退出 / spawn 失败 / 解析失败
 )
 
-// TurnEvent 回合事件。Delta 仅 TurnText 携带；ToolName 仅 TurnToolUse；Status 仅
-// TurnStatus；Result/IsError 仅 TurnDone；Err 仅 TurnError（spawn 失败时 RunTurn 同步
-// 返回 error 而不发本事件）；Card 仅 TurnStatus 携带（T3.2 审批卡随状态行出卡，一回合
-// 至多一张；headless 引擎不产卡，纯文本渠道由泵回落纯文本帧）。
+/*
+ * TurnEvent 回合事件。Delta 仅 TurnText 携带；ToolName 仅 TurnToolUse；Status 仅 TurnStatus；
+ * Result/IsError 仅 TurnDone；Err 仅 TurnError（spawn 失败时 RunTurn 同步返回 error 而不发本事件）；
+ * Card 仅 TurnStatus 携带（T3.2 审批卡随状态行出卡，一回合至多一张；headless 引擎不产卡，纯文本渠道由泵回落纯文本帧）。
+ */
 type TurnEvent struct {
 	Type      TurnEventType
 	SessionID string

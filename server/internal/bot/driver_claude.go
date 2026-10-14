@@ -18,17 +18,21 @@ import (
 	"ocean-harness/server/internal/dal/enums"
 )
 
-// claudeDriver ClaudeDriver 的 headless 实现：每回合 spawn `claude -p`（stream-json 事件流），
-// 回合边界即进程生命周期——退出码/result 事件就是完成信号，无挂死进程需要监护；会话历史
-// SSOT 在 claude 自身会话存储，--resume 重建，sidecar 重启零状态迁移。
+/*
+ * claudeDriver ClaudeDriver 的 headless 实现：每回合 spawn `claude -p`（stream-json 事件流），
+ * 回合边界即进程生命周期——退出码/result 事件就是完成信号，无挂死进程需要监护；会话历史
+ * SSOT 在 claude 自身会话存储，--resume 重建，sidecar 重启零状态迁移。
+ */
 type claudeDriver struct{}
 
 // NewClaudeDriver 构造 claude 引擎。
 func NewClaudeDriver() ClaudeDriver { return claudeDriver{} }
 
-// claudeRuntimeBin 解析 vendored 自带 claude（P5 定稿终态：全链路 SSOT，clibin 三级
-// 探测链已退役）：vendoring 两目录由 main 启动期注入 agentcatalog（本包不依赖
-// global——global → bot 依赖方向不可逆），成功进程级缓存在 agentcatalog 内。
+/*
+ * claudeRuntimeBin 解析 vendored 自带 claude（P5 定稿终态：全链路 SSOT，clibin 三级
+ * 探测链已退役）：vendoring 两目录由 main 启动期注入 agentcatalog（本包不依赖
+ * global——global → bot 依赖方向不可逆），成功进程级缓存在 agentcatalog 内。
+ */
 func claudeRuntimeBin() (string, error) {
 	return agentcatalog.ResolveVendoredClaudeBin(string(enums.AGENT_CODE_CLAUDE_ACP))
 }
@@ -53,18 +57,24 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	if strings.TrimSpace(req.SystemPrompt) != "" {
 		args = append(args, "--append-system-prompt", req.SystemPrompt)
 	}
-	// 工具白名单恒用默认集（P6：bot 级「执行权限」配置已废弃，权限表达上移 workspace 级
-	// launch_settings.permissionMode，ACP 模式接管审批语义；headless 路径安全周界不变）。
+	/*
+	 * 工具白名单恒用默认集（P6：bot 级「执行权限」配置已废弃，权限表达上移 workspace 级
+	 * launch_settings.permissionMode，ACP 模式接管审批语义；headless 路径安全周界不变）。
+	 */
 	args = append(args, "--allowedTools", strings.Join(DefaultAllowedTools(), ","))
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = req.WorkspaceDir
-	// login PATH best-effort（探测失败保留原 PATH）：vendored 自带 claude 为原生二进制
-	// 不依赖 node，但 claude 派生的工具子进程（Bash 工具跑 npm 等）仍需要用户环境。
+	/*
+	 * login PATH best-effort（探测失败保留原 PATH）：vendored 自带 claude 为原生二进制
+	 * 不依赖 node，但 claude 派生的工具子进程（Bash 工具跑 npm 等）仍需要用户环境。
+	 */
 	loginPath, _ := clibin.LoginPath()
 	cmd.Env = turnEnv(loginPath, req.Port)
-	// WaitDelay 收口孙进程管道：ctx 取消只 kill claude 主进程，其工具子进程若仍持有
-	// stdout 写端，管道不关则 Wait 永久阻塞（语义同 marketplace/cli.go 的 run）。
+	/*
+	 * WaitDelay 收口孙进程管道：ctx 取消只 kill claude 主进程，其工具子进程若仍持有
+	 * stdout 写端，管道不关则 Wait 永久阻塞（语义同 marketplace/cli.go 的 run）。
+	 */
 	cmd.WaitDelay = 5 * time.Second
 
 	stdin, err := cmd.StdinPipe()
@@ -113,9 +123,11 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	return events, nil
 }
 
-// turnEnv 组装 claude 子进程 env：继承 sidecar env + OCEAN_HARNESS_PORT（插件/CLI 工具链
-// 用）。PATH 仅在拿到 login PATH 时替换（nvm 等安装形态；login PATH 是父集、brew 自包含
-// 二进制注入无害）——探测失败保留原 PATH，否则子进程丢系统路径、Bash 工具全废。
+/*
+ * turnEnv 组装 claude 子进程 env：继承 sidecar env + OCEAN_HARNESS_PORT（插件/CLI 工具链
+ * 用）。PATH 仅在拿到 login PATH 时替换（nvm 等安装形态；login PATH 是父集、brew 自包含
+ * 二进制注入无害）——探测失败保留原 PATH，否则子进程丢系统路径、Bash 工具全废。
+ */
 func turnEnv(loginPath string, port int) []string {
 	env := os.Environ()
 	filtered := env[:0:0]
@@ -173,8 +185,10 @@ type rawClaudeLine struct {
 	IsError bool   `json:"is_error"`
 }
 
-// parseClaudeLine 单行 stream-json → 0..n 个 TurnEvent。schema 漂移时的表现为事件退化
-// （text 增量丢失、只剩 assistant 整段/result 兜底），不致挂死。thinking 增量在本层过滤。
+/*
+ * parseClaudeLine 单行 stream-json → 0..n 个 TurnEvent。schema 漂移时的表现为事件退化
+ * （text 增量丢失、只剩 assistant 整段/result 兜底），不致挂死。thinking 增量在本层过滤。
+ */
 func parseClaudeLine(line string) []TurnEvent {
 	line = strings.TrimSpace(line)
 	if line == "" {

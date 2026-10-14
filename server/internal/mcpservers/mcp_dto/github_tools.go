@@ -1,12 +1,13 @@
 package mcpdto
 
-// —— GitHub 工具（T4.1）入参 Args ——
-// 仓库定位链（三工具共用）：localRepositoryId → t_local_repositories.remote_url →
-// gitutil.ParseRemoteURL 解析 host/owner/repo → host 适配分流（本期仅支持 github.com，
-// 其余 host 报「暂未支持」，判定集中 mcp_tool.githubTarget）。
+/*
+ * —— GitHub 工具（T4.1）入参 Args ——（仓库定位链三工具共用：localRepositoryId → t_local_repositories.remote_url → gitutil.ParseRemoteURL 解析 host/owner/repo → host 适配分流，本期仅支持 github.com，其余 host 报「暂未支持」，判定集中 mcp_tool.githubTarget）
+ */
 
-// GitHubCreatePRArgs 是 github_create_pr 的入参。head/base 缺省按 agent 开发工作流推导：
-// head = agent_{issueId}（工作空间统一目标分支），base = 该 issue 关联的此仓库基准分支。
+/*
+ * GitHubCreatePRArgs 是 github_create_pr 的入参。
+ * head/base 缺省按 agent 开发工作流推导：head = agent_{issueId}（工作空间统一目标分支），base = 该 issue 关联的此仓库基准分支。
+ */
 type GitHubCreatePRArgs struct {
 	LocalRepositoryID int    `json:"localRepositoryId" jsonschema:"本地仓库 id（PR 目标仓库，按其 remote_url 定位）" vd:"@:$>0; msg:'localRepositoryId 必须为正整数'"`
 	IssueID           string `json:"issueId" jsonschema:"issue 主键（uuid 文本，用于 head/base 缺省推导：head=agent_{issueId}，base=该 issue 关联的此仓库基准分支）" vd:"@:$!=''; msg:'issueId 不能为空'"`

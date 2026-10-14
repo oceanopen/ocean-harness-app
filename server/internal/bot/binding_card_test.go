@@ -14,8 +14,10 @@ import (
 	"ocean-harness/server/internal/dal/query"
 )
 
-// newBindingTestDB 绑定卡链路夹具库：四表全触达（workspace/issue 候选查询、bot 行
-// workspace_id 落库、会话行 bound_issue_id 落库）。
+/*
+ * newBindingTestDB 绑定卡链路夹具库：四表全触达（workspace/issue 候选查询、bot 行
+ * workspace_id 落库、会话行 bound_issue_id 落库）。
+ */
 func newBindingTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	return newBotTestDB(t, &model.Workspace{}, &model.ProjectIssue{}, &model.ImBot{}, &model.ImBotConversation{})
@@ -82,8 +84,10 @@ func bindClickMsg(taskID string, idx int) InboundMessage {
 	}
 }
 
-// bindSubmitMsg 提交事件消息构造（真机形态：带提交按钮的单选卡点选项不发事件、提交携
-// 勾选集回传）：RawKey 为 submit key、ActionIndex=-1、勾选集携带选中下标（可省略）。
+/*
+ * bindSubmitMsg 提交事件消息构造（真机形态：带提交按钮的单选卡点选项不发事件、提交携
+ * 勾选集回传）：RawKey 为 submit key、ActionIndex=-1、勾选集携带选中下标（可省略）。
+ */
 func bindSubmitMsg(taskID string, selections ...int) InboundMessage {
 	in := bindClickMsg(taskID, -1)
 	in.Interaction.RawKey = taskID + ":submit"
@@ -103,8 +107,10 @@ func bindWsList(t *testing.T, db *gorm.DB, keyword string) []*model.Workspace {
 	return wss
 }
 
-// TestBindingTaskIDRoundtrip 投递锚往返三段式（关键词 + 指纹 + 一次性随机段）+ 域互斥 +
-// 非法形态全 miss + 卡契约合法 + 同输入两次出卡锚不同（task_id 全局唯一约束）。
+/*
+ * TestBindingTaskIDRoundtrip 投递锚往返三段式（关键词 + 指纹 + 一次性随机段）+ 域互斥 +
+ * 非法形态全 miss + 卡契约合法 + 同输入两次出卡锚不同（task_id 全局唯一约束）。
+ */
 func TestBindingTaskIDRoundtrip(t *testing.T) {
 	ids := []string{"1", "22", "333"}
 	// 空关键词与中文关键词两形态往返。
@@ -129,8 +135,10 @@ func TestBindingTaskIDRoundtrip(t *testing.T) {
 	if again := bindingTaskID(wsbindCardPrefix, "", ids); again == wsEmpty {
 		t.Fatalf("同输入两次出卡锚应不同: %q", again)
 	}
-	// 域互斥 + 非法形态：对侧域锚、无前缀、段数不符（T2.1 无关键词段 / T2.2 两段式）、
-	// 指纹与随机段空/过短/过长/非 hex、关键词段非合法 hex 全部 miss（各域各验各的）。
+	/*
+	 * 域互斥 + 非法形态：对侧域锚、无前缀、段数不符（T2.1 无关键词段 / T2.2 两段式）、
+	 * 指纹与随机段空/过短/过长/非 hex、关键词段非合法 hex 全部 miss（各域各验各的）。
+	 */
 	for _, bad := range []string{itKw, unAnchor, "acp-x@y-perm-1", "wsbind-", "wsbind-abc", "wsbind-123456789", "wsbind-01234567", "wsbind-xy-01234567", "wsbind--0123456", "wsbind-abc-0123456789", "wsbind--01234567", "wsbind--01234567-zzzzzzzz", "wsbind--01234567-0123456", "wsbind--01234567-01234567-extra"} {
 		if _, _, ok := parseWsbindTaskID(bad); ok {
 			t.Fatalf("parseWsbindTaskID(%q) 应 miss", bad)
@@ -163,8 +171,10 @@ func TestBindingTaskIDRoundtrip(t *testing.T) {
 	}
 }
 
-// TestBindingCardTexts 出卡同帧文本与零候选文案契约：引导语区分带/不带关键词、完整名称
-// 列表与缩小范围提示（触及上限才出）、库空与关键词零命中分开教学。
+/*
+ * TestBindingCardTexts 出卡同帧文本与零候选文案契约：引导语区分带/不带关键词、完整名称
+ * 列表与缩小范围提示（触及上限才出）、库空与关键词零命中分开教学。
+ */
 func TestBindingCardTexts(t *testing.T) {
 	wss := []*model.Workspace{{ID: 1, Name: "前端仓"}, {ID: 2, Name: "后端仓"}}
 	if got := workspaceCardText("", wss); got != "请点击卡片选择要关联的工作空间：\n- 前端仓\n- 后端仓" {
@@ -206,8 +216,10 @@ func TestBindingCardTexts(t *testing.T) {
 	}
 }
 
-// TestBindingFingerprintStability 指纹稳定性：同列表恒同值；内容因子（增删）与次序因子
-// （换位）任一变化即不符——候选查询确定序（SortOrder + ID 次序键）的依据。
+/*
+ * TestBindingFingerprintStability 指纹稳定性：同列表恒同值；内容因子（增删）与次序因子
+ * （换位）任一变化即不符——候选查询确定序（SortOrder + ID 次序键）的依据。
+ */
 func TestBindingFingerprintStability(t *testing.T) {
 	ids := []string{"1", "22", "333"}
 	a := bindingFingerprint(ids)
@@ -222,15 +234,19 @@ func TestBindingFingerprintStability(t *testing.T) {
 	}
 }
 
-// bindingTaskIDMatches 解析式卡锚断言助手：TaskID 含一次性随机段（企微 taskid 全局唯一
-// 约束），字面/重算比对恒假——按「关键词 + 指纹」语义段比对（随机段不参与语义）。
+/*
+ * bindingTaskIDMatches 解析式卡锚断言助手：TaskID 含一次性随机段（企微 taskid 全局唯一
+ * 约束），字面/重算比对恒假——按「关键词 + 指纹」语义段比对（随机段不参与语义）。
+ */
 func bindingTaskIDMatches(taskID, prefix, keyword string, ids []string) bool {
 	kw, fp, ok := parseBindingTaskID(taskID, prefix)
 	return ok && kw == keyword && fp == bindingFingerprint(ids)
 }
 
-// TestBindingCardSpecConstruction 卡构造 SSOT：单选点击即答形态、TaskID 关键词 + 指纹锚、
-// 置灰重建同构（企微整卡替换；TaskID 随机段不参与比对）、空列表不出卡。
+/*
+ * TestBindingCardSpecConstruction 卡构造 SSOT：单选点击即答形态、TaskID 关键词 + 指纹锚、
+ * 置灰重建同构（企微整卡替换；TaskID 随机段不参与比对）、空列表不出卡。
+ */
 func TestBindingCardSpecConstruction(t *testing.T) {
 	wss := []*model.Workspace{{ID: 3, Name: "前端仓"}, {ID: 7, Name: "后端仓"}}
 	spec, ok := workspaceCardSpec(wss, "")
@@ -252,8 +268,10 @@ func TestBindingCardSpecConstruction(t *testing.T) {
 	if !bindingTaskIDMatches(kwSpec.TaskID, wsbindCardPrefix, "前端", []string{"3"}) {
 		t.Fatalf("带关键词 TaskID 不符: %q", kwSpec.TaskID)
 	}
-	// 置灰重建共用 SSOT：同构造字段一致（随机段每次出新——置灰帧在点击消费侧保全被点卡
-	// task_id，见 handleWsbindInteraction；语义段关键词 + 指纹仍须一致）。
+	/*
+	 * 置灰重建共用 SSOT：同构造字段一致（随机段每次出新——置灰帧在点击消费侧保全被点卡
+	 * task_id，见 handleWsbindInteraction；语义段关键词 + 指纹仍须一致）。
+	 */
 	gray, _ := workspaceCardSpec(wss, "")
 	gray.Disabled = true
 	if !bindingTaskIDMatches(gray.TaskID, wsbindCardPrefix, "", workspaceIDKeys(wss)) ||
@@ -276,8 +294,10 @@ func TestBindingCardSpecConstruction(t *testing.T) {
 	}
 }
 
-// TestBindingIssueCandidates 候选口径验收（拍板口径）：非终态且顶级、外域排除、NULL 与
-// 空串顶级等价、SortOrder 升序、并列按 ID 次序键、关键词名称模糊、上限截断。
+/*
+ * TestBindingIssueCandidates 候选口径验收（拍板口径）：非终态且顶级、外域排除、NULL 与
+ * 空串顶级等价、SortOrder 升序、并列按 ID 次序键、关键词名称模糊、上限截断。
+ */
 func TestBindingIssueCandidates(t *testing.T) {
 	db := newBindingTestDB(t)
 	const ws = 1
@@ -348,8 +368,10 @@ func TestBindingIssueCandidates(t *testing.T) {
 	})
 }
 
-// TestBindingWorkspacesLimit workspace 卡候选同享上限（与任务卡同受企微 vote 选项约束，
-// 超出截断防止触发链发卡被适配器拒收）+ 关键词模糊。
+/*
+ * TestBindingWorkspacesLimit workspace 卡候选同享上限（与任务卡同受企微 vote 选项约束，
+ * 超出截断防止触发链发卡被适配器拒收）+ 关键词模糊。
+ */
 func TestBindingWorkspacesLimit(t *testing.T) {
 	db := newBindingTestDB(t)
 	for i := 0; i < bindingOptionLimit+2; i++ {
@@ -363,8 +385,10 @@ func TestBindingWorkspacesLimit(t *testing.T) {
 	}
 }
 
-// TestWsbindClick 命中路径：落库 bot 行 workspace_id + 置灰完整重建 + 热重载触发 + 终帧文案；
-// 尾段覆盖 last_message_card 闸全链（出卡登记 → 消费置位 → 重复点击收口 → 新卡覆盖旧锚失效）。
+/*
+ * TestWsbindClick 命中路径：落库 bot 行 workspace_id + 置灰完整重建 + 热重载触发 + 终帧文案；
+ * 尾段覆盖 last_message_card 闸全链（出卡登记 → 消费置位 → 重复点击收口 → 新卡覆盖旧锚失效）。
+ */
 func TestWsbindClick(t *testing.T) {
 	db := newBindingTestDB(t)
 	wsA, wsB := mkWorkspace(t, db, "前端仓"), mkWorkspace(t, db, "后端仓")
@@ -406,8 +430,10 @@ func TestWsbindClick(t *testing.T) {
 		t.Fatalf("消费成功应置位 last_message_card: %+v ok=%v", lc, ok)
 	}
 
-	// 重复点击收口：置灰卡按钮仍可点，第二次点击（即使换选项）回「已处理过」，不再重放
-	// 消费链——不二次落库（仍 wsB）、不再触发热重载。
+	/*
+	 * 重复点击收口：置灰卡按钮仍可点，第二次点击（即使换选项）回「已处理过」，不再重放
+	 * 消费链——不二次落库（仍 wsB）、不再触发热重载。
+	 */
 	text, update, handled = route.TryHandleInteraction(cfg, bindClickMsg(spec.TaskID, 0))
 	if !handled || text != cardAlreadyProcessedText || update != nil {
 		t.Fatalf("重复点击应收口: (%q, %+v, %v)", text, update, handled)
@@ -434,8 +460,10 @@ func TestWsbindClick(t *testing.T) {
 	}
 }
 
-// TestWsbindSubmitClick 提交事件消费（真机形态：提交携勾选集回传）：勾选下标落库等价选项
-// 直点、置灰保全被点卡 task_id（一次性随机段）；无勾选回引导文案不落库。
+/*
+ * TestWsbindSubmitClick 提交事件消费（真机形态：提交携勾选集回传）：勾选下标落库等价选项
+ * 直点、置灰保全被点卡 task_id（一次性随机段）；无勾选回引导文案不落库。
+ */
 func TestWsbindSubmitClick(t *testing.T) {
 	db := newBindingTestDB(t)
 	wsA, wsB := mkWorkspace(t, db, "前端仓"), mkWorkspace(t, db, "后端仓")
@@ -466,8 +494,10 @@ func TestWsbindSubmitClick(t *testing.T) {
 		t.Fatalf("提交勾选应落库第 2 项: ws=%d err=%v", botRow.WorkspaceID, err)
 	}
 
-	// 无勾选提交：引导文案、不落库不置灰、不置位登记（同卡随后补选提交仍可成功）。用
-	// 新出的卡（新 nonce 锚）——上一张已被成功消费置位，重复提交会先命中「已处理过」收口。
+	/*
+	 * 无勾选提交：引导文案、不落库不置灰、不置位登记（同卡随后补选提交仍可成功）。用
+	 * 新出的卡（新 nonce 锚）——上一张已被成功消费置位，重复提交会先命中「已处理过」收口。
+	 */
 	fresh, _ := workspaceCardSpec(bindWsList(t, db, ""), "")
 	if err := store.SaveLastMessageCard(1, "single:u1", "wsbind", fresh); err != nil {
 		t.Fatalf("登记新卡: %v", err)
@@ -486,8 +516,10 @@ func TestWsbindSubmitClick(t *testing.T) {
 	}
 }
 
-// TestWsbindClickWithKeyword 关键词子集卡点击：按过滤后序列解析下标落库；过滤域内候选
-// 变化（新增同关键词行）指纹不符防错绑——关键词通道的防线与全列表同构。
+/*
+ * TestWsbindClickWithKeyword 关键词子集卡点击：按过滤后序列解析下标落库；过滤域内候选
+ * 变化（新增同关键词行）指纹不符防错绑——关键词通道的防线与全列表同构。
+ */
 func TestWsbindClickWithKeyword(t *testing.T) {
 	db := newBindingTestDB(t)
 	wsA := mkWorkspace(t, db, "后端仓")
@@ -530,9 +562,11 @@ func TestWsbindClickWithKeyword(t *testing.T) {
 	}
 }
 
-// TestWsbindClickMisses wsbind 未命中矩阵：指纹不符（不置灰不落库不热重载）/ 越界防御 /
-// bot 行已删（落库 0 行失败文案）/ 读库失败 fail visible / applier 缺省降级 / 防串卡与
-// 未知锚 miss。
+/*
+ * TestWsbindClickMisses wsbind 未命中矩阵：指纹不符（不置灰不落库不热重载）/ 越界防御 /
+ * bot 行已删（落库 0 行失败文案）/ 读库失败 fail visible / applier 缺省降级 / 防串卡与
+ * 未知锚 miss。
+ */
 func TestWsbindClickMisses(t *testing.T) {
 	t.Run("指纹不符不落库", func(t *testing.T) {
 		db := newBindingTestDB(t)
@@ -700,8 +734,10 @@ func TestTaskbindClickWithKeyword(t *testing.T) {
 	}
 }
 
-// TestTaskbindClickMisses 任务卡未命中矩阵：指纹不符（不置灰不落库）/ 会话行不在场
-// （0 行 UPDATE 非静默成功）/ 读库失败 fail visible。
+/*
+ * TestTaskbindClickMisses 任务卡未命中矩阵：指纹不符（不置灰不落库）/ 会话行不在场
+ * （0 行 UPDATE 非静默成功）/ 读库失败 fail visible。
+ */
 func TestTaskbindClickMisses(t *testing.T) {
 	t.Run("指纹不符不落库", func(t *testing.T) {
 		db := newBindingTestDB(t)
@@ -752,8 +788,10 @@ func TestTaskbindClickMisses(t *testing.T) {
 	})
 }
 
-// TestTaskunbindCard 解绑确认卡构造与同帧文本契约：单选项 = 当前绑定任务、TaskID 关键词
-// 段恒空且指纹为绑定 id 单元素序列、置灰重建同构。
+/*
+ * TestTaskunbindCard 解绑确认卡构造与同帧文本契约：单选项 = 当前绑定任务、TaskID 关键词
+ * 段恒空且指纹为绑定 id 单元素序列、置灰重建同构。
+ */
 func TestTaskunbindCard(t *testing.T) {
 	issue := &model.ProjectIssue{ID: "i-1", Name: "登录重构"}
 	spec := taskunbindCardSpec(issue)
@@ -778,8 +816,10 @@ func TestTaskunbindCard(t *testing.T) {
 	}
 }
 
-// TestTaskunbindClick 解绑卡点击矩阵：命中清锚 + 置灰 + 带名终帧；出卡后已解绑 / 已换绑 /
-// 悬空锚均指纹不符回重取卡文案不落库；越界与读库失败防御；非选项 key miss。
+/*
+ * TestTaskunbindClick 解绑卡点击矩阵：命中清锚 + 置灰 + 带名终帧；出卡后已解绑 / 已换绑 /
+ * 悬空锚均指纹不符回重取卡文案不落库；越界与读库失败防御；非选项 key miss。
+ */
 func TestTaskunbindClick(t *testing.T) {
 	t.Run("命中清锚置灰", func(t *testing.T) {
 		db := newBindingTestDB(t)

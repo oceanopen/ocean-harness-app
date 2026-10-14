@@ -24,26 +24,27 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-// 挂载前置配置集：默认工具决定胶囊首帧图标（不闸门会先闪默认 vscode 图标再被真实值
-// 纠正——编码规则 1）。模块级常量保证引用稳定（useConfigReady 要求）。
+/**
+ * 挂载前置配置集：默认工具决定胶囊首帧图标（不闸门会先闪默认 vscode 图标再被真实值纠正——编码规则 1）。
+ * 模块级常量保证引用稳定（useConfigReady 要求）。
+ */
 const OPEN_TOOL_CONFIG_KEYS: readonly string[] = [WORKSPACE_OPEN_TOOL_KEY];
 
 // 浮层关闭宽限（ms）：鼠标从胶囊移向浮层途中短暂离开放行，防闪烁。
 const FLYOUT_CLOSE_GRACE_MS = 150;
 
 interface OpenWorkspaceDirButtonProps {
-  /// 当前选中 issue id（打开目录 = {workspaceDir}/{issueId}，与终端 cwd 派生同源）。
+  // 当前选中 issue id（打开目录 = {workspaceDir}/{issueId}，与终端 cwd 派生同源）。
   issueId: string;
-  /// 当前工作空间的工作区目录（页面解析下传；null = 解析中，按钮禁用）。
+  // 当前工作空间的工作区目录（页面解析下传；null = 解析中，按钮禁用）。
   workspaceDir: string | null;
 }
 
-/// OpenWorkspaceDirButton：开发工作台标题栏「打开工作区目录」胶囊分体按钮。
-/// 左段 = 当前默认工具图标（仅点击 = 用默认工具打开，无 hover 行为）；右段 = ▼
-/// （hover 展开浮层，下方、右缘对齐；点击 = 显式开关兜底入口）。浮层行点击 =
-/// 切默认 + 立即打开，两者串行：await 打开命令 settle 且成功后才写 config（deepseek-harness
-/// 同款语义）——图标随 useConfigValue 订阅切换、滞后于打开动作肉眼可感知；失败 toast
-/// 不污染默认值。工具目录/平台过滤/命令分发见 openTools.tsx。
+/**
+ * OpenWorkspaceDirButton：开发工作台标题栏「打开工作区目录」胶囊分体按钮。
+ * 左段 = 当前默认工具图标（仅点击 = 用默认工具打开）；右段 = ▼（hover 展开浮层，点击 = 显式开关兜底入口）。
+ * 浮层行点击 = 切默认 + 立即打开（await settle 且成功才写 config，失败 toast 不污染默认值）；工具目录/平台过滤见 openTools.tsx。
+ */
 export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWorkspaceDirButtonProps) {
   const { show: showToast, snack: toastSnack } = useToast();
   const configReady = useConfigReady(OPEN_TOOL_CONFIG_KEYS);
@@ -60,8 +61,10 @@ export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWo
   const pillRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
 
-  // 浮层开合状态机：closeFlyout 是唯一关闭出口（清 timer + 清锚点成对）；scheduleClose
-  // 挂宽限；openFlyout 以胶囊为锚（pillRef，hover 与 ▼ 两入口同锚）。
+  /**
+   * 浮层开合状态机：closeFlyout 是唯一关闭出口（清 timer + 清锚点成对）；
+   * scheduleClose 挂宽限；openFlyout 以胶囊为锚（pillRef，hover 与 ▼ 两入口同锚）。
+   */
   const clearCloseTimer = () => {
     if (closeTimerRef.current != null) {
       window.clearTimeout(closeTimerRef.current);
@@ -92,8 +95,10 @@ export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWo
   // 卸载清 timer（页面切走即卸载的页面级生命周期内，定时器不得越界触发 setState）。
   useEffect(() => clearCloseTimer, []);
 
-  // 串行打开：先 await 打开命令，settle 且成功才写默认工具配置（值变化才写，避免
-  // 同值写入触发一次多余的 app-config-changed 广播）；失败 toast 且默认值不动。
+  /**
+   * 串行打开：先 await 打开命令，settle 且成功才写默认工具配置（值变化才写，避免
+   * 同值写入触发一次多余的 app-config-changed 广播）；失败 toast 且默认值不动。
+   */
   const runOpen = async (toolId: WorkspaceOpenToolId) => {
     closeFlyout();
     if (workspaceDir == null) {
@@ -121,9 +126,9 @@ export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWo
         sx={{
           display: 'inline-flex',
           alignItems: 'center',
-          height: 28,
-          borderRadius: 999,
-          border: 1,
+          height: '28px',
+          borderRadius: '3996px',
+          border: '1px solid',
           borderColor: 'divider',
           overflow: 'hidden',
           flexShrink: 0,
@@ -134,7 +139,7 @@ export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWo
           onClick={() => void runOpen(preferred)}
           disabled={disabled}
           aria-label={`打开工作区目录（${preferredTool.label}）`}
-          sx={{ height: 28, borderRadius: 0, px: 1, color: 'text.secondary' }}
+          sx={{ height: '28px', borderRadius: '0px', px: '8px', color: 'text.secondary' }}
         >
           {configReady ? <PreferredIcon /> : null}
         </IconButton>
@@ -152,17 +157,17 @@ export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWo
           aria-label="切换默认打开工具"
           aria-haspopup="menu"
           aria-expanded={anchorEl != null}
-          sx={{ height: 28, borderRadius: 0, px: 0.5, borderLeft: 1, borderColor: 'divider', color: 'text.secondary' }}
+          sx={{ height: '28px', borderRadius: '0px', px: '4px', borderLeft: '1px solid', borderColor: 'divider', color: 'text.secondary' }}
         >
-          <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />
+          <KeyboardArrowDownIcon sx={{ fontSize: '14px' }} />
         </IconButton>
       </Box>
 
-      {/* 工具选择浮层：非模态 Popper + Paper（hover 类浮层禁用模态 Popover——其全视口
-          透明 Backdrop 会盖住胶囊本体：悬停配对断裂陷入开关闪烁循环、TrapFocus 抢
-          嵌入式终端焦点）。bottom-end = 下方展开、右缘与胶囊右缘对齐；热区仅 ▼ 段与
-          Paper 本体（左段非热区，移入即走宽限关闭），进出双端挂宽限；Esc 兜底。
-          configReady 前不展开（首帧即终值）。 */}
+      {/*
+          工具选择浮层：非模态 Popper + Paper（hover 类浮层禁用模态 Popover——其全视口
+          透明 Backdrop 会盖住胶囊本体：悬停配对断裂陷入开关闪烁循环、TrapFocus 抢嵌入式终端焦点）。
+          bottom-end = 下方展开、右缘对齐；热区仅 ▼ 段与 Paper 本体（左段移入即走宽限关闭），进出双端挂宽限；Esc 兜底；configReady 前不展开（首帧即终值）。
+        */}
       <Popper
         open={configReady && anchorEl != null}
         anchorEl={anchorEl}
@@ -174,7 +179,7 @@ export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWo
           elevation={4}
           onMouseEnter={clearCloseTimer}
           onMouseLeave={scheduleFlyoutClose}
-          sx={{ py: 0.5, minWidth: 160 }}
+          sx={{ py: '4px', minWidth: '160px' }}
         >
           <MenuList
             dense
@@ -192,13 +197,13 @@ export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWo
                   key={tool.id}
                   onClick={() => void runOpen(tool.id)}
                   disabled={opening}
-                  sx={{ gap: 1, px: 1.5, py: 0.75 }}
+                  sx={{ gap: '8px', px: '12px', py: '6px' }}
                 >
-                  <ListItemIcon sx={{ minWidth: 24, color: 'text.secondary' }}>
+                  <ListItemIcon sx={{ minWidth: '24px', color: 'text.secondary' }}>
                     <Icon />
                   </ListItemIcon>
                   <Typography variant="body2" sx={{ flex: 1 }}>{tool.label}</Typography>
-                  {isPreferred && <CheckIcon sx={{ fontSize: 14, color: 'primary.main' }} />}
+                  {isPreferred && <CheckIcon sx={{ fontSize: '14px', color: 'primary.main' }} />}
                 </MenuItem>
               );
             })}

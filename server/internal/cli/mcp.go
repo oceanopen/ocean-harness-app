@@ -25,8 +25,10 @@ func newMcpCmd() *cobra.Command {
 	return cmd
 }
 
-// newMcpToolsCmd 列出全部 MCP 工具：默认精简 JSON（仅 name/description），
-// --full 输出完整 Tool JSON（含 inputSchema/outputSchema），单工具详情走 mcp schema。
+/*
+ * newMcpToolsCmd 列出全部 MCP 工具：默认精简 JSON（仅 name/description），
+ * --full 输出完整 Tool JSON（含 inputSchema/outputSchema），单工具详情走 mcp schema。
+ */
 func newMcpToolsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tools",
@@ -131,8 +133,10 @@ func runMcpSchema(cmd *cobra.Command, args []string) error {
 	return writeJSON(cmd, tool)
 }
 
-// runMcpCall 调用指定工具。pflag 原生支持 flag 后置于位置参数（call <name> --data ...），
-// 替代旧实现的手写解析循环。
+/*
+ * runMcpCall 调用指定工具。pflag 原生支持 flag 后置于位置参数（call <name> --data ...），
+ * 替代旧实现的手写解析循环。
+ */
 func runMcpCall(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	// parseCallData 先于端口校验：--data 非法时优先报用法错误，不触网

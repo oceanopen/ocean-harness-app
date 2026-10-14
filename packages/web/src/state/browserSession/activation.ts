@@ -1,10 +1,9 @@
 import { create } from 'zustand';
 
 /**
- * 浏览器操作台激活态（client 选中态，zustand）：激活 profile 接管工作台终端内容区
- * 浮层（BrowserStageOverlay），跨 BrowserPanel（激活入口）与 DevWorkbenchPage（浮层
- * 挂载点）两个组件树共享。切 issue 不重置——激活的是全局单源的 profile 会话，浮层
- * 跟随 profile 存续。
+ * 浏览器操作台激活态（client 选中态，zustand）：激活 profile 接管工作台终端内容区浮层（BrowserStageOverlay），
+ * 跨 BrowserPanel（激活入口）与 DevWorkbenchPage（浮层挂载点）两个组件树共享。
+ * 切 issue 不重置——激活的是全局单源的 profile 会话，浮层跟随 profile 存续。
  */
 interface BrowserStageState {
   /** 激活到操作台浮层的 profile（null = 未激活，终端内容区正常显示）。 */

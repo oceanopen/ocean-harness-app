@@ -119,13 +119,13 @@ export default function LiveViewport({ profile, frameRef, hasFrame, interactive 
       <Box
         sx={{
           flex: 1,
-          minHeight: 0,
+          minHeight: '0px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          border: 1,
+          border: '1px solid',
           borderColor: 'divider',
-          borderRadius: 1,
+          borderRadius: '4px',
           bgcolor: 'action.hover',
         }}
       >
@@ -145,13 +145,13 @@ export default function LiveViewport({ profile, frameRef, hasFrame, interactive 
     <Box
       sx={{
         flex: 1,
-        minHeight: 0,
+        minHeight: '0px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        border: 1,
+        border: '1px solid',
         borderColor: 'divider',
-        borderRadius: 1,
+        borderRadius: '4px',
         bgcolor: '#000',
         overflow: 'hidden',
         lineHeight: 0,
@@ -246,13 +246,13 @@ export default function LiveViewport({ profile, frameRef, hasFrame, interactive 
         spellCheck={false}
         style={{
           position: 'absolute',
-          left: 0,
-          bottom: 0,
-          width: 2,
-          height: 2,
+          left: '0px',
+          bottom: '0px',
+          width: '2px',
+          height: '2px',
           opacity: 0,
           border: 'none',
-          padding: 0,
+          padding: '0px',
           pointerEvents: 'none',
           caretColor: 'transparent',
           outline: 'none',

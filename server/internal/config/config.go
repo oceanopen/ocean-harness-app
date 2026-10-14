@@ -1,14 +1,8 @@
-// Package config 负责加载并校验服务运行配置。
-//
-// 配置来源优先级：环境变量 > 配置文件（yaml）。
-//   - 环境变量（统一 GO_SERVER_ 前缀）始终优先，由 Rust 侧 spawn 时注入
-//     （见 app/src/shared/http_server.rs），生产环境覆盖配置文件值。
-//   - 配置文件经 -config flag 指定（本地调试用，如 config/settings.dev.yaml），
-//     为环境变量缺失的字段提供默认值；flag 为空（生产环境，Rust 不传该 flag）则不读
-//     任何文件，纯走环境变量，与改造前行为完全一致。
-//
-// 校验：mode 仅允许 gin debug/release/test；port ∈ [1,65535]；log/sqlite 目录转绝对路径并
-// MkdirAll；app.db 与 ACP 两目录为可选（缺失不报错，仅消费方调用期报未配置，仅转绝对路径）。
+/*
+ * Package config 负责加载并校验服务运行配置。
+ * 配置来源优先级：环境变量 > 配置文件（yaml）——环境变量（统一 GO_SERVER_ 前缀）始终优先、由 Rust 侧 spawn 时注入（见 app/src/shared/http_server.rs）；配置文件经 -config flag 指定（本地调试用，如 config/settings.dev.yaml），为环境变量缺失的字段提供默认值，flag 为空（生产环境，Rust 不传该 flag）则不读任何文件、纯走环境变量，与改造前行为完全一致。
+ * 校验：mode 仅允许 gin debug/release/test；port ∈ [1,65535]；log/sqlite 目录转绝对路径并 MkdirAll；app.db 与 ACP 两目录为可选（缺失不报错，仅消费方调用期报未配置，仅转绝对路径）。
+ */
 package config
 
 import (
@@ -32,14 +26,18 @@ const (
 	EnvSqliteDir = "GO_SERVER_SQLITE_DIR" // sqlite 数据目录（绝对路径）
 	EnvAppDb     = "GO_SERVER_APP_DB"     // Rust 侧 app.db 路径（app_config KV 表，Go 只读；可选）
 
-	// ACP vendoring（T1.3）：资源源 = 应用内置 staging（Rust resource 目录派生），
-	// 受管目标 = vendored 安装根。两者均可选：缺失不阻断启动，ACP 拉起期报未配置。
+	/*
+	 * ACP vendoring（T1.3）：资源源 = 应用内置 staging（Rust resource 目录派生），
+	 * 受管目标 = vendored 安装根。两者均可选：缺失不阻断启动，ACP 拉起期报未配置。
+	 */
 	EnvAcpResourcesDir = "GO_SERVER_ACP_RESOURCES_DIR"
 	EnvAcpAdaptersDir  = "GO_SERVER_ACP_ADAPTERS_DIR"
 )
 
-// settingsFile 是 yaml 配置文件的结构（字段名采用 camelCase 对齐配置文件）。
-// 仅作为环境变量缺失时的默认值来源，不对外暴露。
+/*
+ * settingsFile 是 yaml 配置文件的结构（字段名采用 camelCase 对齐配置文件）。
+ * 仅作为环境变量缺失时的默认值来源，不对外暴露。
+ */
 type settingsFile struct {
 	Mode            string `yaml:"mode"`            // gin 运行模式：debug / release / test
 	Port            int    `yaml:"port"`            // HTTP 监听端口
@@ -62,11 +60,11 @@ type Config struct {
 	AcpAdaptersDir  string // vendored 受管目标根（可选：空同上；安装时由消费方 MkdirAll）
 }
 
-// MustLoadConfig 读取并校验配置。优先级：环境变量 > 配置文件（-config 指定，可选）。
-//
-// -config flag 为空时不读文件，纯环境变量模式（生产环境）。任一必填字段最终缺失或非法
-// 即 log.Fatalf 终止启动。校验项：mode 仅允许 gin 三种模式并同步 gin.SetMode；
-// port ∈ [1,65535]；log/sqlite 目录转绝对路径并 MkdirAll。
+/*
+ * MustLoadConfig 读取并校验配置。优先级：环境变量 > 配置文件（-config 指定，可选）。
+ * -config flag 为空时不读文件，纯环境变量模式（生产环境）；任一必填字段最终缺失或非法即 log.Fatalf 终止启动。
+ * 校验项：mode 仅允许 gin 三种模式并同步 gin.SetMode；port ∈ [1,65535]；log/sqlite 目录转绝对路径并 MkdirAll。
+ */
 func MustLoadConfig() *Config {
 	// 解析 -config flag（默认空：不读配置文件，纯环境变量模式）。
 	configPath := flag.String("config", "", "配置文件路径（yaml）；为空则仅从环境变量加载")
@@ -89,8 +87,10 @@ func MustLoadConfig() *Config {
 	portStr := os.Getenv(EnvPort)
 	logDir := firstNonEmpty(os.Getenv(EnvLogDir), sf.LogDir)
 	sqliteDir := firstNonEmpty(os.Getenv(EnvSqliteDir), sf.SqliteDir)
-	// appDb 为可选字段（Rust spawn 注入；本地 air 自测可经 yaml 模拟）：缺失不报错，
-	// 仅 MCP workspace_status 工具调用期报「未配置」。文件归 Rust 所有，Go 只读、不 MkdirAll。
+	/*
+	 * appDb 为可选字段（Rust spawn 注入；本地 air 自测可经 yaml 模拟）：缺失不报错，
+	 * 仅 MCP workspace_status 工具调用期报「未配置」。文件归 Rust 所有，Go 只读、不 MkdirAll。
+	 */
 	appDb := firstNonEmpty(os.Getenv(EnvAppDb), sf.AppDb)
 	// ACP vendoring 两目录同为可选（T1.3）：缺失仅 ACP 拉起期报错，不阻断启动。
 	acpResourcesDir := firstNonEmpty(os.Getenv(EnvAcpResourcesDir), sf.AcpResourcesDir)
@@ -118,10 +118,10 @@ func MustLoadConfig() *Config {
 	}
 	gin.SetMode(mode)
 
-	// 关闭 gin 的 debug 横幅（"Switch to release" 提示 + 路由表打印）：
-	// gin 在 debug/test 模式会经 gin.DefaultWriter 输出这些提示，桥接到 zap 后会污染日志。
-	// 注意须设为 no-op 而非 nil——nil 时 gin 会回落到写 DefaultWriter，提示仍会出现。
-	// release 模式下 debugPrint 自身提前 return，本就静默，此处仅影响 debug/test。
+	/*
+	 * 关闭 gin 的 debug 横幅（"Switch to release" 提示 + 路由表打印）：gin 在 debug/test 模式
+	 * 会经 gin.DefaultWriter 输出这些提示，桥接到 zap 后会污染日志；须设为 no-op 而非 nil——nil 时 gin 会回落到写 DefaultWriter，提示仍会出现。release 模式下 debugPrint 自身提前 return，本就静默，此处仅影响 debug/test。
+	 */
 	gin.DebugPrintFunc = func(string, ...any) {}
 
 	// 5) Port：env 非空则必须合法，否则回退配置文件值；最终必填且 ∈ [1,65535]。
@@ -149,8 +149,10 @@ func MustLoadConfig() *Config {
 		log.Fatalf("[config] %s=%q invalid: %v", EnvSqliteDir, sqliteDir, err)
 	}
 
-	// 7) ACP 两目录仅转绝对路径、不 MkdirAll：资源源是打包只读内容（Rust resource 派生），
-	// 受管根由 EnsureVendored 安装时自建，创建时机均归消费方。
+	/*
+	 * 7) ACP 两目录仅转绝对路径、不 MkdirAll：资源源是打包只读内容（Rust resource 派生），
+	 * 受管根由 EnsureVendored 安装时自建，创建时机均归消费方。
+	 */
 	acpResourcesAbs, err := ensureAbs(acpResourcesDir)
 	if err != nil {
 		log.Fatalf("[config] %s=%q invalid: %v", EnvAcpResourcesDir, acpResourcesDir, err)
@@ -194,8 +196,10 @@ func ensureDir(dir string) (string, error) {
 	return abs, nil
 }
 
-// ensureAbs 仅将路径转为绝对路径（不 MkdirAll）；空值原样返回（= 未配置）。
-// 用于「存在性归消费方保证」的目录：config 只负责路径规范化，不代建。
+/*
+ * ensureAbs 仅将路径转为绝对路径（不 MkdirAll）；空值原样返回（= 未配置）。
+ * 用于「存在性归消费方保证」的目录：config 只负责路径规范化，不代建。
+ */
 func ensureAbs(p string) (string, error) {
 	if p == "" {
 		return "", nil

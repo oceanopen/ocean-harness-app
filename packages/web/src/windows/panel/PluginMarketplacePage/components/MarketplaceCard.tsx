@@ -46,15 +46,15 @@ interface MarketplaceCardProps {
 
 function MarketplaceCard({ mk, updating, onOpen, onUpdate, onRemove }: MarketplaceCardProps) {
   return (
-    <Paper variant="outlined" sx={{ height: '100%', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+    <Paper variant="outlined" sx={{ height: '100%', p: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
       {/* 头部：市场名 + 来源徽标 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '0px' }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 600, minWidth: 0, ...truncateSx }} title={mk.name}>
           {mk.name}
         </Typography>
         <Box sx={{ flex: 1 }} />
         <Tooltip title={`来源：${mk.sourceType}`}>
-          <Chip size="small" variant="outlined" icon={<StorefrontOutlinedIcon sx={{ fontSize: 15 }} />} label={sourceTypeLabel(mk.sourceType)} />
+          <Chip size="small" variant="outlined" icon={<StorefrontOutlinedIcon sx={{ fontSize: '15px' }} />} label={sourceTypeLabel(mk.sourceType)} />
         </Tooltip>
       </Box>
 
@@ -66,7 +66,7 @@ function MarketplaceCard({ mk, updating, onOpen, onUpdate, onRemove }: Marketpla
       )}
 
       {/* 支持的 CLI 徽标行：清单目录探测结果；扫描异常以警示徽标替代 */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
         {mk.scanError
           ? (
               <Tooltip title={mk.scanError}>
@@ -79,7 +79,7 @@ function MarketplaceCard({ mk, updating, onOpen, onUpdate, onRemove }: Marketpla
                 size="small"
                 variant="outlined"
                 color="primary"
-                icon={<ExtensionOutlinedIcon sx={{ fontSize: 15 }} />}
+                icon={<ExtensionOutlinedIcon sx={{ fontSize: '15px' }} />}
                 label={cliLabel(cli)}
               />
             ))}
@@ -95,7 +95,7 @@ function MarketplaceCard({ mk, updating, onOpen, onUpdate, onRemove }: Marketpla
       </Typography>
 
       {/* 底部操作栏 */}
-      <Box sx={{ mt: 'auto', pt: 1, display: 'flex', gap: 1, alignItems: 'center' }}>
+      <Box sx={{ mt: 'auto', pt: '8px', display: 'flex', gap: '8px', alignItems: 'center' }}>
         <Button size="small" variant="contained" onClick={() => onOpen(mk)}>
           插件列表
         </Button>
@@ -107,7 +107,7 @@ function MarketplaceCard({ mk, updating, onOpen, onUpdate, onRemove }: Marketpla
           startIcon={(
             <AutorenewIcon
               sx={{
-                'fontSize': 15,
+                'fontSize': '15px',
                 'animation': updating ? 'spin 0.8s linear infinite' : undefined,
                 '@keyframes spin': {
                   from: { transform: 'rotate(0deg)' },
@@ -119,7 +119,7 @@ function MarketplaceCard({ mk, updating, onOpen, onUpdate, onRemove }: Marketpla
         >
           更新
         </Button>
-        <Button size="small" color="error" onClick={() => onRemove(mk)} startIcon={<DeleteOutlinedIcon sx={{ fontSize: 15 }} />}>
+        <Button size="small" color="error" onClick={() => onRemove(mk)} startIcon={<DeleteOutlinedIcon sx={{ fontSize: '15px' }} />}>
           移除
         </Button>
       </Box>

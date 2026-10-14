@@ -13,8 +13,9 @@ type RepoSubDir struct {
 	SubDirDescription string `json:"subDirDescription"` // 子目录描述
 }
 
-// 每 action 一个独立 Request 类型（对齐项目既有 DTO 风格）。
-// local_dir 必须为存在的绝对路径且为 git 仓库（service 层校验，失败返回哨兵字符串）。
+/*
+ * 每 action 一个独立 Request 类型（对齐项目既有 DTO 风格）：local_dir 必须为存在的绝对路径且为 git 仓库（service 层校验，失败返回哨兵字符串）。
+ */
 
 // LocalRepositoryGetListRequest 是 POST /api/localRepository/getList 的入参（无筛选，列全部）。
 type LocalRepositoryGetListRequest struct{}
@@ -24,8 +25,10 @@ type LocalRepositoryGetInfoRequest struct {
 	ID int `json:"id" binding:"required"`
 }
 
-// LocalRepositoryCreateRequest 是 POST /api/localRepository/create 的入参。
-// remoteUrl/currentBranch/lastCommitAt/lastCommitMessage 不入参（service 调 gitutil 解析写入）。
+/*
+ * LocalRepositoryCreateRequest 是 POST /api/localRepository/create 的入参；
+ * remoteUrl/currentBranch/lastCommitAt/lastCommitMessage 不入参（service 调 gitutil 解析写入）。
+ */
 type LocalRepositoryCreateRequest struct {
 	Name        string       `json:"name" binding:"required,max=100"`
 	LocalDir    string       `json:"localDir" binding:"required"`
@@ -57,9 +60,10 @@ type LocalRepositoryGetLocalBranchesRequest struct {
 	ID int `json:"id" binding:"required"`
 }
 
-// LocalRepositoryResponseData 是仓库响应：DO 字段平铺 + subDirList 由 JSON 文本反序列化为数组。
-// 不嵌入 *model.LocalRepository（其 SubDirList 为 string），改为扁平结构由 FromModel 装配，
-// 与 issue 响应「service 层组装呈现形态」的思路一致。
+/*
+ * LocalRepositoryResponseData 是仓库响应：DO 字段平铺 + subDirList 由 JSON 文本反序列化为数组；
+ * 不嵌入 *model.LocalRepository（其 SubDirList 为 string），改为扁平结构由 FromModel 装配，与 issue 响应「service 层组装呈现形态」的思路一致。
+ */
 type LocalRepositoryResponseData struct {
 	ID                int          `json:"id"`
 	Name              string       `json:"name"`

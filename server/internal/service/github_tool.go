@@ -10,9 +10,11 @@ import (
 	"ocean-harness/server/internal/dal/query"
 )
 
-// GithubTool 是 github MCP 工具（T4.1）的仓库定位支撑：本地仓库 id → 远程地址与
-// issue 关联基准分支。纯 DB 查询组合（无状态），GitHub API 调用在 githubapi 包
-// （handler 层组装：本 service 定位仓库 → gitutil 解析 → githubapi 调用）。
+/*
+ * GithubTool 是 github MCP 工具（T4.1）的仓库定位支撑：本地仓库 id → 远程地址与
+ * issue 关联基准分支。纯 DB 查询组合（无状态），GitHub API 调用在 githubapi 包
+ * （handler 层组装：本 service 定位仓库 → gitutil 解析 → githubapi 调用）。
+ */
 type GithubTool struct {
 	apis.Service
 }
@@ -24,9 +26,11 @@ type GithubRepoRef struct {
 	DefaultBranch string // 仓库默认分支（BaseBranch 为空时的回退）
 }
 
-// ResolveRepo 定位本地仓库的远程信息。issueID 非空时校验 issue 已关联该仓库并返回
-// 关联基准分支（create_pr 的 base 缺省推导依据）；issueID 为空串时跳过关联（list/ci
-// 场景，无需 issue 上下文）。
+/*
+ * ResolveRepo 定位本地仓库的远程信息。issueID 非空时校验 issue 已关联该仓库并返回
+ * 关联基准分支（create_pr 的 base 缺省推导依据）；issueID 为空串时跳过关联（list/ci
+ * 场景，无需 issue 上下文）。
+ */
 func (svc GithubTool) ResolveRepo(issueID string, localRepositoryID int) (*GithubRepoRef, error) {
 	q := query.Use(svc.Orm)
 	repo, err := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(localRepositoryID)).First()

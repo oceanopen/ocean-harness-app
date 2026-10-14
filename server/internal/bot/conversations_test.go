@@ -10,8 +10,10 @@ import (
 	"ocean-harness/server/internal/dal/model"
 )
 
-// newBotTestDB bot 域测试共用夹具：临时 sqlite + 调用方声明的表集（AutoMigrate）。
-// 各测试按链路需要传表，不再各自内联 gorm.Open 样板。
+/*
+ * newBotTestDB bot 域测试共用夹具：临时 sqlite + 调用方声明的表集（AutoMigrate）。
+ * 各测试按链路需要传表，不再各自内联 gorm.Open 样板。
+ */
 func newBotTestDB(t *testing.T, models ...any) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
@@ -30,8 +32,10 @@ func newConversationTestDB(t *testing.T) *gorm.DB {
 	return newBotTestDB(t, &model.ImBotConversation{})
 }
 
-// TestConversationStoreBoundIssueRoundtrip 绑定锚读写验收：新会话默认空、写入读回、
-// 幂等覆盖、解绑（空串）回到未绑定态。
+/*
+ * TestConversationStoreBoundIssueRoundtrip 绑定锚读写验收：新会话默认空、写入读回、
+ * 幂等覆盖、解绑（空串）回到未绑定态。
+ */
 func TestConversationStoreBoundIssueRoundtrip(t *testing.T) {
 	store := &ConversationStore{DB: newConversationTestDB(t)}
 	const botID = 1
@@ -66,8 +70,10 @@ func TestConversationStoreBoundIssueRoundtrip(t *testing.T) {
 	}
 }
 
-// TestConversationStoreBoundIssueOrthogonalToSession 两锚正交契约：绑定/解绑均不触碰
-// headless 续聊锚 claude_session_id（反之亦然）。
+/*
+ * TestConversationStoreBoundIssueOrthogonalToSession 两锚正交契约：绑定/解绑均不触碰
+ * headless 续聊锚 claude_session_id（反之亦然）。
+ */
 func TestConversationStoreBoundIssueOrthogonalToSession(t *testing.T) {
 	store := &ConversationStore{DB: newConversationTestDB(t)}
 	const botID, convKey = 1, "group:c1"
@@ -96,9 +102,11 @@ func TestConversationStoreBoundIssueOrthogonalToSession(t *testing.T) {
 	}
 }
 
-// TestConversationStoreSaveBoundIssueZeroRows 0 行语义契约（F4）：行不在场时 UPDATE 无错
-// 但受影响行数为 0——绑定路径调用方据此按失败收口（防「静默成功假象」），解绑路径幂等
-// 语义忽略行数。
+/*
+ * TestConversationStoreSaveBoundIssueZeroRows 0 行语义契约（F4）：行不在场时 UPDATE 无错
+ * 但受影响行数为 0——绑定路径调用方据此按失败收口（防「静默成功假象」），解绑路径幂等
+ * 语义忽略行数。
+ */
 func TestConversationStoreSaveBoundIssueZeroRows(t *testing.T) {
 	store := &ConversationStore{DB: newConversationTestDB(t)}
 	rows, err := store.SaveBoundIssueID(1, "single:ghost", "issue-1") // 不预置行

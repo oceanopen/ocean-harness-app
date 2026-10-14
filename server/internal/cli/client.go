@@ -12,12 +12,11 @@ import (
 // MCP 端点路径（与 server/internal/router/router.go 的挂载点同源，勿单方修改）。
 const endpointPath = "/mcp/streamableHttp/oceanHarness"
 
-// WithSession 建立一次 MCP 会话并执行 fn，返回前下发 DELETE 终止服务端会话。
-//
-// CLI 进程寿命 = 单命令，go-sdk 的 Transport 一次性（at most one Connect），
-// 故「每命令新建连接」是唯一形态；initialize 握手在 Connect 内部完成。
-// Close（DELETE）是会话释放的首选路径；服务端另配 10 分钟空闲 TTL 兜底回收，
-// 即使 Close 缺失也不留永久孤儿会话，生命周期仍收敛在本函数内，调用方无需感知。
+/*
+ * WithSession 建立一次 MCP 会话并执行 fn，返回前下发 DELETE 终止服务端会话。
+ * CLI 进程寿命 = 单命令，go-sdk 的 Transport 一次性（at most one Connect），故「每命令新建连接」是唯一形态；initialize 握手在 Connect 内部完成。
+ * Close（DELETE）是会话释放的首选路径；服务端另配 10 分钟空闲 TTL 兜底回收，即使 Close 缺失也不留永久孤儿会话，生命周期仍收敛在本函数内，调用方无需感知。
+ */
 func WithSession(ctx context.Context, port int, fn func(*mcp.ClientSession) error) error {
 	client := mcp.NewClient(&mcp.Implementation{Name: "ocean-harness-cli", Version: buildinfo.Version}, nil)
 	transport := &mcp.StreamableClientTransport{

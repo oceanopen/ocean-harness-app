@@ -44,8 +44,9 @@ func TestViewChunkAggregation(t *testing.T) {
 		textChunkUpdate("s1", true, "思考中"),
 		textChunkUpdate("s1", false, "，第三段"),
 	)
-	// 同回合同类 chunk 聚合进同一 entry：每个 chunk 事件出一帧 entry（3 次 agent + 1 次
-	// thought），条目级最新态覆写。
+	/*
+	 * 同回合同类 chunk 聚合进同一 entry：每个 chunk 事件出一帧 entry（3 次 agent + 1 次 thought），条目级最新态覆写。
+	 */
 	entryFrames := 0
 	for _, f := range frames {
 		if f.Type != FrameEntry {
@@ -192,8 +193,9 @@ func TestViewTurnGateAndEndFrames(t *testing.T) {
 	}
 }
 
-// T1.1 显示链路基座：beginTurn 元数据落 user 条目、entry 帧与快照携带、wire 形态
-// （空元数据 omitempty 缺席——前端回落 Text 原样的兼容契约）。
+/*
+ * T1.1 显示链路基座：beginTurn 元数据落 user 条目、entry 帧与快照携带、wire 形态（空元数据 omitempty 缺席——前端回落 Text 原样的兼容契约）。
+ */
 func TestViewBeginTurnPromptMeta(t *testing.T) {
 	view := newSessionView()
 	display := &EntryDisplay{
@@ -346,8 +348,9 @@ func TestViewSetReadyAndSnapshot(t *testing.T) {
 	}
 }
 
-// 零条目快照 wire 契约：entries/pendings 恒为数组。json tag 无 omitempty，曾因
-// append(nil) 拷贝陷阱把零条目新会话序列化成 null 崩掉前端首开（快照拷贝须非 nil 起始）。
+/*
+ * 零条目快照 wire 契约：entries/pendings 恒为数组。json tag 无 omitempty，曾因 append(nil) 拷贝陷阱把零条目新会话序列化成 null 崩掉前端首开（快照拷贝须非 nil 起始）。
+ */
 func TestViewSnapshotEmptyIsArray(t *testing.T) {
 	view := newSessionView()
 	wire, err := json.Marshal(view.snapshot())

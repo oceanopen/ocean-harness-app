@@ -10,19 +10,17 @@ import (
 	"go.uber.org/zap"
 )
 
-// tabsLineRe 引擎 browser_tabs（action=list）输出行格式（playwright-mcp 官方文档逐字
-// 核实口径）：
-//
-//   - 0: [](about:blank)
-//   - 1: (current) [React • TodoMVC](https://demo.playwright.dev/todomvc)
-//
-// 行结构：缩进 + "- <index>:" + 可选 "(current) " + Markdown 链接 [title](url)；无标题
-// 页面 title 为空。崩溃 tab 的 "[crashed]" 标记出现在链接前，正则以可选组容忍。
-// current 以捕获组判定（非子串匹配——防 title 含 "(current)" 误判）。
+/*
+ * tabsLineRe 引擎 browser_tabs（action=list）输出行格式（playwright-mcp 官方文档逐字核实口径）：形如 `0: [](about:blank)`、`1: (current) [React • TodoMVC](https://demo.playwright.dev/todomvc)`。
+ * 行结构：缩进 + "- <index>:" + 可选 "(current) " + Markdown 链接 [title](url)；无标题页面 title 为空。崩溃 tab 的 "[crashed]" 标记出现在链接前，正则以可选组容忍。
+ * current 以捕获组判定（非子串匹配——防 title 含 "(current)" 误判）。
+ */
 var tabsLineRe = regexp.MustCompile(`(?m)^\s*-\s*(\d+):\s*(?:\((current)\)\s*)?(?:\[crashed\]\s*)?\[([^\]]*)\]\(([^)]*)\)`)
 
-// parseTabsOutput 解析 tab 列表文本 → []PageView；一行未匹配则返回 nil（格式漂移时
-// 保持原投影，不误清空）。
+/*
+ * parseTabsOutput 解析 tab 列表文本 → []PageView；一行未匹配则返回 nil（格式漂移时
+ * 保持原投影，不误清空）。
+ */
 func parseTabsOutput(text string) []PageView {
 	matches := tabsLineRe.FindAllStringSubmatch(text, -1)
 	if len(matches) == 0 {
@@ -44,8 +42,10 @@ func parseTabsOutput(text string) []PageView {
 	return pages
 }
 
-// ResultText 提取 CallToolResult 的 TextContent 拼接文本（引擎结果以文本为主载体；
-// REST/工具面等跨包消费的导出口，T2.1 起供 service 层组装分析 prompt 用）。
+/*
+ * ResultText 提取 CallToolResult 的 TextContent 拼接文本（引擎结果以文本为主载体；
+ * REST/工具面等跨包消费的导出口，T2.1 起供 service 层组装分析 prompt 用）。
+ */
 func ResultText(res *mcp.CallToolResult) string {
 	var b strings.Builder
 	for _, c := range res.Content {
@@ -63,10 +63,10 @@ func (m *Manager) refreshPages(handle *EngineHandle, profile string) {
 	m.refreshPagesCtx(ctx, handle, profile)
 }
 
-// refreshPagesCtx 页面投影刷新：拉 tab 列表 → 解析 → view 行更新（锁外广播 sessions
-// 帧）。一次调用一次刷新，无防抖；截图轮询路径经 pagesRefreshExempt 豁免（一次轮询不
-// 触发两次引擎调用）。best-effort——刷新失败仅记日志，不影响转发结果。预算由调用方
-// 给定：Forward 用 pagesRefreshTimeout，Close 收尾捕获用短预算（引擎挂死不拖累收尾）。
+/*
+ * refreshPagesCtx 页面投影刷新：拉 tab 列表 → 解析 → view 行更新（锁外广播 sessions 帧）；一次调用一次刷新，无防抖，截图轮询路径经 pagesRefreshExempt 豁免（一次轮询不触发两次引擎调用）。
+ * best-effort——刷新失败仅记日志，不影响转发结果；预算由调用方给定：Forward 用 pagesRefreshTimeout，Close 收尾捕获用短预算（引擎挂死不拖累收尾）。
+ */
 func (m *Manager) refreshPagesCtx(ctx context.Context, handle *EngineHandle, profile string) {
 	res, err := handle.Session().CallTool(ctx, &mcp.CallToolParams{
 		Name:      EngineToolTabs,
@@ -84,8 +84,10 @@ func (m *Manager) refreshPagesCtx(ctx context.Context, handle *EngineHandle, pro
 	m.applyPages(profile, pages)
 }
 
-// applyPages 页面投影回填并广播 sessions 帧（nil 不动投影——解析失败保持原样不误清
-// 空）；refreshPagesCtx 与观察通道 liveTabsRefresh 共用出口。
+/*
+ * applyPages 页面投影回填并广播 sessions 帧（nil 不动投影——解析失败保持原样不误清
+ * 空）；refreshPagesCtx 与观察通道 liveTabsRefresh 共用出口。
+ */
 func (m *Manager) applyPages(profile string, pages []PageView) {
 	if pages == nil {
 		return

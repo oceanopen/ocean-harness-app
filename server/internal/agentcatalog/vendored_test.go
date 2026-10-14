@@ -7,8 +7,9 @@ import (
 	"testing"
 )
 
-// writeStaging 造最小 npx-adapter 资源源：<srcRoot>/<id>/<version>/ 下含一个入口脚本、
-// 安装包（package.json bin 字符串形态）与 .bin 相对 symlink，覆盖 copyTree 的三类节点。
+/*
+ * writeStaging 造最小 npx-adapter 资源源：<srcRoot>/<id>/<version>/ 下含一个入口脚本、安装包（package.json bin 字符串形态）与 .bin 相对 symlink，覆盖 copyTree 的三类节点。
+ */
 func writeStaging(t *testing.T, version string) (srcRoot, dstRoot string) {
 	t.Helper()
 	srcRoot = t.TempDir()
@@ -126,9 +127,9 @@ func TestEnsureVendoredHalfDoneReinstall(t *testing.T) {
 	}
 }
 
-// 旧格式 / 异平台 marker 一律不命中，整树重制自愈——跨架构错配的受管目录
-// （如历史版本按「仅版本号」marker 复用的 darwin-arm64-only 资源被 amd64 sidecar 命中）
-// 在升级后首次请求即被重制，无法永久存续。
+/*
+ * 旧格式 / 异平台 marker 一律不命中，整树重制自愈——跨架构错配的受管目录（如历史版本按「仅版本号」marker 复用的 darwin-arm64-only 资源被 amd64 sidecar 命中）在升级后首次请求即被重制，无法永久存续。
+ */
 func TestEnsureVendoredStaleMarkerReinstalls(t *testing.T) {
 	srcRoot, dstRoot := writeStaging(t, "1.0.0")
 	entry := vendoringEntry("1.0.0")
@@ -224,8 +225,10 @@ func TestEnsureVendoredRejectsNonVendoredStrategy(t *testing.T) {
 	}
 }
 
-// writeInstalledPkg 造最小 vendored 安装目录：<installDir>/node_modules/@scope/pkg/。
-// binJSON 为 package.json 的 bin 字段原文（覆盖两种形态与异常形态）。
+/*
+ * writeInstalledPkg 造最小 vendored 安装目录：<installDir>/node_modules/@scope/pkg/。
+ * binJSON 为 package.json 的 bin 字段原文（覆盖两种形态与异常形态）。
+ */
 func writeInstalledPkg(t *testing.T, installDir, binJSON string) {
 	t.Helper()
 	mustWriteFile(t, filepath.Join(installDir, "node_modules", "@scope", "pkg", "dist", "cli.js"), "#!/usr/bin/env node\n", 0o755)

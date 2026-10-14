@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * 视口帧（keep-latest 视频流语义）：jpeg base64 + screencast metadata——仅最新帧有意义，
- * 慢消费跳帧不断连；落 ref 不进 TanStack Query 缓存（高频帧不配缓存写放大），绘制由
- * useFramePaint 的 rAF 消费循环驱动（与帧到达事件解耦）。
+ * 慢消费跳帧不断连；落 ref 不进 TanStack Query 缓存（高频帧不配缓存写放大），
+ * 绘制由 useFramePaint 的 rAF 消费循环驱动（与帧到达事件解耦）。
  */
 export interface LiveViewportFrame {
   data: string;
@@ -38,14 +38,9 @@ export interface BrowserFrameStream {
 }
 
 /**
- * useBrowserFrameStream 订阅单页面实时画面 SSE（/api/browserSession/stream，per
- * (profile, pageId)：页码变更即重建，旧流经 done 感知重订）。事件四型分派见
- * BrowserLiveEvent 契约；连接层瞬态断线交 EventSource 自动重连（后端自愈中），永久
- * 失败（readyState CLOSED，含服务端 404/409 订阅拒绝——非 200 规范不自动重连）置
- * failed 终态待手动重试，仅 closed 终态主动停订。生命周期：enabled 为闸门链
- * （expanded && panelVisible && ready && !restoreInFlight）——收起/恢复编排即断流，
- * 重开重订（重订即清帧回到占位态，帧箱不跨订阅保留旧页面残影）。throttleMs 为帧写侧
- * 最小间隔（后端参数，>0 时透传；0/缺省不节流——操作台实时档传 300，迷你预览档传 2000）。
+ * useBrowserFrameStream 订阅单页面实时画面 SSE（/api/browserSession/stream，per (profile, pageId)：页码变更即重建）。
+ * 事件分派见 BrowserLiveEvent 契约；瞬态断线交 EventSource 自动重连，永久失败（readyState CLOSED，含订阅拒绝）置 failed 待手动重试，仅 closed 主动停订。
+ * enabled 为闸门链——收起/恢复编排即断流、重开重订（重订清帧回占位态）；throttleMs 为帧写侧最小间隔（0/缺省不节流，实时档 300、预览档 2000）。
  */
 export function useBrowserFrameStream(profile: string, pageId: number, enabled: boolean, throttleMs = 0): BrowserFrameStream {
   const frameRef = useRef<LiveViewportFrame | null>(null);
@@ -70,8 +65,10 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
       es = null;
     };
 
-    // 命名 handler + 函数声明（互引，范式同 useBrowserSessionEvents）；cleanup 显式
-    // removeEventListener 防御旧实例引用残留。
+    /**
+     * 命名 handler + 函数声明（互引，范式同 useBrowserSessionEvents）；
+     * cleanup 显式 removeEventListener 防御旧实例引用残留。
+     */
     function onMessage(ev: MessageEvent) {
       let evt: BrowserLiveEvent;
       try {
@@ -105,9 +102,10 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
       }
     }
 
-    // 连接层 error：readyState CLOSED = EventSource 已放弃（非 200 订阅拒绝等永久
-    // 失败，规范不自动重连）→ failed 终态待手动重试；CONNECTING = 瞬态断线自动重连
-    // 中（后端自愈期间），不置终态。
+    /**
+     * 连接层 error：readyState CLOSED = EventSource 已放弃（非 200 订阅拒绝等永久失败，
+     * 规范不自动重连）→ failed 终态待手动重试；CONNECTING = 瞬态断线自动重连中（后端自愈期间），不置终态。
+     */
     function onError() {
       if (es && es.readyState === EventSource.CLOSED) {
         setPhase('failed');

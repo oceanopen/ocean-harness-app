@@ -1,19 +1,15 @@
-// 分屏布局树 → 平铺几何（纯函数）。
-//
-// 嵌套 flex 渲染在分屏时会因「同位置元素类型变化」触发 React 整树卸载重建存活
-// pane → ring 回放进失配几何 + 校正 resize 交错 → 左右分屏顶部空白。
-// 平铺渲染要求「组件结构恒定、布局树只产出几何」：本模块把布局二叉树展开为
-// 一组 pane/divider 矩形（px、相对根容器），消费方按 key 平铺渲染。
-//
-// 独立模块而非组件文件导出：react-refresh/only-export-components 拦截组件文件
-// 导出非组件。
+/**
+ * 分屏布局树 → 平铺几何（纯函数）。嵌套 flex 渲染在分屏时会因「同位置元素类型变化」触发 React 整树卸载重建存活 pane
+ * （ring 回放进失配几何 + 校正 resize 交错 → 左右分屏顶部空白），平铺渲染要求「组件结构恒定、布局树只产出几何」：
+ * 本模块把布局二叉树展开为一组 pane/divider 矩形（px、相对根容器），消费方按 key 平铺渲染；独立模块导出是因 react-refresh 拦截组件文件导出非组件。
+ */
 
 import type { PaneLayoutNode, SplitDirection } from './types';
 
-/// divider 厚度（px）：沿分割方向占据，两侧子区域按 ratio 划分扣除后的剩余空间。
+// divider 厚度（px）：沿分割方向占据，两侧子区域按 ratio 划分扣除后的剩余空间。
 export const PANE_DIVIDER_SIZE = 4;
 
-/// leaf pane 矩形（px，相对根容器）。
+// leaf pane 矩形（px，相对根容器）。
 export interface PaneRect {
   paneId: string;
   x: number;
@@ -22,16 +18,16 @@ export interface PaneRect {
   height: number;
 }
 
-/// split 分隔条矩形 + 拖拽换算上下文。
+// split 分隔条矩形 + 拖拽换算上下文。
 export interface DividerRect {
   splitId: string;
   direction: SplitDirection;
-  /// divider 自身矩形（px，相对根容器；厚度侧 = PANE_DIVIDER_SIZE，另一侧贯通所属 split）。
+  // divider 自身矩形（px，相对根容器；厚度侧 = PANE_DIVIDER_SIZE，另一侧贯通所属 split）。
   x: number;
   y: number;
   width: number;
   height: number;
-  /// 所属 split 的矩形与当前 ratio：拖拽换算的基准（指针位移 → 比例增量）。
+  // 所属 split 的矩形与当前 ratio：拖拽换算的基准（指针位移 → 比例增量）。
   splitX: number;
   splitY: number;
   splitWidth: number;
@@ -44,7 +40,7 @@ export interface PaneLayoutGeometry {
   dividers: DividerRect[];
 }
 
-/// 内部递归用的矩形 accumulator 参数。
+// 内部递归用的矩形 accumulator 参数。
 interface Rect {
   x: number;
   y: number;
@@ -52,8 +48,10 @@ interface Rect {
   height: number;
 }
 
-/// 布局树 → 平铺几何。纯函数：给定（树, 根容器尺寸）确定全部 pane 与 divider
-/// 的矩形；容器尺寸变化（窗口缩放/面板开合/比例调整）走同一条重算路径。
+/**
+ * 布局树 → 平铺几何。纯函数：给定（树, 根容器尺寸）确定全部 pane 与 divider
+ * 的矩形；容器尺寸变化（窗口缩放/面板开合/比例调整）走同一条重算路径。
+ */
 export function layoutGeometry(tree: PaneLayoutNode, width: number, height: number): PaneLayoutGeometry {
   const geometry: PaneLayoutGeometry = { panes: [], dividers: [] };
   layoutInto(tree, { x: 0, y: 0, width, height }, geometry);

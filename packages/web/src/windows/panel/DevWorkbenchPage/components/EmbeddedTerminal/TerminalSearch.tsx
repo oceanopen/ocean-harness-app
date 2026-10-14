@@ -16,13 +16,11 @@ interface TerminalSearchProps {
   onClose: () => void;
 }
 
-// TerminalSearch：终端搜索条 overlay（terminal_03 §3.1，官方 @xterm/addon-search 方案）。
-// 终端区右上角浮层：输入即 incremental findNext + 大小写切换 + 上/下导航
-// （Enter/Shift+Enter 键盘等价）+ 结果计数 + 关闭。
-//
-// 状态全部局部 state（用户交互型数据流 → state，terminal_03 §5.3）；输入不建
-// ref 转发层。onDidChangeResults 订阅在 effect 建立随组件卸载断开；装饰清理
-// 与焦点归还由父层 onClose 路径承担（clearDecorations + terminal.focus）。
+/**
+ * TerminalSearch：终端搜索条 overlay（terminal_03 §3.1，官方 @xterm/addon-search 方案）。
+ * 终端区右上角浮层：输入即 incremental findNext + 大小写切换 + 上/下导航（Enter/Shift+Enter 键盘等价）+ 结果计数 + 关闭。
+ * 状态全部局部 state（terminal_03 §5.3）；onDidChangeResults 订阅随组件卸载断开；装饰清理与焦点归还由父层 onClose 路径承担。
+ */
 export default function TerminalSearch({ searchAddon, background, onClose }: TerminalSearchProps) {
   const theme = useTheme();
   const [term, setTerm] = useState('');
@@ -32,8 +30,10 @@ export default function TerminalSearch({ searchAddon, background, onClose }: Ter
   const [resultCount, setResultCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // 结果计数订阅：findNext/findPrevious/clearDecorations 触发回填。
-  // resultIndex === -1 表示匹配数超 highlightLimit（装饰停更，计数语义取「>m」）。
+  /**
+   * 结果计数订阅：findNext/findPrevious/clearDecorations 触发回填。
+   * resultIndex === -1 表示匹配数超 highlightLimit（装饰停更，计数语义取「>m」）。
+   */
   useEffect(() => {
     const dispose = searchAddon.onDidChangeResults(({ resultIndex: index, resultCount: count }) => {
       setResultIndex(index);
@@ -44,9 +44,11 @@ export default function TerminalSearch({ searchAddon, background, onClose }: Ter
     };
   }, [searchAddon]);
 
-  // 搜索 options 统一构造：decorations 必传——addon 源码实证无 decorations 时
-  // fireResultsChanged 直接 return，onDidChangeResults（计数）永不触发，且无
-  // 匹配高亮。背景色须 #RRGGBB（typings 约束），明暗模式各取色。
+  /**
+   * 搜索 options 统一构造：decorations 必传——addon 源码实证无 decorations 时
+   * fireResultsChanged 直接 return，onDidChangeResults（计数）永不触发，且无匹配高亮。
+   * 背景色须 #RRGGBB（typings 约束），明暗模式各取色。
+   */
   const searchOptions = (): ISearchOptions => ({
     caseSensitive,
     decorations: {
@@ -106,8 +108,10 @@ export default function TerminalSearch({ searchAddon, background, onClose }: Ter
       runFind(e.shiftKey ? 'previous' : 'next', false);
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      // 阻断冒泡：搜索条内 Esc 只关搜索，不触发 document 级监听（沉浸模式退出等页面级 Esc
-      // 编排）——与 MdCodeBlock 全屏 Dialog 的 stopPropagation 同款处理。
+      /**
+       * 阻断冒泡：搜索条内 Esc 只关搜索，不触发 document 级监听（沉浸模式退出等页面级 Esc
+       * 编排）——与 MdCodeBlock 全屏 Dialog 的 stopPropagation 同款处理。
+       */
       e.stopPropagation();
       onClose();
     }
@@ -118,21 +122,20 @@ export default function TerminalSearch({ searchAddon, background, onClose }: Ter
       sx={{
         position: 'absolute',
         // 工具栏下方 4px 间隙：高度走共享常量（原 top:32 是与旧工具栏高 28 的双写）
-        top: PANEL_TOOLBAR_HEIGHT + 4,
-        right: 8,
-        // xterm 容器是静态定位不建堆叠上下文，其内部层（helpers z-5、
-        // accessibility z-10、webgl canvas z-0..2）直接参与外层 z-index 竞争；
-        // 搜索条须压过全部内部层（上限 accessibility 的 10），取 MUI 语义
-        // 层级 mobileStepper(1000)。z:2 时对 5/10 直接被压、对平局 webgl
-        // canvas 因 DOM 顺序在后仍被盖 → 点击落 canvas、xterm mousedown
-        // 无条件 preventDefault → 输入框无法聚焦、按钮 click 失效。
+        top: `${PANEL_TOOLBAR_HEIGHT + 4}px`,
+        right: '8px',
+        /**
+         * xterm 容器是静态定位不建堆叠上下文，其内部层（helpers z-5、accessibility z-10、
+         * webgl canvas z-0..2）直接参与外层 z-index 竞争；搜索条须压过全部内部层（上限 accessibility 的 10），
+         * 取 MUI 语义层 mobileStepper(1000)——z:2 时输入框无法聚焦、按钮 click 失效。
+         */
         zIndex: theme.zIndex.mobileStepper,
         display: 'flex',
         alignItems: 'center',
-        gap: 0.5,
-        px: 0.5,
-        py: 0.25,
-        borderRadius: 1,
+        gap: '4px',
+        px: '4px',
+        py: '2px',
+        borderRadius: '4px',
         border: '1px solid',
         borderColor: 'divider',
         // 终端背景色派生：明暗模式各取半透明叠层，浮层不遮死底下的输出
@@ -148,10 +151,10 @@ export default function TerminalSearch({ searchAddon, background, onClose }: Ter
         placeholder="搜索"
         autoFocus
         sx={{
-          width: 160,
-          fontSize: 12,
+          width: '160px',
+          fontSize: '12px',
           fontFamily: 'monospace',
-          px: 0.5,
+          px: '4px',
           color: theme.palette.mode === 'dark' ? '#d4d4d4' : '#333333',
         }}
         inputProps={{ 'aria-label': '终端内搜索' }}
@@ -183,7 +186,7 @@ export default function TerminalSearch({ searchAddon, background, onClose }: Ter
         <ArrowDownwardIcon fontSize="small" />
       </IconButton>
       {/* 计数：超 highlightLimit（resultIndex=-1）显示「>m」 */}
-      <Typography variant="caption" sx={{ color: 'text.secondary', minWidth: 32, textAlign: 'center', lineHeight: 1 }}>
+      <Typography variant="caption" sx={{ color: 'text.secondary', minWidth: '32px', textAlign: 'center', lineHeight: 1 }}>
         {resultIndex === -1 ? `>${resultCount}` : resultCount > 0 ? `${resultIndex + 1}/${resultCount}` : '0/0'}
       </Typography>
       <IconButton size="small" onClick={onClose} aria-label="关闭搜索" sx={{ color: 'text.secondary' }}>

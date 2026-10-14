@@ -6,20 +6,24 @@ import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { listen } from '@tauri-apps/api/event';
 import { useEffect } from 'react';
 
-// 润色命令（T2.2 落地于 ocean-harness 插件；issueId 由 cwd basename 推导——终端
-// cwd 恒为 `${工作空间目录}/${issueId}`，命令无需携带参数，OCEAN_HARNESS_PORT 亦已由
-// pty_spawn 注入）。
+/**
+ * 润色命令（T2.2 落地于 ocean-harness 插件；issueId 由 cwd basename 推导——终端
+ * cwd 恒为 `${工作空间目录}/${issueId}`，命令无需携带参数，OCEAN_HARNESS_PORT 亦已由
+ * pty_spawn 注入）。
+ */
 const REFINE_COMMAND = '/ocean-harness:refine-issue';
 
-// claude 就绪等待上限：超时静默清意图标志（hanging 防护；用户定稿「尽力而为不提示」，
-// 用户在终端里自见实际状态）。claude 冷启动秒级、trust 确认等交互场景留足余量。
+/**
+ * claude 就绪等待上限：超时静默清意图标志（hanging 防护；用户定稿「尽力而为不提示」，
+ * 用户在终端里自见实际状态）。claude 冷启动秒级、trust 确认等交互场景留足余量。
+ */
 const READY_TIMEOUT_MS = 30_000;
 
-// 意图过期阈值：编排启动（会话 active）前的搁置上限——闸门卡在未初始化 / issue
-// 不存在等场景用户已离开时，30s 就绪超时永不起算、标志无限存留，数小时后正常
-// 进入开发会误注入。合法顺延最长场景是跳转后手动初始化 + 大仓库 clone（分钟级），
-// 10 分钟内闸门放行注入仍送达；超时静默放弃（宁可重按一次「AI 润色」）。与
-// READY_TIMEOUT_MS 职责分离：本值管「闸门前放弃」，后者管「编排启动后 claude 起不来」。
+/**
+ * 意图过期阈值：编排启动（会话 active）前的搁置上限——闸门卡在未初始化 / issue 不存在等场景用户已离开时，30s 就绪超时永不起算、标志无限存留，数小时后正常进入开发会误注入。
+ * 合法顺延最长场景是跳转后手动初始化 + 大仓库 clone（分钟级），10 分钟内闸门放行注入仍送达；超时静默放弃（宁可重按一次「AI 润色」）。
+ * 与 READY_TIMEOUT_MS 职责分离：本值管「闸门前放弃」，后者管「编排启动后 claude 起不来」。
+ */
 const REFINE_INTENT_EXPIRE_MS = 10 * 60_000;
 
 // 本会话 claude 进程探测（进程树真值）。失败按未运行处理。
@@ -27,31 +31,19 @@ async function probeClaude(sessionId: string): Promise<boolean> {
   try {
     return await commands.ptyClaudeRunning(sessionId);
   } catch (e) {
-    // warn 级：探测持续失败必须可见（useClaudeRunning 同款教训——静默会把环境
-    // 问题伪装成功能缺陷，如 command 未注册的 dev 旧二进制）。
+    /**
+     * warn 级：探测持续失败必须可见（useClaudeRunning 同款教训——静默会把环境
+     * 问题伪装成功能缺陷，如 command 未注册的 dev 旧二进制）。
+     */
     console.warn('[useRefineInjection] probe failed:', sessionId, e);
     return false;
   }
 }
 
 /**
- * 注入编排主体（模块级函数，时序显式、依赖全注入——usePtySession attach 同款范式）：
- *
- *   ① probe 本会话 claude（进程树真值——先测量后使用，不复用组件级 useClaudeRunning：
- *      其 probe 回填存在「先见 false」窗口，自动注入无人监督不可接受该竞态）
- *        ├─ 已运行 → toast 提示手动执行（refine 增量重入虽支持，但注入会打断进行中
- *        │           的 agent 会话——agent-dev 跑任务被打断代价高，改由用户手动决定）
- *        └─ 未运行 → 裸 shell（plain/reattach）补发 `claude\r` 启动；直启（direct）
- *                    不补发（CLI 已是第一进程，补发会被其 REPL 当 prompt 文本）
- *   ② 等 EVENT_CLAUDE_SESSIONS_CHANGED（claude 启动写 session json 落盘，秒级）重
- *      probe 转 true → 写入 REFINE_COMMAND\r → 清意图标志（一次注入）
- *   ③ 30s 超时 → 静默清意图标志
- *
- * 残余小窗口（已知并接受）：reattach 到「claude 启动加载中」会话（跳转与 spawn 撞在
- * claude 落盘前）→ probe false 补发 `claude\r`，claude ready 后多消费一条 "claude"
- * prompt，随后的注入仍正常送达。
- *
- * 返回 cancel：disposed 后途中所有异步步骤短路，定时器/事件监听全清。
+ * 注入编排主体（模块级函数，时序显式、依赖全注入——usePtySession attach 同款范式）：① probe 本会话 claude（进程树真值——先测量后使用，不复用组件级 useClaudeRunning：其 probe 回填存在「先见 false」窗口，自动注入无人监督不可接受该竞态）——已运行 → toast 提示手动执行（refine 增量重入虽支持，但注入会打断进行中的 agent 会话——agent-dev 跑任务被打断代价高，改由用户手动决定）；未运行 → 裸 shell（plain/reattach）补发 `claude\r` 启动，直启（direct）不补发（CLI 已是第一进程，补发会被其 REPL 当 prompt 文本）。
+ * ② 等 EVENT_CLAUDE_SESSIONS_CHANGED（claude 启动写 session json 落盘，秒级）重 probe 转 true → 写入 REFINE_COMMAND\r → 清意图标志（一次注入）；③ 30s 超时 → 静默清意图标志。
+ * 残余小窗口（已知并接受）：reattach 到「claude 启动加载中」会话（跳转与 spawn 撞在 claude 落盘前）→ probe false 补发 `claude\r`，claude ready 后多消费一条 "claude" prompt，随后的注入仍正常送达。返回 cancel：disposed 后途中所有异步步骤短路，定时器/事件监听全清。
  */
 function runRefineInjection(args: {
   sessionId: string;
@@ -63,10 +55,10 @@ function runRefineInjection(args: {
   const { sessionId, spawnKind, write, showToast, clearRefine } = args;
   let disposed = false;
   const cleanups: Array<() => void> = [];
-  // 终态收口（幂等）：前置 disposed 检查 + 置位 disposed 封死所有在飞回调——
-  // 「一次注入」是本地保证，不依赖 watcher 去抖等跨端时序默契（finish 后、React
-  // cleanup 前的窗口内并发事件 probe 不至二次写入）。cancel（外部 dispose）不
-  // 走此处（clearRefine 仅编排自然终态消费，取消不误清意图）。
+  /**
+   * 终态收口（幂等）：前置 disposed 检查 + 置位 disposed 封死所有在飞回调——「一次注入」是本地保证，不依赖 watcher 去抖等跨端时序默契（finish 后、React cleanup 前的窗口内并发事件 probe 不至二次写入）。
+   * cancel（外部 dispose）不走此处（clearRefine 仅编排自然终态消费，取消不误清意图）。
+   */
   const finish = () => {
     if (disposed) {
       return;

@@ -144,7 +144,7 @@ function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
             {isEdit ? t('repositories:edit.title') : t('repositories:add.title')}
           </Typography>
@@ -154,7 +154,7 @@ function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
         </Box>
 
         {/* 内容 */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {isEdit && (
             <TextField
               label={t('repositories:edit.idLabel')}
@@ -222,7 +222,7 @@ function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
 
           {/* 项目子目录列表：默认空，点击「添加项目子目录」动态生成行，可生成多项。 */}
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: '8px' }}>
               <Typography variant="caption" sx={{ color: 'text.disabled' }}>
                 {t('repositories:add.subDirSection')}
               </Typography>
@@ -239,18 +239,18 @@ function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
             {subDirs.length === 0 && (
               <Divider />
             )}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: subDirs.length > 0 ? 1 : 0 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: '12px', mt: subDirs.length > 0 ? '8px' : '0px' }}>
               {subDirs.map((s, idx) => (
                 <Box
                   key={s._key}
                   sx={{
-                    border: 1,
+                    border: '1px solid',
                     borderColor: 'divider',
-                    borderRadius: 1,
-                    p: 1.5,
+                    borderRadius: '4px',
+                    p: '12px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 1,
+                    gap: '8px',
                   }}
                 >
                   <TextField
@@ -279,7 +279,7 @@ function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
                       },
                     }}
                   />
-                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                  <Box sx={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
                     <TextField
                       placeholder={t('repositories:add.subDirDescPlaceholder')}
                       value={s.subDirDescription}
@@ -308,7 +308,7 @@ function AddRepositoryDrawer({ onClose, repo }: AddRepositoryDrawerProps) {
         </Box>
 
         {/* 底部操作栏：一律左对齐 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderTop: '1px solid', borderColor: 'divider' }}>
           <Button color="inherit" onClick={onClose} disabled={submitting}>
             {t('repositories:add.cancel')}
           </Button>

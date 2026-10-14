@@ -17,11 +17,11 @@ interface PetSpriteProps {
 // 颜色统一跟随 CLAUDE_SESSION_STATUS_COLOR：GitPending 也是 info 蓝（与边框/徽章一致）。
 // IconPark 图标默认主题 outline，按需 deep import（@icon-park/react/es/icons/Branch）最小化打包。
 const renderIcon: Record<ClaudeSessionStatus, (color: string) => ReactElement> = {
-  Busy: color => <Autorenew sx={{ color, fontSize: 56 }} />,
-  Waiting: color => <Notifications sx={{ color, fontSize: 56 }} />,
+  Busy: color => <Autorenew sx={{ color, fontSize: '56px' }} />,
+  Waiting: color => <Notifications sx={{ color, fontSize: '56px' }} />,
   GitPending: color => <Branch theme="outline" size={42} fill={color} />,
-  Idle: color => <Schedule sx={{ color, fontSize: 56 }} />,
-  Dead: color => <Bedtime sx={{ color, fontSize: 56 }} />,
+  Idle: color => <Schedule sx={{ color, fontSize: '56px' }} />,
+  Dead: color => <Bedtime sx={{ color, fontSize: '56px' }} />,
 };
 
 function PetSprite({ status, count }: PetSpriteProps) {
@@ -31,8 +31,8 @@ function PetSprite({ status, count }: PetSpriteProps) {
     <Box
       sx={{
         position: 'relative',
-        width: 96,
-        height: 96,
+        width: '96px',
+        height: '96px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -51,10 +51,10 @@ function PetSprite({ status, count }: PetSpriteProps) {
             // (src/assets/app-icon-dev.svg)。仅 dev 模式显示，避免本地调试版与正式版混淆；
             // 落在圆内、icon 右下方空隙，不挡 icon，与会话数徽章错位不重叠。
             position: 'absolute',
-            bottom: 14,
-            right: 14,
-            width: 12,
-            height: 12,
+            bottom: '14px',
+            right: '14px',
+            width: '12px',
+            height: '12px',
             borderRadius: '50%',
             bgcolor: '#EF4444',
             border: '2px solid #fff',
@@ -66,15 +66,15 @@ function PetSprite({ status, count }: PetSpriteProps) {
         <Box
           sx={{
             position: 'absolute',
-            bottom: -4,
-            right: -4,
-            minWidth: 22,
-            height: 22,
-            px: 0.5,
-            borderRadius: 11,
+            bottom: '-4px',
+            right: '-4px',
+            minWidth: '22px',
+            height: '22px',
+            px: '4px',
+            borderRadius: '44px',
             bgcolor: color,
             color: '#fff',
-            fontSize: 12,
+            fontSize: '12px',
             fontWeight: 700,
             display: 'flex',
             alignItems: 'center',

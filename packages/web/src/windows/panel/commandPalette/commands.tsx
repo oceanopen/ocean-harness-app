@@ -13,10 +13,11 @@ import {
   WorkspacesOutlined as WorkspacesOutlinedIcon,
 } from '@mui/icons-material';
 
-// 命令注册表数据源：v1 三组命令（导航 / 动作 / 跳转）。每条命令即数据——
-// 不持有 UI，仅经 ctx 调用宿主能力或切换二级页面。新增命令在此数组追加即可，
-// registry/Dialog 自动按 group 渲染与过滤，无需改动别处。
-// icons 在模块级实例化（静态数组，渲染开销可忽略），避免每命令存组件类型再 render。
+/**
+ * 命令注册表数据源：v1 三组命令（导航 / 动作 / 跳转）。每条命令即数据——不持有 UI，仅经
+ * ctx 调用宿主能力或切换二级页面，新增命令在此数组追加即可（registry/Dialog 自动按 group
+ * 渲染与过滤）。icons 在模块级实例化（静态数组，渲染开销可忽略），避免每命令存组件类型再 render。
+ */
 export const commands: CommandConfig[] = [
   // ── 导航：跳到各顶级页面（隐藏菜单页经命令面板可达，与侧栏入口互补） ──────
   {
@@ -110,8 +111,10 @@ export const commands: CommandConfig[] = [
     titleI18nKey: 'panel:commandPalette.jump.workspace',
     icon: <WorkspacesOutlinedIcon />,
     keywords: ['workspace', 'switch', '工作空间', '切换'],
-    // 注释当前选中工作空间名（无则不显示），让用户在面板内即可看到当前上下文。
-    // 前缀「当前空间：」硬编码中文（提示类文案按项目惯例不走 i18n），渲染时括注为「（当前空间：名称）」。
+    /**
+     * 注释当前选中工作空间名（无则不显示），让用户在面板内即可看到当前上下文。
+     * 前缀「当前空间：」硬编码中文（提示类文案按项目惯例不走 i18n），渲染时括注为「（当前空间：名称）」。
+     */
     getSubtitle: ctx => (ctx.currentWorkspaceName ? `当前空间：${ctx.currentWorkspaceName}` : null),
     // 切二级页面而非直接关闭：选中后保留面板展示工作空间列表供二次过滤。
     action: ctx => ctx.setSubPage('workspace'),
@@ -123,8 +126,10 @@ export const commands: CommandConfig[] = [
     titleI18nKey: 'panel:commandPalette.jump.project',
     icon: <DashboardOutlinedIcon />,
     keywords: ['project', 'switch', '项目', '切换'],
-    // 未选工作空间时软禁用（置灰 + 提示 + 回车无效），而非隐藏：项目列表依赖 workspaceId，
-    // 但恒定渲染让命令列表长度稳定（避免 cmdk 选中态失序），并引导用户"先选工作空间"。
+    /**
+     * 未选工作空间时软禁用（置灰 + 提示 + 回车无效），而非隐藏：项目列表依赖 workspaceId，
+     * 但恒定渲染让命令列表长度稳定（避免 cmdk 选中态失序），并引导用户"先选工作空间"。
+     */
     isEnabled: ctx => ctx.currentWorkspaceId != null,
     disabledHintI18nKey: 'panel:commandPalette.jump.projectDisabledHint',
     // 前缀「当前项目：」硬编码中文（同 workspace 注释惯例），渲染时括注为「（当前项目：名称）」。

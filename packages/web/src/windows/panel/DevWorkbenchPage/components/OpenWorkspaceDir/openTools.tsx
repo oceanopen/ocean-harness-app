@@ -1,10 +1,8 @@
 import type { Platform } from '@src/shared/platform';
-// 「打开工作区目录」工具目录：id 值域 + 平台过滤 + 打开命令分发的唯一 SSOT（图标
-// 组件在 openToolIcons.tsx）。新增工具 = 目录表追加一项（id/label/Icon/platforms），
-// 浮层与胶囊图标自动出现；分发函数 openWorkspaceDir 同步补一条 case。
-//
-// 不做本机安装检测——未安装的工具点击后由打开命令返回 Err、前端 toast 提示
-// （RepositoriesPage 同款口径）；平台过滤仅按 OS 静态收窄展示项。
+/**
+ * 「打开工作区目录」工具目录：id 值域 + 平台过滤 + 打开命令分发的唯一 SSOT（图标组件在 openToolIcons.tsx）。新增工具 = 目录表追加一项（id/label/Icon/platforms），浮层与胶囊图标自动出现；分发函数 openWorkspaceDir 同步补一条 case。
+ * 不做本机安装检测——未安装的工具点击后由打开命令返回 Err、前端 toast 提示（RepositoriesPage 同款口径）；平台过滤仅按 OS 静态收窄展示项。
+ */
 import type { ReactElement } from 'react';
 import type { ToolIconProps } from './openToolIcons';
 import { commands } from '@src/shared/bindings';
@@ -27,9 +25,11 @@ export const WORKSPACE_OPEN_TOOL_IDS: readonly WorkspaceOpenToolId[] = [
 // 默认值（值域 SSOT 同文件持有，appConfig 只留 key）。
 export const DEFAULT_WORKSPACE_OPEN_TOOL: WorkspaceOpenToolId = 'vscode';
 
-// 配置 decode：全集粗校验（含跨平台值），非法/缺失回退默认 vscode。
-// 平台相关的回退（配置值不属于当前平台）由 resolveWorkspaceOpenTool 在渲染期处理。
-// 模块级函数保证引用稳定（useConfigValue 依赖项要求）。
+/**
+ * 配置 decode：全集粗校验（含跨平台值），非法/缺失回退默认 vscode。
+ * 平台相关的回退（配置值不属于当前平台）由 resolveWorkspaceOpenTool 在渲染期处理。
+ * 模块级函数保证引用稳定（useConfigValue 依赖项要求）。
+ */
 export function decodeWorkspaceOpenTool(raw: string | null): WorkspaceOpenToolId {
   return WORKSPACE_OPEN_TOOL_IDS.includes(raw as WorkspaceOpenToolId)
     ? (raw as WorkspaceOpenToolId)
@@ -38,8 +38,10 @@ export function decodeWorkspaceOpenTool(raw: string | null): WorkspaceOpenToolId
 
 // ─── 工具目录 ───
 
-// 单个打开工具：id 见值域；label 为浮层/无障碍文案；Icon 见 openToolIcons；
-// platforms 为展示平台集合（渲染期过滤，非安装检测）。
+/**
+ * 单个打开工具：id 见值域；label 为浮层/无障碍文案；Icon 见 openToolIcons；
+ * platforms 为展示平台集合（渲染期过滤，非安装检测）。
+ */
 export interface WorkspaceOpenTool {
   id: WorkspaceOpenToolId;
   label: string;
@@ -47,8 +49,10 @@ export interface WorkspaceOpenTool {
   platforms: readonly Platform[];
 }
 
-// finder 即「系统文件管理器」：Rust open_in_file_manager 跨平台（open/explorer/xdg-open），
-// label 按当前平台命名（模块加载期一次求值，运行期平台恒定）。
+/**
+ * finder 即「系统文件管理器」：Rust open_in_file_manager 跨平台（open/explorer/xdg-open），
+ * label 按当前平台命名（模块加载期一次求值，运行期平台恒定）。
+ */
 export const WORKSPACE_OPEN_TOOLS: readonly WorkspaceOpenTool[] = [
   {
     id: 'finder',
@@ -87,17 +91,21 @@ export function workspaceOpenToolsFor(platform: Platform): readonly WorkspaceOpe
   return WORKSPACE_OPEN_TOOLS.filter(t => t.platforms.includes(platform));
 }
 
-// 渲染期解析有效默认工具：配置值不属于当前平台目录（跨平台共用一份存储的换机/
-// 改配置场景）时回退默认。decodeWorkspaceOpenTool 已保证值在全集内，此处只做平台收窄。
+/**
+ * 渲染期解析有效默认工具：配置值不属于当前平台目录（跨平台共用一份存储的换机/
+ * 改配置场景）时回退默认。decodeWorkspaceOpenTool 已保证值在全集内，此处只做平台收窄。
+ */
 export function resolveWorkspaceOpenTool(configured: WorkspaceOpenToolId, platform: Platform): WorkspaceOpenToolId {
   return workspaceOpenToolsFor(platform).some(t => t.id === configured)
     ? configured
     : DEFAULT_WORKSPACE_OPEN_TOOL;
 }
 
-// 用指定工具打开目录（纯分发，无状态）：finder→文件管理器、vscode→编辑器命令（macOS
-// 内部走 open -a 规避 GUI PATH 问题）、其余→终端命令（macOS AppleScript / Windows wt -d）。
-// 返回 Promise，失败 throw string（调用方 toast），成功后调用方才落默认值（串行语义）。
+/**
+ * 用指定工具打开目录（纯分发，无状态）：finder→文件管理器、vscode→编辑器命令（macOS
+ * 内部走 open -a 规避 GUI PATH 问题）、其余→终端命令（macOS AppleScript / Windows wt -d）。
+ * 返回 Promise，失败 throw string（调用方 toast），成功后调用方才落默认值（串行语义）。
+ */
 export function openWorkspaceDir(toolId: WorkspaceOpenToolId, dir: string): Promise<null> {
   switch (toolId) {
     case 'finder':

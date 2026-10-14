@@ -1,19 +1,8 @@
-// 桌宠任务面板窗口：紧贴桌宠左侧悬浮，显隐由 pet 前端基于 count 驱动。
-//
-//   transparent(true) + decorations(false) + always_on_top(true)
-//   + skip_taskbar(true) + resizable(false) + shadow(false)
-//
-// 显隐主导权在 pet 前端：PetSessionSummaryApp 收到 claude-sessions:changed payload 算出 count，
-// count > 0 调 show_pet_session_task_window，count == 0 调 hide_pet_session_task_window。
-// show_pet_session_task_window 内部按 (pet 可见 && active count > 0) 最终裁决，覆盖 pet
-// 显隐命令联动兜底场景（pet 重新显示时前端 useEffect 因 count 未变不触发）。
-// pet 隐藏时由 hide_pet_session_summary_window 命令直接调 hide_pet_session_task_window，避免孤立悬浮列表。
-//
-// 位置每次 show 时重算，跟随 pet 当前位置；左屏边缘自动翻转到 pet 右侧，Y 夹紧 work_area。
-// show 走 orderFront 不激活呈现（shared/window_show）：悬浮面板不夺 key window——
-// 常规 show 会从 panel 终端抢走键盘焦点（回车后光标消失的根因）。已可见时短路，
-// 避免每次 count 变化重复定位 + show。
-
+/*
+ * 桌宠任务面板窗口：紧贴桌宠左侧悬浮，显隐由 pet 前端基于 count 驱动——transparent(true) + decorations(false) + always_on_top(true) + skip_taskbar(true) + resizable(false) + shadow(false)。
+ * 显隐主导权在 pet 前端：PetSessionSummaryApp 收到 claude-sessions:changed payload 算出 count，count > 0 调 show_pet_session_task_window，count == 0 调 hide_pet_session_task_window；show_pet_session_task_window 内部按 (pet 可见 && active count > 0) 最终裁决，覆盖 pet 显隐命令联动兜底场景（pet 重新显示时前端 useEffect 因 count 未变不触发）；pet 隐藏时由 hide_pet_session_summary_window 命令直接调 hide_pet_session_task_window，避免孤立悬浮列表。
+ * 位置每次 show 时重算，跟随 pet 当前位置；左屏边缘自动翻转到 pet 右侧，Y 夹紧 work_area。show 走 orderFront 不激活呈现（shared/window_show）：悬浮面板不夺 key window——常规 show 会从 panel 终端抢走键盘焦点（回车后光标消失的根因）；已可见时短路，避免每次 count 变化重复定位 + show。
+ */
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder,
 };
@@ -23,23 +12,29 @@ use crate::shared::screen::MonitorInfo;
 use crate::shared::state::claude_sessions::ClaudeSessionStore;
 use crate::shared::types::ClaudeSessionStatus;
 
-/// 任务面板窗口 label（前端 get_webview_window 与 HTML 文件名均与此对齐）。
-/// pub(crate)：pet 窗口 Moved 防抖提交时 emit_to REFIT 事件定向使用。
+/*
+ * 任务面板窗口 label（前端 get_webview_window 与 HTML 文件名均与此对齐）。
+ * pub(crate)：pet 窗口 Moved 防抖提交时 emit_to REFIT 事件定向使用。
+ */
 pub(crate) const PET_SESSION_TASK_LABEL: &str = "pet-session-task";
 
-/// 面板宽度（逻辑像素）：固定，仅高度随内容动态变化。
+// 面板宽度（逻辑像素）：固定，仅高度随内容动态变化。
 const PET_SESSION_TASK_WIDTH: f64 = 280.0;
 
-/// 面板默认高度（逻辑像素）：用作 ensure 初始尺寸与 show 时兜底定位；
-/// 前端 mount 后 ResizeObserver 会回调 fit_pet_session_task 用实际高度覆盖。
+/*
+ * 面板默认高度（逻辑像素）：用作 ensure 初始尺寸与 show 时兜底定位；
+ * 前端 mount 后 ResizeObserver 会回调 fit_pet_session_task 用实际高度覆盖。
+ */
 const PET_SESSION_TASK_DEFAULT_HEIGHT: f64 = 340.0;
 
-/// pet 与面板之间的缝隙。设为 0 让两窗口紧贴。
+// pet 与面板之间的缝隙。设为 0 让两窗口紧贴。
 const PET_SESSION_TASK_GAP: f64 = 0.0;
 
-/// 根据 pet 当前外接矩形 + 所在屏 work_area + 面板实际高度，算面板逻辑坐标。
-/// 默认放 pet 左侧垂直居中（panel 中心 Y 对齐 pet 中心 Y）；左侧放不下翻转到右侧；
-/// Y 夹紧到 work_area 内。pet 不可见或拿不到几何时返回 None。
+/*
+ * 根据 pet 当前外接矩形 + 所在屏 work_area + 面板实际高度，算面板逻辑坐标。
+ * 默认放 pet 左侧垂直居中（panel 中心 Y 对齐 pet 中心 Y）；左侧放不下翻转到右侧；
+ * Y 夹紧到 work_area 内。pet 不可见或拿不到几何时返回 None。
+ */
 fn position_near_pet(pet: &tauri::WebviewWindow, panel_h: f64) -> Option<(f64, f64)> {
     let monitor = pet.current_monitor().ok()??;
     let m = MonitorInfo::from_monitor(&monitor);
@@ -76,7 +71,7 @@ fn position_near_pet(pet: &tauri::WebviewWindow, panel_h: f64) -> Option<(f64, f
     Some((panel_x.max(0.0), panel_y.max(0.0)))
 }
 
-/// 创建任务面板窗口（不可见）。已存在则 no-op。窗口属性与 pet 同款透明悬浮。
+// 创建任务面板窗口（不可见）。已存在则 no-op。窗口属性与 pet 同款透明悬浮。
 pub fn ensure(app: &AppHandle) -> tauri::Result<()> {
     if app
         .get_webview_window(PET_SESSION_TASK_LABEL)
@@ -117,12 +112,11 @@ pub fn ensure(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// 显示 pet_session_task 面板：仅当 pet 可见且存在待关注会话（Busy+Waiting+GitPending）时 show + 定位，
-/// 否则 hide。显隐主导权在 pet 前端（基于 claude-sessions:changed payload 的 count），
-/// 本命令作为前端驱动入口；pet 显隐命令也调用它做联动兜底。
-///
-/// 待关注会话口径与前端 isAttentionClaudeSession / countAttentionClaudeSessions 一致（SSOT: claudeSessionStatus.ts）。
-/// 含 GitPending：用户 commit 后空闲会话仍需展示"待提交"，与"仅活跃"语义升级为"待关注"。
+/*
+ * 显示 pet_session_task 面板：仅当 pet 可见且存在待关注会话（Busy+Waiting+GitPending）时 show + 定位，否则 hide。
+ * 显隐主导权在 pet 前端（基于 claude-sessions:changed payload 的 count），本命令作为前端驱动入口；pet 显隐命令也调用它做联动兜底。
+ * 待关注会话口径与前端 isAttentionClaudeSession / countAttentionClaudeSessions 一致（SSOT: claudeSessionStatus.ts）；含 GitPending：用户 commit 后空闲会话仍需展示"待提交"，与"仅活跃"语义升级为"待关注"。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn show_pet_session_task_window(app: AppHandle) -> Result<(), String> {
@@ -161,14 +155,18 @@ pub fn show_pet_session_task_window(app: AppHandle) -> Result<(), String> {
     let Some(task_win) = app.get_webview_window(PET_SESSION_TASK_LABEL) else {
         return Ok(());
     };
-    // 已可见短路：pet 前端每次 count 变化（>0）都会调本命令，重复定位 + show 无意义
-    // （可见期间 pet 移动的重对齐走 pet Moved → REFIT → fit 链路，不经本命令）。
+    /*
+     * 已可见短路：pet 前端每次 count 变化（>0）都会调本命令，重复定位 + show 无意义
+     * （可见期间 pet 移动的重对齐走 pet Moved → REFIT → fit 链路，不经本命令）。
+     */
     if task_win.is_visible().unwrap_or(false) {
         return Ok(());
     }
     if let Some(pet) = app.get_webview_window("pet-session-summary") {
-        // 用窗口当前实际高度定位：re-show 时即上次 fit 保留的高度，避免默认高度导致的跳动；
-        // 首次 show 前端尚未测量，当前高度即默认高度，后续 ResizeObserver 首回调会用实际高度覆盖。
+        /*
+         * 用窗口当前实际高度定位：re-show 时即上次 fit 保留的高度，避免默认高度导致的跳动；
+         * 首次 show 前端尚未测量，当前高度即默认高度，后续 ResizeObserver 首回调会用实际高度覆盖。
+         */
         let panel_h = task_win
             .outer_size()
             .ok()
@@ -194,8 +192,10 @@ pub fn show_pet_session_task_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 隐藏 pet_session_task 面板。pet 隐藏时由后端 hide_pet_session_summary_window 命令联动调用，
-/// 避免孤立的悬浮列表；pet 前端 count 归零时也主动调用。
+/*
+ * 隐藏 pet_session_task 面板。pet 隐藏时由后端 hide_pet_session_summary_window 命令联动调用，
+ * 避免孤立的悬浮列表；pet 前端 count 归零时也主动调用。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn hide_pet_session_task_window(app: AppHandle) -> Result<(), String> {
@@ -205,9 +205,11 @@ pub fn hide_pet_session_task_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 前端测得实际内容高度后回调，调整窗口高度并重新定位以保持与 pet 中心水平对齐。
-/// 由 PetSessionTaskApp 的 ResizeObserver（rAF 节流）触发；窗口已可见，不需 show。
-/// 高度变化时 Y 按 panel 中心 = pet 中心重算，保证增减会话不破坏水平对齐。
+/*
+ * 前端测得实际内容高度后回调，调整窗口高度并重新定位以保持与 pet 中心水平对齐。
+ * 由 PetSessionTaskApp 的 ResizeObserver（rAF 节流）触发；窗口已可见，不需 show。
+ * 高度变化时 Y 按 panel 中心 = pet 中心重算，保证增减会话不破坏水平对齐。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn fit_pet_session_task(app: AppHandle, height: f64) -> Result<(), String> {

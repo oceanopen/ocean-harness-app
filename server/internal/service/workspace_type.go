@@ -11,10 +11,10 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// WorkspaceType 对应 /api/tracker/workspaceType 命名空间下的业务逻辑。
-// type 只挂 workspace，所有项目共享一套通用类型（无 project 级归属）；
-// issue 经 t_project_issues.type_id 单值引用（每 issue 至多一个类型）。
-// 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger。
+/*
+ * WorkspaceType 对应 /api/tracker/workspaceType 命名空间下的业务逻辑。type 只挂 workspace，所有项目共享一套通用类型（无 project 级归属）；issue 经 t_project_issues.type_id 单值引用（每 issue 至多一个类型）。
+ * 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger。
+ */
 type WorkspaceType struct {
 	apis.Service
 }

@@ -1,16 +1,8 @@
-// Package mcpservers 内嵌 MCP Server（docs/agent_dev_01_tasks.md T2.1），把 tracker /
-// issueWorkspace 的既有 service 能力与 GitHub 外部服务工具（T4.1）以 MCP 工具形式暴露，
-// 供 issue 运行工作空间内的 AI agent（经 T1.3 生成的 .mcp.json 接入）调用。模式移植自
-// pros-admin-server/mcp_servers（go-sdk，Streamable HTTP，无鉴权单机场景）。
-//
-// 组织方式（2026-09-03 用户定稿：单 server 归口——T2.1 原预留的「每业务域一个 server
-// 按路径扩展」框架取消，多端点对调用方有割裂感）：全部工具注册在唯一的 ocean_harness
-// server（本文件 init()），工具名按前缀分组（issue_* / github_*，后续平台/业务同理）；
-// 共用基础设施在 mcp_util/（McpTool 基类与失败日志、app_config 只读读取；工具结果的
-// 装配由 SDK ToolHandlerFor 自动完成），工具 handler 实现在 mcp_tool/（文件按业务域
-// 命名），入出参 DTO 在 mcp_dto/。
-// 注意：同包多文件 init() 按文件名序执行，新工具注册一律追加在本文件 init() 内，
-// 不另立 mcp_*.go 的 init（避免字母序在前拿到未初始化的 server 单例）。
+/*
+ * Package mcpservers 内嵌 MCP Server（docs/agent_dev_01_tasks.md T2.1），把 tracker / issueWorkspace 的既有 service 能力与 GitHub 外部服务工具（T4.1）以 MCP 工具形式暴露，供 issue 运行工作空间内的 AI agent（经 T1.3 生成的 .mcp.json 接入）调用。
+ * 模式移植自 pros-admin-server/mcp_servers（go-sdk，Streamable HTTP，无鉴权单机场景）。组织方式（单 server 归口——T2.1 原预留的「每业务域一个 server 按路径扩展」框架取消，多端点对调用方有割裂感）：全部工具注册在唯一的 ocean_harness server（本文件 init()），工具名按前缀分组（issue_* / github_*，后续平台/业务同理）；
+ * 共用基础设施在 mcp_util/（McpTool 基类与失败日志、app_config 只读读取；工具结果的装配由 SDK ToolHandlerFor 自动完成），工具 handler 实现在 mcp_tool/（文件按业务域命名），入出参 DTO 在 mcp_dto/。注意：同包多文件 init() 按文件名序执行，新工具注册一律追加在本文件 init() 内，不另立 mcp_*.go 的 init（避免字母序在前拿到未初始化的 server 单例）。
+ */
 package mcpservers
 
 import (
@@ -22,9 +14,11 @@ import (
 	"ocean-harness/server/internal/mcpservers/mcp_tool"
 )
 
-// mcpServerOceanHarness 是 ocean_harness server 的进程级单例（多会话共享；会话管理由
-// StreamableHTTPHandler 负责）。init() 完成全部工具注册：InputSchema/OutputSchema 均由
-// handler 泛型 In/Out 反射推导（字段描述 = DTO 的 jsonschema tag），不手写 schema。
+/*
+ * mcpServerOceanHarness 是 ocean_harness server 的进程级单例（多会话共享；
+ * 会话管理由 StreamableHTTPHandler 负责）。
+ * init() 完成全部工具注册：InputSchema/OutputSchema 均由 handler 泛型 In/Out 反射推导（字段描述 = DTO 的 jsonschema tag），不手写 schema。
+ */
 var mcpServerOceanHarness *mcp.Server
 
 func init() {
@@ -89,10 +83,11 @@ func init() {
 		Description: "获取指定 PR 的 CI 检查状态（汇总结论 + 逐项检查：GitHub Actions 与旧 commit status 归并）。",
 	}, mcptool.McpGithubTool{}.PullRequestCIStatus)
 
-	// —— 浏览器自动化工具（T2.2，browser_ 前缀分组：原生 6 + 转发 17 + 逃生舱 1）——
-	// 转发类成功结果为引擎原样 Content（截图含图片与落盘路径文本，尾部追加一行归因
-	// 元数据）；profile 留空默认 default；引擎会话自动 ensure，idle 冷启动 1-3s 属预期。
-	// 操作元素一律基于 browser_snapshot 的 ref（stale ref 重新 snapshot 取新值）。
+	/*
+	 * —— 浏览器自动化工具（T2.2，browser_ 前缀分组：原生 6 + 转发 17 + 逃生舱 1）——转发类成功结果为引擎原样
+	 * Content（截图含图片与落盘路径文本，尾部追加一行归因元数据）；profile 留空默认 default；
+	 * 引擎会话自动 ensure，idle 冷启动 1-3s 属预期。操作元素一律基于 browser_snapshot 的 ref（stale ref 重新 snapshot 取新值）。
+	 */
 
 	// 原生 6
 
@@ -228,13 +223,16 @@ func init() {
 	}, mcptool.McpBrowserTool{}.ToolCall)
 }
 
-// mcpSessionTimeout 是流式 HTTP 会话的空闲 TTL：客户端异常退出（来不及 DELETE 终止
-// 会话）时，服务端自动回收会话资源，不再留永久孤儿；正常路径 CLI 仍主动 DELETE 即时
-// 释放，TTL 只是兜底。
+/*
+ * mcpSessionTimeout 是流式 HTTP 会话的空闲 TTL：客户端异常退出（来不及 DELETE
+ * 终止会话）时，服务端自动回收会话资源，不再留永久孤儿；正常路径 CLI 仍主动 DELETE 即时释放，TTL 只是兜底。
+ */
 const mcpSessionTimeout = 10 * time.Minute
 
-// McpOceanHarnessStreamableHTTPHandler 构造 ocean_harness server 的 Streamable HTTP handler
-// （由 router 调用一次；有状态会话 + SSE 流式响应，空闲 10 分钟自动回收）。
+/*
+ * McpOceanHarnessStreamableHTTPHandler 构造 ocean_harness server 的
+ * Streamable HTTP handler（由 router 调用一次；有状态会话 + SSE 流式响应，空闲 10 分钟自动回收）。
+ */
 func McpOceanHarnessStreamableHTTPHandler() http.Handler {
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return mcpServerOceanHarness

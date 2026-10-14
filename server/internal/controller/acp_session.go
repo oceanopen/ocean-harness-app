@@ -14,8 +14,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// AcpSession 对应 /api/acpSession 命名空间下的接口（ACP 会话域：受理/操作 + SSE 事件流）。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * AcpSession 对应 /api/acpSession 命名空间下的接口（ACP 会话域：受理/操作 + SSE 事件流）。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type AcpSession struct {
 	apis.Api
 }
@@ -112,10 +114,11 @@ func (api AcpSession) RespondElicitation(ctx *gin.Context) {
 	api.JsonOK(nil)
 }
 
-// acpEventsReject 事件流订阅前置判定：idle=会话不存在→404、terminated=已结束→409；
-// starting/ready/failed 可订阅（failed 是可观察状态，快照含失败原因供前端呈现）。
-// 真实状态码使 EventSource 不自动重连；前端另有订阅闸门（可订阅状态才连），此处为
-// 防御纵深。
+/*
+ * acpEventsReject 事件流订阅前置判定：idle=会话不存在→404、
+ * terminated=已结束→409；starting/ready/failed 可订阅（failed 是可观察状态，
+ * 快照含失败原因供前端呈现）。真实状态码使 EventSource 不自动重连；前端另有订阅闸门（可订阅状态才连），此处为防御纵深。
+ */
 func acpEventsReject(status acpsession.SessionStatus) (int, error) {
 	switch status {
 	case acpsession.StatusIdle:
@@ -127,10 +130,11 @@ func acpEventsReject(status acpsession.SessionStatus) (int, error) {
 	}
 }
 
-// Events GET /api/acpSession/events?issueId=...：SSE 事件流。建连首帧即当前快照（seq
-// 连续，杜绝快照与增量帧之间的缝隙）；帧协议见 acpsession.Frame。断连/退订/服务收尾
-// （hub 关停关闭通道）任一发生即返回。长驻期间持有 *gin.Context 是安全的——gin 仅在
-// handler 返回后回收复用。
+/*
+ * Events GET /api/acpSession/events?issueId=...：SSE 事件流。
+ * 建连首帧即当前快照（seq 连续，杜绝快照与增量帧之间的缝隙）；帧协议见 acpsession.Frame。
+ * 断连/退订/服务收尾（hub 关停关闭通道）任一发生即返回。长驻期间持有 *gin.Context 是安全的——gin 仅在 handler 返回后回收复用。
+ */
 func (api AcpSession) Events(ctx *gin.Context) {
 	req := &types.AcpSessionEventsRequest{}
 	svc := service.AcpSession{}

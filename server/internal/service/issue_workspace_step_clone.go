@@ -12,21 +12,20 @@ import (
 	"ocean-harness/server/internal/gitutil"
 )
 
-// issueWorkspace cloneRepos step（T1.4）：按状态文件中 cloneRepos 步骤的仓库清单（init 受理时
-// 已从 DB 解析入文件，执行期不碰 DB）逐仓库浅克隆（--depth 1，T1.4 决策）到
-// {issueId}/repo/{name} 并创建 agent_{issueId} 分支。
-// 环境变量：sshConfig 步骤产物（workspace 级 .ssh/config）存在时注入 GIT_SSH_COMMAND 指向它，
-// 不存在（T1.2 SKIPPED）走默认 SSH。
-// 幂等（T1.4 决策）：merge 保留的 SUCCESS 仓库跳过；半成品目录（已是 git 仓库）复用+fetch 后
-// 直接补分支；agent 分支已存在仅 checkout 不重置。单仓库失败记 Message 继续下一个，跑完任一
-// 失败则步骤 FAILED——重试时 merge 只重跑失败仓库。
+/*
+ * issueWorkspace cloneRepos step（T1.4）：按状态文件中 cloneRepos 步骤的仓库清单（init 受理时已从 DB 解析入文件，执行期不碰 DB）逐仓库浅克隆（--depth 1，T1.4 决策）到 {issueId}/repo/{name} 并创建 agent_{issueId} 分支。
+ * 环境变量：sshConfig 步骤产物（workspace 级 .ssh/config）存在时注入 GIT_SSH_COMMAND 指向它，不存在（T1.2 SKIPPED）走默认 SSH。
+ * 幂等（T1.4 决策）：merge 保留的 SUCCESS 仓库跳过；半成品目录（已是 git 仓库）复用+fetch 后直接补分支；agent 分支已存在仅 checkout 不重置。单仓库失败记 Message 继续下一个，跑完任一失败则步骤 FAILED——重试时 merge 只重跑失败仓库。
+ */
 
 func init() {
 	issueWorkspaceStepRunners[types.IW_STEP_KEY_CLONE_REPOS] = issueWorkspaceRunCloneRepos
 }
 
-// issueWorkspaceRunCloneRepos 逐仓库执行 clone/分支，每仓库状态变化即时落盘（单写者 goroutine
-// 内独占 state，前端轮询可见仓库级进度）。全部跑完任一失败则返回 error（编排置步骤/顶层 FAILED）。
+/*
+ * issueWorkspaceRunCloneRepos 逐仓库执行 clone/分支，每仓库状态变化即时落盘（单写者 goroutine
+ * 内独占 state，前端轮询可见仓库级进度）。全部跑完任一失败则返回 error（编排置步骤/顶层 FAILED）。
+ */
 func issueWorkspaceRunCloneRepos(state *types.IssueWorkspaceState, step *types.IssueWorkspaceStep, logger *zap.Logger) error {
 	env := issueWorkspaceCloneGitEnv(state)
 	persist := func() {
@@ -57,8 +56,10 @@ func issueWorkspaceRunCloneRepos(state *types.IssueWorkspaceState, step *types.I
 	return nil
 }
 
-// issueWorkspaceCloneGitEnv 构造 clone/fetch/ls-remote 的附加环境变量：workspace 级 .ssh/config
-// 存在时注入 GIT_SSH_COMMAND（%q 包裹路径，git 经 shell 解析该变量）；不存在返回 nil（默认 SSH）。
+/*
+ * issueWorkspaceCloneGitEnv 构造 clone/fetch/ls-remote 的附加环境变量：workspace 级 .ssh/config
+ * 存在时注入 GIT_SSH_COMMAND（%q 包裹路径，git 经 shell 解析该变量）；不存在返回 nil（默认 SSH）。
+ */
 func issueWorkspaceCloneGitEnv(state *types.IssueWorkspaceState) []string {
 	cfg := filepath.Join(state.BaseDir, state.IssueID, ".ssh", "config")
 	if _, err := os.Stat(cfg); err != nil {
@@ -67,14 +68,10 @@ func issueWorkspaceCloneGitEnv(state *types.IssueWorkspaceState) []string {
 	return []string{fmt.Sprintf("GIT_SSH_COMMAND=ssh -F %q", cfg)}
 }
 
-// issueWorkspaceCloneRepo 单仓库 clone + agent 分支：
-//   - 目标目录已是 git 仓库 → 复用 + FetchLatest（重试半成品，不重新 clone）；
-//   - 目标目录存在但非 git 仓库 → 报错（不覆盖非 git 内容，人工介入）；
-//   - 不存在 → baseBranch 非空先 ls-remote 验证远程分支存在（T1.4 决策：写错分支名应修关联
-//     而非静默回退，不存在即该仓库失败），Clone --branch base --depth 1；baseBranch 为空回退
-//     默认分支浅克隆；
-//   - 分支：agent 分支已存在仅 Checkout（重试不重置既有分支）；不存在则定位基准（fresh clone
-//     已在基准分支；复用场景 checkout 本地基准或从 origin/基准 建）后 CreateAndCheckoutBranch。
+/*
+ * issueWorkspaceCloneRepo 单仓库 clone + agent 分支：目标目录已是 git 仓库 → 复用 + FetchLatest（重试半成品，不重新 clone）；目标目录存在但非 git 仓库 → 报错（不覆盖非 git 内容，人工介入）；不存在 → baseBranch 非空先 ls-remote 验证远程分支存在（T1.4 决策：写错分支名应修关联而非静默回退，不存在即该仓库失败），Clone --branch base --depth 1，baseBranch 为空回退默认分支浅克隆。
+ * 分支：agent 分支已存在仅 Checkout（重试不重置既有分支）；不存在则定位基准（fresh clone 已在基准分支；复用场景 checkout 本地基准或从 origin/基准 建）后 CreateAndCheckoutBranch。
+ */
 func issueWorkspaceCloneRepo(state *types.IssueWorkspaceState, repo *types.IssueWorkspaceRepoState, env []string) error {
 	target := filepath.Join(state.BaseDir, state.IssueID, "repo", repo.Name)
 	reused := false

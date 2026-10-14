@@ -96,13 +96,13 @@ export default function TrackerPage() {
       {/* 工作空间标题栏（恒驻）：当前工作空间名（未选置灰提示）+ 列表开关 icon */}
       <Box
         sx={{
-          height: 48,
+          height: '48px',
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          px: 2,
-          gap: 1,
-          borderBottom: 1,
+          px: '16px',
+          gap: '8px',
+          borderBottom: '1px solid',
           borderColor: 'divider',
           bgcolor: 'background.paper',
         }}
@@ -134,7 +134,7 @@ export default function TrackerPage() {
                 </Box>
               )}
         </Typography>
-        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}>
           {/* 展开空间列表浮层（标题栏下方，不遮盖标题栏）：展开态实心 + primary 色与收起态区分 */}
           <IconButton
             size="small"
@@ -156,7 +156,7 @@ export default function TrackerPage() {
           <Box
             sx={{
               position: 'absolute',
-              inset: 0,
+              inset: '0px',
               zIndex: theme => theme.zIndex.appBar - 1,
               bgcolor: 'background.default',
               display: 'flex',
@@ -172,9 +172,9 @@ export default function TrackerPage() {
                 {/* 左栏：workspaceProject 列表（宽 260，选中态读写 store） */}
                 <Box
                   sx={{
-                    width: 260,
+                    width: '260px',
                     flexShrink: 0,
-                    borderRight: 1,
+                    borderRight: '1px solid',
                     borderColor: 'divider',
                     overflow: 'hidden',
                   }}
@@ -189,7 +189,7 @@ export default function TrackerPage() {
                         <ProjectIssueList key={selectedWorkspaceProject.id} workspaceProject={selectedWorkspaceProject} />
                       )
                     : (
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: '16px' }}>
                           <Typography variant="body2" color="text.secondary">
                             {t('tracker:projectIssue.emptyHint')}
                           </Typography>
@@ -199,7 +199,7 @@ export default function TrackerPage() {
               </>
             )
           : (
-              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
                 <Typography variant="body2" color="text.secondary">
                   {t('tracker:workspace.selectHint')}
                 </Typography>

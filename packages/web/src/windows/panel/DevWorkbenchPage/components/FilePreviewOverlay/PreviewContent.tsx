@@ -16,21 +16,23 @@ import ViewerToolbar from '../fileViewer/ViewerToolbar';
 
 interface PreviewContentProps {
   issueId: string;
-  /// 激活 tab 的文件相对路径（父层按 tab id 作 key，切 tab 即重挂载——query 缓存命中 +
-  /// staleTime 0 静默重验，见 state/workspaceFiles/queries.ts）。
+  /**
+   * 激活 tab 的文件相对路径（父层按 tab id 作 key，切 tab 即重挂载——query 缓存命中 +
+   * staleTime 0 静默重验，见 state/workspaceFiles/queries.ts）。
+   */
   path: string;
-  /// Git 变更模式下的变更文件路径集（父层 FilePreviewOverlay 派生，与 tab 栏小点/刷新分流
-  /// 同源；空集 = 全部文件模式或变更集未就绪）。
+  /**
+   * Git 变更模式下的变更文件路径集（父层 FilePreviewOverlay 派生，与 tab 栏小点/刷新分流
+   * 同源；空集 = 全部文件模式或变更集未就绪）。
+   */
   changedPaths: ReadonlySet<string>;
 }
 
-/// 预览内容区：tab 内容形态（文件内容 / 未提交变更 diff）为渲染期派生——激活文件在变更集
-/// （父层按「面板模式 + getGitChanges 变更集」派生的 changedPaths）时走 fileDiff query，
-/// 否则走 content query。变更集加载中 changedPaths 为空集，先保持文件内容渲染，到位后原位
-/// 切 diff（组件按 tab id 作 key，模式切换不重挂载）。file 链路双层分派——传输 kind（后端
-/// 定夺：text/image/binary/tooLarge）× text 内呈现细分（markdown/code，viewerKind 纯函数）；
-/// diff 走 DiffViewer（text）或信息态（binary/tooLarge）。容器 tabIndex=-1 于挂载时夺焦
-/// （焦点若留在背后 xterm，键盘输入会打进不可见终端）；Escape 冒泡至浮层根处理。
+/**
+ * 预览内容区：tab 内容形态（文件内容 / 未提交变更 diff）为渲染期派生——激活文件在变更集
+ * （父层按「面板模式 + getGitChanges 变更集」派生的 changedPaths）时走 fileDiff query，否则走 content query；变更集加载中 changedPaths 为空集，先保持文件内容渲染，到位后原位切 diff（组件按 tab id 作 key，模式切换不重挂载）。
+ * file 链路双层分派——传输 kind（后端定夺）× text 内呈现细分（markdown/code）；diff 走 DiffViewer 或信息态；容器 tabIndex=-1 于挂载时夺焦（焦点若留在背后 xterm 会打进不可见终端），Escape 冒泡至浮层根处理。
+ */
 export default function PreviewContent({ issueId, path, changedPaths }: PreviewContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hasChange = changedPaths.has(path);
@@ -39,8 +41,10 @@ export default function PreviewContent({ issueId, path, changedPaths }: PreviewC
   const diffQuery = useWorkspaceFileDiff(issueId, hasChange ? path : null);
   const active = hasChange ? diffQuery : contentQuery;
   const { data, dataUpdatedAt, error, isLoading, refetch } = active;
-  // 挂载→内容就绪耗时观测（含传输与渲染提交；DEV 计时日志，每挂载记首份数据一次）。
-  // t0 在 mount effect 里取（纯净性：渲染期不调 performance.now），切 tab 重挂载即重置。
+  /**
+   * 挂载→内容就绪耗时观测（含传输与渲染提交；DEV 计时日志，每挂载记首份数据一次）。
+   * t0 在 mount effect 里取（纯净性：渲染期不调 performance.now），切 tab 重挂载即重置。
+   */
   const mountedAtRef = useRef<number | null>(null);
   const readyLoggedRef = useRef(false);
 
@@ -64,11 +68,11 @@ export default function PreviewContent({ issueId, path, changedPaths }: PreviewC
     <Box
       ref={containerRef}
       tabIndex={-1}
-      sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', outline: 'none' }}
+      sx={{ flex: 1, minHeight: '0px', display: 'flex', flexDirection: 'column', outline: 'none' }}
     >
       {error
         ? (
-            <Box sx={{ p: 1.5 }}>
+            <Box sx={{ p: '12px' }}>
               <Alert
                 severity="error"
                 action={<Button color="inherit" size="small" onClick={() => void refetch()}>重试</Button>}
@@ -93,25 +97,25 @@ export default function PreviewContent({ issueId, path, changedPaths }: PreviewC
 interface RenderContext {
   issueId: string;
   path: string;
-  /// 内容 query 的最后更新时间戳（图片缓存刷新令牌）。
+  // 内容 query 的最后更新时间戳（图片缓存刷新令牌）。
   dataUpdatedAt: number;
 }
 
-/// diff 渲染态分派：text → DiffViewer；binary/tooLarge 为合法信息态（非错误，无 size 信息）。
+// diff 渲染态分派：text → DiffViewer；binary/tooLarge 为合法信息态（非错误，无 size 信息）。
 function renderDiffContent(data: IssueWorkspaceFileDiffResponseData, path: string) {
   switch (data.kind) {
     case 'text':
       return <DiffViewer path={path} data={data} />;
     case 'binary':
-      return <InfoPanel icon={<BrokenImageOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />} title="二进制文件，暂不支持 diff 预览" />;
+      return <InfoPanel icon={<BrokenImageOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />} title="二进制文件，暂不支持 diff 预览" />;
     case 'tooLarge':
-      return <InfoPanel icon={<SubjectRoundedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />} title="文件过大，暂不支持 diff 预览" />;
+      return <InfoPanel icon={<SubjectRoundedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />} title="文件过大，暂不支持 diff 预览" />;
     default:
       return null;
   }
 }
 
-/// 渲染态分派：kind × 呈现细分。binary/tooLarge 为合法信息态（非错误）。
+// 渲染态分派：kind × 呈现细分。binary/tooLarge 为合法信息态（非错误）。
 function renderContent(data: IssueWorkspaceFileContentResponseData, ctx: RenderContext) {
   switch (data.kind) {
     case 'image':
@@ -128,15 +132,15 @@ function renderContent(data: IssueWorkspaceFileContentResponseData, ctx: RenderC
             </>
           );
     case 'binary':
-      return <InfoPanel icon={<BrokenImageOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />} title="二进制文件，暂不支持预览" size={data.size} />;
+      return <InfoPanel icon={<BrokenImageOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />} title="二进制文件，暂不支持预览" size={data.size} />;
     case 'tooLarge':
-      return <InfoPanel icon={<SubjectRoundedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />} title="文件过大，暂不支持预览" size={data.size} />;
+      return <InfoPanel icon={<SubjectRoundedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />} title="文件过大，暂不支持预览" size={data.size} />;
     default:
       return null;
   }
 }
 
-/// binary/tooLarge 信息面板（图标 + 说明 + 可选人类可读大小）。
+// binary/tooLarge 信息面板（图标 + 说明 + 可选人类可读大小）。
 function InfoPanel({ icon, title, size }: { icon: ReactNode; title: string; size?: number }) {
   return (
     <Box
@@ -146,8 +150,8 @@ function InfoPanel({ icon, title, size }: { icon: ReactNode; title: string; size
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 1,
-        p: 2,
+        gap: '8px',
+        p: '16px',
       }}
     >
       {icon}
@@ -157,7 +161,7 @@ function InfoPanel({ icon, title, size }: { icon: ReactNode; title: string; size
   );
 }
 
-/// 字节数 → 人类可读（B/KB/MB，一位小数；预览提示文案用）。
+// 字节数 → 人类可读（B/KB/MB，一位小数；预览提示文案用）。
 function formatBytes(size: number): string {
   if (size < 1024) {
     return `${size} B`;

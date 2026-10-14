@@ -2,8 +2,10 @@ import type { AcpViewSnapshotWire } from './AcpSessionService';
 import { describe, expect, it } from 'vitest';
 import { normalizeAcpViewSnapshot } from './AcpSessionService';
 
-// normalizeAcpViewSnapshot 归一化单测：旧 sidecar wire 的 null 数组归一为 []（零条目
-// 快照缺陷窗口的混跑防御），非空数组与其余字段原样保留。
+/**
+ * normalizeAcpViewSnapshot 归一化单测：旧 sidecar wire 的 null 数组归一为 []（零条目
+ * 快照缺陷窗口的混跑防御），非空数组与其余字段原样保留。
+ */
 
 function wireSnapshot(overrides: Partial<AcpViewSnapshotWire> = {}): AcpViewSnapshotWire {
   return {

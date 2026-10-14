@@ -13,12 +13,12 @@ function EmptyState() {
         alignItems: 'center',
         justifyContent: 'center',
         height: '100%',
-        gap: 1.5,
-        px: 3,
-        py: 4,
+        gap: '12px',
+        px: '24px',
+        py: '32px',
       }}
     >
-      <DvrOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+      <DvrOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />
       <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
         {t('claudeSessions:empty.title')}
       </Typography>

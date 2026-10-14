@@ -22,9 +22,11 @@ func withFakeNode(t *testing.T, version string) {
 	t.Cleanup(func() { resolveNodeBin, nodeVersionOf = oldBin, oldVer })
 }
 
-// fakeStaging 构造伪 vendored 资源源（srcRoot/playwright-mcp/<version>/node_modules/
-// @playwright/mcp/{package.json,cli.js}），保证 EnsureVendored → VendoredSpawnConfig
-// 全链可走通（入口文件存在即可，不真正执行）。
+/*
+ * fakeStaging 构造伪 vendored 资源源（srcRoot/playwright-mcp/<version>/node_modules/
+ * @playwright/mcp/{package.json,cli.js}），保证 EnsureVendored → VendoredSpawnConfig
+ * 全链可走通（入口文件存在即可，不真正执行）。
+ */
 func fakeStaging(t *testing.T) Dirs {
 	t.Helper()
 	version, err := EngineVersion()
@@ -159,8 +161,10 @@ func TestLaunchEngineHappyPathAndClose(t *testing.T) {
 
 func TestEngineHandleClosePidOwnership(t *testing.T) {
 	withTestRoot(t)
-	// pid 锚点删除前归属校验：内容非本 handle 的 pid 不动（防异步回收的旧引擎误删
-	// 同 profile 重建后新引擎的锚点），是自己的 pid 才删。
+	/*
+	 * pid 锚点删除前归属校验：内容非本 handle 的 pid 不动（防异步回收的旧引擎误删
+	 * 同 profile 重建后新引擎的锚点），是自己的 pid 才删。
+	 */
 	root := t.TempDir()
 	pidFile := filepath.Join(root, pidFileName)
 	cmd := exec.Command("true")

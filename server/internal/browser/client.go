@@ -21,15 +21,11 @@ import (
 	"ocean-harness/server/internal/buildinfo"
 )
 
-// 引擎拉起与 go-sdk stdio 桥接（T1.2）。
-//
-// 拉起链：EnsureVendored → node 预检（≥18）→ vendored 入口翻译 → argv 组装 →
-// exec.Cmd 只配 SysProcAttr/StderrPipe（CommandTransport 的 Connect 内自行 Start，
-// 本文件不得自行 Start——go-sdk v1.8.0 源码级复核结论）→ CommandTransport + Connect。
-//
-// 进程退出守护：go session.Wait()（连接关闭即返回——进程死亡 stdout EOF 亦触发）→
-// 记录原因供上层（T1.3 manager）置 failed。注意 cmd.Wait 已被 go-sdk pipeRWC.Close
-// （session.Close() 触达）独占调用，守护方不得自行 cmd.Wait（双 Wait 冲突）。
+/*
+ * 引擎拉起与 go-sdk stdio 桥接（T1.2）。
+ * 拉起链：EnsureVendored → node 预检（≥18）→ vendored 入口翻译 → argv 组装 → exec.Cmd 只配 SysProcAttr/StderrPipe（CommandTransport 的 Connect 内自行 Start，本文件不得自行 Start——go-sdk v1.8.0 源码级复核结论）→ CommandTransport + Connect。
+ * 进程退出守护：go session.Wait()（连接关闭即返回——进程死亡 stdout EOF 亦触发）→ 记录原因供上层（T1.3 manager）置 failed；cmd.Wait 已被 go-sdk pipeRWC.Close（session.Close() 触达）独占调用，守护方不得自行 cmd.Wait（双 Wait 冲突）。
+ */
 
 const (
 	// nodeMinMajor @playwright/mcp 的 engines 口径（node≥18）。
@@ -45,8 +41,10 @@ const (
 	envPlaywrightBrowsersPath = "PLAYWRIGHT_BROWSERS_PATH"
 )
 
-// Dirs vendoring 目录对（语义同 acpsession.Dirs / acpdoctor.Dirs：config 的
-// AcpResourcesDir / AcpAdaptersDir，未配置在拉起期经 EnsureVendored 显式报错）。
+/*
+ * Dirs vendoring 目录对（语义同 acpsession.Dirs / acpdoctor.Dirs：config 的
+ * AcpResourcesDir / AcpAdaptersDir，未配置在拉起期经 EnsureVendored 显式报错）。
+ */
 type Dirs struct {
 	Resources string
 	Adapters  string
@@ -56,16 +54,22 @@ type Dirs struct {
 var (
 	// resolveNodeBin node 绝对路径解析（生产 = agentcatalog.ResolveNodeBin SSOT）。
 	resolveNodeBin = agentcatalog.ResolveNodeBin
-	// nodeVersionOf 执行 node --version（生产 = agentcatalog.NodeVersion SSOT；测试
-	// 注入假版本）。
+	/*
+	 * nodeVersionOf 执行 node --version（生产 = agentcatalog.NodeVersion SSOT；测试
+	 * 注入假版本）。
+	 */
 	nodeVersionOf = agentcatalog.NodeVersion
-	// dialEngine cmd → MCP 会话连接（生产 = CommandTransport；测试注入 in-memory
-	// transport 假引擎，cmd 不真正启动）。
+	/*
+	 * dialEngine cmd → MCP 会话连接（生产 = CommandTransport；测试注入 in-memory
+	 * transport 假引擎，cmd 不真正启动）。
+	 */
 	dialEngine = defaultDialEngine
 )
 
-// defaultDialEngine 生产连接：CommandTransport stdio 桥接（Connect 三参形态，内部
-// 完成 Start 与 initialize 握手）。
+/*
+ * defaultDialEngine 生产连接：CommandTransport stdio 桥接（Connect 三参形态，内部
+ * 完成 Start 与 initialize 握手）。
+ */
 func defaultDialEngine(ctx context.Context, cmd *exec.Cmd) (*mcp.ClientSession, error) {
 	transport := &mcp.CommandTransport{Command: cmd}
 	client := mcp.NewClient(&mcp.Implementation{Name: "ocean-harness-browser", Version: buildinfo.Version}, nil)
@@ -107,9 +111,11 @@ func (h *EngineHandle) ExitErr() error {
 	return h.exitErr
 }
 
-// LaunchEngine 拉起 per-profile 引擎会话。headless 为本次启动的无头终值（偏好读取与
-// 覆写回存归上层 manager 编排，D10）。cwd 取 profile 下载目录（引擎 --output-dir 已
-// 显式传值，cwd 仅兜底）。
+/*
+ * LaunchEngine 拉起 per-profile 引擎会话。headless 为本次启动的无头终值（偏好读取与
+ * 覆写回存归上层 manager 编排，D10）。cwd 取 profile 下载目录（引擎 --output-dir 已
+ * 显式传值，cwd 仅兜底）。
+ */
 func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool, log *zap.Logger) (*EngineHandle, error) {
 	if log == nil {
 		log = zap.NewNop()
@@ -122,8 +128,10 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 	if err != nil {
 		return nil, err
 	}
-	// user-data-dir 正常由 Chrome 自建（不存在则建，空目录无冲突），但 pid 文件在
-	// Connect 成功后立即落盘、Chrome 拉起是异步的——先行自建目录。
+	/*
+	 * user-data-dir 正常由 Chrome 自建（不存在则建，空目录无冲突），但 pid 文件在
+	 * Connect 成功后立即落盘、Chrome 拉起是异步的——先行自建目录。
+	 */
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		return nil, fmt.Errorf("创建 profile 目录: %w", err)
 	}
@@ -155,15 +163,16 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 		return nil, fmt.Errorf("浏览器引擎入口解析: %w", err)
 	}
 
-	// 内置浏览器目录（T3.5/D2 修订）：构建期 vendor 脚本将 install chromium 产物落进
-	// 条目目录 browsers/，EnsureVendored 整树复制随之进受管目录——引擎经
-	// PLAYWRIGHT_BROWSERS_PATH 定位，revision 与 playwright-core browsers.json 天然
-	// 一致（不查系统 Chrome）。
+	/*
+	 * 内置浏览器目录（T3.5/D2 修订）：构建期 vendor 脚本将 install chromium 产物落进条目目录 browsers/，EnsureVendored 整树复制随之进受管目录——引擎经 PLAYWRIGHT_BROWSERS_PATH 定位，revision 与 playwright-core browsers.json 天然一致（不查系统 Chrome）。
+	 */
 	browsersDir := filepath.Join(installDir, embeddedBrowsersDirName)
 
-	// argv = node <vendored 入口> <引擎 flags>；cmd 只配进程组与 stderr（Connect 内
-	// 自行 Start，不得提前）。Env：条目覆盖基座（maps.Clone 防污染 Entry 原映射）+
-	// PLAYWRIGHT_BROWSERS_PATH 注入。
+	/*
+	 * argv = node <vendored 入口> <引擎 flags>；cmd 只配进程组与 stderr（Connect 内
+	 * 自行 Start，不得提前）。Env：条目覆盖基座（maps.Clone 防污染 Entry 原映射）+
+	 * PLAYWRIGHT_BROWSERS_PATH 注入。
+	 */
 	configPath, err := EnsureEngineConfig()
 	if err != nil {
 		return nil, err
@@ -195,16 +204,20 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 
 	session, err := dialEngine(ctx, cmd)
 	if err != nil {
-		// 拨号失败就地补杀整组：go-sdk Connect 失败只杀主进程不杀组，且此时 pid 文件
-		// 尚未落盘、recoverOrphans 无锚点——不补杀会留下无锚点引擎 + 可能的有头
-		// Chrome 孤儿（cmd.Process 为 nil 的 fake-dial 测试路径幂等跳过）。
+		/*
+		 * 拨号失败就地补杀整组：go-sdk Connect 失败只杀主进程不杀组，且此时 pid 文件
+		 * 尚未落盘、recoverOrphans 无锚点——不补杀会留下无锚点引擎 + 可能的有头
+		 * Chrome 孤儿（cmd.Process 为 nil 的 fake-dial 测试路径幂等跳过）。
+		 */
 		_ = acp.KillProcessGroup(cmd)
 		return nil, fmt.Errorf("浏览器引擎连接失败: %w%s", err, dialFailureSuffix(profileDir, installDir, h.stderr.Text()))
 	}
 	h.session = session
 
-	// pid 文件（T1.3 recoverOrphans 杀组目标）。测试注入 in-memory 引擎时 cmd 未启动，
-	// 跳过。
+	/*
+	 * pid 文件（T1.3 recoverOrphans 杀组目标）。测试注入 in-memory 引擎时 cmd 未启动，
+	 * 跳过。
+	 */
 	if cmd.Process != nil {
 		if err := os.WriteFile(h.PidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o644); err != nil {
 			_ = session.Close()
@@ -213,9 +226,11 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 		}
 	}
 
-	// 退出守护：session.Wait() 返回（连接关闭即返回——进程死亡 stdout EOF 亦触发）→
-	// 记录原因，上层经 <-Exited() 感知后置 failed。不得自行 cmd.Wait（pipeRWC.Close
-	// 已独占）。
+	/*
+	 * 退出守护：session.Wait() 返回（连接关闭即返回——进程死亡 stdout EOF 亦触发）→
+	 * 记录原因，上层经 <-Exited() 感知后置 failed。不得自行 cmd.Wait（pipeRWC.Close
+	 * 已独占）。
+	 */
 	go func() {
 		err := session.Wait()
 		h.exitMu.Lock()
@@ -226,8 +241,10 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 	return h, nil
 }
 
-// dialFailureSuffix 拉起失败的诊断后缀（探测不参与拉起决策，只丰富错误归因）：
-// profile 残留锁（优先，更具体）→ 内置浏览器缺失 → 引擎 stderr tail 证据，统一组装一处。
+/*
+ * dialFailureSuffix 拉起失败的诊断后缀（探测不参与拉起决策，只丰富错误归因）：
+ * profile 残留锁（优先，更具体）→ 内置浏览器缺失 → 引擎 stderr tail 证据，统一组装一处。
+ */
 func dialFailureSuffix(profileDir, installDir, stderrText string) string {
 	hints := dialFailureHints(profileDir, installDir)
 	if detail := strings.TrimSpace(stderrText); detail != "" {
@@ -251,9 +268,11 @@ func dialFailureHints(profileDir, installDir string) []string {
 	return hints
 }
 
-// Close 终结引擎：session.Close() 优雅关停（关 stdin → 5s → SIGTERM → SIGKILL，只杀
-// 主进程；T1.1 实测 stdin EOF 即自退并自收浏览器）→ KillProcessGroup 补杀整组（纵深
-// 防御：防未知挂死态与 Windows 未实测场景）→ 删 pid 文件（归属校验）。幂等可重入。
+/*
+ * Close 终结引擎：session.Close() 优雅关停（关 stdin → 5s → SIGTERM → SIGKILL，只杀
+ * 主进程；T1.1 实测 stdin EOF 即自退并自收浏览器）→ KillProcessGroup 补杀整组（纵深
+ * 防御：防未知挂死态与 Windows 未实测场景）→ 删 pid 文件（归属校验）。幂等可重入。
+ */
 func (h *EngineHandle) Close() error {
 	h.closedByCaller.Store(true)
 	var err error
@@ -265,9 +284,11 @@ func (h *EngineHandle) Close() error {
 	return err
 }
 
-// removePidFileIfOwned 删除 pid 锚点前校验归属：异步回收的旧引擎 Close 可能晚于同
-// profile 重建的新引擎落锚（连续超时重建等场景）——内容不匹配（新引擎已易主）不动，
-// 防误删新锚点使引擎脱离 recoverOrphans 视野。
+/*
+ * removePidFileIfOwned 删除 pid 锚点前校验归属：异步回收的旧引擎 Close 可能晚于同
+ * profile 重建的新引擎落锚（连续超时重建等场景）——内容不匹配（新引擎已易主）不动，
+ * 防误删新锚点使引擎脱离 recoverOrphans 视野。
+ */
 func (h *EngineHandle) removePidFileIfOwned() {
 	if h.cmd == nil || h.cmd.Process == nil {
 		return // in-memory 注入路径未落锚（无进程），无归属可校验

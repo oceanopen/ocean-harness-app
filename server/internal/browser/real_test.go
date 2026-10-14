@@ -1,13 +1,9 @@
 package browser
 
-// 真实拉起冒烟验收（T1.2）：不进常规测试轮次，需要本机 staging 与系统 Chrome：
-//
-//	staging=$(mktemp -d)/playwright-mcp 0.0.83 目录内 pnpm add @playwright/mcp@0.0.83
-//	OCEAN_ACP_RESOURCES_DIR=<staging 根> OCEAN_BROWSER_REAL_SMOKE=1 \
-//	  go test ./internal/browser -run TestRealEngineSmoke -v -timeout 300s
-//
-// staging 布局与 acp-adapters 同构（<srcRoot>/playwright-mcp/<version>/node_modules）；
-// T3.1 打包 vendoring 落地后缺省取 app/resources/acp-adapters 即无需手工构造。
+/*
+ * 真实拉起冒烟验收（T1.2）：不进常规测试轮次，需要本机 staging 与系统 Chrome——staging=$(mktemp -d)/playwright-mcp 0.0.83 目录内 pnpm add @playwright/mcp@0.0.83，再以 OCEAN_ACP_RESOURCES_DIR=<staging 根> OCEAN_BROWSER_REAL_SMOKE=1 go test ./internal/browser -run TestRealEngineSmoke -v -timeout 300s 运行。
+ * staging 布局与 acp-adapters 同构（<srcRoot>/playwright-mcp/<version>/node_modules）；T3.1 打包 vendoring 落地后缺省取 app/resources/acp-adapters 即无需手工构造。
+ */
 
 import (
 	"context"

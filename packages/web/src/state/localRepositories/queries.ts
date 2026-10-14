@@ -27,9 +27,11 @@ export function useLocalBranches(localRepositoryId: number) {
   });
 }
 
-// ─── 写操作（mutation）───
-// create/update/delete 走 invalidate（与 tracker 域一致）；refresh/refreshAll 返回最新数据，
-// 直接 setQueryData 更新缓存（无需额外 refetch）。
+/**
+ * ─── 写操作（mutation）───
+ * create/update/delete 走 invalidate（与 tracker 域一致）；refresh/refreshAll 返回最新数据，
+ * 直接 setQueryData 更新缓存（无需额外 refetch）。
+ */
 
 /** 新建本地仓库。 */
 export function useCreateLocalRepository() {

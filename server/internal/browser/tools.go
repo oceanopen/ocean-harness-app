@@ -2,12 +2,16 @@ package browser
 
 import "fmt"
 
-// 引擎工具名单点常量表（T1.3，D5）：转发工具名（ocean 短名）→ 引擎实名。mcp_tool 层
-// （T2.2）的 ocean 工具名 = browser_ + 短名，转发时经本表换引擎实名——引擎名字漂移
-// 一行改一处（spike 校对入口）。引擎实名已按 @playwright/mcp 0.0.83 README 逐名核实。
+/*
+ * 引擎工具名单点常量表（T1.3，D5）：转发工具名（ocean 短名）→ 引擎实名。mcp_tool 层
+ * （T2.2）的 ocean 工具名 = browser_ + 短名，转发时经本表换引擎实名——引擎名字漂移
+ * 一行改一处（spike 校对入口）。引擎实名已按 @playwright/mcp 0.0.83 README 逐名核实。
+ */
 
-// EngineTool* 引擎实名常量：manager 内部消费（pages 投影刷新拉 tab 列表）+ mcp_tool
-// 层转发引用。
+/*
+ * EngineTool* 引擎实名常量：manager 内部消费（pages 投影刷新拉 tab 列表）+ mcp_tool
+ * 层转发引用。
+ */
 const (
 	EngineToolNavigate        = "browser_navigate"
 	EngineToolSnapshot        = "browser_snapshot"
@@ -27,15 +31,19 @@ const (
 	EngineToolPressKey        = "browser_press_key"
 	EngineToolHandleDialog    = "browser_handle_dialog"
 
-	// EngineToolCookieList / EngineToolLocalstorageList storage cap 的登录态双源拉取
-	// （不在转发集；cookie 供 authhttp 带态请求 T1.4、双源供 browser_auth_state T2.2
-	// 组合消费）。
+	/*
+	 * EngineToolCookieList / EngineToolLocalstorageList storage cap 的登录态双源拉取
+	 * （不在转发集；cookie 供 authhttp 带态请求 T1.4、双源供 browser_auth_state T2.2
+	 * 组合消费）。
+	 */
 	EngineToolCookieList       = "browser_cookie_list"
 	EngineToolLocalstorageList = "browser_localstorage_list"
 )
 
-// forwardedTools D5 的 17 精选转发全集：ocean 短名 → 引擎实名（11 基础 + console_messages/
-// navigate_back/close/find/press_key/handle_dialog 扩员）。
+/*
+ * forwardedTools D5 的 17 精选转发全集：ocean 短名 → 引擎实名（11 基础 + console_messages/
+ * navigate_back/close/find/press_key/handle_dialog 扩员）。
+ */
 var forwardedTools = map[string]string{
 	"navigate":         EngineToolNavigate,
 	"snapshot":         EngineToolSnapshot,
@@ -56,20 +64,26 @@ var forwardedTools = map[string]string{
 	"handle_dialog":    EngineToolHandleDialog,
 }
 
-// engineToolBlacklist 逃生舱（T2.2 browser_tool_call）拒绝名单单点：引擎 core 常驻的
-// RCE 等价工具（引擎进程内执行任意 JS），中文报错说明、拒绝直调。
+/*
+ * engineToolBlacklist 逃生舱（T2.2 browser_tool_call）拒绝名单单点：引擎 core 常驻的
+ * RCE 等价工具（引擎进程内执行任意 JS），中文报错说明、拒绝直调。
+ */
 var engineToolBlacklist = map[string]bool{
 	"browser_run_code_unsafe": true,
 }
 
-// IsEngineToolBlacklisted 逃生舱拒绝名单判定（T2.2 browser_tool_list 出参的 blocked
-// 标注消费；拒绝文案统一走 CheckEngineToolCall）。
+/*
+ * IsEngineToolBlacklisted 逃生舱拒绝名单判定（T2.2 browser_tool_list 出参的 blocked
+ * 标注消费；拒绝文案统一走 CheckEngineToolCall）。
+ */
 func IsEngineToolBlacklisted(name string) bool {
 	return engineToolBlacklist[name]
 }
 
-// CheckEngineToolCall 逃生舱直调前置校验（T2.2 browser_tool_call）：黑名单工具中文
-// 报错拒绝——名单与文案单点收敛于此，mcp_tool 层只调用不复制。
+/*
+ * CheckEngineToolCall 逃生舱直调前置校验（T2.2 browser_tool_call）：黑名单工具中文
+ * 报错拒绝——名单与文案单点收敛于此，mcp_tool 层只调用不复制。
+ */
 func CheckEngineToolCall(name string) error {
 	if engineToolBlacklist[name] {
 		return fmt.Errorf("引擎工具 %s 被拒绝：该工具可在引擎进程内执行任意代码（RCE 等价），禁止直调", name)
@@ -77,10 +91,10 @@ func CheckEngineToolCall(name string) error {
 	return nil
 }
 
-// pagesRefreshExempt 转发成功后不触发 pages 投影刷新的工具：截图不改 tab 状态——豁免
-// 使面板截图轮询（1-2s/帧）不会一次轮询触发两次引擎调用；browser_tabs 本身即刷新源；
-// cookie_list 为 context 级读（authhttp 带态请求 T1.4）、localstorage_list 为纯读
-// （browser_auth_state T2.2），同样免刷新。
+/*
+ * pagesRefreshExempt 转发成功后不触发 pages 投影刷新的工具：截图不改 tab 状态——豁免使面板截图轮询（1-2s/帧）不会一次轮询触发两次引擎调用；browser_tabs 本身即刷新源。
+ * cookie_list 为 context 级读（authhttp 带态请求 T1.4）、localstorage_list 为纯读（browser_auth_state T2.2），同样免刷新。
+ */
 var pagesRefreshExempt = map[string]bool{
 	EngineToolTakeScreenshot:   true,
 	EngineToolTabs:             true,

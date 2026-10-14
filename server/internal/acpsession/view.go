@@ -31,17 +31,19 @@ const (
 	entryKindToolCall     = "toolCall"
 )
 
-// user 条目来源取值域（T1.1 显示链路基座）：标记回合发起入口，panel 前端据此区分 IM
-// 来源消息渲染（IM 徽标 + Display 元数据）。取值与 PendingSource* 一致但语义独立——
-// 本来源随 user 条目进 SSE 帧与快照（前端消费的 DTO），而 PendingSource* 是服务端内部
-// 追踪字段（不进任何 client DTO），两组常量各自维护。
+/*
+ * user 条目来源取值域（T1.1 显示链路基座）：标记回合发起入口，panel 前端据此区分 IM 来源消息渲染（IM 徽标 + Display 元数据）。
+ * 取值与 PendingSource* 一致但语义独立——本来源随 user 条目进 SSE 帧与快照（前端消费的 DTO），而 PendingSource* 是服务端内部追踪字段（不进任何 client DTO），两组常量各自维护。
+ */
 const (
 	EntrySourcePanel = "panel" // 桌面 issue 主窗口（Prompt 即时受理恒此来源）
 	EntrySourceBot   = "bot"   // IM bot（PromptQueued 排队受理携带）
 )
 
-// ConversationEntry 会话记录条目（四类：用户消息 / agent 消息 / agent 思考 / 工具调用）。
-// 同类同回合的流式 chunk 聚合进同一 entry，工具调用按 toolCallId 覆写式 upsert。
+/*
+ * ConversationEntry 会话记录条目（四类：用户消息 / agent 消息 / agent 思考 / 工具调用）。
+ * 同类同回合的流式 chunk 聚合进同一 entry，工具调用按 toolCallId 覆写式 upsert。
+ */
 type ConversationEntry struct {
 	EntryID  string        `json:"entryId"`
 	Kind     string        `json:"kind"` // user | agentMessage | agentThought | toolCall
@@ -51,10 +53,11 @@ type ConversationEntry struct {
 	ToolCall *ToolCallView `json:"toolCall,omitempty"`
 }
 
-// EntryDisplay user 条目展示元数据（显示-发送文本分离，D2）：Text 为正文原文（区别于
-// 条目 Text 的围栏全文），Quote / Files 为 IM 引用与附件的展示投影。nil = 无展示元数据，
-// 前端回落条目 Text 原样直显（旧 sidecar + 新前端混跑窗口兼容）。一经落条目即只读共享
-// （帧与快照锁外序列化），构造方不得再触碰。
+/*
+ * EntryDisplay user 条目展示元数据（显示-发送文本分离，D2）：Text 为正文原文（区别于条目 Text 的围栏全文），Quote / Files 为 IM 引用与附件的展示投影。
+ * nil = 无展示元数据，前端回落条目 Text 原样直显（旧 sidecar + 新前端混跑窗口兼容）。
+ * 一经落条目即只读共享（帧与快照锁外序列化），构造方不得再触碰。
+ */
 type EntryDisplay struct {
 	Text  string      `json:"text,omitempty"`
 	Quote *EntryQuote `json:"quote,omitempty"`
@@ -74,9 +77,10 @@ type EntryFile struct {
 	Path string `json:"path,omitempty"`
 }
 
-// PromptMeta 回合受理携带的消息来源元数据（T1.1）：Source 标记发起入口（EntrySource*），
-// Display 为展示元数据（bot 路径组装，panel 恒零值）。进程内参数不经序列化——Source /
-// Display 随 beginTurn 落 user 条目，经 SSE entry 帧与快照透出。
+/*
+ * PromptMeta 回合受理携带的消息来源元数据（T1.1）：Source 标记发起入口（EntrySource*），Display 为展示元数据（bot 路径组装，panel 恒零值）。
+ * 进程内参数不经序列化——Source / Display 随 beginTurn 落 user 条目，经 SSE entry 帧与快照透出。
+ */
 type PromptMeta struct {
 	Source  string
 	Display *EntryDisplay
@@ -104,8 +108,9 @@ type PendingView struct {
 	Request   *acp.ElicitationWire      `json:"request,omitempty"`  // elicitation 专用：全保真 wire（acp-go 生成模型丢 requestedSchema/url，见 acp/elicitation.go）
 }
 
-// ToolTitle 挂起审批的工具呈现标题（Title 优先，Name 兜底，无则空）——投影出口同 label
-// SSOT：bot 域经此取值，不引 acp-go（依赖面口径见 bot/driver_acp.go）。
+/*
+ * ToolTitle 挂起审批的工具呈现标题（Title 优先，Name 兜底，无则空）——投影出口同 label SSOT：bot 域经此取值，不引 acp-go（依赖面口径见 bot/driver_acp.go）。
+ */
 func (p PendingView) ToolTitle() string {
 	if p.ToolCall == nil {
 		return ""
@@ -119,8 +124,10 @@ func (p PendingView) ToolTitle() string {
 	return ""
 }
 
-// ViewSnapshot 会话视图快照——/api/acpSession 响应与 SSE snapshot 帧的 shape SSOT
-// （前端按此镜像 TS 类型）。嵌套的 ACP wire 结构原样透传不转译。
+/*
+ * ViewSnapshot 会话视图快照——/api/acpSession 响应与 SSE snapshot 帧的 shape SSOT（前端按此镜像 TS 类型）。
+ * 嵌套的 ACP wire 结构原样透传不转译。
+ */
 type ViewSnapshot struct {
 	Status            SessionStatus             `json:"status"`
 	AgentCode         string                    `json:"agentCode,omitempty"`
@@ -145,23 +152,25 @@ type pendingSlot struct {
 	elicitation *acp.PendingElicitation
 }
 
-// 应答入口标识（T2.4 双入口审批收敛）：closed-history 登记与后到方文案的来源维度。
-// HTTP 桌面面恒 panel（service 层收口硬编码），bot IM 快路径传 bot；source 是服务端
-// 内部追踪字段，不进任何 client DTO。
+/*
+ * 应答入口标识（T2.4 双入口审批收敛）：closed-history 登记与后到方文案的来源维度。
+ * HTTP 桌面面恒 panel（service 层收口硬编码），bot IM 快路径传 bot；source 是服务端内部追踪字段，不进任何 client DTO。
+ */
 const (
 	PendingSourcePanel = "panel" // 桌面 issue 主窗口（HTTP 应答面）
 	PendingSourceBot   = "bot"   // IM bot（企微回合内数字快路径）
 )
 
-// ErrPendingAlreadyHandled 挂起已被一端应答或已随回合结算（T2.4 first-writer-wins 的
-// 后到方判别哨兵）：acp 层 ErrAlreadyResolved 只说明「CAS 拒绝」，本哨兵补齐「谁、以何
-// 选项处理」的收敛语义。消费方 errors.Is 判别，文案（*PendingAlreadyHandledError）用户
-// 可读直出。
+/*
+ * ErrPendingAlreadyHandled 挂起已被一端应答或已随回合结算（T2.4 first-writer-wins 的后到方判别哨兵）：acp 层 ErrAlreadyResolved 只说明「CAS 拒绝」，本哨兵补齐「谁、以何选项处理」的收敛语义。
+ * 消费方 errors.Is 判别，文案（*PendingAlreadyHandledError）用户可读直出。
+ */
 var ErrPendingAlreadyHandled = errors.New("ACP 挂起已处理")
 
-// PendingAlreadyHandledError 后到方应答已处理挂起的用户可读错误：Error() 即展示文案
-// （「该审批已由桌面端应答（允许）」/「该表单已随回合结束自动结算」），Unwrap 到哨兵
-// 供 errors.Is 判别（文案零前缀污染，前端可按「该审批已/该表单已」前缀识别中性呈现）。
+/*
+ * PendingAlreadyHandledError 后到方应答已处理挂起的用户可读错误：Error() 即展示文案（「该审批已由桌面端应答（允许）」/「该表单已随回合结束自动结算」）。
+ * Unwrap 到哨兵供 errors.Is 判别（文案零前缀污染，前端可按「该审批已/该表单已」前缀识别中性呈现）。
+ */
 type PendingAlreadyHandledError struct {
 	Kind    string // 展示名词：审批 | 表单
 	Source  string // 应答入口（panel/bot；结算路径为空）
@@ -192,18 +201,20 @@ func pendingSourceLabel(source string) string {
 // closedHistoryCap closed-history 环形上限（近期已关闭挂起的收敛记录窗口）。
 const closedHistoryCap = 32
 
-// closedPending 已关闭挂起的收敛记录（closed-history 条目，T2.4）：应答成功登记
-// {source, label}；回合收尾/自动结算登记 {settled}。后到方应答命中历史即回判别哨兵，
-// 未命中（pendingID 写错/超窗出环）才回落「不存在或已关闭」。
+/*
+ * closedPending 已关闭挂起的收敛记录（closed-history 条目，T2.4）：应答成功登记 {source, label}；回合收尾/自动结算登记 {settled}。
+ * 后到方应答命中历史即回判别哨兵，未命中（pendingID 写错/超窗出环）才回落「不存在或已关闭」。
+ */
 type closedPending struct {
 	source  string // 应答入口；空 = 非人为应答
 	label   string // 应答选项/动作展示标签
 	settled bool   // true = 回合收尾/取消自动结算
 }
 
-// PermissionOptionLabel 审批选项展示标签（label SSOT，桌面哨兵文案与 IM 状态行共用）：
-// kind → 中文（allow_once=允许 / allow_always=允许并记住 / reject_once=拒绝 /
-// reject_always=始终拒绝），未知 kind 回落 agent 原始 name。
+/*
+ * PermissionOptionLabel 审批选项展示标签（label SSOT，桌面哨兵文案与 IM 状态行共用）：
+ * kind → 中文（allow_once=允许 / allow_always=允许并记住 / reject_once=拒绝 / reject_always=始终拒绝），未知 kind 回落 agent 原始 name。
+ */
 func PermissionOptionLabel(kind, name string) string {
 	switch schema.PermissionOptionKind(kind) {
 	case schema.PermissionOptionKindAllowOnce:
@@ -218,8 +229,9 @@ func PermissionOptionLabel(kind, name string) string {
 	return name
 }
 
-// findPermissionOption 按 optionId 查审批选项目录（应答预检与标签取值共用一次查找；
-// 不存在返回 ok=false）。
+/*
+ * findPermissionOption 按 optionId 查审批选项目录（应答预检与标签取值共用一次查找；不存在返回 ok=false）。
+ */
 func findPermissionOption(options []schema.PermissionOption, optionID string) (schema.PermissionOption, bool) {
 	for i := range options {
 		if string(options[i].OptionID) == optionID {
@@ -242,9 +254,11 @@ func elicitationActionLabel(action string) string {
 	return action
 }
 
-// sessionView 单会话的积累投影：manager 是唯一写者（受理/收尾编排 + pump 按 wire 顺序
-// 喂入），读经 snapshot。快照类字段（plan/usage/commands/modes）最新替换；条目覆写式
-// upsert。回合两端帧由本视图合成（StopReason 只从 acp Prompt 返回值可见的 gap 补齐）。
+/*
+ * sessionView 单会话的积累投影：manager 是唯一写者（受理/收尾编排 + pump 按 wire 顺序喂入），读经 snapshot。
+ * 快照类字段（plan/usage/commands/modes）最新替换；条目覆写式 upsert。
+ * 回合两端帧由本视图合成（StopReason 只从 acp Prompt 返回值可见的 gap 补齐）。
+ */
 type sessionView struct {
 	mu sync.RWMutex
 
@@ -265,10 +279,10 @@ type sessionView struct {
 	// pendings 挂起交互注册表（acp 层无枚举 API，视图侧自登记；应答/结算后摘除）。
 	pendings []pendingSlot
 
-	// closed 已关闭挂起的收敛记录（pendingID → 详情 + closedOrder FIFO 序，环形上限
-	// closedHistoryCap，跨回合常驻——回合结束后抵达的迟到应答仍可判别；Ensure 重建随
-	// 新视图重置）。后到方应答命中历史回 ErrPendingAlreadyHandled 判别哨兵，未命中才
-	// 回落「不存在或已关闭」。
+	/*
+	 * closed 已关闭挂起的收敛记录（pendingID → 详情 + closedOrder FIFO 序，环形上限 closedHistoryCap，跨回合常驻——回合结束后抵达的迟到应答仍可判别；Ensure 重建随新视图重置）。
+	 * 后到方应答命中历史回 ErrPendingAlreadyHandled 判别哨兵，未命中才回落「不存在或已关闭」。
+	 */
 	closed      map[uint64]closedPending
 	closedOrder []uint64
 
@@ -341,8 +355,9 @@ func (v *sessionView) setTerminated(reason string) []Frame {
 	})}
 }
 
-// applyEvent 会话事件喂入（Update / Permission / Elicitation；Terminated 哨兵由 manager
-// 显式处理——需查进程死亡证据，视图不感知 client）。
+/*
+ * applyEvent 会话事件喂入（Update / Permission / Elicitation；Terminated 哨兵由 manager 显式处理——需查进程死亡证据，视图不感知 client）。
+ */
 func (v *sessionView) applyEvent(event *acp.SessionEvent) []Frame {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -393,9 +408,10 @@ func (v *sessionView) applyUpdateLocked(update *acpgo.Update) []Frame {
 		v.commands = inner.AvailableCommandsUpdate.AvailableCommands
 		return []Frame{{Type: FrameCommandsUpdated, Commands: v.commands}}
 	case inner.CurrentModeUpdate != nil:
-		// 替换式回写：mode 帧共享 v.modes 指针在锁外序列化，就地改 CurrentModeID 同构
-		// 数据竞态——以值拷贝新建（AvailableModes 目录创建后只读，共享安全），帧携带新
-		// 指针；acp 层 setReady 交来的快照副本同样不被就地触碰。
+		/*
+		 * 替换式回写：mode 帧共享 v.modes 指针在锁外序列化，就地改 CurrentModeID 同构数据竞态——以值拷贝新建（AvailableModes 目录创建后只读，共享安全），帧携带新指针；
+		 * acp 层 setReady 交来的快照副本同样不被就地触碰。
+		 */
 		modes := &schema.SessionModeState{CurrentModeID: inner.CurrentModeUpdate.CurrentModeID}
 		if v.modes != nil {
 			modes.AvailableModes = v.modes.AvailableModes
@@ -403,15 +419,18 @@ func (v *sessionView) applyUpdateLocked(update *acpgo.Update) []Frame {
 		v.modes = modes
 		return []Frame{{Type: FrameModeUpdated, Mode: v.modes}}
 	default:
-		// user_message_chunk（用户输入的本地回显）/ config_option_update /
-		// session_info_update：一期不积累不转发，消费需要时在此扩展。
+		/*
+		 * user_message_chunk（用户输入的本地回显）/ config_option_update / session_info_update：
+		 * 一期不积累不转发，消费需要时在此扩展。
+		 */
 		return nil
 	}
 }
 
-// appendChunkLocked 文本 chunk 按 (kind, 当前回合) 聚合进会话条目（agent 流式输出的合帧
-// 投影；ContentChunk.MessageID 的消息边界细分一期不消费，回合粒度聚合足够）。entry 帧
-// 整体覆写（快照类语义：最新态替换）。
+/*
+ * appendChunkLocked 文本 chunk 按 (kind, 当前回合) 聚合进会话条目（agent 流式输出的合帧投影；ContentChunk.MessageID 的消息边界细分一期不消费，回合粒度聚合足够）。
+ * entry 帧整体覆写（快照类语义：最新态替换）。
+ */
 func (v *sessionView) appendChunkLocked(kind, text string) []Frame {
 	if text == "" {
 		return nil
@@ -428,8 +447,9 @@ func (v *sessionView) appendChunkLocked(kind, text string) []Frame {
 	return []Frame{{Type: FrameEntry, Entry: &entry}}
 }
 
-// upsertToolCallLocked 工具调用条目按 toolCallId 覆写式 upsert（tool: 前缀命名空间，
-// 与回合文本条目互不冲突；update 先于初建到达的异常时序同样成立——建空壳再合并）。
+/*
+ * upsertToolCallLocked 工具调用条目按 toolCallId 覆写式 upsert（tool: 前缀命名空间，与回合文本条目互不冲突；update 先于初建到达的异常时序同样成立——建空壳再合并）。
+ */
 func (v *sessionView) upsertToolCallLocked(view *ToolCallView) []Frame {
 	entryID := "tool:" + view.ToolCallID
 	idx, ok := v.entryIndex[entryID]
@@ -443,9 +463,9 @@ func (v *sessionView) upsertToolCallLocked(view *ToolCallView) []Frame {
 	return []Frame{{Type: FrameEntry, Entry: &entry}}
 }
 
-// applyToolCallUpdateLocked 部分更新合并。已发布的 *ToolCallView 被帧与快照共享、在锁外
-// 序列化，就地 merge 构成数据竞态——先克隆再 merge，经 upsert 整体换指针（恢复
-// 「发布后不可变」不变量；浅拷贝足够：切片/RawMessage 字段 merge 中只整体替换）。
+/*
+ * applyToolCallUpdateLocked 部分更新合并。已发布的 *ToolCallView 被帧与快照共享、在锁外序列化，就地 merge 构成数据竞态——先克隆再 merge，经 upsert 整体换指针（恢复「发布后不可变」不变量；浅拷贝足够：切片/RawMessage 字段 merge 中只整体替换）。
+ */
 func (v *sessionView) applyToolCallUpdateLocked(upd *schema.ToolCallUpdate) []Frame {
 	entryID := "tool:" + string(upd.ToolCallID)
 	var view *ToolCallView
@@ -460,8 +480,10 @@ func (v *sessionView) applyToolCallUpdateLocked(upd *schema.ToolCallUpdate) []Fr
 	return v.upsertToolCallLocked(view)
 }
 
-// mergeToolCallUpdate 部分合并语义：指针/切片字段非空才覆盖（ACP wire 部分更新契约），
-// 其余保留。wire 解码对象不可变，字段引用直接共享安全。
+/*
+ * mergeToolCallUpdate 部分合并语义：指针/切片字段非空才覆盖（ACP wire 部分更新契约），其余保留。
+ * wire 解码对象不可变，字段引用直接共享安全。
+ */
 func mergeToolCallUpdate(view *ToolCallView, upd *schema.ToolCallUpdate) {
 	if upd.Title != nil {
 		view.Title = *upd.Title
@@ -514,15 +536,11 @@ func (v *sessionView) registerPendingLocked(view PendingView, slot *pendingSlot)
 	return []Frame{{Type: FramePendingOpened, Pending: &view}}
 }
 
-// respondPending 收敛应答骨架（permission/elicitation 共用，差异经 precheck/respond
-// 闭包传入）。固定时序：定位挂起 → closed-history 判别哨兵 → precheck（kind 错配/非法
-// 选项在摘除前拒绝——摘除后应答失败会让前后端挂起视图与 agent 等待态三方失同步）→
-// 摘除 → CAS 应答 → 登记 closed-history → pendingClosed 帧。CAS 被拒（errors.Is 判
-// acp.ErrAlreadyResolved：回合收尾/取消竞态先结算）回填槽位 + 登记 settled + 回 settled
-// 哨兵——回填维持 endTurn 兜底补发 pendingClosed 的原语义（订阅端不挂死在已消失的审批
-// 上）；其余应答错误回填后原样透传（挂起在视图与 agent 侧均仍开放，可重试）。
-// pendingId 命中 closed-history 回 ErrPendingAlreadyHandled 判别哨兵（T2.4 双入口
-// first-writer-wins：另一端已应答/已随回合结算），未命中才是「不存在或已关闭」。
+/*
+ * respondPending 收敛应答骨架（permission/elicitation 共用，差异经 precheck/respond 闭包传入）。固定时序：定位挂起 → closed-history 判别哨兵 → precheck（kind 错配/非法选项在摘除前拒绝——摘除后应答失败会让前后端挂起视图与 agent 等待态三方失同步）→ 摘除 → CAS 应答 → 登记 closed-history → pendingClosed 帧。
+ * CAS 被拒（errors.Is 判 acp.ErrAlreadyResolved：回合收尾/取消竞态先结算）回填槽位 + 登记 settled + 回 settled 哨兵——回填维持 endTurn 兜底补发 pendingClosed 的原语义（订阅端不挂死在已消失的审批上）；其余应答错误回填后原样透传（挂起在视图与 agent 侧均仍开放，可重试）。
+ * pendingId 命中 closed-history 回 ErrPendingAlreadyHandled 判别哨兵（T2.4 双入口 first-writer-wins：另一端已应答/已随回合结算），未命中才是「不存在或已关闭」。
+ */
 func (v *sessionView) respondPending(pendingID uint64, noun, source string, precheck func(slot pendingSlot) error, respond func(slot pendingSlot) (string, error)) ([]Frame, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -551,8 +569,9 @@ func (v *sessionView) respondPending(pendingID uint64, noun, source string, prec
 	return []Frame{pendingClosedFrame(pendingID)}, nil
 }
 
-// respondPermission 以 optionId 应答挂起权限审批（差异步：句柄预检 + 选项预检与标签
-// 取值共用一次目录查找）。
+/*
+ * respondPermission 以 optionId 应答挂起权限审批（差异步：句柄预检 + 选项预检与标签取值共用一次目录查找）。
+ */
 func (v *sessionView) respondPermission(pendingID uint64, optionID, source string) ([]Frame, error) {
 	var pick schema.PermissionOption
 	return v.respondPending(pendingID, "审批", source,
@@ -575,8 +594,9 @@ func (v *sessionView) respondPermission(pendingID uint64, optionID, source strin
 	)
 }
 
-// respondElicitation 以完整三态应答挂起 elicitation（构造见 acpgo.AcceptElicitation 等；
-// 差异步仅句柄预检，应答标签取动作三态）。
+/*
+ * respondElicitation 以完整三态应答挂起 elicitation（构造见 acpgo.AcceptElicitation 等；差异步仅句柄预检，应答标签取动作三态）。
+ */
 func (v *sessionView) respondElicitation(pendingID uint64, action string, response schema.CreateElicitationResponse, source string) ([]Frame, error) {
 	return v.respondPending(pendingID, "表单", source,
 		func(slot pendingSlot) error {
@@ -591,8 +611,9 @@ func (v *sessionView) respondElicitation(pendingID uint64, action string, respon
 	)
 }
 
-// alreadyClosedLocked 已关闭挂起的判别错误构造（历史未命中返回 nil——回落「不存在或已
-// 关闭」原语义）。
+/*
+ * alreadyClosedLocked 已关闭挂起的判别错误构造（历史未命中返回 nil——回落「不存在或已关闭」原语义）。
+ */
 func (v *sessionView) alreadyClosedLocked(kind string, pendingID uint64) error {
 	info, ok := v.closed[pendingID]
 	if !ok {
@@ -601,8 +622,9 @@ func (v *sessionView) alreadyClosedLocked(kind string, pendingID uint64) error {
 	return &PendingAlreadyHandledError{Kind: kind, Source: info.source, Label: info.label, Settled: info.settled}
 }
 
-// recordClosedLocked 登记已关闭挂起（环形上限：超限逐出最旧；同 ID 重复登记只覆写详情
-// 不重排队序）。
+/*
+ * recordClosedLocked 登记已关闭挂起（环形上限：超限逐出最旧；同 ID 重复登记只覆写详情不重排队序）。
+ */
 func (v *sessionView) recordClosedLocked(pendingID uint64, info closedPending) {
 	if _, exists := v.closed[pendingID]; !exists {
 		v.closedOrder = append(v.closedOrder, pendingID)
@@ -624,9 +646,10 @@ func pendingIndexOfLocked(pendings []pendingSlot, pendingID uint64) int {
 	return -1
 }
 
-// beginTurn 受理一轮回合：用户消息条目（Text 存 prompt 全文——围栏 + im_context 原样；
-// meta 的 Source / Display 落条目，经 entry 帧与快照透出）+ turnStarted 合成。已有活动
-// 回合拒绝（单会话回合串行，与 acp.ErrTurnActive 同语义的视图侧前置闸门）。
+/*
+ * beginTurn 受理一轮回合：用户消息条目（Text 存 prompt 全文——围栏 + im_context 原样；meta 的 Source / Display 落条目，经 entry 帧与快照透出）+ turnStarted 合成。
+ * 已有活动回合拒绝（单会话回合串行，与 acp.ErrTurnActive 同语义的视图侧前置闸门）。
+ */
 func (v *sessionView) beginTurn(text string, meta PromptMeta) ([]Frame, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -650,10 +673,10 @@ func (v *sessionView) beginTurn(text string, meta PromptMeta) ([]Frame, error) {
 	}, nil
 }
 
-// endTurn 回合终态：turnEnded 合成（stopReason / 错误）+ 未决交互对齐清空（acp 侧
-// settlePendings 已结算但无事件通道通知，视图补发 pendingClosed——其余订阅端不挂死在
-// 已消失的审批上）。残余挂起登记 closed-history（settled）——回合结束后抵达的迟到
-// 应答可判别（T2.4）。
+/*
+ * endTurn 回合终态：turnEnded 合成（stopReason / 错误）+ 未决交互对齐清空（acp 侧 settlePendings 已结算但无事件通道通知，视图补发 pendingClosed——其余订阅端不挂死在已消失的审批上）。
+ * 残余挂起登记 closed-history（settled）——回合结束后抵达的迟到应答可判别（T2.4）。
+ */
 func (v *sessionView) endTurn(stop string, errText string) []Frame {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -671,10 +694,10 @@ func (v *sessionView) endTurn(stop string, errText string) []Frame {
 	return frames
 }
 
-// snapshot 投影快照。entries 浅拷贝安全：条目字段一经写入只被整体替换（chunk 聚合是
-// string 追加 + 工具调用是整体指针替换），单写者 + 锁互斥下无共享可变态。拷贝必须以
-// 非 nil 字面量起始：entries 的 json tag 无 omitempty，nil 会序列化为 null 违反前端
-// 非空数组契约（零条目新会话首开即崩，wire 契约用例见 TestViewSnapshotEmptyIsArray）。
+/*
+ * snapshot 投影快照。entries 浅拷贝安全：条目字段一经写入只被整体替换（chunk 聚合是 string 追加 + 工具调用是整体指针替换），单写者 + 锁互斥下无共享可变态。
+ * 拷贝必须以非 nil 字面量起始：entries 的 json tag 无 omitempty，nil 会序列化为 null 违反前端非空数组契约（零条目新会话首开即崩，wire 契约用例见 TestViewSnapshotEmptyIsArray）。
+ */
 func (v *sessionView) snapshot() ViewSnapshot {
 	v.mu.RLock()
 	defer v.mu.RUnlock()

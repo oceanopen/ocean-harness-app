@@ -7,14 +7,18 @@ import (
 	"ocean-harness/server/internal/global"
 )
 
-// AcpSession 对应 /api/acpSession 命名空间下的业务逻辑。无本地状态：SSOT 为会话域门面
-// global.AcpSessions（main 装配），本 service 只做受理转发与投影。
+/*
+ * AcpSession 对应 /api/acpSession 命名空间下的业务逻辑。无本地状态：SSOT 为会话域门面
+ * global.AcpSessions（main 装配），本 service 只做受理转发与投影。
+ */
 type AcpSession struct {
 	apis.Service
 }
 
-// Ensure 幂等受理会话创建（异步建模）：立即返回受理时刻快照，spawn 链在后台进行，
-// 就绪/失败经 SSE sessionStatus 帧或 getInfo 轮询跟进。pickedLaunchMode 临场启动声明透传。
+/*
+ * Ensure 幂等受理会话创建（异步建模）：立即返回受理时刻快照，spawn 链在后台进行，
+ * 就绪/失败经 SSE sessionStatus 帧或 getInfo 轮询跟进。pickedLaunchMode 临场启动声明透传。
+ */
 func (svc AcpSession) Ensure(req *types.AcpSessionEnsureRequest) (acpsession.ViewSnapshot, error) {
 	return global.AcpSessions.Ensure(svc.Context, req.IssueID, req.PickedLaunchMode)
 }
@@ -34,14 +38,18 @@ func (svc AcpSession) Cancel(req *types.AcpSessionCancelRequest) error {
 	return global.AcpSessions.Cancel(req.IssueID)
 }
 
-// RespondPermission 以 optionId 应答挂起权限审批。HTTP 面即桌面 issue 主窗口，source
-// 恒 panel（T2.4 收敛语义的入口标记；bot 快路径不经本层）。
+/*
+ * RespondPermission 以 optionId 应答挂起权限审批。HTTP 面即桌面 issue 主窗口，source
+ * 恒 panel（T2.4 收敛语义的入口标记；bot 快路径不经本层）。
+ */
 func (svc AcpSession) RespondPermission(req *types.AcpSessionRespondPermissionRequest) error {
 	return global.AcpSessions.RespondPermission(req.IssueID, req.PendingID, req.OptionID, acpsession.PendingSourcePanel)
 }
 
-// RespondElicitation 应答挂起 elicitation（accept 带 content / decline / cancel）；
-// source 同 RespondPermission 恒 panel。
+/*
+ * RespondElicitation 应答挂起 elicitation（accept 带 content / decline / cancel）；
+ * source 同 RespondPermission 恒 panel。
+ */
 func (svc AcpSession) RespondElicitation(req *types.AcpSessionRespondElicitationRequest) error {
 	return global.AcpSessions.RespondElicitation(req.IssueID, req.PendingID, req.Action, req.Content, acpsession.PendingSourcePanel)
 }

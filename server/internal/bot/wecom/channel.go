@@ -1,6 +1,8 @@
-// Package wecom 企业微信「智能机器人」渠道适配器：实现 bot 包的 ChannelRuntime/Factory 契约。
-// 职责边界：连接生命周期（WsClient 封装 + 状态投影）、入站帧规范化（含附件同步下载落盘）、
-// 覆写式回复流落地。编排/幂等/白名单/prompt 全在 bot 核心，本包不做业务决策。
+/*
+ * Package wecom 企业微信「智能机器人」渠道适配器：实现 bot 包的 ChannelRuntime/Factory 契约。
+ * 职责边界：连接生命周期（WsClient 封装 + 状态投影）、入站帧规范化（含附件同步下载落盘）、
+ * 覆写式回复流落地。编排/幂等/白名单/prompt 全在 bot 核心，本包不做业务决策。
+ */
 package wecom
 
 import (
@@ -21,14 +23,16 @@ import (
 // byteLimit 企微流式单条内容字节上限（SDK types/api.go 校验值）。
 const byteLimit = 20480
 
-// inboundBufferCapacity 入站处理通道容量：ws readLoop 回调必须快进快出，下载/入队串行在本
-// 通道的消费 goroutine（保消息顺序）。满即丢（企微 WS 无补投，fail closed 不积压）。
+/*
+ * inboundBufferCapacity 入站处理通道容量：ws readLoop 回调必须快进快出，下载/入队串行在本
+ * 通道的消费 goroutine（保消息顺序）。满即丢（企微 WS 无补投，fail closed 不积压）。
+ */
 const inboundBufferCapacity = 32
 
-// interactionBufferCapacity 交互事件快车道容量（T3.2 与消息队列分流）：卡片点击事件与消息
-// 不共通道——前置消息的附件同步下载（URL 五分钟有效）会排队占用消息消费 goroutine 数秒，
-// 而点击的置灰更新须在回调 5 秒窗口内完成，共通道即被吃掉。点击事件低频（人工逐次点击），
-// 容量取小；满即丢告警（卡片仍在可重点，用户即有反馈）。
+/*
+ * interactionBufferCapacity 交互事件快车道容量（T3.2 与消息队列分流）：卡片点击事件与消息不共通道——前置消息的附件同步下载（URL 五分钟有效）会排队占用消息消费 goroutine 数秒，而点击的置灰更新须在回调 5 秒窗口内完成，共通道即被吃掉。
+ * 点击事件低频（人工逐次点击），容量取小；满即丢告警（卡片仍在可重点，用户即有反馈）。
+ */
 const interactionBufferCapacity = 16
 
 // Factory 渠道工厂（main 装配注册）。
@@ -76,8 +80,10 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	log := zap.L().With(zap.String("component", "bot.wecom"), zap.Int("botID", cfg.BotID))
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// 幂等防御：先停旧代连接（supervisor 常规路径已保证先 Stop，这里兜底）；断连在锁外完成
-	// （同 Stop，见 stopAndRelease 注释），终态窗口内旧代迟到回调经代际守卫全部忽略。
+	/*
+	 * 幂等防御：先停旧代连接（supervisor 常规路径已保证先 Stop，这里兜底）；断连在锁外完成
+	 * （同 Stop，见 stopAndRelease 注释），终态窗口内旧代迟到回调经代际守卫全部忽略。
+	 */
 	r.stopAndRelease()
 
 	r.mu.Lock()
@@ -87,9 +93,11 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	r.onInbound = onInbound
 	r.state = "connecting"
 	r.lastErr = ""
-	// 入站通道按 Start 代际创建：processLoop 以参数持有本代通道（见下），旧代 loop 只能
-	// 收到旧代 stop 关闭信号退出，绝不消费新代消息——同实例误重入也不会双消费者抢食。
-	// 交互快车道同代际创建、共用同一 stop（两条消费 loop 同生共死）。
+	/*
+	 * 入站通道按 Start 代际创建：processLoop 以参数持有本代通道（见下），旧代 loop 只能
+	 * 收到旧代 stop 关闭信号退出，绝不消费新代消息——同实例误重入也不会双消费者抢食。
+	 * 交互快车道同代际创建、共用同一 stop（两条消费 loop 同生共死）。
+	 */
 	ch := make(chan func(*bot.InboundMessage), inboundBufferCapacity)
 	ach := make(chan func(*bot.InboundMessage), interactionBufferCapacity)
 	stop := make(chan struct{})
@@ -106,8 +114,10 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	r.client = client
 	r.mu.Unlock()
 
-	// 连接生命周期 → 状态投影（闭包捕获本代 client，经代际守卫写入；旧代迟到的 SDK 回调
-	// 不污染新代状态）。
+	/*
+	 * 连接生命周期 → 状态投影（闭包捕获本代 client，经代际守卫写入；旧代迟到的 SDK 回调
+	 * 不污染新代状态）。
+	 */
 	client.OnAuthenticated = func() { r.setStateForClient(client, "connected", "") }
 	client.OnReconnecting = func(int) { r.setStateForClient(client, "connecting", "") }
 	client.OnDisconnected = func(reason string) { r.setStateForClient(client, "disconnected", reason) }
@@ -143,20 +153,21 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 			r.buildMixed(frame.Body.Mixed, in)
 		})
 	}
-	// 模板卡片点击事件（T3.1）：SDK dispatch 已预调 DecodeEvent，回调内 Body.Event 即具体
-	// 事件类型。归一为合成 BaseMessage + Interaction 后投交互快车道（T3.2 分流：不排附件
-	// 下载队，保住点击置灰的 5 秒窗口），重活（拦截步判定/置灰更新）在编排器侧完成；路由
-	// 载荷覆写为 wsRoute 事件流（置灰用事件 headers，终帧走主动推送——见 wsRoute 注释）；
-	// 解码失败丢弃并告警（无 msgid 不可幂等）。response_url 受理即应答已下线（真机定标：
-	// 独立 HTTP 通道同样被客户端合并渲染，解决不了首帧反馈，徒增一条消息）。
+	/*
+	 * 模板卡片点击事件（T3.1）：SDK dispatch 已预调 DecodeEvent，回调内 Body.Event 即具体事件类型；归一为合成 BaseMessage + Interaction 后投交互快车道（T3.2 分流：不排附件下载队，保住点击置灰的 5 秒窗口），重活（拦截步判定/置灰更新）在编排器侧完成。
+	 * 路由载荷覆写为 wsRoute 事件流（置灰用事件 headers，终帧走主动推送——见 wsRoute 注释）；解码失败丢弃并告警（无 msgid 不可幂等）。
+	 * response_url 受理即应答已下线（真机定标：独立 HTTP 通道同样被客户端合并渲染，解决不了首帧反馈，徒增一条消息）。
+	 */
 	client.OnTemplateCardEvent = func(frame *aibottypes.WsFrame[aibottypes.EventMessage]) {
 		base, interaction, ok := cardEventPayload(frame.Body)
 		if !ok {
 			log.Warn("企微模板卡片事件解码失败，已丢弃", zap.String("msgid", frame.Body.MsgId))
 			return
 		}
-		// 真机载荷观测（DEBUG）：event_key 原文（RawKey）+ 回传 task_id + 归一下标与勾选集
-		// ——企微实际回传形态与文档假设的差异（前缀形态/字段缺失）只能实测定标。
+		/*
+		 * 真机载荷观测（DEBUG）：event_key 原文（RawKey）+ 回传 task_id + 归一下标与勾选集
+		 * ——企微实际回传形态与文档假设的差异（前缀形态/字段缺失）只能实测定标。
+		 */
 		log.Debug("企微模板卡事件载荷",
 			zap.String("raw_key", interaction.RawKey),
 			zap.String("task_id", interaction.TaskID),
@@ -171,8 +182,10 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 		})
 	}
 
-	// 入站处理 goroutine：保序串行消费（下载在 5 分钟有效 URL 约束下同步完成）；交互快车道
-	// 独立 goroutine 同款生命周期（共用 stop，两条 loop 同生共死）。
+	/*
+	 * 入站处理 goroutine：保序串行消费（下载在 5 分钟有效 URL 约束下同步完成）；交互快车道
+	 * 独立 goroutine 同款生命周期（共用 stop，两条 loop 同生共死）。
+	 */
 	go r.processLoop(ch, stop)
 	go r.processLoop(ach, stop)
 
@@ -189,10 +202,10 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 // Stop 实现 bot.ChannelRuntime：断开连接 + 停处理通道（幂等）。
 func (r *channelRuntime) Stop() { r.stopAndRelease() }
 
-// stopAndRelease 停止当前代连接并释放资源（Stop / Start 防御路径共用）。锁内只做快照、
-// 字段置空与置终态，真正的断连必须在锁外：SDK 的 Disconnect 会在调用者 goroutine 上内联
-// 触发 OnDisconnected → setStateForClient，若此时仍持 r.mu 即不可重入自死锁——且死锁
-// goroutine 持有的 supervisor s.mu 会毒化全部 imBot 接口（getList 也随之永久挂起）。
+/*
+ * stopAndRelease 停止当前代连接并释放资源（Stop / Start 防御路径共用）；锁内只做快照、字段置空与置终态。
+ * 真正的断连必须在锁外：SDK 的 Disconnect 会在调用者 goroutine 上内联触发 OnDisconnected → setStateForClient，若此时仍持 r.mu 即不可重入自死锁——且死锁 goroutine 持有的 supervisor s.mu 会毒化全部 imBot 接口（getList 也随之永久挂起）。
+ */
 func (r *channelRuntime) stopAndRelease() {
 	r.mu.Lock()
 	cancel, client, stop := r.cancel, r.client, r.stopProc
@@ -202,8 +215,10 @@ func (r *channelRuntime) stopAndRelease() {
 	releaseGeneration(cancel, client, stop)
 }
 
-// releaseGeneration 锁外释放一代连接资源：取消 ctx → 断开 SDK 连接（内联回调经代际守卫
-// 看到 r.client 已置空/换代而忽略）→ 停入站消费 loop。
+/*
+ * releaseGeneration 锁外释放一代连接资源：取消 ctx → 断开 SDK 连接（内联回调经代际守卫
+ * 看到 r.client 已置空/换代而忽略）→ 停入站消费 loop。
+ */
 func releaseGeneration(cancel context.CancelFunc, client *aibot.WsClient, stop chan struct{}) {
 	if cancel != nil {
 		cancel()
@@ -216,9 +231,11 @@ func releaseGeneration(cancel context.CancelFunc, client *aibot.WsClient, stop c
 	}
 }
 
-// setStateForClient 回调驱动的状态写入，代际守卫：仅当 client 仍是当前代连接（r.client ==
-// client）时生效。停止/换代后 r.client 已置空，迟到的 SDK 回调（含 Disconnect 内联触发的
-// OnDisconnected）在此自然忽略——stopped 终态不被覆盖，且写入方永远拿得到锁。
+/*
+ * setStateForClient 回调驱动的状态写入，代际守卫：仅当 client 仍是当前代连接（r.client ==
+ * client）时生效。停止/换代后 r.client 已置空，迟到的 SDK 回调（含 Disconnect 内联触发的
+ * OnDisconnected）在此自然忽略——stopped 终态不被覆盖，且写入方永远拿得到锁。
+ */
 func (r *channelRuntime) setStateForClient(client *aibot.WsClient, state, lastErr string) {
 	r.mu.Lock()
 	if r.client == client {
@@ -235,8 +252,10 @@ func (r *channelRuntime) Status() bot.ChannelStatus {
 	return bot.ChannelStatus{State: r.state, LastError: r.lastErr}
 }
 
-// clientSnapshot 回复流用的客户端快照（nil = 已停止/未启动）。返回接缝接口（replyClient）
-// 供单测注入 fake；nil 判定显式判 client 字段——具体类型 nil 上转接口会得到非 nil 接口值。
+/*
+ * clientSnapshot 回复流用的客户端快照（nil = 已停止/未启动）。返回接缝接口（replyClient）
+ * 供单测注入 fake；nil 判定显式判 client 字段——具体类型 nil 上转接口会得到非 nil 接口值。
+ */
 func (r *channelRuntime) clientSnapshot() replyClient {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -271,8 +290,10 @@ func (r *channelRuntime) submitInteraction(build func(*bot.InboundMessage)) {
 	trySend(ch, stop, build, "bot 交互通道已满，点击事件丢弃")
 }
 
-// trySend 非阻塞投递：通道满即丢并告警（企微 WS 无补投，fail closed 不积压）；Stop 关闭
-// 窗口内的迟到投递经 stop 分支静默丢弃。
+/*
+ * trySend 非阻塞投递：通道满即丢并告警（企微 WS 无补投，fail closed 不积压）；Stop 关闭
+ * 窗口内的迟到投递经 stop 分支静默丢弃。
+ */
 func trySend(ch chan func(*bot.InboundMessage), stop chan struct{}, build func(*bot.InboundMessage), fullWarn string) {
 	select {
 	case ch <- build:
@@ -282,8 +303,10 @@ func trySend(ch chan func(*bot.InboundMessage), stop chan struct{}, build func(*
 	}
 }
 
-// processLoop 保序串行消费：构建（含同步下载）→ 交核心编排器。通道与停止信号按 Start
-// 代际以参数固定——本 loop 只消费本代通道，Stop 关旧代 stop 后本 loop 自然退出。
+/*
+ * processLoop 保序串行消费：构建（含同步下载）→ 交核心编排器。通道与停止信号按 Start
+ * 代际以参数固定——本 loop 只消费本代通道，Stop 关旧代 stop 后本 loop 自然退出。
+ */
 func (r *channelRuntime) processLoop(ch chan func(*bot.InboundMessage), stop chan struct{}) {
 	for {
 		select {

@@ -21,8 +21,10 @@ import (
 	"ocean-harness/server/internal/global"
 )
 
-// ImBot 对应 /api/imBot 命名空间下的业务逻辑：bot CRUD + supervisor 连接热更新联动。
-// DB 是配置 SSOT；运行时是投影——写库成功后才调 supervisor（ApplyBot/StopBot），失败仅日志。
+/*
+ * ImBot 对应 /api/imBot 命名空间下的业务逻辑：bot CRUD + supervisor 连接热更新联动。
+ * DB 是配置 SSOT；运行时是投影——写库成功后才调 supervisor（ApplyBot/StopBot），失败仅日志。
+ */
 type ImBot struct {
 	apis.Service
 }
@@ -116,8 +118,10 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	row.Enabled = enabledYesNo(req.Enabled)
 
 	q := query.Use(svc.Orm)
-	// 显式列 Updates 而非基线 Save：row 是 mustGet 的陈旧快照，Save 整行回写会把 supervisor
-	// 并发写入的 last_error 覆盖回旧值；map 更新恰好绕开该列的竞态（有意偏离基线，勿"纠正"）。
+	/*
+	 * 显式列 Updates 而非基线 Save：row 是 mustGet 的陈旧快照，Save 整行回写会把 supervisor
+	 * 并发写入的 last_error 覆盖回旧值；map 更新恰好绕开该列的竞态（有意偏离基线，勿"纠正"）。
+	 */
 	if _, err := q.ImBot.WithContext(svc.Context).Where(q.ImBot.ID.Eq(row.ID)).
 		Updates(map[string]any{
 			"name": row.Name, "credential": row.Credential, "workspace_id": row.WorkspaceID,
@@ -131,8 +135,10 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	return &item, nil
 }
 
-// Delete 物理删除 bot + 事务级联删会话映射（无 DB 外键，service 层手动级联——tracker 基线约定），
-// 并停止其连接。
+/*
+ * Delete 物理删除 bot + 事务级联删会话映射（无 DB 外键，service 层手动级联——tracker 基线约定），
+ * 并停止其连接。
+ */
 func (svc ImBot) Delete(req *types.ImBotDeleteRequest) error {
 	if _, err := svc.mustGet(req.ID); err != nil {
 		return err
@@ -202,9 +208,11 @@ func (svc ImBot) GetConversations(req *types.ImBotGetConversationsRequest) ([]ty
 	return out, nil
 }
 
-// BindConversationIssue 会话级绑定/解绑（issueId 空 = 解绑）。绑定校验链：bot 已选工作空间 →
-// issue 存在且归属 bot 工作空间 → 会话行在场（绑定以会话已开启为前提，行不存在即拒）。
-// 只写绑定列不动 claude_session_id；不触发 applyRuntime——绑定每回合现读，无需热重载。
+/*
+ * BindConversationIssue 会话级绑定/解绑（issueId 空 = 解绑）。绑定校验链：bot 已选工作空间 →
+ * issue 存在且归属 bot 工作空间 → 会话行在场（绑定以会话已开启为前提，行不存在即拒）。
+ * 只写绑定列不动 claude_session_id；不触发 applyRuntime——绑定每回合现读，无需热重载。
+ */
 func (svc ImBot) BindConversationIssue(req *types.ImBotBindIssueRequest) error {
 	botRow, err := svc.mustGet(req.BotId)
 	if err != nil {
@@ -242,8 +250,10 @@ func (svc ImBot) BindConversationIssue(req *types.ImBotBindIssueRequest) error {
 	return nil
 }
 
-// boundIssueNames 会话行绑定 issue id → name 一次性映射（对齐 workspaceNames 惯例；
-// 悬空锚/查失败按空名兜底，不阻塞列表加载）。
+/*
+ * boundIssueNames 会话行绑定 issue id → name 一次性映射（对齐 workspaceNames 惯例；
+ * 悬空锚/查失败按空名兜底，不阻塞列表加载）。
+ */
 func (svc ImBot) boundIssueNames(rows []*model.ImBotConversation) map[string]string {
 	ids := make([]string, 0, len(rows))
 	seen := map[string]bool{}
@@ -268,8 +278,10 @@ func (svc ImBot) boundIssueNames(rows []*model.ImBotConversation) map[string]str
 	return names
 }
 
-// chatTypeOfKey 会话键前缀派生聊天类型（group: → group，single: 及其余 → single）。键格式
-// SSOT 是 bot.FormatConversationKey（前缀自描述），此处按前缀就地解析、不调用 bot 包函数。
+/*
+ * chatTypeOfKey 会话键前缀派生聊天类型（group: → group，single: 及其余 → single）。键格式
+ * SSOT 是 bot.FormatConversationKey（前缀自描述），此处按前缀就地解析、不调用 bot 包函数。
+ */
 func chatTypeOfKey(key string) string {
 	if strings.HasPrefix(key, "group:") {
 		return "group"
@@ -315,9 +327,11 @@ func provisionView(v wecom.AttemptView) *types.ImBotProvisionView {
 	}
 }
 
-// ProvisionActivateBot 扫码授权成功的激活回调（main 装配注入 wecom.SetProvisionActivator，
-// 进程级函数——不依赖请求上下文，同 StartEnabled 口径）。botId 查重 → 建 bot 行
-// （enabled=Y、工作空间待补选、默认开放白名单、名称默认可后改）→ 拉起连接。
+/*
+ * ProvisionActivateBot 扫码授权成功的激活回调（main 装配注入 wecom.SetProvisionActivator，
+ * 进程级函数——不依赖请求上下文，同 StartEnabled 口径）。botId 查重 → 建 bot 行
+ * （enabled=Y、工作空间待补选、默认开放白名单、名称默认可后改）→ 拉起连接。
+ */
 func ProvisionActivateBot(remoteBotID, secret string) (int, error) {
 	if global.BotSupervisor == nil {
 		return 0, errors.New("bot 运行时未就绪")
@@ -366,8 +380,10 @@ func (svc ImBot) mustGet(id int) (*model.ImBot, error) {
 	return row, nil
 }
 
-// applyRuntime 落库成功后的连接热更新：启用 → ApplyBot（Stop→Start），停用 → StopBot。
-// 失败仅日志（DB 已是 SSOT，运行时漂移可经重启连接/重启应用收敛）。
+/*
+ * applyRuntime 落库成功后的连接热更新：启用 → ApplyBot（Stop→Start），停用 → StopBot。
+ * 失败仅日志（DB 已是 SSOT，运行时漂移可经重启连接/重启应用收敛）。
+ */
 func (svc ImBot) applyRuntime(row *model.ImBot) {
 	if global.BotSupervisor == nil {
 		return
@@ -384,8 +400,10 @@ func (svc ImBot) applyRuntime(row *model.ImBot) {
 	}
 }
 
-// mergeCurrentStatus 取该 bot 当前运行态合并进响应（Create/Update 后响应即真实状态，
-// 前端 setQueryData 一次往返不出现「已启用+未运行」的矛盾投影）。
+/*
+ * mergeCurrentStatus 取该 bot 当前运行态合并进响应（Create/Update 后响应即真实状态，
+ * 前端 setQueryData 一次往返不出现「已启用+未运行」的矛盾投影）。
+ */
 func (svc ImBot) mergeCurrentStatus(item *types.ImBotResponseData, row *model.ImBot) {
 	var st bot.BotStatusView
 	if global.BotSupervisor != nil {
@@ -394,8 +412,10 @@ func (svc ImBot) mergeCurrentStatus(item *types.ImBotResponseData, row *model.Im
 	mergeRuntimeStatus(item, row, st)
 }
 
-// mergeRuntimeStatus 运行态合并进响应：running=false（未运行/未注册适配器）时
-// ConnState=stopped，LastError 回落 DB 行 last_error（跨重启可见）。
+/*
+ * mergeRuntimeStatus 运行态合并进响应：running=false（未运行/未注册适配器）时
+ * ConnState=stopped，LastError 回落 DB 行 last_error（跨重启可见）。
+ */
 func mergeRuntimeStatus(item *types.ImBotResponseData, row *model.ImBot, st bot.BotStatusView) {
 	item.LastError = row.LastError
 	if st.State != "" {
@@ -434,8 +454,10 @@ func (svc ImBot) workspaceNames() map[int]string {
 	return names
 }
 
-// ensureBotIdAvailable credential.botId 查重（JSON 列无法建唯一索引，service 层扫描校验；
-// excludeID 供 update 排除自身）。
+/*
+ * ensureBotIdAvailable credential.botId 查重（JSON 列无法建唯一索引，service 层扫描校验；
+ * excludeID 供 update 排除自身）。
+ */
 func (svc ImBot) ensureBotIdAvailable(botId string, excludeID int) error {
 	q := query.Use(svc.Orm)
 	rows, err := q.ImBot.WithContext(svc.Context).Find()

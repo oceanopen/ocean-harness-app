@@ -94,12 +94,12 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
       {/* 紧凑工具栏：搜索 + 新建 */}
       <Box
         sx={{
-          p: 1.5,
-          borderBottom: 1,
+          p: '12px',
+          borderBottom: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
+          gap: '8px',
         }}
       >
         <TextField
@@ -107,7 +107,7 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
           placeholder={t('tracker:workspaceProject.search')}
           value={searchName}
           onChange={e => setSearchName(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: 60 }}
+          sx={{ flexGrow: 1, minWidth: '60px' }}
         />
         <Tooltip title={t('tracker:workspaceProject.actions.add')}>
           <IconButton
@@ -145,7 +145,7 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
           </Box>
         )}
         {isError && (
-          <Box sx={{ p: 1.5 }}>
+          <Box sx={{ p: '12px' }}>
             <Alert
               severity="error"
               action={(
@@ -167,12 +167,12 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
               alignItems: 'center',
               justifyContent: 'center',
               height: '100%',
-              gap: 1,
-              px: 2,
-              py: 3,
+              gap: '8px',
+              px: '16px',
+              py: '24px',
             }}
           >
-            <FolderOutlinedIcon sx={{ fontSize: 36, color: 'text.secondary' }} />
+            <FolderOutlinedIcon sx={{ fontSize: '36px', color: 'text.secondary' }} />
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
               {t('tracker:workspaceProject.empty.title')}
             </Typography>
@@ -184,7 +184,7 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
               size="small"
               startIcon={<AddOutlinedIcon />}
               onClick={() => setAddDialogOpen(true)}
-              sx={{ mt: 0.5 }}
+              sx={{ mt: '4px' }}
             >
               {t('tracker:workspaceProject.actions.add')}
             </Button>
@@ -198,7 +198,7 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
           </Box>
         )}
         {ready && displayed.length > 0 && (
-          <Box sx={{ py: 0.5 }}>
+          <Box sx={{ py: '4px' }}>
             {displayed.map(p => (
               <WorkspaceProjectRow
                 key={p.id}
@@ -275,14 +275,14 @@ function WorkspaceProjectRow({ workspaceProject, selected, onSelect, onEdit, onD
         {
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
-          mx: 0.5,
-          my: 0.25,
-          px: 1,
-          py: 0.75,
+          gap: '8px',
+          mx: '4px',
+          my: '2px',
+          px: '8px',
+          py: '6px',
           cursor: 'pointer',
-          borderRadius: 1,
-          borderLeft: 3,
+          borderRadius: '4px',
+          borderLeft: '3px solid',
           borderColor: selected ? 'primary.main' : 'transparent',
           bgcolor: selected ? 'action.selected' : 'transparent',
         },
@@ -290,15 +290,15 @@ function WorkspaceProjectRow({ workspaceProject, selected, onSelect, onEdit, onD
         { '&:hover': { bgcolor: selected ? 'action.selected' : 'action.hover' } },
       ]}
     >
-      <Box sx={{ width: 22, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Box sx={{ width: '22px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {emoji
           ? (
-              <Typography component="span" sx={{ fontSize: 18, lineHeight: 1 }}>
+              <Typography component="span" sx={{ fontSize: '18px', lineHeight: 1 }}>
                 {emoji}
               </Typography>
             )
           : (
-              <FolderOutlinedIcon sx={{ fontSize: 18, color: 'text.disabled' }} />
+              <FolderOutlinedIcon sx={{ fontSize: '18px', color: 'text.disabled' }} />
             )}
       </Box>
       <Box sx={{ flex: 1, minWidth: 0 }}>

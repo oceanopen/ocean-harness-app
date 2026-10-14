@@ -13,18 +13,18 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// issueWorkspace sshConfig step（T1.2）：根据 issue 关联仓库的 SSH URL（manifest.remoteUrl），
-// 从全局 ~/.ssh/config 提取匹配的 Host 段（精确 + 通配符），生成 workspace 级
-// {issueId}/.ssh/config。IdentityFile 等保持全局原路径原样转写，不复制私钥；T1.4 clone 时通过
-// GIT_SSH_COMMAND="ssh -F <workspace>/.ssh/config" 环境变量指定本文件。
-// 降级：全局 config 不存在/不可读、无任何匹配 Host 段 → 步骤置 SKIPPED（git clone 走默认 SSH）。
+/*
+ * issueWorkspace sshConfig step（T1.2）：根据 issue 关联仓库的 SSH URL（manifest.remoteUrl），从全局 ~/.ssh/config 提取匹配的 Host 段（精确 + 通配符），生成 workspace 级 {issueId}/.ssh/config。IdentityFile 等保持全局原路径原样转写，不复制私钥；T1.4 clone 时通过 GIT_SSH_COMMAND="ssh -F <workspace>/.ssh/config" 环境变量指定本文件。
+ * 降级：全局 config 不存在/不可读、无任何匹配 Host 段 → 步骤置 SKIPPED（git clone 走默认 SSH）。
+ */
 
 func init() {
 	issueWorkspaceStepRunners[types.IW_STEP_KEY_SSH_CONFIG] = issueWorkspaceRunSSHConfig
 }
 
-// issueWorkspaceSSHGlobalConfigPath 返回全局 ssh config 路径（~/.ssh/config）。
-// 包级函数变量而非内联调用，便于测试替换为临时文件路径；取不到 home 时返回空串（读取失败走降级）。
+/*
+ * issueWorkspaceSSHGlobalConfigPath 返回全局 ssh config 路径（~/.ssh/config）。包级函数变量而非内联调用，便于测试替换为临时文件路径；取不到 home 时返回空串（读取失败走降级）。
+ */
 var issueWorkspaceSSHGlobalConfigPath = func() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -33,9 +33,10 @@ var issueWorkspaceSSHGlobalConfigPath = func() string {
 	return filepath.Join(home, ".ssh", "config")
 }
 
-// issueWorkspaceRunSSHConfig 生成 workspace 级 .ssh/config。终态协议：
-// 生成成功 → 返回 nil（编排置 SUCCESS）；降级跳过 → 自置 SKIPPED + Message 并返回 nil；
-// 全局 config 解析失败 → 返回 error（编排置 FAILED）——全局配置损坏应暴露而非静默吞掉。
+/*
+ * issueWorkspaceRunSSHConfig 生成 workspace 级 .ssh/config。终态协议：生成成功 → 返回 nil（编排置 SUCCESS）；降级跳过 → 自置 SKIPPED + Message 并返回 nil；
+ * 全局 config 解析失败 → 返回 error（编排置 FAILED）——全局配置损坏应暴露而非静默吞掉。
+ */
 func issueWorkspaceRunSSHConfig(state *types.IssueWorkspaceState, step *types.IssueWorkspaceStep, logger *zap.Logger) error {
 	hosts := issueWorkspaceSSHHostsFromManifest(state.Manifest)
 	globalPath := issueWorkspaceSSHGlobalConfigPath()
@@ -67,9 +68,10 @@ func issueWorkspaceRunSSHConfig(state *types.IssueWorkspaceState, step *types.Is
 	return nil
 }
 
-// issueWorkspaceSSHHost 从 remote URL 提取 ssh hostname，不识别的格式返回 ""（不参与匹配）。
-// 本期仅支持 scp 风格 user@host:path（实际场景唯一格式：git@github.com:org/repo.git）；
-// ssh://git@host[:port]/path 等带协议前缀的格式暂不解析，待有真实需求时在此扩展。
+/*
+ * issueWorkspaceSSHHost 从 remote URL 提取 ssh hostname，不识别的格式返回 ""（不参与匹配）。
+ * 本期仅支持 scp 风格 user@host:path（实际场景唯一格式：git@github.com:org/repo.git）；ssh://git@host[:port]/path 等带协议前缀的格式暂不解析，待有真实需求时在此扩展。
+ */
 func issueWorkspaceSSHHost(remoteURL string) string {
 	if strings.Contains(remoteURL, "://") {
 		return ""
@@ -102,11 +104,11 @@ func issueWorkspaceSSHHostsFromManifest(manifest []types.IssueWorkspaceRepoRef) 
 	return hosts
 }
 
-// issueWorkspaceBuildSSHConfig 由全局 config 原文提取与目标 host 集合匹配的 Host 段并序列化，
-// matched 表示是否存在至少一个匹配段（false 时调用方降级 SKIPPED）。两处保留/剔除约定：
-//   - 文件头裸配置（解析为隐式 Host * 段）与显式 Host * 段匹配一切 host，原样保留——
-//     clone 用 ssh -F 指定本文件后不再读全局 config，保留用户全局默认行为（如 AddKeysToAgent）；
-//   - Include 指令不展开也不转写——其相对路径在 workspace config 中语义失效（本期范围外）。
+/*
+ * issueWorkspaceBuildSSHConfig 由全局 config 原文提取与目标 host 集合匹配的 Host 段并序列化，matched 表示是否存在至少一个匹配段（false 时调用方降级 SKIPPED）。两处保留/剔除约定：
+ * 文件头裸配置（解析为隐式 Host * 段）与显式 Host * 段匹配一切 host，原样保留——clone 用 ssh -F 指定本文件后不再读全局 config，保留用户全局默认行为（如 AddKeysToAgent）；
+ * Include 指令不展开也不转写——其相对路径在 workspace config 中语义失效（本期范围外）。
+ */
 func issueWorkspaceBuildSSHConfig(globalConfig []byte, hosts []string) (content string, matched bool, err error) {
 	cfg, err := ssh_config.DecodeBytes(globalConfig)
 	if err != nil {

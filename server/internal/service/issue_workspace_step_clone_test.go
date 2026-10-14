@@ -12,8 +12,10 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// newCloneBareRemote 构造 cloneRepos 测试源（与 gitutil 包测试同构，test helper 不跨包复用）：
-// work 仓库 main 分支 + feature/base 分支，bare（HEAD=main）作 remote。
+/*
+ * newCloneBareRemote 构造 cloneRepos 测试源（与 gitutil 包测试同构，test helper 不跨包复用）：
+ * work 仓库 main 分支 + feature/base 分支，bare（HEAD=main）作 remote。
+ */
 func newCloneBareRemote(t *testing.T) (work, bare string) {
 	t.Helper()
 	work, bare = t.TempDir(), t.TempDir()

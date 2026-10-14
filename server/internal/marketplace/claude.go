@@ -5,17 +5,20 @@ import (
 	"fmt"
 )
 
-// claude.go：claude plugin CLI 的命令构造与 JSON 输出解析。
-// 命令口径与命令行完全一致（透传 CLI 能力）；安装/卸载/启停/更新一律 user scope +
-// --yes（非 TTY 下免交互确认），与本应用「全局安装」的产品语义对齐。
+/*
+ * claude.go：claude plugin CLI 的命令构造与 JSON 输出解析。命令口径与命令行完全一致（透传 CLI 能力）；
+ * 安装/卸载/启停/更新一律 user scope + --yes（非 TTY 下免交互确认），与本应用「全局安装」的产品语义对齐。
+ */
 //
-// 多 CLI 扩展提示：本文件导出名（ListMarketplaces/InstallPlugin 等）为 claude 语义的
-// 无前缀通用名——v1 单 CLI 下命名诚实。未来第二 CLI（codex 等）落地时，须把本文件
-// 导出按 <CLI> 前缀规约重构（如 ClaudeListMarketplaces/ClaudeInstallPlugin），新增
-// <cli>.go 对称实现，service.Operate 届时升级为 cli×action 二维分发。
+/*
+ * 多 CLI 扩展提示：本文件导出名（ListMarketplaces/InstallPlugin 等）为 claude 语义的无前缀通用名——v1 单 CLI 下命名诚实；
+ * 未来第二 CLI（codex 等）落地时须把本文件导出按 <CLI> 前缀规约重构（如 ClaudeListMarketplaces），新增 <cli>.go 对称实现，service.Operate 届时升级为 cli×action 二维分发。
+ */
 
-// ClaudeMarketplaceEntry 对应 `claude plugin marketplace list --json` 的数组元素
-// （实测 claude 2.1.228 字段；防御性最小集，CLI 增字段不破解析）。
+/*
+ * ClaudeMarketplaceEntry 对应 `claude plugin marketplace list --json` 的数组元素（实测 claude 2.1.228 字段；
+ * 防御性最小集，CLI 增字段不破解析）。
+ */
 type ClaudeMarketplaceEntry struct {
 	Name            string `json:"name"`
 	Source          string `json:"source"` // github | git | directory | file
@@ -25,8 +28,10 @@ type ClaudeMarketplaceEntry struct {
 	InstallLocation string `json:"installLocation"`
 }
 
-// SourceType 把 CLI 的 source 原始类型归一为前端展示口径，返回 (类型, 明细)：
-// github → owner/repo；git → git URL；directory/file → 本地路径（引用原目录，不拷贝）。
+/*
+ * SourceType 把 CLI 的 source 原始类型归一为前端展示口径，返回 (类型, 明细)：github → owner/repo；git → git URL；
+ * directory/file → 本地路径（引用原目录，不拷贝）。
+ */
 func (e ClaudeMarketplaceEntry) SourceType() (string, string) {
 	switch e.Source {
 	case "github":
@@ -62,8 +67,9 @@ func ListMarketplaces() ([]ClaudeMarketplaceEntry, error) {
 	return entries, nil
 }
 
-// AddMarketplace 注册插件市场。source 为 CLI 认可的三种形式之一：本地绝对路径 /
-// GitHub owner/repo / git URL，透传不加工（本地路径为引用原目录，github/git 源由 CLI clone）。
+/*
+ * AddMarketplace 注册插件市场：source 为 CLI 认可的三种形式之一（本地绝对路径 / GitHub owner/repo / git URL），透传不加工（本地路径引用原目录，github/git 源由 CLI clone）。
+ */
 func AddMarketplace(source string) error {
 	_, err := run(timeoutClone, "plugin", "marketplace", "add", source)
 	return err
@@ -75,8 +81,9 @@ func UpdateMarketplace(name string) error {
 	return err
 }
 
-// RemoveMarketplace 注销插件市场。claude 语义：从最后一个 scope 移除时连带卸载该市场
-// 已安装的全部插件——调用方（service/前端）须先经用户确认。
+/*
+ * RemoveMarketplace 注销插件市场；claude 语义：从最后一个 scope 移除时连带卸载该市场已安装的全部插件，调用方（service/前端）须先经用户确认。
+ */
 func RemoveMarketplace(name string) error {
 	_, err := run(timeoutLocal, "plugin", "marketplace", "remove", name)
 	return err

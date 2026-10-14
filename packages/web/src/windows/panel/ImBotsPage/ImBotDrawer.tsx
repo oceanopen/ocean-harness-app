@@ -120,7 +120,7 @@ function ImBotDrawer(props: ImBotDrawerProps) {
   };
 
   const helpText = (text: string) => (
-    <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>{text}</Typography>
+    <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>{text}</Typography>
   );
 
   return (
@@ -132,22 +132,22 @@ function ImBotDrawer(props: ImBotDrawerProps) {
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 标题栏 */}
-        <Box sx={{ px: 3, py: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography sx={{ fontSize: 16, fontWeight: 600 }}>
+        <Box sx={{ px: '24px', py: '16px', borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Typography sx={{ fontSize: '16px', fontWeight: 600 }}>
             {editing ? '编辑机器人' : '手动接入机器人'}
           </Typography>
           <IconButton
             size="small"
             onClick={onClose}
             disabled={saving}
-            sx={{ 'ml': 'auto', '& svg': { fontSize: 18 } }}
+            sx={{ 'ml': 'auto', '& svg': { fontSize: '18px' } }}
           >
             <CloseOutlinedIcon />
           </IconButton>
         </Box>
 
         {/* 表单区 */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <TextField
             size="small"
             fullWidth
@@ -199,7 +199,7 @@ function ImBotDrawer(props: ImBotDrawerProps) {
                       size="small"
                       aria-label={showSecret ? '隐藏 Secret' : '显示 Secret'}
                       onClick={() => setShowSecret(v => !v)}
-                      sx={{ '& svg': { fontSize: 18 } }}
+                      sx={{ '& svg': { fontSize: '18px' } }}
                     >
                       {showSecret ? <VisibilityOffOutlinedIcon /> : <VisibilityOutlinedIcon />}
                     </IconButton>
@@ -267,14 +267,14 @@ function ImBotDrawer(props: ImBotDrawerProps) {
           )}
 
           {(createMutation.error || updateMutation.error) && (
-            <Alert severity="error" sx={{ fontSize: 12 }}>
+            <Alert severity="error" sx={{ fontSize: '12px' }}>
               {(createMutation.error ?? updateMutation.error)!.message}
             </Alert>
           )}
         </Box>
 
         {/* 底部操作栏 */}
-        <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+        <Box sx={{ px: '24px', py: '16px', borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
           <Button onClick={onClose} color="inherit" disabled={saving}>取消</Button>
           <Button onClick={handleSave} variant="contained" loading={saving} disabled={invalid}>保存</Button>
         </Box>

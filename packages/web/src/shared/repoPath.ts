@@ -1,5 +1,7 @@
-// 本地仓库路径工具：仓库目录与项目子目录的拼接、相对路径计算、basename 提取。
-// 表单（子目录剥离前缀）与卡片（拼接后打开目录）共用，避免多处重复字符串处理。
+/**
+ * 本地仓库路径工具：仓库目录与项目子目录的拼接、相对路径计算、basename 提取。
+ * 表单（子目录剥离前缀）与卡片（拼接后打开目录）共用，避免多处重复字符串处理。
+ */
 
 /**
  * 去掉路径**结尾**的路径分隔符（`/` 或 `\`），**保留前导分隔符**。
@@ -42,10 +44,9 @@ export function joinRepoDir(dir: string, subDir: string): string {
 }
 
 /**
- * 计算所选目录相对仓库目录的子目录路径（用于表单「项目子目录」字段）。
- * - 所选即仓库目录本身 → 返回 `''`（无子目录）
- * - 所选位于仓库目录之下 → 返回相对路径（分隔符统一为 `/`），如 `packages/ums_infomweb_web_infom`
- * - 所选不在仓库目录之下 → 返回 `null`（调用方据此提示「子目录必须位于仓库目录之下」）
+ * 计算所选目录相对仓库目录的子目录路径（用于表单「项目子目录」字段）：所选即仓库目录本身 → 返回 `''`（无子目录）；
+ * 所选位于仓库目录之下 → 返回相对路径（分隔符统一为 `/`），如 `packages/ums_infomweb_web_infom`；
+ * 所选不在仓库目录之下 → 返回 `null`（调用方据此提示「子目录必须位于仓库目录之下」）。
  */
 export function relativeSubDir(repoDir: string, selected: string): string | null {
   const root = trimTrailingSeparators(repoDir.trim());

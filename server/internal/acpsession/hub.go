@@ -6,10 +6,9 @@ import (
 	"github.com/BrokkAi/acp-go/schema"
 )
 
-// subscriberBuffer 单订户有界缓冲：满即断开（溢出策略见 broadcast）——pump 永不阻塞于
-// 慢 SSE 客户端（保住 acp 事件流的背压契约：Session.Events() 必须被持续排空，慢消费会
-// 拖住整条连接的读循环）。断开的客户端由 EventSource 自动重连取全新快照（对齐 PTY
-// scrollback 重挂载语义；不做 Last-Event-ID 续传）。
+/*
+ * subscriberBuffer 单订户有界缓冲：满即断开（溢出策略见 broadcast）——pump 永不阻塞于慢 SSE 客户端，保住 acp 事件流背压契约、慢消费不拖连接读循环；断开客户端由 EventSource 自动重连取全新快照（对齐 PTY scrollback 重挂载语义，不做 Last-Event-ID 续传）。
+ */
 const subscriberBuffer = 256
 
 // FrameType SSE 帧型全集（信封 type 字段取值域）。
@@ -30,8 +29,10 @@ const (
 	FrameTerminated      FrameType = "terminated"      // 会话终结（终态帧，订阅端收到即可断开）
 )
 
-// Frame SSE 帧信封：seq 按 issue 单调递增（前端检测 gap 即重连取快照），type 判别载荷
-// （至多一个非零载荷字段，与 Type 对应）。JSON 序列化即 wire 形态。
+/*
+ * Frame SSE 帧信封：seq 按 issue 单调递增（前端检测 gap 即重连取快照），type 判别载荷
+ * （至多一个非零载荷字段，与 Type 对应）。JSON 序列化即 wire 形态。
+ */
 type Frame struct {
 	Seq     uint64    `json:"seq"`
 	IssueID string    `json:"issueId"`
@@ -64,8 +65,10 @@ type TurnPayload struct {
 	Error      string `json:"error,omitempty"`
 }
 
-// hub issue 粒度的 SSE 订阅注册表：seq 单调分配 + 建连即快照（首帧）+ 广播扇出。
-// 所有方法内部加锁；帧发送永不阻塞（溢出断开慢订户）。
+/*
+ * hub issue 粒度的 SSE 订阅注册表：seq 单调分配 + 建连即快照（首帧）+ 广播扇出。
+ * 所有方法内部加锁；帧发送永不阻塞（溢出断开慢订户）。
+ */
 type hub struct {
 	mu     sync.Mutex
 	subs   map[string]map[*subscriber]struct{}
@@ -85,8 +88,10 @@ func newHub() *hub {
 	}
 }
 
-// subscribe 订阅并装配首帧：快照在 hub 锁内生成入订户通道（seq 连续分配，杜绝快照与
-// 增量帧之间的缝隙）。snapshot 由调用方提供投影（Manager.Get）。返回帧通道与退订函数。
+/*
+ * subscribe 订阅并装配首帧：快照在 hub 锁内生成入订户通道（seq 连续分配，杜绝快照与
+ * 增量帧之间的缝隙）。snapshot 由调用方提供投影（Manager.Get）。返回帧通道与退订函数。
+ */
 func (h *hub) subscribe(issueID string, snapshot func() *ViewSnapshot) (<-chan Frame, func()) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -103,8 +108,10 @@ func (h *hub) subscribe(issueID string, snapshot func() *ViewSnapshot) (<-chan F
 	return sub.ch, func() { h.unsubscribe(sub) }
 }
 
-// broadcast 帧扇出：seq 逐帧分配后投递。慢订户（缓冲满）即断开——断开的是订阅而非
-// HTTP 连接，客户端 EventSource 自动重连（重连即新快照）。
+/*
+ * broadcast 帧扇出：seq 逐帧分配后投递。慢订户（缓冲满）即断开——断开的是订阅而非
+ * HTTP 连接，客户端 EventSource 自动重连（重连即新快照）。
+ */
 func (h *hub) broadcast(issueID string, frames []Frame) {
 	if len(frames) == 0 {
 		return

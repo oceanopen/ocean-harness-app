@@ -2,8 +2,10 @@ import type { BrowserFrame, BrowserSessionSnapshot, BrowserSessionView } from '@
 import { describe, expect, it } from 'vitest';
 import { applyFrame, isFrameSequenceBroken, upsertSessions } from './reducer';
 
-// applyFrame 归约单测：两帧型语义（snapshot 整体替换 / sessions 覆写式 upsert）+ 不
-// mutate 入参 + seq 断档判定（镜像 acpSession/reducer.test.ts 范式）。
+/**
+ * applyFrame 归约单测：两帧型语义（snapshot 整体替换 / sessions 覆写式 upsert）+ 不
+ * mutate 入参 + seq 断档判定（镜像 acpSession/reducer.test.ts 范式）。
+ */
 
 let seqSource = 0;
 

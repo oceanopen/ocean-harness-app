@@ -129,12 +129,12 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
       {/* 顶栏：搜索表单 + 操作栏 */}
       <Box
         sx={{
-          p: 2,
-          borderBottom: 1,
+          p: '16px',
+          borderBottom: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           alignItems: 'center',
-          gap: 1.5,
+          gap: '12px',
           flexWrap: 'wrap',
         }}
       >
@@ -146,16 +146,16 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
           placeholder={t('repositories:search.name')}
           value={searchName}
           onChange={e => setSearchName(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: 120 }}
+          sx={{ flexGrow: 1, minWidth: '120px' }}
         />
         <TextField
           size="small"
           placeholder={t('repositories:search.remote')}
           value={searchRemote}
           onChange={e => setSearchRemote(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: 140 }}
+          sx={{ flexGrow: 1, minWidth: '140px' }}
         />
-        <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+        <Box sx={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
           <Button
             variant="contained"
             size="small"
@@ -186,7 +186,7 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
           </Box>
         )}
         {status === 'error' && (
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: '16px' }}>
             <Alert
               severity="error"
               action={(
@@ -208,19 +208,19 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
               alignItems: 'center',
               justifyContent: 'center',
               height: '100%',
-              gap: 1.5,
-              px: 3,
-              py: 4,
+              gap: '12px',
+              px: '24px',
+              py: '32px',
             }}
           >
-            <FolderOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+            <FolderOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
               {t('repositories:empty.title')}
             </Typography>
             <Typography variant="body2" color="text.secondary" align="center">
               {t('repositories:empty.desc')}
             </Typography>
-            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setAddDialogOpen(true)} sx={{ mt: 1 }}>
+            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setAddDialogOpen(true)} sx={{ mt: '8px' }}>
               {t('repositories:actions.add')}
             </Button>
           </Box>
@@ -235,9 +235,9 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
         {status === 'ready' && displayed.length > 0 && (
           <Box
             sx={{
-              p: 2,
+              p: '16px',
               display: 'grid',
-              gap: 2,
+              gap: '16px',
               // 响应式 1-4 列：窄屏 1 列，随宽度递增到 4 列。
               gridTemplateColumns: {
                 xs: '1fr',

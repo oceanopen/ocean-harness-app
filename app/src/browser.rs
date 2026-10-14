@@ -1,21 +1,14 @@
-// 浏览器 OS 层动作（纯桌面便利，不经 Go sidecar 数据面——D7 注明的例外项）。
-//
-// focus_browser_window：把指定 profile 的 Chrome 窗口组前置到桌面最前（有头模式
-// 介入场景的一键定位）。定位依据 = 进程 cmdline 含 `--user-data-dir=<profiles 根>/
-// <profile>`——T1.1 实测 Chrome 进程树全成员 argv 均含此参数，按它反查进程可靠；
-// 且 Chrome per user-data-dir 单实例（T1.2 detect 依据），一个 profile 唯一对应一个
-// Chrome 主进程及其整棵窗口组。
-//
-// profiles 根目录 = ~/.ocean-harness/browser/profiles（Go 侧 paths.go 生产默认；
-// Go 侧根目录可被测试环境变量覆写，属测试态，生产唯一）。
-//
-// 错误纪律（对齐 terminal/ 跳转先例）：未找到进程/窗口显式中文报错，不静默、不做
-// 无谓拉起；动作失败附 stderr 原文。
-
+/*
+ * 浏览器 OS 层动作（纯桌面便利，不经 Go sidecar 数据面——D7 注明的例外项）。
+ * focus_browser_window 按 cmdline 含 `--user-data-dir=<profiles 根>/<profile>` 反查 Chrome 主进程（per user-data-dir 单实例，T1.1/T1.2 实测可靠）并前置其窗口组；profiles 根目录 = ~/.ocean-harness/browser/profiles（Go 侧 paths.go 生产默认）。
+ * 错误纪律（对齐 terminal/ 跳转先例）：未找到进程/窗口显式中文报错，不静默、不做无谓拉起；动作失败附 stderr 原文。
+ */
 use dirs::home_dir;
 
-/// profile 名守卫（Go 侧已有完整校验，此处防御性复查——拼 user-data-dir 路径前
-/// 拒绝路径穿越与分隔符）。
+/*
+ * profile 名守卫（Go 侧已有完整校验，此处防御性复查——拼 user-data-dir 路径前
+ * 拒绝路径穿越与分隔符）。
+ */
 fn validate_profile(profile: &str) -> Result<(), String> {
     if profile.is_empty() || profile == "." || profile == ".." || profile.contains(['/', '\\']) {
         return Err(format!("非法的 profile 名：{profile}"));
@@ -23,7 +16,7 @@ fn validate_profile(profile: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// profile 的 user-data-dir 绝对路径（字符串，供 cmdline 匹配）。
+// profile 的 user-data-dir 绝对路径（字符串，供 cmdline 匹配）。
 fn user_data_dir(profile: &str) -> Result<String, String> {
     validate_profile(profile)?;
     let root = home_dir().ok_or_else(|| "无法定位用户主目录".to_string())?;
@@ -36,9 +29,11 @@ fn user_data_dir(profile: &str) -> Result<String, String> {
         .into_owned())
 }
 
-/// 在 PIDs 集合中判定主进程：父 PID 不在集合内者为树根（Chrome 主进程）。
-/// 理论上恰有一个；防御性取最小 PID（主进程先于其子进程创建）。
-/// （仅 macOS 消费——Windows 侧主进程判定在 PowerShell 脚本内完成。）
+/*
+ * 在 PIDs 集合中判定主进程：父 PID 不在集合内者为树根（Chrome 主进程）。
+ * 理论上恰有一个；防御性取最小 PID（主进程先于其子进程创建）。
+ * （仅 macOS 消费——Windows 侧主进程判定在 PowerShell 脚本内完成。）
+ */
 #[cfg(target_os = "macos")]
 fn main_pid_of(pids: &[u32], ppid_of: &dyn Fn(u32) -> Option<u32>) -> Option<u32> {
     let set: std::collections::HashSet<u32> = pids.iter().copied().collect();
@@ -77,7 +72,7 @@ mod macos {
 
     use super::main_pid_of;
 
-    /// pgrep 的 -f 模式是 ERE：转义路径中的元字符防注入/误匹配。
+    // pgrep 的 -f 模式是 ERE：转义路径中的元字符防注入/误匹配。
     fn regex_escape(s: &str) -> String {
         let mut out = String::with_capacity(s.len());
         for c in s.chars() {
@@ -92,7 +87,7 @@ mod macos {
         out
     }
 
-    /// ps 查父 PID（进程竞态消亡返回 None）。
+    // ps 查父 PID（进程竞态消亡返回 None）。
     fn ppid_of(pid: u32) -> Option<u32> {
         let out = Command::new("ps")
             .args(["-o", "ppid=", "-p", &pid.to_string()])
@@ -102,10 +97,11 @@ mod macos {
         text.trim().parse().ok()
     }
 
-    /// System Events 按 unix id 前置进程（Chrome per-profile 独立实例，其整棵
-    /// 窗口组随进程 frontmost 一并前置）。时序固定：先解最小化（frontmost 不会
-    /// 还原 miniaturized 窗口——最小化窗口只留在 Dock，表现为「点了没反应」），
-    /// 再 set frontmost。
+    /*
+     * System Events 按 unix id 前置进程（Chrome per-profile 独立实例，其整棵窗口组随进程 frontmost 一并前置）。
+     * 时序固定：先解最小化（frontmost 不会还原 miniaturized 窗口——最小化窗口只留在 Dock，表现为「点了没反应」），
+     * 再 set frontmost。
+     */
     fn frontmost_by_pid(pid: u32) -> Result<(), String> {
         let script = format!(
             r#"tell application "System Events"
@@ -164,10 +160,11 @@ mod windows {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
 
-    /// 单次 PowerShell 完成全部动作（进程发现 → 主进程判定 → 窗口前置），零新增
-    /// Rust 依赖（对齐 Go recoverOrphans「shell 工具探查 Windows 进程」先例）。
-    /// 退出码约定：0 成功 / 2 无浏览器进程 / 3 无可见窗口 / 其他 = 脚本自身失败。
-    /// 中文错误统一由 Rust 侧按退出码映射（-Command 传中文有代码页风险，不传）。
+    /*
+     * 单次 PowerShell 完成全部动作（进程发现 → 主进程判定 → 窗口前置），零新增 Rust 依赖（对齐 Go recoverOrphans「shell 工具探查 Windows 进程」先例）。
+     * 退出码约定：0 成功 / 2 无浏览器进程 / 3 无可见窗口 / 其他 = 脚本自身失败。
+     * 中文错误统一由 Rust 侧按退出码映射（-Command 传中文有代码页风险，不传）。
+     */
     const PS_SCRIPT_TEMPLATE: &str = r#"
 $ErrorActionPreference = 'Stop'
 $marker = '--user-data-dir=__DIR__'

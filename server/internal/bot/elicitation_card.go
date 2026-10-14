@@ -1,10 +1,8 @@
-// 本文件是 elicitation 卡域（T3.3）：elicitation 挂起的 requestedSchema（JSON Schema）
-// → 卡题集分类 → 三卡型 spec 构造与勾选集应答映射。分类规则镜像前端 SSOT（
-// AcpSessionView/elicitationForm.ts：string+oneOf→单选 / array+items.anyOf→多选 / 其余
-// 形态 IM 不可表示），Other 自由输入字段（AskUserQuestion 的 _meta._askUserQuestionCustomAnswer
-// 标记，Gold-Band PoC 校准的 wire 形态）从卡题集剔除。TaskID 与审批卡同族编码，marker
-// 为 -elicit-（permissionCardMarker 留位兑现）；首发与置灰共用同一构造函数（企微整卡替换，
-// 同 CardReplyStream.UpdateCard 契约）。
+/*
+ * 本文件是 elicitation 卡域（T3.3）：elicitation 挂起的 requestedSchema（JSON Schema）→ 卡题集分类 → 三卡型 spec 构造与勾选集应答映射。
+ * 分类规则镜像前端 SSOT（AcpSessionView/elicitationForm.ts：string+oneOf→单选 / array+items.anyOf→多选 / 其余形态 IM 不可表示），Other 自由输入字段（AskUserQuestion 的 _meta._askUserQuestionCustomAnswer 标记，Gold-Band PoC 校准的 wire 形态）从卡题集剔除。
+ * TaskID 与审批卡同族编码，marker 为 -elicit-（permissionCardMarker 留位兑现）；首发与置灰共用同一构造函数（企微整卡替换，同 CardReplyStream.UpdateCard 契约）。
+ */
 package bot
 
 import (
@@ -28,8 +26,10 @@ func elicitCardTaskID(issueID, acpSessionID string, pendingID uint64) string {
 		permissionCardSessionToken(acpSessionID) + elicitCardMarker + strconv.FormatUint(pendingID, 10)
 }
 
-// parseElicitCardTaskID 解码 elicitation 卡投递锚；非本域形态返回 ok=false（与
-// parsePermissionCardTaskID 并列，TryHandleInteraction 按 marker 分流）。
+/*
+ * parseElicitCardTaskID 解码 elicitation 卡投递锚；非本域形态返回 ok=false（与
+ * parsePermissionCardTaskID 并列，TryHandleInteraction 按 marker 分流）。
+ */
 func parseElicitCardTaskID(taskID string) (issueID, sessionToken string, pendingID uint64, ok bool) {
 	if !strings.HasPrefix(taskID, permissionCardPrefix) {
 		return "", "", 0, false
@@ -51,8 +51,10 @@ func parseElicitCardTaskID(taskID string) (issueID, sessionToken string, pending
 	return left[:at], left[at+1:], pid, true
 }
 
-// elicitQuestion 分类后的卡题（单题卡恰一题、多题卡 2..3 题）。Key 是 schema 属性名（应答
-// content 的键）；勾选集下标按 Options 序对齐。
+/*
+ * elicitQuestion 分类后的卡题（单题卡恰一题、多题卡 2..3 题）。Key 是 schema 属性名（应答
+ * content 的键）；勾选集下标按 Options 序对齐。
+ */
 type elicitQuestion struct {
 	Key     string
 	Title   string
@@ -60,8 +62,10 @@ type elicitQuestion struct {
 	Options []CardOption // ID = 枚举 const（应答 wire 值），Text = title 兜底 const
 }
 
-// elicitFieldSchema requestedSchema 属性子集（与前端 FieldSchema 镜像；越界字段归类后
-// 令整卡不可表示，不进 elicitQuestion）。
+/*
+ * elicitFieldSchema requestedSchema 属性子集（与前端 FieldSchema 镜像；越界字段归类后
+ * 令整卡不可表示，不进 elicitQuestion）。
+ */
 type elicitFieldSchema struct {
 	Type  string `json:"type"`
 	Title string `json:"title"`
@@ -83,16 +87,19 @@ type elicitFieldSchema struct {
 	} `json:"_meta"`
 }
 
-// isCustomAnswer Other 自由输入字段判定：_meta 标记 isCustomAnswer=true（questionId 挂靠
-// 目标题）。这类字段从卡题集剔除——IM 卡无法承载自由文本。
+/*
+ * isCustomAnswer Other 自由输入字段判定：_meta 标记 isCustomAnswer=true（questionId 挂靠
+ * 目标题）。这类字段从卡题集剔除——IM 卡无法承载自由文本。
+ */
 func (f *elicitFieldSchema) isCustomAnswer() bool {
 	return f.Meta != nil && f.Meta.CustomAnswer != nil && f.Meta.CustomAnswer.IsCustomAnswer
 }
 
-// classifyElicitation requestedSchema → 卡题集与可表示性。不可表示（返回 false）：非对象/
-// 无 properties、存在自由文本/数值/布尔/未知形态字段（卡承载不了）、多选题带 Other 挂靠
-// （自定义答案是多选语义的一部分，缺它即语义残缺；单选带 Other 容忍——预设选项独立成立）、
-// 题数不在 {1} ∪ [2,3] 全单选、混合单多选、选项数超卡上限（单题 20 / 多题每题 10）。
+/*
+ * classifyElicitation requestedSchema → 卡题集与可表示性。
+ * 不可表示（返回 false）：非对象/ 无 properties、存在自由文本/数值/布尔/未知形态字段（卡承载不了）、多选题带 Other 挂靠（自定义答案是多选语义的一部分，缺它即语义残缺；
+ * 单选带 Other 容忍——预设选项独立成立）、题数不在 {1} ∪ [2,3] 全单选、混合单多选、选项数超卡上限（单题 20 / 多题每题 10）。
+ */
 func classifyElicitation(schema json.RawMessage) ([]elicitQuestion, bool) {
 	var top struct {
 		Properties json.RawMessage `json:"properties"`
@@ -157,8 +164,10 @@ func classifyElicitation(schema json.RawMessage) ([]elicitQuestion, bool) {
 	return questions, true
 }
 
-// cardQuestionOptionLimit 卡型选项上限（企微协议）：单题 checkbox [1,20]、多题卡每题
-// select_list [1,10]。
+/*
+ * cardQuestionOptionLimit 卡型选项上限（企微协议）：单题 checkbox [1,20]、多题卡每题
+ * select_list [1,10]。
+ */
 func cardQuestionOptionLimit(multiQuestion bool) int {
 	if multiQuestion {
 		return 10
@@ -166,9 +175,11 @@ func cardQuestionOptionLimit(multiQuestion bool) int {
 	return 20
 }
 
-// elicitQuestionOf 单字段归类（镜像前端 planField）：string+oneOf→单选、array+items.anyOf→
-// 多选；枚举成立需列表非空且每项 const 为字符串（任一缺失整体降级，降级即不可表示）。
-// title 空白回落属性名（Gold-Band 同款，下拉无标题不可读）。
+/*
+ * elicitQuestionOf 单字段归类（镜像前端 planField）：string+oneOf→单选、array+items.anyOf→
+ * 多选；枚举成立需列表非空且每项 const 为字符串（任一缺失整体降级，降级即不可表示）。
+ * title 空白回落属性名（Gold-Band 同款，下拉无标题不可读）。
+ */
 func elicitQuestionOf(key string, field elicitFieldSchema) (elicitQuestion, bool) {
 	title := strings.TrimSpace(field.Title)
 	if title == "" {
@@ -211,8 +222,10 @@ func optionLabel(title, fallback string) string {
 	return fallback
 }
 
-// orderedProperties 解码 JSON 对象为有序键值列表。Go map 解码丢插入序，而 AskUserQuestion
-// 的多题顺序、Other 挂靠顺序都依赖 properties 序（前端 Object.entries 保序，此处必须同序）。
+/*
+ * orderedProperties 解码 JSON 对象为有序键值列表。Go map 解码丢插入序，而 AskUserQuestion
+ * 的多题顺序、Other 挂靠顺序都依赖 properties 序（前端 Object.entries 保序，此处必须同序）。
+ */
 func orderedProperties(raw json.RawMessage) ([]struct {
 	Key string
 	Raw json.RawMessage
@@ -253,8 +266,10 @@ func orderedProperties(raw json.RawMessage) ([]struct {
 	return props, nil
 }
 
-// elicitationCardSpec elicitation 挂起 → 卡 spec（首发与置灰重建的 SSOT，同
-// permissionCardSpec）。不可表示（ok=false）由调用方回落桌面指引文案。
+/*
+ * elicitationCardSpec elicitation 挂起 → 卡 spec（首发与置灰重建的 SSOT，同
+ * permissionCardSpec）。不可表示（ok=false）由调用方回落桌面指引文案。
+ */
 func elicitationCardSpec(issueID, acpSessionID string, pending acpsession.PendingView) (CardSpec, bool) {
 	if pending.Kind != "elicitation" || pending.Request == nil || len(pending.Request.RequestedSchema) == 0 {
 		return CardSpec{}, false
@@ -285,12 +300,11 @@ func elicitationCardSpec(issueID, acpSessionID string, pending acpsession.Pendin
 	return spec, true
 }
 
-// handleElicitationInteraction 表单卡点击消费（-elicit- 域，TryHandleInteraction 分流入口，
-// T3.3 统一 submit 语义）：点选项 key 只是改选（提示点提交，不置灰不触达应答）；submit key
-// 才承载应答——勾选集归一 content 后 accept（成功与后到方判别均置灰；其他失败不置灰可
-// 重试）。快照未就绪/代锚不符出失效文案不置灰；挂起已关闭（桌面先答/回合结算）经 decline
-// 探测取 closed-history 判别文案（decline 只对开放挂起生效，快照 miss 后挂起已摘除不会被
-// 调用——探测安全，同审批域空 optionID 探测形态）。
+/*
+ * handleElicitationInteraction 表单卡点击消费（-elicit- 域，TryHandleInteraction 分流入口， T3.3 统一 submit 语义）：点选项 key 只是改选（提示点提交，不置灰不触达应答）；
+ * submit key 才承载应答——勾选集归一 content 后 accept（成功与后到方判别均置灰；其他失败不置灰可重试）。快照未就绪/代锚不符出失效文案不置灰；
+ * 挂起已关闭（桌面先答/回合结算）经 decline 探测取 closed-history 判别文案（decline 只对开放挂起生效，快照 miss 后挂起已摘除不会被调用——探测安全，同审批域空 optionID 探测形态）。
+ */
 func (r *driverRoute) handleElicitationInteraction(issueID, sessionToken string, pendingID uint64, in *Interaction) (string, *CardSpec, bool) {
 	if in.ActionIndex >= 0 {
 		return "该表单为提交型：请在卡片中选择后点「提交」。", nil, true
@@ -304,8 +318,10 @@ func (r *driverRoute) handleElicitationInteraction(issueID, sessionToken string,
 	}
 	pending, found := findElicitationPending(snap.Pendings, pendingID)
 	if !found {
-		// 已关闭：decline 探测的错误即收敛判别文案（closed-history：「该表单已由桌面端/IM
-		// 应答（…）」/「该表单已随回合结束自动结算」；未命中历史则「不存在或已关闭」）。
+		/*
+		 * 已关闭：decline 探测的错误即收敛判别文案（closed-history：「该表单已由桌面端/IM
+		 * 应答（…）」/「该表单已随回合结束自动结算」；未命中历史则「不存在或已关闭」）。
+		 */
 		err := r.sessions.RespondElicitation(issueID, pendingID, "decline", nil, acpsession.PendingSourceBot)
 		if err == nil {
 			return "该表单已处理。", nil, true // 已关闭挂起的 decline 不应成功，防御收口
@@ -343,8 +359,10 @@ func (r *driverRoute) handleElicitationInteraction(issueID, sessionToken string,
 	}
 }
 
-// findElicitationPending 挂起目录中定位指定 id 的 elicitation 挂起（kind 收窄是防御——
-// 本域 TaskID 只为 elicitation 挂起生成）。
+/*
+ * findElicitationPending 挂起目录中定位指定 id 的 elicitation 挂起（kind 收窄是防御——
+ * 本域 TaskID 只为 elicitation 挂起生成）。
+ */
 func findElicitationPending(pendings []acpsession.PendingView, pendingID uint64) (acpsession.PendingView, bool) {
 	for i := range pendings {
 		if pendings[i].PendingID == pendingID && pendings[i].Kind == "elicitation" {
@@ -354,8 +372,10 @@ func findElicitationPending(pendings []acpsession.PendingView, pendingID uint64)
 	return acpsession.PendingView{}, false
 }
 
-// elicitAnswerSummary 应答摘要（应答确认文案用）：按卡题序列出所选选项文案（title 兜底
-// const 值），多选顿号连接、多题分号连接。
+/*
+ * elicitAnswerSummary 应答摘要（应答确认文案用）：按卡题序列出所选选项文案（title 兜底
+ * const 值），多选顿号连接、多题分号连接。
+ */
 func elicitAnswerSummary(questions []elicitQuestion, content map[string]any) string {
 	var parts []string
 	for _, q := range questions {
@@ -384,10 +404,11 @@ func elicitOptionLabel(options []CardOption, id string) string {
 	return id
 }
 
-// elicitationContent 卡题集 + 提交勾选集 → accept content（键 = schema 属性名，值 = 枚举
-// const；多选为数组、按卡选项序）。ok=false = 勾选集与卡题集不符（缺题/键错/下标越界），
-// 调用方提示重试不置灰。单题卡勾选集以 TaskID 定位，多题卡以 q<题序> 定位（适配器出卡
-// 编码，见 wecom/card.go cardQuestionKey）。
+/*
+ * elicitationContent 卡题集 + 提交勾选集 → accept content（键 = schema 属性名，值 = 枚举 const；
+ * 多选为数组、按卡选项序）。ok=false = 勾选集与卡题集不符（缺题/键错/下标越界），调用方提示重试不置灰。
+ * 单题卡勾选集以 TaskID 定位，多题卡以 q<题序> 定位（适配器出卡编码，见 wecom/card.go cardQuestionKey）。
+ */
 func elicitationContent(questions []elicitQuestion, taskID string, selections []InteractionSelection) (map[string]any, bool) {
 	byKey := make(map[string]InteractionSelection, len(selections))
 	for _, selection := range selections {

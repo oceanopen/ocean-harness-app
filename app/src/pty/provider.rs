@@ -1,6 +1,7 @@
-// PtyProvider：PTY 后端抽象。当前唯一实现 LocalPtyProvider（本机 portable-pty）。
-// 输出与退出事件不经 trait 方法返回，由实现侧通过 Channel 回传前端。
-
+/*
+ * PtyProvider：PTY 后端抽象。当前唯一实现 LocalPtyProvider（本机 portable-pty）。
+ * 输出与退出事件不经 trait 方法返回，由实现侧通过 Channel 回传前端。
+ */
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use specta_typescript::Number;
@@ -8,110 +9,121 @@ use tauri::ipc::Channel;
 
 use super::session::{PtyEvent, PtySession};
 
-/// spawn 入参。cwd 由前端派生（`${工作空间目录}/${issueId}`），
-/// 目录不存在时本模块不创建（skills 集成职责），spawn 失败自然暴露。
+/*
+ * spawn 入参。cwd 由前端派生（`${工作空间目录}/${issueId}`），
+ * 目录不存在时本模块不创建（skills 集成职责），spawn 失败自然暴露。
+ */
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct SpawnOpts {
-    /// 会话锚点（store key）：main → `issueId::main`，附加 pane →
-    /// `issueId::<uuid>`（split 分割窗口，terminal_02 §3.1）。
+    /*
+     * 会话锚点（store key）：main → `issueId::main`，附加 pane →
+     * `issueId::<uuid>`（split 分割窗口，terminal_02 §3.1）。
+     */
     pub session_id: String,
-    /// 工作目录绝对路径。
+    // 工作目录绝对路径。
     pub cwd: String,
-    /// 初始列数（前端 xterm addon-fit 实测值）。
+    // 初始列数（前端 xterm addon-fit 实测值）。
     pub cols: u16,
-    /// 初始行数。
+    // 初始行数。
     pub rows: u16,
-    /// 直启命令（唯一自动执行路径）：在场时无 shell 中转，PTY 直接 exec CLI，
-    /// CLI 退出即 pane 退出。CLI 路径经 cli_bin::resolve_direct_bin 解析（P5
-    /// 终态：token 白名单 → vendored 自带 claude，login PATH 仅 best-effort
-    /// 注入），解析失败回落普通裸 shell。复用分支不重直启。
+    /*
+     * 直启命令（唯一自动执行路径）：在场时无 shell 中转，PTY 直接 exec CLI，CLI 退出即 pane 退出。
+     * CLI 路径经 cli_bin::resolve_direct_bin 解析（P5 终态：token 白名单 → vendored 自带 claude，login PATH 仅 best-effort 注入），解析失败回落普通裸 shell；复用分支不重直启。
+     */
     #[serde(default)]
     pub direct_command: Option<String>,
 }
 
-/// 会话信息快照（pty_list_sessions 返回）。
+// 会话信息快照（pty_list_sessions 返回）。
 #[derive(Clone, Debug, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PtySessionInfo {
-    /// 会话锚点（store key，见 SpawnOpts.session_id）。
+    // 会话锚点（store key，见 SpawnOpts.session_id）。
     pub session_id: String,
-    /// 会话工作目录。
+    // 会话工作目录。
     pub cwd: String,
-    /// shell 进程 pid（拿不到为 0）。
+    // shell 进程 pid（拿不到为 0）。
     pub pid: u32,
-    /// 会话是否已退出（shell 退出/被 kill 后置位；会话仍留 store 供前端重开）。
+    // 会话是否已退出（shell 退出/被 kill 后置位；会话仍留 store 供前端重开）。
     pub exited: bool,
-    /// spawn 时间（毫秒时间戳，远小于 2^53，精度安全）。
+    // spawn 时间（毫秒时间戳，远小于 2^53，精度安全）。
     #[specta(type = Number)]
     pub started_at: i64,
 }
 
-/// pty_spawn 成功荷载：会话元信息，前端挂载时直接渲染（无需再查 list）。
+// pty_spawn 成功荷载：会话元信息，前端挂载时直接渲染（无需再查 list）。
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PtySpawned {
-    /// 会话锚点（store key，见 SpawnOpts.session_id）。
+    // 会话锚点（store key，见 SpawnOpts.session_id）。
     pub session_id: String,
-    /// 会话工作目录。
+    // 会话工作目录。
     pub cwd: String,
-    /// shell 进程 pid（拿不到为 0）。
+    // shell 进程 pid（拿不到为 0）。
     pub pid: u32,
-    /// spawn 时间（毫秒时间戳）。
+    // spawn 时间（毫秒时间戳）。
     #[specta(type = Number)]
     pub started_at: i64,
-    /// 本次是否新起 shell（false = 复用现有会话，如 webview 刷新后重挂）。
+    // 本次是否新起 shell（false = 复用现有会话，如 webview 刷新后重挂）。
     pub fresh: bool,
-    /// 复用会话时的 ring 快照（StrictMode 双挂载/快速重挂场景回放早期输出）；
-    /// 全新 spawn 恒为空串。
+    /*
+     * 复用会话时的 ring 快照（StrictMode 双挂载/快速重挂场景回放早期输出）；
+     * 全新 spawn 恒为空串。
+     */
     pub scrollback: String,
 }
 
-/// pty_reattach 成功荷载：scrollback 随返回值一次性送达，实时流走已换装的 Channel。
+// pty_reattach 成功荷载：scrollback 随返回值一次性送达，实时流走已换装的 Channel。
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct PtyReattached {
-    /// 会话锚点（store key，见 SpawnOpts.session_id）。
+    // 会话锚点（store key，见 SpawnOpts.session_id）。
     pub session_id: String,
-    /// 会话是否已退出（true = 前端直接展示终态 + 重开按钮，不期待实时流）。
+    // 会话是否已退出（true = 前端直接展示终态 + 重开按钮，不期待实时流）。
     pub exited: bool,
-    /// ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。
+    // ring buffer 全量拼接（scrollback 重载，已按 UTF-8 边界切分保证合法）。
     pub scrollback: String,
 }
 
-/// PTY 后端抽象。当前唯一实现 LocalPtyProvider。
+// PTY 后端抽象。当前唯一实现 LocalPtyProvider。
 pub trait PtyProvider: Send + Sync {
-    /// 启动会话（幂等）：未退出会话复用并换装 listener；已退出会话移除重起（重开语义）。
-    /// envs 为业务环境变量（仅在真正 spawn 新进程时注入，复用/reattach 分支无进程创建，
-    /// 不适用）——如 OCEAN_HARNESS_PORT（ocean-harness 插件 .mcp.json 的 MCP 端点 url 据此展开）。
-    /// 返回会话元信息。
+    /*
+     * 启动会话（幂等）：未退出会话复用并换装 listener；已退出会话移除重起（重开语义）。
+     * envs 为业务环境变量（仅在真正 spawn 新进程时注入，复用/reattach 分支无进程创建，不适用）——如 OCEAN_HARNESS_PORT（ocean-harness 插件 .mcp.json 的 MCP 端点 url 据此展开）。
+     * 返回会话元信息。
+     */
     fn spawn(
         &self,
         opts: SpawnOpts,
         listener: Channel<PtyEvent>,
         envs: &[(String, String)],
     ) -> Result<PtySpawned, String>;
-    /// 键盘输入写入会话。
+    // 键盘输入写入会话。
     fn write(&self, id: &str, data: &[u8]) -> Result<(), String>;
-    /// 终端尺寸变化（xterm onResize）。
+    // 终端尺寸变化（xterm onResize）。
     fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), String>;
-    /// 关闭单个会话（kill shell + 移出 store）。
+    // 关闭单个会话（kill shell + 移出 store）。
     fn shutdown(&self, id: &str) -> Result<(), String>;
-    /// 关闭整个 issue 的全部 pane 会话（key 以 `issueId::` 为前缀），
-    /// 返回关闭数。模块 2 split 后一 issue 多 pane；issue 删除时联动调用。
+    /*
+     * 关闭整个 issue 的全部 pane 会话（key 以 `issueId::` 为前缀），
+     * 返回关闭数。模块 2 split 后一 issue 多 pane；issue 删除时联动调用。
+     */
     fn shutdown_issue(&self, issue_id: &str) -> Result<usize, String>;
-    /// 会话是否存在（含已退出；前端挂载时探测，存在则 reattach，不存在才 spawn）。
+    // 会话是否存在（含已退出；前端挂载时探测，存在则 reattach，不存在才 spawn）。
     fn exists(&self, id: &str) -> bool;
-    /// 重挂会话：ring 快照随返回值送达 + 换装 listener 从快照点续流。
-    /// 已退出会话照常返回（exited=true + 退出前 scrollback）；不存在返回 None。
+    /*
+     * 重挂会话：ring 快照随返回值送达 + 换装 listener 从快照点续流。
+     * 已退出会话照常返回（exited=true + 退出前 scrollback）；不存在返回 None。
+     */
     fn reattach(
         &self,
         id: &str,
         listener: Channel<PtyEvent>,
     ) -> Result<Option<PtyReattached>, String>;
-    /// 列出全部会话快照。
+    // 列出全部会话快照。
     fn list(&self) -> Vec<PtySessionInfo>;
-    /// 从 store 取会话引用（reattach/list 内部用，不出命令边界）。
+    // 从 store 取会话引用（reattach/list 内部用，不出命令边界）。
     fn with_session<T>(
         &self,
         id: &str,

@@ -11,20 +11,26 @@ import (
 	"ocean-harness/server/internal/buildinfo"
 )
 
-// 端口约定（与 app/src/shared/http_server.rs 的 HTTP_SERVER_PORT_TEST/RELEASE 同源，勿单方修改）：
-// dev 构建（Mode=test）默认 9000、正式构建（Mode=release）默认 9100。
-// 编译期注入见 scripts/build-server.ts 的 -ldflags -X。
+/*
+ * 端口约定（与 app/src/shared/http_server.rs 的 HTTP_SERVER_PORT_TEST/RELEASE 同源，勿单方修改）：
+ * dev 构建（Mode=test）默认 9000、正式构建（Mode=release）默认 9100。
+ * 编译期注入见 scripts/build-server.ts 的 -ldflags -X。
+ */
 const (
 	portTest    = 9000
 	portRelease = 9100
 )
 
-// EnvPort 服务端口逃生通道环境变量：Rust pty_spawn 向会话终端注入（app/src/pty/mod.rs）；
-// air 自测（pnpm server:dev，端口 9200）等非默认场景手动设置。设置后覆盖编译期默认。
+/*
+ * EnvPort 服务端口逃生通道环境变量：Rust pty_spawn 向会话终端注入（app/src/pty/mod.rs）；
+ * air 自测（pnpm server:dev，端口 9200）等非默认场景手动设置。设置后覆盖编译期默认。
+ */
 const EnvPort = "OCEAN_HARNESS_PORT"
 
-// resolvePort 解析目标服务端口：--port flag > OCEAN_HARNESS_PORT env > 编译期模式默认。
-// flagPort 为 0 视作未设置；非法 flag/env 值返回错误（用法错误，exit 2）。
+/*
+ * resolvePort 解析目标服务端口：--port flag > OCEAN_HARNESS_PORT env > 编译期模式默认。
+ * flagPort 为 0 视作未设置；非法 flag/env 值返回错误（用法错误，exit 2）。
+ */
 func resolvePort(flagPort int) (int, error) {
 	if flagPort != 0 {
 		if flagPort < 0 || flagPort > 65535 {

@@ -1,13 +1,17 @@
 import type { ReactNode } from 'react';
 import { alpha, ListItemButton, ListItemIcon, ListItemText, Tooltip, useTheme } from '@mui/material';
 
-// 左侧菜单项按钮：panel 侧栏菜单与设置页分区菜单的共享组件。
-// 样式差异由 scene 单参数内部分支，不枚举样式 props；
-// 仅数据（selected/icon/label）与回调（onClick）保留为 props。
+/**
+ * 左侧菜单项按钮：panel 侧栏菜单与设置页分区菜单的共享组件。
+ * 样式差异由 scene 单参数内部分支，不枚举样式 props；
+ * 仅数据（selected/icon/label）与回调（onClick）保留为 props。
+ */
 
-// 消费场景：
-// - panelSidebar：panel 侧栏菜单（支持折叠态 icon-only + Tooltip，折叠态由 collapsed 数据 prop 驱动）
-// - settingsSection：设置页分区菜单（恒展开）
+/**
+ * 消费场景：
+ * - panelSidebar：panel 侧栏菜单（支持折叠态 icon-only + Tooltip，折叠态由 collapsed 数据 prop 驱动）
+ * - settingsSection：设置页分区菜单（恒展开）
+ */
 export type MenuListItemButtonScene = 'panelSidebar' | 'settingsSection';
 
 export interface MenuListItemButtonProps {
@@ -43,19 +47,21 @@ export default function MenuListItemButton({
       onClick={onClick}
       {...(iconOnly ? { 'aria-label': label } : {})}
       sx={{
-        // 固定 40px 高度：吸收 ListItemText 默认 margin（展开态约 45px）与收起态（40px）
-        // 的 5px 高度差，两态切换不闪跳；py:0 由固定高度 + alignItems 居中接管。
-        'height': 40,
-        'py': 0,
-        'borderRadius': 2,
-        'mb': 0.5,
+        /**
+         * 固定 40px 高度：吸收 ListItemText 默认 margin（展开态约 45px）与收起态（40px）
+         * 的 5px 高度差，两态切换不闪跳；py '0px' 由固定高度 + alignItems 居中接管。
+         */
+        'height': '40px',
+        'py': '0px',
+        'borderRadius': '8px',
+        'mb': '4px',
         'justifyContent': iconOnly ? 'center' : 'flex-start',
-        'px': iconOnly ? 0 : 2,
+        'px': iconOnly ? '0px' : '16px',
         '&.Mui-selected': { bgcolor: selectedBg },
         '&.Mui-selected:hover': { bgcolor: selectedBg },
         '& .MuiListItemText-primary': {
           fontWeight: 600,
-          fontSize: 14,
+          fontSize: '14px',
           whiteSpace: 'nowrap',
         },
       }}
@@ -63,7 +69,7 @@ export default function MenuListItemButton({
       <Tooltip title={iconOnly ? label : ''} placement="right" disableInteractive>
         <ListItemIcon
           sx={{
-            minWidth: iconOnly ? 0 : 36,
+            minWidth: iconOnly ? '0px' : '36px',
             justifyContent: 'center',
             color: 'text.primary',
           }}

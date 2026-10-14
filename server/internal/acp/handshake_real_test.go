@@ -1,7 +1,9 @@
 package acp_test
 
-// 真握手验收为外部测试包（acp_test）：缺省命令取自 internal/agentcatalog 的内嵌
-// catalog——acp 域不感知 catalog（agentcatalog → acp 单向依赖），测试侧经导出面装配。
+/*
+ * 真握手验收为外部测试包（acp_test）：缺省命令取自 internal/agentcatalog 的内嵌
+ * catalog——acp 域不感知 catalog（agentcatalog → acp 单向依赖），测试侧经导出面装配。
+ */
 
 import (
 	"context"
@@ -18,19 +20,11 @@ import (
 	"ocean-harness/server/internal/dal/enums"
 )
 
-// TestRealHandshake 一次性真握手验收（T1.1 验收 + T1.2/T1.3 升级验证流程收口）：按
-// 生产拉起链路跑通 initialize → session/new → session/prompt——catalog 条目 →
-// EnsureVendored 受管安装 → VendoredSpawnConfig（node <vendored 入口>）→
-// ClaudeEnvOverrides（CLAUDE_CODE_EXECUTABLE + login PATH）→ 真握手。
-// 需要真实凭据与网络，不进常规测试轮次：
-//
-//	pnpm server:vendor:prepare   # 资源源缺失时本用例前置报错
-//	OCEAN_ACP_REAL_HANDSHAKE=1 go test ./internal/acp -run TestRealHandshake -v
-//
-// catalog pin 升级后跑本用例即完成验证（改 pin → pnpm server:catalog:refresh →
-// pnpm server:vendor:prepare → 本用例 → 提交）。资源源可经 OCEAN_ACP_RESOURCES_DIR 覆盖
-// （缺省仓库内 app/resources/acp-adapters）；受管根缺省用一次性临时目录；可经
-// OCEAN_ACP_REAL_COMMAND 覆盖拉起命令（空格分隔 argv）。
+/*
+ * TestRealHandshake 一次性真握手验收（T1.1 验收 + T1.2/T1.3 升级验证流程收口）：按生产拉起链路跑通 initialize → session/new → session/prompt——catalog 条目 → EnsureVendored 受管安装 → VendoredSpawnConfig（node <vendored 入口>）→ ClaudeEnvOverrides（CLAUDE_CODE_EXECUTABLE + login PATH）→ 真握手。需要真实凭据与网络，不进常规测试轮次：
+ * pnpm server:vendor:prepare（资源源缺失时本用例前置报错）后以 OCEAN_ACP_REAL_HANDSHAKE=1 go test ./internal/acp -run TestRealHandshake -v 运行；catalog pin 升级后跑本用例即完成验证（改 pin → pnpm server:catalog:refresh → pnpm server:vendor:prepare → 本用例 → 提交）。
+ * 资源源可经 OCEAN_ACP_RESOURCES_DIR 覆盖（缺省仓库内 app/resources/acp-adapters）；受管根缺省用一次性临时目录；可经 OCEAN_ACP_REAL_COMMAND 覆盖拉起命令（空格分隔 argv）。
+ */
 func TestRealHandshake(t *testing.T) {
 	if os.Getenv("OCEAN_ACP_REAL_HANDSHAKE") != "1" {
 		t.Skip("一次性真握手验收：需要 OCEAN_ACP_REAL_HANDSHAKE=1 与本机 claude 凭据")

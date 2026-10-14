@@ -87,8 +87,10 @@ func TestHubSlowSubscriberDisconnected(t *testing.T) {
 	for i := range frames {
 		frames[i] = Frame{Type: FrameEntry}
 	}
-	// 分批投递（批间让出调度）：broadcast 锁内瞬时投递，单批超缓冲会让健康订户在
-	// 消费 goroutine 腾空前也触溢出——分批保证它持续消费不触线，慢订户累计满即断。
+	/*
+	 * 分批投递（批间让出调度）：broadcast 锁内瞬时投递，单批超缓冲会让健康订户在
+	 * 消费 goroutine 腾空前也触溢出——分批保证它持续消费不触线，慢订户累计满即断。
+	 */
 	for start := 0; start < total; start += 20 {
 		end := start + 20
 		if end > total {

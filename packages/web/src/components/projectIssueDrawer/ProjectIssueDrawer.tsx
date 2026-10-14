@@ -49,17 +49,20 @@ interface ProjectIssueDrawerProps {
   onDeleted?: (issueId: string) => void;
 }
 
-// Issue 抽屉（create/edit 共用）。所有字段（含类型）本地态，点保存/创建一次性提交，
-// 成功后关闭抽屉 + 父级刷新列表；失败 drawer 内弹 error toast（成功 toast 由父级统一弹）。
-// mode 决定：初值来源、提交 API、头部标题/元信息/删除按钮显隐。
-// create + parentIssue：新建子 issue（顶部只读父信息条 + parentId）。
+/**
+ * Issue 抽屉（create/edit 共用）。所有字段（含类型）本地态，点保存/创建一次性提交，
+ * 成功后关闭抽屉 + 父级刷新列表；失败 drawer 内弹 error toast（成功 toast 由父级统一弹）。
+ * mode 决定初值来源/提交 API/头部标题与删除按钮显隐；create + parentIssue = 新建子 issue（只读父信息条 + parentId）。
+ */
 function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialStateCode, parentIssue, onClose, onCreated, onUpdated, onDeleted }: ProjectIssueDrawerProps) {
   const { t, i18n } = useTranslation();
   const routerNavigate = useRouterNavigate();
   const isZh = i18n.language?.toLowerCase().startsWith('zh') ?? false;
   const isCreateSub = mode === 'create' && !!parentIssue;
-  // 子 issue（create-child 或 edit-child）：顶部显示「所属父任务」只读字段。
-  // 父任务名来自 parentIssue（create-child 传入 / edit-child 由 ProjectIssueList 解析后传入）；解析失败回退父 id 尾段。
+  /**
+   * 子 issue（create-child 或 edit-child）：顶部显示「所属父任务」只读字段。
+   * 父任务名来自 parentIssue（create-child 传入 / edit-child 由 ProjectIssueList 解析后传入）；解析失败回退父 id 尾段。
+   */
   const isChild = isCreateSub || (mode === 'edit' && !!projectIssue?.parentId);
   const parentTaskLabel = parentIssue
     ? `${parentIssue.name}`
@@ -78,9 +81,11 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const wsTypesQuery = useWorkspaceTypes(workspaceProject.workspaceId);
   const wsTypes = wsTypesQuery.data;
   const [type, setType] = useState<WorkspaceTypeModel | null>(projectIssue?.type ?? null);
-  // 关联仓库+分支列表（多选）：create 的默认行由全局仓库缓存派生（项目关联仓库各一行、分支预填默认分支，
-  // 数据异步就绪后自动出现，无需 effect 初始化）；用户在 table 里增删改后存 override（此后不再用派生值）。
-  // edit 按回显数据初始化 override。
+  /**
+   * 关联仓库+分支列表（多选）：create 的默认行由全局仓库缓存派生（项目关联仓库各一行、分支预填默认分支，
+   * 数据异步就绪后自动出现，无需 effect 初始化）；用户在 table 里增删改后存 override（此后不再用派生值）。
+   * edit 按回显数据初始化 override。
+   */
   const allReposQuery = useLocalRepositories();
   const defaultRepoBranchRows = useMemo<IssueRepositoryBranchModel[]>(() => {
     const repoMap = new Map((allReposQuery.data ?? []).map(r => [r.id, r]));
@@ -122,8 +127,10 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const [deleting, setDeleting] = useState(false);
   const [dialogDeleteOpen, setDialogDeleteOpen] = useState(false);
   const [drawerManagerOpen, setDrawerManagerOpen] = useState(false);
-  // F1「进入开发」可用条件（按钮始终展示，不满足时 disabled + title 提示原因）：
-  //  issue 当前状态为 IN_PROGRESS（进行中）才可进入开发工作台。
+  /**
+   * F1「进入开发」可用条件（按钮始终展示，不满足时 disabled + title 提示原因）：
+   * issue 当前状态为 IN_PROGRESS（进行中）才可进入开发工作台。
+   */
   const canEnterDev = mode === 'edit' && !!projectIssue && projectIssue.stateCode === 'IN_PROGRESS';
   // 禁用原因（首个不满足条件，按钮 title hover 提示；空串=可启用）。
   const enterDevDisabledReason = !projectIssue
@@ -140,8 +147,10 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   };
   const { show: showToast, snack } = useToast();
 
-  // create 且用户未触碰时，类型默认选「需求」（列表无「需求」则取第一项；无类型保持未分类）。
-  // 派生值而非 effect 回填：未触碰期间随类型列表异步到达自动生效，触碰后固定为用户显式选择。
+  /**
+   * create 且用户未触碰时，类型默认选「需求」（列表无「需求」则取第一项；无类型保持未分类）。
+   * 派生值而非 effect 回填：未触碰期间随类型列表异步到达自动生效，触碰后固定为用户显式选择。
+   */
   const defaultType = wsTypes?.find(ty => ty.name === t('tracker:workspaceType.defaultRequirement')) ?? wsTypes?.[0] ?? null;
   // 类型列表就绪后本地已选 type 匹配不到（已在类型管理里删除）则视为未分类；未就绪（undefined）时保持原选。
   const typeAlive = !type || wsTypes === undefined || wsTypes.some(ty => ty.id === type.id);
@@ -188,14 +197,11 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
 
   const canSubmit = (mode === 'create' ? name.trim().length > 0 : !!dirty) && !hasEmptyRepoRow;
 
-  // T3.3「AI 润色」可用条件（与进入开发同款「始终展示 + disabled + title 提示」范式）：
-  // 子任务禁用（refine-issue 作用于父任务需求描述并生成/维护子任务列表，子任务需求
-  // 来自父任务拆分，不独立润色——子任务身份比终态判定更根本，判定顺序在前）；终态
-  // （DONE/CANCELLED）任务无需润色——与左树过滤（devWorkbench/derive.ts isDevIssue）
-  // 同一判定语义；dirty 时禁用——润色作用于已保存描述，未保存编辑直接跳转会静默
-  // 丢弃且润色旧版（按钮语义「润色我刚写的」放大误用概率，故比「进入开发」更严）。
-  // 点击写入润色意图标志后跳工作台，终端就绪后自动执行 refine-issue（编排见
-  // EmbeddedTerminal/useRefineInjection；跳转与 handleEnterDev 同款）。
+  /**
+   * T3.3「AI 润色」可用条件（「始终展示 + disabled + title 提示」范式）：子任务禁用（refine-issue
+   * 作用于父任务需求描述并生成子任务，不独立润色）；终态（DONE/CANCELLED）与 dirty 禁用——
+   * 润色作用于已保存描述，未保存编辑跳转会静默丢弃且润色旧版。点击写入润色意图标志后跳工作台，终端就绪后自动执行 refine-issue（编排见 useRefineInjection）。
+   */
   const isTerminalState = projectIssue?.stateCode === 'DONE' || projectIssue?.stateCode === 'CANCELLED';
   const canRefine = mode === 'edit' && !!projectIssue && !isChild && !isTerminalState && !dirty;
   const refineDisabledReason = !projectIssue
@@ -295,8 +301,10 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     }
   };
 
-  // 头部标题：edit 完整显示 uuid + 名称（用户定稿——详情抽屉不隐藏 id，便于核对/复制；
-  // 卡片/工作台等列表位仍用尾 8 位截断）；create-sub 显示"新建子 Issue"；其余 create 显示"新建 Issue"。
+  /**
+   * 头部标题：edit 完整显示 uuid + 名称（用户定稿——详情抽屉不隐藏 id，便于核对/复制；
+   * 卡片/工作台等列表位仍用尾 8 位截断）；create-sub 显示"新建子 Issue"；其余 create 显示"新建 Issue"。
+   */
   const title = mode === 'edit'
     ? `${projectIssue?.id ?? ''} - ${projectIssue?.name ?? ''}`
     : isCreateSub
@@ -307,7 +315,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     <ResizableDrawer open onClose={onClose} defaultWidthPct={60}>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
             {title}
           </Typography>
@@ -317,7 +325,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
         </Box>
 
         {/* 内容 */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* 所属项目（只读，create+edit 均显）；子 issue 额外显「所属父任务」 */}
           <TextField
             label={t('tracker:projectIssue.detail.belongingProject')}
@@ -345,7 +353,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
             slotProps={{ htmlInput: { maxLength: 255 } }}
           />
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: '4px' }}>
               {t('tracker:projectIssue.detail.description')}
             </Typography>
             <MarkdownEditor
@@ -356,13 +364,13 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
             />
           </Box>
           <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale={isZh ? 'zh-cn' : 'en'}>
-            <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: 1.5, alignItems: 'center' }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '12px', alignItems: 'center' }}>
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.state')}</Typography>
               <ProjectStateSelect value={stateCode} onChange={setStateCode} disabled={submitting || deleting} />
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.priority')}</Typography>
               <PrioritySelect value={priority} onChange={setPriority} disabled={submitting || deleting} />
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.type')}</Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <TypeSelect value={currentType?.id ?? 0} types={wsTypes ?? []} onChange={handleTypeChange} disabled={submitting || deleting} />
                 <IconButton
                   size="small"
@@ -416,7 +424,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           )}
           {/* 元信息（仅 edit） */}
           {mode === 'edit' && projectIssue && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 1 }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '16px', mt: '8px' }}>
               <Typography variant="caption" color="text.disabled" sx={{ opacity: 0.6 }}>
                 {t('tracker:projectIssue.detail.createdAt')} {formatDate(projectIssue.createdAt, 'YYYY-MM-DD HH:mm')}
               </Typography>
@@ -430,7 +438,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
         </Box>
 
         {/* 底部操作栏：一律左对齐（edit 润色+进入开发+删除+取消+保存；create 取消+创建） */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderTop: '1px solid', borderColor: 'divider' }}>
           {mode === 'edit' && (
             <Button
               size="small"

@@ -1,22 +1,16 @@
-// browser 工具面 DTO（T2.2，23+1 工具）：原生 6（status / profile_open / session_close /
-// auth_state / auth_request / tool_list）+ 转发 17 + 逃生舱 1（tool_call）。
-//
-// 入参两段来源：
-//   - 转发 17 与逃生舱的引擎参数段是 @playwright/mcp 0.0.83 引擎 zod schema 的逐字段
-//     镜像（字段可选性对齐引擎：引擎无 .optional() 的字段不带 omitempty，即自动进
-//     required）；profile/issueId 是服务端自有附加段，经 BrowserProfileArgs 匿名嵌入
-//     平铺（jsonschema-go 对匿名嵌入字段平铺推导，引擎参数段不受嵌套失真）。
-//   - 原生 6 的入参对齐 service 层既有 REST 请求体语义。
-//
-// 出参 Content 仅原生 6 需要（平铺镜像，见包注释）；转发 17 与逃生舱不走类型化出参
-// （手工透传引擎 Content 数组，无 Out DTO——类型化出参的自动装配会丢 ImageContent）。
+/*
+ * browser 工具面 DTO（T2.2，23+1 工具）：原生 6（status / profile_open / session_close / auth_state / auth_request / tool_list）+ 转发 17 + 逃生舱 1（tool_call）。
+ * 入参两段来源：转发 17 与逃生舱的引擎参数段是 @playwright/mcp 0.0.83 引擎 zod schema 的逐字段镜像（字段可选性对齐引擎：引擎无 .optional() 的字段不带 omitempty，即自动进 required），profile/issueId 是服务端自有附加段，经 BrowserProfileArgs 匿名嵌入平铺（jsonschema-go 对匿名嵌入字段平铺推导，引擎参数段不受嵌套失真）；原生 6 的入参对齐 service 层既有 REST 请求体语义。
+ * 出参 Content 仅原生 6 需要（平铺镜像，见包注释）；转发 17 与逃生舱不走类型化出参（手工透传引擎 Content 数组，无 Out DTO——类型化出参的自动装配会丢 ImageContent）。
+ */
 package mcpdto
 
 // —— 共用基座 ——
 
-// BrowserProfileArgs browser_* 工具集共用基座（匿名嵌入平铺）：profile 缺省 default
-// （mcp_tool 层归一，引擎会话自动 ensure，idle 冷启动 1-3s 属预期）；issueId 仅供服务端
-// 操作流水归因（面板 recentCalls 徽标），不参与引擎调用。
+/*
+ * BrowserProfileArgs browser_* 工具集共用基座（匿名嵌入平铺）：profile 缺省 default（mcp_tool 层归一，
+ * 引擎会话自动 ensure，idle 冷启动 1-3s 属预期）；issueId 仅供服务端操作流水归因（面板 recentCalls 徽标），不参与引擎调用。
+ */
 type BrowserProfileArgs struct {
 	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名，留空用 default；不同 profile 各自独立引擎进程与登录态"`
 	IssueID string `json:"issueId,omitempty" jsonschema:"归因 issue 主键（uuid 文本），仅记入浏览器面板操作流水徽标，可留空"`
@@ -33,8 +27,10 @@ type BrowserProfileOpenArgs struct {
 	Headless *bool `json:"headless,omitempty" jsonschema:"无头模式；留空读 profile 偏好文件，显式传入覆写并回存（模式切换会关掉重开，登录态在 profile 目录续存）"`
 }
 
-// BrowserSessionCloseArgs 是 browser_session_close 的入参（释放引擎进程，幂等；登录态
-// 在 profile 目录续存。关停无操作归因语义，不带 issueId）。
+/*
+ * BrowserSessionCloseArgs 是 browser_session_close
+ * 的入参（释放引擎进程，幂等；登录态在 profile 目录续存。关停无操作归因语义，不带 issueId）。
+ */
 type BrowserSessionCloseArgs struct {
 	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名，留空用 default"`
 }
@@ -44,8 +40,10 @@ type BrowserAuthStateArgs struct {
 	BrowserProfileArgs
 }
 
-// BrowserAuthRequestArgs 是 browser_auth_request 的入参（带态 HTTP：引擎实时登录态
-// cookie 注入后 Go 直发，凭据零落盘）。
+/*
+ * BrowserAuthRequestArgs 是 browser_auth_request
+ * 的入参（带态 HTTP：引擎实时登录态 cookie 注入后 Go 直发，凭据零落盘）。
+ */
 type BrowserAuthRequestArgs struct {
 	BrowserProfileArgs
 	Method  string            `json:"method" jsonschema:"HTTP 方法（GET/POST/PUT/DELETE/PATCH 等）" vd:"@:$!=''; msg:'method 不能为空'"`
@@ -76,8 +74,10 @@ type BrowserSnapshotArgs struct {
 	Boxes    *bool  `json:"boxes,omitempty" jsonschema:"true 时快照含各元素包围盒 [box=x,y,width,height]（视口 CSS 像素）"`
 }
 
-// BrowserClickArgs 是 browser_click 的入参（页面点击后若报 modal state，需先处理模态：
-// alert 类对话框用 browser_handle_dialog、文件选择框用 browser_file_upload）。
+/*
+ * BrowserClickArgs 是 browser_click 的入参（页面点击后若报 modal state，
+ * 需先处理模态：alert 类对话框用 browser_handle_dialog、文件选择框用 browser_file_upload）。
+ */
 type BrowserClickArgs struct {
 	BrowserProfileArgs
 	Element     string   `json:"element,omitempty" jsonschema:"元素人读描述（供操作权限判定）"`
@@ -144,8 +144,10 @@ type BrowserTabsArgs struct {
 	URL    string `json:"url,omitempty" jsonschema:"新 tab 打开的地址（new 用，可留空开空白页）"`
 }
 
-// BrowserScreenshotArgs 是 browser_take_screenshot 的入参（截图不可用于继续操作，操作
-// 需基于 browser_snapshot 的 ref）。
+/*
+ * BrowserScreenshotArgs 是
+ * browser_take_screenshot 的入参（截图不可用于继续操作，操作需基于 browser_snapshot 的 ref）。
+ */
 type BrowserScreenshotArgs struct {
 	BrowserProfileArgs
 	Element  string `json:"element,omitempty" jsonschema:"元素人读描述（供操作权限判定；传 target 时使用）"`
@@ -156,8 +158,10 @@ type BrowserScreenshotArgs struct {
 	Scale    string `json:"scale,omitempty" jsonschema:"分辨率：css（默认，CSS 像素）/device（设备像素，高分屏更大）"`
 }
 
-// BrowserFileUploadArgs 是 browser_file_upload 的入参（页面出现文件选择框 modal state
-// 后调用；paths 留空 = 取消选择）。
+/*
+ * BrowserFileUploadArgs 是 browser_file_upload
+ * 的入参（页面出现文件选择框 modal state 后调用；paths 留空 = 取消选择）。
+ */
 type BrowserFileUploadArgs struct {
 	BrowserProfileArgs
 	Paths []string `json:"paths,omitempty" jsonschema:"上传文件的绝对路径列表（可多个）；留空取消文件选择框"`
@@ -176,8 +180,10 @@ type BrowserNavigateBackArgs struct {
 	BrowserProfileArgs
 }
 
-// BrowserCloseArgs 是 browser_close 的入参（关当前页 tab，非关引擎进程——后者用
-// browser_session_close；浏览器继续使用会自动重开页）。
+/*
+ * BrowserCloseArgs 是 browser_close 的入参（关当前页 tab，
+ * 非关引擎进程——后者用 browser_session_close；浏览器继续使用会自动重开页）。
+ */
 type BrowserCloseArgs struct {
 	BrowserProfileArgs
 }
@@ -190,15 +196,19 @@ type BrowserFindArgs struct {
 	Filename string `json:"filename,omitempty" jsonschema:"结果保存文件名（相对工作区根），留空随响应返回"`
 }
 
-// BrowserPressKeyArgs 是 browser_press_key 的入参（core 常驻；Enter 等提交键显式覆盖
-// 输入框的 submit 语义）。
+/*
+ * BrowserPressKeyArgs 是 browser_press_key
+ * 的入参（core 常驻；Enter 等提交键显式覆盖输入框的 submit 语义）。
+ */
 type BrowserPressKeyArgs struct {
 	BrowserProfileArgs
 	Key string `json:"key" jsonschema:"按键名或字符，如 ArrowLeft/Enter/a" vd:"@:$!=''; msg:'key 不能为空'"`
 }
 
-// BrowserHandleDialogArgs 是 browser_handle_dialog 的入参（dialog modal state 的唯一
-// 清除工具，accept 必填）。
+/*
+ * BrowserHandleDialogArgs 是
+ * browser_handle_dialog 的入参（dialog modal state 的唯一清除工具，accept 必填）。
+ */
 type BrowserHandleDialogArgs struct {
 	BrowserProfileArgs
 	Accept     *bool  `json:"accept" jsonschema:"true 接受对话框，false 关闭"`
@@ -207,8 +217,10 @@ type BrowserHandleDialogArgs struct {
 
 // —— 逃生舱 1 工具入参 ——
 
-// BrowserToolCallArgs 是 browser_tool_call 的入参（名单外引擎工具原样直通：isError 与
-// 引擎文本不转换；黑名单 browser_run_code_unsafe 被拒）。
+/*
+ * BrowserToolCallArgs 是 browser_tool_call
+ * 的入参（名单外引擎工具原样直通：isError 与引擎文本不转换；黑名单 browser_run_code_unsafe 被拒）。
+ */
 type BrowserToolCallArgs struct {
 	BrowserProfileArgs
 	Name string         `json:"name" jsonschema:"引擎工具实名（全集见 browser_tool_list；browser_run_code_unsafe 等黑名单工具被拒）" vd:"@:$!=''; msg:'name 不能为空'"`
@@ -254,8 +266,10 @@ type BrowserSessionCloseContent struct {
 	Message string `json:"message" jsonschema:"关停结果说明"`
 }
 
-// BrowserAuthStateContent 是 browser_auth_state 的出参（凭据：仅用于本次
-// browser_auth_request 入参，勿外传勿落盘）。
+/*
+ * BrowserAuthStateContent 是 browser_auth_state
+ * 的出参（凭据：仅用于本次 browser_auth_request 入参，勿外传勿落盘）。
+ */
 type BrowserAuthStateContent struct {
 	Cookies      string `json:"cookies" jsonschema:"引擎 cookie 全集内联文本（name=value (domain: d, path: p) 逐行）"`
 	LocalStorage string `json:"localStorage" jsonschema:"当前页 localStorage 键值内联文本"`

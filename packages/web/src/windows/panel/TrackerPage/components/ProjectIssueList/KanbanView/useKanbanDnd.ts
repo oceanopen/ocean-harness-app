@@ -17,9 +17,11 @@ export interface UseKanbanDndOptions {
   moveFailedText: (message: string) => string;
 }
 
-// computeSortOrder 按分数插值算落点 sortOrder：列空/列首/列尾/列中四情形；
-// 邻值差 < EPSILON 时降级为整数步进，避免反复对半后浮点精度塌缩。
-// 入参 col 应已剔除被拖卡片自身（同列下拖时避免把自己算进邻居导致 index 偏移）。
+/**
+ * computeSortOrder 按分数插值算落点 sortOrder：列空/列首/列尾/列中四情形；
+ * 邻值差 < EPSILON 时降级为整数步进，避免反复对半后浮点精度塌缩。
+ * 入参 col 应已剔除被拖卡片自身（同列下拖时避免把自己算进邻居导致 index 偏移）。
+ */
 export function computeSortOrder(col: ProjectIssueResponseData[], index: number): number {
   if (col.length === 0) {
     return STEP;
@@ -38,9 +40,11 @@ export function computeSortOrder(col: ProjectIssueResponseData[], index: number)
   return (lower + upper) / 2;
 }
 
-// useKanbanDnd 封装看板拖拽的 onDragEnd（列 = 状态）：
-// 目标列 stateCode 即卡片新状态。按 destState 预估 completedAt（DONE 置当前时间，与后端规则字面对齐；后端二次校正）。
-// 乐观更新即时反馈，失败用 setIssues 前的快照整表回滚 + toast；用后端权威返回值二次校正。
+/**
+ * useKanbanDnd 封装看板拖拽的 onDragEnd（列 = 状态）：
+ * 目标列 stateCode 即卡片新状态。按 destState 预估 completedAt（DONE 置当前时间，与后端规则字面对齐；后端二次校正）。
+ * 乐观更新即时反馈，失败用 setIssues 前的快照整表回滚 + toast；用后端权威返回值二次校正。
+ */
 export function useKanbanDnd(opts: UseKanbanDndOptions) {
   const { columnsByState, setIssues, showToast, moveFailedText } = opts;
   // 回滚快照：在 setIssues 的 updater 内捕获更新前的最新 state，失败时整表恢复。
@@ -105,8 +109,10 @@ export function useKanbanDnd(opts: UseKanbanDndOptions) {
     })
       .then((updated) => {
         snapshotRef.current = null;
-        // 用后端权威返回值二次校正（completedAt/sortOrder/stateCode 实际写入值）。
-        // 跨列拖父时后端已同步子（maybeSyncChildrenState），缓存也跟进子。
+        /**
+         * 用后端权威返回值二次校正（completedAt/sortOrder/stateCode 实际写入值）。
+         * 跨列拖父时后端已同步子（maybeSyncChildrenState），缓存也跟进子。
+         */
         setIssues(prev => prev.map((i) => {
           if (i.id === updated.id) {
             return updated;

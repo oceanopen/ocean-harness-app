@@ -56,8 +56,10 @@ func TestBuildTurnPrompt(t *testing.T) {
 	})
 }
 
-// TestBuildTurnDisplay 展示元数据组装（T1.2）：Text 为 trim 后正文原文（区别于围栏全文，
-// 空正文不占位），Quote / Files 为 IM 投影；恒非 nil 全新对象。
+/*
+ * TestBuildTurnDisplay 展示元数据组装（T1.2）：Text 为 trim 后正文原文（区别于围栏全文，
+ * 空正文不占位），Quote / Files 为 IM 投影；恒非 nil 全新对象。
+ */
 func TestBuildTurnDisplay(t *testing.T) {
 	t.Run("纯文本", func(t *testing.T) {
 		d := buildTurnDisplay(InboundMessage{Text: "  帮我看看构建为什么挂了  "})

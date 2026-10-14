@@ -1,8 +1,10 @@
 import { formatDate } from '@src/shared/time';
 import dayjs from 'dayjs';
 
-// ImBotPanel 中文直出文案助手（工具面板文案约定，对齐 ImBotsPage；shared/time 的
-// formatRelativeTime 绑 i18n t 注入，不适用本场景）。纯函数，无组件状态。
+/**
+ * ImBotPanel 中文直出文案助手（工具面板文案约定，对齐 ImBotsPage；shared/time 的
+ * formatRelativeTime 绑 i18n t 注入，不适用本场景）。纯函数，无组件状态。
+ */
 
 /** 会话 chatType → 展示文案（single 私聊 / group 群聊）。 */
 export function chatTypeLabel(chatType: 'single' | 'group'): string {

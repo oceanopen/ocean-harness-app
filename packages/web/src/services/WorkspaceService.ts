@@ -1,8 +1,10 @@
 import type { AgentCode } from '@src/shared/agentCode';
 import { request } from './http';
 
-// WorkspaceLaunchSettings：启动设置（launch_settings JSON 列的结构化形态）。
-// undefined/空对象 = 未配置 → 消费端回落全局 key。
+/**
+ * WorkspaceLaunchSettings：启动设置（launch_settings JSON 列的结构化形态）。
+ * undefined/空对象 = 未配置 → 消费端回落全局 key。
+ */
 export interface WorkspaceLaunchSettings {
   mode?: 'none' | 'terminal-manual' | 'terminal-auto' | 'acp'; // 未配置等同 none（就绪后出启动方式选择面板）
   agentCode?: AgentCode; // ACP 会话 agent

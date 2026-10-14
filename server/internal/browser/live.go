@@ -1,10 +1,9 @@
 package browser
 
-// live.go：per-profile CDP 观察通道（T4.3）——wire 层 JSON-RPC 会话（liveConn）与
-// viewer 层（拨号自愈 connectLive、target 匹配、keep-latest 帧箱 + screencast 订阅）。
-// 生命周期挂接 manager（refs 计数/三处收敛）归 T4.4。协议基线 = T4.1 实测：帧号字段
-// 实名 sessionId（ack 以 {sessionId: 帧号} 回执）、maxFramesInFlight（默认 3）背压窗
-// 须逐帧即时 ack、动画页 ~60fps 损伤驱动推帧。
+/*
+ * live.go：per-profile CDP 观察通道（T4.3）——wire 层 JSON-RPC 会话（liveConn）与 viewer 层（拨号自愈 connectLive、target 匹配、keep-latest 帧箱 + screencast 订阅）；生命周期挂接 manager（refs 计数/三处收敛）归 T4.4。
+ * 协议基线 = T4.1 实测：帧号字段实名 sessionId（ack 以 {sessionId: 帧号} 回执）、maxFramesInFlight（默认 3）背压窗须逐帧即时 ack、动画页 ~60fps 损伤驱动推帧。
+ */
 
 import (
 	"context"
@@ -25,11 +24,15 @@ import (
 )
 
 var (
-	// liveRetryDelays 拨号自愈退避表：每次失败唤醒一次浏览器后等待重拨（合计 ~6s，
-	// 总预算由调用方 ctx 覆盖）。
+	/*
+	 * liveRetryDelays 拨号自愈退避表：每次失败唤醒一次浏览器后等待重拨（合计 ~6s，
+	 * 总预算由调用方 ctx 覆盖）。
+	 */
 	liveRetryDelays = []time.Duration{time.Second, 2 * time.Second, 3 * time.Second}
-	// liveDialTimeout 单次拨号预算（T4.1 实测全序 ~0.5s，6× 余量）：僵尸端口「accept
-	// 不响应」会无限挂住拨号，剥夺自愈重试机会——超时即本轮失败进退避重试。
+	/*
+	 * liveDialTimeout 单次拨号预算（T4.1 实测全序 ~0.5s，6× 余量）：僵尸端口「accept
+	 * 不响应」会无限挂住拨号，剥夺自愈重试机会——超时即本轮失败进退避重试。
+	 */
 	liveDialTimeout = 3 * time.Second
 	// liveAckTimeout 帧回执单次预算（连接已死时快速失败，不积压帧泵）。
 	liveAckTimeout = 5 * time.Second
@@ -41,8 +44,10 @@ var (
 	screencastEveryNth  = 1
 )
 
-// liveWake 拨号失败时的浏览器唤醒钩子（T4.4 接 Manager.Forward(browser_tabs list)，
-// 复用 Ensure + callMu 语义；busy 拒绝由 connectLive 按「浏览器活着」正交解读）。
+/*
+ * liveWake 拨号失败时的浏览器唤醒钩子（T4.4 接 Manager.Forward(browser_tabs list)，
+ * 复用 Ensure + callMu 语义；busy 拒绝由 connectLive 按「浏览器活着」正交解读）。
+ */
 type liveWake func(ctx context.Context) error
 
 // ---- wire 层：JSON-RPC 会话胶水（browser 级 ws、id 配对、事件分流）----
@@ -72,9 +77,11 @@ type cdpWireMsg struct {
 	SessionID string          `json:"sessionId"`
 }
 
-// liveConn CDP wire 层会话：id 配对命令 + 事件缓冲通道，无策略——ack 节律与订阅生命
-// 周期归 viewer 层。事件缓冲满即丢（screencast ~60fps 下防 reader 卡死优先，mailbox
-// keep-latest 语义天然容忍）。
+/*
+ * liveConn CDP wire 层会话：id 配对命令 + 事件缓冲通道，无策略——ack 节律与订阅生命
+ * 周期归 viewer 层。事件缓冲满即丢（screencast ~60fps 下防 reader 卡死优先，mailbox
+ * keep-latest 语义天然容忍）。
+ */
 type liveConn struct {
 	conn *websocket.Conn
 
@@ -91,8 +98,10 @@ type cdpVersion struct {
 	WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 }
 
-// dialLiveConn 单次拨号中段：/json/version 取 browser 级 ws 地址并连接、启动 readLoop。
-// 端口活性裁决归 connectLive 自愈循环（本函数单次成败，不重试）。
+/*
+ * dialLiveConn 单次拨号中段：/json/version 取 browser 级 ws 地址并连接、启动 readLoop。
+ * 端口活性裁决归 connectLive 自愈循环（本函数单次成败，不重试）。
+ */
 func dialLiveConn(ctx context.Context, port int) (*liveConn, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/version", port), nil)
 	if err != nil {
@@ -165,8 +174,10 @@ func (c *liveConn) readLoop() {
 	}
 }
 
-// call 发送命令并等配对响应（写失败/ctx 到期即除名，迟到响应丢弃；sessionID 非空 =
-// flatten 会话内调用）。预算由 ctx 给定。
+/*
+ * call 发送命令并等配对响应（写失败/ctx 到期即除名，迟到响应丢弃；sessionID 非空 =
+ * flatten 会话内调用）。预算由 ctx 给定。
+ */
 func (c *liveConn) call(ctx context.Context, sessionID, method string, params any) (json.RawMessage, error) {
 	c.mu.Lock()
 	c.nextID++
@@ -204,13 +215,17 @@ func (c *liveConn) call(ctx context.Context, sessionID, method string, params an
 
 // ---- 端口解析与 target 枚举 ----
 
-// devToolsActivePortFile Chrome 在 user-data-dir 根部落盘的 CDP 锚点（行1 实际端口、
-// 行2 browser ws path）。
+/*
+ * devToolsActivePortFile Chrome 在 user-data-dir 根部落盘的 CDP 锚点（行1 实际端口、
+ * 行2 browser ws path）。
+ */
 const devToolsActivePortFile = "DevToolsActivePort"
 
-// readDevToolsPort 读取 profile 的 CDP 端口。文件缺失/单行/损坏均报错（浏览器未活的
-// 表象之一）；文件在浏览器退出后残留不删（T4.1 S2），存在不证活性——活性唯一判据是
-// 拨号成败。不缓存端口：每次连接重读（浏览器重开后端口变化）。
+/*
+ * readDevToolsPort 读取 profile 的 CDP 端口。文件缺失/单行/损坏均报错（浏览器未活的
+ * 表象之一）；文件在浏览器退出后残留不删（T4.1 S2），存在不证活性——活性唯一判据是
+ * 拨号成败。不缓存端口：每次连接重读（浏览器重开后端口变化）。
+ */
 func readDevToolsPort(profileDir string) (int, string, error) {
 	data, err := os.ReadFile(filepath.Join(profileDir, devToolsActivePortFile))
 	if err != nil {
@@ -235,8 +250,10 @@ type cdpTargetInfo struct {
 	Title string `json:"title"`
 }
 
-// listPageTargets GET /json/list 取全部 page target（matchPageTarget 的候选全集；
-// 本调用同时是端口活性的一次 HTTP 预检——残档端口在此失败走自愈）。
+/*
+ * listPageTargets GET /json/list 取全部 page target（matchPageTarget 的候选全集；
+ * 本调用同时是端口活性的一次 HTTP 预检——残档端口在此失败走自愈）。
+ */
 func listPageTargets(ctx context.Context, port int) ([]cdpTargetInfo, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/json/list", port), nil)
 	if err != nil {
@@ -263,9 +280,11 @@ func listPageTargets(ctx context.Context, port int) ([]cdpTargetInfo, error) {
 	return targets, nil
 }
 
-// matchPageTarget 纯函数：view 投影页（引擎 tab 口径）按 URL 匹配 CDP page target。
-// 歧义取首个（同 URL 多开）；未命中显式报错（投影与浏览器瞬时态的竞态归调用方刷新
-// 投影后重试），实际 url/title 经 SSE target 事件回显供前端消歧。
+/*
+ * matchPageTarget 纯函数：view 投影页（引擎 tab 口径）按 URL 匹配 CDP page target。
+ * 歧义取首个（同 URL 多开）；未命中显式报错（投影与浏览器瞬时态的竞态归调用方刷新
+ * 投影后重试），实际 url/title 经 SSE target 事件回显供前端消歧。
+ */
 func matchPageTarget(page PageView, targets []cdpTargetInfo) (cdpTargetInfo, error) {
 	for _, tg := range targets {
 		if tg.URL == page.URL {
@@ -283,9 +302,11 @@ type LiveFrame struct {
 	Metadata LiveFrameMeta
 }
 
-// frameMailbox keep-latest 单槽帧箱：视频流语义——新帧覆盖旧帧，慢订户跳帧不断连；
-// 无 seq 无补帧（断线重连 = captureScreenshot 初始帧重放，免 seq 的合法性来源）。
-// changed 每次 deliver 关闭并换新：多订户全唤醒、等待可感知 ctx。
+/*
+ * frameMailbox keep-latest 单槽帧箱：视频流语义——新帧覆盖旧帧，慢订户跳帧不断连；
+ * 无 seq 无补帧（断线重连 = captureScreenshot 初始帧重放，免 seq 的合法性来源）。
+ * changed 每次 deliver 关闭并换新：多订户全唤醒、等待可感知 ctx。
+ */
 type frameMailbox struct {
 	mu      sync.Mutex
 	frame   LiveFrame
@@ -317,9 +338,11 @@ func (mb *frameMailbox) latest() (LiveFrame, uint64, bool) {
 	return mb.frame, mb.gen, true
 }
 
-// waitChange 等待 gen 前进或 ctx 结束（订阅循环骨架：latest 取帧消费后以所见 gen 续
-// 等——先判 gen 已前进，消除「投递落在 latest 与快照之间」的丢唤醒窗口，静态页零推
-// 帧场景下漏唤醒即画面永久滞旧）。
+/*
+ * waitChange 等待 gen 前进或 ctx 结束（订阅循环骨架：latest 取帧消费后以所见 gen 续
+ * 等——先判 gen 已前进，消除「投递落在 latest 与快照之间」的丢唤醒窗口，静态页零推
+ * 帧场景下漏唤醒即画面永久滞旧）。
+ */
 func (mb *frameMailbox) waitChange(ctx context.Context, seenGen uint64) error {
 	mb.mu.Lock()
 	changed, gen := mb.changed, mb.gen
@@ -335,8 +358,10 @@ func (mb *frameMailbox) waitChange(ctx context.Context, seenGen uint64) error {
 	}
 }
 
-// screencastFrame Page.screencastFrame 载荷。帧号字段实名 sessionId（Chromium 155 将
-// frameNumber 更名 sessionId，语义仍是帧号；ack 以 {sessionId: 帧号} 回执，T4.1 实测）。
+/*
+ * screencastFrame Page.screencastFrame 载荷。帧号字段实名 sessionId（Chromium 155 将
+ * frameNumber 更名 sessionId，语义仍是帧号；ack 以 {sessionId: 帧号} 回执，T4.1 实测）。
+ */
 type screencastFrame struct {
 	FrameNo  int64         `json:"sessionId"`
 	Data     string        `json:"data"`
@@ -370,11 +395,11 @@ const (
 	LiveEventClosed LiveEventType = "closed"
 )
 
-// LiveEvent 帧流 SSE 事件信封（JSON 序列化即 wire 形态；至多一个非零载荷字段组，口径
-// 同投影 Frame）。frame：jpeg base64 + screencast metadata（初始帧 metadata 零值——
-// 损伤驱动首帧到达前前端按位图尺寸兜底）；target：closed 置真 = 页面已关闭，随后补发
-// closed 终态；error：自然断连可重订自愈；closed：终态 reason（管理面强拆/页面关闭），
-// 前端停止重订。
+/*
+ * LiveEvent 帧流 SSE 事件信封（JSON 序列化即 wire 形态；至多一个非零载荷字段组，口径同投影 Frame）。
+ * frame：jpeg base64 + screencast metadata（初始帧 metadata 零值——损伤驱动首帧到达前前端按位图尺寸兜底）；target：closed 置真 = 页面已关闭，随后补发 closed 终态。
+ * error：自然断连可重订自愈；closed：终态 reason（管理面强拆/页面关闭），前端停止重订。
+ */
 type LiveEvent struct {
 	Type     LiveEventType  `json:"type"`
 	Data     string         `json:"data,omitempty"`
@@ -386,8 +411,10 @@ type LiveEvent struct {
 	Reason   string         `json:"reason,omitempty"`
 }
 
-// liveViewer 单个页面 target 的观察会话：wire 连接 + flatten attach + screencast 帧泵。
-// 生命周期归调用方（T4.4 refs 计数挂接），连接断开以 done 广播。
+/*
+ * liveViewer 单个页面 target 的观察会话：wire 连接 + flatten attach + screencast 帧泵。
+ * 生命周期归调用方（T4.4 refs 计数挂接），连接断开以 done 广播。
+ */
 type liveViewer struct {
 	conn    *liveConn
 	session string
@@ -399,9 +426,11 @@ type liveViewer struct {
 	done    chan struct{}
 }
 
-// dialViewer 单次拨号全序（不重试）：读端口（每次重读，不缓存）→ /json/version →
-// ws 拨号 → target 发现与匹配 → flatten attach → 初始帧 → screencast。任一步失败即
-// 关停连接返回，重试归 connectLive。
+/*
+ * dialViewer 单次拨号全序（不重试）：读端口（每次重读，不缓存）→ /json/version →
+ * ws 拨号 → target 发现与匹配 → flatten attach → 初始帧 → screencast。任一步失败即
+ * 关停连接返回，重试归 connectLive。
+ */
 func dialViewer(ctx context.Context, profileDir string, page PageView, log *zap.Logger) (*liveViewer, error) {
 	port, _, err := readDevToolsPort(profileDir)
 	if err != nil {
@@ -422,16 +451,17 @@ func dialViewer(ctx context.Context, profileDir string, page PageView, log *zap.
 		_ = conn.close()
 		return nil, err
 	}
-	// 事件泵在 session/page 写定后启动：attach 期间事件由 events 缓冲吸收（screencast
-	// 帧本就在最后一步 startScreencast 后才产生），写读竞争随启动序消除。
+	/*
+	 * 事件泵在 session/page 写定后启动：attach 期间事件由 events 缓冲吸收（screencast
+	 * 帧本就在最后一步 startScreencast 后才产生），写读竞争随启动序消除。
+	 */
 	go v.dispatch()
 	return v, nil
 }
 
-// attach 浏览器级 target 发现与页面会话建立：setDiscoverTargets 开启 target 生命周期
-// 事件（targetDestroyed/targetInfoChanged 事件面的前提）→ URL 匹配 → flatten attach →
-// captureScreenshot 初始帧（静态页零推帧的不白屏保底；此时 metadata 无源——损伤驱动
-// 首帧到达前前端按位图尺寸兜底）→ startScreencast。
+/*
+ * attach 浏览器级 target 发现与页面会话建立：setDiscoverTargets 开启 target 生命周期事件（targetDestroyed/targetInfoChanged 事件面的前提）→ URL 匹配 → flatten attach → captureScreenshot 初始帧（静态页零推帧的不白屏保底；此时 metadata 无源——损伤驱动首帧到达前前端按位图尺寸兜底）→ startScreencast。
+ */
 func (v *liveViewer) attach(ctx context.Context, page PageView, port int) error {
 	if _, err := v.conn.call(ctx, "", "Target.setDiscoverTargets", map[string]any{"discover": true}); err != nil {
 		return err
@@ -483,8 +513,10 @@ func (v *liveViewer) attach(ctx context.Context, page PageView, port int) error 
 	return err
 }
 
-// dispatch 事件泵：screencast 帧 → 帧箱 + 即时 ack（背压窗逐帧回执，T4.1 S4）；target
-// 生命周期 → 低频通知。连接断开即退出并以 done 广播。
+/*
+ * dispatch 事件泵：screencast 帧 → 帧箱 + 即时 ack（背压窗逐帧回执，T4.1 S4）；target
+ * 生命周期 → 低频通知。连接断开即退出并以 done 广播。
+ */
 func (v *liveViewer) dispatch() {
 	defer close(v.done)
 	for ev := range v.conn.events {
@@ -514,8 +546,10 @@ func (v *liveViewer) dispatch() {
 	}
 }
 
-// notifyTarget 解析 target 生命周期事件并过滤本页（缓冲满即丢——低频事件，重连自愈
-// 兜底）。
+/*
+ * notifyTarget 解析 target 生命周期事件并过滤本页（缓冲满即丢——低频事件，重连自愈
+ * 兜底）。
+ */
 func (v *liveViewer) notifyTarget(ev cdpEvent) {
 	var params struct {
 		TargetId   string `json:"targetId"`
@@ -545,16 +579,20 @@ func (v *liveViewer) notifyTarget(ev cdpEvent) {
 	}
 }
 
-// DispatchInput 输入分发原语（远程桌面语义：不经引擎 MCP、不占 callMu——管理面挂接
-// 归 T4.4；本层只负责在已 attach 会话上发一条 Input 域命令）。
+/*
+ * DispatchInput 输入分发原语（远程桌面语义：不经引擎 MCP、不占 callMu——管理面挂接
+ * 归 T4.4；本层只负责在已 attach 会话上发一条 Input 域命令）。
+ */
 func (v *liveViewer) DispatchInput(ctx context.Context, method string, params any) error {
 	_, err := v.conn.call(ctx, v.session, method, params)
 	return err
 }
 
-// connectLive 拨号 + 自愈：直拨一次；失败逐轮唤醒浏览器（busy 拒绝 = 浏览器活着的
-// 正交解读，继续重试）→ 按退避表等待 → 重读端口重拨（残档/陈旧端口自愈——活性唯一
-// 判据是拨号成败，T4.1 S2）。成功返回已订阅 screencast 的 viewer。
+/*
+ * connectLive 拨号 + 自愈：直拨一次；失败逐轮唤醒浏览器（busy 拒绝 = 浏览器活着的
+ * 正交解读，继续重试）→ 按退避表等待 → 重读端口重拨（残档/陈旧端口自愈——活性唯一
+ * 判据是拨号成败，T4.1 S2）。成功返回已订阅 screencast 的 viewer。
+ */
 func connectLive(ctx context.Context, profile string, page PageView, wake liveWake, log *zap.Logger) (*liveViewer, error) {
 	if log == nil {
 		log = zap.NewNop()

@@ -38,11 +38,11 @@ const COLOR_PRESETS = [
   '#64748b',
 ];
 
-// workspace 类型管理抽屉（CRUD）：顶部新建/编辑表单（name + 色板/hex + description）+ 已有类型列表。
-// 类型列表走 TanStack Query 共享缓存（issue 抽屉同源），mutation 内部 invalidate，无需 onChanged 桥接。
-// create 不传 sortOrder（后端 MAX+10000）；update 直接覆盖 color/description；
-// delete 将引用该类型的 issue 置为未分类。
-// 列表为空时展示「需求」「缺陷」两条默认建议项（含预设色），点「添加」才真正落库生效。
+/**
+ * workspace 类型管理抽屉（CRUD）：顶部新建/编辑表单（name + 色板/hex + description）+ 已有类型列表。
+ * 类型列表走 TanStack Query 共享缓存（issue 抽屉同源），mutation 内部 invalidate，无需 onChanged 桥接；
+ * create 不传 sortOrder（后端 MAX+10000），update 直接覆盖，delete 将引用该类型的 issue 置未分类；列表为空时展示「需求」「缺陷」两条默认建议项（含预设色），点「添加」才真正落库生效。
+ */
 interface TypeManagerDrawerProps {
   workspaceId: number;
   onClose: () => void;
@@ -155,7 +155,7 @@ function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerP
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
             {t('tracker:workspaceType.title')}
           </Typography>
@@ -165,7 +165,7 @@ function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerP
         </Box>
 
         {/* 内容 */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {/* 新建/编辑表单 */}
           <TextField
             label={t('tracker:workspaceType.name')}
@@ -182,18 +182,18 @@ function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerP
           />
           <Box>
             <Typography variant="caption" color="text.secondary">{t('tracker:workspaceType.color')}</Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mt: 0.5, alignItems: 'center' }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px', mt: '4px', alignItems: 'center' }}>
               {COLOR_PRESETS.map(c => (
                 <Box
                   key={c}
                   onClick={() => setColor(c)}
                   sx={{
-                    width: 22,
-                    height: 22,
+                    width: '22px',
+                    height: '22px',
                     borderRadius: '50%',
                     bgcolor: c,
                     cursor: 'pointer',
-                    border: color.toLowerCase() === c ? 2 : 0,
+                    border: color.toLowerCase() === c ? '2px solid' : '0px solid',
                     borderColor: 'text.primary',
                     boxSizing: 'border-box',
                   }}
@@ -206,7 +206,7 @@ function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerP
                   setColor(e.target.value);
                   setError(null);
                 }}
-                sx={{ width: 110 }}
+                sx={{ width: '110px' }}
                 disabled={submitting}
                 slotProps={{ htmlInput: { maxLength: 20 } }}
               />
@@ -229,7 +229,7 @@ function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerP
             slotProps={{ htmlInput: { maxLength: 500 } }}
           />
           {error && <Alert severity="error">{error}</Alert>}
-          <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ display: 'flex', gap: '8px' }}>
             <Button
               variant="contained"
               size="small"
@@ -246,14 +246,14 @@ function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerP
             )}
           </Box>
 
-          {types.length > 0 && <Divider sx={{ my: 0.5 }} />}
+          {types.length > 0 && <Divider sx={{ my: '4px' }} />}
 
           {/* 已有类型列表 */}
           {types.map(ty => (
-            <Box key={ty.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: ty.color || 'text.disabled', flexShrink: 0 }} />
-              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{ty.name}</Typography>
-              {ty.description && <Chip label={ty.description} size="small" variant="outlined" sx={{ maxWidth: 160 }} />}
+            <Box key={ty.id} sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Box sx={{ width: '12px', height: '12px', borderRadius: '50%', bgcolor: ty.color || 'text.disabled', flexShrink: 0 }} />
+              <Typography variant="body2" sx={{ flex: 1, minWidth: '0px' }} noWrap>{ty.name}</Typography>
+              {ty.description && <Chip label={ty.description} size="small" variant="outlined" sx={{ maxWidth: '160px' }} />}
               <IconButton size="small" onClick={() => startEdit(ty)} aria-label={t('tracker:workspaceType.edit')}>
                 <EditOutlinedIcon />
               </IconButton>
@@ -264,14 +264,14 @@ function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerP
           ))}
           {types.length === 0 && !typesQuery.isLoading && (
             <>
-              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 1 }}>
+              <Typography variant="body2" color="text.secondary" align="center" sx={{ py: '8px' }}>
                 {t('tracker:workspaceType.empty')}
               </Typography>
               {/* 默认建议类型（需求/缺陷）：点「添加」才落库生效 */}
               {DEFAULT_TYPE_PRESETS.map(preset => (
-                <Box key={preset.nameKey} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: preset.color, flexShrink: 0 }} />
-                  <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>{t(preset.nameKey)}</Typography>
+                <Box key={preset.nameKey} sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Box sx={{ width: '12px', height: '12px', borderRadius: '50%', bgcolor: preset.color, flexShrink: 0 }} />
+                  <Typography variant="body2" sx={{ flex: 1, minWidth: '0px' }} noWrap>{t(preset.nameKey)}</Typography>
                   <Button
                     size="small"
                     startIcon={<AddOutlinedIcon />}
@@ -289,7 +289,7 @@ function WorkspaceTypeManagerDrawer({ workspaceId, onClose }: TypeManagerDrawerP
         </Box>
 
         {/* 底部操作栏：一律左对齐 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderTop: '1px solid', borderColor: 'divider' }}>
           <Button color="inherit" onClick={onClose} disabled={submitting || deleting}>
             {t('tracker:workspaceType.close')}
           </Button>

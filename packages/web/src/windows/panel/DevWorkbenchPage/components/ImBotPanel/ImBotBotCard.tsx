@@ -18,12 +18,14 @@ import { chatTypeLabel, conversationActiveText, conversationShortCode } from './
 
 interface ImBotBotCardProps {
   bot: ImBotModel;
-  /// 当前工作台选中任务（绑定目标 + 聚合 chip 判定基准）。
+  // 当前工作台选中任务（绑定目标 + 聚合 chip 判定基准）。
   issue: ProjectIssueResponseData;
-  /// 面板级绑定 mutation 在飞请求（isPending 时的 variables；null = 空闲）。写操作统一在
-  /// 面板层确认弹窗后执行（单飞行中操作），本卡按 botId 自筛后驱动行级按钮 loading/disabled。
+  /**
+   * 面板级绑定 mutation 在飞请求（isPending 时的 variables；null = 空闲）。写操作统一在
+   * 面板层确认弹窗后执行（单飞行中操作），本卡按 botId 自筛后驱动行级按钮 loading/disabled。
+   */
   bindPending: ImBotBindIssueRequest | null;
-  /// 会话行操作上抛（关联/切换/解绑统一由面板层确认弹窗承接）。
+  // 会话行操作上抛（关联/切换/解绑统一由面板层确认弹窗承接）。
   onConversationAction: (bot: ImBotModel, conversation: ImBotConversationModel) => void;
 }
 
@@ -42,16 +44,16 @@ function ConversationRow(props: {
   const rowDisabled = bindPending != null && !rowLoading;
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.75 }}>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '12px', py: '6px' }}>
+      <Box sx={{ flex: 1, minWidth: '0px' }}>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {`${chatTypeLabel(conversation.chatType)} · ${conversationActiveText(conversation.lastMessageAt)} · ${conversationShortCode(conversation.conversationKey)}`}
         </Typography>
         {boundCurrent && (
-          <Typography sx={{ fontSize: 12, color: 'success.main' }}>已关联当前任务</Typography>
+          <Typography sx={{ fontSize: '12px', color: 'success.main' }}>已关联当前任务</Typography>
         )}
         {boundOther && (
-          <Typography sx={{ fontSize: 12, color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <Typography sx={{ fontSize: '12px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {`已关联：${conversation.boundIssueName || '（任务已不存在）'}`}
           </Typography>
         )}
@@ -72,8 +74,8 @@ function ConversationRow(props: {
 
 /**
  * ImBotBotCard：bot 聚合卡——名称 + 连接状态徽标 + 「N 个会话已关联」聚合 chip，展开列
- * 会话明细（私聊/群聊 · 最近活跃 · key 短码 + 所绑任务 + 行级绑定操作）。会话数据经
- * useImBotConversations(bot.id) 按 bot 独立缓存；绑定/解绑/切换均上抛面板层确认弹窗执行。
+ * 会话明细（私聊/群聊 · 最近活跃 · key 短码 + 所绑任务 + 行级绑定操作）。
+ * 会话数据经 useImBotConversations(bot.id) 按 bot 独立缓存；绑定/解绑/切换均上抛面板层确认弹窗执行。
  */
 export default function ImBotBotCard({ bot, issue, bindPending, onConversationAction }: ImBotBotCardProps) {
   const [expanded, setExpanded] = useState(true);
@@ -84,13 +86,13 @@ export default function ImBotBotCard({ bot, issue, bindPending, onConversationAc
   const cardBindPending = bindPending != null && bindPending.botId === bot.id ? bindPending : null;
 
   return (
-    <Box sx={{ borderRadius: 2, border: 1, borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
+    <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
       {/* 聚合头：点按整行展开/收起；连接徽标 tooltip 显 lastError（同 ImBotsPage 卡片） */}
       <Box
         onClick={() => setExpanded(v => !v)}
-        sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1.25, cursor: 'pointer' }}
+        sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '12px', py: '10px', cursor: 'pointer' }}
       >
-        <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{bot.name}</Typography>
+        <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>{bot.name}</Typography>
         <Tooltip title={bot.lastError || undefined}>
           <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
         </Tooltip>
@@ -102,7 +104,7 @@ export default function ImBotBotCard({ bot, issue, bindPending, onConversationAc
                 label={boundCount > 0 ? `${boundCount} 个会话已关联` : '未关联'}
                 color={boundCount > 0 ? 'success' : 'default'}
                 variant="outlined"
-                sx={{ fontSize: 12 }}
+                sx={{ fontSize: '12px' }}
               />
             )}
         {/* 展开箭头带自身 onClick（键盘可激活；stopPropagation 防与父行点击冒泡双 toggle 抵消） */}
@@ -121,10 +123,10 @@ export default function ImBotBotCard({ bot, issue, bindPending, onConversationAc
       </Box>
 
       {expanded && (
-        <Box sx={{ borderTop: 1, borderColor: 'divider', py: 0.5, display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ borderTop: '1px solid', borderColor: 'divider', py: '4px', display: 'flex', flexDirection: 'column' }}>
           {error
             ? (
-                <Box sx={{ px: 1.5, py: 1 }}>
+                <Box sx={{ px: '12px', py: '8px' }}>
                   <Alert severity="error" action={<Button color="inherit" size="small" onClick={() => refetch()}>重试</Button>}>
                     会话列表加载失败：{error.message}
                   </Alert>
@@ -132,13 +134,13 @@ export default function ImBotBotCard({ bot, issue, bindPending, onConversationAc
               )
             : isLoading
               ? (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 1.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: '12px' }}>
                     <CircularProgress size={18} />
                   </Box>
                 )
               : conversations.length === 0
                 ? (
-                    <Typography sx={{ fontSize: 12, color: 'text.secondary', px: 1.5, py: 1 }}>
+                    <Typography sx={{ fontSize: '12px', color: 'text.secondary', px: '12px', py: '8px' }}>
                       暂无会话——在 IM 中向机器人发消息后出现
                     </Typography>
                   )

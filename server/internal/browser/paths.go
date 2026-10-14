@@ -10,15 +10,10 @@ import (
 	"sync"
 )
 
-// 目录布局 SSOT（D2/D3/D10）：
-//
-//	~/.ocean-harness/browser/
-//	  ├─ profiles/<name>/       per-profile Chrome user-data-dir（登录态活 SSOT，Chromium 自管）
-//	  │   ├─ prefs.json         非凭据偏好元数据（headless 等，D10）
-//	  │   └─ .engine.pid        引擎进程 pid 文件（T1.3 recoverOrphans 消费）
-//	  └─ downloads/<name>/      引擎 --output-dir（下载与产物落点）
-//
-// prefs.json / .engine.pid 落在 user-data-dir 根部：Chrome 忽略未知文件，无冲突。
+/*
+ * 目录布局 SSOT（D2/D3/D10）：~/.ocean-harness/browser/ 下 profiles/<name>/（per-profile Chrome user-data-dir，登录态活 SSOT，Chromium 自管；内含 prefs.json 非凭据偏好元数据 headless 等 D10、.engine.pid 引擎进程 pid 文件 T1.3 recoverOrphans 消费）与 downloads/<name>/（引擎 --output-dir，下载与产物落点）。
+ * prefs.json / .engine.pid 落在 user-data-dir 根部：Chrome 忽略未知文件，无冲突。
+ */
 
 var (
 	pathsMu       sync.RWMutex
@@ -47,12 +42,16 @@ func Root() string {
 	return filepath.Join(home, ".ocean-harness", "browser")
 }
 
-// profileNameRe profile 名合法性：字母数字开头，仅限字母数字与 - _，长度 1-64。
-// 防路径穿越（"/"、".."、前导点均被拒；名字不含点，Windows 保留设备名另行整名拒绝）。
+/*
+ * profileNameRe profile 名合法性：字母数字开头，仅限字母数字与 - _，长度 1-64。
+ * 防路径穿越（"/"、".."、前导点均被拒；名字不含点，Windows 保留设备名另行整名拒绝）。
+ */
 var profileNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
-// windowsReservedNames Windows 保留设备名（con/nul/com1-9/lpt1-9；正则已禁点，扩展名
-// 形态如 con.x 不可能命中，整名匹配即够）——放行会导致 MkdirAll/WriteFile 行为异常。
+/*
+ * windowsReservedNames Windows 保留设备名（con/nul/com1-9/lpt1-9；正则已禁点，扩展名
+ * 形态如 con.x 不可能命中，整名匹配即够）——放行会导致 MkdirAll/WriteFile 行为异常。
+ */
 var windowsReservedNames = map[string]bool{
 	"con": true, "prn": true, "aux": true, "nul": true,
 }
@@ -75,8 +74,10 @@ func ValidateProfileName(name string) error {
 	return nil
 }
 
-// ProfileDir 返回 per-profile Chrome user-data-dir（profiles/<name>/）。只推导不创建——
-// 目录由 Chrome 首次启动自建（user-data-dir 语义）。
+/*
+ * ProfileDir 返回 per-profile Chrome user-data-dir（profiles/<name>/）。只推导不创建——
+ * 目录由 Chrome 首次启动自建（user-data-dir 语义）。
+ */
 func ProfileDir(name string) (string, error) {
 	if err := ValidateProfileName(name); err != nil {
 		return "", err
@@ -84,8 +85,10 @@ func ProfileDir(name string) (string, error) {
 	return filepath.Join(Root(), "profiles", name), nil
 }
 
-// DownloadsDir 返回 per-profile下载/产物落点（downloads/<name>/），并确保目录存在
-// （引擎 --output-dir 的前置；spike 实锤缺省会落 cwd/.playwright-mcp，故显式传值）。
+/*
+ * DownloadsDir 返回 per-profile下载/产物落点（downloads/<name>/），并确保目录存在
+ * （引擎 --output-dir 的前置；spike 实锤缺省会落 cwd/.playwright-mcp，故显式传值）。
+ */
 func DownloadsDir(name string) (string, error) {
 	if err := ValidateProfileName(name); err != nil {
 		return "", err
@@ -97,9 +100,11 @@ func DownloadsDir(name string) (string, error) {
 	return dir, nil
 }
 
-// ProfilePrefs per-profile 偏好元数据（非凭据，不违 D3——D3 约束的是登录态凭据不落盘）。
-// 缺省无头（D10 修订：D9 面板实时画面下人工登录/介入均在面板内完成，桌面零弹窗）；
-// 有头为显式选项，结构体零值语义不承载缺省——缺省判定在 ReadProfilePrefs。
+/*
+ * ProfilePrefs per-profile 偏好元数据（非凭据，不违 D3——D3 约束的是登录态凭据不落盘）。
+ * 缺省无头（D10 修订：D9 面板实时画面下人工登录/介入均在面板内完成，桌面零弹窗）；
+ * 有头为显式选项，结构体零值语义不承载缺省——缺省判定在 ReadProfilePrefs。
+ */
 type ProfilePrefs struct {
 	Headless bool `json:"headless"`
 }
@@ -107,8 +112,10 @@ type ProfilePrefs struct {
 // prefsFile 偏好文件名（user-data-dir 根部，Chrome 忽略未知文件）。
 const prefsFile = "prefs.json"
 
-// ReadProfilePrefs 读取 profile 偏好（文件缺失 = 无头缺省，即新建 profile 缺省口径
-// D10 修订；已落盘 prefs 的既有 profile 行为不变）。
+/*
+ * ReadProfilePrefs 读取 profile 偏好（文件缺失 = 无头缺省，即新建 profile 缺省口径
+ * D10 修订；已落盘 prefs 的既有 profile 行为不变）。
+ */
 func ReadProfilePrefs(profileDir string) (ProfilePrefs, error) {
 	var prefs ProfilePrefs
 	data, err := os.ReadFile(filepath.Join(profileDir, prefsFile))

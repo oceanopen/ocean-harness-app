@@ -1,14 +1,8 @@
-// PtySession：单个嵌入式终端会话的运行时状态。
-//
-// 生命周期（docs/embedded_terminal.md §3.4）：spawn 存 store → reader 线程推输出 →
-// shell 退出置 exited（会话保留 store 供前端重开）→ shutdown 时 kill + 移出 store。
-//
-// 线程安全设计：writer/child 都被 Mutex 包裹——take_writer 只能调一次故 writer 需要跨线程
-// 共享；child 的 kill（shutdown 时）与进程自然退出并发。master 的 resize 是 &self 内部同步，
-// 无需额外锁。SessionIo 是输出侧共享内核（Arc）：reader 线程持它推流，reattach 命令经 store
-// 短锁替换 listener，二者解耦——reader 永不持有 store 锁，高频输出不阻塞命令层。
-// ring buffer（scrollback 重载用）在任务 3 接入 SessionIo。
-
+/*
+ * PtySession：单个嵌入式终端会话的运行时状态。
+ * 生命周期（docs/embedded_terminal.md §3.4）：spawn 存 store → reader 线程推输出 → shell 退出置 exited（会话保留 store 供前端重开）→ shutdown 时 kill + 移出 store。
+ * 线程安全：writer/child 各被 Mutex 包裹（take_writer 仅一次需跨线程共享；kill 与自然退出并发）；SessionIo 是输出侧共享内核（Arc）——reader 推流与 reattach 换 listener 解耦，reader 永不持 store 锁。
+ */
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -18,35 +12,46 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use tauri::ipc::Channel;
 
-/// PTY → 前端 的事件（单 Channel 双分支，数据与退出同序到达）。
-/// 不出现在命令签名（仅作 Channel<PtyEvent> 泛型载荷），需在 lib.rs 用 .typ::<PtyEvent>() 注册。
+/*
+ * PTY → 前端 的事件（单 Channel 双分支，数据与退出同序到达）。
+ * 不出现在命令签名（仅作 Channel<PtyEvent> 泛型载荷），需在 lib.rs 用 .typ::<PtyEvent>() 注册。
+ */
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum PtyEvent {
-    /// 终端输出（UTF-8 边界切分后的完整字符串块）。
+    // 终端输出（UTF-8 边界切分后的完整字符串块）。
     Data { data: String },
-    /// shell 已退出（正常 exit / 被 kill）。会话仍在 store，前端可重开（重新 spawn）。
+    // shell 已退出（正常 exit / 被 kill）。会话仍在 store，前端可重开（重新 spawn）。
     Exit,
 }
 
-/// ring 容量上限（字节）。有界覆盖：超限时从队首丢整块（不切半个字串，保证 replay
-/// 恒为合法 UTF-8）。256 KB 足够常规 scrollback 重载；TUI 全屏 replay 可能轻微错位，
-/// 由应用自重绘（与 orca 行为一致）。
+/*
+ * ring 容量上限（字节）。有界覆盖：超限时从队首丢整块（不切半个字串，保证 replay
+ * 恒为合法 UTF-8）。256 KB 足够常规 scrollback 重载；TUI 全屏 replay 可能轻微错位，
+ * 由应用自重绘（与 orca 行为一致）。
+ */
 const RING_LIMIT_BYTES: usize = 256 * 1024;
 
-/// 会话输出侧共享内核。reader 线程与命令层（reattach 换 listener）各持 Arc。
-/// ring 与 listener 合并一把锁：「入 ring → 推 listener」原子有序——reattach 的
-/// snapshot（ring 快照）与换装 listener 在同临界区内完成，实时流从快照点无缝续接，
-/// 不丢块也不重放已 snapshot 的块。
+/*
+ * 会话输出侧共享内核。reader 线程与命令层（reattach 换 listener）各持 Arc。
+ * ring 与 listener 合并一把锁：「入 ring → 推 listener」原子有序——reattach 的 snapshot（ring 快照）与换装 listener 在同临界区内完成，
+ * 实时流从快照点无缝续接，不丢块也不重放已 snapshot 的块。
+ */
 pub struct SessionIo {
-    /// ring（scrollback）+ 当前 listener。None = 无订阅（webview 断开/未挂载），
-    /// 输出只入 ring 不外发，刷新回来 replay 可见断开期间历史。
+    /*
+     * ring（scrollback）+ 当前 listener。None = 无订阅（webview 断开/未挂载），
+     * 输出只入 ring 不外发，刷新回来 replay 可见断开期间历史。
+     */
     inner: Mutex<SessionInner>,
-    /// ring 累计字节数（含块本身，队首丢弃时同步扣减）。只在 inner 锁内读写，
-    /// atomic 仅为满足跨线程共享（SessionIo 需 Sync）。
+    /*
+     * ring 累计字节数（含块本身，队首丢弃时同步扣减）。只在 inner 锁内读写，
+     * atomic 仅为满足跨线程共享（SessionIo 需 Sync）。
+     */
     ring_bytes: AtomicUsize,
-    /// shell 退出标志（reader EOF 置位）。PtySession.exited 语义合并至此，
-    /// reader 线程与命令层（list/重开判定）共享同一事实源。
+    /*
+     * shell 退出标志（reader EOF 置位）。PtySession.exited 语义合并至此，
+     * reader 线程与命令层（list/重开判定）共享同一事实源。
+     */
     pub exited: AtomicBool,
 }
 
@@ -67,7 +72,7 @@ impl SessionIo {
         }
     }
 
-    /// reader 输出路径：入 ring（有界覆盖）→ 推 listener，同一临界区。
+    // reader 输出路径：入 ring（有界覆盖）→ 推 listener，同一临界区。
     pub fn push_and_emit(&self, text: String) {
         let bytes = text.len();
         let listener = {
@@ -96,8 +101,10 @@ impl SessionIo {
         }
     }
 
-    /// reattach：ring 快照 + exited + 换装 listener，同一临界区（快照点续流）。
-    /// scrollback 为 ring 全量拼接；已退出会话也照常返回（前端展示终态 + scrollback）。
+    /*
+     * reattach：ring 快照 + exited + 换装 listener，同一临界区（快照点续流）。
+     * scrollback 为 ring 全量拼接；已退出会话也照常返回（前端展示终态 + scrollback）。
+     */
     pub fn reattach(&self, channel: Channel<PtyEvent>) -> (String, bool) {
         let mut inner = self
             .inner
@@ -113,7 +120,7 @@ impl SessionIo {
         (scrollback, self.exited.load(Ordering::SeqCst))
     }
 
-    /// spawn 路径装 listener（首挂载，ring 此刻必为空，无需快照）。
+    // spawn 路径装 listener（首挂载，ring 此刻必为空，无需快照）。
     pub fn set_listener(&self, channel: Channel<PtyEvent>) {
         let mut inner = self
             .inner
@@ -122,7 +129,7 @@ impl SessionIo {
         inner.listener = Some(channel);
     }
 
-    /// ring 快照（不换装 listener；list/调试用，当前无调用方——保留给任务 4 状态栏）。
+    // ring 快照（不换装 listener；list/调试用，当前无调用方——保留给任务 4 状态栏）。
     #[allow(dead_code)]
     pub fn snapshot(&self) -> String {
         let inner = self
@@ -137,13 +144,13 @@ impl SessionIo {
             .join("")
     }
 
-    /// ring 累计字节数（测试用）。
+    // ring 累计字节数（测试用）。
     #[allow(dead_code)]
     pub fn ring_len(&self) -> usize {
         self.ring_bytes.load(Ordering::Relaxed)
     }
 
-    /// 推送退出事件（仅在 listener 在场时发一次；刷新错过 Exit 靠 reattach 的 exited 字段补知会）。
+    // 推送退出事件（仅在 listener 在场时发一次；刷新错过 Exit 靠 reattach 的 exited 字段补知会）。
     fn emit_exit(&self) {
         let listener = {
             let inner = self
@@ -158,8 +165,10 @@ impl SessionIo {
     }
 }
 
-/// UTF-8 尾部缓冲：PTY 是字节流，多字节 UTF-8 字符（中文）可能跨读块边界被切断。
-/// 直接 from_utf8_lossy 会瞬间乱码；保留不完整尾部等下一块拼接，只送出完整前缀。
+/*
+ * UTF-8 尾部缓冲：PTY 是字节流，多字节 UTF-8 字符（中文）可能跨读块边界被切断。
+ * 直接 from_utf8_lossy 会瞬间乱码；保留不完整尾部等下一块拼接，只送出完整前缀。
+ */
 struct Utf8Tail {
     pending: Vec<u8>,
 }
@@ -171,8 +180,10 @@ impl Utf8Tail {
         }
     }
 
-    /// 拼接新块并切出所有完整 UTF-8 序列；不完整尾部留待下块。
-    /// 非法字节序列（客户端发送二进制/编码错误）丢弃尾部字节，避免永久卡死。
+    /*
+     * 拼接新块并切出所有完整 UTF-8 序列；不完整尾部留待下块。
+     * 非法字节序列（客户端发送二进制/编码错误）丢弃尾部字节，避免永久卡死。
+     */
     fn take_complete(&mut self, chunk: &[u8]) -> String {
         self.pending.extend_from_slice(chunk);
         match std::str::from_utf8(&self.pending) {
@@ -199,9 +210,11 @@ impl Utf8Tail {
     }
 }
 
-/// reader 线程：阻塞读 PTY 输出 → UTF-8 切分 → 入 ring + 推 listener；
-/// EOF/Err → 置 exited + Exit 事件。spawn 时启动，持 Arc<SessionIo> 与
-/// cloned reader，不碰 store（会话移除后仍会读到 EOF 自然退出）。
+/*
+ * reader 线程：阻塞读 PTY 输出 → UTF-8 切分 → 入 ring + 推 listener；
+ * EOF/Err → 置 exited + Exit 事件。spawn 时启动，持 Arc<SessionIo> 与
+ * cloned reader，不碰 store（会话移除后仍会读到 EOF 自然退出）。
+ */
 pub fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, io: Arc<SessionIo>) {
     std::thread::spawn(move || {
         let mut tail = Utf8Tail::new();
@@ -223,23 +236,27 @@ pub fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, io: Arc<SessionIo>)
     });
 }
 
-/// 单个 PTY 会话。key 为会话锚点（`issueId::<paneId>`，main → `issueId::main`），
-/// 存于 PtySessionStore。
+/*
+ * 单个 PTY 会话。key 为会话锚点（`issueId::<paneId>`，main → `issueId::main`），
+ * 存于 PtySessionStore。
+ */
 pub struct PtySession {
-    /// 会话锚点（store key，见 SpawnOpts.session_id）。
+    // 会话锚点（store key，见 SpawnOpts.session_id）。
     pub session_id: String,
-    /// 工作目录（前端派生的 `${工作空间目录}/${issueId}`）。
+    // 工作目录（前端派生的 `${工作空间目录}/${issueId}`）。
     pub cwd: String,
-    /// PTY master 端：resize。
+    // PTY master 端：resize。
     pub master: Box<dyn MasterPty>,
-    /// PTY 写入端（take_writer 仅一次，Mutex 共享给 pty_write 命令线程——
-    /// Arc 同一把锁，写方向天然串行）。
+    /*
+     * PTY 写入端（take_writer 仅一次，Mutex 共享给 pty_write 命令线程——
+     * Arc 同一把锁，写方向天然串行）。
+     */
     pub writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    /// shell 子进程（kill）。
+    // shell 子进程（kill）。
     pub child: Mutex<Box<dyn Child + Send>>,
-    /// 输出侧共享内核（reader 线程同持一份 Arc）。
+    // 输出侧共享内核（reader 线程同持一份 Arc）。
     pub io: Arc<SessionIo>,
-    /// spawn 时间（毫秒时间戳）。
+    // spawn 时间（毫秒时间戳）。
     pub started_at: i64,
 }
 
@@ -264,12 +281,12 @@ impl PtySession {
         }
     }
 
-    /// 会话是否已退出（shell 退出/被 kill 后置位；会话仍留 store 供前端重开）。
+    // 会话是否已退出（shell 退出/被 kill 后置位；会话仍留 store 供前端重开）。
     pub fn exited(&self) -> bool {
         self.io.exited.load(Ordering::SeqCst)
     }
 
-    /// 写入键盘输入。锁 poison 视为会话已坏，返回 Err 让前端感知。
+    // 写入键盘输入。锁 poison 视为会话已坏，返回 Err 让前端感知。
     pub fn write_input(&self, data: &[u8]) -> Result<(), String> {
         let mut writer = self.writer.lock().map_err(|_| {
             format!(
@@ -282,7 +299,7 @@ impl PtySession {
             .map_err(|e| format!("pty write failed: {e}"))
     }
 
-    /// 调整终端尺寸（内核 winsize + SIGWINCH 通知 shell）。
+    // 调整终端尺寸（内核 winsize + SIGWINCH 通知 shell）。
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), String> {
         self.master
             .resize(portable_pty::PtySize {
@@ -294,8 +311,10 @@ impl PtySession {
             .map_err(|e| format!("pty resize failed: {e}"))
     }
 
-    /// 关闭会话：kill shell（kill 后 reader 读到 EOF 自然收尾并置 exited + Exit 事件）。
-    /// 不从 store 移除——移除由调用方（provider/state 层）统一处理。
+    /*
+     * 关闭会话：kill shell（kill 后 reader 读到 EOF 自然收尾并置 exited + Exit 事件）。
+     * 不从 store 移除——移除由调用方（provider/state 层）统一处理。
+     */
     pub fn shutdown(&self) -> Result<(), String> {
         let mut child = self.child.lock().map_err(|_| {
             format!(
@@ -313,7 +332,7 @@ impl PtySession {
 mod tests {
     use super::*;
 
-    /// UTF-8 边界切分：中文 3 字节序列被任意切断后拼接无损，非法字节被丢弃。
+    // UTF-8 边界切分：中文 3 字节序列被任意切断后拼接无损，非法字节被丢弃。
     #[test]
     fn utf8_tail_splits_on_boundary() {
         let mut tail = Utf8Tail::new();
@@ -332,7 +351,7 @@ mod tests {
         assert_eq!(tail.take_complete(&hao[2..]), "好");
     }
 
-    /// ring 有界覆盖：灌入超上限数据后总量不超限、队首整块被丢、内容仍为合法 UTF-8。
+    // ring 有界覆盖：灌入超上限数据后总量不超限、队首整块被丢、内容仍为合法 UTF-8。
     #[test]
     fn ring_bounded_overwrite() {
         let io = SessionIo::new();
@@ -353,8 +372,10 @@ mod tests {
         assert!(snapshot.chars().all(|c| c == '甲'));
     }
 
-    /// reattach 快照 + 续流：无 listener 期间输出入 ring；reattach 换装后 scrollback
-    /// 含先前内容且 exited=false（活会话）。
+    /*
+     * reattach 快照 + 续流：无 listener 期间输出入 ring；reattach 换装后 scrollback
+     * 含先前内容且 exited=false（活会话）。
+     */
     #[test]
     fn reattach_returns_scrollback_and_exited() {
         let io = SessionIo::new();

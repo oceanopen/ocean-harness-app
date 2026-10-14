@@ -6,27 +6,28 @@ import { useRef, useState } from 'react';
 interface PaneDividerProps {
   // 几何（layoutGeometry 产出）：divider 自身矩形 + 所属 split 矩形/当前 ratio。
   rect: DividerRect;
-  // 拖拽中 ratio 变更（first 子占比）。高频调用（pointermove 级），父层直通 store
-  // setRatio——树操作按 id 替换且值未变时引用不变，不会多余重渲染。
+  /**
+   * 拖拽中 ratio 变更（first 子占比）。高频调用（pointermove 级），父层直通 store
+   * setRatio——树操作按 id 替换且值未变时引用不变，不会多余重渲染。
+   */
   onRatioChange: (ratio: number) => void;
 }
 
-// 拖拽上下文：起始指针坐标 + 起始比例（几何 props 给出，平铺版不再读 DOM 兄弟实测）。
-// 外部事件型数据 → ref。
+/**
+ * 拖拽上下文：起始指针坐标 + 起始比例（几何 props 给出，平铺版不再读 DOM 兄弟实测）。
+ * 外部事件型数据 → ref。
+ */
 interface DragContext {
   startClientX: number;
   startClientY: number;
   startRatio: number;
 }
 
-// PaneDivider：split 分隔条拖拽调比例（平铺几何版，docs/terminal_02_split_panes.md §3.4）。
-//
-// divider 绝对定位（矩形由 layoutGeometry 按当前 ratio 计算）；拖拽换算改为
-// 增量式：指针位移 / 所属 split 沿分割方向总长（splitWidth/splitHeight，含
-// divider 占位）→ 比例增量，加起始比例即新值——与几何计算同基准，无 DOM 实测。
-// clamp 由 store setRatioNode 统一执行（[MIN, MAX]）。
-// pointer capture 模式（setPointerCapture 持续接收 move/up，指针出窗不丢事件）；
-// 4px 命中区 + hover 高亮 + 拖拽中高亮。horizontal（左右分）= col-resize。
+/**
+ * PaneDivider：split 分隔条拖拽调比例（平铺几何版，docs/terminal_02_split_panes.md §3.4）。
+ * divider 绝对定位（矩形由 layoutGeometry 按当前 ratio 计算）；拖拽为增量式换算——指针位移 / 所属 split 沿分割方向总长（含 divider 占位）→ 比例增量加起始比例，与几何计算同基准无 DOM 实测；clamp 由 store setRatioNode 统一执行。
+ * pointer capture 模式（指针出窗不丢事件）；4px 命中区 + hover/拖拽中高亮。horizontal（左右分）= col-resize。
+ */
 export default function PaneDivider({ rect, onRatioChange }: PaneDividerProps) {
   const dragRef = useRef<DragContext | null>(null);
   const [dragging, setDragging] = useState(false);

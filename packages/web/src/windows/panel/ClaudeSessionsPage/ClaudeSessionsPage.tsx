@@ -40,8 +40,10 @@ function navErrToToastKey(err: NavErr): { key: string; opts?: Record<string, unk
   }
 }
 
-// panel 窗口「Claude 会话监听」菜单对应的页面：会话加载/事件订阅/汇总栏/刷新/toast。
-// 由 PanelApp 右侧内容区渲染，根容器 height:100% 适配父级 flex 容器。
+/**
+ * panel 窗口「Claude 会话监听」菜单对应的页面：会话加载/事件订阅/汇总栏/刷新/toast。
+ * 由 PanelApp 右侧内容区渲染，根容器 height:100% 适配父级 flex 容器。
+ */
 function ClaudeSessionsPage() {
   const { t } = useTranslation();
   const [status, setStatus] = useState<LoadStatus>('loading');
@@ -61,8 +63,10 @@ function ClaudeSessionsPage() {
   }, []);
 
   const handleOpenTerminal = useCallback(async (pid: number) => {
-    // navigate_to_claude_session 成功路径返回 Ok(())；失败时后端 emit nav-failed，
-    // 由下面的 listen 统一处理 toast（不在这里 catch），命令调用本身静默。
+    /**
+     * navigate_to_claude_session 成功路径返回 Ok(())；失败时后端 emit nav-failed，
+     * 由下面的 listen 统一处理 toast（不在这里 catch），命令调用本身静默。
+     */
     await commands.navigateToClaudeSession(pid);
   }, []);
 
@@ -113,20 +117,22 @@ function ClaudeSessionsPage() {
     };
   }, [t]);
 
-  // 页面展示全部会话（Dead 理论上不出现），ClaudeSessionList 内按优先级排序。
-  // summary 计数与 pet_task 对齐，统一用 ATTENTION 口径（Busy+Waiting+GitPending 待关注）。
+  /**
+   * 页面展示全部会话（Dead 理论上不出现），ClaudeSessionList 内按优先级排序。
+   * summary 计数与 pet_task 对齐，统一用 ATTENTION 口径（Busy+Waiting+GitPending 待关注）。
+   */
   const attentionCount = countAttentionClaudeSessions(sessions);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Box
         sx={{
-          p: 2,
-          borderBottom: 1,
+          p: '16px',
+          borderBottom: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           alignItems: 'center',
-          gap: 1,
+          gap: '8px',
         }}
       >
         <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -159,7 +165,7 @@ function ClaudeSessionsPage() {
           </Box>
         )}
         {status === 'error' && (
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: '16px' }}>
             <Alert
               severity="error"
               action={(

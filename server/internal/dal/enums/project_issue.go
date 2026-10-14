@@ -5,12 +5,14 @@ import (
 	"fmt"
 )
 
-// 本文件定义 issue 域的枚举与固定常量：状态（StateCode + 展示元数据目录 StateCatalog）
-// 与优先级（Priority）。状态为扁平模型（无 state_group/子状态层级、无 state_id、无 sortorder）——
-// 固定 5 个状态，顺序即 StateCatalog 数组序。数据层不国际化——name/色由 Go 直出中文，前端原样展示。
+/*
+ * 本文件定义 issue 域的枚举与固定常量：状态（StateCode + 展示元数据目录 StateCatalog）与优先级（Priority）；
+ * 状态为扁平模型（无 state_group/子状态层级、无 state_id、无 sortorder），固定 5 个状态顺序即 StateCatalog 数组序，数据层不国际化——name/色由 Go 直出中文，前端原样展示。
+ */
 
-// StateCode issue 状态枚举（t_project_issues.state_code）。
-// 取值 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED；DONE 触发 issue.completed_at 写入。
+/*
+ * StateCode issue 状态枚举（t_project_issues.state_code）：取值 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，DONE 触发 issue.completed_at 写入。
+ */
 type StateCode string
 
 const (
@@ -46,8 +48,10 @@ type StateMeta struct {
 	Color string    `json:"color"`
 }
 
-// StateCatalog 全部 5 个状态的固定展示元数据，数组序即固定顺序（backlog→todo→in_progress→done→cancelled）。
-// 前端在 src/state/tracker/stateMeta.ts 维护同构常量（双端常量，无 catalog 接口）。
+/*
+ * StateCatalog 全部 5 个状态的固定展示元数据，数组序即固定顺序（backlog→todo→in_progress→done→cancelled）；
+ * 前端在 src/state/tracker/stateMeta.ts 维护同构常量（双端常量，无 catalog 接口）。
+ */
 var StateCatalog = []StateMeta{
 	{Code: STATE_CODE_BACKLOG, Name: "待办池", Color: "#94a3b8"},
 	{Code: STATE_CODE_TODO, Name: "待办", Color: "#475569"},

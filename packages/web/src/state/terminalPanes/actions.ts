@@ -1,7 +1,8 @@
-// split 布局树纯函数操作（docs/terminal_02_split_panes.md §3.3）。
-// 树变换均为不可变风格（返回新树，不改入参），由 store action 包装落库。
-// 持久化（loadLayout/saveLayout）：localStorage 按 issue 存 JSON，损坏/缺失回落
-// 单 main leaf——PTY 会话在后端常驻，布局丢失仅 UI 回落 + reattach，不伤会话（§5.1）。
+/**
+ * split 布局树纯函数操作（docs/terminal_02_split_panes.md §3.3）：树变换均不可变（返回新树），由 store action 包装落库。
+ * 持久化（loadLayout/saveLayout）：localStorage 按 issue 存 JSON，损坏/缺失回落单 main leaf——
+ * PTY 会话在后端常驻，布局丢失仅 UI 回落 + reattach，不伤会话（§5.1）。
+ */
 
 import type { PaneLayoutNode, SplitDirection } from '@src/windows/panel/DevWorkbenchPage/components/TerminalPanes/types';
 import {
@@ -12,8 +13,10 @@ import {
   newSplitId,
 } from '@src/windows/panel/DevWorkbenchPage/components/TerminalPanes/types';
 
-/// 在 paneId 对应 leaf 上分割：leaf → split(0.5)，first = 原 pane，second = 新 pane
-/// （新 pane 出现在分割方向的后位——右/下）。paneId 不存在时返回原树（幂等防御）。
+/**
+ * 在 paneId 对应 leaf 上分割：leaf → split(0.5)，first = 原 pane，second = 新 pane
+ * （新 pane 出现在分割方向的后位——右/下）。paneId 不存在时返回原树（幂等防御）。
+ */
 export function splitNode(tree: PaneLayoutNode, paneId: string, direction: SplitDirection): PaneLayoutNode {
   if (tree.type === 'leaf') {
     if (tree.paneId !== paneId) {
@@ -31,8 +34,10 @@ export function splitNode(tree: PaneLayoutNode, paneId: string, direction: Split
   return { ...tree, children: [splitNode(first, paneId, direction), splitNode(second, paneId, direction)] };
 }
 
-/// 关闭 paneId 对应 leaf：从树上剪枝；父 split 只剩单子时折叠（单子提升替代父节点）。
-/// paneId 不存在 / 是 main（不可关，§3.5 由调用方拦截，此处兜底原样返回）时返回原树。
+/**
+ * 关闭 paneId 对应 leaf：从树上剪枝；父 split 只剩单子时折叠（单子提升替代父节点）。
+ * paneId 不存在 / 是 main（不可关，§3.5 由调用方拦截，此处兜底原样返回）时返回原树。
+ */
 export function closeNode(tree: PaneLayoutNode, paneId: string): PaneLayoutNode {
   // main 不可关（调用方已拦截；此处兜底——main 恒为根 leaf 或嵌套 leaf，一律原样返回）。
   if (tree.type === 'leaf') {
@@ -43,16 +48,20 @@ export function closeNode(tree: PaneLayoutNode, paneId: string): PaneLayoutNode 
   return next ?? tree;
 }
 
-/// 递归剪枝：命中 paneId 的 leaf 被剪除（返回 null 表示子树整体移除）；父 split
-/// 单子折叠——null 侧被另一侧整体提升替代。未命中的子树原样引用返回（引用相等，
-/// 调用方可据此免重建）。main leaf 不会被命中（closeNode 入口语义，见上）。
+/**
+ * 递归剪枝：命中 paneId 的 leaf 被剪除（返回 null 表示子树整体移除）；父 split 单子折叠——
+ * null 侧被另一侧整体提升替代。未命中的子树原样引用返回（引用相等，调用方可据此免重建）。
+ * main leaf 不会被命中（closeNode 入口语义，见上）。
+ */
 function pruneLeaf(tree: PaneLayoutNode, paneId: string): PaneLayoutNode | null {
   if (tree.type === 'leaf') {
     return tree.paneId === paneId ? null : tree;
   }
   const [first, second] = tree.children;
-  // main 恒在 first 位（splitNode 原 pane 在 first），此判定非必需——main 由
-  // 调用方/store 双层拦截，此处不重复。
+  /**
+   * main 恒在 first 位（splitNode 原 pane 在 first），此判定非必需——
+   * main 由调用方/store 双层拦截，此处不重复。
+   */
   const nextFirst = pruneLeaf(first, paneId);
   const nextSecond = pruneLeaf(second, paneId);
   if (nextFirst == null) {
@@ -68,7 +77,7 @@ function pruneLeaf(tree: PaneLayoutNode, paneId: string): PaneLayoutNode | null 
   return { ...tree, children: [nextFirst, nextSecond] };
 }
 
-/// 调整 splitId 对应节点的 ratio（divider 拖拽）：clamp 到 [MIN, MAX]；未命中原树返回。
+// 调整 splitId 对应节点的 ratio（divider 拖拽）：clamp 到 [MIN, MAX]；未命中原树返回。
 export function setRatioNode(tree: PaneLayoutNode, splitId: string, ratio: number): PaneLayoutNode {
   if (tree.type === 'leaf') {
     return tree;
@@ -86,22 +95,26 @@ export function setRatioNode(tree: PaneLayoutNode, splitId: string, ratio: numbe
   return { ...tree, children: [nextFirst, nextSecond] };
 }
 
-/// issue 的有效布局：store 未登记（首次打开/布局损坏回落）→ 单 main leaf。
-/// selector 侧调用（store 不预填所有 issue，惰性派生）。
+/**
+ * issue 的有效布局：store 未登记（首次打开/布局损坏回落）→ 单 main leaf。
+ * selector 侧调用（store 不预填所有 issue，惰性派生）。
+ */
 export function layoutFor(tree: PaneLayoutNode | undefined): PaneLayoutNode {
   return tree ?? INITIAL_LAYOUT;
 }
 
 // ---------- 持久化（localStorage 按 issue，文档 §3.3） ----------
 
-/// localStorage key：terminal_pane_layout_<issueId>（paneId 8 位设计保证 key 短）。
+// localStorage key：terminal_pane_layout_<issueId>（paneId 8 位设计保证 key 短）。
 function layoutKey(issueId: string): string {
   return `terminal_pane_layout_${issueId}`;
 }
 
-/// 递归结构校验：防手改/版本演进/截断产生的脏数据进渲染层。
-/// 规则：leaf 有 paneId 字符串；split 有 id/direction 合法/ratio 有限数值在区间内/
-/// children 长度 2。任何一处不满足 → 整树判废（回落单 main，§5.1 布局丢失不伤会话）。
+/**
+ * 递归结构校验：防手改/版本演进/截断产生的脏数据进渲染层。
+ * 规则：leaf 有 paneId 字符串；split 有 id/direction 合法/ratio 有限数值在区间内/children 长度 2。
+ * 任何一处不满足 → 整树判废（回落单 main，§5.1 布局丢失不伤会话）。
+ */
 function isValidNode(node: unknown): node is PaneLayoutNode {
   if (typeof node !== 'object' || node == null) {
     return false;
@@ -121,7 +134,7 @@ function isValidNode(node: unknown): node is PaneLayoutNode {
   return false;
 }
 
-/// 读回 issue 布局：无记录/JSON 解析失败/结构校验失败 → INITIAL_LAYOUT（单 main）。
+// 读回 issue 布局：无记录/JSON 解析失败/结构校验失败 → INITIAL_LAYOUT（单 main）。
 export function loadLayout(issueId: string): PaneLayoutNode {
   try {
     const raw = localStorage.getItem(layoutKey(issueId));
@@ -136,8 +149,10 @@ export function loadLayout(issueId: string): PaneLayoutNode {
   }
 }
 
-/// 写入 issue 布局：非默认树（有分割）才落盘；单 main 树移除 key——localStorage
-/// 不积 corpse，也保证「关闭全部附加 pane」后下次打开回到干净单 pane。
+/**
+ * 写入 issue 布局：非默认树（有分割）才落盘；单 main 树移除 key——localStorage
+ * 不积 corpse，也保证「关闭全部附加 pane」后下次打开回到干净单 pane。
+ */
 export function saveLayout(issueId: string, tree: PaneLayoutNode): void {
   try {
     if (tree.type === 'leaf') {
@@ -151,8 +166,10 @@ export function saveLayout(issueId: string, tree: PaneLayoutNode): void {
   }
 }
 
-/// 清理 issue 的布局记录（归档/取消 onSuccess 调用——issue 终结时移除本地痕迹，
-/// 防 localStorage 积累脏 key；此前无清理机制，顺手补上）。
+/**
+ * 清理 issue 的布局记录（归档/取消 onSuccess 调用——issue 终结时移除本地痕迹，
+ * 防 localStorage 积累脏 key；此前无清理机制，顺手补上）。
+ */
 export function removeLayout(issueId: string): void {
   try {
     localStorage.removeItem(layoutKey(issueId));

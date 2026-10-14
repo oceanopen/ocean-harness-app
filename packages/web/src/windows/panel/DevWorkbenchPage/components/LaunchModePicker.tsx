@@ -21,8 +21,7 @@ interface LaunchModePickerProps {
 
 /**
  * ACP 选项的置灰提示（T1.4 doctor 四态派生）：检测中/未探测 → 检测进行时；unhealthy →
- * 后端生成的用户可读原因直显（node 过低/未登录等）；healthy 时选项解除置灰，本函数
- * 不再被消费（LaunchOption 可点时展示 description）。
+ * 后端生成的用户可读原因直显（node 过低/未登录等）；healthy 时选项解除置灰，本函数不再被消费（LaunchOption 可点时展示 description）。
  */
 function acpDoctorHint(entry: DoctorEntryState | undefined): string {
   switch (entry?.status) {
@@ -36,11 +35,9 @@ function acpDoctorHint(entry: DoctorEntryState | undefined): string {
 }
 
 /**
- * LaunchModePicker：启动方式临场选择面板（workspace 启动模式 = none 时，issue 初始化
- * 就绪后替代终端树渲染）。三选一：终端自动（直启所选 Agent）/ 终端手动（裸 shell +
- * 工具栏按钮拉起）/ ACP 会话（T1.6 前置灰，置灰提示随 doctor 四态派生并附重新检测）。
- * 选择仅本次有效——不回写配置、不记忆，每次打开重新决定；想固定方式应修改 workspace
- * 启动设置。
+ * LaunchModePicker：启动方式临场选择面板（workspace 启动模式 = none 时，issue 初始化就绪后替代终端树渲染）。
+ * 三选一：终端自动（直启所选 Agent）/ 终端手动（裸 shell + 工具栏按钮拉起）/ ACP 会话（T1.6 前置灰，置灰提示随 doctor 四态派生并附重新检测）。
+ * 选择仅本次有效——不回写配置、不记忆，每次打开重新决定；想固定方式应修改 workspace 启动设置。
  */
 export default function LaunchModePicker({ terminalAgentLabel, acpAgentLabel, onPick }: LaunchModePickerProps) {
   const doctorEntry = useDoctorEntry(AGENT_CODE.claudeAcp);
@@ -68,8 +65,10 @@ export default function LaunchModePicker({ terminalAgentLabel, acpAgentLabel, on
         disabledHint={acpDoctorHint(doctorEntry)}
         onClick={() => onPick('acp')}
         footer={(
-          // 重新检测：受理单条目探测（在跑则 join），受理期间按钮 loading（受理与
-          // 探测异步解耦，收敛经四态轮询自动呈现）。
+          /**
+           * 重新检测：受理单条目探测（在跑则 join），受理期间按钮 loading
+           * （受理与探测异步解耦，收敛经四态轮询自动呈现）。
+           */
           <Button
             size="small"
             onClick={() => checkDoctor.mutate(AGENT_CODE.claudeAcp)}
@@ -109,14 +108,14 @@ function LaunchOption({
         fullWidth
         disabled={disabled}
         onClick={onClick}
-        sx={{ display: 'block', textAlign: 'left', py: 1.5, px: 2 }}
+        sx={{ display: 'block', textAlign: 'left', py: '12px', px: '16px' }}
       >
         <Typography variant="body2" sx={{ fontWeight: 600 }}>{title}</Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: '4px' }}>
           {disabled ? disabledHint ?? description : description}
         </Typography>
       </Button>
-      {footer && <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5 }}>{footer}</Box>}
+      {footer && <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: '4px' }}>{footer}</Box>}
     </Box>
   );
 }
@@ -124,8 +123,8 @@ function LaunchOption({
 /** 面板外壳：内容区居中 + 限宽列（与 WorkspaceInitGate 同款视觉）。 */
 function PanelShell({ children }: { children: ReactNode }) {
   return (
-    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
-      <Box sx={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
+      <Box sx={{ width: '100%', maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {children}
       </Box>
     </Box>
@@ -146,11 +145,9 @@ interface TerminalLaunchFlowProps {
 }
 
 /**
- * TerminalLaunchFlow：issue 就绪后的启动分流容器（key 随 issue 挂载——临场选择态随
- * key 重置，无需 effect）。none 先出选择面板，选择后渲染对应视图（自动档带直启值的
- * 终端树、手动档裸 shell、acp 档 ACP 会话视图）；terminal-manual 直接裸 shell 终端
- * （工具栏按钮拉起）；terminal-auto 直接直启；acp（配置或临场选择）渲染 ACP 会话视图
- * （T1.6）。startupCli 按「配置/临场选择」最终值派生（仅终端自动档非 null）。
+ * TerminalLaunchFlow：issue 就绪后的启动分流容器（key 随 issue 挂载——临场选择态随 key 重置，无需 effect）。
+ * none 先出选择面板，选择后渲染对应视图（自动档带直启值的终端树、手动档裸 shell、acp 档 ACP 会话视图 T1.6）；
+ * terminal-manual 直接裸 shell、terminal-auto 直接直启；startupCli 按「配置/临场选择」最终值派生（仅终端自动档非 null）。
  */
 export function TerminalLaunchFlow({
   issueId,
@@ -177,8 +174,10 @@ export function TerminalLaunchFlow({
     );
   }
   if (mode === 'acp' || picked === 'acp') {
-    // ACP 分支自带错误边界（title 区分文案）：ACP 视图的渲染异常在内层收敛为
-    // 「会话视图异常退出」，不冒泡到外层（DevWorkbenchPage）的终端文案边界。
+    /**
+     * ACP 分支自带错误边界（title 区分文案）：ACP 视图的渲染异常在内层收敛为
+     * 「会话视图异常退出」，不冒泡到外层（DevWorkbenchPage）的终端文案边界。
+     */
     return (
       <TerminalErrorBoundary title="会话视图异常退出">
         <AcpSessionView issueId={issueId} />

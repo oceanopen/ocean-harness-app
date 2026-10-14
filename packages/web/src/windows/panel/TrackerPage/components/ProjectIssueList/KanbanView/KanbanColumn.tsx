@@ -31,7 +31,7 @@ function KanbanColumn({ stateCode, projectIssues, subtaskStats, childrenByParent
           {...provided.droppableProps}
           variant="outlined"
           sx={{
-            width: 360,
+            width: '360px',
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
@@ -39,7 +39,7 @@ function KanbanColumn({ stateCode, projectIssues, subtaskStats, childrenByParent
             bgcolor: snapshot.isDraggingOver ? 'action.hover' : 'background.default',
           }}
         >
-          <Box sx={{ px: 1.5, py: 1 }}>
+          <Box sx={{ px: '12px', py: '8px' }}>
             <StateGroupCard
               color={meta?.color}
               name={meta?.name ?? stateCode}
@@ -47,7 +47,7 @@ function KanbanColumn({ stateCode, projectIssues, subtaskStats, childrenByParent
               onAdd={onAdd}
             />
           </Box>
-          <Box sx={{ flex: 1, overflow: 'auto', p: 1 }}>
+          <Box sx={{ flex: 1, overflow: 'auto', p: '8px' }}>
             {projectIssues.map((projectIssue, index) => (
               <Draggable key={projectIssue.id} draggableId={projectIssue.id} index={index}>
                 {(dragProvided, dragSnapshot) => (

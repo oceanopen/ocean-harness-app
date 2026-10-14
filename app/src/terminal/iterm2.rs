@@ -1,28 +1,8 @@
-// iTerm2 AppleScript 跳转。
-//
-// 应用寻址一律用 bundle id（见 ITERM2_BUNDLE_ID），不用名字 "iTerm2"：
-// 冷启动时按名字寻址需经 LaunchServices 解析并拉起应用，部分机器该名字注册
-// 失效（bundle 实际叫 iTerm.app），解析失败 → 脚本字典加载不到 → 编译期
-// -2741（类名无法绑定，如 create window 里的 window）或运行期 -1728。
-// 按 id 寻址不依赖名字注册，冷启动实测可靠。
-//
-// 冷/热启动语义（执行时序固定，杜绝竞态）：
-//   每个脚本以 `application id ... is running` 预判开头——该探测不拉起应用，
-//   是唯一先于一切状态变更的运行态事实。
-//   - 热启动：窗口集合已稳定，activate + count of windows 两分支照旧，无竞态。
-//   - 冷启动：launch（不触发 open/reopen 前台语义）→ create window 拿所有权
-//     锚点 → cd/分屏 → 清扫一切非本脚本窗口（兜底 iTerm2 启动过程自建的默认
-//     空白窗口，即「初次打开多出一个 ~ 空白窗口」的根因）→ 最后才 activate。
-//     所有权锚点是 create window 的返回值，不依赖 count of windows 与 iTerm2
-//     自启窗口创建之间的先后，天然无竞态。
-//
-// focus_session 仅靠 tty of s = targetTTY 匹配——tty 是会话身份的唯一可靠来源，
-// cwd/projectName 等文本子串匹配会因 prompt/历史输出污染而误命中其他项目会话。
-// 命中后：select window/tab/session，并把窗口拉到最前（set index of w to 1）。
-// 未运行/未命中都以 error 终止（osascript 非零退出 → OsaScriptFailed → 前端
-// toast），不做无谓拉起、不静默无反应。
-// tty 为 None 时直接报错，与 terminal_app.rs 行为对齐。
-
+/*
+ * iTerm2 AppleScript 跳转。应用寻址一律用 bundle id（见 ITERM2_BUNDLE_ID），不用名字 "iTerm2"：冷启动按名字寻址需经 LaunchServices 解析并拉起应用，部分机器该名字注册失效（bundle 实际叫 iTerm.app），解析失败 → 脚本字典加载不到 → 编译期 -2741（类名无法绑定，如 create window 里的 window）或运行期 -1728；按 id 寻址不依赖名字注册，冷启动实测可靠。
+ * 冷/热启动语义（执行时序固定，杜绝竞态）：每个脚本以 `application id ... is running` 预判开头（该探测不拉起应用，是唯一先于一切状态变更的运行态事实）。热启动：窗口集合已稳定，activate + count of windows 两分支照旧，无竞态。冷启动：launch（不触发 open/reopen 前台语义）→ create window 拿所有权锚点 → cd/分屏 → 清扫一切非本脚本窗口（兜底 iTerm2 启动过程自建的默认空白窗口，即「初次打开多出一个 ~ 空白窗口」的根因）→ 最后才 activate；所有权锚点是 create window 的返回值，不依赖 count of windows 与 iTerm2 自启窗口创建之间的先后，天然无竞态。
+ * focus_session 仅靠 tty of s = targetTTY 匹配（tty 是会话身份的唯一可靠来源，cwd/projectName 等文本子串匹配会因 prompt/历史输出污染而误命中其他项目会话）；命中后 select window/tab/session，并把窗口拉到最前（set index of w to 1）；未运行/未命中都以 error 终止（osascript 非零退出 → OsaScriptFailed → 前端 toast），不做无谓拉起、不静默无反应；tty 为 None 时直接报错，与 terminal_app.rs 行为对齐。
+ */
 use tauri::{AppHandle, Manager};
 
 use crate::shared::app_config::{
@@ -31,15 +11,14 @@ use crate::shared::app_config::{
 };
 use crate::terminal::{NavErr, Target, run_osascript};
 
-/// iTerm2 的 bundle id。AppleScript 按 id 寻址不依赖 LaunchServices 的名字注册，冷启动可靠。
+// iTerm2 的 bundle id。AppleScript 按 id 寻址不依赖 LaunchServices 的名字注册，冷启动可靠。
 const ITERM2_BUNDLE_ID: &str = "com.googlecode.iterm2";
 
-/// focus_session 脚本模板。时序（固定，勿破坏）：
-/// 1. is running 预判（探测不拉起应用）——未运行直接 error：此时目标 tty 的宿主
-///    进程已随应用退出、匹配注定失败，拉起只会留下 iTerm2 自启空白窗口；
-/// 2. tell 块内纯遍历匹配，不 activate——失败路径零副作用；
-/// 3. 未命中 error（原先静默结束，用户点击后毫无反馈）；
-/// 4. 命中后 select + set index，最后才 activate 把应用带到前台。
+/*
+ * focus_session 脚本模板。时序（固定，勿破坏）：
+ * 1. is running 预判（探测不拉起应用）——未运行直接 error：此时目标 tty 的宿主进程已随应用退出、匹配注定失败，拉起只会留下 iTerm2 自启空白窗口；
+ * 2. tell 块内纯遍历匹配，不 activate——失败路径零副作用；3. 未命中 error（原先静默结束，用户点击后毫无反馈）；4. 命中后 select + set index，最后才 activate 把应用带到前台。
+ */
 const SCRIPT_TEMPLATE: &str = r#"
 -- 未运行直接报错：匹配注定失败，不做无谓拉起。
 if not (application id "{bundle_id}" is running) then
@@ -86,9 +65,11 @@ end tell
 tell application id "{bundle_id}" to activate
 "#;
 
-/// open_directory 脚本骨架。热启动沿用 count 两分支；冷启动走「launch → 自建
-/// 窗口拿所有权锚点 → 清扫非本脚本窗口 → activate」，见文件头注释。
-/// {body_*} 为 `tell current session of ...` 内部语句块（cd，可选分屏 + 第二条 cd）。
+/*
+ * open_directory 脚本骨架。热启动沿用 count 两分支；冷启动走「launch → 自建
+ * 窗口拿所有权锚点 → 清扫非本脚本窗口 → activate」，见文件头注释。
+ * {body_*} 为 `tell current session of ...` 内部语句块（cd，可选分屏 + 第二条 cd）。
+ */
 const OPEN_SCRIPT_TEMPLATE: &str = r#"
 -- 运行态预判先于一切状态变更（探测本身不拉起应用）。
 set wasRunning to (application id "{bundle_id}" is running)
@@ -135,7 +116,7 @@ tell application id "{bundle_id}"
 end tell
 "#;
 
-/// 把字符串字面量转成 AppleScript 字符串字面量（双引号包裹 + 转义）。
+// 把字符串字面量转成 AppleScript 字符串字面量（双引号包裹 + 转义）。
 fn applescript_string(s: &str) -> String {
     let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{}\"", escaped)
@@ -148,8 +129,10 @@ fn render_script(target: &Target<'_>) -> String {
         .replace("{tty}", &applescript_string(target.tty.unwrap()))
 }
 
-/// 生成 `tell current session of ...` 内部语句块：写入 cd；split_cmd 非空时
-/// 追加分屏并在新 session 写第二条 cd。indent 为每行完整缩进。
+/*
+ * 生成 `tell current session of ...` 内部语句块：写入 cd；split_cmd 非空时
+ * 追加分屏并在新 session 写第二条 cd。indent 为每行完整缩进。
+ */
 fn session_body(
     indent: &str,
     split_cmd: Option<&str>,
@@ -172,8 +155,10 @@ fn session_body(
     lines.join("\n")
 }
 
-/// 渲染 open_directory 脚本。split_direction 语义与原实现一致：
-/// none → 不分屏；vertical → 左右分屏；其余（含默认 horizontal）→ 上下分屏。
+/*
+ * 渲染 open_directory 脚本。split_direction 语义与原实现一致：
+ * none → 不分屏；vertical → 左右分屏；其余（含默认 horizontal）→ 上下分屏。
+ */
 fn render_open_script(split_direction: &str, escaped_dir: &str, cmd_suffix: &str) -> String {
     let split_cmd = if split_direction == "none" {
         None
@@ -214,9 +199,11 @@ fn render_open_script(split_direction: &str, escaped_dir: &str, cmd_suffix: &str
         )
 }
 
-/// 执行 iTerm2 跳转。
-/// - tty 为 None：返回 NavErr::OsaScriptFailed（iTerm2 仅靠 tty 匹配，无 fallback）。
-/// - osascript 退出码非 0：返回 NavErr::OsaScriptFailed（含 stderr）。
+/*
+ * 执行 iTerm2 跳转。
+ * - tty 为 None：返回 NavErr::OsaScriptFailed（iTerm2 仅靠 tty 匹配，无 fallback）。
+ * - osascript 退出码非 0：返回 NavErr::OsaScriptFailed（含 stderr）。
+ */
 pub fn focus_session(target: &Target<'_>) -> Result<(), NavErr> {
     if target.tty.is_none() {
         return Err(NavErr::OsaScriptFailed {
@@ -227,10 +214,11 @@ pub fn focus_session(target: &Target<'_>) -> Result<(), NavErr> {
     run_osascript(&script)
 }
 
-/// 在 iTerm2 中打开目录：热启动时有窗口则新建 Tab、无窗口则新建窗口；冷启动时
-/// 自建窗口并清扫 iTerm2 自启的空白窗口，均 cd 到指定目录。
-/// 分屏方向由 `iterm2_split_direction` 配置项控制：
-///   horizontal = 上下分屏，vertical = 左右分屏，none = 不分屏。
+/*
+ * 在 iTerm2 中打开目录：热启动时有窗口则新建 Tab、无窗口则新建窗口；冷启动时
+ * 自建窗口并清扫 iTerm2 自启的空白窗口，均 cd 到指定目录。
+ * 分屏方向由 `iterm2_split_direction` 配置项控制：horizontal = 上下分屏，vertical = 左右分屏，none = 不分屏。
+ */
 pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
     let escaped_dir = escape_dir_for_applescript(dir);
     let state = app.state::<AppConfigState>();
@@ -241,8 +229,10 @@ pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
         .flatten()
         .unwrap_or_else(|| DEFAULT_ITERM2_SPLIT_DIRECTION.to_string());
 
-    // 读取「cd 后追加命令」配置（全局），缺失视为空串（仅 cd）。
-    // 拼成 ` && {cmd}` 后缀，使 write text 最终发出 `cd {dir} && {cmd}`。
+    /*
+     * 读取「cd 后追加命令」配置（全局），缺失视为空串（仅 cd）。
+     * 拼成 ` && {cmd}` 后缀，使 write text 最终发出 `cd {dir} && {cmd}`。
+     */
     let post_open_cmd = read_app_config_raw(&state, TERMINAL_POST_OPEN_COMMAND_KEY)
         .ok()
         .flatten()
@@ -253,9 +243,11 @@ pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
     run_osascript(&script)
 }
 
-/// 将目录路径转义后嵌入 AppleScript 的 `write text "cd ..."` 语句。
-/// 仅返回 shell 安全的路径部分，不含 `cd` 前缀，由调用方拼命令。
-/// 空格用反斜杠转义（`my\ dir`），不使用单引号包裹，生成更自然的 cd 命令。
+/*
+ * 将目录路径转义后嵌入 AppleScript 的 `write text "cd ..."` 语句。
+ * 仅返回 shell 安全的路径部分，不含 `cd` 前缀，由调用方拼命令。
+ * 空格用反斜杠转义（`my\ dir`），不使用单引号包裹，生成更自然的 cd 命令。
+ */
 fn escape_dir_for_applescript(dir: &str) -> String {
     // Shell: 空格前加反斜杠，使 `cd my\ dir` 正确处理含空格路径
     let shell_safe = dir.replace(' ', "\\ ");
@@ -278,8 +270,10 @@ mod tests {
         assert!(script.contains("\"/dev/ttys004\""));
         assert!(script.contains("selectSession"));
         assert!(script.contains("set index of w to 1"));
-        // 回归守卫：必须按 bundle id 寻址；按名字寻址在冷启动时会因 LS 名字注册
-        // 失效而编译失败（-2741）或解析失败（-1728）。
+        /*
+         * 回归守卫：必须按 bundle id 寻址；按名字寻址在冷启动时会因 LS 名字注册
+         * 失效而编译失败（-2741）或解析失败（-1728）。
+         */
         assert!(script.contains(&format!(
             "tell application id \"{ITERM2_BUNDLE_ID}\""
         )));

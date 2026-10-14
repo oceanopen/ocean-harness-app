@@ -1,19 +1,16 @@
-// 进程富集：RawSessionFile → ClaudeSessionInfo。
-//
-// 通过链式 `ps -p <pid> -o ppid=,comm=` 向上找父进程链，
-// 直到匹配到已知终端 comm（iTerm / Terminal / idea / ...），记录 hostPid/hostApp；
-// 然后对 hostPid 跑 `ps -p <hostPid> -o tty=` 拿到 /dev/ttysXXX。
-//
-// 实现上用 std::process::Command 跑 ps，避免引入 nix/libc 依赖。
-// 任一 ps 失败走兜底值（Unknown / pid=0 / 空 tty），不阻塞 enrich 主流程。
-
+/*
+ * 进程富集：RawSessionFile → ClaudeSessionInfo。通过链式 `ps -p <pid> -o ppid=,comm=` 向上找父进程链直到匹配已知终端 comm（iTerm / Terminal / idea / ...），记录 hostPid/hostApp；再对 hostPid 跑 `ps -p <hostPid> -o tty=` 拿到 /dev/ttysXXX。
+ * 实现上用 std::process::Command 跑 ps，避免引入 nix/libc 依赖；任一 ps 失败走兜底值（Unknown / pid=0 / 空 tty），不阻塞 enrich 主流程。
+ */
 use std::path::Path;
 
 use crate::sessions::raw::RawSessionFile;
 use crate::shared::types::{ClaudeSessionInfo, ClaudeSessionStatus, TerminalApp};
 
-/// 调用 `ps -p <pid> -o <field>=`，返回 stdout trim 后的字符串。
-/// 失败返回 None。field 形如 "ppid=" / "comm=" / "tty="。
+/*
+ * 调用 `ps -p <pid> -o <field>=`，返回 stdout trim 后的字符串。
+ * 失败返回 None。field 形如 "ppid=" / "comm=" / "tty="。
+ */
 fn ps_field(pid: u32, field: &str) -> Option<String> {
     let out = std::process::Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", field])
@@ -32,11 +29,11 @@ fn ps_field(pid: u32, field: &str) -> Option<String> {
     }
 }
 
-/// 把 ps 取到的 comm 字符串归一化为 TerminalApp。
-/// iTerm 3.x 进程名是 "iTerm2" 或 "iTerm"；macOS 自带 Terminal 进程名是 "Terminal"；
-/// IntelliJ 内嵌终端进程名是 "idea"；本 app 嵌入式 PTY 的宿主进程名
-/// "ocean-harness"（dev 二进制同名，tauri.dev.conf.json 只改 identifier/productName
-/// 不改二进制名——dev 与 release 同名识别）。
+/*
+ * 把 ps 取到的 comm 字符串归一化为 TerminalApp。
+ * iTerm 3.x 进程名是 "iTerm2" 或 "iTerm"；macOS 自带 Terminal 进程名是 "Terminal"；IntelliJ 内嵌终端进程名是 "idea"；
+ * 本 app 嵌入式 PTY 的宿主进程名 "ocean-harness"（dev 二进制同名——tauri.dev.conf.json 只改 identifier/productName 不改二进制名，dev 与 release 同名识别）。
+ */
 fn classify_terminal(comm: &str) -> Option<TerminalApp> {
     // basename：ps -o comm= 给的可能是完整路径或裸名，统一取最后一段。
     let basename = Path::new(comm)
@@ -52,8 +49,10 @@ fn classify_terminal(comm: &str) -> Option<TerminalApp> {
     }
 }
 
-/// 从 Claude pid 开始向上爬父进程链，直到找到已知终端。
-/// 最多爬 8 层防止异常环；找不到返回 (Unknown, 0)。
+/*
+ * 从 Claude pid 开始向上爬父进程链，直到找到已知终端。
+ * 最多爬 8 层防止异常环；找不到返回 (Unknown, 0)。
+ */
 fn lookup_host(claude_pid: u32) -> (TerminalApp, u32) {
     let mut pid = claude_pid;
     for _ in 0..8 {
@@ -76,10 +75,10 @@ fn lookup_host(claude_pid: u32) -> (TerminalApp, u32) {
     (TerminalApp::Unknown, 0)
 }
 
-/// 把 ps 返回的 tty 字符串归一化为 /dev/ 前缀形式。
-/// ps -o tty= 返回 "ttys002"，而 iTerm2/Terminal.app 的 AppleScript 返回 "/dev/ttys002"；
-/// 不一致会让 osascript 端的 `tty is targetTTY` 永远 false。
-/// "??" / 空串视为无 tty。
+/*
+ * 把 ps 返回的 tty 字符串归一化为 /dev/ 前缀形式：ps -o tty= 返回 "ttys002"，而 iTerm2/Terminal.app 的 AppleScript 返回 "/dev/ttys002"，
+ * 不一致会让 osascript 端的 `tty is targetTTY` 永远 false。"??" / 空串视为无 tty。
+ */
 fn normalize_tty(raw: Option<&str>) -> String {
     let Some(s) = raw else { return String::new() };
     let trimmed = s.trim();
@@ -93,9 +92,11 @@ fn normalize_tty(raw: Option<&str>) -> String {
     }
 }
 
-/// 把 RawSessionFile.status 字符串映射为 ClaudeSessionStatus。
-/// Claude Code 当前已观察到的值："busy" / "waiting" / "idle"。
-/// 未识别值兜底为 Idle（宁可误判 idle 也不误判 busy）。
+/*
+ * 把 RawSessionFile.status 字符串映射为 ClaudeSessionStatus。
+ * Claude Code 当前已观察到的值："busy" / "waiting" / "idle"。
+ * 未识别值兜底为 Idle（宁可误判 idle 也不误判 busy）。
+ */
 pub fn map_status(raw: &str) -> ClaudeSessionStatus {
     match raw {
         "busy" => ClaudeSessionStatus::Busy,
@@ -105,8 +106,10 @@ pub fn map_status(raw: &str) -> ClaudeSessionStatus {
     }
 }
 
-/// 把 RawSessionFile 富集为完整 ClaudeSessionInfo。
-/// projectName = basename(cwd)，cwd 异常（如根路径）时 projectName 为空字符串。
+/*
+ * 把 RawSessionFile 富集为完整 ClaudeSessionInfo。
+ * projectName = basename(cwd)，cwd 异常（如根路径）时 projectName 为空字符串。
+ */
 pub fn enrich(raw: &RawSessionFile) -> ClaudeSessionInfo {
     let project_name = Path::new(&raw.cwd)
         .file_name()
@@ -115,11 +118,11 @@ pub fn enrich(raw: &RawSessionFile) -> ClaudeSessionInfo {
         .to_string();
 
     let (host_app, host_pid) = lookup_host(raw.pid);
-    // TTY 查 claude 自己，而不是 host_pid：iTerm2/Terminal.app 是 GUI 进程没有控制终端，
-    // ps -p <host_pid> -o tty= 会返回 "??"。claude 继承自 shell 的 tty 才是真实值。
-    // gate 仍按 host_pid > 0：识别不到宿主时不查（后续也会被过滤，tty 无意义）。
-    // 归一化为 /dev/ 前缀：ps 输出 "ttys002"，iTerm2/Terminal.app AppleScript 返回 "/dev/ttys002"，
-    // 前缀不一致会导致 osascript 端 `tty of s is targetTTY` 永远 false。
+    /*
+     * TTY 查 claude 自己而不是 host_pid：iTerm2/Terminal.app 是 GUI 进程没有控制终端，ps -p <host_pid> -o tty= 会返回 "??"，claude 继承自 shell 的 tty 才是真实值；gate 仍按 host_pid > 0（识别不到宿主时不查，后续也会被过滤）。
+     * 归一化为 /dev/ 前缀：ps 输出 "ttys002"，iTerm2/Terminal.app AppleScript 返回 "/dev/ttys002"，
+     * 前缀不一致会导致 osascript 端 `tty of s is targetTTY` 永远 false。
+     */
     let tty = if host_pid > 0 {
         normalize_tty(ps_field(raw.pid, "tty=").as_deref())
     } else {

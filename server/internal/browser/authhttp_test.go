@@ -10,12 +10,16 @@ import (
 	"testing"
 )
 
-// 带态 HTTP（authhttp，T1.4）单测：假引擎 + httptest.Server 断言文档验收四类——
-// cookie 注入（含跨域不泄漏）/ UA / 截断 / 显式 header，另覆盖引擎 isError 传导、
-// 空集照发与解析边界（含错误文案脱敏）。
+/*
+ * 带态 HTTP（authhttp，T1.4）单测：假引擎 + httptest.Server 断言文档验收四类——
+ * cookie 注入（含跨域不泄漏）/ UA / 截断 / 显式 header，另覆盖引擎 isError 传导、
+ * 空集照发与解析边界（含错误文案脱敏）。
+ */
 
-// engineResultSample 引擎默认模式输出样例（0.0.83 核实形态：### Result 段 + 尾随
-// ### Code 段，段间无空行）。
+/*
+ * engineResultSample 引擎默认模式输出样例（0.0.83 核实形态：### Result 段 + 尾随
+ * ### Code 段，段间无空行）。
+ */
 func engineResultSample(resultLines ...string) string {
 	return engineResultSection + "\n" + strings.Join(resultLines, "\n") + "\n### Code\n```js\nawait page.context().cookies();\n```"
 }
@@ -82,10 +86,10 @@ func TestAuthedRequestCookieInjectionAndUA(t *testing.T) {
 	ctl := withEngineCtl(t)
 	m := newTestManager(t)
 	srv, rec := newCapturingServer(t, http.StatusCreated, "created")
-	// 目标 host-only（127.0.0.1）命中；其它站 host-only 与跨站 domain 均不得出现在
-	// B 站请求头。github.com 行为回归锚点：host-only 声明域 ≠ 目标 host——若落锚
-	// 退回「全量对目标 URL 一次注入」，此凭据会被 cookiejar 重锚到目标站泄漏
-	// （Domain 空 cookie 锚定传入 URL 的 host）。
+	/*
+	 * 目标 host-only（127.0.0.1）命中；其它站 host-only 与跨站 domain 均不得出现在 B 站请求头。
+	 * github.com 行为回归锚点：host-only 声明域 ≠ 目标 host——若落锚退回「全量对目标 URL 一次注入」，此凭据会被 cookiejar 重锚到目标站泄漏（Domain 空 cookie 锚定传入 URL 的 host）。
+	 */
 	ctl.toolFn = authedToolFn(engineResultSample(
 		"sessionid=abc123 (domain: 127.0.0.1, path: /)",
 		"gh_sess=leakme (domain: github.com, path: /)",
@@ -228,8 +232,10 @@ func TestParseCookieList(t *testing.T) {
 		}
 	}
 
-	// 缺 Result 段 = 格式漂移显式报错且不回显全文（其中可能是真实凭据）；### Code 段
-	// 内容不参与解析。
+	/*
+	 * 缺 Result 段 = 格式漂移显式报错且不回显全文（其中可能是真实凭据）；### Code 段
+	 * 内容不参与解析。
+	 */
 	if _, err := parseCookieList("### Code\n```js\nx\n```"); err == nil || !strings.Contains(err.Error(), engineResultSection) || strings.Contains(err.Error(), "```") {
 		t.Fatalf("缺 Result 段 err = %v, want 显式报错且不回显全文", err)
 	}
@@ -253,8 +259,10 @@ func TestParseEvalString(t *testing.T) {
 			t.Fatalf("parseEvalString(%q) = %q, %v, want %q", raw, got, err, want)
 		}
 	}
-	// 缺段 / 非字符串结果均显式报错且不回显内容（evaluate 结果可能是 localStorage
-	// token 等敏感值）。
+	/*
+	 * 缺段 / 非字符串结果均显式报错且不回显内容（evaluate 结果可能是 localStorage
+	 * token 等敏感值）。
+	 */
 	if _, err := parseEvalString("### Code\nx"); err == nil || strings.Contains(err.Error(), "x") {
 		t.Fatalf("缺 Result 段应显式报错且不回显内容, got %v", err)
 	}

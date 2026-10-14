@@ -9,9 +9,11 @@ import (
 	"ocean-harness/server/internal/bot"
 )
 
-// TestInteractionLaneBypassesInboundQueue 快车道分流（T3.2）：交互事件不排消息队列——
-// 消息通道被未消费任务占满（模拟附件下载积压）时，点击事件仍经独立通道即时到达
-// onInbound（置灰 5 秒窗口不被吃掉）；归一链（会话键/Interaction 注入）与消息同源。
+/*
+ * TestInteractionLaneBypassesInboundQueue 快车道分流（T3.2）：交互事件不排消息队列——
+ * 消息通道被未消费任务占满（模拟附件下载积压）时，点击事件仍经独立通道即时到达
+ * onInbound（置灰 5 秒窗口不被吃掉）；归一链（会话键/Interaction 注入）与消息同源。
+ */
 func TestInteractionLaneBypassesInboundQueue(t *testing.T) {
 	inbound := make(chan func(*bot.InboundMessage), inboundBufferCapacity)
 	actions := make(chan func(*bot.InboundMessage), interactionBufferCapacity)

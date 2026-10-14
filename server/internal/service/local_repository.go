@@ -17,8 +17,10 @@ import (
 	"ocean-harness/server/internal/gitutil"
 )
 
-// LocalRepository 对应 /api/localRepository 命名空间下的业务逻辑（从 src-tauri 迁移而来）。
-// 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger；方法只收 req、用 svc.Orm、返响应 DTO。
+/*
+ * LocalRepository 对应 /api/localRepository 命名空间下的业务逻辑（从 src-tauri 迁移而来）。
+ * 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger；方法只收 req、用 svc.Orm、返响应 DTO。
+ */
 type LocalRepository struct {
 	apis.Service
 }
@@ -41,9 +43,11 @@ func (svc LocalRepository) GetInfo(req *types.LocalRepositoryGetInfoRequest) (ty
 	return types.LocalRepositoryResponseData{}.FromModel(r), nil
 }
 
-// Create 新建仓库。严格校验：name/localDir 非空、localDir 为存在的绝对路径且为 git 仓库；
-// localDir 唯一（重复返回「该仓库目录已添加过」）；subDirList 每项拼接目录须存在（否则「子目录路径无效或不存在」）。
-// 校验通过后解析 git 信息入库，返回新建仓库。
+/*
+ * Create 新建仓库。严格校验：name/localDir 非空、localDir 为存在的绝对路径且为 git 仓库；
+ * localDir 唯一（重复返回「该仓库目录已添加过」）；subDirList 每项拼接目录须存在（否则「子目录路径无效或不存在」）。
+ * 校验通过后解析 git 信息入库，返回新建仓库。
+ */
 func (svc LocalRepository) Create(req *types.LocalRepositoryCreateRequest) (types.LocalRepositoryResponseData, error) {
 	name := strings.TrimSpace(req.Name)
 	localDir := strings.TrimSpace(req.LocalDir)
@@ -88,8 +92,10 @@ func (svc LocalRepository) Create(req *types.LocalRepositoryCreateRequest) (type
 	return types.LocalRepositoryResponseData{}.FromModel(repo), nil
 }
 
-// Update 更新仓库的 name/localDir/description/subDirList。校验新 localDir 须为 git 仓库且不与其他记录重复；
-// subDirList 每项拼接目录须存在。校验通过后重新解析 git 信息并更新，返回更新后的仓库。
+/*
+ * Update 更新仓库的 name/localDir/description/subDirList。校验新 localDir 须为 git 仓库且不与其他记录重复；
+ * subDirList 每项拼接目录须存在。校验通过后重新解析 git 信息并更新，返回更新后的仓库。
+ */
 func (svc LocalRepository) Update(req *types.LocalRepositoryUpdateRequest) (types.LocalRepositoryResponseData, error) {
 	name := strings.TrimSpace(req.Name)
 	localDir := strings.TrimSpace(req.LocalDir)
@@ -140,9 +146,11 @@ func (svc LocalRepository) Update(req *types.LocalRepositoryUpdateRequest) (type
 	return types.LocalRepositoryResponseData{}.FromModel(r), nil
 }
 
-// Delete 物理删除仓库（释放 localDir 供重新添加）。
-// 事务内级联清理（避免悬挂引用）：硬删中间表 t_project_local_repositories 关联记录 +
-// 硬删 issue↔仓库关联表 t_issue_local_repositories 中指向该仓库的记录。
+/*
+ * Delete 物理删除仓库（释放 localDir 供重新添加）。
+ * 事务内级联清理（避免悬挂引用）：硬删中间表 t_project_local_repositories 关联记录 +
+ * 硬删 issue↔仓库关联表 t_issue_local_repositories 中指向该仓库的记录。
+ */
 func (svc LocalRepository) Delete(req *types.LocalRepositoryDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
@@ -162,8 +170,10 @@ func (svc LocalRepository) Delete(req *types.LocalRepositoryDeleteRequest) error
 	})
 }
 
-// Refresh 重解析单个仓库的 git 信息并更新，返回新数据。
-// Go HTTP 单请求独立 service/Orm，无 Rust 的 Mutex；SQLite 单连接由 gorm 自动串行化写。
+/*
+ * Refresh 重解析单个仓库的 git 信息并更新，返回新数据。
+ * Go HTTP 单请求独立 service/Orm，无 Rust 的 Mutex；SQLite 单连接由 gorm 自动串行化写。
+ */
 func (svc LocalRepository) Refresh(req *types.LocalRepositoryRefreshRequest) (types.LocalRepositoryResponseData, error) {
 	q := query.Use(svc.Orm)
 	r, err := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(req.ID)).First()
@@ -180,8 +190,10 @@ func (svc LocalRepository) Refresh(req *types.LocalRepositoryRefreshRequest) (ty
 	return types.LocalRepositoryResponseData{}.FromModel(r), nil
 }
 
-// RefreshAll 遍历重解析全部仓库并更新，返回 DB 最新列表（保证 UI 与 DB 一致）。
-// 串行解析（单用户场景 git 串行可接受）；部分仓库 Save 失败仅记日志不中断，已成功的更新落库。
+/*
+ * RefreshAll 遍历重解析全部仓库并更新，返回 DB 最新列表（保证 UI 与 DB 一致）。
+ * 串行解析（单用户场景 git 串行可接受）；部分仓库 Save 失败仅记日志不中断，已成功的更新落库。
+ */
 func (svc LocalRepository) RefreshAll() ([]types.LocalRepositoryResponseData, error) {
 	q := query.Use(svc.Orm)
 	repos, err := q.LocalRepository.WithContext(svc.Context).Find()
@@ -200,8 +212,10 @@ func (svc LocalRepository) RefreshAll() ([]types.LocalRepositoryResponseData, er
 	return svc.findAll()
 }
 
-// GetLocalBranches 列出仓库的本地分支名（git branch 默认仅本地分支）。
-// 仓库不存在返回错误；非 git 目录 / 无分支返回空切片（gitutil 留空，不阻塞前端选择器）。
+/*
+ * GetLocalBranches 列出仓库的本地分支名（git branch 默认仅本地分支）。
+ * 仓库不存在返回错误；非 git 目录 / 无分支返回空切片（gitutil 留空，不阻塞前端选择器）。
+ */
 func (svc LocalRepository) GetLocalBranches(req *types.LocalRepositoryGetLocalBranchesRequest) ([]string, error) {
 	q := query.Use(svc.Orm)
 	r, err := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(req.ID)).First()
@@ -254,10 +268,10 @@ func validateRepoDir(localDir string) error {
 	return nil
 }
 
-// normalizeSubDirs 归一化并校验子目录列表（复刻原 Rust normalize_sub_dir_list）：
-//   - 每项 subDir 去首尾空白与路径分隔符后须为存在的目录，任一失败返回「子目录路径无效或不存在」；
-//   - subDir 为空的项跳过（防御）；
-//   - 每项 subDirDescription 截断到 200 字。
+/*
+ * normalizeSubDirs 归一化并校验子目录列表（复刻原 Rust normalize_sub_dir_list）：每项 subDir 去首尾空白与路径分隔符后须为存在的目录，任一失败返回「子目录路径无效或不存在」；subDir 为空的项跳过（防御）。
+ * 每项 subDirDescription 截断到 200 字。
+ */
 func normalizeSubDirs(dir string, raw []types.RepoSubDir) ([]types.RepoSubDir, error) {
 	out := make([]types.RepoSubDir, 0, len(raw))
 	for _, item := range raw {

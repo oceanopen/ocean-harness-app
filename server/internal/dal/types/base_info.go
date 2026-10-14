@@ -1,7 +1,6 @@
-// Package types 存放各接口的请求/返回 DTO（数据传输对象）。
-//
-// 按「路由模块」组织文件：base_info.go 汇集 /api/baseInfo 命名空间下的全部 DTO，
-// 后续新增模块时按 <module>.go 新增文件，保持清晰。
+/*
+ * Package types 存放各接口的请求/返回 DTO（数据传输对象）：按「路由模块」组织文件，base_info.go 汇集 /api/baseInfo 命名空间下的全部 DTO，后续新增模块时按 <module>.go 新增文件。
+ */
 package types
 
 // ServerRunInfoRequest 是 GET /api/baseInfo/getServerRunInfo 的请求参数（当前无入参，预留扩展）。

@@ -1,6 +1,7 @@
-// workspaceFiles 域 server 状态（TanStack Query）：文件树 + 文件内容。
-// 手动刷新口径（与 T3.1 子任务面板同决策）：无 watcher 无轮询，树刷新靠面板刷新按钮
-// 显式 invalidate；内容靠 staleTime 0 的激活重验。
+/**
+ * workspaceFiles 域 server 状态（TanStack Query）：文件树 + 文件内容。
+ * 手动刷新口径（与 T3.1 子任务面板同决策）：无 watcher 无轮询，树刷新靠面板刷新按钮显式 invalidate；内容靠 staleTime 0 的激活重验。
+ */
 
 import { IssueWorkspaceService } from '@src/services';
 import { useQuery } from '@tanstack/react-query';

@@ -71,10 +71,10 @@ type OpenAction = 'vscode' | 'idea' | 'iterm2';
 
 function InfoRow({ icon, label, children }: { icon: ReactNode; label?: string; children: ReactNode }) {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.75 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', mb: '6px' }}>
       <Box
         sx={{
-          width: 18,
+          width: '18px',
           flexShrink: 0,
           color: 'text.disabled',
           display: 'flex',
@@ -84,7 +84,7 @@ function InfoRow({ icon, label, children }: { icon: ReactNode; label?: string; c
         {icon}
       </Box>
       {label && (
-        <Typography variant="caption" sx={{ color: 'text.disabled', flexShrink: 0, minWidth: 50 }}>
+        <Typography variant="caption" sx={{ color: 'text.disabled', flexShrink: 0, minWidth: '50px' }}>
           {label}
         </Typography>
       )}
@@ -159,7 +159,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
         title={repo.name}
         slotProps={{ title: { fontWeight: 600, noWrap: true } }}
         action={(
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', gap: '4px' }}>
             <IconButton
               size="small"
               onClick={() => onRefresh(repo)}
@@ -184,11 +184,11 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
             </IconButton>
           </Box>
         )}
-        sx={{ '& .MuiCardHeader-action': { alignSelf: 'center', mt: 0 } }}
+        sx={{ '& .MuiCardHeader-action': { alignSelf: 'center', mt: '0px' } }}
       />
       <Divider />
       <CardContent sx={{ flex: 1 }}>
-        <InfoRow icon={<FolderOutlinedIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.dirLabel')}>
+        <InfoRow icon={<FolderOutlinedIcon sx={{ fontSize: '15px' }} />} label={t('repositories:card.dirLabel')}>
           <Link
             component="button"
             type="button"
@@ -197,11 +197,11 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
             underline="hover"
             sx={{
               fontFamily: 'monospace',
-              fontSize: 12,
+              fontSize: '12px',
               textAlign: 'left',
               display: 'block',
               width: '100%',
-              minWidth: 0,
+              minWidth: '0px',
               ...truncateSx,
             }}
           >
@@ -209,13 +209,13 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
           </Link>
         </InfoRow>
 
-        <InfoRow icon={<CloudOutlinedIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.remoteLabel')}>
+        <InfoRow icon={<CloudOutlinedIcon sx={{ fontSize: '15px' }} />} label={t('repositories:card.remoteLabel')}>
           <Typography variant="caption" sx={{ ...truncateSx, color: hasRemote ? 'text.primary' : 'text.disabled' }} title={repo.remoteUrl}>
             {hasRemote ? repo.remoteUrl : t('repositories:card.noRemote')}
           </Typography>
         </InfoRow>
 
-        <InfoRow icon={<StarBorderOutlinedIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.defaultBranchLabel')}>
+        <InfoRow icon={<StarBorderOutlinedIcon sx={{ fontSize: '15px' }} />} label={t('repositories:card.defaultBranchLabel')}>
           {hasDefaultBranch
             ? (
                 <Chip size="small" variant="outlined" label={repo.defaultBranch} />
@@ -227,7 +227,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
               )}
         </InfoRow>
 
-        <InfoRow icon={<AccountTreeIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.branchLabel')}>
+        <InfoRow icon={<AccountTreeIcon sx={{ fontSize: '15px' }} />} label={t('repositories:card.branchLabel')}>
           {hasBranch
             ? (
                 <Chip size="small" variant="outlined" label={repo.currentBranch} />
@@ -239,7 +239,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
               )}
         </InfoRow>
 
-        <InfoRow icon={<HistoryOutlinedIcon sx={{ fontSize: 15 }} />} label={t('repositories:card.commitLabel')}>
+        <InfoRow icon={<HistoryOutlinedIcon sx={{ fontSize: '15px' }} />} label={t('repositories:card.commitLabel')}>
           <Typography variant="caption" sx={{ color: hasCommit ? 'text.secondary' : 'text.disabled' }}>
             {hasCommit
               ? `${formatRelativeTime(repo.lastCommitAt, t, 'repositories')} | ${formatDate(repo.lastCommitAt, 'YYYY-MM-DD HH:mm:ss')}`
@@ -249,7 +249,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
       </CardContent>
       <Divider />
       <CardActions sx={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: '8px' }}>
           <Button
             size="small"
             onClick={e => handleActionClick('vscode', e)}
@@ -278,7 +278,7 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
             key={sub.subDir}
             onClick={() => handleMenuItemClick(sub.subDir)}
             title={sub.subDirDescription || sub.subDir}
-            sx={{ fontFamily: 'monospace', fontSize: 13 }}
+            sx={{ fontFamily: 'monospace', fontSize: '13px' }}
           >
             {sub.subDir}
           </MenuItem>

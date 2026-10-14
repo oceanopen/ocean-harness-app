@@ -5,8 +5,10 @@ import ClaudeSessionCard from './ClaudeSessionCard';
 import EmptyState from './EmptyState';
 
 interface ClaudeSessionListProps {
-  // 全量会话快照（Dead 理论上不出现，后端 discover 已过滤）。列表内按 CLAUDE_SESSION_STATUS_PRIORITY
-  // 排序（SSOT: claudeSessionStatus.ts）：Waiting > GitPending > Busy > Idle > Dead。
+  /**
+   * 全量会话快照（Dead 理论上不出现，后端 discover 已过滤）。列表内按 CLAUDE_SESSION_STATUS_PRIORITY
+   * 排序（SSOT: claudeSessionStatus.ts）：Waiting > GitPending > Busy > Idle > Dead。
+   */
   sessions: ClaudeSessionInfo[];
   onOpenTerminal: (pid: number) => void;
 }
@@ -19,9 +21,9 @@ function ClaudeSessionList({ sessions, onOpenTerminal }: ClaudeSessionListProps)
   return (
     <Box
       sx={{
-        p: 2,
+        p: '16px',
         display: 'grid',
-        gap: 2,
+        gap: '16px',
         // 响应式 1-2 列：与 RepositoriesPage 一致（窄屏 1 列，md 起两列）。
         gridTemplateColumns: {
           xs: '1fr',

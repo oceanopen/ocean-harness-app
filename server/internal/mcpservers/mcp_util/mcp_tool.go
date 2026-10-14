@@ -1,8 +1,8 @@
-// Package mcputil 提供 MCP server 域的共用基础设施：McpTool 基类（依赖装配与校验、
-// 失败日志）、Rust app_config 只读读取。ocean_harness server 的各业务域工具（issue/
-// workspace/github 等，handler 见 mcp_tool/）均基于本包构建。工具结果的装配（出参双挂载
-// StructuredContent+TextContent、error → IsError 中文文案）由 go-sdk ToolHandlerFor
-// 自动完成，无需手工包装。
+/*
+ * Package mcputil 提供 MCP server 域的共用基础设施：McpTool 基类（依赖装配与校验、失败日志）、Rust app_config 只读读取。
+ * ocean_harness server 的各业务域工具（issue/ workspace/github 等，handler 见 mcp_tool/）均基于本包构建。
+ * 工具结果的装配（出参双挂载 StructuredContent+TextContent、error → IsError 中文文案）由 go-sdk ToolHandlerFor 自动完成，无需手工包装。
+ */
 package mcputil
 
 import (
@@ -17,15 +17,11 @@ import (
 	"ocean-harness/server/internal/global"
 )
 
-// McpTool 是所有 MCP 工具 handler 的基类（与 apis.Api 对 controller 的地位相同，适配 MCP
-// 协议侧的调用链），业务工具以「嵌入」方式获得依赖装配与校验能力：
-//
-//	type McpOceanHarnessTool struct { mcputil.McpTool }
-//
-// 与 pros-admin-server 版的差异（本仓库无登录态，Orm/Logger 启动即就绪）：
-//   - Context 用值类型 context.Context（pros 的 *context.Context 指针是历史包袱）；
-//   - 无 SessionUser 字段——后续接入鉴权时，可在 MakeContext 内从 ctx 提取身份注入
-//     新增字段（本方法即横切逻辑的唯一挂载点，工具 handler 无需逐个改动）。
+/*
+ * McpTool 是所有 MCP 工具 handler 的基类（与 apis.Api 对 controller 的地位相同，适配 MCP 协议侧的调用链），业务工具以「嵌入」方式获得依赖装配与校验能力（type McpOceanHarnessTool struct { mcputil.McpTool }）。
+ * 与 pros-admin-server 版的差异（本仓库无登录态，Orm/Logger 启动即就绪）：Context 用值类型 context.Context（pros 的 *context.Context 指针是历史包袱）。
+ * 无 SessionUser 字段——后续接入鉴权时，可在 MakeContext 内从 ctx 提取身份注入新增字段（本方法即横切逻辑的唯一挂载点，工具 handler 无需逐个改动）。
+ */
 type McpTool struct {
 	Context context.Context
 	Orm     *gorm.DB
@@ -48,8 +44,10 @@ func (mt *McpTool) AddError(err error) {
 	}
 }
 
-// MakeContext 注入 MCP 请求 ctx、全局 logger 与 sqlite 句柄（链式第一步，与
-// apis.Service.MakeContext 同源：三者皆为进程级单例，MCP 场景无 gin Context）。
+/*
+ * MakeContext 注入 MCP 请求 ctx、全局 logger 与 sqlite 句柄（链式第一步，
+ * 与 apis.Service.MakeContext 同源：三者皆为进程级单例，MCP 场景无 gin Context）。
+ */
 func (mt *McpTool) MakeContext(ctx context.Context) *McpTool {
 	mt.Context = ctx
 	mt.Logger = global.Logger
@@ -57,8 +55,10 @@ func (mt *McpTool) MakeContext(ctx context.Context) *McpTool {
 	return mt
 }
 
-// Validate 走 go-tagexpr vd（与 apis.Api.Validate 同口径的中文错误工厂；仅对带 vd tag 的
-// 字段生效，常规必填由 SDK 反射推导的 InputSchema required 保证）。
+/*
+ * Validate 走 go-tagexpr vd（与 apis.Api.Validate 同口径的中文错误工厂；
+ * 仅对带 vd tag 的字段生效，常规必填由 SDK 反射推导的 InputSchema required 保证）。
+ */
 func (mt *McpTool) Validate(data interface{}) *McpTool {
 	vd.SetErrorFactory(func(fieldSelector, msg string) error {
 		return fmt.Errorf("参数校验失败, field: %s, msg: %s", fieldSelector, msg)
@@ -69,8 +69,10 @@ func (mt *McpTool) Validate(data interface{}) *McpTool {
 	return mt
 }
 
-// MakeService 把 McpTool 的 ctx/Orm/Logger 灌入 service 基类（工具 handler 调用
-// 业务 service 的依赖桥，与 apis.Api.MakeService 对应）。
+/*
+ * MakeService 把 McpTool 的 ctx/Orm/Logger 灌入 service
+ * 基类（工具 handler 调用业务 service 的依赖桥，与 apis.Api.MakeService 对应）。
+ */
 func (mt *McpTool) MakeService(svc *apis.Service) *McpTool {
 	svc.Context = mt.Context
 	svc.Orm = mt.Orm
@@ -78,10 +80,11 @@ func (mt *McpTool) MakeService(svc *apis.Service) *McpTool {
 	return mt
 }
 
-// Fail 记录工具业务失败日志后原样返回错误。ToolHandlerFor 会把非 nil error 自动装配为
-// IsError=true 的工具结果（错误文案进 Content，LLM 可读可自我纠正），结果的包装职责已
-// 收敛到 SDK；本方法只承接业务失败的可观测性（zap Warn，中文文案同轨进结果）。
-// MakeContext 之前调用时（前置守卫路径）mt.Logger 尚未注入，兜底走全局 logger。
+/*
+ * Fail 记录工具业务失败日志后原样返回错误。ToolHandlerFor 会把非 nil error 自动装配为
+ * IsError=true 的工具结果（错误文案进 Content，LLM 可读可自我纠正），结果的包装职责已收敛到 SDK；
+ * 本方法只承接业务失败的可观测性（zap Warn，中文文案同轨进结果）。MakeContext 之前调用时（前置守卫路径）mt.Logger 尚未注入，兜底走全局 logger。
+ */
 func (mt *McpTool) Fail(err error) error {
 	logger := mt.Logger
 	if logger == nil {

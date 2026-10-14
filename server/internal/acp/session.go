@@ -12,12 +12,16 @@ import (
 )
 
 const (
-	// turnCancelBudget 软取消收敛预算：session/cancel 通知发出后等 agent 回 prompt
-	// 终态的时限，超时转硬取消（拆回合 ctx）。Gold-Band 取消总时限同款 10s。
+	/*
+	 * turnCancelBudget 软取消收敛预算：session/cancel 通知发出后等 agent 回 prompt
+	 * 终态的时限，超时转硬取消（拆回合 ctx）。Gold-Band 取消总时限同款 10s。
+	 */
 	turnCancelBudget = 10 * time.Second
 
-	// terminateGrace 终结哨兵投递上限：消费方持续不排空时放弃哨兵（消费方以
-	// AgentClient.Done()/Err() 为兜底终结信号），保证 Close 有界。
+	/*
+	 * terminateGrace 终结哨兵投递上限：消费方持续不排空时放弃哨兵（消费方以
+	 * AgentClient.Done()/Err() 为兜底终结信号），保证 Close 有界。
+	 */
 	terminateGrace = 5 * time.Second
 )
 
@@ -35,8 +39,10 @@ func (s *Session) ID() acpgo.SessionID { return s.runtime.id }
 // Events 事件流（有界，背压契约见 events.go；Terminated 哨兵 = 停止消费）。
 func (s *Session) Events() <-chan SessionEvent { return s.runtime.events }
 
-// Modes 模式目录合并视图（创建响应 + current_mode_update 回写 + SetMode 确认的并集）。
-// 返回快照私有副本：CurrentModeID 由通知回写持锁就地改，消费方读副本无共享可变态。
+/*
+ * Modes 模式目录合并视图（创建响应 + current_mode_update 回写 + SetMode 确认的并集）。
+ * 返回快照私有副本：CurrentModeID 由通知回写持锁就地改，消费方读副本无共享可变态。
+ */
 func (s *Session) Modes() *schema.SessionModeState {
 	return s.runtime.sessionValue().Modes
 }
@@ -73,15 +79,19 @@ func newSessionRuntime(id acpgo.SessionID, client *AgentClient, session acpgo.Se
 	}
 }
 
-// dispatchUpdate 通知回调路径：回写本地模式状态后入队。运行在连接层读循环
-// goroutine——库契约要求快速返回，禁止回调内再调 Connection 方法。
+/*
+ * dispatchUpdate 通知回调路径：回写本地模式状态后入队。运行在连接层读循环
+ * goroutine——库契约要求快速返回，禁止回调内再调 Connection 方法。
+ */
 func (r *sessionRuntime) dispatchUpdate(update acpgo.Update) {
 	r.applyStateUpdate(update)
 	r.enqueue(SessionEvent{Update: &update})
 }
 
-// applyStateUpdate 库不回写本地 Session.Modes（SetMode 成功才就地改）；模式状态由
-// 本层从 current_mode_update 通知维护，多入口（T1.5/T2 bot）读同一份视图。
+/*
+ * applyStateUpdate 库不回写本地 Session.Modes（SetMode 成功才就地改）；模式状态由
+ * 本层从 current_mode_update 通知维护，多入口（T1.5/T2 bot）读同一份视图。
+ */
 func (r *sessionRuntime) applyStateUpdate(update acpgo.Update) {
 	if update.Update.CurrentModeUpdate == nil {
 		return
@@ -94,8 +104,10 @@ func (r *sessionRuntime) applyStateUpdate(update acpgo.Update) {
 	// TODO(T1.5): config_option_update / session_info 等变体按消费需要补充本地回写。
 }
 
-// enqueue 事件入队（终结后丢弃）。通道满则阻塞直至消费或进程/连接收敛——背压契约见
-// events.go；收敛期弃投递防拖死连接层读循环的 join。
+/*
+ * enqueue 事件入队（终结后丢弃）。通道满则阻塞直至消费或进程/连接收敛——背压契约见
+ * events.go；收敛期弃投递防拖死连接层读循环的 join。
+ */
 func (r *sessionRuntime) enqueue(event SessionEvent) {
 	r.dispatchMu.Lock()
 	defer r.dispatchMu.Unlock()
@@ -109,8 +121,10 @@ func (r *sessionRuntime) enqueue(event SessionEvent) {
 	}
 }
 
-// terminate 追加终结哨兵（幂等）。只在连接关闭且全部入站 handler join 之后调用；
-// 消费方持续不排空时超时放弃（terminateGrace）。
+/*
+ * terminate 追加终结哨兵（幂等）。只在连接关闭且全部入站 handler join 之后调用；
+ * 消费方持续不排空时超时放弃（terminateGrace）。
+ */
 func (r *sessionRuntime) terminate() {
 	r.dispatchMu.Lock()
 	defer r.dispatchMu.Unlock()
@@ -124,10 +138,11 @@ func (r *sessionRuntime) terminate() {
 	}
 }
 
-// sessionValue 会话状态快照（PromptContent 按值消费 + SetMode 快照送验的输入）。
-// Modes 浅拷贝出私有值副本：CurrentModeID 是唯一会被回写的字段（通知回写 + SetMode
-// 确认合并），隔离后库经快照指针的就地写不再触及共享态；AvailableModes 目录创建后
-// 只读，共享安全。
+/*
+ * sessionValue 会话状态快照（PromptContent 按值消费 + SetMode 快照送验的输入）。
+ * Modes 浅拷贝出私有值副本：CurrentModeID 是唯一会被回写的字段（通知回写 + SetMode 确认合并），隔离后库经快照指针的就地写不再触及共享态；
+ * AvailableModes 目录创建后只读，共享安全。
+ */
 func (r *sessionRuntime) sessionValue() acpgo.Session {
 	r.stateMu.Lock()
 	defer r.stateMu.Unlock()
@@ -139,17 +154,21 @@ func (r *sessionRuntime) sessionValue() acpgo.Session {
 	return snapshot
 }
 
-// prompt 发起一轮回合：单会话互斥（ErrTurnActive）；阻塞至 agent 终态。回合 ctx 不随
-// 调用方 ctx 立即消亡——调用方 ctx 取消走软取消（session/cancel + 结算未决交互），
-// 等 agent 回终态（stopReason=cancelled）后干净返回；超预算才硬取消（以错误返回）。
+/*
+ * prompt 发起一轮回合：单会话互斥（ErrTurnActive）；阻塞至 agent 终态。回合 ctx 不随
+ * 调用方 ctx 立即消亡——调用方 ctx 取消走软取消（session/cancel + 结算未决交互），
+ * 等 agent 回终态（stopReason=cancelled）后干净返回；超预算才硬取消（以错误返回）。
+ */
 func (r *sessionRuntime) prompt(ctx context.Context, content []acpgo.Content) (schema.StopReason, error) {
 	r.turnMu.Lock()
 	if r.turnCancel != nil {
 		r.turnMu.Unlock()
 		return "", ErrTurnActive
 	}
-	// WithoutCancel：软取消期间调用方 ctx 已死，但 prompt 调用要活着等 agent 终态；
-	// 硬取消是唯一终止手段。
+	/*
+	 * WithoutCancel：软取消期间调用方 ctx 已死，但 prompt 调用要活着等 agent 终态；
+	 * 硬取消是唯一终止手段。
+	 */
 	turnCtx, hardCancel := context.WithCancel(context.WithoutCancel(ctx))
 	r.turnGen++
 	gen := r.turnGen
@@ -178,8 +197,10 @@ func (r *sessionRuntime) prompt(ctx context.Context, content []acpgo.Content) (s
 	if err != nil {
 		var rpcErr *acpgo.RPCError
 		if errors.As(err, &rpcErr) && rpcErr.Code == -32800 {
-			// session/cancel 后请求被以 -32800 终止（JSON-RPC 取消语义）：语义即回合取消，
-			// 归一为干净的 cancelled 终态而非错误。
+			/*
+			 * session/cancel 后请求被以 -32800 终止（JSON-RPC 取消语义）：语义即回合取消，
+			 * 归一为干净的 cancelled 终态而非错误。
+			 */
 			return schema.StopReasonCancelled, nil
 		}
 		if turnCtx.Err() != nil {
@@ -199,8 +220,10 @@ func (r *sessionRuntime) cancelCurrentTurn() {
 	r.cancelTurn(gen)
 }
 
-// cancelTurn 软取消：session/cancel 通知 + 立即结算未决交互（取消赢过用户迟到的
-// 应答）；预算内等 agent 终态，超时硬取消（代际校验防误伤后续回合）。
+/*
+ * cancelTurn 软取消：session/cancel 通知 + 立即结算未决交互（取消赢过用户迟到的
+ * 应答）；预算内等 agent 终态，超时硬取消（代际校验防误伤后续回合）。
+ */
 func (r *sessionRuntime) cancelTurn(gen uint64) {
 	r.turnMu.Lock()
 	hardCancel := r.turnCancel
@@ -221,8 +244,10 @@ func (r *sessionRuntime) cancelTurn(gen uint64) {
 	})
 }
 
-// settlePendings 结算全部未决交互（权限→cancelled、elicitation→decline）。
-// 幂等；在回合收尾、取消、会话关闭、连接收敛各路径都会调用。
+/*
+ * settlePendings 结算全部未决交互（权限→cancelled、elicitation→decline）。
+ * 幂等；在回合收尾、取消、会话关闭、连接收敛各路径都会调用。
+ */
 func (r *sessionRuntime) settlePendings() {
 	r.turnMu.Lock()
 	perms := r.permPendings
@@ -238,9 +263,11 @@ func (r *sessionRuntime) settlePendings() {
 	}
 }
 
-// handlePermission 连接层 onRequest 的权限分支。无活动回合直接 cancelled（Gold-Band
-// 语义：agent 状态错乱或迟到请求不挂死）；有则注册挂起 + 事件入队 + 等待决策。
-// 运行在连接层每请求独立 goroutine——允许阻塞等 UI 决策。
+/*
+ * handlePermission 连接层 onRequest 的权限分支。无活动回合直接 cancelled（Gold-Band
+ * 语义：agent 状态错乱或迟到请求不挂死）；有则注册挂起 + 事件入队 + 等待决策。
+ * 运行在连接层每请求独立 goroutine——允许阻塞等 UI 决策。
+ */
 func (r *sessionRuntime) handlePermission(ctx context.Context, request schema.RequestPermissionRequest) (schema.RequestPermissionResponse, error) {
 	pending := r.registerPermission(request)
 	if pending == nil {
@@ -262,8 +289,10 @@ func (r *sessionRuntime) registerPermission(request schema.RequestPermissionRequ
 	return p
 }
 
-// handleElicitation 连接层 onRequest 的 elicitation 分支（与权限同构；wire 为拦截层
-// 全保真解码产物，可为 nil——投影侧降级）。
+/*
+ * handleElicitation 连接层 onRequest 的 elicitation 分支（与权限同构；wire 为拦截层
+ * 全保真解码产物，可为 nil——投影侧降级）。
+ */
 func (r *sessionRuntime) handleElicitation(ctx context.Context, request schema.CreateElicitationRequest, wire *ElicitationWire) (schema.CreateElicitationResponse, error) {
 	pending := r.registerElicitation(request, wire)
 	if pending == nil {

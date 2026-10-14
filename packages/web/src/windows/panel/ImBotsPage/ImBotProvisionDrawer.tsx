@@ -166,27 +166,27 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
       sx={{ '& .MuiDrawer-paper': { width: DRAWER_WIDTH, maxWidth: '90vw' } }}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        <Box sx={{ px: 3, py: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography sx={{ fontSize: 16, fontWeight: 600 }}>扫码接入机器人</Typography>
-          <IconButton size="small" onClick={handleClose} sx={{ 'ml': 'auto', '& svg': { fontSize: 18 } }}>
+        <Box sx={{ px: '24px', py: '16px', borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Typography sx={{ fontSize: '16px', fontWeight: 600 }}>扫码接入机器人</Typography>
+          <IconButton size="small" onClick={handleClose} sx={{ 'ml': 'auto', '& svg': { fontSize: '18px' } }}>
             <CloseOutlinedIcon />
           </IconButton>
         </Box>
 
-        <Box sx={{ flex: 1, overflow: 'auto', p: 3, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
           {starting && (
             <>
-              <CircularProgress size={28} sx={{ mt: 6 }} />
-              <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>正在申请授权二维码…</Typography>
+              <CircularProgress size={28} sx={{ mt: '48px' }} />
+              <Typography sx={{ fontSize: '13px', color: 'text.secondary' }}>正在申请授权二维码…</Typography>
             </>
           )}
 
           {!starting && beginError && (
             <>
-              <Typography sx={{ mt: 6, fontSize: 13, color: 'error.main' }}>
+              <Typography sx={{ mt: '48px', fontSize: '13px', color: 'error.main' }}>
                 {`扫码会话申请失败：${beginError}`}
               </Typography>
-              <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+              <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
                 可改用「手动接入」，或稍后重试。
               </Typography>
             </>
@@ -194,38 +194,38 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
 
           {!starting && !beginError && attempt?.state === 'pending' && (
             <>
-              <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+              <Typography sx={{ fontSize: '13px', color: 'text.secondary' }}>
                 等待企业微信 App 扫码
               </Typography>
-              <Box sx={{ p: 1.5, borderRadius: 2, border: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
+              <Box sx={{ p: '12px', borderRadius: '8px', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
                 {qrError
-                  ? <Typography sx={{ width: 240, height: 240, display: 'flex', alignItems: 'center', fontSize: 12, color: 'text.secondary' }}>二维码渲染失败，请重新生成</Typography>
+                  ? <Typography sx={{ width: '240px', height: '240px', display: 'flex', alignItems: 'center', fontSize: '12px', color: 'text.secondary' }}>二维码渲染失败，请重新生成</Typography>
                   : (qrDataUrl
-                      ? <Box component="img" src={qrDataUrl} alt="企业微信扫码授权二维码" sx={{ width: 240, height: 240, display: 'block' }} />
-                      : <Box sx={{ width: 240, height: 240, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CircularProgress size={22} /></Box>)}
+                      ? <Box component="img" src={qrDataUrl} alt="企业微信扫码授权二维码" sx={{ width: '240px', height: '240px', display: 'block' }} />
+                      : <Box sx={{ width: '240px', height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CircularProgress size={22} /></Box>)}
               </Box>
-              <Box sx={{ width: '100%', maxWidth: 320 }}>
+              <Box sx={{ width: '100%', maxWidth: '320px' }}>
                 <LinearProgress
                   variant="determinate"
                   value={Math.min(100, Math.round((remainingMs / QR_TTL_MS) * 100))}
-                  sx={{ height: 4, borderRadius: 2 }}
+                  sx={{ height: '4px', borderRadius: '8px' }}
                 />
-                <Typography sx={{ mt: 0.5, fontSize: 12, color: 'text.secondary', textAlign: 'center' }}>
+                <Typography sx={{ mt: '4px', fontSize: '12px', color: 'text.secondary', textAlign: 'center' }}>
                   {`二维码 ${Math.ceil(remainingMs / 1000)}s 后过期`}
                 </Typography>
               </Box>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignSelf: 'flex-start', pl: 1 }}>
-                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>1. 打开企业微信 App，扫描左侧二维码</Typography>
-                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>2. 在腾讯授权页面确认创建智能机器人</Typography>
-                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>3. 返回这里等待连接完成</Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', alignSelf: 'flex-start', pl: '8px' }}>
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>1. 打开企业微信 App，扫描左侧二维码</Typography>
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>2. 在腾讯授权页面确认创建智能机器人</Typography>
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>3. 返回这里等待连接完成</Typography>
               </Box>
             </>
           )}
 
           {!starting && !beginError && attempt?.state === 'connecting' && (
             <>
-              <CircularProgress size={28} sx={{ mt: 6 }} />
-              <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+              <CircularProgress size={28} sx={{ mt: '48px' }} />
+              <Typography sx={{ fontSize: '13px', color: 'text.secondary' }}>
                 企业微信已授权，正在连接机器人…
               </Typography>
             </>
@@ -233,11 +233,11 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
 
           {!starting && !beginError && (attempt?.state === 'failed' || attempt?.state === 'expired') && (
             <>
-              <Typography sx={{ mt: 6, fontSize: 13, color: 'error.main' }}>
+              <Typography sx={{ mt: '48px', fontSize: '13px', color: 'error.main' }}>
                 {attempt.state === 'expired' ? '二维码已过期' : '扫码接入失败'}
               </Typography>
               {attempt.errCode && (
-                <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
                   {`错误码：${attempt.errCode}`}
                 </Typography>
               )}
@@ -246,11 +246,11 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
         </Box>
 
         {/* 底部操作：进行中 = 重新生成 + 取消；失败态 = 重新生成 + 关闭（重新生成由父组件 key 重挂载驱动） */}
-        <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+        <Box sx={{ px: '24px', py: '16px', borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
           {attempt?.state === 'pending' && (
             <Button
               size="small"
-              startIcon={<RefreshOutlinedIcon sx={{ '& svg': { fontSize: 16 } }} />}
+              startIcon={<RefreshOutlinedIcon sx={{ '& svg': { fontSize: '16px' } }} />}
               onClick={props.onRegenerate}
             >
               重新生成二维码

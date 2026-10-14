@@ -1,8 +1,10 @@
 package browser
 
-// manager_live.go 单测（T4.4）：refs 计数与槽复用/重建、idle 保活闸（观看期暂停、末订
-// 恢复计时并释放）、三处收敛点强拆（Close/headless 切换/引擎意外退出）、页码解析自愈
-// 与输入面。CDP 面复用 live_test.go 的 cdpTestServer 桩件，引擎面复用 withEngineCtl。
+/*
+ * manager_live.go 单测（T4.4）：refs 计数与槽复用/重建、idle 保活闸（观看期暂停、末订
+ * 恢复计时并释放）、三处收敛点强拆（Close/headless 切换/引擎意外退出）、页码解析自愈
+ * 与输入面。CDP 面复用 live_test.go 的 cdpTestServer 桩件，引擎面复用 withEngineCtl。
+ */
 
 import (
 	"context"
@@ -130,8 +132,10 @@ func TestManagerLiveSubscribeRefs(t *testing.T) {
 	}
 }
 
-// TestManagerLiveIdleKeepAlive 观察保活闸（D4 补充）：订阅期 idle 计时暂停（含
-// resetIdleTimerLocked 直呼的闸复检），末订退订恢复计时并如期释放。
+/*
+ * TestManagerLiveIdleKeepAlive 观察保活闸（D4 补充）：订阅期 idle 计时暂停（含
+ * resetIdleTimerLocked 直呼的闸复检），末订退订恢复计时并如期释放。
+ */
 func TestManagerLiveIdleKeepAlive(t *testing.T) {
 	withCallTimeouts(t, time.Hour, 100*time.Millisecond)
 	env := newLiveTestEnv(t)
@@ -169,8 +173,10 @@ func TestManagerLiveIdleKeepAlive(t *testing.T) {
 	waitForStatus(t, m, "default", StatusIdle) // 100ms 到期 → 自动释放
 }
 
-// TestManagerLiveDropOnClose 收敛点①：Close 强拆在订观察面，终态 reason 可读，refs
-// 随流退订归零。
+/*
+ * TestManagerLiveDropOnClose 收敛点①：Close 强拆在订观察面，终态 reason 可读，refs
+ * 随流退订归零。
+ */
 func TestManagerLiveDropOnClose(t *testing.T) {
 	withCallTimeouts(t, time.Hour, time.Minute)
 	env := newLiveTestEnv(t)
@@ -202,8 +208,10 @@ func TestManagerLiveDropOnClose(t *testing.T) {
 	}
 }
 
-// TestManagerLiveDropOnHeadlessSwitch 收敛点②：headless 切换 close+reopen 强拆在订
-// 观察面（重建后端口变化，残连接必死——显式拆给终态）。
+/*
+ * TestManagerLiveDropOnHeadlessSwitch 收敛点②：headless 切换 close+reopen 强拆在订
+ * 观察面（重建后端口变化，残连接必死——显式拆给终态）。
+ */
 func TestManagerLiveDropOnHeadlessSwitch(t *testing.T) {
 	env := newLiveTestEnv(t)
 	env.ctl = withEngineCtl(t)
@@ -227,8 +235,10 @@ func TestManagerLiveDropOnHeadlessSwitch(t *testing.T) {
 	}
 }
 
-// withKillableEngineCtl 可杀假引擎：同 withEngineCtl 桩面，另暴露 kill（关停 in-memory
-// 服务端会话 → client session.Wait 返回 → 真实 watchExit 链）。
+/*
+ * withKillableEngineCtl 可杀假引擎：同 withEngineCtl 桩面，另暴露 kill（关停 in-memory
+ * 服务端会话 → client session.Wait 返回 → 真实 watchExit 链）。
+ */
 func withKillableEngineCtl(t *testing.T) (*fakeEngineCtl, func()) {
 	t.Helper()
 	ctl := &fakeEngineCtl{}
@@ -249,8 +259,10 @@ func withKillableEngineCtl(t *testing.T) (*fakeEngineCtl, func()) {
 	}
 }
 
-// TestManagerLiveDropOnWatchExit 收敛点③：引擎意外死亡 → watchExit 强拆在订观察面 +
-// 置 failed。
+/*
+ * TestManagerLiveDropOnWatchExit 收敛点③：引擎意外死亡 → watchExit 强拆在订观察面 +
+ * 置 failed。
+ */
 func TestManagerLiveDropOnWatchExit(t *testing.T) {
 	env := newLiveTestEnv(t)
 	ctl, kill := withKillableEngineCtl(t)
@@ -274,8 +286,10 @@ func TestManagerLiveDropOnWatchExit(t *testing.T) {
 	waitForStatus(t, m, "default", StatusFailed)
 }
 
-// TestManagerLivePageResolve 页码解析自愈：空投影经 liveTabsRefresh 刷新后命中；
-// 刷新后仍 miss 显式报错。
+/*
+ * TestManagerLivePageResolve 页码解析自愈：空投影经 liveTabsRefresh 刷新后命中；
+ * 刷新后仍 miss 显式报错。
+ */
 func TestManagerLivePageResolve(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

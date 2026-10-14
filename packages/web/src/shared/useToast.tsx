@@ -11,8 +11,10 @@ export interface UseToastResult {
   snack: ReactElement;
 }
 
-// 统一 toast：消除各页面重复的 toast/toastOpen state + showToast + <Snackbar> 样板。
-// autoHideDuration / anchorOrigin 在此 SSOT，避免散落不同值。
+/**
+ * 统一 toast：消除各页面重复的 toast/toastOpen state + showToast + <Snackbar> 样板。
+ * autoHideDuration / anchorOrigin 在此 SSOT，避免散落不同值。
+ */
 export function useToast(): UseToastResult {
   const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
   const [open, setOpen] = useState(false);

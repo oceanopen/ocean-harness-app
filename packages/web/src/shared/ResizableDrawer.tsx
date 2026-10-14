@@ -17,11 +17,11 @@ interface ResizableDrawerProps {
   children: ReactNode;
 }
 
-// 可拖拽调宽的右侧抽屉壳：左缘拖拽手柄 + 内容区。头部/内容/底栏由各抽屉以 children 传入。
-//
-// 宽度百分比 state（初值=defaultWidthPct），拖拽按指针 x 实时更新并 clamp 到 [MIN, MAX]：
-// 抽屉从右滑出、手柄在左缘，指针向左拖（clientX 减小）→ 宽度增大。
-// 不持久化——抽屉按需挂载/卸载，每次打开自然回到默认宽度（符合「默认宽度作为初始值」）。
+/**
+ * 可拖拽调宽的右侧抽屉壳：左缘拖拽手柄 + 内容区。头部/内容/底栏由各抽屉以 children 传入。
+ * 宽度百分比 state（初值=defaultWidthPct），拖拽按指针 x 实时更新并 clamp 到 [MIN, MAX]——
+ * 手柄在左缘，指针向左拖（clientX 减小）→ 宽度增大；不持久化，每次打开自然回到默认宽度。
+ */
 function ResizableDrawer({ open, onClose, defaultWidthPct, children }: ResizableDrawerProps) {
   const [widthPct, setWidthPct] = useState(defaultWidthPct);
   const [dragging, setDragging] = useState(false);
@@ -69,7 +69,7 @@ function ResizableDrawer({ open, onClose, defaultWidthPct, children }: Resizable
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           sx={{
-            'width': 6,
+            'width': '6px',
             'flexShrink': 0,
             'cursor': 'col-resize',
             'bgcolor': dragging ? 'primary.main' : 'transparent',
@@ -78,7 +78,7 @@ function ResizableDrawer({ open, onClose, defaultWidthPct, children }: Resizable
           }}
         />
         {/* 内容区：各抽屉的头部/内容/底栏 */}
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <Box sx={{ flex: 1, minWidth: '0px', display: 'flex', flexDirection: 'column', height: '100%' }}>
           {children}
         </Box>
       </Box>

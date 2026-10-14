@@ -17,9 +17,11 @@ const GROUPS: { group: CommandGroup; headingKey: string }[] = [
   { group: 'jump', headingKey: 'panel:commandPalette.group.jump' },
 ];
 
-// cmdk 元素经 data-attribute 暴露（[cmdk-input]/[cmdk-item]/...），
-// 用 MUI sx 的后代选择器套主题色，避免引第三方 CSS-in-JS，与全 MUI 栈一致。
-// 注：sx 递归解析嵌套对象中的调色板简写（color:'text.primary' 等）。纯样式常量，无运行时依赖。
+/**
+ * cmdk 元素经 data-attribute 暴露（[cmdk-input]/[cmdk-item]/...），
+ * 用 MUI sx 的后代选择器套主题色，避免引第三方 CSS-in-JS，与全 MUI 栈一致。
+ * 注：sx 递归解析嵌套对象中的调色板简写（color:'text.primary' 等）。纯样式常量，无运行时依赖。
+ */
 const commandSx = {
   'overflow': 'hidden',
   '& [cmdk-input]': {
@@ -28,40 +30,40 @@ const commandSx = {
     'border': 'none',
     'outline': 'none',
     'background': 'transparent',
-    'fontSize': 14,
+    'fontSize': '14px',
     'color': 'text.primary',
     '&::placeholder': { color: 'text.disabled', opacity: 1 },
   },
   '& [cmdk-list]': {
-    maxHeight: 360,
+    maxHeight: '360px',
     overflowY: 'auto',
-    px: 1,
-    pb: 1,
+    px: '8px',
+    pb: '8px',
     // 滚动条与主题协调（细条）。
     scrollbarWidth: 'thin',
   },
   '& [cmdk-group-heading]': {
-    fontSize: 12,
+    fontSize: '12px',
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '0.05em',
     color: 'text.disabled',
-    px: 1.5,
-    pt: 1.5,
-    pb: 0.5,
+    px: '12px',
+    pt: '12px',
+    pb: '4px',
   },
   '& [cmdk-item]': {
     'display': 'flex',
     'alignItems': 'center',
-    'gap': 1.5,
-    'px': 1.5,
-    'py': 1,
-    'borderRadius': 1,
+    'gap': '12px',
+    'px': '12px',
+    'py': '8px',
+    'borderRadius': '4px',
     'cursor': 'pointer',
     'color': 'text.primary',
-    'fontSize': 13,
+    'fontSize': '13px',
     // 命令项图标等比缩小（MUI SvgIcon 默认 24px），与 13px 文字视觉平衡。
-    '& [data-cmdk-icon] svg': { width: 18, height: 18 },
+    '& [data-cmdk-icon] svg': { width: '18px', height: '18px' },
     // cmdk 在激活项上置 data-selected="true"；用 action.selected 标识，避免自调 alpha。
     '&[data-selected="true"]': {
       bgcolor: 'action.selected',
@@ -69,8 +71,10 @@ const commandSx = {
     '&[data-selected="true"] [data-cmdk-icon]': {
       color: 'primary.main',
     },
-    // 软禁用项（如未选工作空间时的"跳到项目"）：置灰但仍可聚焦，回车/点击由 onSelect 守卫无效。
-    // 不用 cmdk 原生 disabled——它会把项踢出键盘导航，反令工作空间变末项、down 键失序 bug 复发。
+    /**
+     * 软禁用项（如未选工作空间时的"跳到项目"）：置灰但仍可聚焦，回车/点击由 onSelect 守卫无效。
+     * 不用 cmdk 原生 disabled——它会把项踢出键盘导航，反令工作空间变末项、down 键失序 bug 复发。
+     */
     '&[data-soft-disabled="true"]': {
       'color': 'text.disabled',
       'cursor': 'not-allowed',
@@ -80,22 +84,24 @@ const commandSx = {
     },
   },
   '& [cmdk-empty]': {
-    px: 2,
-    py: 3,
+    px: '16px',
+    py: '24px',
     textAlign: 'center',
     color: 'text.disabled',
-    fontSize: 14,
+    fontSize: '14px',
   },
   // cmdk 内部 active 项自动滚入可视区；滚动条 thumb 用 divider token（深浅色都协调，勿手调 alpha）。
-  '& [cmdk-list]::-webkit-scrollbar': { width: 8 },
+  '& [cmdk-list]::-webkit-scrollbar': { width: '8px' },
   '& [cmdk-list]::-webkit-scrollbar-thumb': {
     bgcolor: 'divider',
-    borderRadius: 4,
+    borderRadius: '16px',
   },
 } as const;
 
-// 命令面板 Dialog：MUI Dialog 作浮层（backdrop/Esc/click-away/portal），内嵌 cmdk 负责搜索与键盘。
-// 默认页按分组渲染命令；选中"跳转"命令切入二级页（工作空间/项目列表），Backspace(空输入) 返回。
+/**
+ * 命令面板 Dialog：MUI Dialog 作浮层（backdrop/Esc/click-away/portal），内嵌 cmdk 负责搜索与键盘。
+ * 默认页按分组渲染命令；选中"跳转"命令切入二级页（工作空间/项目列表），Backspace(空输入) 返回。
+ */
 function CommandPaletteDialog() {
   const ctx = useCommandPalette();
   const { t } = useTranslation();
@@ -129,8 +135,10 @@ function CommandPaletteDialog() {
 
   // 二级页加载态：仅当前页对应的查询在拉取时显示进度环（缓存命中时为 false，零请求）。
   const loading = ctx.subPage === 'workspace' ? workspacesFetching : workspaceProjectsQuery.isFetching;
-  // 二级页"列表本身为空"（区别于"搜索无匹配"）：前者给"暂无X"明确文案，后者保留"无匹配结果"。
-  // 主页面恒有命令，此标志恒 false（其空态只可能是搜索无匹配）。
+  /**
+   * 二级页"列表本身为空"（区别于"搜索无匹配"）：前者给"暂无X"明确文案，后者保留"无匹配结果"。
+   * 主页面恒有命令，此标志恒 false（其空态只可能是搜索无匹配）。
+   */
   const subPageEmpty = ctx.subPage != null
     && (ctx.subPage === 'workspace' ? workspaces.length === 0 : workspaceProjects.length === 0);
   // 空态文案 key：二级页列表为空给"暂无X"，否则（含主页面搜索无匹配）给"无匹配结果"。
@@ -188,14 +196,14 @@ function CommandPaletteDialog() {
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 1,
-              px: 2,
-              py: 1.5,
-              borderBottom: 1,
+              gap: '8px',
+              px: '16px',
+              py: '12px',
+              borderBottom: '1px solid',
               borderColor: 'divider',
             }}
           >
-            <SearchOutlinedIcon sx={{ fontSize: 20, color: 'text.secondary' }} />
+            <SearchOutlinedIcon sx={{ fontSize: '20px', color: 'text.secondary' }} />
             {ctx.subPage != null && (
               <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.disabled', flexShrink: 0 }}>
                 {subPageHeading}
@@ -225,8 +233,10 @@ function CommandPaletteDialog() {
                           // 软禁用：仍渲染并可达（键盘/鼠标可聚焦），回车/点击由 onSelect 守卫无效。
                           const enabled = cmd.isEnabled?.(ctx) ?? true;
                           const subtitleName = cmd.getSubtitle?.(ctx) ?? null;
-                          // 软禁用时优先展示提示文案；否则展示名称注释；皆无则不显示括注。
-                          // 括号走语言感知 i18n 模板（zh 全角／en 半角），避免硬编码标点泄露到英文环境。
+                          /**
+                           * 软禁用时优先展示提示文案；否则展示名称注释；皆无则不显示括注。
+                           * 括号走语言感知 i18n 模板（zh 全角／en 半角），避免硬编码标点泄露到英文环境。
+                           */
                           const captionText = !enabled && cmd.disabledHintI18nKey
                             ? t(cmd.disabledHintI18nKey)
                             : subtitleName;
@@ -249,10 +259,10 @@ function CommandPaletteDialog() {
                               <Box component="span" data-cmdk-icon sx={{ display: 'flex', color: 'text.secondary' }}>
                                 {cmd.icon}
                               </Box>
-                              <Box component="span" sx={{ flex: 1, minWidth: 0 }}>
+                              <Box component="span" sx={{ flex: 1, minWidth: '0px' }}>
                                 {t(cmd.titleI18nKey)}
                                 {caption && (
-                                  <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: 0.5 }}>
+                                  <Typography component="span" variant="caption" color="text.disabled" sx={{ ml: '4px' }}>
                                     {caption}
                                   </Typography>
                                 )}
@@ -283,10 +293,10 @@ function CommandPaletteDialog() {
           <Box
             sx={{
               display: 'flex',
-              gap: 2,
-              px: 2,
-              py: 1,
-              borderTop: 1,
+              gap: '16px',
+              px: '16px',
+              py: '8px',
+              borderTop: '1px solid',
               borderColor: 'divider',
               bgcolor: 'background.default',
             }}
@@ -322,7 +332,7 @@ interface SubPageListProps {
 function SubPageList({ loading, workspaces, workspaceProjects, onPickWorkspace, onPickWorkspaceProject }: SubPageListProps) {
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: '24px' }}>
         <CircularProgress size={24} />
       </Box>
     );
@@ -331,12 +341,12 @@ function SubPageList({ loading, workspaces, workspaceProjects, onPickWorkspace, 
     <>
       {workspaces.map(ws => (
         <Command.Item key={ws.id} value={ws.name} onSelect={() => onPickWorkspace(ws)}>
-          <Typography sx={{ fontSize: 13 }}>{ws.name}</Typography>
+          <Typography sx={{ fontSize: '13px' }}>{ws.name}</Typography>
         </Command.Item>
       ))}
       {workspaceProjects.map(p => (
         <Command.Item key={p.id} value={p.name} onSelect={() => onPickWorkspaceProject(p)}>
-          <Typography sx={{ fontSize: 13 }}>{p.name}</Typography>
+          <Typography sx={{ fontSize: '13px' }}>{p.name}</Typography>
         </Command.Item>
       ))}
     </>
@@ -350,10 +360,10 @@ function Kbd({ children }: { children: ReactNode }) {
       component="kbd"
       sx={{
         fontFamily: 'monospace',
-        fontSize: 12,
-        px: 0.5,
-        borderRadius: 0.5,
-        border: 1,
+        fontSize: '12px',
+        px: '4px',
+        borderRadius: '2px',
+        border: '1px solid',
         borderColor: 'divider',
         bgcolor: 'action.hover',
       }}

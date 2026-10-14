@@ -1,5 +1,7 @@
-// 官方 Claude 图标（SVG 内联组件，供终端工具条 IconButton 使用）。
-// 源自 Anthropic 官方 brand asset，viewBox 0 0 24 24，fill=#D97757。
+/**
+ * 官方 Claude 图标（SVG 内联组件，供终端工具条 IconButton 使用）。
+ * 源自 Anthropic 官方 brand asset，viewBox 0 0 24 24，fill=#D97757。
+ */
 
 import type { SvgIconProps } from '@mui/material/SvgIcon';
 import { SvgIcon } from '@mui/material';

@@ -1,8 +1,10 @@
 package types
 
-// agent catalog 域 DTO：无本地表，SSOT 为 sidecar 内嵌快照（internal/agentcatalog）。
-// 手写镜像前端 AgentCatalogService 的 TS interface（项目约定，无生成器）；
-// spawn 细节（command/args/env）属后端执行面，不入前端契约。
+/*
+ * agent catalog 域 DTO：无本地表，SSOT 为 sidecar 内嵌快照（internal/agentcatalog）；
+ * 手写镜像前端 AgentCatalogService 的 TS interface（项目约定，无生成器）；
+ * spawn 细节（command/args/env）属后端执行面，不入前端契约。
+ */
 
 // AgentCatalogGetListRequest 是 POST /api/agentCatalog/getList 的入参（无筛选）。
 type AgentCatalogGetListRequest struct{}

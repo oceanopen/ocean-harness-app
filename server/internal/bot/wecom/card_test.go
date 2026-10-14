@@ -83,8 +83,10 @@ func TestBuildTemplateCard(t *testing.T) {
 		}
 	}
 
-	// 置灰：checkbox.disable=true（更新帧统一走本 builder，task_id/keys 与原卡一致；提交
-	// 按钮仍须携带——更新帧省略被企微拒收 errcode=42049，真机实证）。
+	/*
+	 * 置灰：checkbox.disable=true（更新帧统一走本 builder，task_id/keys 与原卡一致；提交
+	 * 按钮仍须携带——更新帧省略被企微拒收 errcode=42049，真机实证）。
+	 */
 	gray := multi
 	gray.Disabled = true
 	card, err = buildTemplateCard(gray)
@@ -182,8 +184,10 @@ func TestCardKeyRoundTrip(t *testing.T) {
 	}
 }
 
-// cardEventPayload + submitMsg 归一链：单聊/群聊会话键、Interaction 注入、路由与 headers
-// 透传、Text 恒空；非模板卡事件 false。
+/*
+ * cardEventPayload + submitMsg 归一链：单聊/群聊会话键、Interaction 注入、路由与 headers
+ * 透传、Text 恒空；非模板卡事件 false。
+ */
 func TestCardEventNormalize(t *testing.T) {
 	headers := aibottypes.WsFrameHeaders{ReqId: "req-1"}
 	mkBody := func(chatType, chatID string) aibottypes.EventMessage {
@@ -243,8 +247,10 @@ func TestCardEventNormalize(t *testing.T) {
 	}
 }
 
-// Submit 语义（T3.3）：单选 + Submit=true 也带提交按钮（点击只是改选，应答取提交回传的
-// 勾选集）；默认选中仍为首项。
+/*
+ * Submit 语义（T3.3）：单选 + Submit=true 也带提交按钮（点击只是改选，应答取提交回传的
+ * 勾选集）；默认选中仍为首项。
+ */
 func TestBuildVoteCardSubmit(t *testing.T) {
 	spec := bot.CardSpec{
 		Title:   "选择方案",
@@ -267,8 +273,10 @@ func TestBuildVoteCardSubmit(t *testing.T) {
 	}
 }
 
-// 多题下拉卡（multiple_interaction select_list，T3.3）：卡型分派、题目定位键 q<序>、选项 id
-// 纯下标、selected_id 首项、截断（题 13 字/选项 10 字）、置灰、上限校验拒绝。
+/*
+ * 多题下拉卡（multiple_interaction select_list，T3.3）：卡型分派、题目定位键 q<序>、选项 id
+ * 纯下标、selected_id 首项、截断（题 13 字/选项 10 字）、置灰、上限校验拒绝。
+ */
 func TestBuildMultipleInteractionCard(t *testing.T) {
 	spec := bot.CardSpec{
 		Title: "补充信息",
@@ -359,8 +367,10 @@ func TestBuildMultipleInteractionCard(t *testing.T) {
 	}
 }
 
-// normalizeSelections 勾选集归一（T3.3）：vote 前缀形态、多题纯下标形态、无效 id 丢弃、
-// 整题无效跳过、nil/缺 OptionIds 容错。
+/*
+ * normalizeSelections 勾选集归一（T3.3）：vote 前缀形态、多题纯下标形态、无效 id 丢弃、
+ * 整题无效跳过、nil/缺 OptionIds 容错。
+ */
 func TestNormalizeSelections(t *testing.T) {
 	// vote 形态：`<TaskID>:<i>` 剥前缀得下标。
 	items := &aibottypes.TemplateCardSelectedItems{SelectedItem: []aibottypes.TemplateCardSelectedItem{
@@ -407,8 +417,10 @@ func TestNormalizeSelections(t *testing.T) {
 	}
 }
 
-// cardEventPayload 勾选集链路（T3.3）：selected_items 归一进 Interaction.Selections，与
-// event_key 反解同帧产出。
+/*
+ * cardEventPayload 勾选集链路（T3.3）：selected_items 归一进 Interaction.Selections，与
+ * event_key 反解同帧产出。
+ */
 func TestCardEventSelectionsPipeline(t *testing.T) {
 	body := aibottypes.EventMessage{
 		MsgId: "ev-10", AibotId: "bot-1", ChatType: "single",
@@ -434,8 +446,10 @@ func TestCardEventSelectionsPipeline(t *testing.T) {
 	}
 }
 
-// fakeReplyClient replyClient 接缝的测试替身：按序记录出站调用，可对卡帧/推送卡/文本帧
-// 分别注错。
+/*
+ * fakeReplyClient replyClient 接缝的测试替身：按序记录出站调用，可对卡帧/推送卡/文本帧
+ * 分别注错。
+ */
 type fakeReplyClient struct {
 	calls       []string
 	cardErr     error // ReplyTemplateCard 注错
@@ -491,10 +505,10 @@ func sendCardSpec() bot.CardSpec {
 	}
 }
 
-// TestSendCardSplitFrames SendCard 拆双帧域：文本帧先行终流、卡帧跟进（真机定标后拍板的
-// 消息序）、失败语义（文本失败卡不发 / 卡失败文本已终流、回落 Flush 幂等无重复）、非终帧
-// 背压吞 skip、一卡一消息与终流幂等。长连接不支持组合 msgtype（企微对组合帧静默丢卡），
-// 拆帧形态是回归主保护面。
+/*
+ * TestSendCardSplitFrames SendCard 拆双帧域：文本帧先行终流、卡帧跟进（真机定标后拍板的消息序）、失败语义（文本失败卡不发 / 卡失败文本已终流、回落 Flush 幂等无重复）、非终帧背压吞 skip、一卡一消息与终流幂等。
+ * 长连接不支持组合 msgtype（企微对组合帧静默丢卡），拆帧形态是回归主保护面。
+ */
 func TestSendCardSplitFrames(t *testing.T) {
 	t.Run("终帧先文本终流后卡跟进", func(t *testing.T) {
 		fake := &fakeReplyClient{}
@@ -607,10 +621,10 @@ func TestWsRouteFrom(t *testing.T) {
 	}
 }
 
-// TestEventStreamFlushPushes 事件流终帧分流（真机定标：事件 req_id 不可用于
-// aibot_respond_msg，errcode=846605 invalid req_id 实证）：终帧走 aibot_send_msg 主动推送
-// （chatid/chat_type 透传），置灰更新仍以事件 headers 走 aibot_respond_update_msg（官方
-// 点击应答通道）；消息流（headers 载荷）终帧不受影响。
+/*
+ * TestEventStreamFlushPushes 事件流终帧分流（真机定标：事件 req_id 不可用于 aibot_respond_msg，errcode=846605 invalid req_id 实证）：终帧走 aibot_send_msg 主动推送（chatid/chat_type 透传），置灰更新仍以事件 headers 走 aibot_respond_update_msg（官方点击应答通道）。
+ * 消息流（headers 载荷）终帧不受影响。
+ */
 func TestEventStreamFlushPushes(t *testing.T) {
 	fake := &fakeReplyClient{}
 	rt := &channelRuntime{replyOverride: fake}
@@ -657,9 +671,11 @@ func TestEventStreamFlushPushes(t *testing.T) {
 	}
 }
 
-// TestSendCardDecoupledPush 消息流卡解耦域：带推送面的流文本先行走 respond_msg 终流、卡
-// 走 aibot_send_msg 独立推送跟进（不占回复流）；卡推送失败时文本已终流送达（回落 Flush
-// 幂等无重复）。
+/*
+ * TestSendCardDecoupledPush 消息流卡解耦域：带推送面的流文本先行走 respond_msg 终流、卡
+ * 走 aibot_send_msg 独立推送跟进（不占回复流）；卡推送失败时文本已终流送达（回落 Flush
+ * 幂等无重复）。
+ */
 func TestSendCardDecoupledPush(t *testing.T) {
 	fake := &fakeReplyClient{}
 	rt := &channelRuntime{replyOverride: fake}

@@ -39,8 +39,10 @@ func TestEngineSpawnArgs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			args := EngineSpawnArgs("/p/dir", "/p/down", "/p/engine.json", tc.headless)
 			joined := strings.Join(args, "\x00")
-			// 固定 flags 全在（拼写即 T1.1 采信结论）；--browser 不传 = playwright 内置
-			// Chromium build（T3.5/D2 修订，系统 chrome channel 退役）。
+			/*
+			 * 固定 flags 全在（拼写即 T1.1 采信结论）；--browser 不传 = playwright 内置
+			 * Chromium build（T3.5/D2 修订，系统 chrome channel 退役）。
+			 */
 			for _, fragment := range []string{
 				"--user-data-dir\x00/p/dir",
 				"--caps\x00" + engineCaps,
@@ -65,8 +67,10 @@ func TestEngineSpawnArgs(t *testing.T) {
 	}
 }
 
-// TestEngineConfigLaunchOptions engine.json 配置面断言：CDP 端口注入常态化（D9/T4.2）
-// 且生产语义字段不丢（EnsureEngineConfig 幂等比对以本常量为锚，防手滑回退）。
+/*
+ * TestEngineConfigLaunchOptions engine.json 配置面断言：CDP 端口注入常态化（D9/T4.2）
+ * 且生产语义字段不丢（EnsureEngineConfig 幂等比对以本常量为锚，防手滑回退）。
+ */
 func TestEngineConfigLaunchOptions(t *testing.T) {
 	var cfg struct {
 		Browser struct {

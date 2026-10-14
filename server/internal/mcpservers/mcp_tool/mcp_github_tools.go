@@ -14,9 +14,11 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// githubHost 是本期唯一支持的托管平台 host（「各 host 单独适配」原则）。多平台扩展点
-// 单点收敛在 githubTarget：后续 gitee/gitlab 落地时在此按 host 分流到各自 api 客户端
-// （各平台 PAT key 的读取分流同在此点），三个 handler 面向返回的 client 编排、无需感知平台。
+/*
+ * githubHost 是本期唯一支持的托管平台 host（「各 host 单独适配」原则）。
+ * 多平台扩展点单点收敛在 githubTarget：后续 gitee/gitlab 落地时在此按 host 分流到各自 api
+ * 客户端（各平台 PAT key 的读取分流同在此点），三个 handler 面向返回的 client 编排、无需感知平台。
+ */
 const githubHost = "github.com"
 
 // McpGithubTool 是 github server 的工具集合（T4.1）。
@@ -24,9 +26,11 @@ type McpGithubTool struct {
 	mcputil.McpTool
 }
 
-// githubTarget 是三工具共用的定位链：仓库 id → remote_url → URL 解析 → host 适配
-// 判定 → PAT 读取 → API 客户端构造。issueID 非空时顺带做 issue 关联校验并返回
-// 分支推导上下文（create_pr 的 base 两级回退：issue 关联基准分支 → 仓库默认分支）。
+/*
+ * githubTarget 是三工具共用的定位链：仓库 id → remote_url → URL 解析 →
+ * host 适配判定 → PAT 读取 → API 客户端构造。
+ * issueID 非空时顺带做 issue 关联校验并返回分支推导上下文（create_pr 的 base 两级回退：issue 关联基准分支 → 仓库默认分支）。
+ */
 func (mt McpGithubTool) githubTarget(repoSvc *service.GithubTool, issueID string, localRepositoryID int) (
 	ref gitutil.RemoteRef, client *githubapi.Client, branches service.GithubRepoRef, err error) {
 
@@ -49,8 +53,10 @@ func (mt McpGithubTool) githubTarget(repoSvc *service.GithubTool, issueID string
 	return parsed, githubapi.NewClient(pat), *repo, nil
 }
 
-// CreatePullRequest 创建 PR（github_create_pr）。head/base 缺省按 agent 工作流推导：
-// head = agent_{issueId}（工作空间统一目标分支），base = issue 关联基准分支 → 仓库默认分支。
+/*
+ * CreatePullRequest 创建 PR（github_create_pr）。
+ * head/base 缺省按 agent 工作流推导：head = agent_{issueId}（工作空间统一目标分支），base = issue 关联基准分支 → 仓库默认分支。
+ */
 func (mt McpGithubTool) CreatePullRequest(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.GitHubCreatePRArgs) (*mcp.CallToolResult, mcpdto.GitHubPullRequestContent, error) {
 
@@ -115,8 +121,10 @@ func (mt McpGithubTool) ListPullRequests(ctx context.Context, _ *mcp.CallToolReq
 	return nil, mcpdto.GitHubPullRequestListContent{Pulls: pulls, RepositoryID: input.LocalRepositoryID}, nil
 }
 
-// PullRequestCIStatus 获取 PR 的 CI 检查状态（github_ci_status：combined status +
-// check runs 归并，规则见 githubapi.mergeCIState）。
+/*
+ * PullRequestCIStatus 获取 PR 的 CI 检查状态（github_ci_status：
+ * combined status + check runs 归并，规则见 githubapi.mergeCIState）。
+ */
 func (mt McpGithubTool) PullRequestCIStatus(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.GitHubCIStatusArgs) (*mcp.CallToolResult, mcpdto.GitHubCIStatusContent, error) {
 

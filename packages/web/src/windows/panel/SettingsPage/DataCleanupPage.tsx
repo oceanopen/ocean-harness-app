@@ -50,11 +50,11 @@ function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }
       sx={{
         display: 'flex',
         alignItems: 'center',
-        gap: 1.5,
-        px: 2,
-        py: 1.5,
+        gap: '12px',
+        px: '16px',
+        py: '12px',
         bgcolor: 'action.hover',
-        borderBottom: 1,
+        borderBottom: '1px solid',
         borderColor: 'divider',
       }}
     >
@@ -68,7 +68,7 @@ function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }
 
 function SectionCard({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
   return (
-    <Box sx={{ borderRadius: 2, border: 1, borderColor: 'divider', overflow: 'hidden' }}>
+    <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
       {header}
       {children}
     </Box>
@@ -89,7 +89,7 @@ interface CleanupCardProps {
 function CleanupCard({ icon, title, desc, path, disabled, onCleanup, onCopyPath }: CleanupCardProps) {
   return (
     <SectionCard header={<SectionHeader icon={icon} label={title} />}>
-      <Box sx={{ px: 2, py: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Box sx={{ px: '16px', py: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <Typography variant="body2" color="text.secondary">
           {desc}
         </Typography>
@@ -101,7 +101,7 @@ function CleanupCard({ icon, title, desc, path, disabled, onCleanup, onCopyPath 
           >
             <ContentCopyOutlinedIcon fontSize="small" />
           </IconButton>
-          <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: 12 }}>
+          <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '12px' }}>
             {path}
           </Typography>
         </Stack>
@@ -172,10 +172,10 @@ function DataCleanupPage() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Box sx={{ p: 3, flex: 1, overflow: 'auto' }}>
+      <Box sx={{ p: '24px', flex: 1, overflow: 'auto' }}>
         {/* 路径未就绪前不渲染清理卡（编码规则 1：禁止先占位后纠正）；失败给出明确错误。 */}
         {paths === null && loadError === null && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: '32px' }}>
             <CircularProgress />
           </Box>
         )}
@@ -183,7 +183,7 @@ function DataCleanupPage() {
           <Typography color="error">{`数据文件路径获取失败：${loadError}`}</Typography>
         )}
         {paths !== null && (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <CleanupCard
               icon={<SettingsSuggestOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
               title={TEXTS.app.title}

@@ -1,9 +1,10 @@
 import { request } from './http';
 
-// ACP 会话域契约：镜像 Go server/internal/acpsession/view.go（ViewSnapshot 为响应 shape
-// SSOT）、hub.go（SSE 帧协议）与 dal/types/acp_session.go（请求 DTO），手写镜像无生成器。
-// 嵌套 ACP wire 结构原样透传不转译（view.go 注释：镜像只会双份维护），本期不渲染的
-// 结构以窄别名/unknown 保快照完整性，后续任务按渲染需要细化。
+/**
+ * ACP 会话域契约：镜像 Go server/internal/acpsession/view.go（ViewSnapshot 为响应 shape SSOT）、
+ * hub.go（SSE 帧协议）与 dal/types/acp_session.go（请求 DTO），手写镜像无生成器。
+ * 嵌套 ACP wire 结构原样透传不转译；本期不渲染的结构以窄别名/unknown 保快照完整性，后续按渲染需要细化。
+ */
 
 // 会话状态机（view.go SessionStatus）。
 export type AcpSessionStatus = 'idle' | 'starting' | 'ready' | 'failed' | 'terminated';
@@ -21,8 +22,10 @@ export interface AcpSessionMode {
   description?: string;
 }
 
-// 本期不渲染的快照类 wire 结构：窄别名透传（reducer 保字段最新替换，UI 消费留后续任务）。
-// TODO(T1.7+)：plan 面板 / usage 指示 / 斜杠命令补全按 ACP wire 细化这三类结构。
+/**
+ * 本期不渲染的快照类 wire 结构：窄别名透传（reducer 保字段最新替换，UI 消费留后续任务）。
+ * TODO(T1.7+)：plan 面板 / usage 指示 / 斜杠命令补全按 ACP wire 细化这三类结构。
+ */
 export type AcpWirePlan = Record<string, unknown>;
 export type AcpWireUsage = Record<string, unknown>;
 export type AcpWireAvailableCommand = Record<string, unknown>;
@@ -40,8 +43,10 @@ export interface AcpToolCallView {
   rawOutput?: unknown;
 }
 
-// 会话记录条目（view.go ConversationEntry）：文本类四类聚合同条目，工具调用按
-// toolCallId 覆写式 upsert，条目级整体覆写（SSE entry 帧即整条替换）。
+/**
+ * 会话记录条目（view.go ConversationEntry）：文本类四类聚合同条目，工具调用按
+ * toolCallId 覆写式 upsert，条目级整体覆写（SSE entry 帧即整条替换）。
+ */
 export interface AcpConversationEntry {
   entryId: string;
   kind: AcpConversationEntryKind;
@@ -51,10 +56,11 @@ export interface AcpConversationEntry {
   toolCall?: AcpToolCallView;
 }
 
-// user 条目展示元数据（view.go EntryDisplay，显示-发送文本分离）：text 为正文原文
-// （区别于条目 text 的围栏全文，围栏只归模型侧），quote / files 为 IM 引用与附件的
-// 展示投影；display 缺失（旧 sidecar + 新前端混跑窗口，历史条目随 sidecar 重启即消失）
-// 前端回落条目 text 原样直显。
+/**
+ * user 条目展示元数据（view.go EntryDisplay，显示-发送文本分离）：text 为正文原文
+ * （区别于条目 text 的围栏全文，围栏只归模型侧），quote / files 为 IM 引用与附件的展示投影；
+ * display 缺失（历史条目随 sidecar 重启即消失）前端回落条目 text 原样直显。
+ */
 export interface AcpEntryDisplay {
   text?: string;
   quote?: AcpEntryQuote;
@@ -74,8 +80,10 @@ export interface AcpEntryFile {
   path?: string;
 }
 
-// 权限选项 kind（ACP wire schema.PermissionOptionKind 透传取值域）：决定审批按钮的
-// 色彩与轻重（allow 绿/reject 红、*_always 实心=附带「记住」语义）。
+/**
+ * 权限选项 kind（ACP wire schema.PermissionOptionKind 透传取值域）：决定审批按钮的
+ * 色彩与轻重（allow 绿/reject 红、*_always 实心=附带「记住」语义）。
+ */
 export type AcpPermissionOptionKind = 'allow_once' | 'allow_always' | 'reject_once' | 'reject_always';
 
 // 权限选项（view.go PendingView.Options 条目，schema.PermissionOption 透传）。
@@ -85,9 +93,11 @@ export interface AcpPermissionOption {
   kind: AcpPermissionOptionKind;
 }
 
-// elicitation 全保真 wire（view.go PendingView.Request，acp.ElicitationWire 透传）。
-// acp-go 生成模型把 spec 的 requestedSchema/url 丢弃（上游生成缺陷），后端在入站链
-// 拦截原始参数自行解码补齐（server/internal/acp/elicitation.go），此结构即其投影。
+/**
+ * elicitation 全保真 wire（view.go PendingView.Request，acp.ElicitationWire 透传）。
+ * acp-go 生成模型把 spec 的 requestedSchema/url 丢弃（上游生成缺陷），后端在入站链
+ * 拦截原始参数自行解码补齐（server/internal/acp/elicitation.go），此结构即其投影。
+ */
 export interface AcpElicitationWire {
   mode?: string; // form | url | 未知形态（前端按 form 表单 / message+跳过 兜底二分）
   message?: string;
@@ -99,8 +109,10 @@ export interface AcpElicitationWire {
   elicitationId?: string;
 }
 
-// 挂起交互投影（view.go PendingView）：字段按 kind 取舍——permission 用 options/toolCall，
-// elicitation 用 request。
+/**
+ * 挂起交互投影（view.go PendingView）：字段按 kind 取舍——permission 用 options/toolCall，
+ * elicitation 用 request。
+ */
 export interface AcpPendingView {
   pendingId: number;
   kind: 'permission' | 'elicitation';
@@ -127,17 +139,19 @@ export interface AcpViewSnapshot {
   error?: string;
 }
 
-// wire 快照形态（ViewSnapshot 序列化）：entries/pendings 的 json tag 无 omitempty 恒
-// 在场；旧 sidecar 的零条目缺陷窗口可能为 null（view.go 曾用 append(nil) 拷贝，已根治），
-// 入站归一化后即为 AcpViewSnapshot。
+/**
+ * wire 快照形态（ViewSnapshot 序列化）：entries/pendings 的 json tag 无 omitempty 恒在场；
+ * 旧 sidecar 的零条目缺陷窗口可能为 null，入站归一化后即为 AcpViewSnapshot。
+ */
 export type AcpViewSnapshotWire = Omit<AcpViewSnapshot, 'entries' | 'pendings'> & {
   entries: AcpConversationEntry[] | null;
   pendings: AcpPendingView[] | null;
 };
 
-// 快照入站归一化（HTTP ensure/getInfo 与 SSE snapshot 帧两入口统一调用）：wire 的
-// null 数组归一为 []，域内快照契约恒非空——reducer/UI 免二次防御（旧 sidecar + 新
-// 前端混跑窗口兼容，同 AcpEntryDisplay 缺失回落先例）。
+/**
+ * 快照入站归一化（HTTP ensure/getInfo 与 SSE snapshot 帧两入口统一调用）：wire 的
+ * null 数组归一为 []，域内快照契约恒非空——reducer/UI 免二次防御（兼容旧 sidecar 混跑窗口）。
+ */
 export function normalizeAcpViewSnapshot(wire: AcpViewSnapshotWire): AcpViewSnapshot {
   return { ...wire, entries: wire.entries ?? [], pendings: wire.pendings ?? [] };
 }
@@ -157,8 +171,10 @@ export type AcpFrameType
     | 'turnEnded'
     | 'terminated';
 
-// SSE 帧信封（hub.go Frame）：seq 按 issue 单调递增（前端 gap 即重连取快照），type 判别
-// 载荷（至多一个非零载荷字段，与 type 对应）。
+/**
+ * SSE 帧信封（hub.go Frame）：seq 按 issue 单调递增（前端 gap 即重连取快照），type 判别
+ * 载荷（至多一个非零载荷字段，与 type 对应）。
+ */
 export interface AcpFrame {
   seq: number;
   issueId: string;
@@ -183,9 +199,11 @@ export interface AcpSessionFrameStatus {
   error?: string;
 }
 
-// POST /api/acpSession/ensure：幂等受理会话创建（异步受理，立即返回受理时刻快照）。
-// pickedLaunchMode 临场启动声明（LaunchModePicker 三选一受理，仅本次会话有效不落库；
-// AcpSessionView 即 acp 意图载体，视图内受理一律显式声明）。
+/**
+ * POST /api/acpSession/ensure：幂等受理会话创建（异步受理，立即返回受理时刻快照）。
+ * pickedLaunchMode 临场启动声明（LaunchModePicker 三选一受理，仅本次会话有效不落库；
+ * AcpSessionView 即 acp 意图载体，视图内受理一律显式声明）。
+ */
 export interface AcpSessionEnsureRequest {
   issueId: string;
   pickedLaunchMode?: 'acp';
@@ -209,8 +227,10 @@ export interface AcpSessionRespondPermissionRequest {
   optionId: string;
 }
 
-// POST /api/acpSession/respondElicitation：应答挂起 elicitation（action 三态；content 仅
-// accept 时有意义，键值对透传 ACP wire）。
+/**
+ * POST /api/acpSession/respondElicitation：应答挂起 elicitation（action 三态；content 仅
+ * accept 时有意义，键值对透传 ACP wire）。
+ */
 export interface AcpSessionRespondElicitationRequest {
   issueId: string;
   pendingId: number;

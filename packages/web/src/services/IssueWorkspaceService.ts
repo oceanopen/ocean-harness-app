@@ -191,8 +191,10 @@ export interface IssueWorkspaceFileDiffResponseData {
 }
 
 export class IssueWorkspaceService {
-  // init：受理工作空间初始化（异步执行；幂等可重入——执行中重复触发返回当前进度，
-  // 已成功且关联未变直接 SUCCESS，失败重试只补失败仓库）。返回受理后的状态快照。
+  /**
+   * init：受理工作空间初始化（异步执行；幂等可重入——执行中重复触发返回当前进度，
+   * 已成功且关联未变直接 SUCCESS，失败重试只补失败仓库）。返回受理后的状态快照。
+   */
   static init(req: IssueWorkspaceInitRequest): Promise<IssueWorkspaceStatusResponseData> {
     return request<IssueWorkspaceStatusResponseData>('POST', '/api/issueWorkspace/init', req);
   }
@@ -227,8 +229,10 @@ export class IssueWorkspaceService {
     return request<IssueWorkspaceFileDiffResponseData>('POST', '/api/issueWorkspace/getFileDiff', req);
   }
 
-  // fileRawUrl：图片原始字节直连 URL（<img src>，类静态资源；base 解析同 request）。
-  // v 为缓存刷新参数（重验/重开时变化强制重新加载）。
+  /**
+   * fileRawUrl：图片原始字节直连 URL（<img src>，类静态资源；base 解析同 request）。
+   * v 为缓存刷新参数（重验/重开时变化强制重新加载）。
+   */
   static fileRawUrl(req: { issueId: string; path: string; v?: string | number }): Promise<string> {
     const query: Record<string, string> = { issueId: req.issueId, path: req.path };
     if (req.v != null) {
@@ -237,8 +241,10 @@ export class IssueWorkspaceService {
     return serverUrl('/api/issueWorkspace/fileRaw', query);
   }
 
-  // fileRawBase：fileRaw 端点基址（不带 query）。MarkdownViewer 一次解析基址、渲染期同步
-  // 拼逐图 src（避免逐图异步解析闪烁）——端点路径 SSOT 收归本类，参数约定与 fileRawUrl 同源。
+  /**
+   * fileRawBase：fileRaw 端点基址（不带 query）。MarkdownViewer 一次解析基址、渲染期同步
+   * 拼逐图 src（避免逐图异步解析闪烁）——端点路径 SSOT 收归本类，参数约定与 fileRawUrl 同源。
+   */
   static fileRawBase(): Promise<string> {
     return serverUrl('/api/issueWorkspace/fileRaw', {});
   }

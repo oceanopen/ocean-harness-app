@@ -38,7 +38,7 @@ function KanbanView({ projectIssues, subtaskStats, childrenByParent, collapsedPa
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <Box sx={{ display: 'flex', gap: 1.5, height: '100%', overflow: 'auto', p: 1.5 }}>
+      <Box sx={{ display: 'flex', gap: '12px', height: '100%', overflow: 'auto', p: '12px' }}>
         {orderedStates.map(code => (
           <KanbanColumn
             key={code}

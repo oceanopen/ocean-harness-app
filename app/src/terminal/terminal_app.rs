@@ -1,16 +1,8 @@
-// Terminal.app AppleScript 跳转。
-//
-// Terminal.app 只有 window → tab 两层（无 session 概念），匹配条件仅 tty。
-// 命中后：set selected tab of w to t; set index of w to 1（把窗口拉到最前）。
-//
-// 冷/热启动语义与 iterm2.rs 对齐（见其文件头注释）：
-//   - 热启动：窗口集合已稳定，activate + count of windows 两分支照旧，无竞态。
-//   - 冷启动：launch → do script 自建窗口 → 以 front window 为所有权锚点清扫
-//     非本脚本窗口（兜底 Terminal.app 启动自建的默认空白窗口）→ 最后才 activate。
-//     锚点在 do script 之后取：do script 新建的窗口立即成为前台窗口。
-// 未运行/未命中都以 error 终止（osascript 非零退出 → OsaScriptFailed → 前端
-// toast），不做无谓拉起、不静默无反应。
-
+/*
+ * Terminal.app AppleScript 跳转。Terminal.app 只有 window → tab 两层（无 session 概念），匹配条件仅 tty；命中后 set selected tab of w to t; set index of w to 1（把窗口拉到最前）。
+ * 冷/热启动语义与 iterm2.rs 对齐（见其文件头注释）：热启动窗口集合已稳定，activate + count of windows 两分支照旧无竞态；冷启动 launch → do script 自建窗口 → 以 front window 为所有权锚点清扫非本脚本窗口（兜底 Terminal.app 启动自建的默认空白窗口）→ 最后才 activate，锚点在 do script 之后取（新建窗口立即成为前台窗口）。
+ * 未运行/未命中都以 error 终止（osascript 非零退出 → OsaScriptFailed → 前端 toast），不做无谓拉起、不静默无反应。
+ */
 use tauri::{AppHandle, Manager};
 
 use crate::shared::app_config::{
@@ -49,8 +41,10 @@ end tell
 tell application "Terminal" to activate
 "#;
 
-/// open_directory 脚本骨架。热启动沿用 count 两分支；冷启动走
-/// 「launch → do script 自建窗口 → 以 front window 为锚点清扫 → activate」。
+/*
+ * open_directory 脚本骨架。热启动沿用 count 两分支；冷启动走
+ * 「launch → do script 自建窗口 → 以 front window 为锚点清扫 → activate」。
+ */
 const OPEN_SCRIPT_TEMPLATE: &str = r#"
 -- 运行态预判先于一切状态变更（探测本身不拉起应用）。
 set wasRunning to (application "Terminal" is running)
@@ -101,15 +95,17 @@ fn render_script(target: &Target<'_>) -> String {
     SCRIPT_TEMPLATE.replace("{tty}", &applescript_string(target.tty))
 }
 
-/// 渲染 open_directory 脚本。
+// 渲染 open_directory 脚本。
 fn render_open_script(escaped_dir: &str, cmd_suffix: &str) -> String {
     OPEN_SCRIPT_TEMPLATE
         .replace("{escaped_dir}", escaped_dir)
         .replace("{cmd_suffix}", cmd_suffix)
 }
 
-/// 执行 Terminal.app 跳转。osascript 失败时返回 NavErr::OsaScriptFailed。
-/// tty 为 None 时直接返回 OsaScriptFailed（Terminal.app 仅靠 tty 匹配，无 fallback）。
+/*
+ * 执行 Terminal.app 跳转。osascript 失败时返回 NavErr::OsaScriptFailed。
+ * tty 为 None 时直接返回 OsaScriptFailed（Terminal.app 仅靠 tty 匹配，无 fallback）。
+ */
 pub fn focus_session(target: &Target<'_>) -> Result<(), NavErr> {
     if target.tty.is_none() {
         return Err(NavErr::OsaScriptFailed {
@@ -120,9 +116,11 @@ pub fn focus_session(target: &Target<'_>) -> Result<(), NavErr> {
     run_osascript(&script)
 }
 
-/// 在 Terminal.app 中打开目录：热启动时有窗口则 `do script ... in front window`
-/// （新建 Tab）、无窗口则 `do script ...`（新建窗口）；冷启动时自建窗口并清扫
-/// Terminal.app 自启的空白窗口，均执行 cd 到指定目录。
+/*
+ * 在 Terminal.app 中打开目录：热启动时有窗口则 `do script ... in front window`
+ * （新建 Tab）、无窗口则 `do script ...`（新建窗口）；冷启动时自建窗口并清扫
+ * Terminal.app 自启的空白窗口，均执行 cd 到指定目录。
+ */
 pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
     let escaped_dir = escape_dir_for_applescript(dir);
 
@@ -140,8 +138,10 @@ pub fn open_directory(app: &AppHandle, dir: &str) -> Result<(), NavErr> {
     run_osascript(&script)
 }
 
-/// 将目录路径转义后嵌入 AppleScript 的 `do script "cd ..."` 语句。
-/// 仅返回 shell 安全的路径部分（单引号包裹 + 转义），不含 `cd` 前缀，由调用方拼命令。
+/*
+ * 将目录路径转义后嵌入 AppleScript 的 `do script "cd ..."` 语句。
+ * 仅返回 shell 安全的路径部分（单引号包裹 + 转义），不含 `cd` 前缀，由调用方拼命令。
+ */
 fn escape_dir_for_applescript(dir: &str) -> String {
     // Shell: 单引号包裹，内部 ' 替换为 '\''（结束引号 → 转义单引号 → 重新开引号）
     let shell_safe = dir.replace('\'', "'\\''");

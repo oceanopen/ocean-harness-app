@@ -1,7 +1,8 @@
-// elicitation 表单的纯函数层：requestedSchema（JSON Schema）→ 渲染计划 → 应答 content。
-// 只覆盖真适配器实际发出的子集（claude-acp 0.84.0 elicitation.js）：属性扁平 + 基元类型
-// + 字符串枚举——单选 string+oneOf、多选 array+items.anyOf、自由文本/数值/布尔；其余
-// 形态降级 unknown（UI 只读展示，不参与应答）。越界的组合关键字/嵌套结构不做。
+/**
+ * elicitation 表单的纯函数层：requestedSchema（JSON Schema）→ 渲染计划 → 应答 content。
+ * 只覆盖真适配器实际发出的子集（claude-acp 0.84.0 elicitation.js）：属性扁平 + 基元类型 +
+ * 字符串枚举——单选 string+oneOf、多选 array+items.anyOf、自由文本/数值/布尔；其余形态降级 unknown（UI 只读展示，不参与应答）。越界的组合关键字/嵌套结构不做。
+ */
 
 /** 单个表单字段的渲染计划。 */
 export interface ElicitationFieldPlan {

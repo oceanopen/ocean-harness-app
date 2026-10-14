@@ -2,8 +2,10 @@ import type { AcpFrame, AcpViewSnapshot } from '@src/services';
 import { describe, expect, it } from 'vitest';
 import { applyFrame, isAcpSessionSubscribable, isFrameSequenceBroken } from './reducer';
 
-// applyFrame 归约单测：12 帧型语义 + 帧序无关性（内容帧与回合终态帧并发交错的两种顺序
-// 收敛同一终态）+ seq 断档判定。chat 模式退役后前端测试自此重建（vite.config test 段）。
+/**
+ * applyFrame 归约单测：12 帧型语义 + 帧序无关性（内容帧与回合终态帧并发交错的两种顺序收敛同一终态）
+ * + seq 断档判定。chat 模式退役后前端测试自此重建（vite.config test 段）。
+ */
 
 let seqSource = 0;
 
@@ -118,8 +120,10 @@ describe('applyFrame', () => {
   });
 
   it('内容帧与回合终态帧乱序交错收敛同一终态（帧序注记）', () => {
-    // pump 内容帧与收尾 turnEnded 并发：两种到达顺序终态必须一致（entry 覆写 + 快照类
-    // 最新替换均无帧间因果）。
+    /**
+     * pump 内容帧与收尾 turnEnded 并发：两种到达顺序终态必须一致
+     * （entry 覆写 + 快照类最新替换均无帧间因果）。
+     */
     const entry = { entryId: 'a1', kind: 'agentMessage' as const, text: '回答' };
     const turnEnded = frameOf({ type: 'turnEnded', turn: { active: false, stopReason: 'end_turn' } });
     const forward = [frameOf({ type: 'entry', entry }), turnEnded];

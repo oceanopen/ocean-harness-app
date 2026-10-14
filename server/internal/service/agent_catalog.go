@@ -6,9 +6,11 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// AgentCatalog 对应 /api/agentCatalog 命名空间下的业务逻辑。
-// 无本地表：SSOT 为 sidecar 内嵌离线快照（internal/agentcatalog，编译期 go:embed），
-// 本 service 只做前端投影（值域 SSOT：launch_settings.agentCode 合法取值 = enabled 条目 id）。
+/*
+ * AgentCatalog 对应 /api/agentCatalog 命名空间下的业务逻辑。
+ * 无本地表：SSOT 为 sidecar 内嵌离线快照（internal/agentcatalog，编译期 go:embed），
+ * 本 service 只做前端投影（值域 SSOT：launch_settings.agentCode 合法取值 = enabled 条目 id）。
+ */
 type AgentCatalog struct {
 	apis.Service
 }

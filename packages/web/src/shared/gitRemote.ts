@@ -1,8 +1,10 @@
 // git remote URL 解析 + PR compare URL 构造（纯函数）。
 
 /** 解析 git remote URL（SSH/HTTPS）为 host + ownerRepo。无法解析返回 null。 */
-// SSH:   git@github.com:org/repo.git   → { host: 'github.com', ownerRepo: 'org/repo' }
-// HTTPS: https://github.com/org/repo.git → 同上
+/**
+ * SSH:   git@github.com:org/repo.git   → { host: 'github.com', ownerRepo: 'org/repo' }
+ * HTTPS: https://github.com/org/repo.git → 同上
+ */
 export function parseRemoteUrl(remoteUrl: string): { host: string; ownerRepo: string } | null {
   if (!remoteUrl) {
     return null;

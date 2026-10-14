@@ -5,8 +5,9 @@ import (
 	"testing"
 )
 
-// TestPullRequestWireFormat 用 GitHub REST v3 真实响应片段固定反序列化契约
-// （html_url 为 snake_case、head/base 为嵌套对象）。
+/*
+ * TestPullRequestWireFormat 用 GitHub REST v3 真实响应片段固定反序列化契约（html_url 为 snake_case、head/base 为嵌套对象）。
+ */
 func TestPullRequestWireFormat(t *testing.T) {
 	raw := `{
 		"number": 1347,
@@ -31,8 +32,9 @@ func TestPullRequestWireFormat(t *testing.T) {
 	}
 }
 
-// TestMergeCIState 覆盖两体系归并的关键场景（T4.1 审查修复：纯 Actions 仓库不再
-// 恒 pending、无 CI 仍 pending、failure 优先）。
+/*
+ * TestMergeCIState 覆盖两体系归并的关键场景（T4.1 审查修复：纯 Actions 仓库不再恒 pending、无 CI 仍 pending、failure 优先）。
+ */
 func TestMergeCIState(t *testing.T) {
 	completed := func(conclusion string) CIRecord {
 		return CIRecord{Status: "completed", Conclusion: conclusion}

@@ -6,11 +6,11 @@ import { useLocalBranches, useLocalRepositories } from '@src/state/localReposito
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-// Issue 关联仓库+分支 table（多选）：每行 = 仓库下拉 + 分支 Combobox（freeSolo）+ 删除按钮，末行「新增」追加空行。
-// 受控：rows / onChange 由父级持有（提交统一在父级），组件不发请求。
-// 仓库选项 = 项目关联仓库中未被其他行选中的（选中的自动从其他行排除）；
-// 选仓库时分支自动预填该仓库默认分支（无默认分支则留空）；项目关联仓库全部选中时新增按钮置灰。
-// 项目无关联仓库时整体提示禁用。表头/按钮文案硬编码中文（i18n 约定：表单区不走路由级 i18n）。
+/**
+ * Issue 关联仓库+分支 table（多选）：每行 = 仓库下拉 + 分支 Combobox（freeSolo）+ 删除按钮，
+ * 末行「新增」追加空行；受控组件（rows/onChange 父级持有，不发请求）。
+ * 仓库选项 = 未被其他行选中的项目关联仓库，选仓库自动预填默认分支；全部选中新增置灰、无关联仓库整体禁用；文案硬编码中文（表单区不走路由级 i18n）。
+ */
 interface IssueRepoBranchTableProps {
   // 当前项目已关联的仓库 id 列表（来自项目响应 WorkspaceProjectModel.localRepositoryIds，作仓库下拉选项源）。
   localRepositoryIds: number[];
@@ -38,9 +38,11 @@ function IssueRepoBranchTable({
   const selectedRepoIds = new Set(rows.map(r => r.localRepositoryId).filter(id => id > 0));
   const availableRepos = projectRepos.filter(r => !selectedRepoIds.has(r.id));
 
-  // 行 key：rows 由父级全量替换（无稳定行 id），用自增 key 追踪行位置——加行追加新 key、
-  // 删行截断尾部（父级删行恒删被点击行并保序，仅末端场景会错位一个渲染周期，无功能影响）。
-  // 渲染期同步派生（React 认可的 derive-during-render），避免数组下标作 key。
+  /**
+   * 行 key：rows 由父级全量替换（无稳定行 id），用自增 key 追踪行位置——加行追加新 key、
+   * 删行截断尾部（父级删行恒删被点击行并保序，仅末端场景会错位一个渲染周期，无功能影响）。
+   * 渲染期同步派生（React 认可的 derive-during-render），避免数组下标作 key。
+   */
   const rowKeysRef = useRef<number[]>([]);
   if (rowKeysRef.current.length < rows.length) {
     const next = [...rowKeysRef.current];
@@ -77,7 +79,7 @@ function IssueRepoBranchTable({
 
   return (
     <Box sx={sx}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: '4px' }}>
         {t('tracker:projectIssue.detail.branch')}
       </Typography>
       <Table size="small" sx={{ tableLayout: 'fixed' }}>
@@ -85,7 +87,7 @@ function IssueRepoBranchTable({
           <TableRow>
             <TableCell sx={{ width: '40%' }}>仓库</TableCell>
             <TableCell>分支</TableCell>
-            <TableCell sx={{ width: 56, px: 1, whiteSpace: 'nowrap' }} aria-label="操作">操作</TableCell>
+            <TableCell sx={{ width: '56px', px: '8px', whiteSpace: 'nowrap' }} aria-label="操作">操作</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -101,7 +103,7 @@ function IssueRepoBranchTable({
             />
           ))}
           <TableRow>
-            <TableCell colSpan={3} sx={{ border: 'none', py: 1 }}>
+            <TableCell colSpan={3} sx={{ border: 'none', py: '8px' }}>
               <Button
                 size="small"
                 startIcon={<AddOutlinedIcon />}
@@ -115,7 +117,7 @@ function IssueRepoBranchTable({
         </TableBody>
       </Table>
       {noRepos && (
-        <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
+        <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: '4px' }}>
           {t('tracker:projectIssue.detail.branchNoRepoHint')}
         </Typography>
       )}
@@ -141,7 +143,7 @@ function RepoBranchRow({ row, repoOptions, disabled, onRepoChange, onBranchChang
 
   return (
     <TableRow>
-      <TableCell sx={{ py: 1 }}>
+      <TableCell sx={{ py: '8px' }}>
         <FormControl size="small" fullWidth>
           <Select
             value={row.localRepositoryId}
@@ -161,7 +163,7 @@ function RepoBranchRow({ row, repoOptions, disabled, onRepoChange, onBranchChang
           </Select>
         </FormControl>
       </TableCell>
-      <TableCell sx={{ py: 1 }}>
+      <TableCell sx={{ py: '8px' }}>
         <Autocomplete
           size="small"
           freeSolo
@@ -178,7 +180,7 @@ function RepoBranchRow({ row, repoOptions, disabled, onRepoChange, onBranchChang
           )}
         />
       </TableCell>
-      <TableCell sx={{ py: 1, px: 1, whiteSpace: 'nowrap' }}>
+      <TableCell sx={{ py: '8px', px: '8px', whiteSpace: 'nowrap' }}>
         <IconButton size="small" onClick={onRemove} disabled={disabled} aria-label="删除">
           <DeleteOutlinedIcon fontSize="small" />
         </IconButton>

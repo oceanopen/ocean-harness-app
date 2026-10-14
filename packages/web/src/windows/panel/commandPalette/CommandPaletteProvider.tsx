@@ -6,8 +6,10 @@ import { CommandPaletteContext } from './CommandPaletteContext';
 import CommandPaletteDialog from './CommandPaletteDialog';
 
 interface CommandPaletteProviderProps {
-  // 宿主注入：当前页面 + 导航/动作回调 + tracker 跳转回写。
-  // 由 PanelApp 构造（持有 activeMenu 与上提后的 tracker 选择状态）。
+  /**
+   * 宿主注入：当前页面 + 导航/动作回调 + tracker 跳转回写。
+   * 由 PanelApp 构造（持有 activeMenu 与上提后的 tracker 选择状态）。
+   */
   activeMenu: MenuKey;
   navigate: (menu: MenuKey) => void;
   toggleSidebar: () => void;
@@ -19,8 +21,10 @@ interface CommandPaletteProviderProps {
   children: ReactNode;
 }
 
-// 命令面板 Provider：托管 isOpen / subPage 状态 + 全局 ⌘K 监听，并在树内挂载 Dialog。
-// ⌘K/Ctrl+K 永远唤起（输入框内也拦），对齐 plane ShortcutHandler 的核心约定。
+/**
+ * 命令面板 Provider：托管 isOpen / subPage 状态 + 全局 ⌘K 监听，并在树内挂载 Dialog。
+ * ⌘K/Ctrl+K 永远唤起（输入框内也拦），对齐 plane ShortcutHandler 的核心约定。
+ */
 function CommandPaletteProvider(props: CommandPaletteProviderProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [subPage, setSubPage] = useState<CommandSubPage | null>(null);
@@ -33,8 +37,10 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
   }, []);
   const toggle = useCallback(() => setIsOpen(v => !v), []);
 
-  // 全局 ⌘K / Ctrl+K 切换：document 级监听，无视当前焦点（含 input/contenteditable）。
-  // 借鉴 plane ShortcutHandler.handleKeyDown 的特判分支——⌘K 是面板自身的总开关，优先于"输入框不拦截"规则。
+  /**
+   * 全局 ⌘K / Ctrl+K 切换：document 级监听，无视当前焦点（含 input/contenteditable）。
+   * 借鉴 plane ShortcutHandler.handleKeyDown 的特判分支——⌘K 是面板自身的总开关，优先于"输入框不拦截"规则。
+   */
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -46,8 +52,10 @@ function CommandPaletteProvider(props: CommandPaletteProviderProps) {
     return () => document.removeEventListener('keydown', handler);
   }, []);
 
-  // 兜底：面板关闭时复位二级页。用渲染期「据 isOpen 调整 state」模式（React 推荐）替代 effect 内
-  // 同步 setState——覆盖 close() 之外的关闭路径（⌘K toggle），与 close() 内联复位双保险。
+  /**
+   * 兜底：面板关闭时复位二级页。用渲染期「据 isOpen 调整 state」模式（React 推荐）替代 effect 内
+   * 同步 setState——覆盖 close() 之外的关闭路径（⌘K toggle），与 close() 内联复位双保险。
+   */
   if (!isOpen && subPage !== null) {
     setSubPage(null);
   }

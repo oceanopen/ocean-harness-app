@@ -36,9 +36,11 @@ func withCallTimeouts(t *testing.T, call, idle time.Duration) {
 	t.Cleanup(func() { forwardCallTimeout, idleReleaseTimeout = oldCall, oldIdle })
 }
 
-// fakeEngineCtl 可控假引擎：spawns 拉起计数、active 在途调用计数、tabsCalls 投影刷新
-// 计数、toolFn 覆写工具行为（返回文本与 isError 标志）、spawnGate 一次性拉起闸门
-// （非 nil 时下一次拉起阻塞至关闭——测 starting 窗口竞态）。
+/*
+ * fakeEngineCtl 可控假引擎：spawns 拉起计数、active 在途调用计数、tabsCalls 投影刷新
+ * 计数、toolFn 覆写工具行为（返回文本与 isError 标志）、spawnGate 一次性拉起闸门
+ * （非 nil 时下一次拉起阻塞至关闭——测 starting 窗口竞态）。
+ */
 type fakeEngineCtl struct {
 	mu        sync.Mutex
 	spawns    int
@@ -73,8 +75,10 @@ func (c *fakeEngineCtl) stats() (spawns, active, tabsCalls int) {
 	return c.spawns, c.active, c.tabsCalls
 }
 
-// withEngineCtl 注入可控假引擎（navigate/tabs/screenshot/evaluate 四工具，覆盖被测
-// 路径）。
+/*
+ * withEngineCtl 注入可控假引擎（navigate/tabs/screenshot/evaluate 四工具，覆盖被测
+ * 路径）。
+ */
 func withEngineCtl(t *testing.T) *fakeEngineCtl {
 	t.Helper()
 	ctl := &fakeEngineCtl{}
@@ -82,9 +86,11 @@ func withEngineCtl(t *testing.T) *fakeEngineCtl {
 	return ctl
 }
 
-// withEngineCtlDial 可控假引擎的公共核心：注入 dialEngine 桩（in-memory transport 假
-// 引擎 + ctl 记账），onSpawn 非 nil 时在每次服务端会话建立后回调（测试捕获 kill 句柄
-// 等扩展用）。
+/*
+ * withEngineCtlDial 可控假引擎的公共核心：注入 dialEngine 桩（in-memory transport 假
+ * 引擎 + ctl 记账），onSpawn 非 nil 时在每次服务端会话建立后回调（测试捕获 kill 句柄
+ * 等扩展用）。
+ */
 func withEngineCtlDial(t *testing.T, ctl *fakeEngineCtl, onSpawn func(ss *mcp.ServerSession)) {
 	t.Helper()
 	withDialFunc(t, func(ctx context.Context, _ *exec.Cmd) (*mcp.ClientSession, error) {
@@ -375,9 +381,11 @@ func TestManagerIdleReleaseAndRepull(t *testing.T) {
 	}
 }
 
-// TestManagerCloseCapturesPages close 收尾捕获真实页面投影：ensure 后零 Forward（模拟
-// 只在浏览器窗口内手动导航——pages 投影为空），close 时引擎还活着，收尾前捕获的 tab
-// 列表即真实当前页（无头切换/重开恢复现场的数据源）。
+/*
+ * TestManagerCloseCapturesPages close 收尾捕获真实页面投影：ensure 后零 Forward（模拟
+ * 只在浏览器窗口内手动导航——pages 投影为空），close 时引擎还活着，收尾前捕获的 tab
+ * 列表即真实当前页（无头切换/重开恢复现场的数据源）。
+ */
 func TestManagerCloseCapturesPages(t *testing.T) {
 	ctl := withEngineCtl(t)
 	m := newTestManager(t)
@@ -645,8 +653,10 @@ func TestRecoverOrphans(t *testing.T) {
 
 	NewManager(dirs, nil)
 
-	// 引擎孤儿被杀组回收（被杀子进程为僵尸态——kill(pid,0) 恒成功，以 Wait4 WNOHANG
-	// 探终结）。
+	/*
+	 * 引擎孤儿被杀组回收（被杀子进程为僵尸态——kill(pid,0) 恒成功，以 Wait4 WNOHANG
+	 * 探终结）。
+	 */
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var ws syscall.WaitStatus

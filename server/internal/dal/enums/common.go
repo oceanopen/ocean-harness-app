@@ -5,9 +5,11 @@ import (
 	"fmt"
 )
 
-// YesNo 公共是否型映射（凡「启用/停用」之类二值字段一律用它，不自建 bool/0-1 列）。
-// 取值 "Y"/"N"，与 Rust 侧 app/src/shared/types.rs 的 YesNo enum（app_config 裸字符串存储）
-// 语义对齐——跨端同一套 Y/N 词汇。TEXT 列存储，typed 枚举约定（无 DB 默认值，代码显式赋值）。
+/*
+ * YesNo 公共是否型映射（凡「启用/停用」之类二值字段一律用它，不自建 bool/0-1 列）；
+ * 取值 "Y"/"N"，与 Rust 侧 app/src/shared/types.rs 的 YesNo enum 语义对齐（跨端同一套 Y/N 词汇）；
+ * TEXT 列存储，typed 枚举约定（无 DB 默认值，代码显式赋值）。
+ */
 type YesNo string
 
 const (

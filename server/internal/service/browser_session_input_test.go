@@ -1,7 +1,9 @@
 package service
 
-// inputCDP kind→CDP Input 域映射单测（T4.5）：四合法路的 method 与 params 字段、非法
-// 路的中文报错。
+/*
+ * inputCDP kind→CDP Input 域映射单测（T4.5）：四合法路的 method 与 params 字段、非法
+ * 路的中文报错。
+ */
 
 import (
 	"reflect"

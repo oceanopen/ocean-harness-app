@@ -1,9 +1,10 @@
 package apis
 
-// PageInfo 是分页参数与结果（请求入参 + 响应回填共用）。
-//
-// 请求 DTO 内嵌本类型（如 IssueGetListByPageRequest{ ...; PageInfo apis.PageInfo }），
-// service 用 GetOffset/GetPageSize 取偏移与条数查询、回填 TotalCount 后随 JsonPageOK 返回。
+/*
+ * PageInfo 是分页参数与结果（请求入参 + 响应回填共用）。
+ * 请求 DTO 内嵌本类型（如 IssueGetListByPageRequest{ ...; PageInfo apis.PageInfo }），
+ * service 用 GetOffset/GetPageSize 取偏移与条数查询、回填 TotalCount 后随 JsonPageOK 返回。
+ */
 type PageInfo struct {
 	PageSize    int   `json:"pageSize"`
 	CurrentPage int   `json:"currentPage"`

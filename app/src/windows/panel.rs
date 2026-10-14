@@ -1,9 +1,8 @@
-// panel 窗口（控制台）+ 桥接命令。
-//
-// 会话扫描 / watcher / poller 逻辑全部下沉到 sessions/ 域（见 crate::sessions）。
-// 终端跳转逻辑全部下沉到 terminal/ 域（见 crate::terminal）。
-// 本文件仅负责：窗口创建、命令包装（get_claude_sessions / navigate_to_claude_session）。
-
+/*
+ * panel 窗口（控制台）+ 桥接命令。
+ * 会话扫描 / watcher / poller 逻辑全部下沉到 sessions/ 域（见 crate::sessions）；终端跳转逻辑全部下沉到 terminal/ 域（见 crate::terminal）。
+ * 本文件仅负责：窗口创建、命令包装（get_claude_sessions / navigate_to_claude_session）。
+ */
 use tauri::{
     AppHandle, Emitter, LogicalPosition, Manager, State, WebviewUrl, WebviewWindowBuilder,
 };
@@ -22,12 +21,11 @@ use crate::terminal::{NavErr, Target, dispatch};
 #[cfg(target_os = "macos")]
 use tauri::TitleBarStyle;
 
-/// 隐藏原生标题栏上的标题文字（仅 macOS，Overlay 标题栏收尾）。
-/// TitleBarStyle::Overlay 只设 titlebar_transparent + fullsize_content_view，不隐藏
-/// 标题——macOS 仍会把窗口标题画在标题栏正中，叠在前端 44px 顶栏上。此处补
-/// setTitleVisibility:（NSWindowTitleVisibilityHidden = 1）取消绘制；标题字符串本身
-/// 保留（Mission Control / ⌘Tab 窗口管理器仍显示）。AppKit 窗口操作非线程安全，
-/// 包 run_on_main_thread 防御（范式同 shared/window_show.rs，同步命令本就在主线程）。
+/*
+ * 隐藏原生标题栏上的标题文字（仅 macOS，Overlay 标题栏收尾）。
+ * TitleBarStyle::Overlay 只设 titlebar_transparent + fullsize_content_view，不隐藏标题——macOS 仍会把窗口标题画在标题栏正中，叠在前端 44px 顶栏上。此处补 setTitleVisibility:（NSWindowTitleVisibilityHidden = 1）取消绘制；标题字符串本身保留（Mission Control / ⌘Tab 窗口管理器仍显示）。
+ * AppKit 窗口操作非线程安全，包 run_on_main_thread 防御（范式同 shared/window_show.rs，同步命令本就在主线程）。
+ */
 #[cfg(target_os = "macos")]
 fn hide_titlebar_text(win: &tauri::WebviewWindow) {
     let w = win.clone();
@@ -48,9 +46,11 @@ pub fn get_claude_sessions(
     Ok(map.values().cloned().collect())
 }
 
-/// 手动刷新会话列表：触发全量重扫并广播 claude-sessions:changed，
-/// 订阅该事件的前端（panel 的 ClaudeSessionsPage 页、pet_session_summary、pet_session_task）自动收到新快照。
-/// force_git=true：手动刷新强制重算空闲会话的 GitPending，立即反映最新 git 状态。
+/*
+ * 手动刷新会话列表：触发全量重扫并广播 claude-sessions:changed，
+ * 订阅该事件的前端（panel 的 ClaudeSessionsPage 页、pet_session_summary、pet_session_task）自动收到新快照。
+ * force_git=true：手动刷新强制重算空闲会话的 GitPending，立即反映最新 git 状态。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn refresh_sessions(app: AppHandle) -> Result<(), String> {
@@ -58,9 +58,11 @@ pub fn refresh_sessions(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 跳转到 pid 对应的宿主终端会话。
-/// 成功返回 Ok(())；失败 emit `claude-sessions:nav-failed` 事件，
-/// 前端据 NavErr.kind 渲染差异化 toast。
+/*
+ * 跳转到 pid 对应的宿主终端会话。
+ * 成功返回 Ok(())；失败 emit `claude-sessions:nav-failed` 事件，
+ * 前端据 NavErr.kind 渲染差异化 toast。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn navigate_to_claude_session(pid: u32, app: AppHandle) -> Result<(), String> {
@@ -100,28 +102,25 @@ pub fn navigate_to_claude_session(pid: u32, app: AppHandle) -> Result<(), String
     Ok(())
 }
 
-/// 用指定编辑器打开项目目录。
-///
-/// **macOS**：GUI 应用从 Dock/Finder 启动时继承的 PATH 仅 `/usr/bin:/bin:/usr/sbin:/sbin`，
-/// 不含 `/usr/local/bin`——直接 spawn `code` / `idea` CLI 会 ENOENT（用户在终端手动执行
-/// `code` 能用是因为 shell 读 ~/.zshrc 补全了 PATH；从 .app bundle 启动则不走 shell 流程）。
-/// 改用 macOS 原生 `open -a <App>`：`open` 在 /usr/bin 不依赖 PATH，由 LaunchServices 解析
-/// 应用。IDEA 应用名因版本而异（CE/Ultimate/EDU），依次尝试候选名，首个成功即返回。
-///
-/// **Windows / Linux**：GUI 应用继承的 PATH 通常含编辑器安装目录（VSCode 安装时默认勾选
-/// Add to PATH，IDEA 由 JetBrains Toolbox 创建 shell link），直接走 `code` / `idea` CLI 即可。
-///
-/// editor 仅允许 "vscode" / "idea"；目录不存在 / 应用未安装 / 启动失败返回 Err(String)，前端 warn。
+/*
+ * 用指定编辑器打开项目目录。
+ * **macOS**：GUI 应用从 Dock/Finder 启动时继承的 PATH 仅 /usr/bin:/bin:/usr/sbin:/sbin，不含 /usr/local/bin——直接 spawn `code` / `idea` CLI 会 ENOENT（用户在终端手动执行能用是因为 shell 读 ~/.zshrc 补全了 PATH；从 .app bundle 启动则不走 shell 流程），改用 macOS 原生 `open -a <App>`：`open` 在 /usr/bin 不依赖 PATH，由 LaunchServices 解析应用；IDEA 应用名因版本而异（CE/Ultimate/EDU），依次尝试候选名，首个成功即返回。
+ * **Windows / Linux**：GUI 应用继承的 PATH 通常含编辑器安装目录（VSCode 安装时默认勾选 Add to PATH，IDEA 由 JetBrains Toolbox 创建 shell link），直接走 `code` / `idea` CLI 即可。editor 仅允许 "vscode" / "idea"；目录不存在 / 应用未安装 / 启动失败返回 Err(String)，前端 warn。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn open_in_editor(editor: String, cwd: String) -> Result<(), String> {
-    // 目录不存在（如 issue 工作空间尚未初始化）时，macOS `open -a` 会以「应用未找到」
-    // 收场——文案误导排查方向（VSCode 明明装了）。前置存在性校验给出明确错误。
+    /*
+     * 目录不存在（如 issue 工作空间尚未初始化）时，macOS `open -a` 会以「应用未找到」
+     * 收场——文案误导排查方向（VSCode 明明装了）。前置存在性校验给出明确错误。
+     */
     if !std::path::Path::new(&cwd).exists() {
         return Err(format!("目录不存在：{cwd}"));
     }
-    // GUI 编辑器（尤其 IDEA）会把 Kotlin/Maven/Gradle 日志写到继承的 stdout/stderr，
-    // 污染 ocean-harness 终端，stdio null 让子进程静默（所有平台共用）。
+    /*
+     * GUI 编辑器（尤其 IDEA）会把 Kotlin/Maven/Gradle 日志写到继承的 stdout/stderr，
+     * 污染 ocean-harness 终端，stdio null 让子进程静默（所有平台共用）。
+     */
     #[cfg(target_os = "macos")]
     {
         let apps: &[&str] = match editor.as_str() {
@@ -175,8 +174,10 @@ pub fn open_in_editor(editor: String, cwd: String) -> Result<(), String> {
     }
 }
 
-/// 判断 cwd 是否 Java 项目（Maven pom.xml 或 Gradle build.gradle/build.gradle.kts）。
-/// 前端据此在非 Java 项目下禁用 IDEA（VSCode 在任何项目下都可用）。
+/*
+ * 判断 cwd 是否 Java 项目（Maven pom.xml 或 Gradle build.gradle/build.gradle.kts）。
+ * 前端据此在非 Java 项目下禁用 IDEA（VSCode 在任何项目下都可用）。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn is_java_project(cwd: String) -> bool {
@@ -186,11 +187,11 @@ pub fn is_java_project(cwd: String) -> bool {
         || path.join("build.gradle.kts").exists()
 }
 
-/// 用指定终端打开目录。macOS：terminal 仅允许 "iterm2" / "terminal"，有窗口则新建 Tab、
-/// 无窗口则新建窗口并 cd 到指定目录（iTerm2 按 `iterm2_split_direction` 配置分屏）。
-/// Windows：terminal 仅允许 "windows-terminal"，spawn `wt -d <dir>`（-d 指定起始目录；
-/// wt 未安装时 spawn ENOENT 即刻返回 Err，前端 toast）。其余平台不支持。
-/// 消费方：RepositoriesPage 仓库卡片、开发工作台「打开工作区目录」工具（openTools.tsx）。
+/*
+ * 用指定终端打开目录。macOS：terminal 仅允许 "iterm2" / "terminal"，有窗口新建 Tab、无窗口新建窗口并 cd 到指定目录（iTerm2 按 `iterm2_split_direction` 分屏）。
+ * Windows：terminal 仅允许 "windows-terminal"，spawn `wt -d <dir>`（-d 指定起始目录；wt 未安装时 spawn ENOENT 即刻返回 Err，前端 toast）。其余平台不支持。
+ * 消费方：RepositoriesPage 仓库卡片、开发工作台「打开工作区目录」工具（openTools.tsx）。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn open_in_terminal(app: AppHandle, terminal: String, dir: String) -> Result<(), String> {
@@ -228,9 +229,11 @@ pub fn open_in_terminal(app: AppHandle, terminal: String, dir: String) -> Result
     }
 }
 
-/// 用系统默认文件管理器打开目录：macOS Finder(open) / Windows Explorer(explorer) / Linux(xdg-open)。
-/// 跨平台 cfg 与 stdio null 写法复刻 open_in_editor。explorer 退出码不可靠，用 spawn 不检查 status。
-/// 从 shared/repositories.rs 迁移而来（仓库注册表已迁至 Go 服务，本命令作为通用 OS 动作保留）。
+/*
+ * 用系统默认文件管理器打开目录：macOS Finder(open) / Windows Explorer(explorer) / Linux(xdg-open)。
+ * 跨平台 cfg 与 stdio null 写法复刻 open_in_editor。explorer 退出码不可靠，用 spawn 不检查 status。
+ * 从 shared/repositories.rs 迁移而来（仓库注册表已迁至 Go 服务，本命令作为通用 OS 动作保留）。
+ */
 fn open_dir(dir: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -265,7 +268,7 @@ fn open_dir(dir: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// 用系统文件管理器打开目录。dir 必须为存在的绝对路径。
+// 用系统文件管理器打开目录。dir 必须为存在的绝对路径。
 #[tauri::command]
 #[specta::specta]
 pub fn open_in_file_manager(dir: String) -> Result<(), String> {
@@ -276,10 +279,10 @@ pub fn open_in_file_manager(dir: String) -> Result<(), String> {
     open_dir(&dir)
 }
 
-/// 用系统默认应用打开任意路径（文件或目录）：macOS 对文件走默认应用、目录走 Finder。
-/// 终端链接点击（terminal_03 §3.4）的后端出口——与 open_in_file_manager 分立，
-/// 语义各自明确（后者文档注释明确「目录」，跨平台行为也不一致：explorer 对文件
-/// 是定位而非默认打开）。path 必须为非空绝对路径。
+/*
+ * 用系统默认应用打开任意路径（文件或目录）：macOS 文件走默认应用、目录走 Finder；path 必须为非空绝对路径。
+ * 终端链接点击（terminal_03 §3.4）的后端出口——与 open_in_file_manager 分立，语义各自明确（后者跨平台行为不一致：explorer 对文件是定位而非默认打开）。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn open_path(path: String) -> Result<(), String> {
@@ -311,18 +314,20 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
                 .product_name
                 .as_deref()
                 .unwrap_or("Ocean Harness");
-            // 首开导航走初始 URL（panel.html#/<page>，HashRouter 首帧直接消费）而非事件：
-            // build() 返回时 webview 尚未加载、前端 listen 未注册，此时 emit_to 必然丢失
-            //（托盘「系统设置」冷启动首开、pet 点击跳会话页同受此保护）。MenuKey 与顶层
-            // path 恒为 `/{menuKey}` 同名映射（panel/routes.ts MENU_PATHS），无需双份映射。
+            /*
+             * 首开导航走初始 URL（panel.html#/<page>，HashRouter 首帧直接消费）而非事件：
+             * build() 返回时 webview 尚未加载、前端 listen 未注册，此时 emit_to 必然丢失（托盘「系统设置」冷启动首开、pet 点击跳会话页同受此保护）。
+             * MenuKey 与顶层 path 恒为 `/{menuKey}` 同名映射（panel/routes.ts MENU_PATHS），无需双份映射。
+             */
             let url = match &navigate_to {
                 Some(page) => format!("panel.html#/{page}").into(),
                 None => "panel.html".into(),
             };
-            // macOS Overlay 标题栏（对应 Electron hiddenInset）：红绿灯保留、内容从窗口
-            // y=0 铺起，前端 44px 顶栏（PanelApp TOP_BAR_HEIGHT）吃进原生标题栏区域，
-            // 合并为单条自定义标题栏；拖拽由前端顶栏 data-tauri-drag-region 承担。
-            // 仅 macOS；其余平台保持默认窗口装饰（原生标题栏在内容区之外）。
+            /*
+             * macOS Overlay 标题栏（对应 Electron hiddenInset）：红绿灯保留、内容从窗口
+             * y=0 铺起，前端 44px 顶栏（PanelApp TOP_BAR_HEIGHT）吃进原生标题栏区域，合并为单条自定义标题栏；拖拽由前端顶栏 data-tauri-drag-region 承担。
+             * 仅 macOS；其余平台保持默认窗口装饰（原生标题栏在内容区之外）。
+             */
             let win_builder = WebviewWindowBuilder::new(&app, "panel", WebviewUrl::App(url))
                 .title(format!("{product} - 控制台")) // Overlay 下不显示，但 Mission Control 仍消费
                 .inner_size(width, height) // 还原尺寸：取消最大化后回到此 85% 屏尺寸
@@ -331,19 +336,22 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
                 .skip_taskbar(true);
             #[cfg(target_os = "macos")]
             let win_builder = win_builder.title_bar_style(TitleBarStyle::Overlay);
-            // 红绿灯与顶栏内容居中对齐：traffic_light_position(x, y) 中 x = close 按钮
-            // 左缘（默认 ~7 不动），y = 按钮圆心距窗口顶部距离（默认 14 = 原生 28px 标题栏
-            // 居中）。取 22 = 顶栏 44px 垂直中心，红绿灯与顶栏内容精确居中对齐。
-            // tao 每次绘制重放该 inset，maximize/还原后位置不漂移。
+            /*
+             * 红绿灯与顶栏内容居中对齐：traffic_light_position(x, y) 中 x = close 按钮左缘（默认 ~7 不动），y = 按钮圆心距窗口顶部距离（默认 14 = 原生 28px 标题栏居中）。
+             * 取 22 = 顶栏 44px 垂直中心，红绿灯与顶栏内容精确居中对齐；
+             * tao 每次绘制重放该 inset，maximize/还原后位置不漂移。
+             */
             #[cfg(target_os = "macos")]
             let win_builder = win_builder.traffic_light_position(LogicalPosition::new(7.0, 22.0));
             let win = win_builder.build().map_err(|e| e.to_string())?;
             #[cfg(target_os = "macos")]
             hide_titlebar_text(&win);
 
-            // 必须在 maximize 之前定位：macOS 上对已最大化（zoom）态的窗口调用 set_position
-            // 会破坏 zoom 定位、但保留撑开的全屏尺寸，导致「尺寸=全屏、左上角≠(0,0)」的错位窗口。
-            // 先定还原坐标（托盘所在屏 work_area 居中，探测失败回退主屏居中），系统把它保存为还原帧。
+            /*
+             * 必须在 maximize 之前定位：macOS 上对已最大化（zoom）态的窗口调用 set_position
+             * 会破坏 zoom 定位、但保留撑开的全屏尺寸，导致「尺寸=全屏、左上角≠(0,0)」的错位窗口。
+             * 先定还原坐标（托盘所在屏 work_area 居中，探测失败回退主屏居中），系统把它保存为还原帧。
+             */
             if let Some(m) = &monitor {
                 let (x, y) = work_area_center(m, width, height);
                 let _ = win.set_position(LogicalPosition::new(x, y));
@@ -370,9 +378,11 @@ pub fn show_panel_window(app: tauri::AppHandle, navigate_to: Option<String>) -> 
     let _ = panel_win.unminimize();
     let _ = panel_win.set_focus();
 
-    // 先导航再通知 shown，确保前端收到 shown 时 activeMenu 已更新。
-    // 二次唤起（webview 已就绪、listen 已注册）走事件；首开导航已在上方写入初始 URL。
-    // 无参不 emit，保持前端当前页面。
+    /*
+     * 先导航再通知 shown，确保前端收到 shown 时 activeMenu 已更新。
+     * 二次唤起（webview 已就绪、listen 已注册）走事件；首开导航已在上方写入初始 URL。
+     * 无参不 emit，保持前端当前页面。
+     */
     if let (true, Some(page)) = (panel_win_is_existing, navigate_to) {
         let _ = app.emit_to("panel", EVENT_PANEL_NAVIGATE, page);
     }

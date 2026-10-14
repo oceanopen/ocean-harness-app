@@ -17,8 +17,10 @@ import (
 	"ocean-harness/server/internal/global"
 )
 
-// 订阅前置判定（D3 细化口径）：idle/terminated 拒绝，starting/ready/failed 可订阅
-// （failed 是可观察状态，快照含失败原因供前端呈现）。
+/*
+ * 订阅前置判定（D3 细化口径）：idle/terminated 拒绝，
+ * starting/ready/failed 可订阅（failed 是可观察状态，快照含失败原因供前端呈现）。
+ */
 func TestAcpEventsReject(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -50,9 +52,11 @@ func TestAcpEventsReject(t *testing.T) {
 	}
 }
 
-// Events handler 接线：预检先于 Subscribe，不存在会话（Get 返回 idle 空快照）404 +
-// code!=0 真实状态码落线（预检被删/挪到 Subscribe 之后则此处退化）。Manager 装配用
-// 临时 sqlite（AutoMigrate 锚点表，范式同 acpsession/launch_settings_test 的 newTestDB）。
+/*
+ * Events handler 接线：预检先于 Subscribe，
+ * 不存在会话（Get 返回 idle 空快照）404 + code!=0 真实状态码落线（预检被删/挪到 Subscribe 之后则此处退化）。
+ * Manager 装配用临时 sqlite（AutoMigrate 锚点表，范式同 acpsession/launch_settings_test 的 newTestDB）。
+ */
 func TestAcpEventsHandlerReject(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

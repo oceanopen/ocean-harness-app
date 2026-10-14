@@ -8,8 +8,10 @@ import (
 	"ocean-harness/server/internal/service"
 )
 
-// WorkspaceType 对应 /api/tracker/workspaceType 命名空间下的接口。
-// 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+/*
+ * WorkspaceType 对应 /api/tracker/workspaceType 命名空间下的接口。
+ * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
+ */
 type WorkspaceType struct {
 	apis.Api
 }

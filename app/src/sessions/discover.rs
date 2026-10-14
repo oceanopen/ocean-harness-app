@@ -1,24 +1,21 @@
-// 扫描 `~/.claude/sessions/` 下所有 `<pid>.json`，过滤出活跃会话。
-//
-//   - 文件名 stem 必须是纯数字 pid（Claude Code 写入约定）
-//   - 进程必须存活（kill -0 等价检查），否则视为 Dead 残留跳过
-//   - 文件必须能成功反序列化为 RawSessionFile，损坏 silently skip
-//
-// 存活检查不引入 nix/libc 依赖：用 `ps -p <pid> -o pid=` 检查 stdout 非空，
-// 跨平台兼容（macOS / Linux 行为一致），实现极简。
-
+/*
+ * 扫描 `~/.claude/sessions/` 下所有 `<pid>.json`，过滤出活跃会话：文件名 stem 须为纯数字 pid（Claude Code 写入约定）、进程须存活（kill -0 等价检查，Dead 残留跳过）、文件须能成功反序列化为 RawSessionFile（损坏 silently skip）。
+ * 存活检查不引入 nix/libc 依赖：用 `ps -p <pid> -o pid=` 检查 stdout 非空，跨平台兼容（macOS / Linux 行为一致），实现极简。
+ */
 use std::fs;
 use std::path::PathBuf;
 
 use crate::sessions::raw::{self, RawSessionFile};
 
-/// `~/.claude/sessions`，home_dir 探测失败返回 None。
+// `~/.claude/sessions`，home_dir 探测失败返回 None。
 pub(crate) fn claude_sessions_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("sessions"))
 }
 
-/// 判断进程是否存活。等价于 `kill -0 <pid>`，但用 `ps` 实现以避免 nix/libc 依赖。
-/// pid 为 0 或超大值时 ps 会返回非零 exit code，自然返回 false。
+/*
+ * 判断进程是否存活。等价于 `kill -0 <pid>`，但用 `ps` 实现以避免 nix/libc 依赖。
+ * pid 为 0 或超大值时 ps 会返回非零 exit code，自然返回 false。
+ */
 fn is_process_alive(pid: u32) -> bool {
     let output = std::process::Command::new("ps")
         .args(["-p", &pid.to_string(), "-o", "pid="])
@@ -29,10 +26,11 @@ fn is_process_alive(pid: u32) -> bool {
     }
 }
 
-/// 列出所有活跃 Claude Code 会话。返回顺序未指定（调用方按需排序）。
-///
-/// 任一文件 IO / 反序列化失败 silently skip（容忍单文件损坏）；
-/// sessions 目录不存在 / home_dir 探测失败返回空 Vec（不报错）。
+/*
+ * 列出所有活跃 Claude Code 会话。返回顺序未指定（调用方按需排序）。
+ * 任一文件 IO / 反序列化失败 silently skip（容忍单文件损坏）；
+ * sessions 目录不存在 / home_dir 探测失败返回空 Vec（不报错）。
+ */
 pub fn list_active() -> Vec<RawSessionFile> {
     let Some(dir) = claude_sessions_dir() else {
         log::warn!("[sessions] home_dir not available");
@@ -66,8 +64,10 @@ pub fn list_active() -> Vec<RawSessionFile> {
             continue;
         };
 
-        // 双重校验：文件名 pid 与 json 内 pid 必须一致；进程必须存活。
-        // 不一致说明文件被外部污染，跳过避免脏数据进入 store。
+        /*
+         * 双重校验：文件名 pid 与 json 内 pid 必须一致；进程必须存活。
+         * 不一致说明文件被外部污染，跳过避免脏数据进入 store。
+         */
         if stem != raw_file.pid.to_string() {
             continue;
         }

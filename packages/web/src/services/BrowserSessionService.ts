@@ -1,12 +1,15 @@
 import { request } from './http';
 
-// 浏览器会话域契约：镜像 Go server/internal/browser/view.go（SessionView/BrowserViewSnapshot/
-// Frame 为响应 shape SSOT）、browser/live.go（LiveEvent 帧流事件）与 dal/types/
-// browser_session.go（请求 DTO），手写镜像无生成器。navigate 的响应是引擎
-// CallToolResult 原样透传（Content 数组原样保留）。
+/**
+ * 浏览器会话域契约：镜像 Go server/internal/browser/view.go（SessionView/BrowserViewSnapshot/Frame
+ * 为响应 shape SSOT）、browser/live.go（LiveEvent 帧流事件）与 dal/types/browser_session.go（请求 DTO），
+ * 手写镜像无生成器。navigate 的响应是引擎 CallToolResult 原样透传（Content 数组原样保留）。
+ */
 
-// 会话状态机（view.go SessionStatus，D4）：idle 已释放（条目驻留供投影）→ starting →
-// ready；任一态可 → failed；failed/idle 经 ensure 自动（重）拉。
+/**
+ * 会话状态机（view.go SessionStatus，D4）：idle 已释放（条目驻留供投影）→ starting → ready；
+ * 任一态可 → failed；failed/idle 经 ensure 自动（重）拉。
+ */
 export type BrowserSessionStatus = 'idle' | 'starting' | 'ready' | 'failed';
 
 // 操作流水结果分类（view.go CallOutcome* 常量取值域；轻量展示分类，不承载重试语义）。
@@ -61,21 +64,23 @@ export interface McpCallToolResult {
   isError?: boolean;
 }
 
-// 引擎 Content 元素（CallToolResult wire 全型别的本域消费面；image 型随截图端点退役
-// 仅为镜像完备保留）。
+/**
+ * 引擎 Content 元素（CallToolResult wire 全型别的本域消费面；image 型随截图端点退役仅为镜像完备保留）。
+ */
 export type McpContent
   = | { type: 'text'; text?: string }
     | { type: 'image'; data?: string; mimeType?: string };
 
-// GET /api/browserSession/stream SSE 事件信封（镜像 browser.LiveEvent wire 形态，type
-// 判别载荷）：frame = jpeg base64 + screencast metadata（初始帧 captureScreenshot 无
-// metadata，渲染侧按位图尺寸兜底）；target = 实际投送目标回显（url/title 供消歧），
-// closed 置真 = 页面已关闭（后端随后补发 closed 终态）；error = 自然断连可重订自愈；
-// closed = 终态 reason（管理面强拆/页面关闭），前端停止重订。
+/**
+ * GET /api/browserSession/stream SSE 事件信封（镜像 browser.LiveEvent wire 形态，type 判别载荷）：
+ * frame = jpeg base64 + screencast metadata（初始帧无 metadata，渲染侧按位图尺寸兜底）；target = 实际投送目标回显，
+ * closed 置真 = 页面已关闭（后端随后补发 closed 终态）；error = 自然断连可重订自愈；closed = 终态 reason，前端停止重订。
+ */
 export type BrowserLiveEventType = 'frame' | 'target' | 'error' | 'closed';
 
-// screencast metadata（镜像 browser.LiveFrameMeta；deviceWidth/Height 是前端坐标换算
-// 基准——渲染尺寸与投送坐标同源）。
+/**
+ * screencast metadata（镜像 browser.LiveFrameMeta；deviceWidth/Height 是前端坐标换算基准——渲染尺寸与投送坐标同源）。
+ */
 export interface BrowserLiveFrameMeta {
   pageScaleFactor: number;
   deviceWidth: number;
@@ -96,8 +101,10 @@ export interface BrowserLiveEvent {
   reason?: string;
 }
 
-// POST /api/browserSession/ensure：拉起/复用 profile 会话（同步等就绪）。Headless 为
-// D10 覆盖：缺省（undefined = 键省略）读 profile 偏好文件，显式传入覆写并回存。
+/**
+ * POST /api/browserSession/ensure：拉起/复用 profile 会话（同步等就绪）。Headless 为 D10 覆盖：
+ * 缺省（undefined = 键省略）读 profile 偏好文件，显式传入覆写并回存。
+ */
 export interface BrowserSessionEnsureRequest {
   profile: string;
   headless?: boolean;
@@ -114,9 +121,11 @@ export interface BrowserSessionNavigateRequest {
   url: string;
 }
 
-// POST /api/browserSession/input：远程桌面输入分发（kind→CDP Input 域映射归后端；
-// 字段镜像 dal/types BrowserInputRequest，可选字段缺省即不传——后端按 kind 白名单
-// 校验）。key 域 vk = Windows 虚拟键码（CDP windowsVirtualKeyCode）。
+/**
+ * POST /api/browserSession/input：远程桌面输入分发（kind→CDP Input 域映射归后端；字段镜像
+ * dal/types BrowserInputRequest，可选字段缺省即不传——后端按 kind 白名单校验）。
+ * key 域 vk = Windows 虚拟键码（CDP windowsVirtualKeyCode）。
+ */
 export interface BrowserSessionInputRequest {
   profile: string;
   kind: 'mouse' | 'wheel' | 'key' | 'text';
@@ -134,8 +143,10 @@ export interface BrowserSessionInputRequest {
   text?: string;
 }
 
-// POST /api/browserSession/analyze：「AI 分析此页」即时受理（会话缺失/回合进行中即中文
-// 报错，不排队）；pageId 缺省 = 当前页。
+/**
+ * POST /api/browserSession/analyze：「AI 分析此页」即时受理（会话缺失/回合进行中即中文报错，不排队）；
+ * pageId 缺省 = 当前页。
+ */
 export interface BrowserSessionAnalyzeRequest {
   profile: string;
   issueId: string;
@@ -153,8 +164,10 @@ export class BrowserSessionService {
     return request<BrowserSessionView>('POST', '/api/browserSession/ensure', req);
   }
 
-  // close：释放会话（幂等）。响应 = 释放后的投影行——收尾前服务端已捕获引擎真实当前页
-  // （浏览器窗口内手动导航只有引擎知道），无头切换/重开恢复现场以此为准。
+  /**
+   * close：释放会话（幂等）。响应 = 释放后的投影行——收尾前服务端已捕获引擎真实当前页
+   * （浏览器窗口内手动导航只有引擎知道），无头切换/重开恢复现场以此为准。
+   */
   static close(req: BrowserSessionCloseRequest): Promise<BrowserSessionView> {
     return request<BrowserSessionView>('POST', '/api/browserSession/close', req);
   }
@@ -164,8 +177,10 @@ export class BrowserSessionService {
     return request<McpCallToolResult>('POST', '/api/browserSession/navigate', req);
   }
 
-  // input：远程桌面输入分发（要求活跃观察面——未建实时画面即中文报错；分发失败为
-  // 尽力语义，调用方静默，自愈重连后恢复）。
+  /**
+   * input：远程桌面输入分发（要求活跃观察面——未建实时画面即中文报错；分发失败为
+   * 尽力语义，调用方静默，自愈重连后恢复）。
+   */
   static input(req: BrowserSessionInputRequest): Promise<null> {
     return request<null>('POST', '/api/browserSession/input', req);
   }

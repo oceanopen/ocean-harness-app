@@ -1,19 +1,10 @@
 package browser
 
-// CDP 观察通道前置 spike（T4.1，本地项）：实测引擎 Chromium 在 --remote-debugging-port
-// 注入下的四项承重行为，结论回写 docs/task_browser_automation.md 对应任务段——
-//
-//	S1 pipe+port 并存（存亡级 gate）：双通道共存拉起，MCP 全链与 CDP 独立会话互不干扰
-//	S2 DevToolsActivePort 时机：写入时机 / port=0 内容形态 / 引擎收敛后是否残留
-//	S3 多客户端并发：第二 CDP 客户端持续收帧期间引擎操作不劣化（域隔离确认）
-//	S4 screencast 端到端：帧节奏 / ack 背压 / 静态页零帧 / captureScreenshot 初始帧 / metadata
-//
-//	OCEAN_BROWSER_REAL_SMOKE=1 go -C server test ./internal/browser -run TestRealCDP -v -timeout 600s
-//
-// 端口注入自 T4.2 起为 pin.go 生产配置常态（engineConfigJSON launchOptions.args），
-// 本文件直用生产 LaunchEngine，实测对象即生产链路；CDP 胶水自 T4.3 起复用生产
-// live.go wire 层（liveConn），S4 末尾另含生产 connectLive 全序端到端。
-// 站点用 www.baidu.com（example.com 在目标网络不可达，T2.1 定稿事实）。
+/*
+ * CDP 观察通道前置 spike（T4.1，本地项）：实测引擎 Chromium 在 --remote-debugging-port 注入下的四项承重行为，结论回写 docs/task_browser_automation.md 对应任务段——S1 pipe+port 并存（存亡级 gate：双通道共存拉起，MCP 全链与 CDP 独立会话互不干扰）；S2 DevToolsActivePort 时机（写入时机 / port=0 内容形态 / 引擎收敛后是否残留）；S3 多客户端并发（第二 CDP 客户端持续收帧期间引擎操作不劣化，域隔离确认）；S4 screencast 端到端（帧节奏 / ack 背压 / 静态页零帧 / captureScreenshot 初始帧 / metadata）。
+ * 运行：OCEAN_BROWSER_REAL_SMOKE=1 go -C server test ./internal/browser -run TestRealCDP -v -timeout 600s。端口注入自 T4.2 起为 pin.go 生产配置常态（engineConfigJSON launchOptions.args），本文件直用生产 LaunchEngine，实测对象即生产链路；CDP 胶水自 T4.3 起复用生产 live.go wire 层（liveConn），S4 末尾另含生产 connectLive 全序端到端。
+ * 站点用 www.baidu.com（example.com 在目标网络不可达，T2.1 定稿事实）。
+ */
 
 import (
 	"context"
@@ -45,8 +36,10 @@ func realSmokeResources(t *testing.T) string {
 	return srcRoot
 }
 
-// launchCDPSpikeEngine 拉起引擎（headless=true，D10 缺省口径；S2 实测的 headless=new
-// 即此形态）。收尾自动 Close + 根目录恢复。
+/*
+ * launchCDPSpikeEngine 拉起引擎（headless=true，D10 缺省口径；S2 实测的 headless=new
+ * 即此形态）。收尾自动 Close + 根目录恢复。
+ */
 func launchCDPSpikeEngine(t *testing.T, profile string) *EngineHandle {
 	t.Helper()
 	if os.Getenv("OCEAN_BROWSER_REAL_SMOKE") != "1" {
@@ -105,8 +98,10 @@ func waitForDevToolsPort(t *testing.T, profileDir string, budget time.Duration) 
 	}
 }
 
-// chromeTreeCmdlines 按 --user-data-dir 检索该 profile 的浏览器进程树命令行（T1.1 手法：
-// Chrome 树全成员 argv 均含 --user-data-dir；剔除 node 引擎自身进程）。macOS 本地项。
+/*
+ * chromeTreeCmdlines 按 --user-data-dir 检索该 profile 的浏览器进程树命令行（T1.1 手法：
+ * Chrome 树全成员 argv 均含 --user-data-dir；剔除 node 引擎自身进程）。macOS 本地项。
+ */
 func chromeTreeCmdlines(t *testing.T, profileDir string) []string {
 	t.Helper()
 	out, err := exec.Command("ps", "-axo", "command=").Output()
@@ -164,8 +159,10 @@ func spikeCall(t *testing.T, conn *liveConn, sessionID, method string, params an
 	return raw
 }
 
-// firstPageTarget 取首个 http page target（多页 URL 消歧归生产 matchPageTarget，spike
-// 探针恒取首个 http 页）。
+/*
+ * firstPageTarget 取首个 http page target（多页 URL 消歧归生产 matchPageTarget，spike
+ * 探针恒取首个 http 页）。
+ */
 func firstPageTarget(t *testing.T, port string) cdpTargetInfo {
 	t.Helper()
 	n, err := strconv.Atoi(port)
@@ -231,8 +228,10 @@ func (r *frameRecorder) setAcking(v bool) {
 	r.mu.Unlock()
 }
 
-// ackErrors ack 失败快照（测试体在关键窗口调用；测试收尾后 pump 的失败只记账不报告，
-// 杜绝「Log in goroutine after test completed」竞态）。
+/*
+ * ackErrors ack 失败快照（测试体在关键窗口调用；测试收尾后 pump 的失败只记账不报告，
+ * 杜绝「Log in goroutine after test completed」竞态）。
+ */
 func (r *frameRecorder) ackErrors() []error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -293,9 +292,11 @@ func (r *frameRecorder) pump() {
 	}
 }
 
-// attachFirstPageCDP S1/S3/S4 同构四步序收敛：等端口落盘 → 生产 wire 层拨号 → 取首个
-// http page target → flatten attach（端口预算统一 30s；返回 target 供 S4 生产观察
-// 通道按 URL 构造匹配页）。
+/*
+ * attachFirstPageCDP S1/S3/S4 同构四步序收敛：等端口落盘 → 生产 wire 层拨号 → 取首个
+ * http page target → flatten attach（端口预算统一 30s；返回 target 供 S4 生产观察
+ * 通道按 URL 构造匹配页）。
+ */
 func attachFirstPageCDP(t *testing.T, h *EngineHandle) (*liveConn, string, cdpTargetInfo) {
 	t.Helper()
 	port, wsPath := waitForDevToolsPort(t, h.ProfileDir, 30*time.Second)
@@ -316,8 +317,10 @@ func TestRealCDPPipePortCoexist(t *testing.T) {
 	// 首个页面级调用拉起浏览器（引擎 MCP 域正常）。
 	mustEngineCall(t, ctx, h, "browser_navigate", map[string]any{"url": "https://www.baidu.com"})
 
-	// 双 flag 并存：Chrome 树 argv 同时含 --remote-debugging-pipe（playwright 恒需）
-	// 与 --remote-debugging-port=0（config 注入）。
+	/*
+	 * 双 flag 并存：Chrome 树 argv 同时含 --remote-debugging-pipe（playwright 恒需）
+	 * 与 --remote-debugging-port=0（config 注入）。
+	 */
 	cmdlines := chromeTreeCmdlines(t, h.ProfileDir)
 	var dual []string
 	for _, ln := range cmdlines {
@@ -510,8 +513,10 @@ func TestRealCDPScreencast(t *testing.T) {
 	}
 	t.Logf("S4: 导航窗口收帧 %d，帧间隔(ms)=%v", len(arrivals), intervals)
 
-	// 真静态页（about:blank）零帧——真实页面常带持续动画致连续出帧（百度 /s 实测
-	// ~60fps 连续帧流），零帧口径只能在无动画页面测。
+	/*
+	 * 真静态页（about:blank）零帧——真实页面常带持续动画致连续出帧（百度 /s 实测
+	 * ~60fps 连续帧流），零帧口径只能在无动画页面测。
+	 */
 	mustEngineCall(t, ctx, h, "browser_navigate", map[string]any{"url": "about:blank"})
 	time.Sleep(1500 * time.Millisecond) // 导航初始帧排空
 	n := rec.count()
@@ -558,10 +563,9 @@ func TestRealCDPScreencast(t *testing.T) {
 	t.Logf("S4: metadata: device=%dx%d pageScaleFactor=%.2f scrollOffset=(%.0f,%.0f) offsetTop=%.0f 帧号=%d",
 		f.Metadata.DeviceWidth, f.Metadata.DeviceHeight, f.Metadata.PageScaleFactor, f.Metadata.ScrollOffsetX, f.Metadata.ScrollOffsetY, f.Metadata.OffsetTop, f.FrameNo)
 
-	// T4.3 生产观察通道端到端：connectLive 全序——重读端口、独立连接（S3 已证多客户端
-	// 域隔离，不受上面背压窗口影响）、setDiscoverTargets、URL 匹配、captureScreenshot
-	// 初始帧、帧泵经 mailbox 投递并即时 ack。页按已探明 target 的 URL 构造（等同投影
-	// 同步态）。
+	/*
+	 * T4.3 生产观察通道端到端：connectLive 全序——重读端口、独立连接（S3 已证多客户端域隔离，不受上面背压窗口影响）、setDiscoverTargets、URL 匹配、captureScreenshot 初始帧、帧泵经 mailbox 投递并即时 ack；页按已探明 target 的 URL 构造（等同投影同步态）。
+	 */
 	lv, err := connectLive(ctx, "cdpspike4", PageView{Index: 0, Title: tg.URL, URL: tg.URL}, nil, nil)
 	if err != nil {
 		t.Fatalf("S4: connectLive 生产观察通道: %v", err)

@@ -4,20 +4,19 @@ import { Box, IconButton, Tooltip } from '@mui/material';
 import { useCopyFeedback } from '../fileViewer/useCopyFeedback';
 
 interface EntryActionsToolbarProps {
-  /// 是否展示（粘滞 hover 态由列表驱动，不自行监听鼠标）。
+  // 是否展示（粘滞 hover 态由列表驱动，不自行监听鼠标）。
   visible: boolean;
-  /// 底部对齐侧：发送条目靠右、回复条目靠左。
+  // 底部对齐侧：发送条目靠右、回复条目靠左。
   side: 'left' | 'right';
-  /// 复制来源文本（调用方按条目类型取定）。
+  // 复制来源文本（调用方按条目类型取定）。
   copyText: string;
-  /// 追加操作位（渲染于复制钮右侧），后续刷新/编辑等图标经此扩展。
+  // 追加操作位（渲染于复制钮右侧），后续刷新/编辑等图标经此扩展。
   children?: ReactNode;
 }
 
 /**
- * 消息条目操作工具条：流内常驻占位行（提前占位，显隐仅切 opacity/pointerEvents，
- * 布局零位移），显隐由列表层的粘滞 hover 态驱动。复制为首个操作，反馈复用项目统一
- * 剪贴板模式（成功态图标切换，2 秒回退）。
+ * 消息条目操作工具条：流内常驻占位行（提前占位，显隐仅切 opacity/pointerEvents，布局零位移），
+ * 显隐由列表层的粘滞 hover 态驱动。复制为首个操作，反馈复用项目统一剪贴板模式（成功态图标切换，2 秒回退）。
  */
 export default function EntryActionsToolbar({ visible, side, copyText, children }: EntryActionsToolbarProps) {
   const { copied, copy } = useCopyFeedback();
@@ -41,8 +40,8 @@ export default function EntryActionsToolbar({ visible, side, copyText, children 
           sx={{ color: 'text.secondary', p: '2px' }}
         >
           {copied
-            ? <CheckIcon sx={{ fontSize: 15, color: 'success.main' }} />
-            : <ContentCopyIcon sx={{ fontSize: 15 }} />}
+            ? <CheckIcon sx={{ fontSize: '15px', color: 'success.main' }} />
+            : <ContentCopyIcon sx={{ fontSize: '15px' }} />}
         </IconButton>
       </Tooltip>
       {children}

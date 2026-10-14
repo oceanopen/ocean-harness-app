@@ -9,8 +9,10 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-// waitExitLog 轮询等待「ACP agent 进程退出」日志条目（awaitProcessExit 在 proc.Done 后
-// 才落日志，存在窗口期，不能在 Close/Kill 返回后立即断言）。
+/*
+ * waitExitLog 轮询等待「ACP agent 进程退出」日志条目（awaitProcessExit 在 proc.Done 后
+ * 才落日志，存在窗口期，不能在 Close/Kill 返回后立即断言）。
+ */
 func waitExitLog(t *testing.T, logs *observer.ObservedLogs) observer.LoggedEntry {
 	t.Helper()
 	deadline := time.After(10 * time.Second)
@@ -40,8 +42,10 @@ func exitLogClosedByCaller(entry observer.LoggedEntry) (present, value bool) {
 	return false, false
 }
 
-// 主动收尾（Close）：设计内死亡降为 DEBUG 并带 closedByCaller=true——doctor 探测回收、
-// StopAll 等路径不打错误观感（与 Err() 的「主动收尾非异常」判别对齐）。
+/*
+ * 主动收尾（Close）：设计内死亡降为 DEBUG 并带 closedByCaller=true——doctor 探测回收、
+ * StopAll 等路径不打错误观感（与 Err() 的「主动收尾非异常」判别对齐）。
+ */
 func TestExitLogCallerInitiated(t *testing.T) {
 	core, logs := observer.New(zapcore.DebugLevel)
 	client, _ := launchFakeLog(t, "happy", zap.New(core))
@@ -60,8 +64,10 @@ func TestExitLogCallerInitiated(t *testing.T) {
 	}
 }
 
-// 意外死亡（绕过 Close 直接整组强杀）：保持 WARN 且无 closedByCaller 字段——崩溃/被杀
-// 仍是需要暴露的异常（与 TestErrAfterUnexpectedDeath 的 Err 断言互为日志面对照）。
+/*
+ * 意外死亡（绕过 Close 直接整组强杀）：保持 WARN 且无 closedByCaller 字段——崩溃/被杀
+ * 仍是需要暴露的异常（与 TestErrAfterUnexpectedDeath 的 Err 断言互为日志面对照）。
+ */
 func TestExitLogUnexpectedDeath(t *testing.T) {
 	core, logs := observer.New(zapcore.WarnLevel)
 	client, _ := launchFakeLog(t, "happy", zap.New(core))

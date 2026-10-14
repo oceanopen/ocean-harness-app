@@ -1,8 +1,8 @@
-// CM6 代码查看主题（移植自 hello-halo 的 renderer/lib/codemirror-theme.ts，观感对齐）。
-// 差异：halo 用 shadcn CSS 变量（hsl(var(--background)) 等），本项目无 tailwind/CSS 变量
-// 体系——改为函数式构建：调用方传入 MUI palette + 明暗标志，明暗切换经 Compartment
-// 热切重建（见 CodeViewer）。语法高亮色板照搬 halo 的 One Dark Pro 硬编码色（暗色
-// 最佳、亮色可接受，halo 同款取舍）。
+/**
+ * CM6 代码查看主题（移植自 hello-halo 的 renderer/lib/codemirror-theme.ts，观感对齐）。
+ * 差异：halo 用 shadcn CSS 变量（hsl(var(--background)) 等），本项目无 tailwind/CSS 变量
+ * 体系——改为函数式构建：调用方传入 MUI palette + 明暗标志，明暗切换经 Compartment 热切重建（见 CodeViewer）。语法高亮色板照搬 halo 的 One Dark Pro 硬编码色（暗色最佳、亮色可接受，halo 同款取舍）。
+ */
 import type { Extension } from '@codemirror/state';
 import type { Palette } from '@mui/material/styles';
 import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
@@ -10,9 +10,11 @@ import { EditorView } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { alpha } from '@mui/material/styles';
 
-/// 编辑器结构主题：字体栈（SF Mono 系）/行高/内容内边距/gutter 样式/活动行/折叠槽/
-/// 搜索面板全套（输入框/按钮/匹配高亮/关闭钮）——halo codemirror-theme 的观感主体，
-/// 颜色逐项映射到 MUI palette token（background/text/divider/action/primary/error）。
+/**
+ * 编辑器结构主题：字体栈（SF Mono 系）/行高/内容内边距/gutter 样式/活动行/折叠槽/
+ * 搜索面板全套（输入框/按钮/匹配高亮/关闭钮）——halo codemirror-theme 的观感主体，
+ * 颜色逐项映射到 MUI palette token（background/text/divider/action/primary/error）。
+ */
 function editorTheme(p: Palette, dark: boolean): Extension {
   return EditorView.theme(
     {
@@ -74,8 +76,10 @@ function editorTheme(p: Palette, dark: boolean): Extension {
         color: p.text.primary,
       },
 
-      // 活动行直接用 action.hover（MUI 自带 4-8% 透明度的微灰覆盖）——不可再包 alpha()：
-      // alpha() 会整体覆盖其透明度（如 0.6 → 深色下 60% 白，刺眼）。
+      /**
+       * 活动行直接用 action.hover（MUI 自带 4-8% 透明度的微灰覆盖）——不可再包 alpha()：
+       * alpha() 会整体覆盖其透明度（如 0.6 → 深色下 60% 白，刺眼）。
+       */
       '.cm-activeLine': {
         backgroundColor: p.action.hover,
       },
@@ -237,8 +241,10 @@ function editorTheme(p: Palette, dark: boolean): Extension {
   );
 }
 
-/// 语法高亮色板：One Dark Pro 硬编码色照搬（halo 同款——暗色最佳、亮色可接受）；
-/// 注释/标点等语义色接 MUI palette 随明暗自适应。
+/**
+ * 语法高亮色板：One Dark Pro 硬编码色照搬（halo 同款——暗色最佳、亮色可接受）；
+ * 注释/标点等语义色接 MUI palette 随明暗自适应。
+ */
 function highlightStyle(p: Palette): HighlightStyle {
   return HighlightStyle.define([
     { tag: tags.comment, color: alpha(p.text.secondary, 0.6), fontStyle: 'italic' },
@@ -319,7 +325,7 @@ function highlightStyle(p: Palette): HighlightStyle {
   ]);
 }
 
-/// 完整主题扩展：结构主题 + 语法高亮（含默认高亮兜底——无语言匹配时仍有基础着色）。
+// 完整主题扩展：结构主题 + 语法高亮（含默认高亮兜底——无语言匹配时仍有基础着色）。
 export function buildCodeTheme(palette: Palette, dark: boolean): Extension {
   return [
     editorTheme(palette, dark),

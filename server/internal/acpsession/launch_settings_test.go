@@ -70,9 +70,11 @@ func TestValidIssueID(t *testing.T) {
 	}
 }
 
-// newTestDB 临时 sqlite（glebarez 纯 Go 驱动）+ 测试涉及的三张表（AutoMigrate 按 model
-// tag 建列，与 goose 迁移的 DSN 差异不影响本域查询语义）。测试收尾关连接池（后台收尾
-// goroutine 的 best-effort 写库在其后失败无害，仅日志）。
+/*
+ * newTestDB 临时 sqlite（glebarez 纯 Go 驱动）+ 测试涉及的三张表（AutoMigrate 按 model
+ * tag 建列，与 goose 迁移的 DSN 差异不影响本域查询语义）。测试收尾关连接池（后台收尾
+ * goroutine 的 best-effort 写库在其后失败无害，仅日志）。
+ */
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
@@ -124,8 +126,10 @@ func TestResolveSessionConfig(t *testing.T) {
 	ctx := context.Background()
 	wsDir := t.TempDir()
 
-	// 用例 1：workspace 配 acp、issue 未配置 → 全回落（agentCode 回落首个 enabled 条目，
-	// permissionMode 回落 acceptEdits），cwd = <wsDir>/<issueId> 且已兜底建目录。
+	/*
+	 * 用例 1：workspace 配 acp、issue 未配置 → 全回落（agentCode 回落首个 enabled 条目，
+	 * permissionMode 回落 acceptEdits），cwd = <wsDir>/<issueId> 且已兜底建目录。
+	 */
 	issueID := seedIssue(t, db, wsDir, `{"mode":"acp"}`, "")
 	cfg, err := resolveSessionConfig(ctx, db, issueID, "")
 	if err != nil {
@@ -170,8 +174,10 @@ func TestResolveSessionConfig(t *testing.T) {
 		t.Fatal("无 launch_settings 应拒绝")
 	}
 
-	// 用例 4b：持久化配置显式 none（LaunchModePicker 场景实况）+ 临场声明 acp 放行；
-	// 无声明仍拒绝（临场声明仅本次会话有效，不落库不记忆）。
+	/*
+	 * 用例 4b：持久化配置显式 none（LaunchModePicker 场景实况）+ 临场声明 acp 放行；
+	 * 无声明仍拒绝（临场声明仅本次会话有效，不落库不记忆）。
+	 */
 	issueID = seedIssue(t, db, wsDir, `{"mode":"none"}`, "")
 	if _, err := resolveSessionConfig(ctx, db, issueID, "acp"); err != nil {
 		t.Fatalf("临场声明 acp 应放行: %v", err)

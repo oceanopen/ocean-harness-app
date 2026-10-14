@@ -8,22 +8,18 @@ import PendingCard from './PendingCard';
 import PromptComposer from './PromptComposer';
 
 /**
- * AcpSessionView：issue 主窗口 ACP 模式的会话视图（TerminalLaunchFlow acp 分支渲染，
- * 与终端树完全同位）。编排时序（编码规则 1）：挂载即幂等受理 ensure（starting/ready
- * join 返现状，failed/terminated 重建；受理显式携带 pickedLaunchMode='acp'——视图即
- * acp 意图载体，配置 acp 与临场选择 acp 统一声明，后端门禁以此放行且不落库）→ SSE
- * 订阅建连首帧全量快照 → 视图按快照 status 分支渲染；受理同步失败（配置校验拒绝等）
- * 先于快照分支渲染失败态 + 重新启动，绝不落死输入框。订阅经 isAcpSessionSubscribable
- * 闸门（D3）：快照可订阅状态才建连，订阅失败置 failed 终态横幅手动重试。挂起审批/
- * 表单在 MessageList 与输入区之间的固定挂起区平铺 PendingCard 应答（卡片移除由 SSE
- * pendingClosed 帧驱动）。
+ * AcpSessionView：issue 主窗口 ACP 模式的会话视图（TerminalLaunchFlow acp 分支渲染，与终端树完全同位）。
+ * 编排时序（编码规则 1）：挂载即幂等受理 ensure（starting/ready join 返现状，failed/terminated 重建，受理显式携带 pickedLaunchMode='acp'，后端门禁以此放行且不落库）→ SSE 订阅建连首帧全量快照 → 视图按快照 status 分支渲染。
+ * 受理同步失败先于快照分支渲染失败态 + 重新启动，绝不落死输入框；订阅经 isAcpSessionSubscribable 闸门（D3），订阅失败置 failed 终态横幅手动重试；挂起审批/表单在 MessageList 与输入区之间平铺 PendingCard 应答。
  */
 export default function AcpSessionView({ issueId }: { issueId: string }) {
   const ensure = useEnsureAcpSession();
   const ensuredRef = useRef(false);
 
-  // 挂载即受理（幂等）：ref 防重入（effect 依赖的 mutation 对象随渲染更新，ref 在前
-  // 挡住重复受理；StrictMode 双跑下 ensure 后端幂等，ref 仅省一次无效请求）。
+  /**
+   * 挂载即受理（幂等）：ref 防重入（effect 依赖的 mutation 对象随渲染更新，ref 在前
+   * 挡住重复受理；StrictMode 双跑下 ensure 后端幂等，ref 仅省一次无效请求）。
+   */
   useEffect(() => {
     if (ensuredRef.current) {
       return;
@@ -34,10 +30,11 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
 
   const { data: snapshot, isPending, error, refetch } = useAcpSessionView(issueId);
 
-  // SSE 订阅（D3 闸门）：快照可订阅状态（starting/ready/failed）才建连——idle（从未
-  // 受理）/terminated（已终结）不订阅，治首开订阅先于 ensure 的 404 竞态；terminated
-  // 随「重新启动」受理回包迁回 starting，闸门重开自动重订。首帧快照入缓存，增量帧归约
-  // 更新；闸门关闭即断，重开重建连。
+  /**
+   * SSE 订阅（D3 闸门）：快照可订阅状态（starting/ready/failed）才建连——idle（从未受理）/
+   * terminated（已终结）不订阅，治首开订阅先于 ensure 的 404 竞态；terminated 随「重新启动」
+   * 受理回包迁回 starting，闸门重开自动重订。首帧快照入缓存，增量帧归约更新；闸门关闭即断，重开重建连。
+   */
   const events = useAcpSessionEvents(issueId, isAcpSessionSubscribable(snapshot?.status));
 
   // 受理同步失败优先呈现（配置校验拒绝等）：先于快照分支，杜绝 idle 死输入框。
@@ -50,7 +47,7 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
           size="small"
           onClick={() => ensure.mutate({ issueId, pickedLaunchMode: 'acp' })}
           loading={ensure.isPending}
-          sx={{ mt: 1.5 }}
+          sx={{ mt: '12px' }}
         >
           重新启动
         </Button>
@@ -64,7 +61,7 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
     return (
       <FullCenter>
         <Typography variant="body2" color="error">会话状态读取失败{error != null ? `：${error.message}` : ''}</Typography>
-        <Button variant="outlined" size="small" onClick={() => void refetch()} sx={{ mt: 1.5 }}>
+        <Button variant="outlined" size="small" onClick={() => void refetch()} sx={{ mt: '12px' }}>
           重试
         </Button>
       </FullCenter>
@@ -86,12 +83,12 @@ function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
       return (
         <FullCenter>
           <CircularProgress size={28} />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: '12px' }}>
             正在启动 ACP 会话{snapshot.agentCode ? `（${snapshot.agentCode}）` : ''}…
           </Typography>
           {/* starting 同为闸门开启态：订阅终态失败时启动帧无人送达，视图死转圈——横幅给出
               信号与重试订阅（会话消亡类拒绝重试恒败，整页重挂重新受理兜底）。 */}
-          <SubscriptionFailedAlert events={events} sx={{ mt: 1.5 }} />
+          <SubscriptionFailedAlert events={events} sx={{ mt: '12px' }} />
         </FullCenter>
       );
     case 'failed':
@@ -102,11 +99,13 @@ function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
             {snapshot.status === 'failed' ? '会话启动失败' : '会话已结束'}{snapshot.error ? `：${snapshot.error}` : ''}
           </Typography>
           {snapshot.status === 'failed' && (
-            // failed 缓存闸门开着：重启的 setStarting 帧依赖订阅送达，订阅终态失败时须先
-            // 重试订阅恢复链路（terminated 闸门已关，ensure 回包翻闸自动重订，无需此横幅）。
-            <SubscriptionFailedAlert events={events} sx={{ mt: 1.5 }} />
+            /**
+             * failed 缓存闸门开着：重启的 setStarting 帧依赖订阅送达，订阅终态失败时须先
+             * 重试订阅恢复链路（terminated 闸门已关，ensure 回包翻闸自动重订，无需此横幅）。
+             */
+            <SubscriptionFailedAlert events={events} sx={{ mt: '12px' }} />
           )}
-          <Button variant="outlined" size="small" onClick={onRestart} loading={ensurePending} sx={{ mt: 1.5 }}>
+          <Button variant="outlined" size="small" onClick={onRestart} loading={ensurePending} sx={{ mt: '12px' }}>
             重新启动
           </Button>
         </FullCenter>
@@ -120,9 +119,11 @@ function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
           <SubscriptionFailedAlert events={events} sx={{ flexShrink: 0 }} />
           <MessageList entries={snapshot.entries} />
           {snapshot.pendings.length > 0 && (
-            // 固定挂起区（MessageList 与输入区之间）：pending 逐项平铺卡片，全部应答
-            // 后（pendings 清空）整区消失。
-            <Box sx={{ flexShrink: 0, p: 1, display: 'flex', flexDirection: 'column', gap: 1, borderTop: 1, borderColor: 'divider' }}>
+            /**
+             * 固定挂起区（MessageList 与输入区之间）：pending 逐项平铺卡片，全部应答
+             * 后（pendings 清空）整区消失。
+             */
+            <Box sx={{ flexShrink: 0, p: '8px', display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid', borderColor: 'divider' }}>
               {snapshot.pendings.map(pending => (
                 <PendingCard key={pending.pendingId} issueId={issueId} pending={pending} />
               ))}
@@ -137,7 +138,7 @@ function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
 /** 全区居中外壳（启动/失败/加载态共用）。 */
 function FullCenter({ children }: { children: React.ReactNode }) {
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
       {children}
     </Box>
   );

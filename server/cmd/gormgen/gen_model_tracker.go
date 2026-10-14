@@ -5,9 +5,11 @@ import (
 	"gorm.io/gen/field"
 )
 
-// GenModelTracker 注册 tracker 模块业务表及其父子关联，生成对应 DO（PO 层）。
-// 结构名取「单数、无 t_ 前缀」；表间无 DB 外键，此处 HasMany 为 gorm/gen 逻辑关联（仅生成结构体字段 + Preload）。
-// HasMany 在父表选项引用子表模板，故按「叶子优先」顺序创建。
+/*
+ * GenModelTracker 注册 tracker 模块业务表及其父子关联，生成对应 DO（PO 层）。
+ * 结构名取「单数、无 t_ 前缀」；表间无 DB 外键，此处 HasMany 为 gorm/gen 逻辑关联（仅生成结构体字段 + Preload）。
+ * HasMany 在父表选项引用子表模板，故按「叶子优先」顺序创建。
+ */
 func GenModelTracker() {
 	// 类型：workspace 级预定义（原「标签」，2026-09-24 更名），issue 经 t_project_issues.type_id 单值引用。
 	workspaceType := G.GenerateModelAs("t_workspace_types", "WorkspaceType")

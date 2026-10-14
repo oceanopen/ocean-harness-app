@@ -1,14 +1,20 @@
 import { request } from './http';
 
-// doctor 域契约：镜像 Go internal/dal/types/doctor.go（T1.4，手写镜像无生成器）。
-// SSOT 为 sidecar 进程内结论缓存（重启即 unknown，启动后台探测重填）。
+/**
+ * doctor 域契约：镜像 Go internal/dal/types/doctor.go（T1.4，手写镜像无生成器）。
+ * SSOT 为 sidecar 进程内结论缓存（重启即 unknown，启动后台探测重填）。
+ */
 
-// 单条目四态：healthy/unhealthy 是结论三态；unknown = 从未探测（≠ 失败）；checking =
-// 探测在跑（派生态，此时结论字段为上一次结论或零值）。
+/**
+ * 单条目四态：healthy/unhealthy 是结论三态；unknown = 从未探测（≠ 失败）；checking =
+ * 探测在跑（派生态，此时结论字段为上一次结论或零值）。
+ */
 export type DoctorStatus = 'healthy' | 'unhealthy' | 'unknown' | 'checking';
 
-// 单条目四态视图。unhealthy 时 stage/reason 非空（reason 为后端生成的用户可读文案，
-// 前端直显）；healthy 时 commandCount/nodeVersion 有值。
+/**
+ * 单条目四态视图。unhealthy 时 stage/reason 非空（reason 为后端生成的用户可读文案，
+ * 前端直显）；healthy 时 commandCount/nodeVersion 有值。
+ */
 export interface DoctorEntryState {
   agentCode: string;
   status: DoctorStatus;
@@ -24,8 +30,10 @@ export interface DoctorCheckRequest {
   agentCode?: string;
 }
 
-// /api/doctor/check 响应：accepted 为本次受理的 agentCode 清单（在跑的同样计入），
-// entries 为受理时刻快照（可直接落地，后续以 getInfo 轮询跟进）。
+/**
+ * /api/doctor/check 响应：accepted 为本次受理的 agentCode 清单（在跑的同样计入），
+ * entries 为受理时刻快照（可直接落地，后续以 getInfo 轮询跟进）。
+ */
 export interface DoctorCheckResponseData {
   accepted: string[];
   entries: DoctorEntryState[];

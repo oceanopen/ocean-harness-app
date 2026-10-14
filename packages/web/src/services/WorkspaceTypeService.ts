@@ -1,7 +1,9 @@
 import { request } from './http';
 
-// 原「标签」（WorkspaceLabel）域，2026-09-24 更名为「类型」：workspace 级预定义，
-// issue 经 t_project_issues.type_id 单值引用（每 issue 至多一个类型）。
+/**
+ * 原「标签」（WorkspaceLabel）域，2026-09-24 更名为「类型」：workspace 级预定义，
+ * issue 经 t_project_issues.type_id 单值引用（每 issue 至多一个类型）。
+ */
 export interface WorkspaceTypeModel {
   id: number;
   workspaceId: number;

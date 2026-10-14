@@ -1,18 +1,8 @@
-// pty 域：应用内 PTY 会话（spawn/写/resize/关闭/reattach）。
-// terminal/ 域负责外部终端跳转，与本域边界互不重叠。
-// 会话锚点统一 `issueId::<paneId>`，cwd 为 `${工作空间目录}/${issueId}`。
-//
-// 子模块：
-//   claude_state    —— claude 运行态探测（进程树父链匹配）
-//   cli_bin         —— 直启二进制解析（vendored 自带 claude 定位 + login PATH 收割）
-//   local_provider  —— LocalPtyProvider（portable-pty 本机实现）
-//   provider        —— PtyProvider trait + SpawnOpts/PtySpawned/PtySessionInfo
-//   session         —— PtySession + SessionIo（listener Channel + exited）
-//   state           —— PtySessionStore（Mutex<HashMap>，抗 webview 刷新常驻）
-//
-// 输出通道：pty_spawn 传 Channel<PtyEvent>（Data/Exit 单通道双分支）。
-// spawn 两条路径：裸 shell / direct_command 直启 CLI。
-
+/*
+ * pty 域：应用内 PTY 会话（spawn/写/resize/关闭/reattach）；terminal/ 域负责外部终端跳转，边界互不重叠。
+ * 会话锚点统一 `issueId::<paneId>`，cwd 为 `${工作空间目录}/${issueId}`；输出通道 pty_spawn 传 Channel<PtyEvent>（Data/Exit 单通道双分支），spawn 两条路径：裸 shell / direct_command 直启 CLI。
+ * 子模块：claude_state 运行态探测 / cli_bin 直启二进制解析 / local_provider 本机实现 / provider trait+入参出参 / session PtySession+SessionIo / state PtySessionStore（抗 webview 刷新常驻）。
+ */
 pub mod claude_state;
 pub mod cli_bin;
 pub mod local_provider;
@@ -26,15 +16,19 @@ use session::PtyEvent;
 use state::PtySessionStore;
 use tauri::Manager;
 
-/// 全局 provider 实例。Tauri State 管理的是 store，provider 以 once 语义全局唯一
-///（本机后端无状态，仅持 store 引用不便拆双份——直接 lazy 常量）。
+/*
+ * 全局 provider 实例。Tauri State 管理的是 store，provider 以 once 语义全局唯一
+ *（本机后端无状态，仅持 store 引用不便拆双份——直接 lazy 常量）。
+ */
 fn provider() -> &'static LocalPtyProvider {
     static PROVIDER: std::sync::OnceLock<LocalPtyProvider> = std::sync::OnceLock::new();
     PROVIDER.get_or_init(LocalPtyProvider::new)
 }
 
-/// PTY 子进程注入 env：终端基座 + OCEAN_HARNESS_PORT。无条件覆盖——终端能力以
-/// 前端 xterm.js 为准，不随启动环境（终端拉起 / launchd）漂移。
+/*
+ * PTY 子进程注入 env：终端基座 + OCEAN_HARNESS_PORT。无条件覆盖——终端能力以
+ * 前端 xterm.js 为准，不随启动环境（终端拉起 / launchd）漂移。
+ */
 fn child_envs(http_port: u16) -> Vec<(String, String)> {
     vec![
         (
@@ -50,13 +44,11 @@ fn child_envs(http_port: u16) -> Vec<(String, String)> {
     ]
 }
 
-/// 启动/复用会话（幂等）：未退出复用 + 换装 listener；已退出重起（重开语义）。
-/// 前端挂载即调本命令；输出/退出事件经 on_event Channel 流式回传。
-///
-/// env 注入（仅真正 spawn 新进程时）：终端基座 + OCEAN_HARNESS_PORT（child_envs）。
-/// ocean-harness 插件捆绑的 .mcp.json 以
-/// ${OCEAN_HARNESS_PORT:-9100} 展开其 MCP 端点 url，嵌入式终端内的 claude 会话据此连上
-/// 本进程的 /mcp/streamableHttp/oceanHarness。
+/*
+ * 启动/复用会话（幂等）：未退出复用 + 换装 listener；已退出重起（重开语义）。
+ * 前端挂载即调本命令；输出/退出事件经 on_event Channel 流式回传。
+ * env 注入（仅真正 spawn 新进程时）：终端基座 + OCEAN_HARNESS_PORT（child_envs）——ocean-harness 插件捆绑的 .mcp.json 以 ${OCEAN_HARNESS_PORT:-9100} 展开其 MCP 端点 url，嵌入式终端内的 claude 会话据此连上本进程的 /mcp/streamableHttp/oceanHarness。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn pty_spawn(
@@ -64,8 +56,10 @@ pub fn pty_spawn(
     opts: SpawnOpts,
     on_event: tauri::ipc::Channel<PtyEvent>,
 ) -> Result<PtySpawned, String> {
-    // vendored 资源源基准装配期解析一次（幂等；release 走 BaseDirectory::Resource，
-    // macOS 打包资源在 .app/Contents/Resources，不可由 exe 路径拼接）。
+    /*
+     * vendored 资源源基准装配期解析一次（幂等；release 走 BaseDirectory::Resource，
+     * macOS 打包资源在 .app/Contents/Resources，不可由 exe 路径拼接）。
+     */
     cli_bin::ensure_resources_base(&app);
     let http_port = app
         .state::<crate::shared::http_server::HttpServerState>()
@@ -85,61 +79,66 @@ pub fn pty_spawn(
     result
 }
 
-/// 键盘输入写入会话。
+// 键盘输入写入会话。
 #[tauri::command]
 #[specta::specta]
 pub fn pty_write(session_id: String, data: String) -> Result<(), String> {
     provider().write(&session_id, data.as_bytes())
 }
 
-/// 终端尺寸变化（xterm onResize）。
+// 终端尺寸变化（xterm onResize）。
 #[tauri::command]
 #[specta::specta]
 pub fn pty_resize(session_id: String, cols: u16, rows: u16) -> Result<(), String> {
     provider().resize(&session_id, cols, rows)
 }
 
-/// 关闭单个会话（kill shell + 移出 store）。
+// 关闭单个会话（kill shell + 移出 store）。
 #[tauri::command]
 #[specta::specta]
 pub fn pty_shutdown(session_id: String) -> Result<(), String> {
     provider().shutdown(&session_id)
 }
 
-/// 关闭整个 issue 的全部 pane 会话（key 以 `issueId::` 为前缀）。
-/// issue 删除联动调用（模块 2 split 后一 issue 多 pane，防孤儿会话）。
+/*
+ * 关闭整个 issue 的全部 pane 会话（key 以 `issueId::` 为前缀）。
+ * issue 删除联动调用（模块 2 split 后一 issue 多 pane，防孤儿会话）。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn pty_shutdown_issue(issue_id: String) -> Result<(), String> {
     provider().shutdown_issue(&issue_id).map(|_| ())
 }
 
-/// 列出全部会话快照。
+// 列出全部会话快照。
 #[tauri::command]
 #[specta::specta]
 pub fn pty_list_sessions() -> Vec<PtySessionInfo> {
     provider().list()
 }
 
-/// 会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。
+// 会话是否存在（含已退出）。前端挂载顺序：exists → 存在则 reattach，不存在才 spawn。
 #[tauri::command]
 #[specta::specta]
 pub fn pty_exists(session_id: String) -> bool {
     provider().exists(&session_id)
 }
 
-/// 本会话 shell 子进程树内是否跑着 claude。
-/// 进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端；
-/// 前端事件 + 轮询混合驱动（useClaudeRunning）。
-/// 查询必须走 provider() 自持的 store（与 spawn 写入侧同一实例）。
+/*
+ * 本会话 shell 子进程树内是否跑着 claude。进程树匹配（claude pid 沿父链找本会话 shell pid），精确到具体终端。
+ * 前端事件 + 轮询混合驱动（useClaudeRunning）。
+ * 查询必须走 provider() 自持的 store（与 spawn 写入侧同一实例）。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn pty_claude_running(session_id: String) -> bool {
     claude_state::claude_running(provider().store(), &session_id)
 }
 
-/// 重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
-/// 已退出会话照常返回（exited=true）；不存在返回 None（前端转 pty_spawn）。
+/*
+ * 重挂会话（webview 刷新/切换 issue 回切）：ring 快照随返回值送达 + 换装 listener 续流。
+ * 已退出会话照常返回（exited=true）；不存在返回 None（前端转 pty_spawn）。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn pty_reattach(
@@ -158,8 +157,10 @@ pub fn pty_reattach(
     result
 }
 
-/// 创建工作目录（mkdir -p 语义）。用于终端 spawn 前目录不存在时一键创建 + 重试。
-/// 校验路径非空绝对路径后 std::fs::create_dir_all。
+/*
+ * 创建工作目录（mkdir -p 语义）。用于终端 spawn 前目录不存在时一键创建 + 重试。
+ * 校验路径非空绝对路径后 std::fs::create_dir_all。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn create_directory(path: String) -> Result<(), String> {
@@ -170,15 +171,19 @@ pub fn create_directory(path: String) -> Result<(), String> {
     std::fs::create_dir_all(p).map_err(|e| format!("创建目录失败：{}", e))
 }
 
-/// 应用退出时（RunEvent::Exit）入口：走 provider 自持的真源 store（spawn
-/// 写入侧同一实例）回收全部会话。不能经 State<PtySessionStore>——那是另一
-/// 实例恒空（历史 probe 恒 false bug 成因，幽灵 manage 已删，见 state.rs）。
+/*
+ * 应用退出时（RunEvent::Exit）入口：走 provider 自持的真源 store（spawn
+ * 写入侧同一实例）回收全部会话。不能经 State<PtySessionStore>——那是另一
+ * 实例恒空（历史 probe 恒 false bug 成因，幽灵 manage 已删，见 state.rs）。
+ */
 pub fn shutdown_all_provider() {
     shutdown_all(provider().store());
 }
 
-/// 遍历 store kill 全部 shell 并清空。
-/// reader 线程在 kill 后读到 EOF 自然退出，无需 join。
+/*
+ * 遍历 store kill 全部 shell 并清空。
+ * reader 线程在 kill 后读到 EOF 自然退出，无需 join。
+ */
 pub fn shutdown_all(store: &PtySessionStore) {
     let mut map = store
         .0
@@ -202,7 +207,7 @@ pub fn shutdown_all(store: &PtySessionStore) {
 mod tests {
     use super::child_envs;
 
-    /// 终端基座 env 齐全且值正确。
+    // 终端基座 env 齐全且值正确。
     #[test]
     fn child_envs_contains_terminal_base() {
         let envs = child_envs(9000);

@@ -8,8 +8,10 @@ import (
 	"ocean-harness/server/internal/dal/types"
 )
 
-// TestIssueWorkspaceRunStepsPanicRecovery 验证步骤 runner 的 panic 被 issueWorkspaceRunSteps
-// 顶层 recover 转为 FAILED 落盘，而非击穿进程（T1.2-T1.4 将注册子进程/文件写等真实 panic 面）。
+/*
+ * TestIssueWorkspaceRunStepsPanicRecovery 验证步骤 runner 的 panic 被 issueWorkspaceRunSteps
+ * 顶层 recover 转为 FAILED 落盘，而非击穿进程（T1.2-T1.4 将注册子进程/文件写等真实 panic 面）。
+ */
 func TestIssueWorkspaceRunStepsPanicRecovery(t *testing.T) {
 	const stepKey = "panicTestStep"
 	issueWorkspaceStepRunners[stepKey] = func(_ *types.IssueWorkspaceState, _ *types.IssueWorkspaceStep, _ *zap.Logger) error {

@@ -8,9 +8,11 @@ mod windows;
 use tauri::{Listener, Manager};
 use tauri_specta::{Builder, collect_commands};
 
-// 集中注册所有 IPC 命令到 tauri-specta Builder。
-// run()（注册 invoke handler）与 bin/export_bindings.rs（生成 TS 绑定）共用此函数，
-// 保证命令清单单一来源，避免两份注册表漂移。
+/*
+ * 集中注册所有 IPC 命令到 tauri-specta Builder。
+ * run()（注册 invoke handler）与 bin/export_bindings.rs（生成 TS 绑定）共用此函数，
+ * 保证命令清单单一来源，避免两份注册表漂移。
+ */
 pub fn build_specta_builder() -> Builder<tauri::Wry> {
     use crate::pty::session::PtyEvent;
     use crate::shared::types::{
@@ -61,20 +63,26 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_reattach,
             pty::create_directory,
         ])
-        // 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
-        // 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。
+        /*
+         * 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），
+         * 用 typ 显式注册，让 specta 把它们导出到 bindings.ts 供前端复用。
+         */
         .typ::<AppConfigChangedPayload>()
         .typ::<ClaudeSessionStatus>()
         .typ::<TerminalApp>()
         .typ::<YesNo>()
         .typ::<ClaudeSessionInfo>()
         .typ::<NavErr>()
-        // PtyEvent 是 Channel<PtyEvent> 的泛型载荷（Channel 本身在参数签名中可见，
-        // 但泛型参数类型需显式注册才能导出 union 定义）。
+        /*
+         * PtyEvent 是 Channel<PtyEvent> 的泛型载荷（Channel 本身在参数签名中可见，
+         * 但泛型参数类型需显式注册才能导出 union 定义）。
+         */
         .typ::<PtyEvent>()
-        // Rust/TS 共用常量经 .constant() 导出到 bindings.ts（Rust 单源，前端 re-export）。
-        // config key 族（app_config.rs）：后端读取的 key 在此定义，前端仅消费生成物，
-        // 根治此前 appConfig.ts 手工镜像的双份维护漂移（POLL 三值曾实际漂移）。
+        /*
+         * Rust/TS 共用常量经 .constant() 导出到 bindings.ts（Rust 单源，前端 re-export）。
+         * config key 族（app_config.rs）：后端读取的 key 在此定义，前端仅消费生成物，
+         * 根治此前 appConfig.ts 手工镜像的双份维护漂移（POLL 三值曾实际漂移）。
+         */
         .constant("LANGUAGE_KEY", shared::app_config::LANGUAGE_KEY)
         .constant(
             "POLL_INTERVAL_SECS_KEY",
@@ -120,9 +128,11 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             "DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES",
             shared::app_config::DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
         )
-        // HTTP 端口已彻底固化为编译期常量（http_server.rs：dev=9000/release=9100），
-        // 不再经 .constant() 导出，前端无消费点（服务地址走 http_server_status 实时获取）。
-        // 事件名（events.rs）：emit/listen 字符串 typo 不编译报错，单源导出消双份。
+        /*
+         * HTTP 端口已彻底固化为编译期常量（http_server.rs：dev=9000/release=9100），
+         * 不再经 .constant() 导出，前端无消费点（服务地址走 http_server_status 实时获取）。
+         * 事件名（events.rs）：emit/listen 字符串 typo 不编译报错，单源导出消双份。
+         */
         .constant(
             "EVENT_APP_CONFIG_CHANGED",
             crate::shared::events::EVENT_APP_CONFIG_CHANGED,
@@ -158,12 +168,11 @@ pub fn run() {
     let specta_builder = build_specta_builder();
 
     let builder = tauri::Builder::default()
-        // 单实例：官方要求注册在插件链最前（plugins 按注册顺序执行，越早注册越早拦截
-        // 二次启动）。第二实例启动时本回调在主实例触发：唤起 panel 主控台后第二实例
-        // 自动退出——根治双实例并行互杀 sidecar 的边界（两实例共享 app_data_dir 与
-        // 固定端口，任一时刻只应存活一份；崩溃/强杀残留孤儿仍由 http_server::init 自愈）。
-        // 锁按 tauri identifier 隔离：dev（com.ocean.harness.dev）与 build（com.ocean.harness
-        // / ...build.local）互不干扰，可照常并行开发调试。
+        /*
+         * 单实例：官方要求注册在插件链最前（plugins 按注册顺序执行，越早注册越早拦截二次启动）。
+         * 第二实例启动时本回调在主实例触发：唤起 panel 主控台后第二实例自动退出——根治双实例并行互杀 sidecar（两实例共享 app_data_dir 与固定端口，任一时刻只应存活一份；崩溃/强杀残留孤儿仍由 http_server::init 自愈）。
+         * 锁按 tauri identifier 隔离：dev（com.ocean.harness.dev）与 build（com.ocean.harness/...build.local）互不干扰，可照常并行开发调试。
+         */
         .plugin(tauri_plugin_single_instance::init(
             |app, _argv, _cwd| {
                 if let Err(e) = crate::windows::panel::show_panel_window(app.clone(), None) {
@@ -177,13 +186,17 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(specta_builder.invoke_handler());
 
-    // macOS：自定义应用菜单替代默认菜单——close_window 让出 ⌘W accelerator 交给前端
-    // 接管（见 shared/app_menu.rs 头注释）。Windows/Linux 本就无应用菜单，不设置。
+    /*
+     * macOS：自定义应用菜单替代默认菜单——close_window 让出 ⌘W accelerator 交给前端
+     * 接管（见 shared/app_menu.rs 头注释）。Windows/Linux 本就无应用菜单，不设置。
+     */
     #[cfg(target_os = "macos")]
     let builder = builder
         .menu(shared::app_menu::build)
-        // 菜单栏点击「Close Window」：关闭聚焦窗口（走各窗口 CloseRequested 拦截链，
-        // 与前端 ⌘W 兜底的 window.close() 同一条路径）。
+        /*
+         * 菜单栏点击「Close Window」：关闭聚焦窗口（走各窗口 CloseRequested 拦截链，
+         * 与前端 ⌘W 兜底的 window.close() 同一条路径）。
+         */
         .on_menu_event(|app, event| {
             if event.id() == shared::app_menu::CLOSE_WINDOW_MENU_ID {
                 // get_focused_window 需要 unstable feature，改用遍历 + is_focused 等价实现。
@@ -199,9 +212,11 @@ pub fn run() {
 
     builder
         .setup(move |app| {
-            // macOS 隐藏 Dock 图标：将应用激活策略设为 Accessory（代理应用），
-            // 应用不再出现在程序坞和应用菜单栏，只保留顶部状态栏托盘图标。
-            // 该 API 仅 macOS 生效；Windows/Linux 任务栏隐藏由各窗口的 skip_taskbar(true) 负责。
+            /*
+             * macOS 隐藏 Dock 图标：将应用激活策略设为 Accessory（代理应用），
+             * 应用不再出现在程序坞和应用菜单栏，只保留顶部状态栏托盘图标。
+             * 该 API 仅 macOS 生效；Windows/Linux 任务栏隐藏由各窗口的 skip_taskbar(true) 负责。
+             */
             #[cfg(target_os = "macos")]
             {
                 let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -235,21 +250,27 @@ pub fn run() {
             shared::state::claude_sessions::init(app)?;
             windows::tray::setup(app)?;
 
-            // pet 右键菜单事件分发（show_pet_context_menu 弹出的原生菜单不经前端回调，
-            // 统一走 app 级 on_menu_event）：「隐藏桌宠」与托盘 toggle 隐藏路径同一语义。
+            /*
+             * pet 右键菜单事件分发（show_pet_context_menu 弹出的原生菜单不经前端回调，
+             * 统一走 app 级 on_menu_event）：「隐藏桌宠」与托盘 toggle 隐藏路径同一语义。
+             */
             app.on_menu_event(|app, event| {
                 if event.id().as_ref() == windows::pet_session_summary::PET_CONTEXT_HIDE_MENU_ID {
                     windows::pet_session_summary::hide_and_persist(app);
                 }
             });
 
-            // 先 rescan 填充 ClaudeSessionStore 并广播首批快照，保证后续 pet_session_task / pet
-            // 窗口 React mount 后初次拉取 IPC 时 store 必有数据，根治启动期"0 个活跃"竞态。
-            // force_git=true：启动首次对空闲会话跑一次 git，得到准确的 GitPending 初值。
+            /*
+             * 先 rescan 填充 ClaudeSessionStore 并广播首批快照，保证后续 pet_session_task / pet
+             * 窗口 React mount 后初次拉取 IPC 时 store 必有数据，根治启动期"0 个活跃"竞态；
+             * force_git=true：启动首次对空闲会话跑一次 git，得到准确的 GitPending 初值。
+             */
             sessions::rescan(app.handle(), true);
 
-            // 预构建 pet_session_task 窗口（隐藏）：webview 异步加载，React mount 时机虽不确定，
-            // 但 store 已满，初次 IPC 必拿到非空数据；后续 claude-sessions:changed 事件持续驱动。
+            /*
+             * 预构建 pet_session_task 窗口（隐藏）：webview 异步加载，React mount 时机虽不确定，
+             * 但 store 已满，初次 IPC 必拿到非空数据；后续 claude-sessions:changed 事件持续驱动。
+             */
             if let Err(e) = windows::pet_session_task::ensure(app.handle()) {
                 log::warn!("[pet-session-task] startup ensure failed: {}", e);
             }
@@ -257,11 +278,15 @@ pub fn run() {
             sessions::watch::start(app.handle().clone());
             sessions::poll::start(app.handle().clone());
 
-            // 桌宠显隐读 pet_session_summary_visible 偏好：用户上次隐藏则保持隐藏，否则启动显示。
-            // pet 显示后由前端基于 count 调 show_pet_session_task_window 联动面板显隐。
+            /*
+             * 桌宠显隐读 pet_session_summary_visible 偏好：用户上次隐藏则保持隐藏，否则启动显示；
+             * pet 显示后由前端基于 count 调 show_pet_session_task_window 联动面板显隐。
+             */
             windows::pet_session_summary::startup_show(app.handle());
-            // 托盘菜单在 setup 时基于窗口可见性初始化文案，此时 pet 窗口尚未创建，
-            // 故恒为"显示桌宠"；startup_show 确定真实显隐后刷新一次以纠正文案。
+            /*
+             * 托盘菜单在 setup 时基于窗口可见性初始化文案，此时 pet 窗口尚未创建，
+             * 故恒为"显示桌宠"；startup_show 确定真实显隐后刷新一次以纠正文案。
+             */
             windows::tray::refresh_menu_texts(app.handle());
 
             specta_builder.mount_events(app);
@@ -289,12 +314,16 @@ pub fn run() {
                 },
             );
 
-            // 后台异步拉起 Go 本地 HTTP 服务（dev 先 go build，build 用随包二进制），前端 fetch 直连。
-            // 非核心依赖：init 在后台线程进行，失败仅 log::warn，永不阻塞 setup、永不拖垮 app。
+            /*
+             * 后台异步拉起 Go 本地 HTTP 服务（dev 先 go build，build 用随包二进制），前端 fetch 直连。
+             * 非核心依赖：init 在后台线程进行，失败仅 log::warn，永不阻塞 setup、永不拖垮 app。
+             */
             shared::http_server::init(app.handle());
 
-            // 后台线程自动注册 ocean-harness CLI 命令（symlink 到 /usr/local/bin，
-            // 幂等；提权取消有版本化记忆）。同为非核心依赖，失败仅 log，不阻塞 setup。
+            /*
+             * 后台线程自动注册 ocean-harness CLI 命令（symlink 到 /usr/local/bin，
+             * 幂等；提权取消有版本化记忆）。同为非核心依赖，失败仅 log，不阻塞 setup。
+             */
             shared::cli_register::init(app.handle());
 
             Ok(())

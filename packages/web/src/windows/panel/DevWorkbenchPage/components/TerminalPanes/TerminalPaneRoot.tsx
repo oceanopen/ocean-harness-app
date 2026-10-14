@@ -10,12 +10,11 @@ interface TerminalPaneRootProps {
   startupCli: string | null;
 }
 
-// TerminalPaneRoot：终端区 split 树容器（docs/terminal_02_split_panes.md §3.4）。
-//
-// 职责：读 store 渲染该 issue 的布局树。分割与关闭 pane 均由各 pane 内 TerminalView
-// 工具栏的按钮承担（EmbeddedTerminal props 闭包自识别目标 pane）：分割 =
-// handleSplit（splitPane，左右/上下分屏）；关闭 = handleClose（附加 pane
-// ptyShutdown+树剪枝 / main 二次确认）。
+/**
+ * TerminalPaneRoot：终端区 split 树容器（docs/terminal_02_split_panes.md §3.4）。
+ * 职责：读 store 渲染该 issue 的布局树。分割与关闭 pane 均由各 pane 内 TerminalView
+ * 工具栏的按钮承担（EmbeddedTerminal props 闭包自识别目标 pane）：分割 = handleSplit（splitPane，左右/上下分屏）；关闭 = handleClose。
+ */
 export default function TerminalPaneRoot({ issueId, workspaceDir, startupCli }: TerminalPaneRootProps) {
   const layout = useTerminalPanesStore(s => layoutFor(s.layouts[issueId]));
 

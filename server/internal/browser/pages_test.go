@@ -2,8 +2,10 @@ package browser
 
 import "testing"
 
-// tabsSample 引擎 browser_tabs（action=list）输出样例（playwright-mcp 官方文档逐字
-// 口径，含无标题页/current 标记/crashed 标记三种形态）。
+/*
+ * tabsSample 引擎 browser_tabs（action=list）输出样例（playwright-mcp 官方文档逐字
+ * 口径，含无标题页/current 标记/crashed 标记三种形态）。
+ */
 const tabsSample = `  - 0: [](about:blank)
   - 1: (current) [React • TodoMVC](https://demo.playwright.dev/todomvc)
   - 2: [crashed] [Example Domain](https://example.com)

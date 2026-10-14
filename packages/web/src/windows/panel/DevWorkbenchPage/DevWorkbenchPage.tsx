@@ -98,7 +98,7 @@ function terminalStartupCli(mode: 'none' | 'terminal-manual' | 'terminal-auto' |
 // TOOLBAR_ICON_SX 同档对齐）。尺寸必须走 '& svg' 后代选择器——SvgIcon 的
 // width/height = 1em 跟随自身 font-size，由其 variant class 显式设定（缺省
 // medium = 24px），在 IconButton 上直接设 fontSize 对 svg 无效（实测教训）。
-const TITLEBAR_ICON_SX = { 'color': 'text.secondary', '& svg': { fontSize: 16 } } as const;
+const TITLEBAR_ICON_SX = { 'color': 'text.secondary', '& svg': { fontSize: '16px' } } as const;
 
 // 布局挂载前置配置集：左栏折叠 + 工具面板区折叠/宽度三个 key 决定各栏首帧几何。
 // 就绪前渲染会按默认态布局、配置到达后动画纠正——每次挂载翻转一遍，中栏终端区
@@ -364,9 +364,9 @@ export default function DevWorkbenchPage() {
           退出全屏按原配置恢复。 */}
       <Box
         sx={{
-          width: treeHidden ? 0 : 260,
+          width: treeHidden ? '0px' : '260px',
           flexShrink: 0,
-          borderRight: treeHidden ? 0 : 1,
+          borderRight: treeHidden ? '0px' : '1px solid',
           borderColor: 'divider',
           overflow: 'hidden',
           display: 'flex',
@@ -377,7 +377,7 @@ export default function DevWorkbenchPage() {
           }),
         }}
       >
-        <Box sx={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <Box sx={{ width: '260px', flexShrink: 0, display: 'flex', flexDirection: 'column', height: '100%' }}>
           <DevTaskTree />
         </Box>
       </Box>
@@ -386,7 +386,7 @@ export default function DevWorkbenchPage() {
           标题栏下沉终端列——操作组（ml:auto）落终端列右缘：面板展开时紧贴其左边界，不被推到最右。 */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {/* 终端列：标题栏 + 终端内容；minWidth 与工具面板区拖拽上限联动（ToolPanelArea 按容器实测宽收紧 max） */}
-        <Box sx={{ flex: 1, minWidth: TERMINAL_MIN_WIDTH, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ flex: 1, minWidth: TERMINAL_MIN_WIDTH, minHeight: '0px', display: 'flex', flexDirection: 'column' }}>
           {/* 标题栏：左栏折叠开关 + 状态徽章 + 选中 issue 名称 + 右侧快捷区。
               macOS Overlay：沉浸模式下外壳（含顶栏）不渲染、本栏顶到窗口 y=0，带
               data-tauri-drag-region 承担窗口拖拽，pl 让位红绿灯 80px（非沉浸时本栏在
@@ -400,10 +400,10 @@ export default function DevWorkbenchPage() {
               flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
-              px: 1,
+              px: '8px',
               pl: workbenchFullscreen && isMacOS ? `${TRAFFIC_LIGHT_CLEARANCE}px` : 1,
-              gap: 0.5,
-              borderBottom: 1,
+              gap: '4px',
+              borderBottom: '1px solid',
               borderColor: 'divider',
               bgcolor: 'background.paper',
             }}
@@ -420,7 +420,7 @@ export default function DevWorkbenchPage() {
               <Chip
                 size="small"
                 label={stateMeta.name}
-                sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: 12, flexShrink: 0, pointerEvents: 'none' }}
+                sx={{ bgcolor: `${stateMeta.color}22`, color: stateMeta.color, fontSize: '12px', flexShrink: 0, pointerEvents: 'none' }}
               />
             )}
             {hasSelection && issue && (
@@ -436,7 +436,7 @@ export default function DevWorkbenchPage() {
                 {issue.name}
               </Typography>
             )}
-            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+            <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
               {/* 打开工作区目录（胶囊分体按钮，OpenWorkspaceDir/ 特性目录）：左段图标 =
                   当前默认工具（点击即打开），hover/▼ 展开浮层切默认（串行：打开成功后才切）。 */}
               {hasSelection && issue && <OpenWorkspaceDirButton issueId={issue.id} workspaceDir={workspaceDir} />}
@@ -511,10 +511,10 @@ export default function DevWorkbenchPage() {
           {/* 终端内容：选中 issue → 终端 split 树容器（一 issue 一布局，多 pane 各自独立
             PTY 会话；切换 issue 即重挂载，后端会话常驻）。relative 供文件预览浮层
             （absolute inset 0 铺满本区、不挤压布局零 SIGWINCH）锚定。 */}
-          <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+          <Box sx={{ flex: 1, minHeight: '0px', position: 'relative' }}>
             {!hasSelection
               ? (
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: '16px' }}>
                     <Typography variant="body2" color="text.secondary">选择左侧任务开始开发</Typography>
                   </Box>
                 )
@@ -555,7 +555,7 @@ export default function DevWorkbenchPage() {
                       </Box>
                     )
                   : (
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: '16px' }}>
                         <Typography variant="body2" color="text.secondary">任务不存在或已移出开发流程</Typography>
                       </Box>
                     )}
@@ -603,9 +603,9 @@ export default function DevWorkbenchPage() {
               : '归档将删除该任务的工作空间目录（含全部仓库的本地修改与未推送提交）、关闭其终端会话，issue 置为「已完成」。'}
           </Typography>
           {archiveConfirm?.warnings != null && (
-            <Alert severity="warning" sx={{ mt: 1.5 }}>
+            <Alert severity="warning" sx={{ mt: '12px' }}>
               安全检查发现以下问题，执行后这些内容将丢失：
-              <Box component="ul" sx={{ my: 0.5, pl: 2 }}>
+              <Box component="ul" sx={{ my: '4px', pl: '16px' }}>
                 {archiveConfirm.warnings.map(w => <li key={w}>{w}</li>)}
               </Box>
             </Alert>

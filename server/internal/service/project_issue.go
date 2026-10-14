@@ -15,21 +15,19 @@ import (
 	"ocean-harness/server/internal/global"
 )
 
-// ProjectIssue 对应 /api/tracker/projectIssue 命名空间下的业务逻辑。
-// issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，Create 时生成 uuid v7（时间有序），
-// 后续作为工作空间运行任务目录标识）；state_code 为固定 5 值枚举（无 state_id/项目级状态行）；
-// completed_at 为 *time.Time（未完成=nil/完成=&time）。
-//
-// 状态联动口径（2026-09-02 解耦定稿，T3.2 归档/取消随同收口）：父子状态独立变更——
-// 父状态流转不级联子任务（原 maybeSyncChildrenState 已删，含看板拖拽/Update 全链路），
-// 新建子任务默认 BACKLOG（STATE_CODE_DEFAULT）；唯一保留的单向联动是「全部子任务
-// 完成 → 父自动 DONE」（maybeAutoCompleteParent）。
+/*
+ * ProjectIssue 对应 /api/tracker/projectIssue 命名空间下的业务逻辑。issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，Create 时生成 uuid v7（时间有序），后续作为工作空间运行任务目录标识）；state_code 为固定 5 值枚举（无 state_id/项目级状态行）；completed_at 为 *time.Time（未完成=nil/完成=&time）。
+ * 状态联动口径（T3.2 归档/取消随同收口）：父子状态独立变更——父状态流转不级联子任务（原 maybeSyncChildrenState 已删，含看板拖拽/Update 全链路），新建子任务默认 BACKLOG（STATE_CODE_DEFAULT）。
+ * 唯一保留的单向联动是「全部子任务完成 → 父自动 DONE」（maybeAutoCompleteParent）。
+ */
 type ProjectIssue struct {
 	apis.Service
 }
 
-// GetList 按 projectId 查 issue（扁平列表），支持筛选（stateCode/priority/keyword/typeId）+ orderBy（默认 sort_order）。
-// 批量组装每个 issue 的类型与仓库+分支列表（避免 N+1）。分组由前端对扁平列表自行分组。
+/*
+ * GetList 按 projectId 查 issue（扁平列表），支持筛选（stateCode/priority/keyword/typeId）+ orderBy（默认 sort_order）。
+ * 批量组装每个 issue 的类型与仓库+分支列表（避免 N+1）。分组由前端对扁平列表自行分组。
+ */
 func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types.ProjectIssueResponseData, error) {
 	q := query.Use(svc.Orm)
 	iq := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ProjectID.Eq(req.ProjectID))
@@ -81,9 +79,11 @@ func (svc ProjectIssue) GetInfo(req *types.ProjectIssueGetInfoRequest) (*types.P
 	return list[0], nil
 }
 
-// Create 新建 issue。stateCode 空值取默认 BACKLOG；sort_order 自算（同 project MAX+10000，首个 10000）；
-// priority 空值规范为 none；typeId 单值直写（0=未分类）。事务内创建 issue + 同步仓库分支关联，
-// completed_at 默认 nil（未完成）。
+/*
+ * Create 新建 issue。stateCode 空值取默认 BACKLOG；sort_order 自算（同 project MAX+10000，首个 10000）；
+ * priority 空值规范为 none；typeId 单值直写（0=未分类）。事务内创建 issue + 同步仓库分支关联，
+ * completed_at 默认 nil（未完成）。
+ */
 func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.ProjectIssueResponseData, error) {
 	var created *model.ProjectIssue
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -122,8 +122,10 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			priority = enums.PRIORITY_NONE
 		}
 
-		// stateCode 空值取默认；非法值报错。DONE 时同步写 completed_at（与 applyStateTransition 口径一致，
-		// 否则留下 state=DONE 但 completed_at=nil 的记录，会阻断父任务自动完成）。
+		/*
+		 * stateCode 空值取默认；非法值报错。DONE 时同步写 completed_at（与 applyStateTransition 口径一致，
+		 * 否则留下 state=DONE 但 completed_at=nil 的记录，会阻断父任务自动完成）。
+		 */
 		stateCode := req.StateCode
 		if stateCode == "" {
 			stateCode = enums.STATE_CODE_DEFAULT
@@ -174,9 +176,11 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 	return list[0], nil
 }
 
-// Update 更新 issue 业务字段；检测 stateCode 变化触发 completed_at 流转：
-// 新 stateCode=DONE→写 now，否则清 nil（*time.Time 指针，Save 写 NULL）。
-// 事务内 Save + 全量同步仓库分支关联；typeId 为 *int：nil=保留原值（MCP 部分更新），0=未分类。
+/*
+ * Update 更新 issue 业务字段；检测 stateCode 变化触发 completed_at 流转：
+ * 新 stateCode=DONE→写 now，否则清 nil（*time.Time 指针，Save 写 NULL）。
+ * 事务内 Save + 全量同步仓库分支关联；typeId 为 *int：nil=保留原值（MCP 部分更新），0=未分类。
+ */
 func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.ProjectIssueResponseData, error) {
 	var issue *model.ProjectIssue
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -241,8 +245,10 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 	return list[0], nil
 }
 
-// applyStateTransition 处理 stateCode 变化时的 completed_at 流转：新 stateCode=DONE→写 now，否则清 nil。
-// 只改内存结构体，不落库（Save 由调用方在事务内执行）。newStateCode 为空或等于当前值为 no-op；非法值返回错误。
+/*
+ * applyStateTransition 处理 stateCode 变化时的 completed_at 流转：新 stateCode=DONE→写 now，否则清 nil。
+ * 只改内存结构体，不落库（Save 由调用方在事务内执行）。newStateCode 为空或等于当前值为 no-op；非法值返回错误。
+ */
 func (svc ProjectIssue) applyStateTransition(issue *model.ProjectIssue, newStateCode enums.StateCode) error {
 	if newStateCode == "" || newStateCode == issue.StateCode {
 		return nil
@@ -260,8 +266,10 @@ func (svc ProjectIssue) applyStateTransition(issue *model.ProjectIssue, newState
 	return nil
 }
 
-// maybeAutoCompleteParent 状态联动：若 issue 是子任务（ParentID 非空）且其全部兄弟均已完成，
-// 则把父任务流转到 DONE。仅做"全完成→完成父"单方向；父已完成/不存在时静默跳过（不阻断主流程）。orm 传 tx 以复用事务。
+/*
+ * maybeAutoCompleteParent 状态联动：若 issue 是子任务（ParentID 非空）且其全部兄弟均已完成，
+ * 则把父任务流转到 DONE。仅做"全完成→完成父"单方向；父已完成/不存在时静默跳过（不阻断主流程）。orm 传 tx 以复用事务。
+ */
 func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.ProjectIssue) error {
 	if issue.ParentID == "" {
 		return nil
@@ -294,8 +302,10 @@ func (svc ProjectIssue) maybeAutoCompleteParent(orm *gorm.DB, issue *model.Proje
 	return q.ProjectIssue.WithContext(svc.Context).Save(parent)
 }
 
-// Move 看板拖拽单卡移动：写 sortOrder（前端按分数插值算好）+ stateCode 变化触发 completed_at 流转。
-// 子任务全完成时联动完成父（事务内：自身完成态先落库再查兄弟，避免部分失败不一致）。不碰其他业务字段。
+/*
+ * Move 看板拖拽单卡移动：写 sortOrder（前端按分数插值算好）+ stateCode 变化触发 completed_at 流转。
+ * 子任务全完成时联动完成父（事务内：自身完成态先落库再查兄弟，避免部分失败不一致）。不碰其他业务字段。
+ */
 func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.ProjectIssueResponseData, error) {
 	var issue *model.ProjectIssue
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -337,10 +347,10 @@ func (svc ProjectIssue) Move(req *types.ProjectIssueMoveRequest) (*types.Project
 	return list[0], nil
 }
 
-// Delete 物理删除 issue（无 DB 外键），事务内级联：删其 t_issue_local_repositories
-// 关联与子任务（+ 子任务的仓库分支关联），避免悬挂（type_id 为单值列，无独立关联可清）。
-// 事务成功后进程内级联 ACP 会话域：关活会话 + 删绑定锚点行（D7 受控反转的删除面；放
-// 事务外因会话收敛是进程内操作，不参与 DB 事务，服务未装配（工具进程）时跳过）。
+/*
+ * Delete 物理删除 issue（无 DB 外键），事务内级联：删其 t_issue_local_repositories 关联与子任务（+ 子任务的仓库分支关联），避免悬挂（type_id 为单值列，无独立关联可清）。
+ * 事务成功后进程内级联 ACP 会话域：关活会话 + 删绑定锚点行（D7 受控反转的删除面；放事务外因会话收敛是进程内操作，不参与 DB 事务，服务未装配（工具进程）时跳过）。
+ */
 func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 	deletedIDs := []string{req.ID}
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -375,8 +385,10 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 			}
 			deletedIDs = append(deletedIDs, childIDs...)
 		}
-		// T2.3 级联清绑：清全部被删 issue 的 IM 会话绑定锚（清列保行——claude_session_id
-		// 等 headless 续聊锚不动，绑定回未绑定态，下一回合由路由层降级为未绑定引导）。
+		/*
+		 * T2.3 级联清绑：清全部被删 issue 的 IM 会话绑定锚（清列保行——claude_session_id
+		 * 等 headless 续聊锚不动，绑定回未绑定态，下一回合由路由层降级为未绑定引导）。
+		 */
 		if _, e := q.ImBotConversation.WithContext(svc.Context).Where(
 			q.ImBotConversation.BoundIssueID.In(deletedIDs...),
 		).UpdateSimple(
@@ -398,9 +410,11 @@ func (svc ProjectIssue) Delete(req *types.ProjectIssueDeleteRequest) error {
 	return nil
 }
 
-// assembleWithType 批量组装 issue 的类型与关联仓库+分支列表（3 次查询避免 N+1）：
-// issues → t_workspace_types（按 type_id 批查）→ t_issue_local_repositories（按 issue_id 批查）
-// → 按 issue 组装（type 为单值，type_id=0 或类型已被删时为 null）。
+/*
+ * assembleWithType 批量组装 issue 的类型与关联仓库+分支列表（3 次查询避免 N+1）：
+ * issues → t_workspace_types（按 type_id 批查）→ t_issue_local_repositories（按 issue_id 批查）
+ * → 按 issue 组装（type 为单值，type_id=0 或类型已被删时为 null）。
+ */
 func (svc ProjectIssue) assembleWithType(issues []*model.ProjectIssue) ([]*types.ProjectIssueResponseData, error) {
 	result := make([]*types.ProjectIssueResponseData, 0, len(issues))
 	if len(issues) == 0 {
@@ -459,8 +473,10 @@ func (svc ProjectIssue) assembleWithType(issues []*model.ProjectIssue) ([]*types
 	return result, nil
 }
 
-// syncIssueRepos 全量同步某 issue 的关联仓库+分支为 list（写 t_issue_local_repositories，事务内调用，orm 传 tx）。
-// 先删该 issue 全部关联再插入（列表经 validateIssueRepoList 已校验，量小无需 diff）。
+/*
+ * syncIssueRepos 全量同步某 issue 的关联仓库+分支为 list（写 t_issue_local_repositories，事务内调用，orm 传 tx）。
+ * 先删该 issue 全部关联再插入（列表经 validateIssueRepoList 已校验，量小无需 diff）。
+ */
 func (svc ProjectIssue) syncIssueRepos(orm *gorm.DB, issueID string, list []types.IssueRepositoryBranch) error {
 	q := query.Use(orm)
 	if _, e := q.IssueLocalRepository.WithContext(svc.Context).
@@ -481,9 +497,11 @@ func (svc ProjectIssue) syncIssueRepos(orm *gorm.DB, issueID string, list []type
 	return q.IssueLocalRepository.WithContext(svc.Context).Create(links...)
 }
 
-// validateIssueRepoList 校验 issue 关联的仓库+分支列表：逐项 localRepositoryId > 0（前端空行未选仓库报错）、
-// 同一仓库不重复（每仓库至多一行）且属于 projectID 的关联仓库集合（一次批量查中间表，避免逐项 Count）。
-// 返回原列表（校验通过即原样落库）。orm 传 tx 以复用调用方事务。
+/*
+ * validateIssueRepoList 校验 issue 关联的仓库+分支列表：逐项 localRepositoryId > 0（前端空行未选仓库报错）、
+ * 同一仓库不重复（每仓库至多一行）且属于 projectID 的关联仓库集合（一次批量查中间表，避免逐项 Count）。
+ * 返回原列表（校验通过即原样落库）。orm 传 tx 以复用调用方事务。
+ */
 func (svc ProjectIssue) validateIssueRepoList(orm *gorm.DB, projectID int, list []types.IssueRepositoryBranch) ([]types.IssueRepositoryBranch, error) {
 	if len(list) == 0 {
 		return nil, nil

@@ -6,9 +6,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// fakeCardStream 嵌 fakeReplyStream 的卡片扩展流替身：额外记录 UpdateCard 调用与
-// update/终帧 的先后序（拦截步同步执行于 HandleInbound 调用方 goroutine，断言随后同
-// goroutine 直读，无跨 goroutine 面；锁语义沿用内嵌替身）。
+/*
+ * fakeCardStream 嵌 fakeReplyStream 的卡片扩展流替身：额外记录 UpdateCard 调用与
+ * update/终帧 的先后序（拦截步同步执行于 HandleInbound 调用方 goroutine，断言随后同
+ * goroutine 直读，无跨 goroutine 面；锁语义沿用内嵌替身）。
+ */
 type fakeCardStream struct {
 	fakeReplyStream
 	updates []CardSpec
@@ -65,9 +67,11 @@ func interactionCfg() BotRuntimeConfig {
 	return BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 }
 
-// grayCardSpec 置灰 update 返回值的标准形态：原卡完整 spec + Disabled=true（企微
-// UpdateTemplateCard 整卡替换，仅 TaskID+Disabled 的最小 spec 会被适配器拒绝——见
-// CardReplyStream.UpdateCard 契约注释）。
+/*
+ * grayCardSpec 置灰 update 返回值的标准形态：原卡完整 spec + Disabled=true（企微
+ * UpdateTemplateCard 整卡替换，仅 TaskID+Disabled 的最小 spec 会被适配器拒绝——见
+ * CardReplyStream.UpdateCard 契约注释）。
+ */
 func grayCardSpec() *CardSpec {
 	return &CardSpec{
 		Title:    "审批请求",
@@ -77,8 +81,10 @@ func grayCardSpec() *CardSpec {
 	}
 }
 
-// nil handler（T3.1 生产装配形态）：恰一帧兜底终帧、无占位帧、不出回合，且 MarkSeen
-// 生效（兜底处理也算已处理）。
+/*
+ * nil handler（T3.1 生产装配形态）：恰一帧兜底终帧、无占位帧、不出回合，且 MarkSeen
+ * 生效（兜底处理也算已处理）。
+ */
 func TestOrchestratorInteractionFallback(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	driver := &stubTurnDriver{}
@@ -153,8 +159,10 @@ func TestOrchestratorInteractionHandlerMiss(t *testing.T) {
 	}
 }
 
-// 重投幂等：同 msgid 二次推送不进 handler 判定（T3.2 起判定含变更性动作），二投回
-// 「已处理过」终帧。
+/*
+ * 重投幂等：同 msgid 二次推送不进 handler 判定（T3.2 起判定含变更性动作），二投回
+ * 「已处理过」终帧。
+ */
 func TestOrchestratorInteractionRedelivery(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	driver := &stubTurnDriver{}
@@ -222,8 +230,10 @@ func TestOrchestratorInteractionGroupDenied(t *testing.T) {
 	}
 }
 
-// cardActionIndex 单题单选卡应答下标解析：直点原样、提交事件取定位键匹配勾选集首项、
-// 定位键不符跳过（多题形态防御）、无勾选 false。
+/*
+ * cardActionIndex 单题单选卡应答下标解析：直点原样、提交事件取定位键匹配勾选集首项、
+ * 定位键不符跳过（多题形态防御）、无勾选 false。
+ */
 func TestCardActionIndex(t *testing.T) {
 	if idx, ok := cardActionIndex(&Interaction{ActionIndex: 2}); !ok || idx != 2 {
 		t.Fatalf("直点应原样取用: (%d, %v)", idx, ok)

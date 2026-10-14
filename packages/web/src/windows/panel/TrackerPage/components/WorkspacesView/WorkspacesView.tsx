@@ -101,12 +101,12 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
       {/* 顶栏：计数 + 搜索 + 刷新 + 新建（新建入口收回本工具栏，外层标题栏只留列表开关） */}
       <Box
         sx={{
-          p: 2,
-          borderBottom: 1,
+          p: '16px',
+          borderBottom: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           alignItems: 'center',
-          gap: 1.5,
+          gap: '12px',
           flexWrap: 'wrap',
         }}
       >
@@ -118,9 +118,9 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
           placeholder={t('tracker:workspace.search')}
           value={searchName}
           onChange={e => setSearchName(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: 120 }}
+          sx={{ flexGrow: 1, minWidth: '120px' }}
         />
-        <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+        <Box sx={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
           <IconButton
             size="small"
             onClick={() => void refetch()}
@@ -155,7 +155,7 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
           </Box>
         )}
         {isError && (
-          <Box sx={{ p: 2 }}>
+          <Box sx={{ p: '16px' }}>
             <Alert
               severity="error"
               action={(
@@ -177,19 +177,19 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
               alignItems: 'center',
               justifyContent: 'center',
               height: '100%',
-              gap: 1.5,
-              px: 3,
-              py: 4,
+              gap: '12px',
+              px: '24px',
+              py: '32px',
             }}
           >
-            <WorkspacesOutlinedIcon sx={{ fontSize: 48, color: 'text.secondary' }} />
+            <WorkspacesOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />
             <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
               {t('tracker:workspace.empty.title')}
             </Typography>
             <Typography variant="body2" color="text.secondary" align="center">
               {t('tracker:workspace.empty.desc')}
             </Typography>
-            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setAddDialogOpen(true)} sx={{ mt: 1 }}>
+            <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => setAddDialogOpen(true)} sx={{ mt: '8px' }}>
               {t('tracker:workspace.actions.add')}
             </Button>
           </Box>
@@ -204,9 +204,9 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
         {ready && displayed.length > 0 && (
           <Box
             sx={{
-              p: 2,
+              p: '16px',
               display: 'grid',
-              gap: 2,
+              gap: '16px',
               // 响应式 1-2 列：窄屏 1 列，宽屏 2 列。
               gridTemplateColumns: {
                 xs: '1fr',
@@ -303,12 +303,12 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete
     >
       <CardHeader
         title={(
-          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
             {ws.name}
             {isActive && (
               <CheckOutlinedIcon
                 color="primary"
-                sx={{ fontSize: 18 }}
+                sx={{ fontSize: '18px' }}
                 aria-label={t('tracker:workspace.card.current')}
               />
             )}
@@ -316,7 +316,7 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete
         )}
         slotProps={{ title: { fontWeight: 600, noWrap: true } }}
         action={(
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', gap: '4px' }}>
             <IconButton
               size="small"
               onClick={(e) => {
@@ -349,17 +349,17 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete
             </IconButton>
           </Box>
         )}
-        sx={{ '& .MuiCardHeader-action': { alignSelf: 'center', mt: 0 } }}
+        sx={{ '& .MuiCardHeader-action': { alignSelf: 'center', mt: '0px' } }}
       />
       <Divider />
       <CardContent sx={{ flex: 1 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1, ...truncateSx }} title={ws.dir}>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: '8px', ...truncateSx }} title={ws.dir}>
           {`${t('tracker:workspace.card.dirLabel')}：${ws.dir}`}
         </Typography>
         <Typography
           variant="body2"
           color={hasDescription ? 'text.secondary' : 'text.disabled'}
-          sx={{ mb: 1, minHeight: '1.5em', ...truncateSx }}
+          sx={{ mb: '8px', minHeight: '1.5em', ...truncateSx }}
           title={hasDescription ? ws.description : undefined}
         >
           {hasDescription ? ws.description : t('tracker:workspace.card.noDescription')}

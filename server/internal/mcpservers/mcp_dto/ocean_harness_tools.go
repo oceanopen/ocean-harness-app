@@ -1,26 +1,26 @@
-// Package mcpdto 定义 MCP 工具的入参（Args）与出参（Content）DTO。
-//
-// 三 tag 范式（承 pros-admin-server 惯例）：json（协议字段名，camelCase）+ jsonschema
-// （字段中文描述——SDK 从泛型反射推导 Input/Output Schema 时写入 description，AI 可见）
-// + vd（go-tagexpr 校验，跨字段/复杂规则用）。
-//
-// 出参 Content 为 AI 消费视角的平铺镜像（不复用 types.XxxResponseData：其嵌入 DO 与
-// time.Time 字段反射推导出的 schema 失真——嵌入结构不平铺、时间类型变 object），时间一律
-// 转 RFC3339 字符串，全字段带中文描述。
+/*
+ * Package mcpdto 定义 MCP 工具的入参（Args）与出参（Content）DTO。
+ * 三 tag 范式（承 pros-admin-server 惯例）：json（协议字段名，camelCase）+ jsonschema（字段中文描述——SDK 从泛型反射推导 Input/Output Schema 时写入 description，AI 可见）+ vd（go-tagexpr 校验，
+ * 跨字段/复杂规则用）。出参 Content 为 AI 消费视角的平铺镜像（不复用 types.XxxResponseData：其嵌入 DO 与 time.Time 字段反射推导出的 schema 失真——嵌入结构不平铺、时间类型变 object），时间一律转 RFC3339 字符串，全字段带中文描述。
+ */
 package mcpdto
 
 import "ocean-harness/server/internal/dal/enums"
 
 // —— 入参 Args ——
 
-// IssueIDArgs 仅需 issueId 的工具共用（issue_get_info / workspace_status）。
-// required 由反射规则推导：无 omitempty 的字段自动进 required，故无需手写 InputSchema。
+/*
+ * IssueIDArgs 仅需 issueId 的工具共用（issue_get_info / workspace_status）。
+ * required 由反射规则推导：无 omitempty 的字段自动进 required，故无需手写 InputSchema。
+ */
 type IssueIDArgs struct {
 	IssueID string `json:"issueId" jsonschema:"issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
 }
 
-// IssueUpdateArgs 部分更新入参（issue_update / issue_child_update 共用，契约一致）：
-// 三业务字段全可选，空 = 保留原值（首期不支持经 MCP 置空字段）。
+/*
+ * IssueUpdateArgs 部分更新入参（issue_update / issue_child_update 共用，契约一致）：三业务字段全可选，
+ * 空 = 保留原值（首期不支持经 MCP 置空字段）。
+ */
 type IssueUpdateArgs struct {
 	IssueID     string          `json:"issueId" jsonschema:"目标 issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
 	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"目标状态，留空不改。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED；DONE 记录完成时间，全部子任务完成后父任务自动完成，父任务状态变化会级联同步子任务"`

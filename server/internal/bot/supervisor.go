@@ -15,9 +15,11 @@ import (
 	"ocean-harness/server/internal/dal/query"
 )
 
-// Supervisor bot 运行生命周期：Factory 注册表 → 单 bot 运行时（ChannelRuntime + 装配参数）
-// 的启停/重启/状态投影。连接的重连由渠道 SDK 自管（指数退避）；被新连接踢下线属终态、
-// 不自动重连（防双实例互踢风暴），恢复手段是 UI 的重启连接。
+/*
+ * Supervisor bot 运行生命周期：Factory 注册表 → 单 bot 运行时（ChannelRuntime + 装配参数）
+ * 的启停/重启/状态投影。连接的重连由渠道 SDK 自管（指数退避）；被新连接踢下线属终态、
+ * 不自动重连（防双实例互踢风暴），恢复手段是 UI 的重启连接。
+ */
 type Supervisor struct {
 	orch    *Orchestrator
 	db      *gorm.DB
@@ -36,12 +38,11 @@ type BotStatusView struct {
 	LastError string
 }
 
-// NewSupervisor 构造 supervisor（port 为 sidecar 自身 HTTP 端口；sessions 为 ACP 会话域，
-// 引擎路由按 workspace 启动模式消费——两引擎共存，见 driver_route.go）。路由驱动以三角色
-// 装配进编排器：ClaudeDriver（引擎路由）、pendingGate（审批数字快路径，T2.4）、
-// interactionHandler（审批卡点击消费，T3.2）——三者同源于 driverRoute 单实例，共享
-// resolve 与会话域消费面；supervisor 自身以 botApplier 第四依赖注入（wsbind 卡落库后的
-// 延迟热重载，T2.1）。
+/*
+ * NewSupervisor 构造 supervisor（port 为 sidecar 自身 HTTP 端口；sessions 为 ACP 会话域，引擎路由按 workspace 启动模式消费——两引擎共存，见 driver_route.go）。
+ * 路由驱动以三角色装配进编排器：ClaudeDriver（引擎路由）、pendingGate（审批数字快路径，T2.4）、 interactionHandler（审批卡点击消费，T3.2）——三者同源于 driverRoute 单实例，共享 resolve 与会话域消费面；
+ * supervisor 自身以 botApplier 第四依赖注入（wsbind 卡落库后的延迟热重载，T2.1）。
+ */
 func NewSupervisor(db *gorm.DB, port int, sessions acpSessions, log *zap.Logger) *Supervisor {
 	s := &Supervisor{
 		db:    db,
@@ -77,9 +78,11 @@ func (s *Supervisor) StartEnabled() {
 	}
 }
 
-// ApplyBot 应用 bot 行配置：解析 → EnsureStarted（启动清单 / create-update 启用 / 重启连接
-// 的统一入口；已在跑则先停再起 = 配置变更无脑重启）。成败均回写 t_im_bots.last_error
-// （成功清空）——连接终态错误跨重启可见（迁移列的承诺由本方法兑现）。
+/*
+ * ApplyBot 应用 bot 行配置：解析 → EnsureStarted（启动清单 / create-update 启用 / 重启连接
+ * 的统一入口；已在跑则先停再起 = 配置变更无脑重启）。成败均回写 t_im_bots.last_error
+ * （成功清空）——连接终态错误跨重启可见（迁移列的承诺由本方法兑现）。
+ */
 func (s *Supervisor) ApplyBot(b *model.ImBot) error {
 	cfg, err := s.botRuntimeConfig(b)
 	if err != nil {
@@ -94,9 +97,11 @@ func (s *Supervisor) ApplyBot(b *model.ImBot) error {
 	return nil
 }
 
-// EnsureStarted 以新配置启动单个 bot。以 s.mu 全程串行（Factory.Create 与 rt.Start 均非
-// 阻塞、毫秒级临界区）——同一 bot 的并发调用（如前端双击重启）在此排队，杜绝「旧 runtime
-// 从注册表漏删、双连接互踢风暴」的交错窗口。
+/*
+ * EnsureStarted 以新配置启动单个 bot。以 s.mu 全程串行（Factory.Create 与 rt.Start 均非
+ * 阻塞、毫秒级临界区）——同一 bot 的并发调用（如前端双击重启）在此排队，杜绝「旧 runtime
+ * 从注册表漏删、双连接互踢风暴」的交错窗口。
+ */
 func (s *Supervisor) EnsureStarted(cfg BotRuntimeConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -126,19 +131,21 @@ func (s *Supervisor) EnsureStarted(cfg BotRuntimeConfig) error {
 	return nil
 }
 
-// applyBotAsyncDelay 绑定卡落库到热重载的缓冲（风险 §6.4）：终帧与置灰先走完渠道
-// 回复窗口，再 Stop→Start——EnsureStarted 持 s.mu 同步 Stop 会拆渠道 WS 连接，紧贴点击
-// 处理会吃掉 UpdateCard/Flush 的发送窗口。包级变量，测试可缩短。
+/*
+ * applyBotAsyncDelay 绑定卡落库到热重载的缓冲（风险 §6.4）：终帧与置灰先走完渠道
+ * 回复窗口，再 Stop→Start——EnsureStarted 持 s.mu 同步 Stop 会拆渠道 WS 连接，紧贴点击
+ * 处理会吃掉 UpdateCard/Flush 的发送窗口。包级变量，测试可缩短。
+ */
 var applyBotAsyncDelay = time.Second
 
 // 编译期断言：supervisor 满足绑定卡热重载消费面（newDriverRoute 第四依赖注入自身）。
 var _ botApplier = (*Supervisor)(nil)
 
-// ApplyBotAsync 延迟热重载 bot（goroutine + applyBotAsyncDelay）：绑定卡点击链路的收尾
-// 动作——落库已同步完成，本方法只让运行时追上 DB。重拉 bot 行按 service 层 applyRuntime
-// 同款禁用语义：行已删跳过；停用 → StopBot（幂等）；启用 → ApplyBot（成败照常回写
-// last_error）。supervisor 已停止（StopAll）则醒后早退不复活连接（EnsureStarted 侧守卫
-// 兜住检查后的交错窗口）。
+/*
+ * ApplyBotAsync 延迟热重载 bot（goroutine + applyBotAsyncDelay）：绑定卡点击链路的收尾动作——落库已同步完成，本方法只让运行时追上 DB。
+ * 重拉 bot 行按 service 层 applyRuntime 同款禁用语义：行已删跳过；停用 → StopBot（幂等）；
+ * 启用 → ApplyBot（成败照常回写 last_error）。supervisor 已停止（StopAll）则醒后早退不复活连接（EnsureStarted 侧守卫兜住检查后的交错窗口）。
+ */
 func (s *Supervisor) ApplyBotAsync(botID int) {
 	delay := applyBotAsyncDelay // 调用时点捕获：goroutine 不触包级变量（测试缩短/还原不构成数据竞争）
 	go func() {
@@ -183,9 +190,11 @@ func (s *Supervisor) stopBotLocked(botID int) {
 	}
 }
 
-// StopAll 优雅停止全部：断渠道连接（不再收新消息）→ 编排器关队列 + 取消在途回合。
-// 同时置位 stopped——此后全部 EnsureStarted（含 applier 延迟 goroutine）被拒绝，杜绝
-// 关机窗口内复活渠道连接。
+/*
+ * StopAll 优雅停止全部：断渠道连接（不再收新消息）→ 编排器关队列 + 取消在途回合。
+ * 同时置位 stopped——此后全部 EnsureStarted（含 applier 延迟 goroutine）被拒绝，杜绝
+ * 关机窗口内复活渠道连接。
+ */
 func (s *Supervisor) StopAll() {
 	s.mu.Lock()
 	s.stopped = true
@@ -234,8 +243,10 @@ func (s *Supervisor) setLastError(botID int, msg string) {
 	}
 }
 
-// botRuntimeConfig t_im_bots 行 → 运行时装配参数（JSON 列在此解析，渠道凭据保持 JSON 透传）。
-// 会话目录取工作空间 dir（workspace_id 关联，0/行缺失 = 未选 → 空串）。
+/*
+ * botRuntimeConfig t_im_bots 行 → 运行时装配参数（JSON 列在此解析，渠道凭据保持 JSON 透传）。
+ * 会话目录取工作空间 dir（workspace_id 关联，0/行缺失 = 未选 → 空串）。
+ */
 func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) {
 	policy, err := ParseAccessPolicy(b.AccessPolicy)
 	if err != nil {

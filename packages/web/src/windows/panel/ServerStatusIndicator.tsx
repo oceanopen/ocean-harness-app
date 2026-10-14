@@ -57,11 +57,11 @@ function ServerStatusIndicator() {
         'display': 'flex',
         'alignItems': 'center',
         'justifyContent': 'center',
-        'gap': 1,
-        'height': 30,
-        'px': 1.5,
-        'borderRadius': 2,
-        'border': 1,
+        'gap': '8px',
+        'height': '30px',
+        'px': '12px',
+        'borderRadius': '8px',
+        'border': '1px solid',
         'borderColor': 'divider',
         'color': 'text.secondary',
         'flexShrink': 0,
@@ -70,14 +70,14 @@ function ServerStatusIndicator() {
     >
       <Box
         sx={{
-          width: 8,
-          height: 8,
+          width: '8px',
+          height: '8px',
           borderRadius: '50%',
           bgcolor: color,
           flexShrink: 0,
         }}
       />
-      <Typography variant="body2" sx={{ fontSize: 12, lineHeight: 1, color: 'text.secondary' }} noWrap>
+      <Typography variant="body2" sx={{ fontSize: '12px', lineHeight: 1, color: 'text.secondary' }} noWrap>
         {label}
       </Typography>
     </ButtonBase>

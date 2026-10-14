@@ -19,9 +19,11 @@ export function usePluginMarketplaces() {
   });
 }
 
-// ─── 写操作（mutation）───
-// 后端所有写操作统一返回最新列表投影，故全部走 setQueryData 整体替换缓存
-// （一次往返即完成刷新，无需 invalidate 触发二次请求）。
+/**
+ * ─── 写操作（mutation）───
+ * 后端所有写操作统一返回最新列表投影，故全部走 setQueryData 整体替换缓存
+ * （一次往返即完成刷新，无需 invalidate 触发二次请求）。
+ */
 
 /** 写操作公共装配：mutationFn 返回最新列表，成功后就地替换 list 缓存。 */
 function useListReplacingMutation<TReq>(fn: (req: TReq) => Promise<PluginMarketplaceListModel>) {

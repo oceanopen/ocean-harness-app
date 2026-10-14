@@ -2,9 +2,11 @@ package service
 
 import "sync"
 
-// issueWorkspace 准入控制（活跃任务登记）：同一 issue 至多一个后台写者。
-// 锁只保护本 map（纳秒级临界区），不保护文件——文件写的串行由「唯一写者 goroutine + 步骤 for 循环」
-// 构造保证。进程重启后 registry 随进程清空，status 侧以「文件 RUNNING 但无登记」判定 INTERRUPTED。
+/*
+ * issueWorkspace 准入控制（活跃任务登记）：同一 issue 至多一个后台写者。
+ * 锁只保护本 map（纳秒级临界区），不保护文件——文件写的串行由「唯一写者 goroutine + 步骤 for 循环」
+ * 构造保证。进程重启后 registry 随进程清空，status 侧以「文件 RUNNING 但无登记」判定 INTERRUPTED。
+ */
 var issueWorkspaceRegistry = struct {
 	sync.Mutex
 	tasks map[string]struct{}

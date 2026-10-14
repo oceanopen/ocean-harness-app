@@ -1,44 +1,8 @@
-// HTTP 本地服务的进程生命周期管理（sidecar 模式，dev/build 统一）+ IPC 命令。
-//
-// Go 服务作为 Tauri sidecar 打包，baseName 复用各 conf 的 identifier（让进程名携带环境标识）：
-//   build 取 tauri.conf.json、dev 取 tauri.dev.conf.json，文件名 {identifier}-go_server_bin-{triple}。
-//   打包器把对应文件去 triple 后缀放进 Contents/MacOS/（macOS）并随主 app 签名——arm64 下 AMFI 不再拦。
-//   dev 模式下 tauri-build（cargo build）把该文件拷到 target/<profile>/<baseName>。
-//   app.shell().sidecar(format!("{}-go_server_bin", app.config().identifier)) 解析到 current_exe 同级路径，
-//   identifier 随当前生效 conf 自动切换，故 dev/build 用同一份代码。
-//
-// 配置全部走环境变量注入 Go 进程（不读配置文件）：
-//   GO_SERVER_MODE（dev 编译→test、build 编译→release）、
-//   GO_SERVER_PORT（端口已彻底固化：dev=9000/build=9100，见下方端口契约常量注释）、
-//   GO_SERVER_LOG_DIR、GO_SERVER_SQLITE_DIR（均由 app_data_dir 派生，dev/build 自动隔离）、
-//   GO_SERVER_APP_DB（可选：Rust 自身 app_config 库路径，Go MCP workspace_status 只读
-//   github_pat 用；解析失败缺省注入，Go 侧按「未配置」降级）、
-//   GO_SERVER_ACP_RESOURCES_DIR（可选：内置 ACP adapter 资源源目录——dev 以 crate 目录
-//   为基准的 app/resources/acp-adapters〔见下方解析处〕，release 为打包资源（Resource
-//   基准按平台解析，macOS = Contents/Resources）；缺失〔未跑 vendor 脚本〕不注入，Go
-//   侧报未配置降级）、
-//   GO_SERVER_ACP_ADAPTERS_DIR（vendored 受管目标根 = app_data_dir/acp-adapters，
-//   目录由 Go EnsureVendored 自建，Rust 不 MkdirAll）。
-//
-// IPC：前端「服务状态」页通过 http_server_status 查询运行态与地址，通过 set_http_server_enabled
-//   开关服务（调 start_server/stop_server）。setup 时默认自动启动（开关默认 ON）。
-//
-// 设计原则：HTTP 服务是旁路（仅 ServerStatusPage 用），不是核心依赖——
-//   - init() 永不返回 Err、永不阻塞 setup；目录解析失败仅 log::warn 并跳过自动启动。
-//   - app 退出时尽力回收子进程，并通过 aborted 标志消除"退出与注册竞态"产生的孤儿。
-//
-// 启动阶段（start_server）：停同会话 child + spawn，spawn 后置 Starting；后台 settle 线程在 STARTUP_VERDICT_DEADLINE 窗口内按
-//   STARTUP_POLL_INTERVAL 轮询「子进程 PID 是否监听端口」做身份校验——命中即置 Running，窗口结束未命中则 kill 子进程后置 Stopped。
-//   运行中进程退出由事件线程的 Terminated 即时捕获。run_state 三态供前端渲染，Running 即自有进程已 bind 可直接 fetch。
-//
-// 孤立进程清理（防端口占用 bind 失败，两个触点同一套匹配校验）：app 重启/异常退出后残留的 go-server
-//   可能占用端口。① init 自动启动前自愈 reclaim_port_if_orphan_go_server（覆盖重启/崩溃/强杀一切孤儿）；
-//   ② 前端「服务状态」页开关开启时经 cleanup_orphan_http_server 命令在 start 前显式清理——
-//   仅当端口占用者进程名含 tauri.conf identifier + go_server_bin（本应用 sidecar）才 kill，不误杀他应用。
-//
-// 退出阶段（RunEvent::Exit → shutdown）：unix 先 SIGTERM 让服务优雅退出，再 kill() 兜底；
-// Windows 直接 kill()（无 SIGTERM 概念）。
-
+/*
+ * HTTP 本地服务进程生命周期管理（Go sidecar 模式，dev/build 统一）+ IPC 命令。baseName 复用各 conf 的 identifier（{identifier}-go_server_bin-{triple}：打包器去 triple 后缀放进 Contents/MacOS/ 并随主 app 签名——arm64 下 AMFI 不再拦；dev 由 tauri-build 拷到 target/<profile>/；sidecar() 解析到 current_exe 同级，identifier 随当前生效 conf 自动切换，故 dev/build 用同一份代码）。
+ * 配置全部走环境变量注入 Go 进程（不读配置文件）：GO_SERVER_MODE（dev→test、build→release）、GO_SERVER_PORT（端口已彻底固化 dev=9000/build=9100，见下方端口契约）、GO_SERVER_LOG_DIR / GO_SERVER_SQLITE_DIR（app_data_dir 派生，dev/build 自动隔离）必注；GO_SERVER_APP_DB（Go MCP workspace_status 只读 github_pat 用）、GO_SERVER_ACP_RESOURCES_DIR（内置 ACP adapter 资源源目录：dev 以 crate 目录为基准，release 为打包资源；缺失〔未跑 vendor 脚本〕不注入）可选，解析失败缺省注入由 Go 侧按「未配置」降级；GO_SERVER_ACP_ADAPTERS_DIR（vendored 受管目标根 = app_data_dir/acp-adapters，目录由 Go EnsureVendored 自建，Rust 不 MkdirAll）。
+ * 设计原则：HTTP 服务是旁路（仅 ServerStatusPage 用）非核心依赖——init 永不返回 Err、永不阻塞 setup，目录解析失败仅 log::warn 并跳过自动启动，app 退出时尽力回收子进程并以 aborted 标志消除「退出与注册竞态」孤儿。启动阶段（start_server）：停同会话 child + spawn 后置 Starting，后台 settle 线程在 STARTUP_VERDICT_DEADLINE 窗口内按 STARTUP_POLL_INTERVAL 轮询「子进程 PID 是否监听端口」做身份校验——命中即置 Running，窗口结束未命中则 kill 子进程后置 Stopped；运行中进程退出由事件线程 Terminated 即时捕获，run_state 三态供前端渲染，Running 即自有进程已 bind 可直接 fetch。孤立进程清理（防端口占用 bind 失败，仅当占用者进程名含 tauri.conf identifier + go_server_bin 才 kill，不误杀他应用）：① init 自动启动前自愈 reclaim_port_if_orphan_go_server（覆盖重启/崩溃/强杀一切孤儿）；② 前端开关开启时经 cleanup_orphan_http_server 命令在 start 前显式清理。退出阶段（RunEvent::Exit → shutdown）：unix 先 SIGTERM 优雅退出再 kill() 兜底，Windows 直接 kill()（无 SIGTERM 概念）。
+ */
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -55,19 +19,23 @@ use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use crate::shared::events::EVENT_HTTP_SERVER_STATE_CHANGED;
 use crate::shared::types::{HttpServerRunState, HttpServerStatus};
 
-/// dev/build 编译各自的固定端口（端口契约 SSOT；CLI 侧同源常量见 server/internal/cli/port.go）。
-/// 端口已彻底固化、不再支持用户自定义：dev=9000 / release=9100，仅 OCEAN_HARNESS_PORT
-/// env 作为逃生通道（Rust pty_spawn 注入 / 手动设置）。本组常量不再 .constant() 导出前端。
+/*
+ * dev/build 编译各自的固定端口（端口契约 SSOT；CLI 侧同源常量见 server/internal/cli/port.go）。
+ * 端口已彻底固化、不再支持用户自定义：dev=9000 / release=9100，仅 OCEAN_HARNESS_PORT
+ * env 作为逃生通道（Rust pty_spawn 注入 / 手动设置）。本组常量不再 .constant() 导出前端。
+ */
 pub const HTTP_SERVER_PORT_TEST: u16 = 9000;
 pub const HTTP_SERVER_PORT_RELEASE: u16 = 9100;
 
-/// settle 线程：启动裁定的硬上限，超过仍未监听端口即判定失败（防异常启动永久挂起 Starting）。
+// settle 线程：启动裁定的硬上限，超过仍未监听端口即判定失败（防异常启动永久挂起 Starting）。
 const STARTUP_VERDICT_DEADLINE: Duration = Duration::from_secs(10);
-/// settle 线程：轮询「子进程是否已监听端口」的间隔。直接探活端口就绪，不依赖日志输出节奏——
-/// Go 启动期 SQLite 迁移可能数秒无控制台输出，「日志静默」式触发会误杀正常启动，故改轮询。
+/*
+ * settle 线程：轮询「子进程是否已监听端口」的间隔。直接探活端口就绪，不依赖日志输出节奏——
+ * Go 启动期 SQLite 迁移可能数秒无控制台输出，「日志静默」式触发会误杀正常启动，故改轮询。
+ */
 const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
-/// 当前编译模式的固定端口（cfg! 编译期决定）。
+// 当前编译模式的固定端口（cfg! 编译期决定）。
 fn default_port() -> u16 {
     if cfg!(debug_assertions) {
         HTTP_SERVER_PORT_TEST
@@ -76,31 +44,37 @@ fn default_port() -> u16 {
     }
 }
 
-/// HTTP 服务运行态：持有 sidecar 子进程 handle、运行态、运行模式与注入给 Go 的目录。
+// HTTP 服务运行态：持有 sidecar 子进程 handle、运行态、运行模式与注入给 Go 的目录。
 pub struct HttpServerState {
-    /// sidecar 子进程 handle（用于停止时 kill）；None 表示未运行。
+    // sidecar 子进程 handle（用于停止时 kill）；None 表示未运行。
     pub child: Mutex<Option<CommandChild>>,
-    /// shutdown 置位后，后台 worker 若刚 spawn 出子进程会自行 kill，避免退出竞态产生孤儿。
+    // shutdown 置位后，后台 worker 若刚 spawn 出子进程会自行 kill，避免退出竞态产生孤儿。
     pub aborted: AtomicBool,
-    /// 运行态（Stopped/Starting/Running），供 http_server_status 查询与前端渲染。
+    // 运行态（Stopped/Starting/Running），供 http_server_status 查询与前端渲染。
     pub run_state: AtomicU8,
-    /// 运行模式（debug/release），对应 Go 的 gin mode。
+    // 运行模式（debug/release），对应 Go 的 gin mode。
     pub mode: &'static str,
-    /// 监听端口（编译期固化：dev=9000 / build=9100）。
+    // 监听端口（编译期固化：dev=9000 / build=9100）。
     pub port: AtomicU16,
-    /// 日志目录（注入 GO_SERVER_LOG_DIR）。
+    // 日志目录（注入 GO_SERVER_LOG_DIR）。
     pub log_dir: String,
-    /// sqlite 数据目录（注入 GO_SERVER_SQLITE_DIR）。
+    // sqlite 数据目录（注入 GO_SERVER_SQLITE_DIR）。
     pub sqlite_dir: String,
-    /// 本次启动过程的全量日志（stdout+stderr，按到达顺序 append）。仅 run_state==Starting 期间累积——
-    /// 一旦进入 Running/Stopped 即停止 append，保证前端拿到的是纯净的"本次启动过程"快照，且运行期访问日志不会无限增长。
-    /// 失败时取最后一行清洗为 start_last_error；http_server_status 返回前端供后续"查看启动日志"。
+    /*
+     * 本次启动过程的全量日志（stdout+stderr，按到达顺序 append）。仅 run_state==Starting 期间累积——
+     * 一旦进入 Running/Stopped 即停止 append，保证前端拿到的是纯净的"本次启动过程"快照，且运行期访问日志不会无限增长。
+     * 失败时取最后一行清洗为 start_last_error；http_server_status 返回前端供后续"查看启动日志"。
+     */
     pub start_recent_log: Mutex<Vec<String>>,
-    /// 最近一次启动失败的详细原因（启动期进程退出 / 身份校验未通过 / 超时时填充；正常启动 / 主动停止为 None）。
-    /// http_server_status 返回给前端，供「服务状态」页重启失败时 toast 展示。
+    /*
+     * 最近一次启动失败的详细原因（启动期进程退出 / 身份校验未通过 / 超时时填充；正常启动 / 主动停止为 None）。
+     * http_server_status 返回给前端，供「服务状态」页重启失败时 toast 展示。
+     */
     pub start_last_error: Mutex<Option<String>>,
-    /// 本次 sidecar 子进程 PID（spawn 时记录）：settle 线程据「该 PID 是否监听端口」判定启动成败，
-    /// 精确匹配端口监听者，区别于占用端口的别家服务或同名 / 孤儿进程。0 表示当前无活动子进程。
+    /*
+     * 本次 sidecar 子进程 PID（spawn 时记录）：settle 线程据「该 PID 是否监听端口」判定启动成败，
+     * 精确匹配端口监听者，区别于占用端口的别家服务或同名 / 孤儿进程。0 表示当前无活动子进程。
+     */
     pub child_pid: AtomicU32,
 }
 
@@ -124,8 +98,10 @@ impl HttpServerState {
     fn address(&self) -> String {
         format!("http://127.0.0.1:{}", self.port())
     }
-    /// 复位启动相关状态（start_server 入口调用）：清启动日志缓冲与 start_last_error，
-    /// 确保本次启动过程日志与失败原因取自本次 Go 输出。child_pid 在 spawn 时另行设置。
+    /*
+     * 复位启动相关状态（start_server 入口调用）：清启动日志缓冲与 start_last_error，
+     * 确保本次启动过程日志与失败原因取自本次 Go 输出。child_pid 在 spawn 时另行设置。
+     */
     fn reset_start_error(&self) {
         if let Ok(mut g) = self.start_recent_log.lock() {
             g.clear();
@@ -134,7 +110,7 @@ impl HttpServerState {
             *g = None;
         }
     }
-    /// 事件线程 append 一行 stdout/stderr 到启动日志；仅 run_state==Starting 期间累积（一旦 Running/Stopped 即停）。
+    // 事件线程 append 一行 stdout/stderr 到启动日志；仅 run_state==Starting 期间累积（一旦 Running/Stopped 即停）。
     fn append_start_recent_log(&self, line: String) {
         if self.run_state() == HttpServerRunState::Starting {
             if let Ok(mut g) = self.start_recent_log.lock() {
@@ -142,11 +118,11 @@ impl HttpServerState {
             }
         }
     }
-    /// 设置本次 sidecar 子进程 PID（spawn 时调用）。
+    // 设置本次 sidecar 子进程 PID（spawn 时调用）。
     fn set_child_pid(&self, pid: u32) {
         self.child_pid.store(pid, Ordering::SeqCst);
     }
-    /// 取启动日志最后一行非空、清洗为失败原因（供 Starting 期进程退出的 error；无内容则 None）。
+    // 取启动日志最后一行非空、清洗为失败原因（供 Starting 期进程退出的 error；无内容则 None）。
     fn extract_last_log_error(&self) -> Option<String> {
         self.start_recent_log
             .lock()
@@ -160,20 +136,20 @@ impl HttpServerState {
             .map(|line| clean_go_error_line(&line))
             .filter(|s| !s.is_empty())
     }
-    /// 清 start_last_error（启动成功 / 主动停止时调用）。
+    // 清 start_last_error（启动成功 / 主动停止时调用）。
     fn clear_start_last_error(&self) {
         if let Ok(mut g) = self.start_last_error.lock() {
             *g = None;
         }
     }
-    /// 取最近一次启动失败原因（http_server_status 返回前端用；无则 None）。
+    // 取最近一次启动失败原因（http_server_status 返回前端用；无则 None）。
     fn start_last_error(&self) -> Option<String> {
         self.start_last_error
             .lock()
             .ok()
             .and_then(|g| g.clone())
     }
-    /// 取启动日志拼接字符串（空则 None），http_server_status 返回前端用。
+    // 取启动日志拼接字符串（空则 None），http_server_status 返回前端用。
     fn start_recent_log_joined(&self) -> Option<String> {
         self.start_recent_log
             .lock()
@@ -183,9 +159,11 @@ impl HttpServerState {
     }
 }
 
-/// 清洗 Go 启动失败日志行为干净的错误详情，供前端直接展示（前端只做关键词翻译）。两种来源：
-///   - zap console：`2026-07-29 ... FATAL server/main.go:71 serve failed {"error": "..."}` → 提取 error 值
-///   - 标准库 log（config.go 的 log.Fatalf）：`2026/07/29 10:52:18 [config] ...` → 剥离前导时间戳
+/*
+ * 清洗 Go 启动失败日志行为干净的错误详情，供前端直接展示（前端只做关键词翻译）。两种来源：
+ *   - zap console：`2026-07-29 ... FATAL server/main.go:71 serve failed {"error": "..."}` → 提取 error 值
+ *   - 标准库 log（config.go 的 log.Fatalf）：`2026/07/29 10:52:18 [config] ...` → 剥离前导时间戳
+ */
 fn clean_go_error_line(line: &str) -> String {
     let line = line.trim();
     // 优先提取 zap 的 error 字段值："error":"..."。
@@ -211,8 +189,10 @@ fn clean_go_error_line(line: &str) -> String {
     line.to_string()
 }
 
-/// 构造当前服务状态快照（run_state/address/port/mode/start_last_error/start_recent_log）。
-/// 既是 http_server_status 命令的返回，也作为 state-changed 事件的 payload，保证前端两路数据一致。
+/*
+ * 构造当前服务状态快照（run_state/address/port/mode/start_last_error/start_recent_log）。
+ * 既是 http_server_status 命令的返回，也作为 state-changed 事件的 payload，保证前端两路数据一致。
+ */
 fn build_status(state: &HttpServerState) -> HttpServerStatus {
     HttpServerStatus {
         run_state: state.run_state(),
@@ -224,10 +204,11 @@ fn build_status(state: &HttpServerState) -> HttpServerStatus {
     }
 }
 
-/// 更新 run_state 并把最新状态快照作为 payload emit 给前端（前端 listen 后直接同步 UI，无需二次拉取）。
-/// 幂等：若新旧状态相同（如多次 Stopped）则不重复 emit——根治事件线程 Terminated+流结束、
-/// 以及 settle 线程与 Terminated 并发 finalize 时可能的双重 emit。
-/// init 的初始值与 shutdown（app 退出、webview 已关）不走此函数，本就不 emit。
+/*
+ * 更新 run_state 并把最新状态快照作为 payload emit 给前端（前端 listen 后直接同步 UI，无需二次拉取）。
+ * 幂等：若新旧状态相同（如多次 Stopped）则不重复 emit——根治事件线程 Terminated+流结束、以及 settle 线程与 Terminated 并发 finalize 时可能的双重 emit。
+ * init 的初始值与 shutdown（app 退出、webview 已关）不走此函数，本就不 emit。
+ */
 fn transition_state(app: &AppHandle, state: &HttpServerState, new: HttpServerRunState) {
     let old = state.run_state();
     state.set_run_state(new);
@@ -240,8 +221,10 @@ fn transition_state(app: &AppHandle, state: &HttpServerState, new: HttpServerRun
     );
 }
 
-/// 解析 app_data_dir 下的 app-server 数据目录并确保存在，返回 (log_dir, sqlite_dir)。
-/// 命名空间到 app-server/ 子目录，避免与 Rust 自身的 app.db 等文件混放。
+/*
+ * 解析 app_data_dir 下的 app-server 数据目录并确保存在，返回 (log_dir, sqlite_dir)。
+ * 命名空间到 app-server/ 子目录，避免与 Rust 自身的 app.db 等文件混放。
+ */
 fn resolve_dirs(app: &AppHandle) -> Result<(String, String), String> {
     let data_dir: PathBuf = app
         .path()
@@ -257,8 +240,10 @@ fn resolve_dirs(app: &AppHandle) -> Result<(String, String), String> {
     ))
 }
 
-/// 终止子进程：unix 先 SIGTERM 让服务优雅退出（关闭监听连接），短暂等待后 kill() 兜底；
-/// Windows 直接 kill()（无 SIGTERM 概念）。用 `kill` 命令发信号避免引入 libc 依赖。
+/*
+ * 终止子进程：unix 先 SIGTERM 让服务优雅退出（关闭监听连接），短暂等待后 kill() 兜底；
+ * Windows 直接 kill()（无 SIGTERM 概念）。用 `kill` 命令发信号避免引入 libc 依赖。
+ */
 fn terminate_child(child: CommandChild) {
     #[cfg(unix)]
     {
@@ -275,15 +260,16 @@ fn terminate_child(child: CommandChild) {
     let _ = child.kill();
 }
 
-// ============================================================
-// 端口兜底：清理跨会话残留的 go-server 孤立进程
-// ============================================================
-// 仅当端口占用者进程名同时含 tauri.conf identifier 与 go_server_bin（即本应用 sidecar）才 kill，
-// 避免误杀占用同端口的其它应用（那种情况留给 spawn 的 bind 失败自然暴露）。
-// 跨平台：unix 用 lsof/ps/kill，Windows 用 netstat/tasklist/taskkill。
+/*
+ * 端口兜底：清理跨会话残留的 go-server 孤立进程。
+ * 仅当端口占用者进程名同时含 tauri.conf identifier 与 go_server_bin（即本应用 sidecar）才 kill，避免误杀占用同端口的其它应用（那种情况留给 spawn 的 bind 失败自然暴露）。
+ * 跨平台：unix 用 lsof/ps/kill，Windows 用 netstat/tasklist/taskkill。
+ */
 
-/// 若端口被本应用 go-server 孤立进程占用，逐个 kill（unix SIGTERM→SIGKILL；Windows taskkill /F）。
-/// identifier 取自运行态 tauri.conf（app.config().identifier），dev/build 各自匹配自己的 sidecar 名。
+/*
+ * 若端口被本应用 go-server 孤立进程占用，逐个 kill（unix SIGTERM→SIGKILL；Windows taskkill /F）。
+ * identifier 取自运行态 tauri.conf（app.config().identifier），dev/build 各自匹配自己的 sidecar 名。
+ */
 fn reclaim_port_if_orphan_go_server(port: u16, identifier: &str) {
     for pid in pids_listening_on_port(port) {
         let cmd = match pid_command(pid) {
@@ -308,24 +294,30 @@ fn reclaim_port_if_orphan_go_server(port: u16, identifier: &str) {
     }
 }
 
-/// 进程命令行是否像本应用 go-server：同时含 **tauri.conf 的 identifier** 与 `go_server_bin`。
-/// identifier 由调用方传入运行态 `app.config().identifier`——dev/build 各自取值（见各 conf），
-/// 故同一份匹配逻辑天然兼容 dev（...dev-go_server_bin）与 build（...go_server_bin）两种 sidecar 名。
+/*
+ * 进程命令行是否像本应用 go-server：同时含 **tauri.conf 的 identifier** 与 `go_server_bin`。
+ * identifier 由调用方传入运行态 `app.config().identifier`——dev/build 各自取值（见各 conf），
+ * 故同一份匹配逻辑天然兼容 dev（...dev-go_server_bin）与 build（...go_server_bin）两种 sidecar 名。
+ */
 fn looks_like_go_server(cmd: &str, identifier: &str) -> bool {
     cmd.contains(identifier) && cmd.contains("go_server_bin")
 }
 
-/// 判断本应用 sidecar 子进程是否已监听目标端口（= Go 已成功 bind）。
-/// 复用 pids_listening_on_port 取端口监听者 PID，精确匹配 child_pid——
-/// 不受同名 / 孤儿进程干扰，也绝不会把占用端口的别家服务误判为启动成功。
+/*
+ * 判断本应用 sidecar 子进程是否已监听目标端口（= Go 已成功 bind）。
+ * 复用 pids_listening_on_port 取端口监听者 PID，精确匹配 child_pid——
+ * 不受同名 / 孤儿进程干扰，也绝不会把占用端口的别家服务误判为启动成功。
+ */
 fn child_owns_port(port: u16, child_pid: u32) -> bool {
     pids_listening_on_port(port).contains(&child_pid)
 }
 
 #[cfg(unix)]
 fn pids_listening_on_port(port: u16) -> Vec<u32> {
-    // -nP 不解析主机名/端口名（快且避免 DNS 失败）；-iTCP:<port> 过滤端口；
-    // -sTCP:LISTEN 仅监听套接字（bind 冲突的唯一来源）；-t 仅输出 PID。
+    /*
+     * -nP 不解析主机名/端口名（快且避免 DNS 失败）；-iTCP:<port> 过滤端口；
+     * -sTCP:LISTEN 仅监听套接字（bind 冲突的唯一来源）；-t 仅输出 PID。
+     */
     let out = Command::new("lsof")
         .args([
             "-nP",
@@ -407,8 +399,10 @@ fn kill_orphan_pid(pid: u32) {
 
 #[cfg(windows)]
 fn pids_listening_on_port(port: u16) -> Vec<u32> {
-    // netstat -ano -p TCP 行形如：
-    //   TCP    127.0.0.1:9100    0.0.0.0:0    LISTENING    1234
+    /*
+     * netstat -ano -p TCP 行形如：
+     *   TCP    127.0.0.1:9100    0.0.0.0:0    LISTENING    1234
+     */
     let out = match Command::new("netstat")
         .args(["-ano", "-p", "TCP"])
         .stdin(Stdio::null())
@@ -471,10 +465,10 @@ fn kill_orphan_pid(pid: u32) {
         .status();
 }
 
-/// 集中式「置 Stopped + emit + 回收 child」：幂等——已 Stopped 则直接返回不再 emit，
-/// 根治事件线程「Terminated + 流结束」双重触发导致的 stopped 双发。
-/// error=Some 表示启动失败原因（Starting 期退出 / 身份校验未通过 / 超时），前端据此 toast；
-/// error=None 表示运行中或主动停止，不弹失败 toast。
+/*
+ * 集中式「置 Stopped + emit + 回收 child」：幂等——已 Stopped 则直接返回不再 emit，根治事件线程「Terminated + 流结束」双重触发导致的 stopped 双发。
+ * error=Some 表示启动失败原因（Starting 期退出 / 身份校验未通过 / 超时），前端据此 toast；error=None 表示运行中或主动停止，不弹失败 toast。
+ */
 fn finalize_stopped(app: &AppHandle, error: Option<String>) {
     let Some(state) = app.try_state::<HttpServerState>() else {
         return;
@@ -492,17 +486,11 @@ fn finalize_stopped(app: &AppHandle, error: Option<String>) {
     }
 }
 
-/// 启动 sidecar（仅 spawn + 启动成败判定，不含端口清理逻辑）。在调用方线程同步执行；失败返回 Err。
-///
-/// 跨会话 go-server 孤立进程的清理由调用方负责：init 自动启动路径先行自愈
-/// （reclaim_port_if_orphan_go_server），手动开关路径经 `cleanup_orphan_http_server`
-/// 命令显式触发（详见该命令注释）。
-///
-/// 1) 停掉同会话 Rust 持有的 child（强制干净重启；init 时 child 为 None，空操作）。
-/// 2) 加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 记 child_pid → 置 Starting；
-///    spawn 后再复查 aborted，若期间 app 已退出则当场 kill，不留孤儿。
-/// 3) 后台 settle 线程：在 STARTUP_VERDICT_DEADLINE 窗口内按 STARTUP_POLL_INTERVAL 轮询 child_owns_port（PID 精确匹配端口监听者）
-///    判定成败——命中即置 Running（前端可直接 fetch），窗口结束未命中则 kill 子进程后置 Stopped(失败)；进程退出由事件线程 Terminated 即时捕获。
+/*
+ * 启动 sidecar（仅 spawn + 启动成败判定，不含端口清理逻辑）。在调用方线程同步执行；失败返回 Err。跨会话 go-server 孤立进程的清理由调用方负责：init 自动启动路径先行自愈（reclaim_port_if_orphan_go_server），手动开关路径经 `cleanup_orphan_http_server` 命令显式触发（详见该命令注释）。
+ * 步骤 1：停掉同会话 Rust 持有的 child（强制干净重启；init 时 child 为 None，空操作）。
+ * 步骤 2：加锁复查 aborted/dirs（并发双 spawn 由 child 已 Some 兜底）→ spawn → 记 child_pid → 置 Starting；spawn 后再复查 aborted，若期间 app 已退出则当场 kill，不留孤儿。步骤 3：后台 settle 线程在 STARTUP_VERDICT_DEADLINE 窗口内按 STARTUP_POLL_INTERVAL 轮询 child_owns_port（PID 精确匹配端口监听者）判定成败——命中即置 Running（前端可直接 fetch），窗口结束未命中则 kill 子进程后置 Stopped(失败)；进程退出由事件线程 Terminated 即时捕获。
+ */
 fn start_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
 
@@ -545,20 +533,22 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     let port = default_port();
     state.set_port(port);
 
-    // 解析 Rust 自身 app_config 库路径（app_data_dir/app.db，与 resolve_dirs/app_config::init 同口径）：
-    // Go MCP 工具只读共享该库（如 github_pat）。解析失败不阻断启动
-    // （缺省注入时 Go 侧按「未配置」降级，HTTP 服务是旁路的原则同样适用于此处）。
+    /*
+     * 解析 Rust 自身 app_config 库路径（app_data_dir/app.db，与 resolve_dirs/app_config::init 同口径）：
+     * Go MCP 工具只读共享该库（如 github_pat）。解析失败不阻断启动
+     * （缺省注入时 Go 侧按「未配置」降级，HTTP 服务是旁路的原则同样适用于此处）。
+     */
     let app_db_path: Option<String> = app
         .path()
         .app_data_dir()
         .ok()
         .map(|dir| dir.join("app.db").to_string_lossy().into_owned());
 
-    // ACP vendoring 两目录（T1.3）：resources 源目录缺失时降级不注入（Go 侧报未配置）；
-    // 受管目标根 Go 自建，Rust 不 MkdirAll（对齐 app_db 的旁路原则）。
-    // Resource 基准按平台解析（macOS = .app/Contents/Resources、Windows = exe 目录，
-    // 均含打包资源；dev 下 bundle.resources 不复制进 target），dev 分支改以 crate
-    // 目录为基准指向仓库内 staging，release 恒为打包资源目录。
+    /*
+     * ACP vendoring 两目录（T1.3）：resources 源目录缺失时降级不注入（Go 侧报未配置）；受管目标根 Go 自建，Rust 不 MkdirAll（对齐 app_db 的旁路原则）。
+     * Resource 基准按平台解析（macOS = .app/Contents/Resources、Windows = exe 目录，均含打包资源；dev 下 bundle.resources 不复制进 target），
+     * dev 分支改以 crate 目录为基准指向仓库内 staging，release 恒为打包资源目录。
+     */
     let acp_resources_dir: Option<String> = if tauri::is_dev() {
         Some(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -623,11 +613,11 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     );
     drop(guard); // 释放锁，事件线程与 settle 线程才能访问 child。
 
-    // 后台 settle 线程：判定启动成败。在 STARTUP_VERDICT_DEADLINE 窗口内按 STARTUP_POLL_INTERVAL 轮询 child_owns_port
-    // （该 PID 是否监听端口）做身份校验——端口就绪即置 Running；窗口结束仍未就绪则 kill 子进程后置 Stopped(失败)。
-    // 轮询而非「日志静默触发」：Go 启动期 SQLite 迁移可能数秒无控制台输出，日志静默会误杀正常启动；
-    // 失败即 kill 杜绝「进程在跑但状态 Stopped」的孤儿（settle 一次性判定、运行期无探活，不 kill 则状态永久偏离）。
-    // 任一 finalize（进程退出等）先行后，run_state≠Starting 即退让，保证「先到先得」不重复 emit。
+    /*
+     * 后台 settle 线程：判定启动成败。在 STARTUP_VERDICT_DEADLINE 窗口内按 STARTUP_POLL_INTERVAL 轮询 child_owns_port（该 PID 是否监听端口）做身份校验——端口就绪即置 Running；窗口结束仍未就绪则 kill 子进程后置 Stopped(失败)。
+     * 轮询而非「日志静默触发」：Go 启动期 SQLite 迁移可能数秒无控制台输出，日志静默会误杀正常启动；失败即 kill 杜绝「进程在跑但状态 Stopped」的孤儿（settle 一次性判定、运行期无探活，不 kill 则状态永久偏离）。
+     * 任一 finalize（进程退出等）先行后，run_state≠Starting 即退让，保证「先到先得」不重复 emit。
+     */
     let settle_handle = app.clone();
     thread::spawn(move || {
         let state = settle_handle.state::<HttpServerState>();
@@ -662,10 +652,10 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                 port
             );
         } else {
-            // 身份校验：deadline 内可能已发生「停→重启」（如 reset_server_data 的停删重拉、
-            // 用户快速关→开服务），run_state 短暂经过 Stopped 又回到 Starting 时，本线程会把
-            // 新 child 的 Starting 误认成自己的。child_pid 已换代说明 mutex 里的 child 属于
-            // 新一次 spawn，交由其自己的 settle 线程裁定，本线程不 kill、不裁定。
+            /*
+             * 身份校验：deadline 内可能已发生「停→重启」（如 reset_server_data 的停删重拉、用户快速关→开服务），run_state 短暂经过 Stopped 又回到 Starting 时，本线程会把新 child 的 Starting 误认成自己的。
+             * child_pid 已换代说明 mutex 里的 child 属于新一次 spawn，交由其自己的 settle 线程裁定，本线程不 kill、不裁定。
+             */
             if state.child_pid.load(Ordering::SeqCst) != child_pid {
                 log::info!(
                     "[http-server] settle for pid {} superseded by pid {}; skip verdict",
@@ -679,8 +669,10 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                 child_pid,
                 port
             );
-            // 失败即杀：take 出 child 并 terminate，避免「进程实际在跑却置 Stopped」的孤儿。
-            // finalize_stopped 不会再 kill（child 已 take 为 None），仅置状态 + 记录失败原因。
+            /*
+             * 失败即杀：take 出 child 并 terminate，避免「进程实际在跑却置 Stopped」的孤儿。
+             * finalize_stopped 不会再 kill（child 已 take 为 None），仅置状态 + 记录失败原因。
+             */
             if let Ok(mut guard) = state.child.lock() {
                 if let Some(child) = guard.take() {
                     terminate_child(child);
@@ -693,9 +685,11 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         }
     });
 
-    // 事件线程：转发 sidecar 的 stdout/stderr/终止/错误。
-    // Stderr 用 warn 级：Go 的 zap 控制台日志默认写 stderr（含正常 listening 信息），release 日志级别为 Warn，
-    // WARN 才能保证 Go 输出（含失败原因）留痕供排障。
+    /*
+     * 事件线程：转发 sidecar 的 stdout/stderr/终止/错误。
+     * Stderr 用 warn 级：Go 的 zap 控制台日志默认写 stderr（含正常 listening 信息），release 日志级别为 Warn，
+     * WARN 才能保证 Go 输出（含失败原因）留痕供排障。
+     */
     let app_clone = app.clone();
     thread::spawn(move || {
         while let Some(event) = rx.blocking_recv() {
@@ -744,7 +738,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 停止 sidecar（未运行则跳过，幂等）。unix SIGTERM 优雅退出 + kill() 兜底。
+// 停止 sidecar（未运行则跳过，幂等）。unix SIGTERM 优雅退出 + kill() 兜底。
 fn stop_server(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<HttpServerState>();
     let child = {
@@ -756,18 +750,21 @@ fn stop_server(app: &AppHandle) -> Result<(), String> {
     };
     if let Some(child) = child {
         terminate_child(child);
-        // 主动停止非启动失败：finalize_stopped(None) 置 Stopped 且不携带失败原因（不弹失败 toast）；
-        // 其后进程退出的 Terminated 会命中 finalize_stopped 幂等分支，不再重复 emit。
+        /*
+         * 主动停止非启动失败：finalize_stopped(None) 置 Stopped 且不携带失败原因（不弹失败 toast）；
+         * 其后进程退出的 Terminated 会命中 finalize_stopped 幂等分支，不再重复 emit。
+         */
         finalize_stopped(app, None);
         log::info!("[http-server] stopped");
     }
     Ok(())
 }
 
-/// 在 setup 阶段注册 HttpServerState 并后台拉起 sidecar（默认 ON）。
-///
-/// 非核心依赖：**永不返回 Err、永不阻塞 setup**。先同步注册 state（含 mode/port/dirs），
-/// 确保前端 status 命令立即可用；实际 spawn 在后台线程，失败仅 log::warn。
+/*
+ * 在 setup 阶段注册 HttpServerState 并后台拉起 sidecar（默认 ON）。
+ * 非核心依赖：**永不返回 Err、永不阻塞 setup**。先同步注册 state（含 mode/port/dirs），
+ * 确保前端 status 命令立即可用；实际 spawn 在后台线程，失败仅 log::warn。
+ */
 pub fn init(app: &AppHandle) {
     // app 启动的 go-server 只有两种模式：dev 编译（tauri:dev）→ test，build 编译（tauri:build）→ release。
     let mode = if cfg!(debug_assertions) {
@@ -794,8 +791,10 @@ pub fn init(app: &AppHandle) {
         aborted: AtomicBool::new(false),
         run_state: AtomicU8::new(HttpServerRunState::Stopped as u8),
         mode,
-        // 端口为编译期固定值（dev=9000 / release=9100，见本文件顶部端口契约注释），
-        // start_server 时同值写入。
+        /*
+         * 端口为编译期固定值（dev=9000 / release=9100，见本文件顶部端口契约注释），
+         * start_server 时同值写入。
+         */
         port: AtomicU16::new(default_port()),
         log_dir,
         sqlite_dir,
@@ -804,9 +803,11 @@ pub fn init(app: &AppHandle) {
         start_last_error: Mutex::new(None),
     });
 
-    // 默认自动启动（后台线程，不阻塞 setup）。启动前先自愈清理本应用 sidecar 孤儿——
-    // 上一实例重启/崩溃/强杀残留占用端口会让新 sidecar bind 失败（复用与手动开关路径
-    // 同一款 identifier+go_server_bin 双重校验，不误杀他应用）。
+    /*
+     * 默认自动启动（后台线程，不阻塞 setup）。启动前先自愈清理本应用 sidecar 孤儿——
+     * 上一实例重启/崩溃/强杀残留占用端口会让新 sidecar bind 失败（复用与手动开关路径
+     * 同一款 identifier+go_server_bin 双重校验，不误杀他应用）。
+     */
     if dirs.is_some() {
         let handle = app.clone();
         thread::spawn(move || {
@@ -819,7 +820,7 @@ pub fn init(app: &AppHandle) {
     }
 }
 
-/// 应用退出时（RunEvent::Exit）调用：置 aborted 阻止新 spawn，再尽力回收 sidecar 子进程。
+// 应用退出时（RunEvent::Exit）调用：置 aborted 阻止新 spawn，再尽力回收 sidecar 子进程。
 pub fn shutdown(state: &HttpServerState) {
     // 先置位：后台 worker 若在此之后才 spawn 成功，会读到 aborted 自行 kill，不留孤儿。
     state.aborted.store(true, Ordering::SeqCst);
@@ -832,21 +833,21 @@ pub fn shutdown(state: &HttpServerState) {
     }
 }
 
-// ============================================================
-// IPC 命令（前端经 tauri-specta 调用，见 src/shared/bindings.ts）
-// ============================================================
+/*
+ * IPC 命令（前端经 tauri-specta 调用，见 src/shared/bindings.ts）
+ */
 
-/// 查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。
+// 查询 HTTP 服务运行态与地址。前端 ServerStatusPage 据此渲染 Switch 与服务地址，并 fetch sysinfo。
 #[tauri::command]
 #[specta::specta]
 pub fn http_server_status(state: State<'_, HttpServerState>) -> HttpServerStatus {
     build_status(state.inner())
 }
 
-/// 开关 HTTP 服务（true=启动，false=停止）。前端 Switch 控件调用。
-///
-/// 开启时仅调 start_server（内部停同会话 child + spawn，不含端口清理）；
-/// 跨会话孤立进程的清理由前端在调用本命令前显式触发 `cleanup_orphan_http_server`。
+/*
+ * 开关 HTTP 服务（true=启动，false=停止）。前端 Switch 控件调用。
+ * 开启时仅调 start_server（内部停同会话 child + spawn，不含端口清理）；跨会话孤立进程的清理由前端在调用本命令前显式触发 `cleanup_orphan_http_server`。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn set_http_server_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
@@ -857,14 +858,11 @@ pub fn set_http_server_enabled(app: AppHandle, enabled: bool) -> Result<(), Stri
     }
 }
 
-/// 清理跨会话残留的本应用 go-server 孤立进程（app 异常退出后残留、占用端口者）。
-///
-/// 仅当端口占用者进程名同时含 tauri.conf identifier 与 go_server_bin（即本应用 sidecar）才 kill，
-/// 不误杀占用同端口的其它应用。前端「服务状态」页开关从关闭→开启时，应在 `set_http_server_enabled(true)`
-/// 之前调用本命令，确保端口可用，避免新 sidecar bind 失败。
-///
-/// 注：init 自动启动路径不经本命令，但其启动线程内直接调用同一款
-/// `reclaim_port_if_orphan_go_server` 自愈（见 init 注释）。
+/*
+ * 清理跨会话残留的本应用 go-server 孤立进程（app 异常退出后残留、占用端口者）。
+ * 仅当端口占用者进程名同时含 tauri.conf identifier 与 go_server_bin（即本应用 sidecar）才 kill，不误杀占用同端口的其它应用；前端「服务状态」页开关从关闭→开启时，应在 `set_http_server_enabled(true)` 之前调用本命令，确保端口可用，避免新 sidecar bind 失败。
+ * 注：init 自动启动路径不经本命令，但其启动线程内直接调用同一款 `reclaim_port_if_orphan_go_server` 自愈（见 init 注释）。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn cleanup_orphan_http_server(app: AppHandle) -> Result<(), String> {
@@ -873,11 +871,15 @@ pub fn cleanup_orphan_http_server(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 删除 server.db 文件（幂等：不存在视为成功）。
-/// Windows 上进程刚被 kill、句柄可能延迟释放，短重试兜底；unix 通常一次成功。
+/*
+ * 删除 server.db 文件（幂等：不存在视为成功）。
+ * Windows 上进程刚被 kill、句柄可能延迟释放，短重试兜底；unix 通常一次成功。
+ */
 fn remove_server_db(sqlite_dir: &str) -> Result<(), String> {
-    // 文件名 SSOT 在 Go 侧（server/internal/initialize/sqlite.go 的 sqliteFileName），
-    // 与 README「查看服务 SQLite 数据库」文档口径一致。
+    /*
+     * 文件名 SSOT 在 Go 侧（server/internal/initialize/sqlite.go 的 sqliteFileName），
+     * 与 README「查看服务 SQLite 数据库」文档口径一致。
+     */
     let db_path = PathBuf::from(sqlite_dir).join("server.db");
     if !db_path.exists() {
         return Ok(());
@@ -899,15 +901,11 @@ fn remove_server_db(sqlite_dir: &str) -> Result<(), String> {
     ))
 }
 
-/// 重置服务数据（数据清理页，整库重置）：停 sidecar → 删 server.db → 原本在跑则重拉。
-///
-/// server.db 无任何种子数据、空库即初始态，Go 启动时 goose 迁移自动重建全部表，
-/// 删除文件即完成重置。选择进程外重置而非 Go 进程内清表：Go 侧 bot Supervisor 的
-/// StopAll 终态位不可逆、ACP/会话锚点表有 GetOrCreate 自愈语义（清表后旧写方会重建
-/// 脏行），进程内收敛复杂且脆弱——停进程是最干净的收敛。
-///
-/// 时序：先停自有 child（此后端口监听者只会是跨会话孤儿）→ 回收孤儿（其打开的 db
-/// 句柄会阻塞 Windows 删除）→ 删文件 → was_active 时重拉（迁移重跑）。
+/*
+ * 重置服务数据（数据清理页，整库重置）：停 sidecar → 删 server.db → 原本在跑则重拉。server.db 无任何种子数据、空库即初始态，Go 启动时 goose 迁移自动重建全部表，删除文件即完成重置。
+ * 选择进程外重置而非 Go 进程内清表：Go 侧 bot Supervisor 的 StopAll 终态位不可逆、ACP/会话锚点表有 GetOrCreate 自愈语义（清表后旧写方会重建脏行），进程内收敛复杂且脆弱——停进程是最干净的收敛。
+ * 时序：先停自有 child（此后端口监听者只会是跨会话孤儿）→ 回收孤儿（其打开的 db 句柄会阻塞 Windows 删除）→ 删文件 → was_active 时重拉（迁移重跑）。
+ */
 #[tauri::command]
 #[specta::specta]
 pub fn reset_server_data(app: AppHandle) -> Result<(), String> {
@@ -921,8 +919,10 @@ pub fn reset_server_data(app: AppHandle) -> Result<(), String> {
     }
     reclaim_port_if_orphan_go_server(state.port(), &app.config().identifier);
     if let Err(e) = remove_server_db(&state.sqlite_dir) {
-        // 删除失败（如 Windows 句柄延迟未释放）：库文件仍在、数据未动。原本在跑则尽力
-        // 拉回服务（回到旧数据可用态），再向上报错——避免服务停留 Stopped 需用户手动重开。
+        /*
+         * 删除失败（如 Windows 句柄延迟未释放）：库文件仍在、数据未动。原本在跑则尽力
+         * 拉回服务（回到旧数据可用态），再向上报错——避免服务停留 Stopped 需用户手动重开。
+         */
         if was_active {
             if let Err(re) = start_server(&app) {
                 log::warn!(

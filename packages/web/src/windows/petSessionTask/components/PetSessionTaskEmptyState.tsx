@@ -13,9 +13,9 @@ function PetSessionTaskEmptyState() {
         alignItems: 'center',
         justifyContent: 'center',
         flex: 1,
-        gap: 0.5,
-        px: 2,
-        py: 3,
+        gap: '4px',
+        px: '16px',
+        py: '24px',
       }}
     >
       <Typography variant="body2" sx={{ fontWeight: 600 }}>

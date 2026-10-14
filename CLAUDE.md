@@ -66,7 +66,7 @@ React 前端（多窗口 webview）─ IPC ─ Rust（Tauri shell）─ spawn/HT
 - **状态管理**（`packages/web/src/state/`，约定见其 README.md）：一业务域一目录（store + keys + queries + index），server 状态用 TanStack Query、client 选中态用 zustand；跨窗口同步一律走后端 SSOT + Tauri 事件，前端不做。
 - **Go API 客户端**：`packages/web/src/services/`；服务地址从 Rust `http_server_status` 命令获取，不硬编码端口。
 - **配置体系**：key 常量与默认值的 SSOT 是 `packages/web/src/shared/appConfig.ts`。`useConfigValue` 订阅单 key（**初值为同步默认值、真实值异步回填**）；挂载期消费度量/编排类配置的组件用 `useConfigReady` 闸门等就绪（见「编码规则 1」）。
-- **Tauri 桥**：所有 IPC command 类型在 `packages/web/src/shared/bindings.ts`（生成物，勿手改）——**改 Rust command 后必须 `pnpm gen:bindings`**，否则 CI `verify:bindings` 漂移失败。
+- **Tauri 桥**：所有 IPC command 类型在 `packages/web/src/shared/bindings.ts`（生成物，勿手改）——**改 Rust command 后必须 `pnpm gen:bindings`**，否则 CI `verify:bindings` 漂移失败。生成流程末尾剥离生成器注入的块注释（`scripts/strip-bindings-comments.mjs`），生成物除文件头外零注释（Rust 源码不使用文档注释，见编码规则 3）。
 
 ### 终端链路（本项目核心，跨 React ↔ Rust）
 
@@ -99,27 +99,69 @@ Gin + GORM + sqlite（纯 Go，无 CGO），分层规范/API 范式/配置优先
 
 ### 3. 注释要求
 
-所有注释行数 ≤3：常规一行，内容确多两行，特别注意点放第三行补充。
+所有注释行数 ≤3：常规一行，内容确多两行，特别注意点放第三行补充。注释仅描述功能，极简风：不与代码中的变量名、方法名、属性名等实现细节绑定，不写过程性叙述（演变史归 git）；只写「这是什么/有什么约束」。
 
-- 单行注释用 `//`；超过一行即用块格式（方便后续行数扩展）：
+**Web（TS/TSX）**
+
+- 单行：
 
   ```
   // 单行注释
+  ```
 
+- 多行：
+
+  ```
   /**
    * 多行注释
    */
   ```
 
-- JSX 内部用 `{/* */}` 同规格（单行 `{/* x */}`，多行分行写）。
-- 注释仅描述功能，极简风：不与代码中的变量名、方法名、属性名等实现细节绑定，不写过程性叙述（演变史归 git）；只写「这是什么/有什么约束」。
-- 所有代码文件遵循；存量注释不主动批量翻新，改到哪里就地把该处收敛。
+- JSX 内部同规格：
+
+  ```jsx
+  {/* 单行注释 */}
+
+  {/*
+  多行注释
+  */}
+  ```
+
+**Rust**
+
+- 单行：`//`（文档注释 `///`，inner `//!`）
+- 多行一律普通块（不区分文档/普通注释，应用型 crate 不发布 rustdoc）：
+
+  ```
+  /*
+   * 多行注释
+   */
+  ```
+
+- 生成物豁免（`bindings.ts`等生成代码不改）。
+
+**Go**
+
+- 单行：`//`
+- 多行（函数文档注释同格式）：
+
+  ```
+  /*
+   * 多行注释
+   */
+  ```
+
+- 超过 3 行的存量注释按语义压缩内容收敛，不机械截断。
+- 生成物豁免（`gorm/gen` DO 层等生成代码不改）。
 
 ### 4. UI 尺寸一律显式 px 字符串
 
 sx 中所有能明确 px 的地方一律写 `'14px'` 字符串，**禁止写数字**。
 
 - 根因：MUI sx 的 padding/margin 系属性传数字是 theme.spacing 倍数（×8px），`paddingBottom: 10` 实渲染 80px；统一字符串后歧义归零。
-- 例外两类：库 API 的数值参数（类型即 number、单位即 px，如 virtua `startMargin: 12`）照传数字；`px: 2` 这类刻意用 spacing 倍数的主题间距语义不受限。
+- 适用范围：MUI sx 及一切内联样式对象（`style={{...}}` 同样禁裸数字 px）。
+- theme 倍乘属性一律保渲染换算：spacing 系（padding/margin/gap 及 p/m 简写）数字是 ×8 倍乘、borderRadius 数字是 ×shape.borderRadius（当前主题 4）倍乘，均按实渲染值换算为显式 `'Npx'` 字符串（零渲染变化）；本项目无响应式 spacing 需求，禁止保留倍数写法，仅确需跟随主题缩放的特殊场景可例外并注明理由。
+- 例外：库 API 的数值参数（类型即 number、单位即 px，如 virtua `startMargin: 12`）照传数字；无单位属性（`flex`/`zIndex`/`fontWeight`/`opacity`/`lineHeight` 等）与百分比/`calc()` 值不属「明确 px」，不在约束内。
+- px 语义属性的数值 0 统一写 `'0px'`。
 - fontSize 最小 12、禁小数渲染值，不依赖 MUI 变体默认字号（主题 12/14 系数使变体实渲染全为小数，caption ≈10.29px）；变体仅用于行高/语义。
 - 存量数字写法不主动批量翻新，改到哪里就地把该处收敛为字符串 px。

@@ -205,8 +205,10 @@ func TestErrAfterUnexpectedDeath(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("进程未在时限内退出")
 	}
-	// 意外死亡证据面：Err 必须非 nil 且携带异常退出语义（主动收尾才是 nil，
-	// 见 TestLaunchHappyPath 的对照断言）。
+	/*
+	 * 意外死亡证据面：Err 必须非 nil 且携带异常退出语义（主动收尾才是 nil，
+	 * 见 TestLaunchHappyPath 的对照断言）。
+	 */
 	err := client.Err()
 	if err == nil {
 		t.Fatal("意外死亡后 Err 应返回非 nil 错误")
@@ -315,8 +317,10 @@ func TestElicitationAccept(t *testing.T) {
 	if pending.Request().Message != "请选择一个选项" {
 		t.Fatalf("请求文案不符，got %q", pending.Request().Message)
 	}
-	// 拦截层端到端：typed 模型不承载的 requestedSchema 必须经 wire 投影保真到达
-	//（fakeagent 以线上扁平格式直发，客户端 typed 解码会丢该字段）。
+	/*
+	 * 拦截层端到端：typed 模型不承载的 requestedSchema 必须经 wire 投影保真到达
+	 * （fakeagent 以线上扁平格式直发，客户端 typed 解码会丢该字段）。
+	 */
 	wire := pending.Wire()
 	if wire == nil || wire.Mode != "form" || wire.Message != "请选择一个选项" || wire.SessionID == "" {
 		t.Fatalf("wire 投影应携带拦截层解析结果，got %+v", wire)
@@ -466,8 +470,10 @@ func TestLoadSessionCapabilityRejected(t *testing.T) {
 	}
 }
 
-// LoadSession 全链：历史重放（响应前推送经早到帧缓冲，注册后按序回放）+ 请求 id 注册 +
-// Modes 合装 + 恢复后 prompt 正常推进。
+/*
+ * LoadSession 全链：历史重放（响应前推送经早到帧缓冲，注册后按序回放）+ 请求 id 注册 +
+ * Modes 合装 + 恢复后 prompt 正常推进。
+ */
 func TestLoadSessionReplayAndPrompt(t *testing.T) {
 	client := launchFakeClient(t, "load")
 	if _, err := client.Initialize(context.Background()); err != nil {

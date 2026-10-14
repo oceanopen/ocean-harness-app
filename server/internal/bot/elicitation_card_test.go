@@ -10,8 +10,10 @@ import (
 	"ocean-harness/server/internal/acpsession"
 )
 
-// radioField / checkboxField / otherField / textField 组装 requestedSchema 夹具（形态镜像
-// Gold-Band PoC 捕获的 AskUserQuestion wire）。
+/*
+ * radioField / checkboxField / otherField / textField 组装 requestedSchema 夹具（形态镜像
+ * Gold-Band PoC 捕获的 AskUserQuestion wire）。
+ */
 func schemaOf(fields ...string) json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{` + strings.Join(fields, ",") + `}}`)
 }
@@ -287,8 +289,10 @@ func TestElicitInteractionEmptySelection(t *testing.T) {
 	}
 }
 
-// 点击消费矩阵·命中（单选 submit）：accept 带勾选集归一的 content（source=bot）、确认文案
-// 带选项摘要、置灰为「原卡完整形态 + Disabled=true」。
+/*
+ * 点击消费矩阵·命中（单选 submit）：accept 带勾选集归一的 content（source=bot）、确认文案
+ * 带选项摘要、置灰为「原卡完整形态 + Disabled=true」。
+ */
 func TestElicitInteractionRespond(t *testing.T) {
 	sessions := newFakeSessions(interactSnap(elicitPendingView(9, schemaOf(radioField("db", "数据库", "mysql", "postgres")))))
 	route := gateTestRoute(acpResolve, sessions)
@@ -314,8 +318,10 @@ func TestElicitInteractionRespond(t *testing.T) {
 	}
 }
 
-// 点击消费矩阵·命中（多题 submit）：q0/q1 勾选集 → 各键 content，摘要分号连接，置灰带
-// Questions 投影。
+/*
+ * 点击消费矩阵·命中（多题 submit）：q0/q1 勾选集 → 各键 content，摘要分号连接，置灰带
+ * Questions 投影。
+ */
 func TestElicitInteractionRespondMultiQuestion(t *testing.T) {
 	sessions := newFakeSessions(interactSnap(elicitPendingView(9, schemaOf(
 		radioField("env", "环境", "dev", "prod"),
@@ -390,8 +396,10 @@ func TestElicitInteractionRespondFailure(t *testing.T) {
 	}
 }
 
-// 点击消费矩阵·已关闭（桌面先答/回合结算，快照已摘挂起）：decline 探测取 closed-history
-// 判别文案，不置灰。
+/*
+ * 点击消费矩阵·已关闭（桌面先答/回合结算，快照已摘挂起）：decline 探测取 closed-history
+ * 判别文案，不置灰。
+ */
 func TestElicitInteractionAlreadyClosed(t *testing.T) {
 	sessions := newFakeSessions(interactSnap()) // 快照无挂起 = 已关闭
 	sessions.elicitRespondErr = &acpsession.PendingAlreadyHandledError{Kind: "表单", Source: acpsession.PendingSourcePanel, Label: "接受"}
@@ -425,9 +433,11 @@ func TestElicitInteractionSessionRebuilt(t *testing.T) {
 	}
 }
 
-// 快路径数字回吞两态（T3.3）：纯表单挂起可表示 → 不确定态文案（gate 无回合上下文，「审批
-// 卡曾占位后残留纯表单态」与正常出卡态快照同形，确定态文案会指引不存在的卡；不可表示指回
-// 桌面由 TestPendingGateOnlyElicitation 覆盖）。
+/*
+ * 快路径数字回吞两态（T3.3）：纯表单挂起可表示 → 不确定态文案（gate 无回合上下文，「审批
+ * 卡曾占位后残留纯表单态」与正常出卡态快照同形，确定态文案会指引不存在的卡；不可表示指回
+ * 桌面由 TestPendingGateOnlyElicitation 覆盖）。
+ */
 func TestPendingGateOnlyElicitationRepresentable(t *testing.T) {
 	sessions := newFakeSessions(gateSnap(elicitPendingView(21, schemaOf(radioField("db", "数据库", "mysql", "postgres")))))
 	route := gateTestRoute(acpResolve, sessions)

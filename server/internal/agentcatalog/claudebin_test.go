@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// writeClaudeBinAt 在 installDir 内造当前平台的 SDK 平台二进制包（node_modules/
-// @anthropic-ai/claude-agent-sdk-<triple>/claude），返回二进制绝对路径。
+/*
+ * writeClaudeBinAt 在 installDir 内造当前平台的 SDK 平台二进制包（node_modules/@anthropic-ai/claude-agent-sdk-<triple>/claude），返回二进制绝对路径。
+ */
 func writeClaudeBinAt(t *testing.T, installDir string) string {
 	t.Helper()
 	triple := claudePlatformTriple()

@@ -4,10 +4,11 @@ import { useToast } from '@src/shared/useToast';
 import { useCancelAcpSession, usePromptAcpSession } from '@src/state/acpSession';
 import { useState } from 'react';
 
-// 底部任务描述输入框：Enter 发送 / Shift+Enter 换行（TerminalSearch 键盘范式）。
-// 回合态交互（拍板）：turnActive 禁用输入框，发送钮切换为「停止」（软取消，受理期间
-// 按钮 loading 可见——等待态优先 loading 而非仅禁用）；受理成功清空文本，失败 toast
-// 保留输入。
+/**
+ * 底部任务描述输入框：Enter 发送 / Shift+Enter 换行（TerminalSearch 键盘范式）。
+ * 回合态交互（拍板）：turnActive 禁用输入框，发送钮切换为「停止」（软取消，受理期间按钮 loading 可见——等待态优先 loading 而非仅禁用）；
+ * 受理成功清空文本，失败 toast 保留输入。
+ */
 export default function PromptComposer({ issueId, turnActive }: { issueId: string; turnActive: boolean }) {
   const [text, setText] = useState('');
   const prompt = usePromptAcpSession();
@@ -36,8 +37,8 @@ export default function PromptComposer({ issueId, turnActive }: { issueId: strin
   };
 
   return (
-    <Box sx={{ borderTop: 1, borderColor: 'divider', px: 2, py: 1.5 }}>
-      <Box sx={{ maxWidth: 860, mx: 'auto', display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+    <Box sx={{ borderTop: 1, borderColor: 'divider', px: '16px', py: '12px' }}>
+      <Box sx={{ maxWidth: '860px', mx: 'auto', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
         <TextField
           fullWidth
           multiline

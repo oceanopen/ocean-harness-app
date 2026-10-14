@@ -138,7 +138,7 @@ function WorkspaceProjectDrawer({ workspaceId, workspaceName, onClose, onCreated
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* 头部 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderBottom: '1px solid', borderColor: 'divider' }}>
           <Typography variant="subtitle1" sx={{ flex: 1, fontWeight: 600 }} noWrap>
             {isEdit ? t('tracker:workspaceProject.edit.title') : t('tracker:workspaceProject.add.title')}
           </Typography>
@@ -148,7 +148,7 @@ function WorkspaceProjectDrawer({ workspaceId, workspaceName, onClose, onCreated
         </Box>
 
         {/* 内容 */}
-        <Box sx={{ flex: 1, overflow: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Box sx={{ flex: 1, overflow: 'auto', p: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* 所属工作空间（只读，create+edit 均显，确认归属上下文） */}
           <TextField
             label={t('tracker:workspaceProject.edit.belongingWorkspace')}
@@ -217,7 +217,7 @@ function WorkspaceProjectDrawer({ workspaceId, workspaceName, onClose, onCreated
             onClose={() => setEmojiPickerAnchor(null)}
             anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
           >
-            <Box sx={{ p: 1.5, maxWidth: 320, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            <Box sx={{ p: '12px', maxWidth: '320px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
               {EMOJI_PRESETS.map((e) => {
                 const selected = emoji === e;
                 return (
@@ -231,12 +231,12 @@ function WorkspaceProjectDrawer({ workspaceId, workspaceName, onClose, onCreated
                     }}
                     disabled={submitting}
                     sx={{
-                      'width': 32,
-                      'height': 32,
-                      'p': 0,
-                      'fontSize': 18,
+                      'width': '32px',
+                      'height': '32px',
+                      'p': '0px',
+                      'fontSize': '18px',
                       'lineHeight': 1,
-                      'border': 2,
+                      'border': '2px solid',
                       'borderColor': selected ? 'primary.main' : 'transparent',
                       'bgcolor': selected ? 'action.selected' : 'transparent',
                       '&:hover': { bgcolor: 'action.hover' },
@@ -295,7 +295,7 @@ function WorkspaceProjectDrawer({ workspaceId, workspaceName, onClose, onCreated
         </Box>
 
         {/* 底部操作栏：一律左对齐 */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, p: 2, borderTop: 1, borderColor: 'divider' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderTop: '1px solid', borderColor: 'divider' }}>
           <Button color="inherit" onClick={onClose} disabled={submitting}>
             {t('tracker:workspaceProject.add.cancel')}
           </Button>
