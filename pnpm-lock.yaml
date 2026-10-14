@@ -249,6 +249,9 @@ catalogs:
     unplugin-icons:
       specifier: ^23.0.1
       version: 23.0.1
+    virtua:
+      specifier: ^0.53.5
+      version: 0.53.5
     vite:
       specifier: ^8.0.12
       version: 8.0.16
@@ -486,7 +489,7 @@ importers:
         specifier: 'catalog:'
         version: 2.6.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       virtua:
-        specifier: ^0.53.5
+        specifier: 'catalog:'
         version: 0.53.5(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       zustand:
         specifier: 'catalog:'
