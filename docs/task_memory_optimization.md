@@ -104,11 +104,17 @@
 
 ### 第二批（B 组：治本）
 
-**任务 T5：MessageList 虚拟化** ⬜
+**任务 T5：MessageList 虚拟化** ✅
 - 功能：数百条历史滚动流畅，挂载内存与会话长度解耦
 - 技术方案：引入 virtua（`packages/web/package.json`），`MessageList.tsx:49` 全量 map 改 Virtualizer 动态高度渲染；保持新消息自动滚底、滚动位置保持、ToolCallItem 交互回归
 - 依赖：无（先于 T6，列表数据源边界先定型）
 - 验收：500 条消息会话滚动 60fps、内存稳定；自动滚底与手动上滚不冲突；Shiki 高亮不回归
+
+**实施定稿**：
+- 落地面：virtua 0.53.5 进 catalog SSOT（`pnpm-workspace.yaml` + web 包 `catalog:` 引用）；`MessageList.tsx` 重写——滚动容器外接 `Virtualizer`（`scrollRef` + render-prop + `overflowAnchor:'none'`），限宽 860 居中列保留，顶部 12px 由 wrapper `paddingTop` 真实空隙 + 同源 `startMargin` 表达（startMargin 声明的是实际存在的偏移，二者常量同源），条目间 `gap` 折进条目 wrapper `paddingBottom:10` 并复原 flex 纵列语境（user 气泡 `alignSelf` 不回归）；贴底判定抽 `stickToBottom.ts` 纯函数（48px 严格小于，4 边界用例）；归底编排收敛单一入口 `followBottom`（`useCallback([entries])`，entries effect 与 `onResize` 共用——effect 直传函数写法；`scrollTop=scrollHeight` 直写废弃，改 `scrollToIndex(last, end)`）；工具调用展开态提升 `expandedToolCalls`（`Record<toolCallId, boolean>`，false 同缺省）+ `toolCallIdOf` 派生单一口径（读 key 与 ToolCallItem 合成 id 同源）+ `toggleToolCall` useCallback 稳定；`EntryItem` 包 `React.memo`（全仓首例，reducer 保证未变条目引用稳定，流式重渲染仅及增长条目）；`ToolCallItem` 受控化（`expanded`/`onToggle`，删内部 state），`PendingCard` PermissionCard 以单卡本地 state 接线（固定挂起区不受虚拟化影响）；`PayloadBlock` 的 `full` 局部态保持 T2 语义不动
+- 相对方案偏离/细化：① 展开态处理经用户拍板走「状态提升」路线（备选 keepMounted 保挂未采用——离屏 DOM 常驻与 T2 语义冲突）；② startMargin 与 wrapper paddingTop 的同源约束为方案细化（虚拟器上方空隙须真实存在）；③ 归底时序三路径冗余闭环——entries effect 首滚 / virtua scrollToIndex 内部重试（订阅测高事件微任务重滚）/ onResize 贴底跟随（Shiki 异步测高补齐），审查以 virtua 0.53.5 内部实现反汇编核验；④ T6 前向边界已预留：prepend 时开 `shift` prop（注释标明），`entries` props 契约未变
+- 验收实证：`pnpm web:lint` 零报错、`pnpm web:test` 58 例全绿（原 54 + stickToBottom 4）、`pnpm web:build`（tsc -b + vite）通过；500 条滚动流畅度/内存稳定/自动滚底与上翻不冲突/展开无闪烁留待实机 tauri:dev 观察（风险 #4 专项；不达标回退评估 react-window）
+- 质量审查：缺陷检查零高置信度发现（贴底判定抗程序性滚动、初始挂载落真底、流式高频归底、展开态 key 同源、memo 正确性、virtua 契约、非 entry 帧不误触发 effect、依赖登记逐项核验）；简洁性修复三处（归底两处内联收敛 `followBottom`、`toolCallIdOf` 统一隐式键耦合、删 `threshold` 死参数）；规范/分层三维度（导入命名 px/catalog、hook 与 memo 范式、组件域组织与状态落点）零发现
 
 **任务 T6：ACP 消息落库 + 分页 + 快照窗口** ⬜
 - 功能：Go 内存不随会话长度线性涨；sidecar 重启后消息可回看

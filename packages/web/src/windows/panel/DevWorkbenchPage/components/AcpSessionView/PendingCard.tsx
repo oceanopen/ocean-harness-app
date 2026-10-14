@@ -44,6 +44,8 @@ function RespondError({ message }: { message: string }) {
 function PermissionCard({ issueId, pending }: { issueId: string; pending: AcpPendingView }) {
   const respond = useRespondAcpPermission();
   const [choosing, setChoosing] = useState<string | null>(null);
+  // 挂起卡片固定展示不受虚拟化影响，展开态本地持有。
+  const [toolCallExpanded, setToolCallExpanded] = useState(false);
   const options = pending.options ?? [];
 
   const choose = (optionId: string) => {
@@ -58,7 +60,11 @@ function PermissionCard({ issueId, pending }: { issueId: string; pending: AcpPen
     <CardShell title="Agent 请求授权">
       {pending.toolCall && (
         <Box sx={{ mb: 1 }}>
-          <ToolCallItem toolCall={pending.toolCall.toolCallId ? pending.toolCall : { ...pending.toolCall, toolCallId: `pending:${pending.pendingId}` }} />
+          <ToolCallItem
+            toolCall={pending.toolCall.toolCallId ? pending.toolCall : { ...pending.toolCall, toolCallId: `pending:${pending.pendingId}` }}
+            expanded={toolCallExpanded}
+            onToggle={() => setToolCallExpanded(v => !v)}
+          />
         </Box>
       )}
       <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>

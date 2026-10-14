@@ -67,6 +67,7 @@
     "remark-math": "catalog:",
     "shiki": "catalog:",
     "streamdown": "catalog:",
+    "virtua": "catalog:",
     "zustand": "catalog:"
   },
   "devDependencies": {

@@ -1,59 +1,34 @@
 import type { SxProps, Theme } from '@mui/material';
 import type { AcpConversationEntry, AcpEntryDisplay } from '@src/services';
+import type { VirtualizerHandle } from 'virtua';
 import { AttachFileOutlined as AttachFileOutlinedIcon, ForumOutlined as ForumOutlinedIcon } from '@mui/icons-material';
 import { Box, Chip, Tooltip, Typography } from '@mui/material';
-import { useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
+import { Virtualizer } from 'virtua';
 import { proseSx, REHYPE_PLUGINS, REMARK_PLUGINS } from '../fileViewer/streamdownShared';
+import { isStickToBottom } from './stickToBottom';
 import ToolCallItem from './ToolCallItem';
 import 'streamdown/styles.css';
 
-// 会话记录条目列表：四类条目（user 高亮块——IM 来源带徽标与展示元数据 / agentMessage
-// markdown / agentThought 淡化 / toolCall 折叠卡）+ 近底部自动滚底。滚动策略「先测量后
-// 使用」：onScroll 实时测距判定用户是否贴底（48px 阈值），entries 更新时仅在贴底态才
-// 归位——用户上翻查阅历史不被打断。
-export default function MessageList({ entries }: { entries: AcpConversationEntry[] }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
+/**
+ * 会话记录条目列表：四类条目 + 虚拟化渲染（挂载内存与会话长度解耦）+ 近底部自动滚底
+ * （贴底态才归位，用户上翻不打断）。工具调用展开态外置，防止滚出视口后丢失。
+ */
+const ITEM_SPACING_PX = 10;
+const TOP_MARGIN_PX = 12;
 
-  const handleScroll = () => {
-    const el = scrollRef.current;
-    if (el) {
-      stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-    }
-  };
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && stickToBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [entries]);
-
-  if (entries.length === 0) {
-    return (
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography variant="body2" color="text.secondary">会话还没有内容</Typography>
-          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
-            在下方输入任务描述开始与 Agent 协作
-          </Typography>
-        </Box>
-      </Box>
-    );
-  }
-
-  return (
-    <Box ref={scrollRef} onScroll={handleScroll} sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-      <Box sx={{ maxWidth: 860, mx: 'auto', width: '100%', px: 2, py: 1.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-        {entries.map(entry => <EntryItem key={entry.entryId} entry={entry} />)}
-      </Box>
-    </Box>
-  );
+// 条目对应工具调用的稳定标识：载荷缺失时回退条目自身标识。
+function toolCallIdOf(entry: AcpConversationEntry): string {
+  return entry.toolCall?.toolCallId ?? entry.entryId;
 }
 
-/** 单条目分发：按 kind 选呈现形态（未知 kind 防御性忽略——wire 扩展不炸前端）。 */
-function EntryItem({ entry }: { entry: AcpConversationEntry }) {
+// 单条目按类型分发呈现，未知类型防御性忽略；渲染防流式重渲染扩散。
+const EntryItem = memo(({ entry, expanded, onToggleToolCall }: {
+  entry: AcpConversationEntry;
+  expanded: boolean;
+  onToggleToolCall: (toolCallId: string) => void;
+}) => {
   switch (entry.kind) {
     case 'user':
       return <UserEntry entry={entry} />;
@@ -70,13 +45,84 @@ function EntryItem({ entry }: { entry: AcpConversationEntry }) {
           <MarkdownMessage text={entry.text ?? ''} messageSx={{ color: 'text.secondary' }} />
         </Box>
       );
-    case 'toolCall':
+    case 'toolCall': {
+      const toolCall = entry.toolCall ?? { toolCallId: toolCallIdOf(entry) };
       return (
         <Box sx={{ alignSelf: 'stretch' }}>
-          <ToolCallItem toolCall={entry.toolCall ?? { toolCallId: entry.entryId }} />
+          <ToolCallItem toolCall={toolCall} expanded={expanded} onToggle={() => onToggleToolCall(toolCall.toolCallId)} />
         </Box>
       );
+    }
   }
+});
+
+export default function MessageList({ entries }: { entries: AcpConversationEntry[] }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtRef = useRef<VirtualizerHandle>(null);
+  const stickToBottomRef = useRef(true);
+  // 仅记录展开项，随 issue 切换归零。
+  const [expandedToolCalls, setExpandedToolCalls] = useState<Record<string, boolean>>({});
+
+  const handleScroll = (offset: number) => {
+    const el = scrollRef.current;
+    if (el) {
+      stickToBottomRef.current = isStickToBottom({ scrollHeight: el.scrollHeight, scrollTop: offset, clientHeight: el.clientHeight });
+    }
+  };
+
+  const toggleToolCall = useCallback((toolCallId: string) => {
+    setExpandedToolCalls(prev => ({ ...prev, [toolCallId]: !prev[toolCallId] }));
+  }, []);
+
+  // 贴底归底统一入口：新消息到达与条目尺寸变化共用，流式输出持续跟随。
+  const followBottom = useCallback(() => {
+    if (stickToBottomRef.current && entries.length > 0) {
+      virtRef.current?.scrollToIndex(entries.length - 1, { align: 'end' });
+    }
+  }, [entries]);
+
+  useEffect(followBottom, [followBottom]);
+
+  if (entries.length === 0) {
+    return (
+      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+        <Box sx={{ textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary">会话还没有内容</Typography>
+          <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
+            在下方输入任务描述开始与 Agent 协作
+          </Typography>
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    // 浏览器原生滚动锚定关闭，定位交由虚拟层负责。
+    <Box ref={scrollRef} sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowAnchor: 'none' }}>
+      {/* 顶部留白须真实存在，滚动定位声明才成立；px 一律字符串写法。 */}
+      <Box sx={{ maxWidth: 860, mx: 'auto', width: '100%', px: 2, paddingTop: `${TOP_MARGIN_PX}px` }}>
+        <Virtualizer
+          ref={virtRef}
+          data={entries}
+          scrollRef={scrollRef}
+          startMargin={TOP_MARGIN_PX}
+          onScroll={handleScroll}
+          onResize={followBottom}
+        >
+          {(entry: AcpConversationEntry) => (
+            // 条目容器承载纵向布局语境与条目间距。
+            <Box sx={{ paddingBottom: `${ITEM_SPACING_PX}px`, display: 'flex', flexDirection: 'column' }}>
+              <EntryItem
+                entry={entry}
+                expanded={expandedToolCalls[toolCallIdOf(entry)] === true}
+                onToggleToolCall={toggleToolCall}
+              />
+            </Box>
+          )}
+        </Virtualizer>
+      </Box>
+    </Box>
+  );
 }
 
 /**

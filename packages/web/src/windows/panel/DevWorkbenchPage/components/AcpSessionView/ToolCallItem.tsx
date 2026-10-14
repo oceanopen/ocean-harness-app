@@ -5,12 +5,15 @@ import { useMemo, useState } from 'react';
 import { prettyPayloadText, truncatePayloadText } from './payloadText';
 import { TOOL_CALL_STATUS_META } from './toolCallStatusMeta';
 
-// 工具调用条目：标题行（title + name + 状态徽章/in_progress 转圈）+ 可折叠的
-// rawInput/rawOutput pretty JSON（unmountOnExit 折叠即卸载子树；超 tcPayloadMaxChars
-// 截断展示 + 展开全文）。ACP wire 原样透传，呈现按 status 选择形态
-// （view.go ToolCallView 注释同义）；kind 图标一期不做（TODO：随 agent 目录扩展补）。
-export default function ToolCallItem({ toolCall }: { toolCall: AcpToolCallView }) {
-  const [expanded, setExpanded] = useState(false);
+/**
+ * 工具调用条目：标题行 + 可折叠载荷（折叠即卸载，超长截断可展开全文）。
+ * 展开态由使用方持有，防止滚出视口后丢失。
+ */
+export default function ToolCallItem({ toolCall, expanded, onToggle }: {
+  toolCall: AcpToolCallView;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
   const meta = toolCall.status ? TOOL_CALL_STATUS_META[toolCall.status] : undefined;
   const title = toolCall.title || toolCall.name || '工具调用';
   const hasPayload = toolCall.rawInput !== undefined || toolCall.rawOutput !== undefined;
@@ -18,7 +21,7 @@ export default function ToolCallItem({ toolCall }: { toolCall: AcpToolCallView }
   return (
     <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
       <Box
-        onClick={hasPayload ? () => setExpanded(v => !v) : undefined}
+        onClick={hasPayload ? onToggle : undefined}
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -55,9 +58,7 @@ export default function ToolCallItem({ toolCall }: { toolCall: AcpToolCallView }
   );
 }
 
-// pretty JSON 载荷块：文本化与截断规则见 payloadText（折叠卸载由 unmountOnExit 达成，
-// 展开才重新文本化）；挂载期内 memo 防 in_progress 流式更新重复 pretty 化。超限默认
-// 截断展示 +「展开全文」（块内局部态，随收起重置回截断态，占用保持有界）。
+// 载荷块：pretty JSON 文本化 + 超限截断与全文展开，展开态随收起重置。
 function PayloadBlock({ label, value }: { label: string; value: unknown }) {
   const [full, setFull] = useState(false);
   const pretty = useMemo(() => prettyPayloadText(value), [value]);

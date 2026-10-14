@@ -94,6 +94,7 @@ catalog:
   streamdown: ^2.6.0
   typescript: ~6.0.2
   unplugin-icons: ^23.0.1
+  virtua: ^0.53.5
   vite: ^8.0.12
   vitest: ^4.1.11
   zustand: ^5.0.14
