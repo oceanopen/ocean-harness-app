@@ -7,6 +7,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import { Virtualizer } from 'virtua';
 import { proseSx, REHYPE_PLUGINS, REMARK_PLUGINS } from '../fileViewer/streamdownShared';
+import EntryActionsToolbar from './EntryActionsToolbar';
 import { isStickToBottom } from './stickToBottom';
 import ToolCallItem from './ToolCallItem';
 import 'streamdown/styles.css';
@@ -17,10 +18,35 @@ import 'streamdown/styles.css';
  */
 const ITEM_SPACING_PX = 10;
 const TOP_MARGIN_PX = 12;
+// 带工具条条目的底部间距：为绝对定位的工具条预留整段空间，叠放不侵入消息内容
+// （发送气泡卡片式观感偏松、回复裸文本收紧）。
+const USER_TOOLBAR_SPACING_PX = 24;
+const AGENT_TOOLBAR_SPACING_PX = 18;
+
+// 条目 wrapper 基础样式（模块级常量避免每次渲染重建）：纵向布局语境 + 条目间距 +
+// relative 定位语境；工具条显隐由粘滞 hover 态驱动，不在样式层监听鼠标。
+const entryWrapperSx: SxProps<Theme> = {
+  paddingBottom: `${ITEM_SPACING_PX}px`,
+  display: 'flex',
+  flexDirection: 'column',
+  position: 'relative',
+};
+// 带工具条条目的间距覆写（常驻占位，显隐零布局位移）。
+const userToolbarSpacingSx: SxProps<Theme> = { paddingBottom: `${USER_TOOLBAR_SPACING_PX}px` };
+const agentToolbarSpacingSx: SxProps<Theme> = { paddingBottom: `${AGENT_TOOLBAR_SPACING_PX}px` };
 
 // 条目对应工具调用的稳定标识：载荷缺失时回退条目自身标识。
 function toolCallIdOf(entry: AcpConversationEntry): string {
   return entry.toolCall?.toolCallId ?? entry.entryId;
+}
+
+// 复制来源文本：user 取显示原文（bot display.text 优先），agentMessage 取回复原文
+// （thinking 为独立条目，天然不含）；其余类型不出复制钮。
+function copyTextOf(entry: AcpConversationEntry): string {
+  if (entry.kind === 'user') {
+    return entry.display?.text ?? entry.text ?? '';
+  }
+  return entry.text ?? '';
 }
 
 // 单条目按类型分发呈现，未知类型防御性忽略；渲染防流式重渲染扩散。
@@ -62,6 +88,9 @@ export default function MessageList({ entries }: { entries: AcpConversationEntry
   const stickToBottomRef = useRef(true);
   // 仅记录展开项，随 issue 切换归零。
   const [expandedToolCalls, setExpandedToolCalls] = useState<Record<string, boolean>>({});
+  // 粘滞 hover 态：移入过的条目工具条保持常显，移入新条目才切换。
+  const [hoveredEntryId, setHoveredEntryId] = useState<string | null>(null);
+  const hoverEntry = useCallback((entryId: string) => setHoveredEntryId(entryId), []);
 
   const handleScroll = (offset: number) => {
     const el = scrollRef.current;
@@ -109,16 +138,29 @@ export default function MessageList({ entries }: { entries: AcpConversationEntry
           onScroll={handleScroll}
           onResize={followBottom}
         >
-          {(entry: AcpConversationEntry) => (
-            // 条目容器承载纵向布局语境与条目间距。
-            <Box sx={{ paddingBottom: `${ITEM_SPACING_PX}px`, display: 'flex', flexDirection: 'column' }}>
-              <EntryItem
-                entry={entry}
-                expanded={expandedToolCalls[toolCallIdOf(entry)] === true}
-                onToggleToolCall={toggleToolCall}
-              />
-            </Box>
-          )}
+          {(entry: AcpConversationEntry) => {
+            const hasToolbar = entry.kind === 'user' || entry.kind === 'agentMessage';
+            return (
+              // 条目容器承载纵向布局语境、条目间距与工具条定位语境；整行 hover 触发粘滞显隐。
+              <Box
+                sx={[entryWrapperSx, ...(hasToolbar ? [entry.kind === 'user' ? userToolbarSpacingSx : agentToolbarSpacingSx] : [])] as SxProps<Theme>}
+                onMouseEnter={hasToolbar ? () => hoverEntry(entry.entryId) : undefined}
+              >
+                <EntryItem
+                  entry={entry}
+                  expanded={expandedToolCalls[toolCallIdOf(entry)] === true}
+                  onToggleToolCall={toggleToolCall}
+                />
+                {hasToolbar && (
+                  <EntryActionsToolbar
+                    visible={hoveredEntryId === entry.entryId}
+                    side={entry.kind === 'user' ? 'right' : 'left'}
+                    copyText={copyTextOf(entry)}
+                  />
+                )}
+              </Box>
+            );
+          }}
         </Virtualizer>
       </Box>
     </Box>
