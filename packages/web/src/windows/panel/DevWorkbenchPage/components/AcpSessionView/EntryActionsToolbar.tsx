@@ -15,8 +15,8 @@ interface EntryActionsToolbarProps {
 }
 
 /**
- * 消息条目操作工具条：绝对定位叠放于条目底部边角，显隐由列表层的粘滞 hover 态
- * 驱动（opacity/pointerEvents 切换，不占布局）。复制为首个操作，反馈复用项目统一
+ * 消息条目操作工具条：流内常驻占位行（提前占位，显隐仅切 opacity/pointerEvents，
+ * 布局零位移），显隐由列表层的粘滞 hover 态驱动。复制为首个操作，反馈复用项目统一
  * 剪贴板模式（成功态图标切换，2 秒回退）。
  */
 export default function EntryActionsToolbar({ visible, side, copyText, children }: EntryActionsToolbarProps) {
@@ -24,11 +24,10 @@ export default function EntryActionsToolbar({ visible, side, copyText, children 
   return (
     <Box
       sx={{
-        position: 'absolute',
-        bottom: 0,
-        ...(side === 'right' ? { right: '2px' } : { left: '2px' }),
         display: 'flex',
         alignItems: 'center',
+        alignSelf: side === 'right' ? 'flex-end' : 'flex-start',
+        marginTop: side === 'right' ? '5px' : '0px',
         opacity: visible ? 1 : 0,
         pointerEvents: visible ? 'auto' : 'none',
         transition: 'opacity 0.15s ease',

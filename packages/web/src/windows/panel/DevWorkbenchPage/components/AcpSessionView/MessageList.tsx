@@ -18,22 +18,17 @@ import 'streamdown/styles.css';
  */
 const ITEM_SPACING_PX = 10;
 const TOP_MARGIN_PX = 12;
-// 带工具条条目的底部间距：为绝对定位的工具条预留整段空间，叠放不侵入消息内容
-// （发送气泡卡片式观感偏松、回复裸文本收紧）。
-const USER_TOOLBAR_SPACING_PX = 24;
-const AGENT_TOOLBAR_SPACING_PX = 18;
 
-// 条目 wrapper 基础样式（模块级常量避免每次渲染重建）：纵向布局语境 + 条目间距 +
-// relative 定位语境；工具条显隐由粘滞 hover 态驱动，不在样式层监听鼠标。
+// 条目 wrapper 基础样式（模块级常量避免每次渲染重建）：纵向布局语境 + 条目间距；
+// 工具条显隐由粘滞 hover 态驱动，不在样式层监听鼠标。
 const entryWrapperSx: SxProps<Theme> = {
   paddingBottom: `${ITEM_SPACING_PX}px`,
   display: 'flex',
   flexDirection: 'column',
-  position: 'relative',
 };
-// 带工具条条目的间距覆写（常驻占位，显隐零布局位移）。
-const userToolbarSpacingSx: SxProps<Theme> = { paddingBottom: `${USER_TOOLBAR_SPACING_PX}px` };
-const agentToolbarSpacingSx: SxProps<Theme> = { paddingBottom: `${AGENT_TOOLBAR_SPACING_PX}px` };
+// 带工具条条目的间距覆写：条目间距由工具条占位块自身提供（含其上边距），底部仅留
+// 兜底空隙，避免工具条行与下一条目贴死。
+const toolbarSpacingSx: SxProps<Theme> = { paddingBottom: '4px' };
 
 // 条目对应工具调用的稳定标识：载荷缺失时回退条目自身标识。
 function toolCallIdOf(entry: AcpConversationEntry): string {
@@ -143,7 +138,7 @@ export default function MessageList({ entries }: { entries: AcpConversationEntry
             return (
               // 条目容器承载纵向布局语境、条目间距与工具条定位语境；整行 hover 触发粘滞显隐。
               <Box
-                sx={[entryWrapperSx, ...(hasToolbar ? [entry.kind === 'user' ? userToolbarSpacingSx : agentToolbarSpacingSx] : [])] as SxProps<Theme>}
+                sx={[entryWrapperSx, ...(hasToolbar ? [toolbarSpacingSx] : [])] as SxProps<Theme>}
                 onMouseEnter={hasToolbar ? () => hoverEntry(entry.entryId) : undefined}
               >
                 <EntryItem
