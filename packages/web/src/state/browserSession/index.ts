@@ -1,4 +1,5 @@
 export { useBrowserStageStore } from './activation';
+export { deriveIssueProfile, isSessionLive } from './derive';
 export { browserSessionKeys } from './keys';
 export {
   useAnalyzeBrowserSession,

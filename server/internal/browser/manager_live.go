@@ -169,7 +169,7 @@ func (m *Manager) UnsubscribeLive(profile string) {
 /*
  * DispatchInput 远程桌面输入分发：要求活跃观察面存在，经已 attach 会话直发 Input 域
  * 命令——不经 acceptCall、不占 callMu、不受 per-call 超时约束（与 AI Forward 并发；
- * 「AI 操作中」可见性靠既有 lastIssueTag 徽标）。
+ * 「AI 操作中」可见性靠 recentCalls 操作流水）。
  */
 func (m *Manager) DispatchInput(ctx context.Context, profile, method string, params any) error {
 	if err := ValidateProfileName(profile); err != nil {

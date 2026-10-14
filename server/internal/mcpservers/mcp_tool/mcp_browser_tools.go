@@ -30,12 +30,18 @@ type McpBrowserTool struct {
  */
 const defaultBrowserProfile = "default"
 
-// resolveProfile MCP 入参 profile 归一：留空用 default。
-func resolveProfile(profile string) string {
-	if profile == "" {
-		return defaultBrowserProfile
+/*
+ * resolveProfile MCP 入参 profile 归一：profile 留空且 issueId 在手时由任务派生
+ * （issue-<issueId>，与面板「+」新建同一命名约定——同任务同会话同登录态）；否则留空用 default。
+ */
+func resolveProfile(profile, issueID string) string {
+	if profile != "" {
+		return profile
 	}
-	return profile
+	if issueID != "" {
+		return "issue-" + issueID
+	}
+	return defaultBrowserProfile
 }
 
 /*
@@ -114,7 +120,7 @@ func (mt McpBrowserTool) Status(ctx context.Context, _ *mcp.CallToolRequest,
 func (mt McpBrowserTool) ProfileOpen(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserProfileOpenArgs) (*mcp.CallToolResult, mcpdto.BrowserSessionContent, error) {
 
-	profile := resolveProfile(input.Profile)
+	profile := resolveProfile(input.Profile, input.IssueID)
 	browserSvc := service.BrowserSession{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&browserSvc.Service).Errors; err != nil {
 		return nil, mcpdto.BrowserSessionContent{}, mt.Fail(err)
@@ -133,7 +139,7 @@ func (mt McpBrowserTool) ProfileOpen(ctx context.Context, _ *mcp.CallToolRequest
 func (mt McpBrowserTool) SessionClose(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserSessionCloseArgs) (*mcp.CallToolResult, mcpdto.BrowserSessionCloseContent, error) {
 
-	profile := resolveProfile(input.Profile)
+	profile := resolveProfile(input.Profile, "")
 	browserSvc := service.BrowserSession{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&browserSvc.Service).Errors; err != nil {
 		return nil, mcpdto.BrowserSessionCloseContent{}, mt.Fail(err)
@@ -153,7 +159,7 @@ func (mt McpBrowserTool) SessionClose(ctx context.Context, _ *mcp.CallToolReques
 func (mt McpBrowserTool) AuthState(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserAuthStateArgs) (*mcp.CallToolResult, mcpdto.BrowserAuthStateContent, error) {
 
-	profile := resolveProfile(input.Profile)
+	profile := resolveProfile(input.Profile, input.IssueID)
 	browserSvc := service.BrowserSession{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&browserSvc.Service).Errors; err != nil {
 		return nil, mcpdto.BrowserAuthStateContent{}, mt.Fail(err)
@@ -169,7 +175,7 @@ func (mt McpBrowserTool) AuthState(ctx context.Context, _ *mcp.CallToolRequest,
 func (mt McpBrowserTool) AuthedRequest(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserAuthRequestArgs) (*mcp.CallToolResult, mcpdto.BrowserAuthedResponseContent, error) {
 
-	profile := resolveProfile(input.Profile)
+	profile := resolveProfile(input.Profile, input.IssueID)
 	browserSvc := service.BrowserSession{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&browserSvc.Service).Errors; err != nil {
 		return nil, mcpdto.BrowserAuthedResponseContent{}, mt.Fail(err)
@@ -190,7 +196,7 @@ func (mt McpBrowserTool) AuthedRequest(ctx context.Context, _ *mcp.CallToolReque
 func (mt McpBrowserTool) ToolList(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserToolListArgs) (*mcp.CallToolResult, mcpdto.BrowserToolListContent, error) {
 
-	profile := resolveProfile(input.Profile)
+	profile := resolveProfile(input.Profile, input.IssueID)
 	browserSvc := service.BrowserSession{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&browserSvc.Service).Errors; err != nil {
 		return nil, mcpdto.BrowserToolListContent{}, mt.Fail(err)
@@ -216,103 +222,103 @@ func (mt McpBrowserTool) ToolList(ctx context.Context, _ *mcp.CallToolRequest,
 // Navigate 打开地址。
 func (mt McpBrowserTool) Navigate(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserNavigateArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolNavigate, "打开页面")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolNavigate, "打开页面")
 }
 
 // Snapshot 拉取页面快照（操作元素的 ref 事实源）。
 func (mt McpBrowserTool) Snapshot(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserSnapshotArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolSnapshot, "拉取页面快照")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolSnapshot, "拉取页面快照")
 }
 
 // Click 点击元素（页面报 modal state 时先处理模态，工具描述已注明）。
 func (mt McpBrowserTool) Click(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserClickArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolClick, "点击元素")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolClick, "点击元素")
 }
 
 // Type 输入文本。
 func (mt McpBrowserTool) Type(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserTypeArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolType, "输入文本")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolType, "输入文本")
 }
 
 // FillForm 批量填写表单。
 func (mt McpBrowserTool) FillForm(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserFillFormArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolFillForm, "填写表单")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolFillForm, "填写表单")
 }
 
 // SelectOption 选择下拉项。
 func (mt McpBrowserTool) SelectOption(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserSelectOptionArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolSelectOption, "选择下拉项")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolSelectOption, "选择下拉项")
 }
 
 // WaitFor 等待页面状态（文本出现/消失或定时）。
 func (mt McpBrowserTool) WaitFor(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserWaitForArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolWaitFor, "等待页面状态")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolWaitFor, "等待页面状态")
 }
 
 // Evaluate 页面/元素上执行 JS。
 func (mt McpBrowserTool) Evaluate(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserEvaluateArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolEvaluate, "执行页面脚本")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolEvaluate, "执行页面脚本")
 }
 
 // Tabs 管理 tab（list/new/close/select）。
 func (mt McpBrowserTool) Tabs(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserTabsArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolTabs, "管理 tab")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolTabs, "管理 tab")
 }
 
 // Screenshot 截取页面（结果含图片与落盘路径）。
 func (mt McpBrowserTool) Screenshot(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserScreenshotArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolTakeScreenshot, "截取页面")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolTakeScreenshot, "截取页面")
 }
 
 // FileUpload 处理文件选择框（paths 留空取消）。
 func (mt McpBrowserTool) FileUpload(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserFileUploadArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolFileUpload, "上传文件")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolFileUpload, "上传文件")
 }
 
 // ConsoleMessages 读取控制台消息。
 func (mt McpBrowserTool) ConsoleMessages(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserConsoleMessagesArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolConsoleMessages, "读取控制台消息")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolConsoleMessages, "读取控制台消息")
 }
 
 // NavigateBack 历史后退。
 func (mt McpBrowserTool) NavigateBack(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserNavigateBackArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolNavigateBack, "后退")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolNavigateBack, "后退")
 }
 
 // Close 关闭当前页 tab（非关引擎进程——后者用 browser_session_close）。
 func (mt McpBrowserTool) Close(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserCloseArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolClose, "关闭页面")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolClose, "关闭页面")
 }
 
 // Find 快照内查找元素（比整页快照省）。
 func (mt McpBrowserTool) Find(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserFindArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolFind, "查找页面元素")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolFind, "查找页面元素")
 }
 
 // PressKey 按键。
 func (mt McpBrowserTool) PressKey(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserPressKeyArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolPressKey, "按键")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolPressKey, "按键")
 }
 
 // HandleDialog 处理对话框（dialog modal state 唯一清除工具）。
 func (mt McpBrowserTool) HandleDialog(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.BrowserHandleDialogArgs) (*mcp.CallToolResult, any, error) {
-	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile), input.IssueID, browser.EngineToolHandleDialog, "处理对话框")
+	return forwardTool(&mt, ctx, &input, resolveProfile(input.Profile, input.IssueID), input.IssueID, browser.EngineToolHandleDialog, "处理对话框")
 }
 
 // —— 逃生舱 1 ——
@@ -327,7 +333,7 @@ func (mt McpBrowserTool) ToolCall(ctx context.Context, _ *mcp.CallToolRequest,
 	if err := browser.CheckEngineToolCall(input.Name); err != nil {
 		return nil, nil, mt.Fail(err)
 	}
-	profile := resolveProfile(input.Profile)
+	profile := resolveProfile(input.Profile, input.IssueID)
 	browserSvc := service.BrowserSession{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&browserSvc.Service).Errors; err != nil {
 		return nil, nil, mt.Fail(err)
@@ -344,11 +350,10 @@ func (mt McpBrowserTool) ToolCall(ctx context.Context, _ *mcp.CallToolRequest,
 // newSessionContent 会话投影 → 平铺镜像（状态枚举中文释义见 DTO jsonschema tag）。
 func newSessionContent(view *browser.SessionView) *mcpdto.BrowserSessionContent {
 	out := &mcpdto.BrowserSessionContent{
-		Profile:      view.Profile,
-		Status:       string(view.Status),
-		Headless:     view.Headless,
-		Error:        view.Error,
-		LastIssueTag: view.LastIssueTag,
+		Profile:  view.Profile,
+		Status:   string(view.Status),
+		Headless: view.Headless,
+		Error:    view.Error,
 	}
 	for _, p := range view.Pages {
 		out.Pages = append(out.Pages, &mcpdto.BrowserPageContent{Index: p.Index, Title: p.Title, URL: p.URL, Current: p.Current})

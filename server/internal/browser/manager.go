@@ -517,7 +517,7 @@ func (m *Manager) acceptCall(ctx context.Context, profile, callName, issueTag st
 /*
  * Forward 引擎调用统一入口（mcp_tool 转发与 controller navigate 均经此）：受理纪律（ensure → callMu 互斥 → per-call 超时 → 在途登记）与 ListTools 共用 acceptCall；成功重置 idle 计时 + 页面投影刷新（pagesRefreshExempt 豁免项除外）。
  * 转发结果按 isError:true 标志判错（引擎错误一律 isError 文本，非 JSON-RPC error）——结果原样返回，包装归调用方（T2.2 手工透传 Content 数组）。
- * issueTag 为归因展示标签（lastIssueTag/recentCalls，非过滤键）。
+ * issueTag 为归因展示标签（recentCalls 流水行，非过滤键）。
  */
 func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[string]any, issueTag string) (*mcp.CallToolResult, error) {
 	handle, callCtx, done, err := m.acceptCall(ctx, profile, tool, issueTag)
@@ -662,8 +662,7 @@ func (m *Manager) ListTools(ctx context.Context, profile, issueTag string) ([]*m
 }
 
 /*
- * recordCall 操作流水记录（view 行 recentCalls 环形缓冲 + lastIssueTag）并广播
- * sessions 帧（锁外）。
+ * recordCall 操作流水记录（view 行 recentCalls 环形缓冲）并广播 sessions 帧（锁外）。
  */
 func (m *Manager) recordCall(profile, tool, issueTag, outcome, errText string) {
 	// rune 安全截断（字节截断会切断 UTF-8 序列，序列化端得 U+FFFD）。
@@ -671,9 +670,6 @@ func (m *Manager) recordCall(profile, tool, issueTag, outcome, errText string) {
 		errText = string(runes[:200]) + "…"
 	}
 	sv := m.view.apply(profile, func(row *SessionView) {
-		if issueTag != "" {
-			row.LastIssueTag = issueTag
-		}
 		row.RecentCalls = append(row.RecentCalls, RecentCall{
 			Tool:     tool,
 			IssueTag: issueTag,

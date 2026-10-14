@@ -8,12 +8,13 @@ package mcpdto
 // —— 共用基座 ——
 
 /*
- * BrowserProfileArgs browser_* 工具集共用基座（匿名嵌入平铺）：profile 缺省 default（mcp_tool 层归一，
- * 引擎会话自动 ensure，idle 冷启动 1-3s 属预期）；issueId 仅供服务端操作流水归因（面板 recentCalls 徽标），不参与引擎调用。
+ * BrowserProfileArgs browser_* 工具集共用基座（匿名嵌入平铺）：profile 留空且 issueId 在手时
+ * 由任务派生（issue-<issueId>，与面板「+」新建同一命名约定），否则用 default（mcp_tool 层归一，
+ * 引擎会话自动 ensure，idle 冷启动 1-3s 属预期）；issueId 兼作服务端操作流水归因（面板 recentCalls 徽标）。
  */
 type BrowserProfileArgs struct {
-	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名，留空用 default；不同 profile 各自独立引擎进程与登录态"`
-	IssueID string `json:"issueId,omitempty" jsonschema:"归因 issue 主键（uuid 文本），仅记入浏览器面板操作流水徽标，可留空"`
+	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名；留空且带 issueId 时由任务派生（issue-<issueId>），否则用 default；不同 profile 各自独立引擎进程与登录态"`
+	IssueID string `json:"issueId,omitempty" jsonschema:"归因 issue 主键（uuid 文本）；profile 留空时同时决定目标会话（任务派生），可留空"`
 }
 
 // —— 原生 6 工具入参 ——
@@ -32,7 +33,7 @@ type BrowserProfileOpenArgs struct {
  * 的入参（释放引擎进程，幂等；登录态在 profile 目录续存。关停无操作归因语义，不带 issueId）。
  */
 type BrowserSessionCloseArgs struct {
-	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名，留空用 default"`
+	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名，留空用 default；任务派生会话须显式传 issue-<issueId>（见 browser_profile_open 的派生约定），留空关停的是 default 而非任务会话"`
 }
 
 // BrowserAuthStateArgs 是 browser_auth_state 的入参（当前登录态双源拉取）。
@@ -252,7 +253,6 @@ type BrowserSessionContent struct {
 	Headless     bool                        `json:"headless" jsonschema:"是否无头模式"`
 	Error        string                      `json:"error,omitempty" jsonschema:"失败原因（failed 态非空）"`
 	Pages        []*BrowserPageContent       `json:"pages,omitempty" jsonschema:"当前页面列表"`
-	LastIssueTag string                      `json:"lastIssueTag,omitempty" jsonschema:"最近归因的 issueId"`
 	RecentCalls  []*BrowserRecentCallContent `json:"recentCalls,omitempty" jsonschema:"最近操作流水（环形，至多 20 条）"`
 }
 

@@ -59,7 +59,6 @@ type SessionView struct {
 	Headless     bool          `json:"headless"`
 	Error        string        `json:"error,omitempty"`
 	Pages        []PageView    `json:"pages,omitempty"`
-	LastIssueTag string        `json:"lastIssueTag,omitempty"`
 	RecentCalls  []RecentCall  `json:"recentCalls,omitempty"`
 }
 

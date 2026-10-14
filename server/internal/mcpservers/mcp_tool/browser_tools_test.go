@@ -16,11 +16,18 @@ import (
  */
 
 func TestResolveProfile(t *testing.T) {
-	if got := resolveProfile(""); got != defaultBrowserProfile {
-		t.Fatalf("resolveProfile(\"\") = %q, want %q", got, defaultBrowserProfile)
+	if got := resolveProfile("", ""); got != defaultBrowserProfile {
+		t.Fatalf(`resolveProfile("", "") = %q, want %q`, got, defaultBrowserProfile)
 	}
-	if got := resolveProfile("work"); got != "work" {
-		t.Fatalf("resolveProfile(work) = %q, want 原值", got)
+	if got := resolveProfile("work", ""); got != "work" {
+		t.Fatalf(`resolveProfile("work", "") = %q, want 原值`, got)
+	}
+	// 任务派生约定：profile 留空且 issueId 在手 → issue-<issueId>；显式 profile 不被覆写。
+	if got := resolveProfile("", "abc-123"); got != "issue-abc-123" {
+		t.Fatalf(`resolveProfile("", "abc-123") = %q, want issue-abc-123`, got)
+	}
+	if got := resolveProfile("work", "abc-123"); got != "work" {
+		t.Fatalf(`resolveProfile("work", "abc-123") = %q, want 原值`, got)
 	}
 }
 

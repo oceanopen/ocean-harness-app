@@ -38,7 +38,6 @@ export interface BrowserSessionView {
   headless: boolean;
   error?: string;
   pages?: BrowserPageView[];
-  lastIssueTag?: string;
   recentCalls?: BrowserRecentCall[];
 }
 

@@ -1,6 +1,6 @@
 import type { DraggableProvided, DraggableStateSnapshot } from '@hello-pangea/dnd';
 import type { SxProps, Theme } from '@mui/material';
-import type { ProjectIssueResponseData } from '@src/services';
+import type { BrowserSessionView, ProjectIssueResponseData } from '@src/services';
 import type { MouseEvent, ReactNode } from 'react';
 import type { SubtaskStats } from './shared';
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
@@ -13,13 +13,15 @@ import {
   KeyboardArrowDownRounded as KeyboardArrowDownRoundedIcon,
   KeyboardArrowRightRounded as KeyboardArrowRightRoundedIcon,
 } from '@mui/icons-material';
-import { Box, Chip, IconButton, Typography } from '@mui/material';
+import { Box, Chip, IconButton, Tooltip, Typography } from '@mui/material';
 import { PRIORITY_COLOR } from '@src/components/priorityMeta';
 import { formatDate } from '@src/shared/time';
+import { isSessionLive } from '@src/state/browserSession';
 import { STATE_MAP } from '@src/state/tracker';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate as useRouterNavigate } from 'react-router-dom';
+import ChromeIcon from './ChromeIcon';
 import { GUTTER_WIDTH, truncateSx } from './shared';
 
 /**
@@ -83,6 +85,8 @@ export interface IssueCardProps {
   kanban?: boolean;
   // 子任务拖拽重排回调（仅列表模式启用）。
   onReorderChild?: (parentId: string, from: number, to: number) => void;
+  // 该 issue 关联的浏览器会话投影行（任务派生 profile 命中行；不传即无徽标，左树由 DevTaskTree 派生传入）。
+  browserSession?: BrowserSessionView;
 }
 
 /**
@@ -105,6 +109,7 @@ function IssueCard({
   dnd,
   kanban,
   onReorderChild,
+  browserSession,
 }: IssueCardProps) {
   const { t } = useTranslation();
   const routerNavigate = useRouterNavigate();
@@ -352,6 +357,33 @@ function IssueCard({
     />
   );
 
+  // 浏览器会话徽标（第三行行尾）：有关联会话即亮，存在未释放会话（starting/ready）转圈。
+  const browserLive = browserSession != null && isSessionLive(browserSession.status);
+  const browserBadge = browserSession && (
+    <Tooltip title={browserLive ? '浏览器会话运行中' : '浏览器会话已释放'}>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          ml: 'auto',
+          flexShrink: 0,
+          color: browserLive ? 'text.secondary' : 'text.disabled',
+          ...(browserLive
+            ? {
+                'animation': 'spin 0.8s linear infinite',
+                '@keyframes spin': {
+                  from: { transform: 'rotate(0deg)' },
+                  to: { transform: 'rotate(360deg)' },
+                },
+              }
+            : {}),
+        }}
+      >
+        <ChromeIcon sx={{ fontSize: '14px' }} />
+      </Box>
+    </Tooltip>
+  );
+
   /**
    * 卡片主体（首行/第二行/第三行），列表/看板共用同一布局；占根布局左侧（flex:1），
    * 新增子/编辑按钮在根布局右侧独立成列、垂直居中（见 render 处）。
@@ -371,14 +403,15 @@ function IssueCard({
         {priorityBadge}
         {stateBadge}
       </Box>
-      {/* 第三行：展开/占位 类型徽章 目标日期 子任务进度，统一左对齐。
-          渲染条件含 hasChildren：展开图标在本行，无类型/日期/进度的父卡片也要渲染以保留展开入口 */}
-      {(!!issue.type || !!issue.targetDate || (stat?.total ?? 0) > 0 || hasChildren) && (
+      {/* 第三行：展开/占位 类型徽章 目标日期 子任务进度 浏览器徽标（行尾），左对齐+行尾徽标。
+          渲染条件含 hasChildren/browserSession：展开图标在本行，无类型/日期/进度的父卡片也要渲染以保留展开入口 */}
+      {(!!issue.type || !!issue.targetDate || (stat?.total ?? 0) > 0 || hasChildren || !!browserSession) && (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', height: '24px' }}>
           {gutter}
           {typeBadge}
           {dateEl}
           {progressEl}
+          {browserBadge}
         </Box>
       )}
     </Box>

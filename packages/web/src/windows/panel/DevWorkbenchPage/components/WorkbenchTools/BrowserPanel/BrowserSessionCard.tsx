@@ -222,16 +222,11 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
         onClick={() => setExpanded(v => !v)}
         sx={{ 'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'px': '12px', 'py': '8px', 'cursor': 'pointer', 'bgcolor': 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}
       >
-        <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>{session.profile}</Typography>
+        <Typography noWrap sx={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: '0px' }}>{session.profile}</Typography>
         <Chip size="small" variant="outlined" label={chip.label} color={chip.color} sx={{ fontSize: '12px' }} />
         <Tooltip title={session.headless ? '无头模式：无窗口，面板实时画面即页面' : '有头模式：桌面真实 Chrome 窗口（人工介入通道）'}>
           <Chip size="small" variant="outlined" label={session.headless ? '无头' : '有头'} sx={{ fontSize: '12px', color: 'text.secondary' }} />
         </Tooltip>
-        {session.lastIssueTag && (
-          <Tooltip title="最近操作的关联任务">
-            <Chip size="small" variant="outlined" label={session.lastIssueTag} sx={{ fontSize: '12px', color: 'text.secondary' }} />
-          </Tooltip>
-        )}
         {ready && !session.headless && (
           <Tooltip title="把该 profile 的 Chrome 窗口组前置到桌面最前（多窗口实例场景的一键定位）">
             <Button

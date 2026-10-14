@@ -280,8 +280,8 @@ func TestManagerForwardPagesAndIssueTag(t *testing.T) {
 	}
 
 	sv = sessionRow(t, m, "default")
-	if sv.LastIssueTag != "issue-2" {
-		t.Fatalf("lastIssueTag = %q, want issue-2", sv.LastIssueTag)
+	if last := sv.RecentCalls[2]; last.IssueTag != "issue-2" {
+		t.Fatalf("归因 issueTag = %q, want issue-2", last.IssueTag)
 	}
 	if len(sv.RecentCalls) != 3 {
 		t.Fatalf("recentCalls = %d 条, want 3", len(sv.RecentCalls))
@@ -715,8 +715,8 @@ func TestManagerListTools(t *testing.T) {
 	}
 	// 操作流水：browser_tool_list 名义 + ok 分类 + issueTag 归因。
 	sv := sessionRow(t, m, "default")
-	if sv.LastIssueTag != "issue-1" {
-		t.Fatalf("lastIssueTag = %q, want issue-1", sv.LastIssueTag)
+	if sv.RecentCalls[0].IssueTag != "issue-1" {
+		t.Fatalf("归因 issueTag = %q, want issue-1", sv.RecentCalls[0].IssueTag)
 	}
 	if n := len(sv.RecentCalls); n != 1 || sv.RecentCalls[0].Tool != listToolsCallName || sv.RecentCalls[0].Outcome != CallOK {
 		t.Fatalf("recentCalls = %+v, want 1 条 %s/%s", sv.RecentCalls, listToolsCallName, CallOK)
