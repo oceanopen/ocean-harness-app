@@ -1,7 +1,7 @@
 # 内存优化——任务清单
 
-> 状态：实施中
-> 范围：内存占用优化六个任务——操作台帧流双层节流与可见性闸门、ToolCallItem 折叠卸载与载荷懒渲染、SSE 订阅失败终态、ACP 适配器闲置回收、MessageList 虚拟化、ACP 消息落库与分页。本文档自含全部设计事实，是进度唯一 SSOT。
+> 状态：已完结
+> 范围：内存占用优化六个任务——操作台帧流双层节流与可见性闸门、ToolCallItem 折叠卸载与载荷懒渲染、SSE 订阅失败终态、ACP 适配器闲置回收、MessageList 虚拟化、ACP 消息落库与分页（T6 裁撤）。本文档自含全部设计事实，是进度唯一 SSOT。
 >
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
 >
@@ -37,7 +37,7 @@
 | D3 | SSE 失败终态：订阅端点失败改真实 HTTP 状态码（不存在 404 / 已关闭 409），前端 phase 增加 failed 终态 + 手动重试；EventSource 对非 200 不自动重连（浏览器规范行为）。实施细化：browserSession/stream 订阅前预检 Row().Status（空串→404、idle/failed→409）；acpSession/events 预检 Get().Status（idle→404、terminated→409，failed 照常订阅），前端订阅加闸门（快照可订阅状态才连，治首开订阅先于 ensure 的竞态），ensure 受理回包在缓存为终态（idle/terminated）时落快照——终态无活流覆盖安全，保「重新启动」后闸门可重开；browserSession/events 全局单源订阅、无失败判定面，服务端与前端 hook 均零改动；Bind/Validate 参数错误维持 200 现状 | 治本消灭 3s 空转循环（预检在订阅之前，每次重连变成无副作用的即时 404/409）；404/409 为防御纵深，正常流由前端闸门保证 |
 | D4 | 适配器闲置回收阈值走 appConfig 可配置（key `acpSessionIdleTimeoutMinutes`，默认 30），Go 侧经 app.db 直读；idle 判定 = 无进行中 turn 且 hub 无订户（对齐 browser 域先例） | 阈值属运营调优面，入配置体系是项目惯例；回收后 `Ensure` 走锚点重建 |
 | D5 | 虚拟化库 = virtua（动态高度一等支持、体积小、维护活跃、React 19 兼容） | 对齐技术选型评估标准（流行度/稳定性/维护活跃度） |
-| D6 | 消息落库：新增 entries 表（issue_id + seq + entry JSON），**直接编辑原迁移文件** + `pnpm server:gorm:gen`（不新建迁移、不考虑历史数据，项目拍板惯例）；Go 内存只留热窗口（最近 N 条，命名对齐 `iwFileMaxEntries` 惯例），SSE 快照仅带热窗口，分页 REST 供上滑加载 | 治本 Go 堆线性涨 + 全量快照下发；迁移策略遵循既有拍板 |
+| D6 | ~~消息落库~~（随 T6 裁撤，理由见 T6 裁撤定稿）：原方案为 entries 表（issue_id + seq + entry JSON）+ 直接编辑原迁移文件 + `pnpm server:gorm:gen`；Go 内存热窗口 + SSE 快照热窗口 + 分页 REST | 原理由：治本 Go 堆线性涨 + 全量快照下发；迁移策略遵循既有拍板 |
 
 ## 3. 任务清单
 
@@ -112,15 +112,20 @@
 
 **实施定稿**：
 - 落地面：virtua 0.53.5 进 catalog SSOT（`pnpm-workspace.yaml` + web 包 `catalog:` 引用）；`MessageList.tsx` 重写——滚动容器外接 `Virtualizer`（`scrollRef` + render-prop + `overflowAnchor:'none'`），限宽 860 居中列保留，顶部 12px 由 wrapper `paddingTop` 真实空隙 + 同源 `startMargin` 表达（startMargin 声明的是实际存在的偏移，二者常量同源），条目间 `gap` 折进条目 wrapper `paddingBottom:10` 并复原 flex 纵列语境（user 气泡 `alignSelf` 不回归）；贴底判定抽 `stickToBottom.ts` 纯函数（48px 严格小于，4 边界用例）；归底编排收敛单一入口 `followBottom`（`useCallback([entries])`，entries effect 与 `onResize` 共用——effect 直传函数写法；`scrollTop=scrollHeight` 直写废弃，改 `scrollToIndex(last, end)`）；工具调用展开态提升 `expandedToolCalls`（`Record<toolCallId, boolean>`，false 同缺省）+ `toolCallIdOf` 派生单一口径（读 key 与 ToolCallItem 合成 id 同源）+ `toggleToolCall` useCallback 稳定；`EntryItem` 包 `React.memo`（全仓首例，reducer 保证未变条目引用稳定，流式重渲染仅及增长条目）；`ToolCallItem` 受控化（`expanded`/`onToggle`，删内部 state），`PendingCard` PermissionCard 以单卡本地 state 接线（固定挂起区不受虚拟化影响）；`PayloadBlock` 的 `full` 局部态保持 T2 语义不动
-- 相对方案偏离/细化：① 展开态处理经用户拍板走「状态提升」路线（备选 keepMounted 保挂未采用——离屏 DOM 常驻与 T2 语义冲突）；② startMargin 与 wrapper paddingTop 的同源约束为方案细化（虚拟器上方空隙须真实存在）；③ 归底时序三路径冗余闭环——entries effect 首滚 / virtua scrollToIndex 内部重试（订阅测高事件微任务重滚）/ onResize 贴底跟随（Shiki 异步测高补齐），审查以 virtua 0.53.5 内部实现反汇编核验；④ T6 前向边界已预留：prepend 时开 `shift` prop（注释标明），`entries` props 契约未变
+- 相对方案偏离/细化：① 展开态处理经用户拍板走「状态提升」路线（备选 keepMounted 保挂未采用——离屏 DOM 常驻与 T2 语义冲突）；② startMargin 与 wrapper paddingTop 的同源约束为方案细化（虚拟器上方空隙须真实存在）；③ 归底时序三路径冗余闭环——entries effect 首滚 / virtua scrollToIndex 内部重试（订阅测高事件微任务重滚）/ onResize 贴底跟随（Shiki 异步测高补齐），审查以 virtua 0.53.5 内部实现反汇编核验；④ `entries` props 契约未变（原「prepend 开 shift prop」预留随 T6 裁撤一并作废，无相关代码）。
 - 验收实证：`pnpm web:lint` 零报错、`pnpm web:test` 58 例全绿（原 54 + stickToBottom 4）、`pnpm web:build`（tsc -b + vite）通过；500 条滚动流畅度/内存稳定/自动滚底与上翻不冲突/展开无闪烁留待实机 tauri:dev 观察（风险 #4 专项；不达标回退评估 react-window）
 - 质量审查：缺陷检查零高置信度发现（贴底判定抗程序性滚动、初始挂载落真底、流式高频归底、展开态 key 同源、memo 正确性、virtua 契约、非 entry 帧不误触发 effect、依赖登记逐项核验）；简洁性修复三处（归底两处内联收敛 `followBottom`、`toolCallIdOf` 统一隐式键耦合、删 `threshold` 死参数）；规范/分层三维度（导入命名 px/catalog、hook 与 memo 范式、组件域组织与状态落点）零发现
 
-**任务 T6：ACP 消息落库 + 分页 + 快照窗口** ⬜
+**任务 T6：ACP 消息落库 + 分页 + 快照窗口** 🚫 裁撤
 - 功能：Go 内存不随会话长度线性涨；sidecar 重启后消息可回看
 - 技术方案：按 D6 实施——改原迁移文件加 entries 表 → `pnpm server:gorm:gen`；`view.go` 写穿落库 + 内存热窗口；SSE 快照仅带热窗口；新增分页接口（issueId + pageInfo{pageSize, currentPage}）；前端 MessageList 上滑拉历史 append 缓存
 - 依赖：T5
 - 验收：长会话 Go RSS 平稳；快照体积有界；重启 sidecar 后历史消息经分页可回看；新旧数据切换按「无历史数据」惯例处理
+
+**裁撤定稿**：
+- 裁撤理由（用户拍板 + 现状核验）：① 典型会话消息条数有限，Go 侧 entries 纯 JSON 文本仅几 MB，T5 后前端挂载内存已与会话长度解耦，无实际内存压力——D6 治的是「超长会话线性涨」的理论边界；② 「idle 回收/重启后 UI 历史为空」本就是现状行为（reclaimIdle 摘 entry 即丢全部视图、Ensure 重开视图从零积累、重启 SweepSessionIDs 清锚走全新会话），裁撤不引入任何退化；模型侧上下文由 T4 的 resume + 适配器历史重放延续（已知边界：重放超 earlyFrameCap=64 的完整性未实测，随 T4 实机观察项跟进）；③ IM 消息 display 元数据（作者/引用/附件气泡）本就无持久化，裁撤属「未获得」而非「失去」。
+- 与原生方案的关系：历史回看依赖 claude CLI 会话文件 + 适配器 LoadSession 重放（T4 已落地），接受重放对超长历史的保真上限与 IM 气泡增强字段不恢复。
+- 若未来 bot 渠道产生「与引擎无关的持久化 + IM 元数据保真」需求可重新立项，改造面已勘察完毕：per-issue 单调 seq（entryId 跨重建重号不能当主键，DB seq 需 Ensure 重建时从 MAX(seq) 续号）、entries 表（t_ 前缀、entry TEXT ↔ json.Marshal、Discard 级联删行）、写穿挂帧广播同点（锁外落库）、热窗口裁剪 + snapshot 裁剪、POST /api/acpSession/getEntries（apis.PageInfo + JsonPageOK，前端 data 为 {list, pageInfo} 双字段包裹）、Ensure 回填、前端 useLoadAcpHistory（setQueryData + prepend 去重纯函数，独立 history key 不可取）、MessageList 上滑顶检测（isNearTop 纯函数同构 stickToBottom）+ shift prop 仅 prepend 帧置 true、重连快照整体替换丢已拉历史的已知边界。
 
 ## 4. 风险
 
