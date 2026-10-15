@@ -47,14 +47,14 @@ type LiveStream struct {
 	slot    *liveSlot
 }
 
-// LatestFrame 当前帧与其代数（尚无帧 ok=false；T4.5 SSE 循环以所见 gen 续等）。
+// LatestFrame 当前帧与其代数（尚无帧 ok=false；SSE 写侧以 gen 判新帧）。
 func (s *LiveStream) LatestFrame() (LiveFrame, uint64, bool) {
 	return s.slot.v.frames.latest()
 }
 
-// WaitFrameChange 等帧代数前进或 ctx 结束（静态页零推帧不白忙——gen 感知等待）。
-func (s *LiveStream) WaitFrameChange(ctx context.Context, seenGen uint64) error {
-	return s.slot.v.frames.waitChange(ctx, seenGen)
+// FrameChanged 帧变更信号（deliver 关闭换新；select 收到后重取，LatestFrame 按 gen 判新取帧）。
+func (s *LiveStream) FrameChanged() <-chan struct{} {
+	return s.slot.v.frames.changedC()
 }
 
 // Targets target 变更通知流（导航回显消歧 / 页面关闭终态）。

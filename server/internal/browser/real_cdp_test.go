@@ -584,9 +584,10 @@ func TestRealCDPScreencast(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatal("S4: 观察通道 5s 内未收到损伤帧（帧泵/ack 链路失效）")
 		}
-		wctx, wcancel := context.WithTimeout(ctx, time.Second)
-		_ = lv.frames.waitChange(wctx, cur)
-		wcancel()
+		select {
+		case <-lv.frames.changedC():
+		case <-time.After(time.Second):
+		}
 		_, cur, _ = lv.frames.latest()
 	}
 	t.Logf("S4: 观察通道损伤帧经 mailbox 到达（gen %d → %d，%s 内）", initGen, cur, time.Since(evalAt).Round(time.Millisecond))

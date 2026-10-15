@@ -305,7 +305,7 @@ type LiveFrame struct {
 /*
  * frameMailbox keep-latest 单槽帧箱：视频流语义——新帧覆盖旧帧，慢订户跳帧不断连；
  * 无 seq 无补帧（断线重连 = captureScreenshot 初始帧重放，免 seq 的合法性来源）。
- * changed 每次 deliver 关闭并换新：多订户全唤醒、等待可感知 ctx。
+ * changed 每次 deliver 关闭并换新：多订户全唤醒，等待方 select 直连（ctx 并联自身 Done）。
  */
 type frameMailbox struct {
 	mu      sync.Mutex
@@ -338,24 +338,11 @@ func (mb *frameMailbox) latest() (LiveFrame, uint64, bool) {
 	return mb.frame, mb.gen, true
 }
 
-/*
- * waitChange 等待 gen 前进或 ctx 结束（订阅循环骨架：latest 取帧消费后以所见 gen 续
- * 等——先判 gen 已前进，消除「投递落在 latest 与快照之间」的丢唤醒窗口，静态页零推
- * 帧场景下漏唤醒即画面永久滞旧）。
- */
-func (mb *frameMailbox) waitChange(ctx context.Context, seenGen uint64) error {
+// changedC 当前变更信号 channel（deliver 关闭换新；select 收到信号后须重取新 channel）。
+func (mb *frameMailbox) changedC() <-chan struct{} {
 	mb.mu.Lock()
-	changed, gen := mb.changed, mb.gen
-	mb.mu.Unlock()
-	if gen > seenGen {
-		return nil
-	}
-	select {
-	case <-changed:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	defer mb.mu.Unlock()
+	return mb.changed
 }
 
 /*

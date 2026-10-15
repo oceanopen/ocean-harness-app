@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
-	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -143,6 +142,11 @@ func (api BrowserSession) Events(ctx *gin.Context) {
 const liveSSEPingInterval = 15 * time.Second
 
 /*
+ * liveSSEWriteTimeout SSE 单次写预算：客户端停滞读取时写超时结束流，防 handler 永久挂起。
+ */
+const liveSSEWriteTimeout = 10 * time.Second
+
+/*
  * browserStreamReject 实时画面帧流的订阅前置判定：投影行状态不可订阅即返回 HTTP
  * 状态码与原因（空串=未知 profile 404；idle/failed=会话已关闭/引擎未运行 409；
  * starting/ready 可订阅返回 nil）。真实状态码使 EventSource 按规范 fail the connection 不自动重连。
@@ -193,20 +197,14 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 	ping := time.NewTicker(liveSSEPingInterval)
 	defer ping.Stop()
 	/*
-	 * 帧源是 keep-latest 单槽 mailbox 而非 channel：waiter 以 gen
-	 * 感知等待转成通知信号（满即合并丢信号——主循环醒来按 gen 补读，无丢唤醒），gen 随写入推进防重复帧。
+	 * 帧源是 keep-latest 单槽 mailbox：变更信号 channel 每次 deliver 关闭换新，select
+	 * 直连——每帧至多一次唤醒，静态页零推帧时阻塞零开销。
 	 */
-	notify := make(chan struct{}, 1)
-	var seen atomic.Uint64
-	go func() {
-		for stream.WaitFrameChange(hctx, seen.Load()) == nil {
-			select {
-			case notify <- struct{}{}:
-			default:
-			}
-		}
-	}()
+	frameC := stream.FrameChanged()
+	var seen uint64
+	rc := http.NewResponseController(writer)
 	writeEvent := func(evt browser.LiveEvent) {
+		_ = rc.SetWriteDeadline(time.Now().Add(liveSSEWriteTimeout))
 		api.Context.SSEvent("message", evt)
 		writer.Flush()
 	}
@@ -219,8 +217,8 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 	var catchup *time.Timer
 	var catchupC <-chan time.Time
 	writeLatest := func() {
-		if f, gen, ok := stream.LatestFrame(); ok && gen > seen.Load() {
-			seen.Store(gen)
+		if f, gen, ok := stream.LatestFrame(); ok && gen > seen {
+			seen = gen
 			writeEvent(browser.LiveEvent{
 				Type:     browser.LiveEventFrame,
 				Data:     base64.StdEncoding.EncodeToString(f.Data),
@@ -234,9 +232,11 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 			catchup.Stop()
 		}
 	}()
+	writeLatest() // 订阅建立即冲刷 mailbox 现有帧（attach 初始帧/重订恢复帧由此落流，静态页不再依赖后续推帧）
 	for {
 		select {
-		case <-notify:
+		case <-frameC:
+			frameC = stream.FrameChanged()
 			if throttle <= 0 {
 				writeLatest()
 				break
@@ -264,6 +264,7 @@ func (api BrowserSession) Stream(ctx *gin.Context) {
 			}
 			return
 		case <-ping.C:
+			_ = rc.SetWriteDeadline(time.Now().Add(liveSSEWriteTimeout))
 			_, _ = writer.WriteString(": ping\n\n")
 			writer.Flush()
 		case <-hctx.Done():

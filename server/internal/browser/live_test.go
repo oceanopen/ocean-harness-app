@@ -96,15 +96,18 @@ func TestFrameMailbox(t *testing.T) {
 		t.Fatalf("latest = %+v gen=%d ok=%v; want 3/3/true", f, gen, ok)
 	}
 
-	// 多订户同帧全唤醒；ctx 取消可中断等待。
+	// 多订户同帧全唤醒（持旧 channel 被 deliver 关闭）；换新后新 channel 未就绪。
 	const subscribers = 3
-	_, curGen, _ := mb.latest()
+	subC := mb.changedC()
 	errs := make(chan error, subscribers)
 	for i := 0; i < subscribers; i++ {
 		go func() {
-			wctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			errs <- mb.waitChange(wctx, curGen)
+			select {
+			case <-subC:
+				errs <- nil
+			case <-time.After(2 * time.Second):
+				errs <- fmt.Errorf("订户未被唤醒")
+			}
 		}()
 	}
 	time.Sleep(50 * time.Millisecond) // 等订户进入等待
@@ -114,12 +117,10 @@ func TestFrameMailbox(t *testing.T) {
 			t.Fatalf("订户未唤醒: %v", err)
 		}
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, curGen, _ = mb.latest()
-	if err := mb.waitChange(ctx, curGen); err == nil {
-		t.Fatal("ctx 取消应中断等待")
+	select {
+	case <-mb.changedC():
+		t.Fatal("deliver 换新后信号不应立即就绪")
+	default:
 	}
 }
 
@@ -333,9 +334,10 @@ func TestConnectLiveE2E(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("5s 内未收到投递帧（gen 停在 %d）", gen)
 		}
-		wctx, wcancel := context.WithTimeout(ctx, time.Second)
-		_ = v.frames.waitChange(wctx, gen)
-		wcancel()
+		select {
+		case <-v.frames.changedC():
+		case <-time.After(time.Second):
+		}
 		_, gen, ok = v.frames.latest()
 	}
 	if f, _, ok2 := v.frames.latest(); !ok2 || f.Metadata.DeviceWidth != 800 || f.Metadata.OffsetTop != 12 {
