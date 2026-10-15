@@ -1,4 +1,4 @@
-import type { AcpSessionIdleTimeoutMinutes, Appearance, Iterm2SplitDirection, Language } from './appConfig';
+import type { AcpSessionIdleTimeoutMinutes, Appearance, BrowserRefreshMs, Iterm2SplitDirection, Language } from './appConfig';
 
 export interface LanguageOption {
   value: Language;
@@ -43,4 +43,18 @@ export const iterm2SplitDirectionOptions: Iterm2SplitDirectionOption[] = [
   { value: 'horizontal', labelKey: 'settings:terminal.option.splitHorizontal' },
   { value: 'vertical', labelKey: 'settings:terminal.option.splitVertical' },
   { value: 'none', labelKey: 'settings:terminal.option.splitNone' },
+];
+
+export interface BrowserRefreshMsOption {
+  value: BrowserRefreshMs;
+  labelKey: string;
+}
+
+// 渲染 label 时以 { seconds: value / 1000 } 插值（500 → 0.5）。
+export const browserRefreshMsOptions: BrowserRefreshMsOption[] = [
+  { value: 500, labelKey: 'settings:app.option.refreshSeconds' },
+  { value: 1000, labelKey: 'settings:app.option.refreshSeconds' },
+  { value: 2000, labelKey: 'settings:app.option.refreshSeconds' },
+  { value: 3000, labelKey: 'settings:app.option.refreshSeconds' },
+  { value: 5000, labelKey: 'settings:app.option.refreshSeconds' },
 ];

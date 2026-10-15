@@ -1,5 +1,12 @@
 import type { BrowserSessionView } from '@src/services';
 import { Alert, Box, Button, CircularProgress, Typography, useTheme } from '@mui/material';
+import {
+  BROWSER_LIVE_REFRESH_MS_KEY,
+  DEFAULT_BROWSER_LIVE_REFRESH_MS,
+  parseBrowserRefreshMs,
+} from '@src/shared/appConfig';
+import { useConfigReady } from '@src/shared/useConfigReady';
+import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
   useBrowserFrameStream,
@@ -10,6 +17,10 @@ import {
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useEffect } from 'react';
 import LiveViewport from './LiveViewport';
+
+// useConfigValue decode 须稳定引用、useConfigReady keys 须稳定引用（模块级常量）。
+const decodeLiveRefreshMs = (raw: string | null) => parseBrowserRefreshMs(raw, DEFAULT_BROWSER_LIVE_REFRESH_MS);
+const LIVE_REFRESH_CONFIG_KEYS = [BROWSER_LIVE_REFRESH_MS_KEY];
 
 /**
  * BrowserStageOverlay：浏览器操作台浮层——激活 profile 接管工作台终端内容区
@@ -41,10 +52,13 @@ function StageContent({ profile }: { profile: string }) {
   // 观看页码：卡内点选优先，未选 = 当前页；pages 未就绪以 0 起步，首帧即真实页。
   const pageId = selectedPageId ?? (session?.pages ?? []).find(page => page.current)?.index ?? 0;
   // 帧流闸门：ready && 窗口可见（面板关托盘/最小化时 webview 隐藏但组件树不卸载，
-  // 隐藏即断流，恢复显示重订回放首帧）；throttleMs 300 = 写侧节流档（~3fps，迷你
-  // 预览 2000 同机制），绘制侧 rAF 合帧见 useFramePaint。
+  // 隐藏即断流，恢复显示重订回放首帧）&& 配置就绪（编码规则 1：首帧即终值，不默认值
+  // 建流后纠正重订）；节流间隔来自通用设置「实时画面刷新间隔」，运行时改动按既有
+  // 语义重订（清帧回占位再出帧），绘制侧 rAF 合帧见 useFramePaint。
   const visible = useDocumentVisible();
-  const stream = useBrowserFrameStream(profile, pageId, ready && visible, 300);
+  const configReady = useConfigReady(LIVE_REFRESH_CONFIG_KEYS);
+  const refreshMs = useConfigValue(BROWSER_LIVE_REFRESH_MS_KEY, decodeLiveRefreshMs, DEFAULT_BROWSER_LIVE_REFRESH_MS);
+  const stream = useBrowserFrameStream(profile, pageId, ready && visible && configReady, refreshMs);
 
   // Esc 关浮层：焦点在画面画布（远端页面键盘交互）时让位；沉浸全屏下让位页面级退出
   // （getState 现读，不建渲染订阅，范式同 FilePreviewOverlay）。

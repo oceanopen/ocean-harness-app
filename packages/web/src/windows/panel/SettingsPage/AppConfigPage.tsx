@@ -1,7 +1,9 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { AcpSessionIdleTimeoutMinutes, Appearance, Language } from '@src/shared/appConfig';
+import type { AcpSessionIdleTimeoutMinutes, Appearance, BrowserRefreshMs, Language } from '@src/shared/appConfig';
 import LanguageIcon from '@mui/icons-material/Language';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import PictureInPictureAltOutlinedIcon from '@mui/icons-material/PictureInPictureAltOutlined';
+import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
 import {
   Box,
@@ -15,17 +17,23 @@ import {
 import {
   ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY,
   APPEARANCE_KEY,
+  BROWSER_LIVE_REFRESH_MS_KEY,
+  BROWSER_PREVIEW_REFRESH_MS_KEY,
   DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
   DEFAULT_APPEARANCE,
+  DEFAULT_BROWSER_LIVE_REFRESH_MS,
+  DEFAULT_BROWSER_PREVIEW_REFRESH_MS,
   DEFAULT_LANGUAGE,
   getAppConfig,
   LANGUAGE_KEY,
   parseAcpSessionIdleTimeoutMinutes,
+  parseBrowserRefreshMs,
   setAppConfig,
 } from '@src/shared/appConfig';
 import {
   acpSessionIdleTimeoutOptions,
   appearanceOptions,
+  browserRefreshMsOptions,
   languageOptions,
 } from '@src/shared/settingOption';
 import { useEffect, useState } from 'react';
@@ -40,13 +48,19 @@ function AppConfigPage() {
   const [draftAppearance, setDraftAppearance] = useState<Appearance>(DEFAULT_APPEARANCE);
   const [savedAcpIdle, setSavedAcpIdle] = useState<AcpSessionIdleTimeoutMinutes>(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
   const [draftAcpIdle, setDraftAcpIdle] = useState<AcpSessionIdleTimeoutMinutes>(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
+  const [savedLiveRefresh, setSavedLiveRefresh] = useState<BrowserRefreshMs>(DEFAULT_BROWSER_LIVE_REFRESH_MS);
+  const [draftLiveRefresh, setDraftLiveRefresh] = useState<BrowserRefreshMs>(DEFAULT_BROWSER_LIVE_REFRESH_MS);
+  const [savedPreviewRefresh, setSavedPreviewRefresh] = useState<BrowserRefreshMs>(DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
+  const [draftPreviewRefresh, setDraftPreviewRefresh] = useState<BrowserRefreshMs>(DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
 
   useEffect(() => {
     Promise.all([
       getAppConfig(LANGUAGE_KEY),
       getAppConfig(APPEARANCE_KEY),
       getAppConfig(ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY),
-    ]).then(([lang, appearance, idleMinutes]) => {
+      getAppConfig(BROWSER_LIVE_REFRESH_MS_KEY),
+      getAppConfig(BROWSER_PREVIEW_REFRESH_MS_KEY),
+    ]).then(([lang, appearance, idleMinutes, liveRefresh, previewRefresh]) => {
       if (lang === 'system' || lang === 'zh-CN' || lang === 'en') {
         setSavedLanguage(lang);
         setDraftLanguage(lang);
@@ -58,33 +72,49 @@ function AppConfigPage() {
       const acpIdle = parseAcpSessionIdleTimeoutMinutes(idleMinutes);
       setSavedAcpIdle(acpIdle);
       setDraftAcpIdle(acpIdle);
+      const live = parseBrowserRefreshMs(liveRefresh, DEFAULT_BROWSER_LIVE_REFRESH_MS);
+      setSavedLiveRefresh(live);
+      setDraftLiveRefresh(live);
+      const preview = parseBrowserRefreshMs(previewRefresh, DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
+      setSavedPreviewRefresh(preview);
+      setDraftPreviewRefresh(preview);
     });
   }, []);
 
   const dirty
     = draftLanguage !== savedLanguage
       || draftAppearance !== savedAppearance
-      || draftAcpIdle !== savedAcpIdle;
+      || draftAcpIdle !== savedAcpIdle
+      || draftLiveRefresh !== savedLiveRefresh
+      || draftPreviewRefresh !== savedPreviewRefresh;
 
   const handleReset = () => {
     setDraftLanguage(DEFAULT_LANGUAGE);
     setDraftAppearance(DEFAULT_APPEARANCE);
     setDraftAcpIdle(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
+    setDraftLiveRefresh(DEFAULT_BROWSER_LIVE_REFRESH_MS);
+    setDraftPreviewRefresh(DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
   };
   const handleCancel = () => {
     setDraftLanguage(savedLanguage);
     setDraftAppearance(savedAppearance);
     setDraftAcpIdle(savedAcpIdle);
+    setDraftLiveRefresh(savedLiveRefresh);
+    setDraftPreviewRefresh(savedPreviewRefresh);
   };
   const handleSave = async () => {
     await Promise.all([
       setAppConfig(LANGUAGE_KEY, draftLanguage),
       setAppConfig(APPEARANCE_KEY, draftAppearance),
       setAppConfig(ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY, String(draftAcpIdle)),
+      setAppConfig(BROWSER_LIVE_REFRESH_MS_KEY, String(draftLiveRefresh)),
+      setAppConfig(BROWSER_PREVIEW_REFRESH_MS_KEY, String(draftPreviewRefresh)),
     ]);
     setSavedLanguage(draftLanguage);
     setSavedAppearance(draftAppearance);
     setSavedAcpIdle(draftAcpIdle);
+    setSavedLiveRefresh(draftLiveRefresh);
+    setSavedPreviewRefresh(draftPreviewRefresh);
   };
 
   return (
@@ -188,6 +218,78 @@ function AppConfigPage() {
                 {acpSessionIdleTimeoutOptions.map(opt => (
                   <MenuItem key={opt.value} value={opt.value}>
                     {t(opt.labelKey, { minutes: opt.value })}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          <Divider />
+
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              px: '16px',
+              py: '12px',
+              gap: '16px',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              <SpeedOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: '4px' }} />
+              <Box>
+                <Typography>{t('settings:app.row.browserLiveRefresh')}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t('settings:app.help.browserRefresh')}
+                </Typography>
+              </Box>
+            </Box>
+            <FormControl size="small" sx={{ minWidth: '140px' }}>
+              <Select
+                value={draftLiveRefresh}
+                onChange={(e: SelectChangeEvent<BrowserRefreshMs>) =>
+                  setDraftLiveRefresh(e.target.value as BrowserRefreshMs)}
+              >
+                {browserRefreshMsOptions.map(opt => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {t(opt.labelKey, { seconds: opt.value / 1000 })}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+
+          <Divider />
+
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              px: '16px',
+              py: '12px',
+              gap: '16px',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              <PictureInPictureAltOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: '4px' }} />
+              <Box>
+                <Typography>{t('settings:app.row.browserPreviewRefresh')}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t('settings:app.help.browserRefresh')}
+                </Typography>
+              </Box>
+            </Box>
+            <FormControl size="small" sx={{ minWidth: '140px' }}>
+              <Select
+                value={draftPreviewRefresh}
+                onChange={(e: SelectChangeEvent<BrowserRefreshMs>) =>
+                  setDraftPreviewRefresh(e.target.value as BrowserRefreshMs)}
+              >
+                {browserRefreshMsOptions.map(opt => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {t(opt.labelKey, { seconds: opt.value / 1000 })}
                   </MenuItem>
                 ))}
               </Select>

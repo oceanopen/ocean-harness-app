@@ -123,6 +123,21 @@ export function parseTerminalLineHeight(value: string | null): TerminalLineHeigh
     : DEFAULT_TERMINAL_LINE_HEIGHT;
 }
 
+// 浏览器画面帧流节流间隔（ms）：实时操作台与迷你预览各一 key，值域共用，脏值回落各自默认。
+export const BROWSER_REFRESH_MS_OPTIONS = [500, 1000, 2000, 3000, 5000] as const;
+export type BrowserRefreshMs = (typeof BROWSER_REFRESH_MS_OPTIONS)[number];
+export const BROWSER_LIVE_REFRESH_MS_KEY = 'browser_live_refresh_ms';
+export const DEFAULT_BROWSER_LIVE_REFRESH_MS: BrowserRefreshMs = 500;
+export const BROWSER_PREVIEW_REFRESH_MS_KEY = 'browser_preview_refresh_ms';
+export const DEFAULT_BROWSER_PREVIEW_REFRESH_MS: BrowserRefreshMs = 3000;
+
+export function parseBrowserRefreshMs(value: string | null, fallback: BrowserRefreshMs): BrowserRefreshMs {
+  const parsed = value != null ? Number.parseInt(value, 10) : Number.NaN;
+  return (BROWSER_REFRESH_MS_OPTIONS as readonly number[]).includes(parsed)
+    ? (parsed as BrowserRefreshMs)
+    : fallback;
+}
+
 /**
  * HTTP 本地服务端口已彻底固化（Rust 编译期常量：dev=9000/release=9100），无前端配置项；
  * 前端消费服务地址一律走 http_server_status 实时获取，不持有端口字面量。

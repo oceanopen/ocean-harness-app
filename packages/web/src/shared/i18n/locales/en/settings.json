@@ -18,10 +18,13 @@
     "row": {
       "language": "Language",
       "appearance": "Appearance",
-      "acpIdleTimeout": "ACP idle session reclaim"
+      "acpIdleTimeout": "ACP idle session reclaim",
+      "browserLiveRefresh": "Live viewport refresh interval",
+      "browserPreviewRefresh": "Mini preview refresh interval"
     },
     "help": {
-      "acpIdleTimeout": "Sessions idle beyond this duration exit automatically and restore on reopen"
+      "acpIdleTimeout": "Sessions idle beyond this duration exit automatically and restore on reopen",
+      "browserRefresh": "Minimum interval between frame pushes; larger saves resources, smaller feels smoother, changes apply immediately"
     },
     "option": {
       "followSystem": "Follow system",
@@ -29,7 +32,8 @@
       "english": "English",
       "light": "Light",
       "dark": "Dark",
-      "idleMinutes": "{{minutes}} min"
+      "idleMinutes": "{{minutes}} min",
+      "refreshSeconds": "{{seconds}} s"
     }
   },
   "terminal": {

@@ -19,7 +19,14 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import {
+  BROWSER_PREVIEW_REFRESH_MS_KEY,
+  DEFAULT_BROWSER_PREVIEW_REFRESH_MS,
+  parseBrowserRefreshMs,
+} from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
+import { useConfigReady } from '@src/shared/useConfigReady';
+import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
   useAnalyzeBrowserSession,
@@ -36,6 +43,10 @@ import MiniPreview from './MiniPreview';
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
+
+// useConfigValue decode 须稳定引用、useConfigReady keys 须稳定引用（模块级常量）。
+const decodePreviewRefreshMs = (raw: string | null) => parseBrowserRefreshMs(raw, DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
+const PREVIEW_REFRESH_CONFIG_KEYS = [BROWSER_PREVIEW_REFRESH_MS_KEY];
 
 /**
  * 流水行 key（内容指纹 + 同指纹序号）：环形缓冲整行无业务 id，index key 会随窗口滑动
@@ -73,13 +84,9 @@ interface BrowserSessionCardProps {
 }
 
 /**
- * BrowserSessionCard：单 profile 浏览器会话卡（紧凑态）——迷你预览（ready 且面板可见
- * 且未激活且无恢复编排才订阅 2s 节流帧流，纯展示无输入；hover 高亮点击激活到工作台
- * 操作台浮层）、地址栏打开、页面列表（点选 = 分析目标与观看页码）、释放按钮（立即
- * close，免等 idle 计时）、无头切换/重开（close + ensure 链，成功后按 close 时捕获的
- * 真实当前页恢复现场）、「AI 分析此页」受理、「最近操作」流水。会话状态迁移全由 SSE
- * sessions 帧驱动，卡片不维护会话状态副本。激活与观看页码读写 useBrowserStageStore
- *（浮层与面板跨组件树共享，见 activation.ts）。
+ * BrowserSessionCard：单 profile 浏览器会话卡（紧凑态）——迷你预览（激活期停订的低频节流帧流，
+ * 纯展示）、地址栏/页面列表/释放/无头切换与重开（close + ensure 链恢复现场）/「AI 分析此页」受理/
+ * 最近操作流水。会话状态全由 SSE sessions 帧驱动，激活与观看页码走 useBrowserStageStore。
  */
 export default function BrowserSessionCard({ session, issueId, panelVisible }: BrowserSessionCardProps) {
   const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
@@ -89,13 +96,13 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   const activated = activatedProfile === session.profile;
   const [expanded, setExpanded] = useState(true);
   const [address, setAddress] = useState('');
-  // 无头切换确认弹窗（null = 关闭）：headless 在引擎启动时固化、运行中不可改，切换 =
-  // close + ensure 传新值；restoreUrl 为打开弹窗时的 pages 快照，仅作确认文案提示
-  // （权威恢复目标 = close 响应行——服务端收尾前捕获引擎真实当前页，弹窗快照看不到
-  // 浏览器窗口内的手动导航）。编排链路期间弹窗保持打开以展示进度与错误。
+  /**
+   * 无头切换确认弹窗（null = 关闭）：headless 引擎启动时固化，切换 = close + ensure 传新值；
+   * restoreUrl 为弹窗打开时的 pages 快照，仅作文案提示（权威恢复目标 = close 响应行，快照
+   * 看不到窗口内手动导航）；编排期弹窗保持打开展示进度与错误。
+   */
   const [pendingToggle, setPendingToggle] = useState<{ headless: boolean; restoreUrl: string | null } | null>(null);
-  // 恢复编排进行中暂停帧流订阅：编排导航与观察通道同争页面拨号（订阅重建风暴即自愈
-  // 抖动）。
+  // 恢复编排进行中暂停帧流订阅：编排导航与观察通道同争页面拨号（订阅重建风暴即自愈抖动）。
   const [restoreInFlight, setRestoreInFlight] = useState(false);
   // 释放按钮的独立错误位（closeMutation 与无头切换共用，弹窗关闭时释放失败也要可见）。
   const [releaseError, setReleaseError] = useState<string | null>(null);
@@ -109,14 +116,18 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   const analyzeMutation = useAnalyzeBrowserSession();
 
   const ready = session.status === 'ready';
-  // 预览订阅闸门：激活期停订（该 profile 的实时订阅归操作台 Stage——单 profile 单订阅）；
-  // 窗口隐藏（关托盘/最小化）停订——webview 隐藏不卸载组件树，隐藏期订阅纯空转。
+  /**
+   * 预览订阅闸门：激活期停订（该 profile 的实时订阅归操作台 Stage——单 profile 单订阅）；
+   * 窗口隐藏（关托盘/最小化）停订——webview 隐藏不卸载组件树，隐藏期订阅纯空转；
+   * 配置就绪同操作台（首帧即终值）。
+   */
   const visible = useDocumentVisible();
-  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight && !activated && visible;
-  // 观看页码：点选页优先，未选 = 当前页（分析目标与观看页码同一语义）；pages 未就绪
-  // 以 0 起步，首帧即真实页。
+  const configReady = useConfigReady(PREVIEW_REFRESH_CONFIG_KEYS);
+  const refreshMs = useConfigValue(BROWSER_PREVIEW_REFRESH_MS_KEY, decodePreviewRefreshMs, DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
+  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight && !activated && visible && configReady;
+  // 观看页码：点选页优先，未选 = 当前页（分析目标与观看页码同一语义）；pages 未就绪以 0 起步，首帧即真实页。
   const pageId = selectedPageId ?? (session.pages ?? []).find(page => page.current)?.index ?? 0;
-  const stream = useBrowserFrameStream(session.profile, pageId, streamEnabled, 2000);
+  const stream = useBrowserFrameStream(session.profile, pageId, streamEnabled, refreshMs);
 
   const recentCalls = session.recentCalls ?? [];
   const chip = browserSessionStateChip(session.status);
@@ -153,9 +164,11 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
       return;
     }
     const { headless: next } = pendingToggle;
-    // 编排全程暂停截图轮询；close/ensure 失败保持弹窗展示错误；恢复导航失败不回滚
-    // 切换（错误经 ready 区 Alert 兜底展示）。恢复目标取 close 响应行（收尾前服务端
-    // 捕获引擎真实当前页——弹窗快照仅作文案，看不到窗口内手动导航）。
+    /**
+     * 编排全程暂停截图轮询；close/ensure 失败保持弹窗展示错误；恢复导航失败不回滚
+     * 切换（错误经 ready 区 Alert 兜底展示）。恢复目标取 close 响应行（收尾前服务端
+     * 捕获引擎真实当前页——弹窗快照仅作文案，看不到窗口内手动导航）。
+     */
     setRestoreInFlight(true);
     const settle = () => setRestoreInFlight(false);
     closeMutation.mutate({ profile: session.profile }, {

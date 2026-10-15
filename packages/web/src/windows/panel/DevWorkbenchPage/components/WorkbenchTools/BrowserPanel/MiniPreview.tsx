@@ -15,8 +15,8 @@ interface MiniPreviewProps {
 
 /**
  * MiniPreview：会话卡迷你预览（纯展示，无输入监听——操作收敛在操作台 Stage）。帧源为
- * 后端 throttleMs 节流流（约 0.5fps）；绘制 rAF 消费循环同 Stage（useFramePaint 共用）；
- * contain 缩放同 Stage（canvas max 约束 + 留白）。
+ * 后端 throttleMs 节流流（间隔走通用设置「迷你预览刷新间隔」）；绘制 rAF 消费循环同
+ * Stage（useFramePaint 共用）；contain 缩放同 Stage（canvas max 约束 + 留白）。
  */
 export default function MiniPreview({ frameRef, hasFrame, height }: MiniPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);

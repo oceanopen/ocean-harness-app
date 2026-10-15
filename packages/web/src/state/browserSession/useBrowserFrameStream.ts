@@ -40,7 +40,7 @@ export interface BrowserFrameStream {
 /**
  * useBrowserFrameStream 订阅单页面实时画面 SSE（/api/browserSession/stream，per (profile, pageId)：页码变更即重建）。
  * 事件分派见 BrowserLiveEvent 契约；瞬态断线交 EventSource 自动重连，永久失败（readyState CLOSED，含订阅拒绝）置 failed 待手动重试，仅 closed 主动停订。
- * enabled 为闸门链——收起/恢复编排即断流、重开重订（重订清帧回占位态）；throttleMs 为帧写侧最小间隔（0/缺省不节流，实时档 300、预览档 2000）。
+ * enabled 为闸门链——收起/恢复编排即断流、重开重订（重订清帧回占位态）；throttleMs 为帧写侧最小间隔（0/缺省不节流，实时/预览档位走通用设置配置项）。
  */
 export function useBrowserFrameStream(profile: string, pageId: number, enabled: boolean, throttleMs = 0): BrowserFrameStream {
   const frameRef = useRef<LiveViewportFrame | null>(null);
