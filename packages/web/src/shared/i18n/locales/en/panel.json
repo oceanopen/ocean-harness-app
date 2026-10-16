@@ -6,7 +6,7 @@
     "imBots": "IM Bots",
     "serverStatus": "Service Status",
     "tracker": "Project & Issue Management",
-    "devWorkbench": "Dev Workbench"
+    "devWorkbench": "Task Workbench"
   },
   "sidebar": {
     "collapse": "Collapse sidebar",
@@ -36,7 +36,7 @@
       "imBots": "Go to IM Bots",
       "serverStatus": "Go to Service Status",
       "tracker": "Go to Project & Issue Management",
-      "devWorkbench": "Go to Dev Workbench"
+      "devWorkbench": "Go to Task Workbench"
     },
     "action": {
       "settings": "Open Settings",

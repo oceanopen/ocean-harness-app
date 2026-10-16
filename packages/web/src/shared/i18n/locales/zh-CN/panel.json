@@ -6,7 +6,7 @@
     "imBots": "IM 机器人",
     "serverStatus": "服务状态",
     "tracker": "项目事项管理",
-    "devWorkbench": "开发工作台"
+    "devWorkbench": "任务工作台"
   },
   "sidebar": {
     "collapse": "收起侧边栏",
@@ -36,7 +36,7 @@
       "imBots": "前往 IM 机器人",
       "serverStatus": "前往服务状态",
       "tracker": "前往项目事项管理",
-      "devWorkbench": "前往开发工作台"
+      "devWorkbench": "前往任务工作台"
     },
     "action": {
       "settings": "打开设置",

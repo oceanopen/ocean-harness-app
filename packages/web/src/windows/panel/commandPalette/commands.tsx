@@ -79,7 +79,7 @@ export const commands: CommandConfig[] = [
     group: 'navigation',
     titleI18nKey: 'panel:commandPalette.nav.devWorkbench',
     icon: <DeveloperModeOutlinedIcon />,
-    keywords: ['devWorkbench', 'dev', 'workbench', '开发工作台', '开发'],
+    keywords: ['devWorkbench', 'dev', 'workbench', '任务工作台', '工作台'],
     action: ctx => ctx.navigate('devWorkbench'),
     closeOnSelect: true,
   },
