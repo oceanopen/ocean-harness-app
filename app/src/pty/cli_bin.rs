@@ -99,6 +99,10 @@ pub(crate) static TEST_RESOURCES_ROOT: std::sync::LazyLock<std::sync::Mutex<Opti
  * shell 一致；stdin 关死——rc 脚本若读 stdin 会挂起探测进程）。
  */
 fn login_path() -> Option<String> {
+    // Windows 无 $SHELL login 探测语义：GUI 进程本继承注册表 PATH，跳过免每次直启空跑失败进程。
+    if cfg!(windows) {
+        return None;
+    }
     {
         let cache = LOGIN_PATH_CACHE
             .lock()

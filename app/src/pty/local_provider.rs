@@ -1,6 +1,6 @@
 /*
  * LocalPtyProvider：本机 PTY 后端（portable-pty）。
- * spawn 细节：shell 显式取 $SHELL 回退 /bin/zsh 加 -i（不能用 CommandBuilder::new_default_prog()——无 tty 环境会永久挂起）；direct_command 无 shell 中转直接 exec CLI，解析失败回落普通裸 shell；cwd 不存在时 spawn_command 直接报错由前端捕获展示。
+ * spawn 细节：shell 按平台解析（Unix 取 $SHELL 回退 /bin/zsh 加 -i，Windows 用 powershell.exe -NoLogo；不能用 CommandBuilder::new_default_prog()——无 tty 环境会永久挂起）；direct_command 无 shell 中转直接 exec CLI，解析失败回落普通裸 shell；cwd 不存在时 spawn_command 直接报错由前端捕获展示。
  * spawn 即启动 reader 线程：输出经 UTF-8 边界切分后推 listener Channel，EOF 置 exited + Exit 事件。重复 spawn：未退出复用换装新 listener（webview 刷新后旧 Channel 失效）；已退出移除重起 shell（「重开」路径）。
  */
 use std::sync::Arc;
@@ -198,9 +198,19 @@ impl Default for LocalPtyProvider {
 }
 
 /*
- * 解析用户 shell：$SHELL 优先，缺失回退 /bin/zsh（macOS 默认）。
- * 返回 (程序, 参数)——交互式 shell 需要 -i。
+ * 解析用户 shell，按平台分支：Unix 取 $SHELL 回退 /bin/zsh 加 -i；Windows 用
+ * 系统自带的 powershell.exe（ConPTY 下即交互运行，-NoLogo 去横幅）。
+ * 返回 (程序, 参数)。
  */
+#[cfg(windows)]
+fn resolve_shell() -> (String, Vec<String>) {
+    (
+        "powershell.exe".to_string(),
+        vec!["-NoLogo".to_string()],
+    )
+}
+
+#[cfg(not(windows))]
 fn resolve_shell() -> (String, Vec<String>) {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
     (shell, vec!["-i".to_string()])
