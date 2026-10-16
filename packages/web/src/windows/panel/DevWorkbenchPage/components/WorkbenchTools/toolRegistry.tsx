@@ -21,8 +21,8 @@ export interface WorkbenchToolRenderCtx {
   issue: ProjectIssueResponseData;
   projectId: number;
   /**
-   * 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：轮询类视口的暂停闸门
-   * （浏览器面板截图轮询「收起即停」，D4 展示侧对偶）。
+   * 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：帧流类视口的暂停闸门
+   * （浏览器面板实时画面「收起即停」，D4 展示侧对偶）。
    */
   panelVisible: boolean;
   // 打开指定 issue 的编辑抽屉（如子任务卡片点击）。

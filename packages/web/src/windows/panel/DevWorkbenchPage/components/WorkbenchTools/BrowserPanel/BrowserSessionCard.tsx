@@ -86,13 +86,14 @@ interface BrowserSessionCardProps {
 /**
  * BrowserSessionCard：单 profile 浏览器会话卡（紧凑态）——迷你预览（激活期停订的低频节流帧流，
  * 纯展示）、地址栏/页面列表/释放/无头切换与重开（close + ensure 链恢复现场）/「AI 分析此页」受理/
- * 最近操作流水。会话状态全由 SSE sessions 帧驱动，激活与观看页码走 useBrowserStageStore。
+ * 最近操作流水。会话状态全由 SSE sessions 帧驱动，激活与观看页 targetId 走 useBrowserStageStore。
  */
 export default function BrowserSessionCard({ session, issueId, panelVisible }: BrowserSessionCardProps) {
   const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
   const activate = useBrowserStageStore(s => s.activate);
-  const selectedPageId = useBrowserStageStore(s => s.watchPage[session.profile] ?? null);
+  const selectedTargetId = useBrowserStageStore(s => s.watchPage[session.profile] ?? null);
   const toggleWatchPage = useBrowserStageStore(s => s.toggleWatchPage);
+  const clearWatchPage = useBrowserStageStore(s => s.clearWatchPage);
   const activated = activatedProfile === session.profile;
   const [expanded, setExpanded] = useState(true);
   const [address, setAddress] = useState('');
@@ -124,10 +125,11 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   const visible = useDocumentVisible();
   const configReady = useConfigReady(PREVIEW_REFRESH_CONFIG_KEYS);
   const refreshMs = useConfigValue(BROWSER_PREVIEW_REFRESH_MS_KEY, decodePreviewRefreshMs, DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
-  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight && !activated && visible && configReady;
-  // 观看页码：点选页优先，未选 = 当前页（分析目标与观看页码同一语义）；pages 未就绪以 0 起步，首帧即真实页。
-  const pageId = selectedPageId ?? (session.pages ?? []).find(page => page.current)?.index ?? 0;
-  const stream = useBrowserFrameStream(session.profile, pageId, streamEnabled, refreshMs);
+  // 观看目标：点选页优先，未选 = 跟随激活页（投影 SSE 推送驱动重订——新开 tab/手动切换
+  // tab 画面实时跟随）；投影未就绪时不订阅（等 SSE 首帧，首帧即终值）。
+  const watchTargetId = selectedTargetId ?? (session.pages ?? []).find(page => page.current)?.targetId ?? '';
+  const streamEnabled = expanded && panelVisible && ready && !restoreInFlight && !activated && visible && configReady && watchTargetId !== '';
+  const stream = useBrowserFrameStream(session.profile, watchTargetId, streamEnabled, refreshMs);
 
   const recentCalls = session.recentCalls ?? [];
   const chip = browserSessionStateChip(session.status);
@@ -165,7 +167,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
     }
     const { headless: next } = pendingToggle;
     /**
-     * 编排全程暂停截图轮询；close/ensure 失败保持弹窗展示错误；恢复导航失败不回滚
+     * 编排全程暂停帧流订阅；close/ensure 失败保持弹窗展示错误；恢复导航失败不回滚
      * 切换（错误经 ready 区 Alert 兜底展示）。恢复目标取 close 响应行（收尾前服务端
      * 捕获引擎真实当前页——弹窗快照仅作文案，看不到窗口内手动导航）。
      */
@@ -176,6 +178,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
         const restoreUrl = restoreUrlOf(row);
         ensureMutation.mutate({ profile: session.profile, headless: next }, {
           onSuccess: () => {
+            clearWatchPage(session.profile); // targetId 随重建失效，恢复跟随激活页
             if (restoreUrl == null) {
               setPendingToggle(null);
               settle();
@@ -201,6 +204,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
     setRestoreInFlight(true);
     ensureMutation.mutate({ profile: session.profile }, {
       onSuccess: () => {
+        clearWatchPage(session.profile); // targetId 随重建失效，恢复跟随激活页
         if (restoreUrl == null) {
           setRestoreInFlight(false);
           return;
@@ -222,10 +226,12 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   };
 
   const analyze = () => {
+    // 未点选 = 分析当前激活页（有头模式引擎选中页可能与激活页不一致，显式传 targetId）。
+    const targetId = selectedTargetId ?? (session.pages ?? []).find(page => page.current)?.targetId;
     analyzeMutation.mutate({
       profile: session.profile,
       issueId,
-      pageId: selectedPageId ?? undefined,
+      targetId: targetId ?? undefined,
     });
   };
 
@@ -341,7 +347,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 ? (
                     <Box
                       sx={{
-                        height: MINI_PREVIEW_HEIGHT,
+                        height: '150px',
                         flexShrink: 0,
                         display: 'flex',
                         alignItems: 'center',
@@ -422,14 +428,18 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
 
               <Box>
                 <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: '4px' }}>
-                  页面（点选行 = 指定分析目标与观看页码，未选 = 当前页）
+                  页面（点选行 = 指定分析目标与观看页，未选 = 跟随激活页）
                 </Typography>
                 {(session.pages ?? []).length === 0
                   ? <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>暂无页面</Typography>
                   : (session.pages ?? []).map(page => (
                       <Box
-                        key={page.index}
-                        onClick={() => toggleWatchPage(session.profile, page.index)}
+                        key={page.targetId ?? page.index}
+                        onClick={() => {
+                          if (page.targetId != null) {
+                            toggleWatchPage(session.profile, page.targetId);
+                          }
+                        }}
                         sx={{
                           'display': 'flex',
                           'alignItems': 'center',
@@ -437,8 +447,8 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                           'px': '6px',
                           'py': '4px',
                           'borderRadius': '4px',
-                          'cursor': 'pointer',
-                          'bgcolor': selectedPageId === page.index ? 'action.selected' : 'transparent',
+                          'cursor': page.targetId != null ? 'pointer' : 'default',
+                          'bgcolor': selectedTargetId != null && selectedTargetId === page.targetId ? 'action.selected' : 'transparent',
                           '&:hover': { bgcolor: 'action.hover' },
                         }}
                       >

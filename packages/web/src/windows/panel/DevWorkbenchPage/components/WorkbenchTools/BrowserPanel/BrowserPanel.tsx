@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
 import { Alert, Box, Button, CircularProgress, Typography } from '@mui/material';
-import { deriveIssueProfile, useBrowserSessionEvents, useBrowserSessionView, useEnsureBrowserSession } from '@src/state/browserSession';
+import { deriveIssueProfile, useBrowserSessionEvents, useBrowserSessionView, useBrowserStageStore, useEnsureBrowserSession } from '@src/state/browserSession';
 import BrowserSessionCard from './BrowserSessionCard';
 
 function errorMessage(error: unknown): string {
@@ -32,7 +32,9 @@ export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProp
 
   const createOrOpen = () => {
     // profile 由任务派生：新建即关联当前任务，同任务复用同 profile；headless 键省略读后端 D10 偏好。
-    ensureMutation.mutate({ profile: deriveIssueProfile(issueId) });
+    ensureMutation.mutate({ profile: deriveIssueProfile(issueId) }, {
+      onSuccess: () => useBrowserStageStore.getState().clearWatchPage(deriveIssueProfile(issueId)),
+    });
   };
 
   let body: ReactNode;

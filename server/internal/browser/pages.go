@@ -18,10 +18,11 @@ import (
 var tabsLineRe = regexp.MustCompile(`(?m)^\s*-\s*(\d+):\s*(?:\((current)\)\s*)?(?:\[crashed\]\s*)?\[([^\]]*)\]\(([^)]*)\)`)
 
 /*
- * parseTabsOutput 解析 tab 列表文本 → []PageView；一行未匹配则返回 nil（格式漂移时
- * 保持原投影，不误清空）。
+ * ParseTabsOutput 解析 tab 列表文本 → []PageView；一行未匹配则返回 nil（格式漂移时保持
+ * 原投影，不误清空）。消费面仅剩两处：Close 收尾捕获与 analyze 的 targetId → 引擎 index
+ * 定位（Pages 投影 SSOT 归页面观察者）。
  */
-func parseTabsOutput(text string) []PageView {
+func ParseTabsOutput(text string) []PageView {
 	matches := tabsLineRe.FindAllStringSubmatch(text, -1)
 	if len(matches) == 0 {
 		return nil
@@ -56,37 +57,31 @@ func ResultText(res *mcp.CallToolResult) string {
 	return b.String()
 }
 
-// refreshPages Forward 成功后的页面投影刷新（缺省预算包装，见 refreshPagesCtx）。
-func (m *Manager) refreshPages(handle *EngineHandle, profile string) {
-	ctx, cancel := context.WithTimeout(context.Background(), pagesRefreshTimeout)
-	defer cancel()
-	m.refreshPagesCtx(ctx, handle, profile)
-}
-
 /*
- * refreshPagesCtx 页面投影刷新：拉 tab 列表 → 解析 → view 行更新（锁外广播 sessions 帧）；一次调用一次刷新，无防抖，截图轮询路径经 pagesRefreshExempt 豁免（一次轮询不触发两次引擎调用）。
- * best-effort——刷新失败仅记日志，不影响转发结果；预算由调用方给定：Forward 用 pagesRefreshTimeout，Close 收尾捕获用短预算（引擎挂死不拖累收尾）。
+ * capturePagesCtx Close 收尾捕获：拉引擎 tab 列表 → 解析 → view 行更新（锁外广播 sessions
+ * 帧）。捕获行无 TargetID（引擎文本解析无此信息）——仅供前端恢复现场取 URL，会话已入
+ * idle 不参与订阅寻址；best-effort——捕获失败仅记日志，不拖累收尾。
  */
-func (m *Manager) refreshPagesCtx(ctx context.Context, handle *EngineHandle, profile string) {
+func (m *Manager) capturePagesCtx(ctx context.Context, handle *EngineHandle, profile string) {
 	res, err := handle.Session().CallTool(ctx, &mcp.CallToolParams{
 		Name:      EngineToolTabs,
 		Arguments: map[string]any{"action": "list"},
 	})
 	if err != nil {
-		m.log.Debug("页面投影刷新失败", zap.String("profile", profile), zap.Error(err))
+		m.log.Debug("页面捕获失败", zap.String("profile", profile), zap.Error(err))
 		return
 	}
 	if res.IsError {
-		m.log.Debug("页面投影刷新被引擎拒绝", zap.String("profile", profile), zap.String("result", ResultText(res)))
+		m.log.Debug("页面捕获被引擎拒绝", zap.String("profile", profile), zap.String("result", ResultText(res)))
 		return
 	}
-	pages := parseTabsOutput(ResultText(res))
+	pages := ParseTabsOutput(ResultText(res))
 	m.applyPages(profile, pages)
 }
 
 /*
  * applyPages 页面投影回填并广播 sessions 帧（nil 不动投影——解析失败保持原样不误清
- * 空）；refreshPagesCtx 与观察通道 liveTabsRefresh 共用出口。
+ * 空）；capturePagesCtx 与页面观察者 publish 共用出口。
  */
 func (m *Manager) applyPages(profile string, pages []PageView) {
 	if pages == nil {

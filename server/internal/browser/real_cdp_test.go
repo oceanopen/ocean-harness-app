@@ -160,7 +160,7 @@ func spikeCall(t *testing.T, conn *liveConn, sessionID, method string, params an
 }
 
 /*
- * firstPageTarget 取首个 http page target（多页 URL 消歧归生产 matchPageTarget，spike
+ * firstPageTarget 取首个 http page target（多页消歧归生产 findPageTarget，spike
  * 探针恒取首个 http 页）。
  */
 func firstPageTarget(t *testing.T, port string) cdpTargetInfo {

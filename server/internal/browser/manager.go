@@ -37,8 +37,6 @@ var (
 	ensureWaitTimeout = 30 * time.Second
 	// forwardCallTimeout per-call 超时上限（防 evaluate 死循环把 profile 永久挂死）。
 	forwardCallTimeout = 120 * time.Second
-	// pagesRefreshTimeout pages 投影刷新（tab 列表拉取）超时。
-	pagesRefreshTimeout = 30 * time.Second
 	/*
 	 * closePagesCaptureTimeout close 收尾前的真实页面捕获预算：浏览器窗口内手动导航只
 	 * 有引擎知道，无头切换/重开恢复现场以捕获结果为准；引擎挂死时短预算放弃，不拖累
@@ -92,6 +90,15 @@ type Manager struct {
 	viewerMu  sync.Mutex
 	viewers   map[string]*liveSlot
 	connectMu sync.Mutex // 连接阶段串行化（拨号秒级慢操作不持 viewerMu）
+
+	/*
+	 * 页面观察者域（Pages 投影事件驱动 SSOT）：observerMu 守护注册表，观察者仅经
+	 * applyPages 触达 view/hub（锁序独立）。observersEnabled 供测试关断（单测关闭
+	 * 后台观察者，观察者专项测试显式开启）。
+	 */
+	observerMu       sync.Mutex
+	observers        map[string]*pageObserver
+	observersEnabled bool
 }
 
 /*
@@ -103,12 +110,14 @@ func NewManager(dirs Dirs, log *zap.Logger) *Manager {
 		log = zap.NewNop()
 	}
 	m := &Manager{
-		dirs:    dirs,
-		log:     log,
-		hub:     newHub(),
-		view:    newBrowserView(),
-		entries: map[string]*sessionEntry{},
-		viewers: map[string]*liveSlot{},
+		dirs:             dirs,
+		log:              log,
+		hub:              newHub(),
+		view:             newBrowserView(),
+		entries:          map[string]*sessionEntry{},
+		viewers:          map[string]*liveSlot{},
+		observers:        map[string]*pageObserver{},
+		observersEnabled: true,
 	}
 	m.recoverOrphans()
 	return m
@@ -303,9 +312,10 @@ func (m *Manager) ensureSpawned(ctx context.Context, entry *sessionEntry, profil
 		}
 		if old != nil {
 			/*
-			 * 观察通道强拆（T4.4 收敛点②）：重建后端口变化，残连接必死——显式拆让在订
-			 * 方拿到终态，下次订阅自然重读新端口。
+			 * 页面观察者与观察通道收敛（重建后端口变化，残连接必死）：显式停机/拆让在订
+			 * 方拿到终态，新会话就绪后各自重建。
 			 */
+			m.stopObserver(profile)
 			m.dropLiveViewer(profile, "无头模式切换，实时画面已断开")
 			_ = old.Close() // 旧引擎优雅关停（锁外慢操作）
 		}
@@ -429,6 +439,7 @@ func (m *Manager) runSpawn(entry *sessionEntry) {
 	entry.mu.Unlock()
 	m.mu.Unlock()
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
+	m.startObserver(profile) // 页面投影观察者随会话就绪启动（后台自愈，不阻塞）
 	go m.watchExit(entry, handle)
 	close(spawnDone)
 }
@@ -466,7 +477,8 @@ func (m *Manager) watchExit(entry *sessionEntry, handle *EngineHandle) {
 	m.mu.Unlock()
 	m.log.Warn("浏览器引擎意外退出", zap.String("profile", profile), zap.String("reason", errText))
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
-	// 观察通道强拆（T4.4 收敛点③）：引擎已死，CDP 连接随即断——显式拆记终态原因。
+	// 观察者与观察通道收敛（引擎已死，CDP 连接随即断——显式停机/拆记终态而非自然断连表象）。
+	m.stopObserver(profile)
 	m.dropLiveViewer(profile, "引擎进程意外退出")
 }
 
@@ -515,7 +527,7 @@ func (m *Manager) acceptCall(ctx context.Context, profile, callName, issueTag st
 }
 
 /*
- * Forward 引擎调用统一入口（mcp_tool 转发与 controller navigate 均经此）：受理纪律（ensure → callMu 互斥 → per-call 超时 → 在途登记）与 ListTools 共用 acceptCall；成功重置 idle 计时 + 页面投影刷新（pagesRefreshExempt 豁免项除外）。
+ * Forward 引擎调用统一入口（mcp_tool 转发与 controller navigate 均经此）：受理纪律（ensure → callMu 互斥 → per-call 超时 → 在途登记）与 ListTools 共用 acceptCall；成功重置 idle 计时（页面投影由页面观察者事件驱动维护，此处不再刷新）。
  * 转发结果按 isError:true 标志判错（引擎错误一律 isError 文本，非 JSON-RPC error）——结果原样返回，包装归调用方（T2.2 手工透传 Content 数组）。
  * issueTag 为归因展示标签（recentCalls 流水行，非过滤键）。
  */
@@ -605,9 +617,6 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 		}
 	}
 	m.recordCall(profile, tool, issueTag, outcome, errText)
-	if !pagesRefreshExempt[tool] {
-		m.refreshPages(handle, profile)
-	}
 	return res, nil
 }
 
@@ -737,9 +746,10 @@ func (m *Manager) Close(profile string) error {
 		cancelCall()
 	}
 	/*
-	 * 杀引擎前先断观察通道（T4.4 收敛点①）：CDP 连接随引擎死亡本会断，显式强拆让
-	 * 在订方拿到终态 reason 而非自然断连表象。
+	 * 杀引擎前先停页面观察者并断观察通道（CDP 连接随引擎死亡本会断，显式收敛让在订方
+	 * 拿到终态 reason 而非自然断连表象）。
 	 */
+	m.stopObserver(profile)
 	m.dropLiveViewer(profile, "浏览器会话已关闭")
 	/*
 	 * idle 行广播先行：捕获帧最后到，最终投影恒为「idle + 捕获到的真实页面」，防旧
@@ -753,7 +763,7 @@ func (m *Manager) Close(profile string) error {
 		 */
 		captureCtx, cancel := context.WithTimeout(context.Background(), closePagesCaptureTimeout)
 		defer cancel()
-		m.refreshPagesCtx(captureCtx, handle, profile)
+		m.capturePagesCtx(captureCtx, handle, profile)
 		_ = handle.Close() // 锁外慢操作
 	}
 	return nil

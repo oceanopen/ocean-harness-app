@@ -74,11 +74,11 @@ func (svc BrowserSession) Navigate(req *types.BrowserNavigateRequest) (*mcp.Call
 }
 
 /*
- * Stream 订阅实时画面（SSE 帧流端点受理）：页码解析/拨号自愈/refs 计数与 idle 保活闸
- * 全在 manager 层（T4.4），本层零逻辑透传。
+ * Stream 订阅实时画面（SSE 帧流端点受理）：targetId 解析/拨号自愈/refs 计数与 idle 保活
+ * 闸全在 manager 层（T4.4），本层零逻辑透传。
  */
 func (svc BrowserSession) Stream(req *types.BrowserStreamRequest) (*browser.LiveStream, error) {
-	return global.Browser.SubscribeLive(svc.Context, req.Profile, *req.PageID)
+	return global.Browser.SubscribeLive(svc.Context, req.Profile, req.TargetID)
 }
 
 /*
@@ -158,13 +158,17 @@ func inputCDP(req *types.BrowserInputRequest) (string, map[string]any, error) {
 
 /*
  * Analyze 即时受理「AI 分析此页」：拉页面快照 → 组装分析 prompt → 经 ACP 会话域 Prompt 注入 issue 绑定的 agent 会话（即时受理语义：会话缺失/回合进行中即中文报错，不排队，回答走终端/IM 既有链路）。
- * PageID 非 nil 先选中该 tab 再快照（支持分析非当前页）——选中失败显式报错，不静默降级为分析旧当前页；相关 Forward 以 issueId 归因（recentCalls 徽标）。
+ * TargetID 非空先选中该 tab 再快照（支持分析非激活页）——选中失败显式报错，不静默降级为分析旧当前页；相关 Forward 以 issueId 归因（recentCalls 徽标）。
  * 快照为不可信页面内容，prompt 显式标注纪律（T3.3 铁律的服务端同款约束）。
  */
 func (svc BrowserSession) Analyze(req *types.BrowserAnalyzeRequest) error {
-	if req.PageID != nil {
+	if req.TargetID != "" {
+		index, err := svc.analyzePageIndex(req.Profile, req.TargetID)
+		if err != nil {
+			return err
+		}
 		if _, err := forwardOK(svc.Context, req.Profile, browser.EngineToolTabs,
-			map[string]any{"action": "select", "index": *req.PageID}, req.IssueID, "选中页面"); err != nil {
+			map[string]any{"action": "select", "index": index}, req.IssueID, "选中页面"); err != nil {
 			return err
 		}
 	}
@@ -176,6 +180,33 @@ func (svc BrowserSession) Analyze(req *types.BrowserAnalyzeRequest) error {
 		return fmt.Errorf("页面分析受理: %w", err)
 	}
 	return nil
+}
+
+/*
+ * analyzePageIndex 订阅目标 targetId → 引擎 tab index：投影行 URL 与引擎 tab 列表精确
+ * 匹配取首个（同 URL 多开取首个——引擎仅支持 index 选中）；未命中显式报错。
+ */
+func (svc BrowserSession) analyzePageIndex(profile, targetID string) (int, error) {
+	pageURL := ""
+	for _, p := range global.Browser.Row(profile).Pages {
+		if p.TargetID == targetID {
+			pageURL = p.URL
+			break
+		}
+	}
+	if pageURL == "" {
+		return 0, errors.New("页面不存在或已关闭，请刷新页面列表后重试")
+	}
+	res, err := forwardOK(svc.Context, profile, browser.EngineToolTabs, map[string]any{"action": "list"}, "", "获取页面列表")
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range browser.ParseTabsOutput(browser.ResultText(res)) {
+		if p.URL == pageURL {
+			return p.Index, nil
+		}
+	}
+	return 0, errors.New("页面已切换或关闭，请刷新页面列表后重试")
 }
 
 /*

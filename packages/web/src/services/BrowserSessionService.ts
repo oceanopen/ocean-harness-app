@@ -15,9 +15,13 @@ export type BrowserSessionStatus = 'idle' | 'starting' | 'ready' | 'failed';
 // 操作流水结果分类（view.go CallOutcome* 常量取值域；轻量展示分类，不承载重试语义）。
 export type BrowserCallOutcome = 'ok' | 'error' | 'timeout' | 'stale_ref' | 'closed';
 
-// 页面投影行（view.go PageView；每次引擎调用成功后刷新，截图轮询豁免）。
+/*
+ * 页面投影行（view.go PageView；页面观察者事件驱动维护，current = 浏览器实际激活 tab）。
+ * targetId 为 CDP 稳定锚（订阅/点选/分析寻址均用之）；Close 收尾捕获行无 targetId（仅供恢复现场取 URL）。
+ */
 export interface BrowserPageView {
   index: number;
+  targetId?: string;
   title: string;
   url: string;
   current: boolean;
@@ -72,10 +76,10 @@ export type McpContent
 
 /**
  * GET /api/browserSession/stream SSE 事件信封（镜像 browser.LiveEvent wire 形态，type 判别载荷）：
- * frame = jpeg base64 + screencast metadata（初始帧无 metadata，渲染侧按位图尺寸兜底）；target = 实际投送目标回显，
- * closed 置真 = 页面已关闭（后端随后补发 closed 终态）；error = 自然断连可重订自愈；closed = 终态 reason，前端停止重订。
+ * frame = jpeg base64 + screencast metadata（初始帧无 metadata，渲染侧按位图尺寸兜底）；target = 投送目标回显（closed 置真后端随补 closed 终态）；
+ * error = 自然断连可重订自愈；closed/reject = 终态（reason/真实拒绝原因），前端停止重订。
  */
-export type BrowserLiveEventType = 'frame' | 'target' | 'error' | 'closed';
+export type BrowserLiveEventType = 'frame' | 'target' | 'error' | 'closed' | 'reject';
 
 /**
  * screencast metadata（镜像 browser.LiveFrameMeta；deviceWidth/Height 是前端坐标换算基准——渲染尺寸与投送坐标同源）。
@@ -144,12 +148,12 @@ export interface BrowserSessionInputRequest {
 
 /**
  * POST /api/browserSession/analyze：「AI 分析此页」即时受理（会话缺失/回合进行中即中文报错，不排队）；
- * pageId 缺省 = 当前页。
+ * targetId 缺省 = 引擎当前页。
  */
 export interface BrowserSessionAnalyzeRequest {
   profile: string;
   issueId: string;
-  pageId?: number;
+  targetId?: string;
 }
 
 export class BrowserSessionService {

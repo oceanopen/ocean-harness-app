@@ -23,13 +23,9 @@ const decodeLiveRefreshMs = (raw: string | null) => parseBrowserRefreshMs(raw, D
 const LIVE_REFRESH_CONFIG_KEYS = [BROWSER_LIVE_REFRESH_MS_KEY];
 
 /**
- * BrowserStageOverlay：浏览器操作台浮层——激活 profile 接管工作台终端内容区
- * （FilePreviewOverlay 同款接管语义，absolute inset 0 不挤压布局：终端 DOM 尺寸不变、
- * 零 SIGWINCH 扰动，会话后端常驻仅视觉遮盖；实色背景完整接收 pointerEvents 防点击
- * 穿透被 xterm 吞掉）。激活态经 useBrowserStageStore 共享（BrowserPanel 迷你预览点击
- * 激活）；Esc 关浮层（焦点在画面画布时让位——Esc 先服务于远端页面，如关闭页面内
- * 对话框；沉浸全屏下让位页面级退出）。显隐派生自 activatedProfile；激活期自持投影
- * SSE 订阅（浏览器工具 tab 关闭后浮层仍随帧刷新状态/页面列表）。
+ * BrowserStageOverlay：浏览器操作台浮层——激活 profile 接管工作台终端内容区（inset 0
+ * 遮盖不挤压布局，实色背景完整接收 pointerEvents 防点击穿透被 xterm 吞掉）；激活态经
+ * useBrowserStageStore 共享，激活期自持投影 SSE 订阅（浏览器工具 tab 关闭后仍随帧刷新）。
  */
 export default function BrowserStageOverlay() {
   const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
@@ -42,23 +38,24 @@ export default function BrowserStageOverlay() {
 function StageContent({ profile }: { profile: string }) {
   const theme = useTheme();
   const deactivate = useBrowserStageStore(s => s.deactivate);
-  const selectedPageId = useBrowserStageStore(s => s.watchPage[profile] ?? null);
+  const selectedTargetId = useBrowserStageStore(s => s.watchPage[profile] ?? null);
   const { data: snapshot } = useBrowserSessionView();
   // 激活期自持投影订阅：本浮层独立于浏览器工具 tab 的挂载而存在。
   useBrowserSessionEvents();
 
   const session: BrowserSessionView | null = snapshot?.sessions.find(item => item.profile === profile) ?? null;
   const ready = session?.status === 'ready';
-  // 观看页码：卡内点选优先，未选 = 当前页；pages 未就绪以 0 起步，首帧即真实页。
-  const pageId = selectedPageId ?? (session?.pages ?? []).find(page => page.current)?.index ?? 0;
-  // 帧流闸门：ready && 窗口可见（面板关托盘/最小化时 webview 隐藏但组件树不卸载，
-  // 隐藏即断流，恢复显示重订回放首帧）&& 配置就绪（编码规则 1：首帧即终值，不默认值
-  // 建流后纠正重订）；节流间隔来自通用设置「实时画面刷新间隔」，运行时改动按既有
-  // 语义重订（清帧回占位再出帧），绘制侧 rAF 合帧见 useFramePaint。
+  // 观看目标：点选页优先，未选 = 跟随激活页（投影 SSE 推送驱动重订）；投影未就绪不订阅。
+  const watchTargetId = selectedTargetId ?? (session?.pages ?? []).find(page => page.current)?.targetId ?? '';
+  /**
+   * 帧流闸门：ready && 窗口可见（webview 隐藏即断流、恢复重订回放首帧）&& 配置就绪
+   * （编码规则 1 首帧即终值）；节流间隔来自通用设置「实时画面刷新间隔」，改动即按既有
+   * 语义重订（清帧回占位再出帧），绘制侧 rAF 合帧见 useFramePaint。
+   */
   const visible = useDocumentVisible();
   const configReady = useConfigReady(LIVE_REFRESH_CONFIG_KEYS);
   const refreshMs = useConfigValue(BROWSER_LIVE_REFRESH_MS_KEY, decodeLiveRefreshMs, DEFAULT_BROWSER_LIVE_REFRESH_MS);
-  const stream = useBrowserFrameStream(profile, pageId, ready && visible && configReady, refreshMs);
+  const stream = useBrowserFrameStream(profile, watchTargetId, ready && visible && configReady && watchTargetId !== '', refreshMs);
 
   // Esc 关浮层：焦点在画面画布（远端页面键盘交互）时让位；沉浸全屏下让位页面级退出
   // （getState 现读，不建渲染订阅，范式同 FilePreviewOverlay）。
@@ -108,7 +105,7 @@ function StageContent({ profile }: { profile: string }) {
         </Typography>
       </Box>
 
-      <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '8px', p: '8px' }}>
+      <Box sx={{ flex: 1, minHeight: '0px', display: 'flex', flexDirection: 'column', gap: '8px', p: '8px' }}>
         {!ready && (
           <Box sx={{ flex: 1, minHeight: '0px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', border: '1px solid', borderColor: 'divider', borderRadius: '4px' }}>
             {session == null && (

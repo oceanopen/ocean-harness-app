@@ -18,12 +18,17 @@ const (
 	StatusFailed   SessionStatus = "failed"
 )
 
-// PageView 页面投影行（pages.go 每次 Forward 成功后刷新）。
+/*
+ * PageView 页面投影行：observer.go 事件驱动维护为 SSOT，Current = 浏览器实际激活 tab
+ * （visibility 探测）；Close 收尾捕获行来自引擎文本解析、无 TargetID——仅供恢复现场取
+ * URL，不参与订阅寻址。
+ */
 type PageView struct {
-	Index   int    `json:"index"`
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Current bool   `json:"current"`
+	Index    int    `json:"index"`
+	TargetID string `json:"targetId,omitempty"`
+	Title    string `json:"title"`
+	URL      string `json:"url"`
+	Current  bool   `json:"current"`
 }
 
 /*
@@ -54,12 +59,12 @@ const recentCallsCap = 20
  * 的 upsert 载荷，同一结构）。
  */
 type SessionView struct {
-	Profile      string        `json:"profile"`
-	Status       SessionStatus `json:"status"`
-	Headless     bool          `json:"headless"`
-	Error        string        `json:"error,omitempty"`
-	Pages        []PageView    `json:"pages,omitempty"`
-	RecentCalls  []RecentCall  `json:"recentCalls,omitempty"`
+	Profile     string        `json:"profile"`
+	Status      SessionStatus `json:"status"`
+	Headless    bool          `json:"headless"`
+	Error       string        `json:"error,omitempty"`
+	Pages       []PageView    `json:"pages,omitempty"`
+	RecentCalls []RecentCall  `json:"recentCalls,omitempty"`
 }
 
 // BrowserViewSnapshot 全量快照（建连首帧载荷；sessions 按 profile 字典序稳定排列）。

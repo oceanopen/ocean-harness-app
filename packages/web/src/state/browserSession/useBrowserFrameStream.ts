@@ -38,11 +38,11 @@ export interface BrowserFrameStream {
 }
 
 /**
- * useBrowserFrameStream 订阅单页面实时画面 SSE（/api/browserSession/stream，per (profile, pageId)：页码变更即重建）。
- * 事件分派见 BrowserLiveEvent 契约；瞬态断线交 EventSource 自动重连，永久失败（readyState CLOSED，含订阅拒绝）置 failed 待手动重试，仅 closed 主动停订。
- * enabled 为闸门链——收起/恢复编排即断流、重开重订（重订清帧回占位态）；throttleMs 为帧写侧最小间隔（0/缺省不节流，实时/预览档位走通用设置配置项）。
+ * useBrowserFrameStream 订阅单页面实时画面 SSE（/api/browserSession/stream，per (profile, targetId)：目标变更即重建；
+ * targetId 空串不订阅，等 SSE 投影首帧——首帧即终值）。事件分派见 BrowserLiveEvent 契约：瞬态断线交 EventSource 自动重连，
+ * reject/永久失败置 failed 待手动重试，仅 closed 主动停订；enabled 为闸门链，throttleMs 为帧写侧最小间隔（0/缺省不节流）。
  */
-export function useBrowserFrameStream(profile: string, pageId: number, enabled: boolean, throttleMs = 0): BrowserFrameStream {
+export function useBrowserFrameStream(profile: string, targetId: string, enabled: boolean, throttleMs = 0): BrowserFrameStream {
   const frameRef = useRef<LiveViewportFrame | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
   const [phase, setPhase] = useState<LiveStreamPhase>('connecting');
@@ -54,7 +54,7 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
   const retry = useCallback(() => setAttempt(n => n + 1), []);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || targetId === '') {
       return;
     }
     let es: EventSource | null = null;
@@ -94,6 +94,12 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
           setPhase('healing');
           setHealingMessage(evt.message ?? '实时画面连接中断');
           break;
+        case 'reject':
+          // 订阅拒绝终态：载荷为后端真实原因（排障可见），EventSource 不再重连。
+          setPhase('failed');
+          setFailedMessage(evt.message ?? '订阅被服务端拒绝');
+          close();
+          break;
         case 'closed':
           setPhase('closed');
           setClosedReason(evt.reason ?? '');
@@ -116,7 +122,7 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
 
     async function connect() {
       let url: string;
-      const query: Record<string, string> = { profile, pageId: String(pageId) };
+      const query: Record<string, string> = { profile, targetId };
       if (throttleMs > 0) {
         query.throttleMs = String(throttleMs);
       }
@@ -154,7 +160,7 @@ export function useBrowserFrameStream(profile: string, pageId: number, enabled: 
       es?.removeEventListener('error', onError);
       close();
     };
-  }, [profile, pageId, enabled, throttleMs, attempt]);
+  }, [profile, targetId, enabled, throttleMs, attempt]);
 
   return { frameRef, hasFrame, phase, target, healingMessage, closedReason, failedMessage, retry };
 }

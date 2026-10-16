@@ -1,7 +1,7 @@
 package browser
 
 /*
- * live.go 单测：DevToolsActivePort 解析、target 匹配、帧箱跳帧/多订户、拨号自愈预算
+ * live.go 单测：DevToolsActivePort 解析、target 直取、帧箱跳帧/多订户、拨号自愈预算
  * 与协议基线（帧号字段 sessionId、逐帧 ack）——httptest 模拟 DevTools HTTP/ws 面，
  * 不依赖真实浏览器（真实链路冒烟归 spike 族 real_cdp_test.go）。
  */
@@ -56,26 +56,19 @@ func TestReadDevToolsPort(t *testing.T) {
 	}
 }
 
-func TestMatchPageTarget(t *testing.T) {
+func TestFindPageTarget(t *testing.T) {
 	targets := []cdpTargetInfo{
 		{ID: "t0", Type: "page", URL: "about:blank", Title: "空白页"},
 		{ID: "t1", Type: "page", URL: "https://x.test/", Title: "例页"},
 		{ID: "t2", Type: "iframe", URL: "https://x.test/frame", Title: "内嵌"},
 	}
-	page := PageView{Index: 1, Title: "例页", URL: "https://x.test/"}
 
-	tg, err := matchPageTarget(page, targets)
+	tg, err := findPageTarget("t1", targets)
 	if err != nil || tg.ID != "t1" {
-		t.Fatalf("精确匹配 = %+v, %v; want t1", tg, err)
+		t.Fatalf("按 ID 直取 = %+v, %v; want t1", tg, err)
 	}
 
-	ambiguous := append([]cdpTargetInfo{{ID: "a", Type: "page", URL: page.URL}}, targets...)
-	tg, err = matchPageTarget(page, ambiguous)
-	if err != nil || tg.ID != "a" {
-		t.Fatalf("歧义应取首个 = %+v, %v", tg, err)
-	}
-
-	_, err = matchPageTarget(PageView{URL: "https://gone.test/"}, targets)
+	_, err = findPageTarget("gone", targets)
 	if err == nil {
 		t.Fatal("未命中应显式报错")
 	}
@@ -135,6 +128,8 @@ type cdpTestServer struct {
 	calls  []string
 	acks   []int64
 	events chan cdpWireMsg
+	// evaluateValue Runtime.evaluate 的 canned 返回值（visibility 探测桩，setEvaluate 覆写）。
+	evaluateValue string
 }
 
 func newCDPTestServer(t *testing.T, targets []cdpTargetInfo) *cdpTestServer {
@@ -220,9 +215,21 @@ func (s *cdpTestServer) canned(t *testing.T, method string, params json.RawMessa
 		s.acks = append(s.acks, p.SessionID)
 		s.mu.Unlock()
 		return map[string]any{}
+	case "Runtime.evaluate":
+		s.mu.Lock()
+		v := s.evaluateValue
+		s.mu.Unlock()
+		return map[string]any{"result": map[string]any{"type": "string", "value": v}}
 	default: // setDiscoverTargets / Page.enable / startScreencast 等空结果
 		return map[string]any{}
 	}
+}
+
+// setEvaluate 覆写 Runtime.evaluate 的 canned 返回值（visibility 探测桩）。
+func (s *cdpTestServer) setEvaluate(value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.evaluateValue = value
 }
 
 // pushEvent 注入一条 CDP 事件（sessionId 字段即会话归属）。
@@ -302,7 +309,7 @@ func TestConnectLiveE2E(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	v, err := connectLive(ctx, "default", PageView{Index: 1, Title: "例页", URL: "https://x.test/"}, nil, nil)
+	v, err := connectLive(ctx, "default", PageView{TargetID: "t1", Title: "例页", URL: "https://x.test/"}, nil, nil)
 	if err != nil {
 		t.Fatalf("connectLive: %v", err)
 	}
@@ -404,7 +411,7 @@ func TestConnectLiveSelfHealWake(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			v, err := connectLive(ctx, "default", PageView{URL: "https://x.test/"}, wake, nil)
+			v, err := connectLive(ctx, "default", PageView{TargetID: "t1", URL: "https://x.test/"}, wake, nil)
 			if err != nil {
 				t.Fatalf("自愈后 connectLive: %v", err)
 			}
@@ -443,7 +450,7 @@ func TestConnectLiveExhausted(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if _, err := connectLive(ctx, "default", PageView{URL: "https://x.test/"}, wake, nil); err == nil {
+	if _, err := connectLive(ctx, "default", PageView{TargetID: "t1", URL: "https://x.test/"}, wake, nil); err == nil {
 		t.Fatal("预算耗尽应显式失败")
 	}
 	if wakeCount != len(liveRetryDelays) {

@@ -33,22 +33,22 @@ type BrowserNavigateRequest struct {
 
 /*
  * BrowserAnalyzeRequest 是 POST /api/browserSession/analyze 的入参（即时受理「AI 分析此页」入 issue 绑定的 ACP 会话：会话缺失/回合进行中即中文报错，不排队）；
- * PageID 为页面投影行 Index（PageView.Index），非 nil 先选中该 tab 再快照（支持分析非当前页）。
+ * TargetID 为页面投影行 CDP targetId（PageView.TargetID），非空先选中该 tab 再快照（支持分析非激活页）。
  */
 type BrowserAnalyzeRequest struct {
-	Profile string `json:"profile" binding:"required"`
-	IssueID string `json:"issueId" binding:"required"`
-	PageID  *int   `json:"pageId,omitempty"`
+	Profile  string `json:"profile" binding:"required"`
+	IssueID  string `json:"issueId" binding:"required"`
+	TargetID string `json:"targetId,omitempty"`
 }
 
 /*
  * BrowserStreamRequest 是 GET /api/browserSession/stream 的入参（query 绑定；
- * CDP 观察通道实时画面帧流）：PageID 为页面投影行 Index，指针承 required（页码 0 合法，缺失才校验失败）；
+ * CDP 观察通道实时画面帧流）：TargetID 为页面投影行 CDP targetId（订阅锚随导航稳定）；
  * ThrottleMs 为帧写侧最小间隔（0/缺省不节流，负值按 0 处理）——面板迷你预览档订阅，mailbox keep-latest 语义不变。
  */
 type BrowserStreamRequest struct {
 	Profile    string `form:"profile" binding:"required"`
-	PageID     *int   `form:"pageId" binding:"required"`
+	TargetID   string `form:"targetId" binding:"required"`
 	ThrottleMs int    `form:"throttleMs"`
 }
 

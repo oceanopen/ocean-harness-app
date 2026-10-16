@@ -147,42 +147,57 @@ const liveSSEPingInterval = 15 * time.Second
 const liveSSEWriteTimeout = 10 * time.Second
 
 /*
- * browserStreamReject 实时画面帧流的订阅前置判定：投影行状态不可订阅即返回 HTTP
- * 状态码与原因（空串=未知 profile 404；idle/failed=会话已关闭/引擎未运行 409；
- * starting/ready 可订阅返回 nil）。真实状态码使 EventSource 按规范 fail the connection 不自动重连。
+ * browserStreamReject 实时画面帧流的订阅前置判定：投影行状态不可订阅即返回原因错误
+ * （空串=未知 profile；idle/failed=会话已关闭/引擎未运行；starting/ready 可订阅返回 nil）。
+ * 错误经 streamReject 以 SSE reject 事件透出（真实原因前端可读），不再走 HTTP 状态码拒绝。
  */
-func browserStreamReject(status browser.SessionStatus) (int, error) {
+func browserStreamReject(status browser.SessionStatus) error {
 	switch status {
 	case "":
-		return http.StatusNotFound, errors.New("浏览器会话不存在")
+		return errors.New("浏览器会话不存在")
 	case browser.StatusIdle:
-		return http.StatusConflict, errors.New("浏览器会话已关闭")
+		return errors.New("浏览器会话已关闭")
 	case browser.StatusFailed:
-		return http.StatusConflict, errors.New("浏览器引擎未运行")
+		return errors.New("浏览器引擎未运行")
 	default:
-		return 0, nil
+		return nil
 	}
 }
 
 /*
- * Stream GET /api/browserSession/stream?profile=&pageId=：CDP 观察通道实时画面帧流（远程桌面语义，per-profile 单订——页码变更即重建，
- * 旧流经 done 感知重订）。事件四型 frame/target/error/closed（LiveEvent.type 判别载荷）：error=自然断连可重订自愈、
- * closed=终态（管理面强拆/页面关闭）不重订。请求 ctx Done 即退订驱动 refs 减一（末订拆连接恢复 idle 计时）。长驻期间持有 *gin.Context 是安全的——gin 仅在 handler 返回后回收复用。
+ * streamReject 订阅拒绝的 SSE 收敛出口：以合法 event-stream 返回 reject 事件（载荷真实
+ * 中文原因）后终结——EventSource 据此置 failed 终态并拿到可排障的错误文本，替代拿不到
+ * 状态码/响应体的 HTTP 拒绝路径。
+ */
+func (api BrowserSession) streamReject(err error) {
+	writer := api.Context.Writer
+	writer.Header().Set("Content-Type", "text/event-stream")
+	writer.Header().Set("Cache-Control", "no-cache")
+	writer.Header().Set("Connection", "keep-alive")
+	writer.WriteHeader(http.StatusOK)
+	api.Context.SSEvent("message", browser.LiveEvent{Type: browser.LiveEventRejected, Message: err.Error()})
+	writer.Flush()
+}
+
+/*
+ * Stream GET /api/browserSession/stream?profile=&targetId=：CDP 观察通道实时画面帧流（远程桌面语义，per-profile 单订——目标变更即重建，
+ * 旧流经 done 感知重订）。事件五型 frame/target/error/closed/reject：error=自然断连可重订自愈，closed/reject=终态不重订；
+ * 请求 ctx Done 即退订驱动 refs 减一（末订拆连接恢复 idle 计时）。长驻期间持有 *gin.Context 是安全的——gin 仅在 handler 返回后回收复用。
  */
 func (api BrowserSession) Stream(ctx *gin.Context) {
 	req := &types.BrowserStreamRequest{}
 	svc := service.BrowserSession{}
 	if err := api.MakeContext(ctx).Bind(req, binding.Query).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
+		api.streamReject(err)
 		return
 	}
-	if httpStatus, err := browserStreamReject(global.Browser.Row(req.Profile).Status); err != nil {
-		api.JsonFailWithStatus(httpStatus, err)
+	if err := browserStreamReject(global.Browser.Row(req.Profile).Status); err != nil {
+		api.streamReject(err)
 		return
 	}
 	stream, err := svc.Stream(req)
 	if err != nil {
-		api.JsonFail(err)
+		api.streamReject(err)
 		return
 	}
 	defer stream.Unsubscribe()

@@ -2,7 +2,7 @@ package browser
 
 /*
  * manager_live.go：CDP 观察通道的 manager 侧生命周期（T4.4）——per-profile 单订 viewer 槽、SSE 订阅引用计数与 idle 保活闸、远程桌面输入面；三处收敛点强拆（Close/headless 切换/watchExit → dropLiveViewer）分见 manager.go 对应路径。
- * 单订语义：DispatchInput 无 pageId、远程桌面画面唯一——每 profile 至多一个活跃 viewer；订阅页码与在订 viewer 不符即重建（旧连接强拆，在订方经 done 感知重订）。
+ * 单订语义：DispatchInput 无 targetId、远程桌面画面唯一——每 profile 至多一个活跃 viewer；订阅目标与在订 viewer 不符即重建（旧连接强拆，在订方经 done 感知重订）。
  */
 
 import (
@@ -20,21 +20,21 @@ var (
 	liveInputTimeout = 5 * time.Second
 )
 
-// liveIssueTag 观察通道唤醒/页码刷新调用在操作流水中的归因标签。
+// liveIssueTag 观察通道自愈唤醒调用在操作流水中的归因标签。
 const liveIssueTag = "browser_live"
 
 // ErrLiveNotActive 无活跃观察流时的输入分发错误（调用方按 errors.Is 判别）。
 var ErrLiveNotActive = errors.New("浏览器未在投送：请先在面板建立实时画面后再发送输入")
 
 /*
- * liveSlot 单 profile 活跃观察面：viewer + 订阅时页面锚点 + 强拆 reason。reason 供
- * 在订 SSE 区分终态语义（管理面强拆非空；自然断连为空——可重订自愈）。v/pageURL 建
+ * liveSlot 单 profile 活跃观察面：viewer + 订阅时 targetId 锚点 + 强拆 reason。reason 供
+ * 在订 SSE 区分终态语义（管理面强拆非空；自然断连为空——可重订自愈）。v/targetID 建
  * 槽后只读，reason 仅在 viewerMu 下随强拆写入。
  */
 type liveSlot struct {
-	v       *liveViewer
-	pageURL string
-	reason  string
+	v        *liveViewer
+	targetID string
+	reason   string
 }
 
 /*
@@ -83,15 +83,15 @@ func (s *LiveStream) Unsubscribe() {
 }
 
 /*
- * SubscribeLive 订阅实时画面（T4.5 SSE 端点消费）：页码投影解析（miss 刷新复析）→
- * 同 URL 复用在订 viewer / 异页或断连重建 → refs 计数 → 0→1 时停 idle 计时。连接
- * 阶段经 connectMu 串行（并发订阅同页复用同一 viewer，不重复拨号）。
+ * SubscribeLive 订阅实时画面（T4.5 SSE 端点消费）：targetId 投影解析 → 同目标复用在订
+ * viewer / 异页或断连重建 → refs 计数 → 0→1 时停 idle 计时。连接阶段经 connectMu 串行
+ * （并发订阅同页复用同一 viewer，不重复拨号）。
  */
-func (m *Manager) SubscribeLive(ctx context.Context, profile string, pageID int) (*LiveStream, error) {
+func (m *Manager) SubscribeLive(ctx context.Context, profile string, targetID string) (*LiveStream, error) {
 	if err := ValidateProfileName(profile); err != nil {
 		return nil, err
 	}
-	page, err := m.resolveLivePage(ctx, profile, pageID)
+	page, err := m.resolveLiveTarget(profile, targetID)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (m *Manager) SubscribeLive(ctx context.Context, profile string, pageID int)
 	m.viewerMu.Lock()
 	slot := m.viewers[profile]
 	switch {
-	case slot != nil && slot.pageURL == page.URL:
+	case slot != nil && slot.targetID == targetID:
 		select {
 		case <-slot.v.done: // 断连残留槽：拆掉走重建
 		default:
@@ -113,7 +113,7 @@ func (m *Manager) SubscribeLive(ctx context.Context, profile string, pageID int)
 		}
 		m.dropViewerLocked(profile, "")
 	case slot != nil:
-		m.dropViewerLocked(profile, "") // 页码变更：重建（旧流经 done 感知）
+		m.dropViewerLocked(profile, "") // 目标变更：重建（旧流经 done 感知）
 	}
 	refsBefore := entry.viewerRefs.Load()
 	becameActive := refsBefore == 0
@@ -121,7 +121,7 @@ func (m *Manager) SubscribeLive(ctx context.Context, profile string, pageID int)
 	m.viewerMu.Unlock()
 
 	v, err := connectLive(ctx, profile, page, func(c context.Context) error {
-		return m.liveTabsRefresh(c, profile)
+		return m.liveWakeProbe(c, profile)
 	}, m.log)
 	m.viewerMu.Lock()
 	if err != nil {
@@ -138,7 +138,7 @@ func (m *Manager) SubscribeLive(ctx context.Context, profile string, pageID int)
 		_ = v.conn.close()
 		return nil, errors.New("实时画面订阅已中断，请重试")
 	}
-	slot = &liveSlot{v: v, pageURL: page.URL}
+	slot = &liveSlot{v: v, targetID: targetID}
 	m.viewers[profile] = slot
 	m.viewerMu.Unlock()
 
@@ -235,11 +235,11 @@ func (m *Manager) onLiveRefsChange(profile string) {
 }
 
 /*
- * liveTabsRefresh Forward browser_tabs list 并回填投影（观察通道的 wake 钩子与页码
- * 复析共用出口：browser_tabs 在 pagesRefreshExempt 中，Forward 不自动刷新——此处显式
- * 回填）。busy 拒绝原样上抛（connectLive 按「浏览器活着」正交解读）。
+ * liveWakeProbe 观察通道自愈唤醒（connectLive wake 钩子）：Forward 一次 browser_tabs
+ * list 触发引擎活性探测（busy 拒绝由 connectLive 按「浏览器活着」正交解读）；结果不回写
+ * 投影——Pages SSOT 归页面观察者。
  */
-func (m *Manager) liveTabsRefresh(ctx context.Context, profile string) error {
+func (m *Manager) liveWakeProbe(ctx context.Context, profile string) error {
 	res, err := m.Forward(ctx, profile, EngineToolTabs, map[string]any{"action": "list"}, liveIssueTag)
 	if err != nil {
 		return err
@@ -247,42 +247,18 @@ func (m *Manager) liveTabsRefresh(ctx context.Context, profile string) error {
 	if res.IsError {
 		return fmt.Errorf("获取页面列表失败: %s", ResultText(res))
 	}
-	m.applyPages(profile, parseTabsOutput(ResultText(res)))
 	return nil
 }
 
 /*
- * resolveLivePage 页码 → 投影页：直接命中即返回；miss 刷新投影一次后复析（新建会话
- * 零投影 / 浏览器侧动过 tab 的陈旧投影自愈），仍 miss 显式报错。
+ * resolveLiveTarget 订阅目标解析：按 targetId 查投影（页面观察者事件驱动维护，miss 即
+ * 显式报错——投影随 SSE 自愈，前端未点选页时自动跟随激活页重订）。
  */
-func (m *Manager) resolveLivePage(ctx context.Context, profile string, pageID int) (PageView, error) {
-	if page, ok := findLivePage(m.view.row(profile).Pages, pageID); ok {
-		return page, nil
-	}
-	if err := m.liveTabsRefresh(ctx, profile); err != nil {
-		if errors.Is(err, ErrSessionBusy) {
-			// busy = 浏览器活跃（AI 操作中），投影大概率新鲜：按未命中口径报错。
-			return PageView{}, livePageMiss(pageID)
-		}
-		return PageView{}, err
-	}
-	if page, ok := findLivePage(m.view.row(profile).Pages, pageID); ok {
-		return page, nil
-	}
-	return PageView{}, livePageMiss(pageID)
-}
-
-// findLivePage 页码查投影（纯函数）。
-func findLivePage(pages []PageView, pageID int) (PageView, bool) {
-	for _, p := range pages {
-		if p.Index == pageID {
-			return p, true
+func (m *Manager) resolveLiveTarget(profile, targetID string) (PageView, error) {
+	for _, p := range m.view.row(profile).Pages {
+		if p.TargetID == targetID {
+			return p, nil
 		}
 	}
-	return PageView{}, false
-}
-
-// livePageMiss 页码未命中的显式错误（投影与浏览器瞬时态竞态归调用方刷新重试）。
-func livePageMiss(pageID int) error {
-	return fmt.Errorf("页码 %d 不存在，请刷新页面列表后重试", pageID)
+	return PageView{}, fmt.Errorf("页面不存在或已关闭（targetId %s），请刷新页面列表后重试", targetID)
 }

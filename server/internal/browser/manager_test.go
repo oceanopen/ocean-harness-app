@@ -21,11 +21,14 @@ import (
 )
 
 // newTestManager 测试装配：临时根目录 + 假 node + 伪 staging（EnsureVendored 链可走通）。
+// 页面观察者默认关断（无真实 CDP 面；观察者专项测试显式开启）。
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
 	withTestRoot(t)
 	withFakeNode(t, "v20.11.0")
-	return NewManager(fakeStaging(t), nil)
+	m := NewManager(fakeStaging(t), nil)
+	m.observersEnabled = false
+	return m
 }
 
 // withCallTimeouts 覆写 per-call 超时与主层 idle 计时（收尾恢复）。
@@ -37,8 +40,8 @@ func withCallTimeouts(t *testing.T, call, idle time.Duration) {
 }
 
 /*
- * fakeEngineCtl 可控假引擎：spawns 拉起计数、active 在途调用计数、tabsCalls 投影刷新
- * 计数、toolFn 覆写工具行为（返回文本与 isError 标志）、spawnGate 一次性拉起闸门
+ * fakeEngineCtl 可控假引擎：spawns 拉起计数、active 在途调用计数、tabsCalls browser_tabs
+ * 调用计数、toolFn 覆写工具行为（返回文本与 isError 标志）、spawnGate 一次性拉起闸门
  * （非 nil 时下一次拉起阻塞至关闭——测 starting 窗口竞态）。
  */
 type fakeEngineCtl struct {
@@ -229,14 +232,12 @@ func TestManagerConcurrentProfilesCap(t *testing.T) {
 	}
 }
 
-func TestManagerForwardPagesAndIssueTag(t *testing.T) {
+func TestManagerForwardIssueTag(t *testing.T) {
 	ctl := withEngineCtl(t)
 	ctl.toolFn = func(tool string, args map[string]any) (string, bool) {
 		switch tool {
 		case EngineToolNavigate:
 			return "navigated: " + fmt.Sprint(args["url"]), false
-		case EngineToolTabs:
-			return tabsSample, false
 		case EngineToolEvaluate:
 			return "Element ref not found: stale element", true
 		}
@@ -253,21 +254,9 @@ func TestManagerForwardPagesAndIssueTag(t *testing.T) {
 		t.Fatalf("navigate 结果 = %+v", res)
 	}
 
-	// 页面投影刷新：一次调用一次刷新（tabs 被拉一次）。
-	sv := sessionRow(t, m, "default")
-	if len(sv.Pages) != 3 || sv.Pages[1].Title != "React • TodoMVC" || !sv.Pages[1].Current {
-		t.Fatalf("pages = %+v, want 三页且 current 落在 index 1", sv.Pages)
-	}
-	if _, _, tabsCalls := ctl.stats(); tabsCalls != 1 {
-		t.Fatalf("tabsCalls = %d, want 1", tabsCalls)
-	}
-
-	// 截图轮询豁免：screenshot 不再触发 tabs 刷新。
-	if _, err := m.Forward(context.Background(), "default", EngineToolTakeScreenshot, nil, ""); err != nil {
-		t.Fatalf("Forward screenshot: %v", err)
-	}
-	if _, _, tabsCalls := ctl.stats(); tabsCalls != 1 {
-		t.Fatalf("screenshot 后 tabsCalls = %d, want 1（豁免）", tabsCalls)
+	// 页面投影刷新已退役（SSOT 归页面观察者）：Forward 不再拉 tabs。
+	if _, _, tabsCalls := ctl.stats(); tabsCalls != 0 {
+		t.Fatalf("tabsCalls = %d, want 0", tabsCalls)
 	}
 
 	// 引擎 isError 结果原样透传 + stale_ref 分类。
@@ -279,14 +268,14 @@ func TestManagerForwardPagesAndIssueTag(t *testing.T) {
 		t.Fatal("isError 结果应原样透传")
 	}
 
-	sv = sessionRow(t, m, "default")
-	if last := sv.RecentCalls[2]; last.IssueTag != "issue-2" {
+	sv := sessionRow(t, m, "default")
+	if len(sv.RecentCalls) != 2 {
+		t.Fatalf("recentCalls = %d 条, want 2", len(sv.RecentCalls))
+	}
+	if last := sv.RecentCalls[1]; last.IssueTag != "issue-2" {
 		t.Fatalf("归因 issueTag = %q, want issue-2", last.IssueTag)
 	}
-	if len(sv.RecentCalls) != 3 {
-		t.Fatalf("recentCalls = %d 条, want 3", len(sv.RecentCalls))
-	}
-	if last := sv.RecentCalls[2]; last.Outcome != CallStaleRef {
+	if last := sv.RecentCalls[1]; last.Outcome != CallStaleRef {
 		t.Fatalf("最近一次 outcome = %s, want %s", last.Outcome, CallStaleRef)
 	}
 }

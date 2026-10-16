@@ -2,7 +2,7 @@ package browser
 
 /*
  * manager_live.go 单测（T4.4）：refs 计数与槽复用/重建、idle 保活闸（观看期暂停、末订
- * 恢复计时并释放）、三处收敛点强拆（Close/headless 切换/引擎意外退出）、页码解析自愈
+ * 恢复计时并释放）、三处收敛点强拆（Close/headless 切换/引擎意外退出）、订阅目标解析
  * 与输入面。CDP 面复用 live_test.go 的 cdpTestServer 桩件，引擎面复用 withEngineCtl。
  */
 
@@ -36,7 +36,7 @@ func newLiveTestEnv(t *testing.T) *liveTestEnv {
 	writePortFile(t, dir, ts.port)
 	zeroLiveDelays(t)
 	m.view.apply("default", func(row *SessionView) {
-		row.Pages = []PageView{{Index: 0, URL: "https://x.test/", Title: "例页", Current: true}}
+		row.Pages = []PageView{{Index: 0, TargetID: "t1", URL: "https://x.test/", Title: "例页", Current: true}}
 	})
 	return &liveTestEnv{m: m, ts: ts}
 }
@@ -66,7 +66,7 @@ func TestManagerLiveSubscribeRefs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	s1, err := m.SubscribeLive(ctx, "default", 0)
+	s1, err := m.SubscribeLive(ctx, "default", "t1")
 	if err != nil {
 		t.Fatalf("SubscribeLive: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestManagerLiveSubscribeRefs(t *testing.T) {
 	}
 
 	// 同页复用：同一槽，不重复拨号（attachToTarget 只此一次）。
-	s2, err := m.SubscribeLive(ctx, "default", 0)
+	s2, err := m.SubscribeLive(ctx, "default", "t1")
 	if err != nil {
 		t.Fatalf("复用 SubscribeLive: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestManagerLiveIdleKeepAlive(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	s, err := m.SubscribeLive(ctx, "default", 0)
+	s, err := m.SubscribeLive(ctx, "default", "t1")
 	if err != nil {
 		t.Fatalf("SubscribeLive: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestManagerLiveDropOnClose(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	s, err := m.SubscribeLive(ctx, "default", 0)
+	s, err := m.SubscribeLive(ctx, "default", "t1")
 	if err != nil {
 		t.Fatalf("SubscribeLive: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestManagerLiveDropOnHeadlessSwitch(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	s, err := m.SubscribeLive(ctx, "default", 0)
+	s, err := m.SubscribeLive(ctx, "default", "t1")
 	if err != nil {
 		t.Fatalf("SubscribeLive: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestManagerLiveDropOnWatchExit(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	s, err := m.SubscribeLive(ctx, "default", 0)
+	s, err := m.SubscribeLive(ctx, "default", "t1")
 	if err != nil {
 		t.Fatalf("SubscribeLive: %v", err)
 	}
@@ -287,35 +287,27 @@ func TestManagerLiveDropOnWatchExit(t *testing.T) {
 }
 
 /*
- * TestManagerLivePageResolve 页码解析自愈：空投影经 liveTabsRefresh 刷新后命中；
- * 刷新后仍 miss 显式报错。
+ * TestManagerLiveTargetResolve 订阅目标解析：投影命中 targetId 即订阅成功；miss 显式
+ * 报错（投影由页面观察者事件驱动维护，不再走引擎刷新自愈）。
  */
-func TestManagerLivePageResolve(t *testing.T) {
+func TestManagerLiveTargetResolve(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		pageID  int
-		tabs    string
-		wantErr string
+		name     string
+		targetID string
+		pages    []PageView
+		wantErr  string
 	}{
-		{"刷新后命中", 0, "- 0: (current) [例页](https://x.test/)\n", ""},
-		{"越界页码刷新后仍未命中", 5, "- 0: (current) [例页](https://x.test/)\n", "页码 5 不存在"},
+		{"命中 targetId", "t1", []PageView{{Index: 0, TargetID: "t1", URL: "https://x.test/", Title: "例页", Current: true}}, ""},
+		{"未命中 targetId 显式报错", "t9", []PageView{{Index: 0, TargetID: "t1", URL: "https://x.test/", Title: "例页", Current: true}}, "页面不存在或已关闭"},
+		{"空投影显式报错", "t1", nil, "页面不存在或已关闭"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			env := newLiveTestEnv(t)
-			env.ctl = withEngineCtl(t)
-			env.m.view.apply("default", func(row *SessionView) { row.Pages = nil }) // 空投影起步
-			env.ctl.mu.Lock()
-			env.ctl.toolFn = func(tool string, args map[string]any) (string, bool) {
-				if tool == EngineToolTabs {
-					return tc.tabs, false
-				}
-				return "ok: " + tool, false
-			}
-			env.ctl.mu.Unlock()
+			env.m.view.apply("default", func(row *SessionView) { row.Pages = tc.pages })
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			s, err := env.m.SubscribeLive(ctx, "default", tc.pageID)
+			s, err := env.m.SubscribeLive(ctx, "default", tc.targetID)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error = %v, want 含 %q", err, tc.wantErr)
@@ -326,9 +318,6 @@ func TestManagerLivePageResolve(t *testing.T) {
 				t.Fatalf("SubscribeLive: %v", err)
 			}
 			defer s.Unsubscribe()
-			if row := sessionRow(t, env.m, "default"); len(row.Pages) != 1 || row.Pages[0].URL != "https://x.test/" {
-				t.Fatalf("刷新未回填投影: %+v", row.Pages)
-			}
 		})
 	}
 }

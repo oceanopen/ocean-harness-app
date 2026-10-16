@@ -8,12 +8,14 @@ import { create } from 'zustand';
 interface BrowserStageState {
   /** 激活到操作台浮层的 profile（null = 未激活，终端内容区正常显示）。 */
   activatedProfile: string | null;
-  /** 各 profile 的观看页码（null/缺省 = 当前页；页面行点选 = 分析目标与观看页码同语义）。 */
-  watchPage: Record<string, number | null>;
+  /** 各 profile 的观看页 targetId（null/缺省 = 跟随当前激活页；页面行点选 = 分析目标与观看页同语义）。 */
+  watchPage: Record<string, string | null>;
   activate: (profile: string) => void;
   deactivate: () => void;
-  /** 页面行点选：同码再点取消（回落当前页）。 */
-  toggleWatchPage: (profile: string, pageIndex: number) => void;
+  /** 页面行点选：同页再点取消（回落跟随激活页）。 */
+  toggleWatchPage: (profile: string, targetId: string) => void;
+  /** 会话重建后清观看页（targetId 随重建失效，恢复跟随激活页）。 */
+  clearWatchPage: (profile: string) => void;
 }
 
 export const useBrowserStageStore = create<BrowserStageState>()(set => ({
@@ -21,8 +23,10 @@ export const useBrowserStageStore = create<BrowserStageState>()(set => ({
   watchPage: {},
   activate: profile => set({ activatedProfile: profile }),
   deactivate: () => set({ activatedProfile: null }),
-  toggleWatchPage: (profile, pageIndex) =>
+  toggleWatchPage: (profile, targetId) =>
     set(state => ({
-      watchPage: { ...state.watchPage, [profile]: state.watchPage[profile] === pageIndex ? null : pageIndex },
+      watchPage: { ...state.watchPage, [profile]: state.watchPage[profile] === targetId ? null : targetId },
     })),
+  clearWatchPage: profile =>
+    set(state => ({ watchPage: { ...state.watchPage, [profile]: null } })),
 }));

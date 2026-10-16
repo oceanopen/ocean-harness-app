@@ -242,7 +242,7 @@ func readDevToolsPort(profileDir string) (int, string, error) {
 	return port, fields[1], nil
 }
 
-// cdpTargetInfo /json/list 元素（观察通道消费字段；url/title 供 SSE target 事件回显）。
+// cdpTargetInfo /json/list 元素（观察通道与页面观察者共用消费字段；url/title 供 SSE target 事件回显与投影行建行）。
 type cdpTargetInfo struct {
 	ID    string `json:"id"`
 	Type  string `json:"type"`
@@ -251,7 +251,7 @@ type cdpTargetInfo struct {
 }
 
 /*
- * listPageTargets GET /json/list 取全部 page target（matchPageTarget 的候选全集；
+ * listPageTargets GET /json/list 取全部 page target（findPageTarget 的候选全集；
  * 本调用同时是端口活性的一次 HTTP 预检——残档端口在此失败走自愈）。
  */
 func listPageTargets(ctx context.Context, port int) ([]cdpTargetInfo, error) {
@@ -281,17 +281,17 @@ func listPageTargets(ctx context.Context, port int) ([]cdpTargetInfo, error) {
 }
 
 /*
- * matchPageTarget 纯函数：view 投影页（引擎 tab 口径）按 URL 匹配 CDP page target。
- * 歧义取首个（同 URL 多开）；未命中显式报错（投影与浏览器瞬时态的竞态归调用方刷新
- * 投影后重试），实际 url/title 经 SSE target 事件回显供前端消歧。
+ * findPageTarget 纯函数：按 targetId 直取 CDP page target（targetId 是稳定锚——导航不
+ * 换锚，无 URL 匹配竞态）；未命中显式报错（页面已关闭等，归调用方重解析），实际 url/title
+ * 经 SSE target 事件回显供前端消歧。
  */
-func matchPageTarget(page PageView, targets []cdpTargetInfo) (cdpTargetInfo, error) {
+func findPageTarget(targetID string, targets []cdpTargetInfo) (cdpTargetInfo, error) {
 	for _, tg := range targets {
-		if tg.URL == page.URL {
+		if tg.ID == targetID {
 			return tg, nil
 		}
 	}
-	return cdpTargetInfo{}, fmt.Errorf("页面 %q（%s）在浏览器中无对应 CDP target，请刷新页面列表后重试", page.Title, page.URL)
+	return cdpTargetInfo{}, fmt.Errorf("页面 target %s 不在浏览器中（可能已关闭），请刷新页面列表后重试", targetID)
 }
 
 // ---- viewer 层：帧箱与 screencast 订阅 ----
@@ -376,16 +376,17 @@ type LiveTarget struct {
 type LiveEventType string
 
 const (
-	LiveEventFrame  LiveEventType = "frame"
-	LiveEventTarget LiveEventType = "target"
-	LiveEventError  LiveEventType = "error"
-	LiveEventClosed LiveEventType = "closed"
+	LiveEventFrame    LiveEventType = "frame"
+	LiveEventTarget   LiveEventType = "target"
+	LiveEventError    LiveEventType = "error"
+	LiveEventClosed   LiveEventType = "closed"
+	LiveEventRejected LiveEventType = "reject"
 )
 
 /*
  * LiveEvent 帧流 SSE 事件信封（JSON 序列化即 wire 形态；至多一个非零载荷字段组，口径同投影 Frame）。
  * frame：jpeg base64 + screencast metadata（初始帧 metadata 零值——损伤驱动首帧到达前前端按位图尺寸兜底）；target：closed 置真 = 页面已关闭，随后补发 closed 终态。
- * error：自然断连可重订自愈；closed：终态 reason（管理面强拆/页面关闭），前端停止重订。
+ * error：自然断连可重订自愈；closed：终态 reason（管理面强拆/页面关闭），前端停止重订；reject：订阅拒绝终态（载荷真实原因，前端停止重订）。
  */
 type LiveEvent struct {
 	Type     LiveEventType  `json:"type"`
@@ -447,7 +448,7 @@ func dialViewer(ctx context.Context, profileDir string, page PageView, log *zap.
 }
 
 /*
- * attach 浏览器级 target 发现与页面会话建立：setDiscoverTargets 开启 target 生命周期事件（targetDestroyed/targetInfoChanged 事件面的前提）→ URL 匹配 → flatten attach → captureScreenshot 初始帧（静态页零推帧的不白屏保底；此时 metadata 无源——损伤驱动首帧到达前前端按位图尺寸兜底）→ startScreencast。
+ * attach 浏览器级 target 发现与页面会话建立：setDiscoverTargets 开启 target 生命周期事件（targetDestroyed/targetInfoChanged 事件面的前提）→ targetId 直取 → flatten attach → captureScreenshot 初始帧（静态页零推帧的不白屏保底；此时 metadata 无源——损伤驱动首帧到达前前端按位图尺寸兜底）→ startScreencast。
  */
 func (v *liveViewer) attach(ctx context.Context, page PageView, port int) error {
 	if _, err := v.conn.call(ctx, "", "Target.setDiscoverTargets", map[string]any{"discover": true}); err != nil {
@@ -457,7 +458,7 @@ func (v *liveViewer) attach(ctx context.Context, page PageView, port int) error 
 	if err != nil {
 		return err
 	}
-	tg, err := matchPageTarget(page, targets)
+	tg, err := findPageTarget(page.TargetID, targets)
 	if err != nil {
 		return err
 	}
@@ -558,7 +559,9 @@ func (v *liveViewer) notifyTarget(ev cdpEvent) {
 	}
 	up := LiveTarget{URL: v.page.URL, Title: v.page.Title, Closed: ev.Method == "Target.targetDestroyed"}
 	if ev.Method == "Target.targetInfoChanged" {
-		up.URL, up.Title = params.TargetInfo.URL, params.TargetInfo.Title
+		// 导航/标题变更回写锚点：target 事件回显与后续通知取实时值。
+		v.page.URL, v.page.Title = params.TargetInfo.URL, params.TargetInfo.Title
+		up.URL, up.Title = v.page.URL, v.page.Title
 	}
 	select {
 	case v.targets <- up:

@@ -9,8 +9,8 @@ import "fmt"
  */
 
 /*
- * EngineTool* 引擎实名常量：manager 内部消费（pages 投影刷新拉 tab 列表）+ mcp_tool
- * 层转发引用。
+ * EngineTool* 引擎实名常量：manager 内部消费（观察通道唤醒探测 / Close 收尾捕获）+
+ * mcp_tool 层转发引用。
  */
 const (
 	EngineToolNavigate        = "browser_navigate"
@@ -89,15 +89,4 @@ func CheckEngineToolCall(name string) error {
 		return fmt.Errorf("引擎工具 %s 被拒绝：该工具可在引擎进程内执行任意代码（RCE 等价），禁止直调", name)
 	}
 	return nil
-}
-
-/*
- * pagesRefreshExempt 转发成功后不触发 pages 投影刷新的工具：截图不改 tab 状态——豁免使面板截图轮询（1-2s/帧）不会一次轮询触发两次引擎调用；browser_tabs 本身即刷新源。
- * cookie_list 为 context 级读（authhttp 带态请求 T1.4）、localstorage_list 为纯读（browser_auth_state T2.2），同样免刷新。
- */
-var pagesRefreshExempt = map[string]bool{
-	EngineToolTakeScreenshot:   true,
-	EngineToolTabs:             true,
-	EngineToolCookieList:       true,
-	EngineToolLocalstorageList: true,
 }
