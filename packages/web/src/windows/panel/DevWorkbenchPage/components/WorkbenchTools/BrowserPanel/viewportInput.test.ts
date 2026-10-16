@@ -114,7 +114,7 @@ describe('routeKeyDown', () => {
 
   it('控制键走 rawKeyDown', () => {
     expect(routeKeyDown(sig({ key: 'Enter', code: 'Enter' })))
-      .toEqual({ action: 'rawKeyDown', key: 'Enter', code: 'Enter', vk: 13 });
+      .toEqual({ action: 'keyDown', key: 'Enter', code: 'Enter', vk: 13, text: '\r' });
   });
 
   it('shift 单修饰不阻断字符（shift+a 仍输入）', () => {

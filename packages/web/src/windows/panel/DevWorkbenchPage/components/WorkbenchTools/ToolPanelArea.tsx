@@ -155,6 +155,7 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
             <Tab
               key={tab.id}
               value={tab.id}
+              component="div"
               label={(
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                   {def.title}

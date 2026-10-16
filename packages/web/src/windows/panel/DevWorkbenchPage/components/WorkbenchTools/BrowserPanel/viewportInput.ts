@@ -136,9 +136,9 @@ export interface KeySignal {
   hasTextBlockingModifier: boolean;
 }
 
-// 键盘路由结果（kind 恒 'key' 由组件补齐；text 仅 char 路径携带）。
+// 键盘路由结果（kind 恒 'key' 由组件补齐；text 仅产生字符语义的路径携带）。
 export interface KeyRoute {
-  action: 'char' | 'rawKeyDown' | 'keyUp';
+  action: 'char' | 'keyDown' | 'rawKeyDown' | 'keyUp';
   key: string;
   code: string;
   vk: number;
@@ -147,12 +147,16 @@ export interface KeyRoute {
 
 /**
  * routeKeyDown keydown 分流：组合期不转发（IME 文本整体走 compositionend → insertText）；
- * 可打印字符且无组合修饰 → char（text 承载字符）；控制键/修饰组合键 → rawKeyDown
- * （ctrl+c 等不得注入字符，页面按 modifiers 自行解释快捷键）。
+ * 可打印字符且无组合修饰 → char（text 承载字符）；Enter → keyDown + text('\r')（CDP 惯例：
+ * 无 text 的 rawKeyDown 不触发 keypress/默认提交语义，搜索框回车失效）；其余控制键/修饰
+ * 组合键 → rawKeyDown（ctrl+c 等不注入字符，页面按 modifiers 自行解释快捷键）。
  */
 export function routeKeyDown(sig: KeySignal): KeyRoute | null {
   if (sig.isComposing) {
     return null;
+  }
+  if (sig.key === 'Enter') {
+    return { action: 'keyDown', key: sig.key, code: sig.code, vk: vkOf(sig.key), text: '\r' };
   }
   if (sig.key.length === 1 && !sig.hasTextBlockingModifier) {
     return { action: 'char', key: sig.key, code: sig.code, vk: vkOf(sig.key), text: sig.key };

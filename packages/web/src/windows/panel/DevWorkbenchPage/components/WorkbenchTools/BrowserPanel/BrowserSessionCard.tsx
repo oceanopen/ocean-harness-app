@@ -14,6 +14,7 @@ import {
   DialogTitle,
   FormControlLabel,
   IconButton,
+  Radio,
   Switch,
   TextField,
   Tooltip,
@@ -25,6 +26,7 @@ import {
   parseBrowserRefreshMs,
 } from '@src/shared/appConfig';
 import { commands } from '@src/shared/bindings';
+import { formatDate } from '@src/shared/time';
 import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
@@ -49,27 +51,17 @@ const decodePreviewRefreshMs = (raw: string | null) => parseBrowserRefreshMs(raw
 const PREVIEW_REFRESH_CONFIG_KEYS = [BROWSER_PREVIEW_REFRESH_MS_KEY];
 
 /**
- * 流水行 key（内容指纹 + 同指纹序号）：环形缓冲整行无业务 id，index key 会随窗口滑动
- * 错位复用（Tooltip 内容串行）；指纹去重序号在滑动下保持行身份。
+ * 页面操作流水行 key（时刻 + 工具 + 结果指纹 + 同指纹序号）：流水行无业务 id，
+ * 指纹去重序号防同毫秒同操作下 key 串位。
  */
-function recentCallRows(calls: BrowserRecentCall[]): Array<{ call: BrowserRecentCall; key: string }> {
+function pageActionRows(actions: BrowserRecentCall[]): Array<{ call: BrowserRecentCall; key: string }> {
   const seen = new Map<string, number>();
-  return calls.map((call) => {
-    const base = `${call.tool}|${call.outcome}|${call.issueTag ?? ''}|${call.error ?? ''}`;
+  return actions.map((call) => {
+    const base = `${call.atMs}|${call.tool}|${call.outcome}|${call.error ?? ''}`;
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);
     return { call, key: `${base}#${n}` };
   });
-}
-
-/**
- * 重启恢复目标（无头切换/重开共用）：输入行的 pages 当前页 URL（切换链取 close 响应行
- * ——服务端收尾前捕获的真实页面；重开取 SSE 投影行）；空与 about:blank 无可恢复返回
- * null。多标签仅恢复当前页。
- */
-function restoreUrlOf(session: BrowserSessionView): string | null {
-  const url = (session.pages ?? []).find(page => page.current)?.url ?? '';
-  return url !== '' && url !== 'about:blank' ? url : null;
 }
 
 /** 迷你预览固定高度（px，含边框）：低频节流帧的纯展示窗口。 */
@@ -97,12 +89,9 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   const activated = activatedProfile === session.profile;
   const [expanded, setExpanded] = useState(true);
   const [address, setAddress] = useState('');
-  /**
-   * 无头切换确认弹窗（null = 关闭）：headless 引擎启动时固化，切换 = close + ensure 传新值；
-   * restoreUrl 为弹窗打开时的 pages 快照，仅作文案提示（权威恢复目标 = close 响应行，快照
-   * 看不到窗口内手动导航）；编排期弹窗保持打开展示进度与错误。
-   */
-  const [pendingToggle, setPendingToggle] = useState<{ headless: boolean; restoreUrl: string | null } | null>(null);
+  // 无头切换确认弹窗（null = 关闭）：headless 引擎启动时固化，切换 = close + ensure 传新值；
+  // 页面现场恢复归服务端（close 前捕获、重建后按序还原）。
+  const [pendingToggle, setPendingToggle] = useState<{ headless: boolean } | null>(null);
   // 恢复编排进行中暂停帧流订阅：编排导航与观察通道同争页面拨号（订阅重建风暴即自愈抖动）。
   const [restoreInFlight, setRestoreInFlight] = useState(false);
   // 释放按钮的独立错误位（closeMutation 与无头切换共用，弹窗关闭时释放失败也要可见）。
@@ -128,10 +117,11 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   // 观看目标：点选页优先，未选 = 跟随激活页（投影 SSE 推送驱动重订——新开 tab/手动切换
   // tab 画面实时跟随）；投影未就绪时不订阅（等 SSE 首帧，首帧即终值）。
   const watchTargetId = selectedTargetId ?? (session.pages ?? []).find(page => page.current)?.targetId ?? '';
+  // 操作历史跟随当前生效页（点选页优先，未选跟随激活页）。
+  const historyTargetActions = (session.pages ?? []).find(p => p.targetId != null && p.targetId === (selectedTargetId ?? (session.pages ?? []).find(page => page.current)?.targetId))?.actions;
   const streamEnabled = expanded && panelVisible && ready && !restoreInFlight && !activated && visible && configReady && watchTargetId !== '';
   const stream = useBrowserFrameStream(session.profile, watchTargetId, streamEnabled, refreshMs);
 
-  const recentCalls = session.recentCalls ?? [];
   const chip = browserSessionStateChip(session.status);
   const toggling = closeMutation.isPending || ensureMutation.isPending || navigateMutation.isPending;
 
@@ -158,7 +148,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
     ensureMutation.reset();
     navigateMutation.reset();
     setReleaseError(null);
-    setPendingToggle({ headless: next, restoreUrl: restoreUrlOf(session) });
+    setPendingToggle({ headless: next });
   };
 
   const confirmToggleHeadless = () => {
@@ -166,32 +156,17 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
       return;
     }
     const { headless: next } = pendingToggle;
-    /**
-     * 编排全程暂停帧流订阅；close/ensure 失败保持弹窗展示错误；恢复导航失败不回滚
-     * 切换（错误经 ready 区 Alert 兜底展示）。恢复目标取 close 响应行（收尾前服务端
-     * 捕获引擎真实当前页——弹窗快照仅作文案，看不到窗口内手动导航）。
-     */
+    // 页面现场恢复归服务端（close 前捕获 → 重建后按序还原）；前端只关心编排成败。
     setRestoreInFlight(true);
     const settle = () => setRestoreInFlight(false);
     closeMutation.mutate({ profile: session.profile }, {
-      onSuccess: (row) => {
-        const restoreUrl = restoreUrlOf(row);
+      onSuccess: () => {
+        clearWatchPage(session.profile); // targetId 随重建失效，恢复跟随激活页
         ensureMutation.mutate({ profile: session.profile, headless: next }, {
-          onSuccess: () => {
-            clearWatchPage(session.profile); // targetId 随重建失效，恢复跟随激活页
-            if (restoreUrl == null) {
-              setPendingToggle(null);
-              settle();
-              return;
-            }
-            navigateMutation.mutate({ profile: session.profile, url: restoreUrl }, {
-              onSettled: () => {
-                setPendingToggle(null);
-                settle();
-              },
-            });
+          onSettled: () => {
+            setPendingToggle(null);
+            settle();
           },
-          onError: settle,
         });
       },
       onError: settle,
@@ -199,21 +174,13 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
   };
 
   const reopen = () => {
-    // headless 键省略：读 profile 偏好（上次运行值），面板不越权改偏好。
-    const restoreUrl = restoreUrlOf(session);
+    // headless 键省略：读 profile 偏好（上次运行值），面板不越权改偏好；恢复归服务端。
     setRestoreInFlight(true);
     ensureMutation.mutate({ profile: session.profile }, {
-      onSuccess: () => {
-        clearWatchPage(session.profile); // targetId 随重建失效，恢复跟随激活页
-        if (restoreUrl == null) {
-          setRestoreInFlight(false);
-          return;
-        }
-        navigateMutation.mutate({ profile: session.profile, url: restoreUrl }, {
-          onSettled: () => setRestoreInFlight(false),
-        });
+      onSettled: () => {
+        clearWatchPage(session.profile);
+        setRestoreInFlight(false);
       },
-      onError: () => setRestoreInFlight(false),
     });
   };
 
@@ -225,13 +192,11 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
     navigateMutation.mutate({ profile: session.profile, url });
   };
 
-  const analyze = () => {
-    // 未点选 = 分析当前激活页（有头模式引擎选中页可能与激活页不一致，显式传 targetId）。
-    const targetId = selectedTargetId ?? (session.pages ?? []).find(page => page.current)?.targetId;
+  const analyzePage = (targetId: string) => {
     analyzeMutation.mutate({
       profile: session.profile,
       issueId,
-      targetId: targetId ?? undefined,
+      targetId,
     });
   };
 
@@ -241,7 +206,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
         onClick={() => setExpanded(v => !v)}
         sx={{ 'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'px': '12px', 'py': '8px', 'cursor': 'pointer', 'bgcolor': 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}
       >
-        <Typography noWrap sx={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: '0px' }}>{session.profile}</Typography>
+        <Typography noWrap sx={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: '0px' }}>浏览器会话</Typography>
         <Chip size="small" variant="outlined" label={chip.label} color={chip.color} sx={{ fontSize: '12px' }} />
         <Tooltip title={session.headless ? '无头模式：无窗口，面板实时画面即页面' : '有头模式：桌面真实 Chrome 窗口（人工介入通道）'}>
           <Chip size="small" variant="outlined" label={session.headless ? '无头' : '有头'} sx={{ fontSize: '12px', color: 'text.secondary' }} />
@@ -426,59 +391,96 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 </Alert>
               )}
 
-              <Box>
-                <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: '4px' }}>
-                  页面（点选行 = 指定分析目标与观看页，未选 = 跟随激活页）
-                </Typography>
-                {(session.pages ?? []).length === 0
-                  ? <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>暂无页面</Typography>
-                  : (session.pages ?? []).map(page => (
-                      <Box
-                        key={page.targetId ?? page.index}
-                        onClick={() => {
-                          if (page.targetId != null) {
-                            toggleWatchPage(session.profile, page.targetId);
-                          }
-                        }}
-                        sx={{
-                          'display': 'flex',
-                          'alignItems': 'center',
-                          'gap': '8px',
-                          'px': '6px',
-                          'py': '4px',
-                          'borderRadius': '4px',
-                          'cursor': page.targetId != null ? 'pointer' : 'default',
-                          'bgcolor': selectedTargetId != null && selectedTargetId === page.targetId ? 'action.selected' : 'transparent',
-                          '&:hover': { bgcolor: 'action.hover' },
-                        }}
-                      >
-                        {page.current
-                          ? <Chip size="small" label="当前" color="primary" variant="outlined" sx={{ fontSize: '12px' }} />
-                          : <Typography sx={{ fontSize: '12px', color: 'text.secondary', width: '24px', textAlign: 'center' }}>{page.index}</Typography>}
-                        <Tooltip title={page.url}>
-                          <Typography sx={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {page.title || page.url}
-                          </Typography>
-                        </Tooltip>
-                      </Box>
-                    ))}
-              </Box>
-
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <FormControlLabel
                   control={<Switch size="small" checked={session.headless} onChange={e => askToggleHeadless(e.target.checked)} />}
-                  label="无头模式（无窗口，面板实时画面）"
+                  label={session.headless ? '当前为无头模式' : '当前为有头模式'}
                   sx={{ '& .MuiFormControlLabel-label': { fontSize: '12px' } }}
                 />
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={analyze}
-                  disabled={analyzeMutation.isPending}
-                  sx={{ ml: 'auto', flexShrink: 0 }}
-                >
-                  {analyzeMutation.isPending ? <CircularProgress size={14} color="inherit" /> : 'AI 分析此页'}
-                </Button>
+              </Box>
+
+              <Box>
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: '4px' }}>
+                  页面列表
+                </Typography>
+                {(session.pages ?? []).length === 0
+                  ? <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>暂无页面</Typography>
+                  : (session.pages ?? []).map((page) => {
+                      const watched = page.targetId != null && selectedTargetId === page.targetId;
+                      return (
+                        <Box
+                          key={page.targetId ?? `captured-${page.index}`}
+                          onClick={() => {
+                            if (page.targetId != null) {
+                              toggleWatchPage(session.profile, page.targetId);
+                            }
+                          }}
+                          sx={{
+                            'display': 'flex',
+                            'alignItems': 'center',
+                            'gap': '4px',
+                            'px': '4px',
+                            'py': '2px',
+                            'borderRadius': '4px',
+                            'cursor': page.targetId != null ? 'pointer' : 'default',
+                            'bgcolor': watched ? 'action.selected' : 'transparent',
+                            '&:hover': { 'bgcolor': 'action.hover', '& .page-analyze-btn': { opacity: 1, pointerEvents: 'auto' } },
+                          }}
+                        >
+                          <Radio
+                            checked={watched || (selectedTargetId == null && page.current)}
+                            sx={{ 'p': '4px', '& svg': { fontSize: '16px' } }}
+                          />
+                          <Tooltip title={page.url} placement="left">
+                            <Typography sx={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {page.title || page.url}
+                            </Typography>
+                          </Tooltip>
+                          {page.targetId != null && (
+                            <Button
+                              className="page-analyze-btn"
+                              size="small"
+                              variant="text"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                analyzePage(page.targetId as string);
+                              }}
+                              disabled={analyzeMutation.isPending}
+                              sx={{ ml: 'auto', flexShrink: 0, fontSize: '12px', minWidth: '0px', px: '8px', mt: '2px', color: 'primary.main', opacity: 0, pointerEvents: 'none' }}
+                            >
+                              {analyzeMutation.isPending ? <CircularProgress size={12} color="inherit" /> : 'AI 分析'}
+                            </Button>
+                          )}
+                        </Box>
+                      );
+                    })}
+              </Box>
+
+              <Box>
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: '4px' }}>操作历史</Typography>
+                {(historyTargetActions?.length ?? 0) === 0
+                  ? <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>暂无操作</Typography>
+                  : pageActionRows(historyTargetActions ?? []).map(({ call, key }) => (
+                      <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Typography sx={{ fontSize: '12px', color: 'text.secondary', flexShrink: 0 }}>
+                          {formatDate(call.atMs, 'HH:mm:ss')}
+                        </Typography>
+                        <Chip size="small" variant="outlined" label={browserCallOutcomeChip(call.outcome).label} color={browserCallOutcomeChip(call.outcome).color} sx={{ fontSize: '11px', height: '18px' }} />
+                        <Typography sx={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {call.tool}
+                        </Typography>
+                        {call.issueTag != null && call.issueTag !== '' && (
+                          <Typography sx={{ fontSize: '12px', color: 'text.secondary', flexShrink: 0 }}>
+                            {call.issueTag}
+                          </Typography>
+                        )}
+                        {call.outcome !== 'ok' && call.error != null && call.error !== '' && (
+                          <Typography sx={{ fontSize: '12px', color: 'error.main', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {call.error}
+                          </Typography>
+                        )}
+                      </Box>
+                    ))}
               </Box>
               {analyzeMutation.error && (
                 <Alert severity="error" sx={{ fontSize: '12px' }}>
@@ -486,25 +488,6 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
                 </Alert>
               )}
             </>
-          )}
-
-          {recentCalls.length > 0 && (
-            <Box>
-              <Typography sx={{ fontSize: '12px', color: 'text.secondary', mb: '4px' }}>最近操作</Typography>
-              {recentCallRows(recentCalls).map(({ call, key }) => {
-                const outcome = browserCallOutcomeChip(call.outcome);
-                return (
-                  <Box key={key} sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '4px', py: '2px' }}>
-                    <Chip size="small" variant="outlined" label={outcome.label} color={outcome.color} sx={{ fontSize: '12px' }} />
-                    <Tooltip title={call.error ?? call.tool}>
-                      <Typography sx={{ fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {call.tool.replace(/^browser_/, '')}{call.issueTag ? ` · ${call.issueTag}` : ''}
-                      </Typography>
-                    </Tooltip>
-                  </Box>
-                );
-              })}
-            </Box>
           )}
         </Box>
       )}
@@ -520,7 +503,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
         <DialogTitle sx={{ fontSize: '16px' }}>{`切换为${pendingToggle?.headless ? '无头' : '有头'}模式`}</DialogTitle>
         <DialogContent>
           <DialogContentText sx={{ fontSize: '13px' }}>
-            {`将关闭并重新打开会话「${session.profile}」（约 1–3 秒）。登录态保存在本地 profile 目录，不会丢失。${pendingToggle?.restoreUrl != null ? '完成后将自动恢复上次打开的页面。' : ''}`}
+            将关闭并重新打开会话（约 1–3 秒）。登录态保存在本地 profile 目录，不会丢失；已开页面将在重开后自动恢复。
           </DialogContentText>
           {(closeMutation.error || ensureMutation.error) && (
             <Alert severity="error" sx={{ mt: '12px', fontSize: '12px' }}>

@@ -36,6 +36,7 @@ export default function PreviewTabsBar({ tabs, activeTabId, changedPaths, onSele
           <Tab
             key={path}
             value={path}
+            component="div"
             title={path}
             label={(
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px', maxWidth: '100%' }}>

@@ -43,6 +43,8 @@ var (
 	 * 收尾（idle 释放同路径受益——重开恢复真实最后页面）。
 	 */
 	closePagesCaptureTimeout = 3 * time.Second
+	// restorePagesTimeout 会话重建后页面现场恢复的总预算（逐页导航串行）。
+	restorePagesTimeout = 30 * time.Second
 	/*
 	 * idleReleaseTimeout 主层 idle 释放计时（D4 双层的主层；每次成功调用即重置。兜底层
 	 * 为引擎侧 --idle-timeout 15 分钟，见 pin.go——到期只关浏览器窗口，entry 状态无需
@@ -99,6 +101,12 @@ type Manager struct {
 	observerMu       sync.Mutex
 	observers        map[string]*pageObserver
 	observersEnabled bool
+
+	/*
+	 * 页面级操作历史（per-profile per-target，跨页面关闭与会话重建留存）：调试排障的
+	 * 取数层，独立锁自守（store 自带 mu），不与 entry/view 锁交叉。
+	 */
+	pageHist *pageHistoryStore
 }
 
 /*
@@ -118,6 +126,7 @@ func NewManager(dirs Dirs, log *zap.Logger) *Manager {
 		viewers:          map[string]*liveSlot{},
 		observers:        map[string]*pageObserver{},
 		observersEnabled: true,
+		pageHist:         newPageHistoryStore(),
 	}
 	m.recoverOrphans()
 	return m
@@ -155,6 +164,12 @@ type sessionEntry struct {
 	 * 下 entry 侧不可反取 viewerMu，原子读是唯一合规路径。
 	 */
 	viewerRefs atomic.Int32
+
+	/*
+	 * restorePages 会话释放前捕获的页面现场（重开/无头切换恢复用，激活页垫底恢复）。
+	 * 关闭后仍留存——恢复语义跨重建成立。
+	 */
+	restorePages []PageView
 
 	callMu sync.Mutex
 }
@@ -440,8 +455,40 @@ func (m *Manager) runSpawn(entry *sessionEntry) {
 	m.mu.Unlock()
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
 	m.startObserver(profile) // 页面投影观察者随会话就绪启动（后台自愈，不阻塞）
+	go m.restorePages(profile, entry) // 页面现场恢复（best-effort，不阻塞就绪返回）
 	go m.watchExit(entry, handle)
 	close(spawnDone)
+}
+
+/*
+ * restorePages 会话重建后的页面现场恢复（best-effort）：逐页导航重建，原激活页垫底恢复
+ * （末位导航后即激活态）；单页失败仅记日志跳过，不中断整体恢复。
+ */
+func (m *Manager) restorePages(profile string, entry *sessionEntry) {
+	entry.mu.Lock()
+	pages := entry.restorePages
+	entry.mu.Unlock()
+	if len(pages) == 0 {
+		return
+	}
+	m.log.Info("开始恢复页面现场", zap.String("profile", profile), zap.Int("pages", len(pages)))
+	ctx, cancel := context.WithTimeout(context.Background(), restorePagesTimeout)
+	defer cancel()
+	for _, p := range pages {
+		if p.Closed || p.URL == "" || p.URL == "about:blank" {
+			continue
+		}
+		if !p.Current {
+			if _, err := m.Forward(ctx, profile, EngineToolTabs, map[string]any{"action": "new"}, "恢复页面"); err != nil {
+				m.log.Warn("页面恢复新建 tab 失败（跳过该页）", zap.String("profile", profile), zap.String("url", p.URL), zap.Error(err))
+				continue
+			}
+		}
+		if _, err := m.Forward(ctx, profile, EngineToolNavigate, map[string]any{"url": p.URL}, "恢复页面"); err != nil {
+			m.log.Warn("页面恢复导航失败（跳过该页）", zap.String("profile", profile), zap.String("url", p.URL), zap.Error(err))
+			continue
+		}
+	}
 }
 
 /*
@@ -504,7 +551,7 @@ func (m *Manager) acceptCall(ctx context.Context, profile, callName, issueTag st
 	if entry.closing || entry.state != StatusReady || entry.handle == nil {
 		entry.mu.Unlock()
 		m.mu.Unlock()
-		m.recordCall(profile, callName, issueTag, CallClosed, "")
+		m.recordCall(profile, m.pageHist.currentTargetID(profile), callName, issueTag, CallClosed, "")
 		cancel()
 		entry.callMu.Unlock()
 		return nil, nil, nil, errSessionClosed
@@ -529,7 +576,7 @@ func (m *Manager) acceptCall(ctx context.Context, profile, callName, issueTag st
 /*
  * Forward 引擎调用统一入口（mcp_tool 转发与 controller navigate 均经此）：受理纪律（ensure → callMu 互斥 → per-call 超时 → 在途登记）与 ListTools 共用 acceptCall；成功重置 idle 计时（页面投影由页面观察者事件驱动维护，此处不再刷新）。
  * 转发结果按 isError:true 标志判错（引擎错误一律 isError 文本，非 JSON-RPC error）——结果原样返回，包装归调用方（T2.2 手工透传 Content 数组）。
- * issueTag 为归因展示标签（recentCalls 流水行，非过滤键）。
+ * issueTag 为归因展示标签（页面操作流水行，非过滤键）。
  */
 func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[string]any, issueTag string) (*mcp.CallToolResult, error) {
 	handle, callCtx, done, err := m.acceptCall(ctx, profile, tool, issueTag)
@@ -546,6 +593,7 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 		args = map[string]any{}
 	}
 	res, err := handle.Session().CallTool(callCtx, &mcp.CallToolParams{Name: tool, Arguments: args})
+	targetID := m.pageHist.currentTargetID(profile) // 操作流水按页归因（调用发起时的激活页）
 
 	entry := m.entryOf(profile) // entries 只增不删，与 acceptCall 取到同一 entry（entryOf 自持 m.mu，须先取再进锁）
 	m.mu.Lock()
@@ -586,7 +634,7 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 					go func(h *EngineHandle) { _ = h.Close() }(stale)
 				}
 				m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
-				m.recordCall(profile, tool, issueTag, CallTimeout, err.Error())
+				m.recordCall(profile, targetID, tool, issueTag, CallTimeout, err.Error())
 				return nil, fmt.Errorf("%s: %w", failText, err)
 			}
 		}
@@ -601,7 +649,7 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 		case timedOut:
 			outcome = CallTimeout
 		}
-		m.recordCall(profile, tool, issueTag, outcome, callErr.Error())
+		m.recordCall(profile, targetID, tool, issueTag, outcome, callErr.Error())
 		return nil, callErr
 	}
 	entry.consecutiveTimeouts = 0
@@ -616,7 +664,7 @@ func (m *Manager) Forward(ctx context.Context, profile, tool string, args map[st
 			outcome = CallStaleRef
 		}
 	}
-	m.recordCall(profile, tool, issueTag, outcome, errText)
+	m.recordCall(profile, targetID, tool, issueTag, outcome, errText)
 	return res, nil
 }
 
@@ -663,7 +711,7 @@ func (m *Manager) ListTools(ctx context.Context, profile, issueTag string) ([]*m
 			outcome = CallTimeout
 		}
 	}
-	m.recordCall(profile, listToolsCallName, issueTag, outcome, errText)
+	m.recordCall(profile, m.pageHist.currentTargetID(profile), listToolsCallName, issueTag, outcome, errText)
 	if callErr != nil {
 		return nil, callErr
 	}
@@ -671,25 +719,22 @@ func (m *Manager) ListTools(ctx context.Context, profile, issueTag string) ([]*m
 }
 
 /*
- * recordCall 操作流水记录（view 行 recentCalls 环形缓冲）并广播 sessions 帧（锁外）。
+ * recordCall 操作流水记录（per-page 归档 + 投影广播，锁外）：targetID 空 = 无法归因，
+ * 仅落 store 留档，不进投影。
  */
-func (m *Manager) recordCall(profile, tool, issueTag, outcome, errText string) {
+func (m *Manager) recordCall(profile, targetID, tool, issueTag, outcome, errText string) {
 	// rune 安全截断（字节截断会切断 UTF-8 序列，序列化端得 U+FFFD）。
 	if runes := []rune(errText); len(runes) > 200 {
 		errText = string(runes[:200]) + "…"
 	}
-	sv := m.view.apply(profile, func(row *SessionView) {
-		row.RecentCalls = append(row.RecentCalls, RecentCall{
-			Tool:     tool,
-			IssueTag: issueTag,
-			Outcome:  outcome,
-			Error:    errText,
-		})
-		if len(row.RecentCalls) > recentCallsCap {
-			row.RecentCalls = row.RecentCalls[len(row.RecentCalls)-recentCallsCap:]
-		}
-	})
-	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
+	m.pageHist.record(profile, targetID, RecentCall{
+		Tool:     tool,
+		IssueTag: issueTag,
+		Outcome:  outcome,
+		Error:    errText,
+		AtMs:     time.Now().UnixMilli(),
+	}, time.Now().UnixMilli())
+	m.publishPages(profile)
 }
 
 /*
@@ -758,12 +803,17 @@ func (m *Manager) Close(profile string) error {
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
 	if handle != nil {
 		/*
-		 * 收尾前捕获真实页面投影（引擎还活着）：浏览器窗口内手动导航只有引擎知道，
-		 * 无头切换/重开恢复现场以此为准。
+		 * 收尾前捕获真实页面（引擎还活着）：浏览器窗口内手动导航只有引擎知道，恢复现场
+		 * 以此为准；捕获即标记关闭留档（操作历史跨重建可查）。
 		 */
 		captureCtx, cancel := context.WithTimeout(context.Background(), closePagesCaptureTimeout)
-		defer cancel()
-		m.capturePagesCtx(captureCtx, handle, profile)
+		captured := m.capturePagesCtx(captureCtx, handle, profile)
+		cancel()
+		m.pageHist.closeAll(profile)
+		m.publishPages(profile)
+		entry.mu.Lock()
+		entry.restorePages = captured
+		entry.mu.Unlock()
 		_ = handle.Close() // 锁外慢操作
 	}
 	return nil

@@ -230,20 +230,26 @@ type BrowserToolCallArgs struct {
 
 // —— 原生 6 工具出参 Content ——
 
-// BrowserPageContent 页面投影行镜像。
+// BrowserPageContent 页面投影行镜像（含生命周期时间戳与页面维度操作流水）。
 type BrowserPageContent struct {
-	Index   int    `json:"index" jsonschema:"tab 序号"`
-	Title   string `json:"title" jsonschema:"页面标题"`
-	URL     string `json:"url" jsonschema:"页面地址"`
-	Current bool   `json:"current" jsonschema:"是否当前激活页"`
+	Index          int                        `json:"index" jsonschema:"行序号（开页按首见序，关闭页随后）"`
+	TargetID       string                     `json:"targetId,omitempty" jsonschema:"CDP targetId；Close 收尾捕获行为空"`
+	Title          string                     `json:"title" jsonschema:"页面标题"`
+	URL            string                     `json:"url" jsonschema:"页面地址"`
+	Current        bool                       `json:"current" jsonschema:"是否当前激活页"`
+	Closed         bool                       `json:"closed,omitempty" jsonschema:"是否已关闭（留档行）"`
+	OpenedAtMs     int64                      `json:"openedAtMs,omitempty" jsonschema:"打开时刻（epoch 毫秒）"`
+	LastActiveAtMs int64                      `json:"lastActiveAtMs,omitempty" jsonschema:"最近活动时刻（epoch 毫秒）"`
+	Actions        []*BrowserRecentCallContent `json:"actions,omitempty" jsonschema:"本页操作流水（环形，至多 30 条）"`
 }
 
-// BrowserRecentCallContent 最近操作流水行镜像。
+// BrowserRecentCallContent 操作流水行镜像。
 type BrowserRecentCallContent struct {
 	Tool     string `json:"tool" jsonschema:"工具名"`
 	IssueTag string `json:"issueTag,omitempty" jsonschema:"归因 issueId；空为面板手动或未归因调用"`
 	Outcome  string `json:"outcome" jsonschema:"结果分类：ok 成功/error 失败/timeout 超时/stale_ref 快照 ref 失效/closed 会话已关"`
 	Error    string `json:"error,omitempty" jsonschema:"失败原因摘要"`
+	AtMs     int64  `json:"atMs" jsonschema:"发生时刻（epoch 毫秒）"`
 }
 
 // BrowserSessionContent 单 profile 会话投影镜像（status / profile_open 出参共用）。
@@ -252,8 +258,7 @@ type BrowserSessionContent struct {
 	Status       string                      `json:"status" jsonschema:"状态：idle 已释放/starting 准备中/ready 就绪/failed 失败（见 error 字段）"`
 	Headless     bool                        `json:"headless" jsonschema:"是否无头模式"`
 	Error        string                      `json:"error,omitempty" jsonschema:"失败原因（failed 态非空）"`
-	Pages        []*BrowserPageContent       `json:"pages,omitempty" jsonschema:"当前页面列表"`
-	RecentCalls  []*BrowserRecentCallContent `json:"recentCalls,omitempty" jsonschema:"最近操作流水（环形，至多 20 条）"`
+	Pages       []*BrowserPageContent `json:"pages,omitempty" jsonschema:"页面列表（含已关闭留档）"`
 }
 
 // BrowserStatusContent 是 browser_status 的出参。

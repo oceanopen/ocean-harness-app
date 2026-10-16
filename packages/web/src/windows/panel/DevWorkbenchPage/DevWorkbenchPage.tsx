@@ -564,7 +564,7 @@ export default function DevWorkbenchPage() {
             {issue != null && <FilePreviewOverlay issueId={issue.id} />}
             {/* 浏览器操作台浮层：激活 profile（useBrowserStageStore）接管终端内容区，
                 FilePreviewOverlay 同款接管语义；显隐自派生（未激活渲染 null）。 */}
-            {issue != null && <BrowserStageOverlay />}
+            {issue != null && <BrowserStageOverlay issueId={issue.id} />}
           </Box>
         </Box>
         <ToolPanelArea

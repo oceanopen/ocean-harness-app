@@ -685,10 +685,25 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         }
     });
 
-    /*
-     * 事件线程：转发 sidecar 的 stdout/stderr/终止/错误。
-     * Stderr 用 warn 级：Go 的 zap 控制台日志默认写 stderr（含正常 listening 信息），release 日志级别为 Warn，
-     * WARN 才能保证 Go 输出（含失败原因）留痕供排障。
+/*
+ * sidecar_log_level 从 zap console 编码行提取级别字段（tab 分隔第 2 段：时间\t级别\t...）；
+ * 非该形态的行返回 None（调用方按 warn 兜底）。
+ */
+fn sidecar_log_level(line: &str) -> Option<&str> {
+    let mut fields = line.split('\t');
+    let _date = fields.next()?;
+    let level = fields.next()?.trim();
+    match level {
+        "DEBUG" | "INFO" | "WARN" | "ERROR" | "DPANIC" | "FATAL" => Some(level),
+        _ => None,
+    }
+}
+
+/*
+ * 事件线程：转发 sidecar 的 stdout/stderr/终止/错误。
+     * stderr 行解析 zap console 编码的级别字段（第 3 个 tab 分隔段）后按真实级别转发
+     * ——Go 侧 INFO/DEBUG 也走 stderr，固定 WARN 会把例行日志顶成假警报；解析失败
+     * 回落 warn 保底（启动失败原因提取依赖本线程的留痕不中断）。
      */
     let app_clone = app.clone();
     thread::spawn(move || {
@@ -709,12 +724,18 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                     let line = String::from_utf8_lossy(&line)
                         .trim_end()
                         .to_owned();
-                    if !line.is_empty() {
-                        log::warn!("[http-server] {}", line);
-                        // append 到启动日志（zap 改走 stderr 后，启动失败的 Fatal 行也在这里）。
-                        if let Some(state) = app_clone.try_state::<HttpServerState>() {
-                            state.append_start_recent_log(line);
-                        }
+                    if line.is_empty() {
+                        continue;
+                    }
+                    match sidecar_log_level(&line) {
+                        Some("DEBUG") => log::debug!("[http-server] {}", line),
+                        Some("INFO") => log::info!("[http-server] {}", line),
+                        Some("WARN") => log::warn!("[http-server] {}", line),
+                        _ => log::error!("[http-server] {}", line),
+                    }
+                    // 启动日志留痕保持全量（启动失败原因提取依赖此缓冲）。
+                    if let Some(state) = app_clone.try_state::<HttpServerState>() {
+                        state.append_start_recent_log(line);
                     }
                 }
                 CommandEvent::Error(err) => log::warn!("[http-server] event error: {}", err),

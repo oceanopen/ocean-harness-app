@@ -169,7 +169,7 @@ func (m *Manager) UnsubscribeLive(profile string) {
 /*
  * DispatchInput 远程桌面输入分发：要求活跃观察面存在，经已 attach 会话直发 Input 域
  * 命令——不经 acceptCall、不占 callMu、不受 per-call 超时约束（与 AI Forward 并发；
- * 「AI 操作中」可见性靠 recentCalls 操作流水）。
+ * 「AI 操作中」可见性靠页面操作流水）。
  */
 func (m *Manager) DispatchInput(ctx context.Context, profile, method string, params any) error {
 	if err := ValidateProfileName(profile); err != nil {
@@ -188,7 +188,42 @@ func (m *Manager) DispatchInput(ctx context.Context, profile, method string, par
 	}
 	ictx, cancel := context.WithTimeout(ctx, liveInputTimeout)
 	defer cancel()
-	return slot.v.DispatchInput(ictx, method, params)
+	err := slot.v.DispatchInput(ictx, method, params)
+	label := inputActionLabel(method, params)
+	if err == nil && label == "" {
+		return nil
+	}
+	outcome, errText := CallOK, ""
+	if err != nil {
+		outcome, errText = CallError, err.Error()
+	}
+	m.recordCall(profile, slot.targetID, label, "", outcome, errText)
+	return err
+}
+
+/*
+ * inputActionLabel 输入动作的流水展示名；返回空串 = 不落流水（鼠标移动/keyUp 高频噪声）。
+ */
+func inputActionLabel(method string, params any) string {
+	action, _ := params.(map[string]any)["type"].(string)
+	switch method {
+	case "Input.dispatchKeyEvent":
+		if action == "keyUp" {
+			return ""
+		}
+		return "键盘按键"
+	case "Input.insertText":
+		return "输入文字"
+	case "Input.dispatchMouseEvent":
+		switch action {
+		case "mousePressed":
+			return "鼠标按下"
+		case "mouseReleased":
+			return "鼠标释放"
+		}
+		return ""
+	}
+	return ""
 }
 
 /*

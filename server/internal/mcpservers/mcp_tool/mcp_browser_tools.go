@@ -356,12 +356,16 @@ func newSessionContent(view *browser.SessionView) *mcpdto.BrowserSessionContent 
 		Error:    view.Error,
 	}
 	for _, p := range view.Pages {
-		out.Pages = append(out.Pages, &mcpdto.BrowserPageContent{Index: p.Index, Title: p.Title, URL: p.URL, Current: p.Current})
-	}
-	for _, c := range view.RecentCalls {
-		out.RecentCalls = append(out.RecentCalls, &mcpdto.BrowserRecentCallContent{
-			Tool: c.Tool, IssueTag: c.IssueTag, Outcome: c.Outcome, Error: c.Error,
-		})
+		row := &mcpdto.BrowserPageContent{
+			Index: p.Index, TargetID: p.TargetID, Title: p.Title, URL: p.URL,
+			Current: p.Current, Closed: p.Closed, OpenedAtMs: p.OpenedAtMs, LastActiveAtMs: p.LastActiveAtMs,
+		}
+		for _, a := range p.Actions {
+			row.Actions = append(row.Actions, &mcpdto.BrowserRecentCallContent{
+				Tool: a.Tool, IssueTag: a.IssueTag, Outcome: a.Outcome, Error: a.Error, AtMs: a.AtMs,
+			})
+		}
+		out.Pages = append(out.Pages, row)
 	}
 	return out
 }

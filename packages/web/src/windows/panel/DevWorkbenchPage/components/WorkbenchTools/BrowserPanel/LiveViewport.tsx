@@ -3,7 +3,7 @@ import type { LiveViewportFrame } from '@src/state/browserSession';
 import type { RefObject } from 'react';
 import { Box, Typography } from '@mui/material';
 import { BrowserSessionService } from '@src/services';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFramePaint } from './useFramePaint';
 import { buttonOf, heldButtonOf, modifiersOf, pointToPage, routeKeyDown, routeKeyUp } from './viewportInput';
 
@@ -45,11 +45,25 @@ export default function LiveViewport({ profile, frameRef, hasFrame, interactive 
   const pumpingRef = useRef(false);
   // 按住的鼠标键（pointer capture 期 pointercancel 补发 release 用；up/cancel 清零）。
   const heldRef = useRef<'left' | 'middle' | 'right' | null>(null);
+  // 键盘接管态（隐藏 input 聚焦中）：边框高亮给「输入去哪了」的显式反馈。
+  const [focused, setFocused] = useState(false);
+  // 连续失败聚合（断连窗口期逐条 warn 刷屏 → 计数聚合，恢复时补记）。
+  const failCountRef = useRef(0);
 
-  const send = (req: InputDispatch): Promise<void> => BrowserSessionService.input({ profile, ...req }).then(() => undefined, (err: unknown) => {
-    // 尽力语义不中断交互，但留排查痕迹（「浏览器未在投送」等服务端错误不再静默）。
-    console.warn('[browserSession] 输入投送失败:', err);
-  });
+  const send = (req: InputDispatch): Promise<void> => BrowserSessionService.input({ profile, ...req }).then(
+    () => {
+      if (failCountRef.current > 0) {
+        console.warn(`[browserSession] 输入投送恢复（此前连续失败 ${failCountRef.current} 次）`);
+        failCountRef.current = 0;
+      }
+    },
+    (err: unknown) => {
+      failCountRef.current += 1;
+      if (failCountRef.current === 1 || failCountRef.current % 20 === 0) {
+        console.warn(`[browserSession] 输入投送失败（连续第 ${failCountRef.current} 次）:`, err);
+      }
+    },
+  );
 
   const pump = () => {
     if (pumpingRef.current) {
@@ -150,7 +164,7 @@ export default function LiveViewport({ profile, frameRef, hasFrame, interactive 
         alignItems: 'center',
         justifyContent: 'center',
         border: '1px solid',
-        borderColor: 'divider',
+        borderColor: focused ? 'primary.main' : 'divider',
         borderRadius: '4px',
         bgcolor: '#000',
         overflow: 'hidden',
@@ -244,6 +258,8 @@ export default function LiveViewport({ profile, frameRef, hasFrame, interactive 
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck={false}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         style={{
           position: 'absolute',
           left: '0px',

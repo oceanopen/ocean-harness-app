@@ -53,7 +53,7 @@ func TestPageObserverEvents(t *testing.T) {
 
 	// targetCreated：新 tab 进投影（创建事件回退判据下即当前页）。
 	created, _ := json.Marshal(map[string]any{
-		"targetInfo": map[string]any{"targetId": "t2", "type": "page", "url": "about:blank", "title": ""},
+		"targetInfo": map[string]any{"targetId": "t2", "type": "page", "url": "https://y.test/", "title": "新页"},
 	})
 	ts.pushEvent(t, cdpWireMsg{Method: "Target.targetCreated", Params: created})
 	pages = waitPages(t, m, "default", 2)
@@ -61,12 +61,12 @@ func TestPageObserverEvents(t *testing.T) {
 		t.Fatalf("创建后投影 = %+v", pages)
 	}
 
-	// targetDestroyed：行移除、Index 重排。
+	// targetDestroyed：行转关闭留档（历史保留），开页组内序号重排。
 	destroyed, _ := json.Marshal(map[string]any{"targetId": "t1"})
 	ts.pushEvent(t, cdpWireMsg{Method: "Target.targetDestroyed", Params: destroyed})
 	pages = waitPages(t, m, "default", 1)
 	if pages[0].TargetID != "t2" || pages[0].Index != 0 {
-		t.Fatalf("销毁后投影 = %+v", pages)
+		t.Fatalf("销毁后投影 = %+v", pages[0])
 	}
 
 	// visibility 上报 → 重探测回写（取值以 evaluate 为准）。
@@ -76,7 +76,7 @@ func TestPageObserverEvents(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		pages = m.view.row("default").Pages
-		if len(pages) == 1 && pages[0].URL == "https://z.test/" && pages[0].Title == "可见页" {
+		if len(pages) == 1 && pages[0].URL == "https://z.test/" && pages[0].Title == "可见页" && pages[0].Current {
 			break
 		}
 		if time.Now().After(deadline) {

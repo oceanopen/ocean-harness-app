@@ -20,19 +20,23 @@ const (
 
 /*
  * PageView 页面投影行：observer.go 事件驱动维护为 SSOT，Current = 浏览器实际激活 tab
- * （visibility 探测）；Close 收尾捕获行来自引擎文本解析、无 TargetID——仅供恢复现场取
- * URL，不参与订阅寻址。
+ * （visibility 探测）；行集恒等浏览器真实 tab 集（关闭即出列）。Close 收尾捕获行来自
+ * 引擎文本解析、无 TargetID——仅供恢复现场取 URL，不参与订阅寻址。
  */
 type PageView struct {
-	Index    int    `json:"index"`
-	TargetID string `json:"targetId,omitempty"`
-	Title    string `json:"title"`
-	URL      string `json:"url"`
-	Current  bool   `json:"current"`
+	Index          int          `json:"index"`
+	TargetID       string       `json:"targetId,omitempty"`
+	Title          string       `json:"title"`
+	URL            string       `json:"url"`
+	Current        bool         `json:"current"`
+	Closed         bool         `json:"closed,omitempty"`
+	OpenedAtMs     int64        `json:"openedAtMs,omitempty"`
+	LastActiveAtMs int64        `json:"lastActiveAtMs,omitempty"`
+	Actions        []RecentCall `json:"actions,omitempty"`
 }
 
 /*
- * CallOutcome 操作流水结果分类（recentCalls 失败 chip 展示口径，轻量分类——仅区分
+ * CallOutcome 操作流水结果分类（页面操作流水失败标注的展示口径，轻量分类——仅区分
  * 展示形态，不承载重试语义）。
  */
 const (
@@ -43,28 +47,26 @@ const (
 	CallClosed   = "closed"
 )
 
-// RecentCall 轻量操作流水行。
+// RecentCall 操作流水行（AtMs = 发生时刻 epoch 毫秒；TargetID 为归属页面锚点）。
 type RecentCall struct {
 	Tool     string `json:"tool"`
 	IssueTag string `json:"issueTag,omitempty"`
 	Outcome  string `json:"outcome"`
 	Error    string `json:"error,omitempty"`
+	AtMs     int64  `json:"atMs"`
+	TargetID string `json:"targetId,omitempty"`
 }
-
-// recentCallsCap recentCalls 环形缓冲容量（面板「最近操作」展示上限）。
-const recentCallsCap = 20
 
 /*
  * SessionView 单 profile 会话投影（SSE snapshot 帧的 sessions 元素与 sessions 增量帧
  * 的 upsert 载荷，同一结构）。
  */
 type SessionView struct {
-	Profile     string        `json:"profile"`
-	Status      SessionStatus `json:"status"`
-	Headless    bool          `json:"headless"`
-	Error       string        `json:"error,omitempty"`
-	Pages       []PageView    `json:"pages,omitempty"`
-	RecentCalls []RecentCall  `json:"recentCalls,omitempty"`
+	Profile  string        `json:"profile"`
+	Status   SessionStatus `json:"status"`
+	Headless bool          `json:"headless"`
+	Error    string        `json:"error,omitempty"`
+	Pages    []PageView    `json:"pages,omitempty"`
 }
 
 // BrowserViewSnapshot 全量快照（建连首帧载荷；sessions 按 profile 字典序稳定排列）。

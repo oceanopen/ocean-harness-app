@@ -17,7 +17,8 @@ export type BrowserCallOutcome = 'ok' | 'error' | 'timeout' | 'stale_ref' | 'clo
 
 /*
  * 页面投影行（view.go PageView；页面观察者事件驱动维护，current = 浏览器实际激活 tab）。
- * targetId 为 CDP 稳定锚（订阅/点选/分析寻址均用之）；Close 收尾捕获行无 targetId（仅供恢复现场取 URL）。
+ * targetId 为 CDP 稳定锚（订阅/点选/分析寻址均用之）；Closed 行为关闭留档（历史可查），
+ * Close 收尾捕获行无 targetId（仅供恢复现场取 URL）。
  */
 export interface BrowserPageView {
   index: number;
@@ -25,24 +26,29 @@ export interface BrowserPageView {
   title: string;
   url: string;
   current: boolean;
+  closed?: boolean;
+  openedAtMs?: number;
+  lastActiveAtMs?: number;
+  actions?: BrowserRecentCall[];
 }
 
-// 轻量操作流水行（view.go RecentCall；环形缓冲上限 20，tool 为引擎实名）。
+// 单页操作流水行（view.go RecentCall；per-page 环形上限 30，tool 为引擎实名或输入动作名）。
 export interface BrowserRecentCall {
   tool: string;
   issueTag?: string;
   outcome: BrowserCallOutcome;
   error?: string;
+  atMs: number;
+  targetId?: string;
 }
 
-// 单 profile 会话投影（view.go SessionView；pages/recentCalls 为 omitempty 可选）。
+// 单 profile 会话投影（view.go SessionView；pages 为 omitempty 可选）。
 export interface BrowserSessionView {
   profile: string;
   status: BrowserSessionStatus;
   headless: boolean;
   error?: string;
   pages?: BrowserPageView[];
-  recentCalls?: BrowserRecentCall[];
 }
 
 // 全量快照（view.go BrowserViewSnapshot；sessions 按 profile 字典序稳定排列，恒非 null）。

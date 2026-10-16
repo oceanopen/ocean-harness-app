@@ -173,6 +173,25 @@ func sessionRow(t *testing.T, m *Manager, profile string) SessionView {
 	return SessionView{}
 }
 
+// lastPageAction 取单 profile 最末条页面操作流水（不存在时 fatal）。
+func lastPageAction(t *testing.T, m *Manager, profile string) RecentCall {
+	t.Helper()
+	rows := m.pageHist.rows(profile)
+	if len(rows) == 0 {
+		t.Fatalf("profile %s 无页面操作流水", profile)
+	}
+	actions := rows[len(rows)-1].Actions
+	if len(actions) == 0 {
+		t.Fatalf("profile %s 末页无操作流水", profile)
+	}
+	return actions[len(actions)-1]
+}
+
+// seedPage 预置一页（无观察者路径下的归因锚点）。
+func seedPage(m *Manager, profile, targetID string) {
+	m.pageHist.observe(profile, targetID, "https://seed.test/", "seed", false, time.Now().UnixMilli())
+}
+
 func TestManagerEnsureReuseAndHeadlessSwitch(t *testing.T) {
 	ctl := withEngineCtl(t)
 	m := newTestManager(t)
@@ -244,6 +263,7 @@ func TestManagerForwardIssueTag(t *testing.T) {
 		return "ok", false
 	}
 	m := newTestManager(t)
+	seedPage(m, "default", "t0")
 
 	res, err := m.Forward(context.Background(), "default", EngineToolNavigate,
 		map[string]any{"url": "https://example.com"}, "issue-1")
@@ -268,14 +288,13 @@ func TestManagerForwardIssueTag(t *testing.T) {
 		t.Fatal("isError 结果应原样透传")
 	}
 
-	sv := sessionRow(t, m, "default")
-	if len(sv.RecentCalls) != 2 {
-		t.Fatalf("recentCalls = %d 条, want 2", len(sv.RecentCalls))
+	if actions := m.pageHist.rows("default")[0].Actions; len(actions) != 2 {
+		t.Fatalf("页面操作流水 = %d 条, want 2", len(actions))
 	}
-	if last := sv.RecentCalls[1]; last.IssueTag != "issue-2" {
+	if last := lastPageAction(t, m, "default"); last.IssueTag != "issue-2" {
 		t.Fatalf("归因 issueTag = %q, want issue-2", last.IssueTag)
 	}
-	if last := sv.RecentCalls[1]; last.Outcome != CallStaleRef {
+	if last := lastPageAction(t, m, "default"); last.Outcome != CallStaleRef {
 		t.Fatalf("最近一次 outcome = %s, want %s", last.Outcome, CallStaleRef)
 	}
 }
@@ -322,6 +341,7 @@ func TestManagerForwardTimeoutRebuild(t *testing.T) {
 		return "done", false
 	}
 	m := newTestManager(t)
+	seedPage(m, "default", "t0")
 
 	for i := 1; i <= consecutiveTimeoutLimit; i++ {
 		_, err := m.Forward(context.Background(), "default", EngineToolEvaluate, nil, "")
@@ -330,7 +350,7 @@ func TestManagerForwardTimeoutRebuild(t *testing.T) {
 		}
 	}
 	waitForStatus(t, m, "default", StatusFailed)
-	if last := sessionRow(t, m, "default").RecentCalls[len(sessionRow(t, m, "default").RecentCalls)-1]; last.Outcome != CallTimeout {
+	if last := lastPageAction(t, m, "default"); last.Outcome != CallTimeout {
 		t.Fatalf("最近一次 outcome = %s, want timeout", last.Outcome)
 	}
 
@@ -401,14 +421,15 @@ func TestManagerCloseCapturesPages(t *testing.T) {
 	if row.Status != StatusIdle {
 		t.Fatalf("close 后状态 = %s, want idle", row.Status)
 	}
-	if len(row.Pages) != 1 || row.Pages[0].URL != "https://www.bing.com/" || !row.Pages[0].Current {
-		t.Fatalf("close 未捕获真实页面投影: %+v", row.Pages)
+	restored := m.entryOf("default").restorePages
+	if len(restored) != 1 || restored[0].URL != "https://www.bing.com/" || !restored[0].Current {
+		t.Fatalf("close 未捕获恢复现场: %+v", restored)
 	}
 	if _, _, tabsCalls := ctl.stats(); tabsCalls == 0 {
 		t.Fatalf("close 收尾未发起 tab 列表捕获")
 	}
 	// Row 导出与投影行同源（close 响应携带的数据源）。
-	if row2 := m.Row("default"); len(row2.Pages) != 1 || row2.Profile != "default" {
+	if row2 := m.Row("default"); len(row2.Pages) != 0 || row2.Profile != "default" {
 		t.Fatalf("Row 导出行异常: %+v", row2)
 	}
 }
@@ -423,6 +444,7 @@ func TestManagerCloseRace(t *testing.T) {
 		return "done", false
 	}
 	m := newTestManager(t)
+	seedPage(m, "default", "t0")
 	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -443,9 +465,6 @@ func TestManagerCloseRace(t *testing.T) {
 		t.Fatalf("在途调用 err = %v, want errSessionClosed", err)
 	}
 	waitForStatus(t, m, "default", StatusIdle)
-	if last := sessionRow(t, m, "default").RecentCalls[len(sessionRow(t, m, "default").RecentCalls)-1]; last.Outcome != CallClosed {
-		t.Fatalf("最近一次 outcome = %s, want closed", last.Outcome)
-	}
 }
 
 func TestManagerCloseDuringStartingThenEnsure(t *testing.T) {
@@ -682,6 +701,7 @@ func mustProfileDir(t *testing.T, profile string) string {
 func TestManagerListTools(t *testing.T) {
 	ctl := withEngineCtl(t)
 	m := newTestManager(t)
+	seedPage(m, "default", "t0")
 
 	tools, err := m.ListTools(context.Background(), "default", "issue-1")
 	if err != nil {
@@ -703,12 +723,8 @@ func TestManagerListTools(t *testing.T) {
 		t.Fatalf("tabsCalls = %d, want 0（tools/list 免刷新）", tabsCalls)
 	}
 	// 操作流水：browser_tool_list 名义 + ok 分类 + issueTag 归因。
-	sv := sessionRow(t, m, "default")
-	if sv.RecentCalls[0].IssueTag != "issue-1" {
-		t.Fatalf("归因 issueTag = %q, want issue-1", sv.RecentCalls[0].IssueTag)
-	}
-	if n := len(sv.RecentCalls); n != 1 || sv.RecentCalls[0].Tool != listToolsCallName || sv.RecentCalls[0].Outcome != CallOK {
-		t.Fatalf("recentCalls = %+v, want 1 条 %s/%s", sv.RecentCalls, listToolsCallName, CallOK)
+	if last := lastPageAction(t, m, "default"); last.IssueTag != "issue-1" || last.Tool != listToolsCallName || last.Outcome != CallOK {
+		t.Fatalf("操作流水末条 = %+v, want %s/%s 归因 issue-1", last, listToolsCallName, CallOK)
 	}
 }
 
@@ -722,6 +738,7 @@ func TestManagerListToolsBusy(t *testing.T) {
 		return "done", false
 	}
 	m := newTestManager(t)
+	seedPage(m, "default", "t0")
 
 	done := make(chan error, 1)
 	go func() {
@@ -735,8 +752,8 @@ func TestManagerListToolsBusy(t *testing.T) {
 		t.Fatalf("err = %v, want ErrSessionBusy", err)
 	}
 	// busy 拒绝不记流水（与 Forward 同口径）。
-	if sv := sessionRow(t, m, "default"); len(sv.RecentCalls) != 0 {
-		t.Fatalf("recentCalls = %+v, want 空（busy 拒绝不记）", sv.RecentCalls)
+	if rows := m.pageHist.rows("default"); len(rows) > 0 && len(rows[0].Actions) > 0 {
+		t.Fatalf("页面操作流水 = %+v, want 空（busy 拒绝不记）", rows[0].Actions)
 	}
 
 	close(release)

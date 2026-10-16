@@ -1,5 +1,5 @@
 import type { BrowserSessionView } from '@src/services';
-import { Alert, Box, Button, CircularProgress, Typography, useTheme } from '@mui/material';
+import { Alert, Box, Button, CircularProgress, Tooltip, Typography, useTheme } from '@mui/material';
 import {
   BROWSER_LIVE_REFRESH_MS_KEY,
   DEFAULT_BROWSER_LIVE_REFRESH_MS,
@@ -9,6 +9,7 @@ import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
+  deriveIssueProfile,
   useBrowserFrameStream,
   useBrowserSessionEvents,
   useBrowserSessionView,
@@ -26,15 +27,22 @@ const LIVE_REFRESH_CONFIG_KEYS = [BROWSER_LIVE_REFRESH_MS_KEY];
  * BrowserStageOverlay：浏览器操作台浮层——激活 profile 接管工作台终端内容区（inset 0
  * 遮盖不挤压布局，实色背景完整接收 pointerEvents 防点击穿透被 xterm 吞掉）；激活态经
  * useBrowserStageStore 共享，激活期自持投影 SSE 订阅（浏览器工具 tab 关闭后仍随帧刷新）。
+ * 激活按任务绑定：issue 切换即重估——新任务会话在场则跟随切换，否则收起（会话归属
+ * 跟随任务，不跨任务残留）。
  */
-export default function BrowserStageOverlay() {
+export default function BrowserStageOverlay({ issueId }: { issueId: string }) {
   const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
-  if (activatedProfile == null) {
+  const deactivate = useBrowserStageStore(s => s.deactivate);
+  const profile = deriveIssueProfile(issueId);
+  useEffect(() => {
+    // 切走任务即收起浮层（会话归属跟随任务；新任务的浮层由用户显式激活，不代拉起）。
+    deactivate();
+  }, [profile, deactivate]);
+  if (activatedProfile !== profile) {
     return null;
   }
-  return <StageContent key={activatedProfile} profile={activatedProfile} />;
+  return <StageContent key={profile} profile={profile} />;
 }
-
 function StageContent({ profile }: { profile: string }) {
   const theme = useTheme();
   const deactivate = useBrowserStageStore(s => s.deactivate);
@@ -91,18 +99,23 @@ function StageContent({ profile }: { profile: string }) {
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '12px', height: '40px', flexShrink: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
-        <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>{`操作台：${profile}`}</Typography>
+        <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>浏览器操作台</Typography>
         <Typography sx={{ fontSize: '12px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {stream.target != null
             ? `正在投送：${stream.target.title || stream.target.url}`
             : (ready ? '正在连接实时画面…' : '')}
         </Typography>
-        <Typography
-          onClick={deactivate}
-          sx={{ 'ml': 'auto', 'flexShrink': 0, 'fontSize': '12px', 'color': 'text.secondary', 'cursor': 'pointer', '&:hover': { color: 'text.primary' } }}
-        >
-          取消激活（Esc）
-        </Typography>
+        <Tooltip title="退出操作台，回到工作台内容区">
+          <Button
+            size="small"
+            variant="outlined"
+            color="warning"
+            onClick={deactivate}
+            sx={{ ml: 'auto', flexShrink: 0, fontSize: '12px', minWidth: '0px', px: '8px' }}
+          >
+            取消激活（Esc）
+          </Button>
+        </Tooltip>
       </Box>
 
       <Box sx={{ flex: 1, minHeight: '0px', display: 'flex', flexDirection: 'column', gap: '8px', p: '8px' }}>

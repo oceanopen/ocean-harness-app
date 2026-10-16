@@ -58,35 +58,34 @@ func ResultText(res *mcp.CallToolResult) string {
 }
 
 /*
- * capturePagesCtx Close 收尾捕获：拉引擎 tab 列表 → 解析 → view 行更新（锁外广播 sessions
- * 帧）。捕获行无 TargetID（引擎文本解析无此信息）——仅供前端恢复现场取 URL，会话已入
- * idle 不参与订阅寻址；best-effort——捕获失败仅记日志，不拖累收尾。
+ * capturePagesCtx Close 收尾捕获：拉引擎 tab 列表并解析返回（捕获行无 TargetID——引擎
+ * 文本解析无此信息），供会话重建恢复现场；best-effort——失败返回 nil，不拖累收尾。
  */
-func (m *Manager) capturePagesCtx(ctx context.Context, handle *EngineHandle, profile string) {
+func (m *Manager) capturePagesCtx(ctx context.Context, handle *EngineHandle, profile string) []PageView {
 	res, err := handle.Session().CallTool(ctx, &mcp.CallToolParams{
 		Name:      EngineToolTabs,
 		Arguments: map[string]any{"action": "list"},
 	})
 	if err != nil {
 		m.log.Debug("页面捕获失败", zap.String("profile", profile), zap.Error(err))
-		return
+		return nil
 	}
 	if res.IsError {
 		m.log.Debug("页面捕获被引擎拒绝", zap.String("profile", profile), zap.String("result", ResultText(res)))
-		return
+		return nil
 	}
-	pages := ParseTabsOutput(ResultText(res))
-	m.applyPages(profile, pages)
+	return ParseTabsOutput(ResultText(res))
 }
 
 /*
- * applyPages 页面投影回填并广播 sessions 帧（nil 不动投影——解析失败保持原样不误清
- * 空）；capturePagesCtx 与页面观察者 publish 共用出口。
+ * publishPages 页面投影重算并广播（SSOT 归 pageHistoryStore）；store 无该 profile 记录
+ * 时不动投影（避免误清空）。
  */
-func (m *Manager) applyPages(profile string, pages []PageView) {
-	if pages == nil {
+func (m *Manager) publishPages(profile string) {
+	rows := m.pageHist.rows(profile)
+	if rows == nil {
 		return
 	}
-	sv := m.view.apply(profile, func(row *SessionView) { row.Pages = pages })
+	sv := m.view.apply(profile, func(row *SessionView) { row.Pages = rows })
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
 }

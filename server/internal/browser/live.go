@@ -273,11 +273,25 @@ func listPageTargets(ctx context.Context, port int) ([]cdpTargetInfo, error) {
 	}
 	targets := make([]cdpTargetInfo, 0, len(all))
 	for _, tg := range all {
-		if tg.Type == "page" {
+		if tg.Type == "page" && isUserPageURL(tg.URL, tg.Title) {
 			targets = append(targets, tg)
 		}
 	}
 	return targets, nil
+}
+
+/*
+ * isUserPageURL 过滤浏览器内部 target（地址栏弹层 chrome://omnibox、devtools 窗口、
+ * url/title 双空的瞬态 target——CDP 以 page 类型上报但非用户可见页，进列表只会产生
+ * 不可交互的幽灵行）。
+ */
+func isUserPageURL(url, title string) bool {
+	if url == "" || url == "about:blank" {
+		return false
+	}
+	return !strings.HasPrefix(url, "chrome://") &&
+		!strings.HasPrefix(url, "devtools://") &&
+		!strings.HasPrefix(url, "chrome-extension://")
 }
 
 /*
