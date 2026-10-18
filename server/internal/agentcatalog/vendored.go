@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -108,15 +109,15 @@ func EnsureVendored(entry Entry, srcRoot, dstRoot string) (string, error) {
 }
 
 /*
- * VendoredSpawnConfig 将 npx-adapter 条目翻译为指向 vendored 入口的 acp.SpawnConfig（argv = node <包 bin 入口>，installDir 为 EnsureVendored 返回值；node 经 resolveNodeBin 落成绝对路径）。
- * claude 专属注入（可执行文件指定 / login PATH）仍归调用方经 Env 追加，与 SpawnConfig 同约定（D5）。
+ * VendoredSpawnConfig 将 npx-adapter 条目翻译为指向 vendored 入口的 acp.SpawnConfig（argv = node <包 bin 入口>，resourcesRoot 供内嵌 node 查找，installDir 为 EnsureVendored 返回值）。
+ * claude 专属注入经 envOverrides 由调用方传入（D5）；env 装配收口在此，末步把 node 所在目录前置进 PATH——包内 spawn('node')/shebang 子进程与主进程同源命中（env 未显式带 PATH 时与 MergeEnv 底座同取 sidecar 环境）。
  * native-acp 条目无 vendored 形态（走 SpawnConfig 直连），此处显式报错防误用。
  */
-func (e Entry) VendoredSpawnConfig(installDir, cwd string) (acp.SpawnConfig, error) {
+func (e Entry) VendoredSpawnConfig(resourcesRoot, installDir, cwd string, envOverrides map[string]string) (acp.SpawnConfig, error) {
 	if e.Strategy != StrategyNpxAdapter {
 		return acp.SpawnConfig{}, fmt.Errorf("agent %q 策略 %s 无 vendored 入口形态", e.ID, e.Strategy)
 	}
-	nodeBin, err := ResolveNodeBin()
+	nodeBin, err := ResolveNodeBin(resourcesRoot)
 	if err != nil {
 		return acp.SpawnConfig{}, fmt.Errorf("agent %q %w", e.ID, err)
 	}
@@ -133,18 +134,32 @@ func (e Entry) VendoredSpawnConfig(installDir, cwd string) (acp.SpawnConfig, err
 	if _, err := os.Stat(entryPath); err != nil {
 		return acp.SpawnConfig{}, fmt.Errorf("vendored 入口不存在: %s", entryPath)
 	}
+	env := maps.Clone(e.Env)
+	if env == nil {
+		env = make(map[string]string, 1)
+	}
+	maps.Copy(env, envOverrides)
+	prev := env["PATH"]
+	if prev == "" {
+		prev = os.Getenv("PATH")
+	}
+	env["PATH"] = filepath.Dir(nodeBin) + string(os.PathListSeparator) + prev
 	return acp.SpawnConfig{
 		Command: []string{nodeBin, entryPath},
-		Env:     maps.Clone(e.Env),
+		Env:     env,
 		Cwd:     cwd,
 	}, nil
 }
 
 /*
- * ResolveNodeBin 解析 node 可执行文件绝对路径（vendored spawn 翻译与 T1.4 doctor 探测共用，单一 SSOT）：exec.Command 对相对 argv[0] 按 sidecar 自身 PATH 查找，SpawnConfig.Env 的覆盖不影响查找——GUI 拉起的 sidecar PATH 又常缺 nvm/volta 目录（claude 同源问题），故 LookPath 失败后沿 login PATH 逐目录兜底。
- * 落成绝对路径后，拉起不受 spawn env 的 PATH 覆盖影响。
+ * ResolveNodeBin 解析 node 可执行文件绝对路径（vendored spawn 翻译与 T1.4 doctor 探测共用，单一 SSOT）。
+ * 查找顺序：内嵌运行时（<resourcesRoot>/runtime/node/<semver>/node，semver 最高，构建期 vendor-node-runtime.ts 随包分发，保证与 vendored 适配器的构建期兼容组合）→ LookPath → login PATH 逐目录兜底——GUI 拉起的 sidecar PATH 常缺 nvm/volta 目录（claude 同源问题）。
+ * resourcesRoot 空 = 资源源未配置，跳过内嵌查找（降级语义同 GO_SERVER_ACP_RESOURCES_DIR）；落成绝对路径后，拉起不受 spawn env 的 PATH 覆盖影响。
  */
-func ResolveNodeBin() (string, error) {
+func ResolveNodeBin(resourcesRoot string) (string, error) {
+	if bin := embeddedNodeBin(resourcesRoot); bin != "" {
+		return bin, nil
+	}
 	if p, err := exec.LookPath("node"); err == nil {
 		return p, nil
 	}
@@ -154,9 +169,73 @@ func ResolveNodeBin() (string, error) {
 	}
 	bin, err := nodeBinFromDirs(filepath.SplitList(loginPath))
 	if err != nil {
-		return "", fmt.Errorf("解析 node 可执行文件（PATH 与 login shell 均未命中）: %w", err)
+		return "", fmt.Errorf("解析 node 可执行文件（内嵌运行时、PATH 与 login shell 均未命中）: %w", err)
 	}
 	return bin, nil
+}
+
+/*
+ * embeddedNodeBin 扫内嵌运行时目录取 semver 最高版本目录下的 node（目录名即纯数字点分
+ * 版本，vendor-node-runtime.ts 落地同源；二进制在位判定复用 nodeBinFromDirs）。
+ * 无命中（未配置/未打包/目录损坏）返回空串交由调用链回落，不报错——内嵌是优选非硬门槛。
+ */
+func embeddedNodeBin(resourcesRoot string) string {
+	if resourcesRoot == "" {
+		return ""
+	}
+	versionDir := filepath.Join(resourcesRoot, "runtime", "node")
+	entries, err := os.ReadDir(versionDir)
+	if err != nil {
+		return ""
+	}
+	best := ""
+	for _, e := range entries {
+		if !e.IsDir() || !isPlainSemver(e.Name()) {
+			continue
+		}
+		if best == "" || compareSemver(e.Name(), best) > 0 {
+			best = e.Name()
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	bin, err := nodeBinFromDirs([]string{filepath.Join(versionDir, best)})
+	if err != nil {
+		return ""
+	}
+	return bin
+}
+
+// isPlainSemver 纯数字点分版本名判定（如 24.18.0；含空段/非数字段即否）。
+func isPlainSemver(name string) bool {
+	for part := range strings.SplitSeq(name, ".") {
+		if part == "" {
+			return false
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// compareSemver 点分版本逐段数值比较（等前缀时长版本大；两侧均须 isPlainSemver 通过）。
+func compareSemver(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		ai, _ := strconv.Atoi(as[i])
+		bi, _ := strconv.Atoi(bs[i])
+		if ai != bi {
+			if ai > bi {
+				return 1
+			}
+			return -1
+		}
+	}
+	return len(as) - len(bs)
 }
 
 /*

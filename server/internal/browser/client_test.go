@@ -17,7 +17,7 @@ import (
 func withFakeNode(t *testing.T, version string) {
 	t.Helper()
 	oldBin, oldVer := resolveNodeBin, nodeVersionOf
-	resolveNodeBin = func() (string, error) { return "/fake/node", nil }
+	resolveNodeBin = func(string) (string, error) { return "/fake/node", nil }
 	nodeVersionOf = func(context.Context, string) (string, error) { return version, nil }
 	t.Cleanup(func() { resolveNodeBin, nodeVersionOf = oldBin, oldVer })
 }

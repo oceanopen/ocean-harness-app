@@ -31,7 +31,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const STAGING_ROOT = resolve(repoRoot, 'app/resources/acp-adapters');
+export const STAGING_ROOT = resolve(repoRoot, 'app/resources/acp-adapters');
 
 const WORKSPACE_YAML = resolve(repoRoot, 'pnpm-workspace.yaml');
 
@@ -168,7 +168,7 @@ function stagingReady(dir: string, pkg: string, version: string, platformBinRel:
  * 清理同 id 下历史中断残留的 .<version>.tmp-* 临时目录（与运行期 EnsureVendored 的
  * 同名卫生规则对齐；当前 pid 的临时目录在本函数之后才创建，不受误伤）。
  */
-function cleanStaleTmp(idDir: string): void {
+export function cleanStaleTmp(idDir: string): void {
   if (!existsSync(idDir)) {
     return;
   }

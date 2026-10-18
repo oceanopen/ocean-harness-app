@@ -52,12 +52,13 @@ func TestRealHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("vendored 自带 claude 解析: %v", err)
 	}
-	cfg, err := entry.VendoredSpawnConfig(installDir, t.TempDir())
+	env, err := acp.ClaudeEnvOverrides(entry.Env, claudeBin)
+	if err != nil {
+		t.Fatalf("claude 路径一致性注入: %v", err)
+	}
+	cfg, err := entry.VendoredSpawnConfig(srcRoot, installDir, t.TempDir(), env)
 	if err != nil {
 		t.Fatalf("vendored 入口翻译: %v", err)
-	}
-	if cfg.Env, err = acp.ClaudeEnvOverrides(cfg.Env, claudeBin); err != nil {
-		t.Fatalf("claude 路径一致性注入: %v", err)
 	}
 	if custom := os.Getenv("OCEAN_ACP_REAL_COMMAND"); custom != "" {
 		cfg.Command = strings.Fields(custom)

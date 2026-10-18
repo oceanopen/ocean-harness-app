@@ -137,7 +137,7 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 	}
 
 	// node 预检：@playwright/mcp engines 口径 node≥18。
-	nodeBin, err := resolveNodeBin()
+	nodeBin, err := resolveNodeBin(dirs.Resources)
 	if err != nil {
 		return nil, fmt.Errorf("浏览器引擎拉起: %w", err)
 	}
@@ -158,7 +158,7 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 	if err != nil {
 		return nil, fmt.Errorf("浏览器引擎 vendored 安装: %w", err)
 	}
-	cfg, err := entry.VendoredSpawnConfig(installDir, downloadDir)
+	cfg, err := entry.VendoredSpawnConfig(dirs.Resources, installDir, downloadDir, nil)
 	if err != nil {
 		return nil, fmt.Errorf("浏览器引擎入口解析: %w", err)
 	}

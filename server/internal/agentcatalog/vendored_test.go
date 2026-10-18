@@ -2,7 +2,9 @@ package agentcatalog
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -250,7 +252,7 @@ func TestVendoredSpawnConfigBinForms(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			installDir := t.TempDir()
 			writeInstalledPkg(t, installDir, c.binJSON)
-			cfg, err := entry.VendoredSpawnConfig(installDir, "/tmp/workdir")
+			cfg, err := entry.VendoredSpawnConfig("", installDir, "/tmp/workdir", nil)
 			if err != nil {
 				t.Fatalf("VendoredSpawnConfig: %v", err)
 			}
@@ -273,7 +275,7 @@ func TestVendoredSpawnConfigErrors(t *testing.T) {
 	t.Run("args 无 spec", func(t *testing.T) {
 		entry := vendoringEntry("1.0.0")
 		entry.Args = []string{"-y"}
-		if _, err := entry.VendoredSpawnConfig(t.TempDir(), ""); err == nil {
+		if _, err := entry.VendoredSpawnConfig("", t.TempDir(), "", nil); err == nil {
 			t.Fatal("无 spec 应报错")
 		}
 	})
@@ -281,7 +283,7 @@ func TestVendoredSpawnConfigErrors(t *testing.T) {
 		entry := vendoringEntry("1.0.0")
 		installDir := t.TempDir()
 		writeInstalledPkg(t, installDir, `"dist/missing.js"`)
-		if _, err := entry.VendoredSpawnConfig(installDir, ""); err == nil || !strings.Contains(err.Error(), "不存在") {
+		if _, err := entry.VendoredSpawnConfig("", installDir, "", nil); err == nil || !strings.Contains(err.Error(), "不存在") {
 			t.Fatalf("err = %v, want 入口不存在", err)
 		}
 	})
@@ -289,15 +291,45 @@ func TestVendoredSpawnConfigErrors(t *testing.T) {
 		entry := vendoringEntry("1.0.0")
 		installDir := t.TempDir()
 		writeInstalledPkg(t, installDir, `null`)
-		if _, err := entry.VendoredSpawnConfig(installDir, ""); err == nil {
+		if _, err := entry.VendoredSpawnConfig("", installDir, "", nil); err == nil {
 			t.Fatal("无 bin 应报错")
 		}
 	})
 	t.Run("native-acp 防误用", func(t *testing.T) {
 		entry := vendoringEntry("1.0.0")
 		entry.Strategy = StrategyNativeACP
-		if _, err := entry.VendoredSpawnConfig(t.TempDir(), ""); err == nil {
+		if _, err := entry.VendoredSpawnConfig("", t.TempDir(), "", nil); err == nil {
 			t.Fatal("native-acp 条目应报无 vendored 入口")
+		}
+	})
+}
+
+/*
+ * TestVendoredSpawnConfigEnvAssembly env 装配收口断言：PATH 恒前置 node 所在目录
+ * （overrides 携带 PATH 亦然——claude 链 login PATH 注入后前置段不被冲掉）。
+ */
+func TestVendoredSpawnConfigEnvAssembly(t *testing.T) {
+	entry := vendoringEntry("1.0.0")
+	installDir := t.TempDir()
+	writeInstalledPkg(t, installDir, `"dist/cli.js"`)
+	t.Run("无 overrides 前置且透传 sidecar PATH", func(t *testing.T) {
+		cfg, err := entry.VendoredSpawnConfig("", installDir, "", nil)
+		if err != nil {
+			t.Fatalf("VendoredSpawnConfig: %v", err)
+		}
+		want := filepath.Dir(cfg.Command[0]) + string(os.PathListSeparator) + os.Getenv("PATH")
+		if cfg.Env["PATH"] != want {
+			t.Fatalf("PATH = %q, want 前置 node 目录 %q", cfg.Env["PATH"], want)
+		}
+	})
+	t.Run("overrides 含 PATH 仍前置", func(t *testing.T) {
+		cfg, err := entry.VendoredSpawnConfig("", installDir, "", map[string]string{"PATH": "/login/bin"})
+		if err != nil {
+			t.Fatalf("VendoredSpawnConfig: %v", err)
+		}
+		want := filepath.Dir(cfg.Command[0]) + string(os.PathListSeparator) + "/login/bin"
+		if cfg.Env["PATH"] != want {
+			t.Fatalf("PATH = %q, want 前置 node 目录 %q", cfg.Env["PATH"], want)
 		}
 	})
 }
@@ -354,4 +386,64 @@ func TestNodeBinFromDirs(t *testing.T) {
 	if _, err := nodeBinFromDirs([]string{dirNode, notExec}); err == nil {
 		t.Fatal("无可执行命中应报错")
 	}
+}
+
+/*
+ * writeEmbeddedNode 造内嵌 node 运行时假目录：<resourcesRoot>/runtime/node/<version>/node
+ * （shell 脚本形态，执行位判定同真实二进制）。
+ */
+func writeEmbeddedNode(t *testing.T, resourcesRoot, version string) string {
+	t.Helper()
+	bin := filepath.Join(resourcesRoot, "runtime", "node", version, "node")
+	mustWriteFile(t, bin, "#!/bin/sh\n", 0o755)
+	return bin
+}
+
+func TestResolveNodeBinEmbedded(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("假 node 以 shell 脚本伪造执行位，仅 unix 形态覆盖")
+	}
+	t.Run("内嵌优先且取 semver 最高（非版本目录忽略）", func(t *testing.T) {
+		root := t.TempDir()
+		writeEmbeddedNode(t, root, "9.9.9")
+		want := writeEmbeddedNode(t, root, "24.18.0")
+		writeEmbeddedNode(t, root, "latest") // 非纯数字点分版本，必须忽略
+		got, err := ResolveNodeBin(root)
+		if err != nil {
+			t.Fatalf("ResolveNodeBin: %v", err)
+		}
+		if got != want {
+			t.Fatalf("ResolveNodeBin = %q, want 内嵌最高版本 %q", got, want)
+		}
+	})
+	t.Run("内嵌半成品回落 PATH", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "runtime", "node", "24.18.0"), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		want, lookErr := exec.LookPath("node")
+		if lookErr != nil {
+			t.Skip("PATH 无 node，回落断言无基准")
+		}
+		got, err := ResolveNodeBin(root)
+		if err != nil {
+			t.Fatalf("ResolveNodeBin: %v", err)
+		}
+		if got != want {
+			t.Fatalf("ResolveNodeBin = %q, want 回落 PATH %q", got, want)
+		}
+	})
+	t.Run("resourcesRoot 空 跳过内嵌查找", func(t *testing.T) {
+		want, lookErr := exec.LookPath("node")
+		if lookErr != nil {
+			t.Skip("PATH 无 node，回落断言无基准")
+		}
+		got, err := ResolveNodeBin("")
+		if err != nil {
+			t.Fatalf("ResolveNodeBin: %v", err)
+		}
+		if got != want {
+			t.Fatalf("ResolveNodeBin = %q, want PATH %q", got, want)
+		}
+	})
 }

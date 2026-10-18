@@ -202,7 +202,11 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, 
 	if err != nil {
 		return nil, nil, err
 	}
-	spawn, err := entry.VendoredSpawnConfig(installDir, cfg.Cwd)
+	env, err := acp.ClaudeEnvOverrides(entry.Env, claudeBin)
+	if err != nil {
+		return nil, nil, err
+	}
+	spawn, err := entry.VendoredSpawnConfig(dirs.Resources, installDir, cfg.Cwd, env)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -211,13 +215,7 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, 
 	 * 自身 env 无此变量（Rust 只注入 GO_SERVER_*），缺失会让会话内插件 .mcp.json 的
 	 * ${OCEAN_HARNESS_PORT:-9100} 回落默认端口，dev（9000）等场景错配。
 	 */
-	if spawn.Env == nil {
-		spawn.Env = map[string]string{}
-	}
 	spawn.Env["OCEAN_HARNESS_PORT"] = strconv.Itoa(port)
-	if spawn.Env, err = acp.ClaudeEnvOverrides(spawn.Env, claudeBin); err != nil {
-		return nil, nil, err
-	}
 	/*
 	 * purpose=issue-session：生产会话流量标记——acp 包下游日志（握手/stderr/进程退出）
 	 * 随此 logger 自动携带，与 doctor 探测流量（doctor-probe）可辨识。

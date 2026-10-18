@@ -117,7 +117,7 @@ func CheckEntry(ctx context.Context, entry agentcatalog.Entry, dirs Dirs, log *z
 	}
 
 	// 探测项 1：node 可用 + 版本下限（复用 vendored spawn 同一份解析，单一 SSOT）。
-	nodeBin, err := agentcatalog.ResolveNodeBin()
+	nodeBin, err := agentcatalog.ResolveNodeBin(dirs.Resources)
 	if err != nil {
 		return fail(StageNode, "%v", err)
 	}
@@ -154,16 +154,17 @@ func CheckEntry(ctx context.Context, entry agentcatalog.Entry, dirs Dirs, log *z
 		return fail(StageVendored, "创建探测临时目录: %v", err)
 	}
 	defer os.RemoveAll(cwd)
-	cfg, err := entry.VendoredSpawnConfig(installDir, cwd)
-	if err != nil {
-		return fail(StageVendored, "%v", err)
-	}
 	/*
 	 * claude 路径一致性注入（T1.3/P5 定稿终态）：CLAUDE_CODE_EXECUTABLE = vendored
-	 * 二进制 + login PATH，消费方拼装。
+	 * 二进制 + login PATH，经 VendoredSpawnConfig 的 envOverrides 传入。
 	 */
-	if cfg.Env, err = acp.ClaudeEnvOverrides(cfg.Env, claudeBin); err != nil {
+	env, err := acp.ClaudeEnvOverrides(entry.Env, claudeBin)
+	if err != nil {
 		return fail(StageClaude, "%v", err)
+	}
+	cfg, err := entry.VendoredSpawnConfig(dirs.Resources, installDir, cwd, env)
+	if err != nil {
+		return fail(StageVendored, "%v", err)
 	}
 
 	// 真握手：initialize → session/new → available_commands（硬门槛）。
