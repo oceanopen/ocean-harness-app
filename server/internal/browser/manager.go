@@ -454,7 +454,7 @@ func (m *Manager) runSpawn(entry *sessionEntry) {
 	entry.mu.Unlock()
 	m.mu.Unlock()
 	m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
-	m.startObserver(profile) // 页面投影观察者随会话就绪启动（后台自愈，不阻塞）
+	m.startObserver(profile)          // 页面投影观察者随会话就绪启动（后台自愈，不阻塞）
 	go m.restorePages(profile, entry) // 页面现场恢复（best-effort，不阻塞就绪返回）
 	go m.watchExit(entry, handle)
 	close(spawnDone)

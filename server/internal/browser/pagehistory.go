@@ -165,7 +165,7 @@ func (s *pageHistoryStore) rows(profile string) []PageView {
 	if visible != 1 && len(live) > 0 {
 		last := live[0]
 		for _, h := range live[1:] {
-			if h.lastActiveMs > last.lastActiveMs {
+			if h.lastActive > last.lastActive {
 				last = h
 			}
 		}
