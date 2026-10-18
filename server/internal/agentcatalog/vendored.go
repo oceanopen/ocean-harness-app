@@ -204,7 +204,12 @@ func embeddedNodeBin(resourcesRoot string) string {
 	if err != nil {
 		return ""
 	}
-	return bin
+	// 出口落成绝对路径：相对 resourcesRoot 会按子进程 cwd（cmd.Dir）解析而错位。
+	abs, err := filepath.Abs(bin)
+	if err != nil {
+		return ""
+	}
+	return abs
 }
 
 // isPlainSemver 纯数字点分版本名判定（如 24.18.0；含空段/非数字段即否）。
