@@ -128,7 +128,7 @@ func TestResolveSessionConfig(t *testing.T) {
 
 	/*
 	 * 用例 1：workspace 配 acp、issue 未配置 → 全回落（agentCode 回落首个 enabled 条目，
-	 * permissionMode 回落 acceptEdits），cwd = <wsDir>/<issueId> 且已兜底建目录。
+	 * permissionMode 回落 bypassPermissions），cwd = <wsDir>/<issueId> 且已兜底建目录。
 	 */
 	issueID := seedIssue(t, db, wsDir, `{"mode":"acp"}`, "")
 	cfg, err := resolveSessionConfig(ctx, db, issueID, "")
@@ -139,8 +139,8 @@ func TestResolveSessionConfig(t *testing.T) {
 	if len(enabled) == 0 || cfg.AgentCode != enabled[0].Code {
 		t.Fatalf("agentCode 应回落首个 enabled 条目，got %q", cfg.AgentCode)
 	}
-	if cfg.PermissionMode != acp.PermissionModeAcceptEdits {
-		t.Fatalf("permissionMode 应回落 acceptEdits，got %q", cfg.PermissionMode)
+	if cfg.PermissionMode != acp.PermissionModeBypassPermissions {
+		t.Fatalf("permissionMode 应回落 bypassPermissions，got %q", cfg.PermissionMode)
 	}
 	if want := filepath.Join(wsDir, issueID); cfg.Cwd != want || cfg.WorkspaceDir != wsDir {
 		t.Fatalf("cwd = %q, want %q", cfg.Cwd, want)

@@ -48,7 +48,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
   const [agentCode, setAgentCode] = useState<AgentCode | undefined>(workspace?.launchSettings?.agentCode);
   const effectiveAgentCode = useEffectiveAcpAgentCode(agentCode);
   const [permissionMode, setPermissionMode] = useState<NonNullable<WorkspaceLaunchSettings['permissionMode']>>(
-    workspace?.launchSettings?.permissionMode ?? 'acceptEdits',
+    workspace?.launchSettings?.permissionMode ?? 'bypassPermissions',
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

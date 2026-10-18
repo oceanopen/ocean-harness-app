@@ -109,7 +109,7 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   );
   const effectiveLaunchAgentCode = useEffectiveAcpAgentCode(launchAgentCode);
   const [launchPermissionMode, setLaunchPermissionMode] = useState<NonNullable<WorkspaceLaunchSettings['permissionMode']>>(
-    projectIssue?.launchSettings?.permissionMode ?? 'acceptEdits',
+    projectIssue?.launchSettings?.permissionMode ?? 'bypassPermissions',
   );
   // 覆盖后的启动设置草稿（'' = 未覆盖 → undefined，对齐「省略 = 未覆盖」契约）；dirty 与提交共用。
   const draftLaunchSettings: WorkspaceLaunchSettings | undefined

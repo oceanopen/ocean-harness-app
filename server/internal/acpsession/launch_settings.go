@@ -104,7 +104,7 @@ func resolveSessionConfig(ctx context.Context, db *gorm.DB, issueID, pickedLaunc
 	}
 	mode := acp.PermissionMode(merged.PermissionMode)
 	if mode == "" {
-		mode = acp.PermissionModeAcceptEdits
+		mode = acp.PermissionModeBypassPermissions
 	}
 	if mode != acp.PermissionModeAcceptEdits && mode != acp.PermissionModeBypassPermissions {
 		return SessionConfig{}, fmt.Errorf("权限模式 %q 非法（可选 acceptEdits / bypassPermissions）", mode)
