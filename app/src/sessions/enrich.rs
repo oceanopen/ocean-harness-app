@@ -31,7 +31,7 @@ fn ps_field(pid: u32, field: &str) -> Option<String> {
 
 /*
  * 把 ps 取到的 comm 字符串归一化为 TerminalApp。
- * iTerm 3.x 进程名是 "iTerm2" 或 "iTerm"；macOS 自带 Terminal 进程名是 "Terminal"；IntelliJ 内嵌终端进程名是 "idea"；
+ * iTerm 进程名 "iTerm2"/"iTerm"，3.6+ server 架构宿主为 "iTermServer-<版本>"；macOS Terminal 为 "Terminal"；IntelliJ 内嵌终端为 "idea"；
  * 本 app 嵌入式 PTY 的宿主进程名 "ocean-harness"（dev 二进制同名——tauri.dev.conf.json 只改 identifier/productName 不改二进制名，dev 与 release 同名识别）。
  */
 fn classify_terminal(comm: &str) -> Option<TerminalApp> {
@@ -42,6 +42,8 @@ fn classify_terminal(comm: &str) -> Option<TerminalApp> {
         .unwrap_or(comm);
     match basename {
         "iTerm" | "iTerm2" => Some(TerminalApp::ITerm2),
+        // server 宿主名带版本后缀，按前缀匹配兼容 iTerm2 升级。
+        b if b.starts_with("iTermServer") => Some(TerminalApp::ITerm2),
         "Terminal" => Some(TerminalApp::Terminal),
         "idea" => Some(TerminalApp::IntelliJ),
         "ocean-harness" => Some(TerminalApp::OceanHarness),
@@ -180,6 +182,14 @@ mod tests {
         assert_eq!(classify_terminal("wezterm"), None);
         assert_eq!(
             classify_terminal("/Applications/iTerm.app/Contents/MacOS/iTerm2"),
+            Some(TerminalApp::ITerm2)
+        );
+        assert_eq!(
+            classify_terminal("iTermServer-3.6.11"),
+            Some(TerminalApp::ITerm2)
+        );
+        assert_eq!(
+            classify_terminal("/Users/u/Library/Application Support/iTerm2/iTermServer-3.6.11"),
             Some(TerminalApp::ITerm2)
         );
     }

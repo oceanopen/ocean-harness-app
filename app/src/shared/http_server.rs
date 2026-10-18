@@ -685,22 +685,22 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         }
     });
 
-/*
- * sidecar_log_level 从 zap console 编码行提取级别字段（tab 分隔第 2 段：时间\t级别\t...）；
- * 非该形态的行返回 None（调用方按 warn 兜底）。
- */
-fn sidecar_log_level(line: &str) -> Option<&str> {
-    let mut fields = line.split('\t');
-    let _date = fields.next()?;
-    let level = fields.next()?.trim();
-    match level {
-        "DEBUG" | "INFO" | "WARN" | "ERROR" | "DPANIC" | "FATAL" => Some(level),
-        _ => None,
+    /*
+     * sidecar_log_level 从 zap console 编码行提取级别字段（tab 分隔第 2 段：时间\t级别\t...）；
+     * 非该形态的行返回 None（调用方按 warn 兜底）。
+     */
+    fn sidecar_log_level(line: &str) -> Option<&str> {
+        let mut fields = line.split('\t');
+        let _date = fields.next()?;
+        let level = fields.next()?.trim();
+        match level {
+            "DEBUG" | "INFO" | "WARN" | "ERROR" | "DPANIC" | "FATAL" => Some(level),
+            _ => None,
+        }
     }
-}
 
-/*
- * 事件线程：转发 sidecar 的 stdout/stderr/终止/错误。
+    /*
+     * 事件线程：转发 sidecar 的 stdout/stderr/终止/错误。
      * stderr 行解析 zap console 编码的级别字段（第 3 个 tab 分隔段）后按真实级别转发
      * ——Go 侧 INFO/DEBUG 也走 stderr，固定 WARN 会把例行日志顶成假警报；解析失败
      * 回落 warn 保底（启动失败原因提取依赖本线程的留痕不中断）。
