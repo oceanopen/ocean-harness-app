@@ -12,21 +12,23 @@ export interface ImBotAccessPolicy {
 export interface ImBotModel {
   id: number;
   name: string;
-  channel: string; // 渠道枚举（本期恒 'wecom'，后续 feishu 等扩展）
+  channel: string; // 渠道枚举（wecom | weixin）
   workspaceId: number; // 0 = 未选择（扫码接入待补选）
   workspaceName: string; // 关联工作空间名（展示用）
   accessPolicy: ImBotAccessPolicy;
   enabled: boolean;
   secret: string; // 明文（本地数据语义，编辑抽屉回显；前端默认掩码 + 显式切换明文）
-  botId: string;
+  botId: string; // 企微后台颁发；weixin 行为空
+  accountId: string; // 微信 iLink 账号 id；wecom 行为空
   connState: string; // connecting | connected | disconnected | stopped
   lastError: string;
   createdAt: string;
   updatedAt: string;
 }
 
-// POST /api/imBot/create 的入参。
+// POST /api/imBot/create 的入参（仅 wecom 可手工创建，weixin 由后端拒绝并引导扫码）。
 export interface ImBotCreateRequest {
+  channel: string;
   name: string;
   botId: string;
   secret: string;
@@ -35,7 +37,7 @@ export interface ImBotCreateRequest {
   enabled?: boolean;
 }
 
-// POST /api/imBot/update 的入参（secret 留空 = 沿用原值）。
+// POST /api/imBot/update 的入参（secret 留空 = 沿用原值；weixin 行后端不触凭据列）。
 export interface ImBotUpdateRequest {
   id: number;
   name: string;
@@ -84,32 +86,56 @@ export interface ImBotBindIssueRequest {
 }
 
 /**
- * ─── 扫码授权接入（provision）───
- * 凭据安全语义：secret 仅在服务端落库，provision 扫码链路不回传；落库后经 getList/getInfo 明文回显（本地数据语义）。qrContent 为腾讯授权页 URL（公开）。
+ * ─── 扫码授权接入（provision）─── 凭据仅在服务端落库（扫码链路不回传，落库后经 getList
+ * 明文回显——本地数据语义）；qrContent 为公开的扫码链接（两侧均前端本地渲染成二维码）。
  */
 
-// 扫码会话状态（同后端状态机；无 scanned 中间态——腾讯协议不区分已扫码未确认）。
-export type ImBotProvisionState = 'pending' | 'connecting' | 'connected' | 'failed' | 'expired' | 'cancelled';
+// 扫码会话状态（同后端状态机；scanned/needs_verification 仅 weixin——微信协议区分已扫码
+// 与需配对码两中间态）。
+export type ImBotProvisionState
+  = | 'pending'
+    | 'scanned'
+    | 'needs_verification'
+    | 'connecting'
+    | 'connected'
+    | 'failed'
+    | 'expired'
+    | 'cancelled';
 
-// POST /api/imBot/provisionBegin 的响应。
-export interface ImBotProvisionView {
-  attemptId: string;
-  state: ImBotProvisionState;
-  qrContent?: string; // 授权页 URL（二维码内容，pending 态非空）
-  expiresAt: number; // 毫秒时间戳（0 = 无 QR 语境）
-  pollIntervalMs: number; // 宿主下发轮询节奏（前端不自造）
-  errCode?: string;
-  botId?: number; // connected 后的新 bot 行 id
+// POST /api/imBot/provisionBegin 的入参（weixin 传 botId>0 = 对既有 bot 换绑凭据，0 = 新建）。
+export interface ImBotProvisionBeginRequest {
+  channel: string;
+  botId?: number;
 }
 
 // POST /api/imBot/provisionPoll 的入参。
 export interface ImBotProvisionPollRequest {
+  channel: string;
   attemptId: string;
 }
 
 // POST /api/imBot/provisionCancel 的入参。
 export interface ImBotProvisionCancelRequest {
+  channel: string;
   attemptId: string;
+}
+
+// POST /api/imBot/provisionVerifyCode 的入参（微信扫码配对码提交，仅 needs_verification 态受理）。
+export interface ImBotProvisionVerifyCodeRequest {
+  channel: string;
+  attemptId: string;
+  verifyCode: string;
+}
+
+// provisionBegin / provisionPoll 的响应（扫码会话快照）。
+export interface ImBotProvisionView {
+  attemptId: string;
+  state: ImBotProvisionState;
+  qrContent?: string; // 二维码扫码链接（两侧均前端本地渲染成二维码）
+  expiresAt: number; // 毫秒时间戳（0 = 无 QR 语境）
+  pollIntervalMs: number; // 宿主下发轮询节奏（前端不自造）
+  errCode?: string;
+  botId?: number; // connected 后的 bot 行 id（含换绑目标）
 }
 
 export class ImBotService {
@@ -153,14 +179,19 @@ export class ImBotService {
     return request<void>('POST', '/api/imBot/bindIssue', req);
   }
 
-  // provisionBegin：开新扫码授权会话（返回二维码内容 + 轮询节奏；已有会话自动取消）。
-  static provisionBegin(): Promise<ImBotProvisionView> {
-    return request<ImBotProvisionView>('POST', '/api/imBot/provisionBegin', {});
+  // provisionBegin：开新扫码授权会话（渠道分发；已有会话自动取消；weixin botId>0 = 换绑）。
+  static provisionBegin(req: ImBotProvisionBeginRequest): Promise<ImBotProvisionView> {
+    return request<ImBotProvisionView>('POST', '/api/imBot/provisionBegin', req);
   }
 
-  // provisionPoll：轮询扫码结果（connected 即激活完成，botId 为新建 bot 行 id）。
+  // provisionPoll：轮询扫码结果（connected 即激活完成，botId 为目标 bot 行 id）。
   static provisionPoll(req: ImBotProvisionPollRequest): Promise<ImBotProvisionView> {
     return request<ImBotProvisionView>('POST', '/api/imBot/provisionPoll', req);
+  }
+
+  // provisionVerifyCode：提交微信扫码配对码（仅 needs_verification 态受理，wecom 无此环节）。
+  static provisionVerifyCode(req: ImBotProvisionVerifyCodeRequest): Promise<void> {
+    return request<void>('POST', '/api/imBot/provisionVerifyCode', req);
   }
 
   // provisionCancel：取消扫码会话。

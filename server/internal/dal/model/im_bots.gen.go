@@ -23,6 +23,7 @@ type ImBot struct {
 	LastError    string        `gorm:"column:last_error;type:TEXT;not null;default:''" json:"lastError"`
 	CreatedAt    time.Time     `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt    time.Time     `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	ChannelState string        `gorm:"column:channel_state;type:TEXT;not null;default:'{}'" json:"channelState"`
 }
 
 // TableName ImBot's table name

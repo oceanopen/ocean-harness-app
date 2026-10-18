@@ -134,6 +134,10 @@ type BotRuntimeConfig struct {
 	WorkspaceDir string
 	AccessPolicy AccessPolicy
 	Port         int // sidecar HTTP 端口，driver 注入 claude 子进程 OCEAN_HARNESS_PORT
+	// ChannelState 渠道自管运行态 JSON（t_im_bots.channel_state 启动快照，如微信长轮询游标；
+	// 核心不解释内容）。SaveChannelState 回写通道（nil = 忽略；失败由适配器自行兜底）。
+	ChannelState     string
+	SaveChannelState func(botID int, raw string) error
 }
 
 /*

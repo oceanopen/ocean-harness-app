@@ -2,8 +2,10 @@ import type {
   ImBotBindIssueRequest,
   ImBotCreateRequest,
   ImBotModel,
+  ImBotProvisionBeginRequest,
   ImBotProvisionCancelRequest,
   ImBotProvisionPollRequest,
+  ImBotProvisionVerifyCodeRequest,
   ImBotUpdateRequest,
 } from '@src/services';
 import { ImBotService } from '@src/services';
@@ -109,14 +111,14 @@ export function useBindImBotIssue() {
  * refetchInterval）；connected 即激活完成（服务端已建 bot 并连接），此处只负责失效列表缓存。
  */
 
-/** 开新扫码会话（已有会话自动取消）。 */
+/** 开新扫码会话（渠道分发；已有会话自动取消；weixin botId>0 = 对既有 bot 换绑凭据）。 */
 export function useProvisionBegin() {
   return useMutation({
-    mutationFn: () => ImBotService.provisionBegin(),
+    mutationFn: (req: ImBotProvisionBeginRequest) => ImBotService.provisionBegin(req),
   });
 }
 
-/** 轮询一次扫码结果；connected 时失效列表（新 bot 已建）。 */
+/** 轮询一次扫码结果；connected 时失效列表（目标 bot 已建/换绑完成）。 */
 export function useProvisionPoll() {
   const qc = useQueryClient();
   return useMutation({
@@ -126,6 +128,13 @@ export function useProvisionPoll() {
         void qc.invalidateQueries({ queryKey: imBotsKeys.list() });
       }
     },
+  });
+}
+
+/** 提交微信扫码配对码（仅 needs_verification 态受理，wecom 无此环节）。 */
+export function useProvisionVerifyCode() {
+  return useMutation({
+    mutationFn: (req: ImBotProvisionVerifyCodeRequest) => ImBotService.provisionVerifyCode(req),
   });
 }
 

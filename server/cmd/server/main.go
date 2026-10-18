@@ -22,6 +22,7 @@ import (
 	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/bot"
 	"ocean-harness/server/internal/bot/wecom"
+	"ocean-harness/server/internal/bot/weixin"
 	"ocean-harness/server/internal/browser"
 	"ocean-harness/server/internal/config"
 	"ocean-harness/server/internal/global"
@@ -83,14 +84,16 @@ func main() {
 	}, global.Logger)
 
 	/*
-	 * 5.6) bot 运行时装配：注册企微适配器工厂 + 拉起全部启用 bot（WS 长连接后台运行，
-	 * 不阻塞 HTTP 启动；连接状态经 /api/imBot/getList 投影呈现）。
+	 * 5.6) bot 运行时装配：注册渠道适配器工厂（wecom 长连接 / weixin 长轮询）+ 拉起全部
+	 * 启用 bot（后台运行，不阻塞 HTTP 启动；连接状态经 /api/imBot/getList 投影呈现）。
 	 */
 	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, acpSessions, global.Logger)
 	global.BotSupervisor.Register(wecom.Factory{})
+	global.BotSupervisor.Register(weixin.Factory{})
 	global.BotSupervisor.StartEnabled()
-	// 扫码授权激活回调：凭据落库 + 拉连接（secret 仅经此路径入 sqlite，不回前端不进日志）。
+	// 扫码授权激活回调：凭据落库 + 拉连接（凭据仅经此路径入 sqlite，不回前端不进日志）。
 	wecom.SetProvisionActivator(service.ProvisionActivateBot)
+	weixin.SetProvisionActivator(service.ProvisionActivateWeixin)
 
 	/*
 	 * 5.7) doctor 启动后台探测：对全部 enabled agent 条目串行跑真实握手，把结论填进

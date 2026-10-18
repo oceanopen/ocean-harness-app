@@ -27,8 +27,9 @@ type ImBotCredential struct {
 }
 
 /*
- * 每 action 一个独立 Request 类型（对齐项目既有 DTO 风格）：channel 本期固定 wecom（service 赋值，不入参）；
- * secret 更新时留空 = 沿用原值。
+ * 每 action 一个独立 Request 类型（对齐项目既有 DTO 风格）；secret 更新时留空 = 沿用原值。
+ * 渠道差异：wecom 凭据手工录入（botId/secret），weixin 凭据唯一来源是扫码授权（Create 拒绝、
+ * Update 不触凭据列、换绑走 provision 链路）。
  */
 
 // ImBotGetListRequest 是 POST /api/imBot/getList 的入参（无筛选，列全部）。
@@ -39,8 +40,9 @@ type ImBotGetInfoRequest struct {
 	ID int `json:"id" binding:"required"`
 }
 
-// ImBotCreateRequest 是 POST /api/imBot/create 的入参。
+// ImBotCreateRequest 是 POST /api/imBot/create 的入参（仅 wecom 可手工创建；weixin 由 service 拒绝并引导扫码）。
 type ImBotCreateRequest struct {
+	Channel      enums.Channel     `json:"channel" binding:"required,oneof=wecom weixin"`
 	Name         string            `json:"name" binding:"required,max=100"`
 	BotId        string            `json:"botId" binding:"required"`
 	Secret       string            `json:"secret" binding:"required"`
@@ -49,11 +51,11 @@ type ImBotCreateRequest struct {
 	Enabled      bool              `json:"enabled"`
 }
 
-// ImBotUpdateRequest 是 POST /api/imBot/update 的入参（secret 留空 = 沿用原值）。
+// ImBotUpdateRequest 是 POST /api/imBot/update 的入参（secret 留空 = 沿用原值；weixin 行仅更新非凭据字段）。
 type ImBotUpdateRequest struct {
 	ID           int               `json:"id" binding:"required"`
 	Name         string            `json:"name" binding:"required,max=100"`
-	BotId        string            `json:"botId" binding:"required"`
+	BotId        string            `json:"botId" binding:"omitempty"`
 	Secret       string            `json:"secret" binding:"omitempty"`
 	WorkspaceId  int               `json:"workspaceId" binding:"required"`
 	AccessPolicy ImBotAccessPolicy `json:"accessPolicy" binding:"required"`
@@ -98,33 +100,49 @@ type ImBotBindIssueRequest struct {
 }
 
 /*
- * ImBotProvisionBeginRequest 是 POST /api/imBot/provisionBegin 的入参（无入参，开新扫码会话；已有进行中会话自动取消）。
+ * ImBotProvisionBeginRequest 是 POST /api/imBot/provisionBegin 的入参（开新扫码会话，已有进行中
+ * 会话自动取消；weixin 传 botId>0 = 对既有 bot 换绑凭据，0 = 新建；wecom 忽略 botId）。
  */
-type ImBotProvisionBeginRequest struct{}
+type ImBotProvisionBeginRequest struct {
+	Channel enums.Channel `json:"channel" binding:"required,oneof=wecom weixin"`
+	BotID   int           `json:"botId"`
+}
 
-// ImBotProvisionPollRequest 是 POST /api/imBot/provisionPoll 的入参（惰性单飞轮询一次）。
+// ImBotProvisionPollRequest 是 POST /api/imBot/provisionPoll 的入参（轮询一次扫码结果）。
 type ImBotProvisionPollRequest struct {
-	AttemptID string `json:"attemptId" binding:"required"`
+	Channel   enums.Channel `json:"channel" binding:"required,oneof=wecom weixin"`
+	AttemptID string        `json:"attemptId" binding:"required"`
 }
 
 // ImBotProvisionCancelRequest 是 POST /api/imBot/provisionCancel 的入参。
 type ImBotProvisionCancelRequest struct {
-	AttemptID string `json:"attemptId" binding:"required"`
+	Channel   enums.Channel `json:"channel" binding:"required,oneof=wecom weixin"`
+	AttemptID string        `json:"attemptId" binding:"required"`
 }
 
 /*
- * ImBotProvisionView 扫码会话投影：剥除 scode 与 secret（凭据仅在服务端落库，provision 扫码链路不回传；
- * 落库后经 getList/getInfo 明文回显，见 ImBotResponseData.Secret）；
- * qrContent 为腾讯授权页 URL（二维码内容，公开可回传，前端本地渲染二维码）。
+ * ImBotProvisionVerifyCodeRequest 是 POST /api/imBot/provisionVerifyCode 的入参（微信扫码的
+ * 配对码提交，仅 needs_verification 态受理；wecom 无此环节）。
+ */
+type ImBotProvisionVerifyCodeRequest struct {
+	Channel    enums.Channel `json:"channel" binding:"required,oneof=wecom weixin"`
+	AttemptID  string        `json:"attemptId" binding:"required"`
+	VerifyCode string        `json:"verifyCode" binding:"required"`
+}
+
+/*
+ * ImBotProvisionView 扫码会话投影：剥除 qrcode 令牌与凭据（凭据仅在服务端落库，provision 扫码
+ * 链路不回传；落库后经 getList/getInfo 明文回显，见 ImBotResponseData）；
+ * qrContent 为二维码图片 URL（公开可回传，前端本地渲染）。
  */
 type ImBotProvisionView struct {
 	AttemptID      string `json:"attemptId"`
-	State          string `json:"state"` // pending | connecting | connected | failed | expired | cancelled
+	State          string `json:"state"` // pending | scanned | needs_verification | connecting | connected | failed | expired | cancelled（wecom 无中间两态）
 	QRContent      string `json:"qrContent,omitempty"`
-	ExpiresAt      int64  `json:"expiresAt"` // 毫秒时间戳（0 = 无 QR 语境）
+	ExpiresAt      int64  `json:"expiresAt"` // 毫秒时间戳
 	PollIntervalMs int    `json:"pollIntervalMs"`
 	ErrCode        string `json:"errCode,omitempty"`
-	BotID          int    `json:"botId,omitempty"` // connected 后的新 bot 行 id
+	BotID          int    `json:"botId,omitempty"` // connected 后的 bot 行 id（含换绑目标）
 }
 
 /*
@@ -141,8 +159,10 @@ type ImBotResponseData struct {
 	Enabled       bool              `json:"enabled"`
 	// credential 明文 secret：桌面应用数据全本地，编辑抽屉直接回显（前端默认掩码 + 显式切换明文）。
 	Secret string `json:"secret"`
-	// credential 内的 botId（企微后台颁发），表单回显用。
+	// credential 内的 botId（企微后台颁发），表单回显用；weixin 行为空。
 	BotId string `json:"botId"`
+	// credential 内的 accountId（微信 iLink 账号 id），列表回显用；wecom 行为空。
+	AccountId string `json:"accountId"`
 	// 运行态（supervisor 投影合并；未运行 = stopped，LastError 回落 DB 行 last_error）。
 	ConnState string `json:"connState"`
 	LastError string `json:"lastError"`
@@ -170,6 +190,13 @@ func (ImBotResponseData) FromModel(r *model.ImBot) ImBotResponseData {
 		if err := json.Unmarshal([]byte(r.Credential), &cred); err == nil {
 			out.BotId = cred.BotId
 			out.Secret = cred.Secret
+		}
+		// weixin 凭据 shape 与渠道边界解耦（就地匿名结构投影 accountId，不依赖渠道包）。
+		var wxCred struct {
+			AccountID string `json:"accountId"`
+		}
+		if err := json.Unmarshal([]byte(r.Credential), &wxCred); err == nil {
+			out.AccountId = wxCred.AccountID
 		}
 	}
 	return out

@@ -8,47 +8,110 @@ import {
   Drawer,
   IconButton,
   LinearProgress,
+  TextField,
   Typography,
 } from '@mui/material';
-import { useProvisionBegin, useProvisionCancel, useProvisionPoll } from '@src/state/imBots';
+import {
+  useProvisionBegin,
+  useProvisionCancel,
+  useProvisionPoll,
+  useProvisionVerifyCode,
+} from '@src/state/imBots';
 import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
 
-// 扫码授权接入抽屉（体验对齐 dsh-im QrPanel）：打开即申请二维码 → 用户企业微信 App 扫码 →
-// 腾讯授权页确认创建 → 本机轮询取凭据（服务端自动建 bot 并连接）。凭据全程不经过前端。
-// 轮询节奏 = 宿主下发的 pollIntervalMs（协议节奏，链式 setTimeout，终态即停）。
-// 「重新生成二维码」由父组件以 key 重挂载实现（卸载清理定时器 + 新 begin 自动取消旧会话）。
+// 扫码授权接入抽屉（渠道化）：按渠道申请二维码 → 扫码 → 中间态推进 → 服务端自动建 bot/换绑
+// 并连接；轮询走宿主 pollIntervalMs 链式 setTimeout（终态即停），scanned/needs_verification
+// 仅微信渠道。二维码渠道差异收口在 resolveQrSrc；rebindBotId>0 为换绑语境。
+// 「重新生成二维码」由父组件以 key 重挂载实现（卸载清定时器 + 新 begin 自动取消旧会话）。
 
-const DRAWER_WIDTH = 480;
+const DRAWER_WIDTH = '480px';
 
-/** 二维码总时长（与后端 qrTTL 同源：5 分钟，腾讯未下发 TTL 的本地推断值）。 */
+/** 二维码总时长（与后端 qrTTL 同源：5 分钟，宿主未下发 TTL 的本地推断值）。 */
 const QR_TTL_MS = 5 * 60_000;
 
-/** 组件挂载期一次性二维码渲染：qrContent → dataURL（content 域名已由后端强校验，前端再兜底）。 */
-async function renderQr(content: string): Promise<string> {
-  if (!content.startsWith('https://work.weixin.qq.com/')) {
-    throw new Error('授权链接域名异常');
+/** 配对码形态（与后端校验同形：4-8 位数字）。 */
+const VERIFY_CODE_PATTERN = /^\d{4,8}$/;
+
+/** 扫码会话进行中状态集合（关闭时需通知服务端取消；终态不取消）。 */
+const IN_FLIGHT_STATES = new Set(['pending', 'scanned', 'needs_verification', 'connecting']);
+
+/**
+ * 二维码来源收口：两侧均为「扫码内容 → 本地渲染 dataURL」，杜绝 webview 外链加载依赖。
+ * 微信侧内容为 liteapp 扫码链接（qrcode_img_content 非图片地址），域名白名单对齐后端 isWeixinHost。
+ */
+async function resolveQrSrc(channel: string, content: string): Promise<string> {
+  let host = '';
+  try {
+    host = new URL(content).hostname;
+  } catch {
+    host = '';
+  }
+  const trusted = channel === 'weixin'
+    ? host === 'weixin.qq.com' || host.endsWith('.weixin.qq.com') || host === 'wechat.com' || host.endsWith('.wechat.com')
+    : host === 'work.weixin.qq.com';
+  if (!content.startsWith('https://') || !trusted) {
+    throw new Error('二维码内容域名异常');
   }
   return QRCode.toDataURL(content, { width: 240, margin: 1, errorCorrectionLevel: 'M' });
 }
 
-function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onRegenerate: () => void }) {
-  const { open } = props;
+/** 渠道扫码引导步骤 + 中间态文案 SSOT。 */
+function channelCopy(channel: string): { steps: string[]; scannedHint: string; verifyHint: string; connectingHint: string } {
+  if (channel === 'weixin') {
+    return {
+      steps: [
+        '1. 打开微信 App，扫描二维码并确认登录',
+        '2. 如微信提示配对码，在下方输入框填入',
+        '3. 返回这里等待连接完成',
+      ],
+      scannedHint: '已扫码，请在手机上确认登录',
+      verifyHint: '请在微信中查看配对码并在下方输入',
+      connectingHint: '微信已确认，正在连接机器人…',
+    };
+  }
+  return {
+    steps: [
+      '1. 打开企业微信 App，扫描左侧二维码',
+      '2. 在腾讯授权页面确认创建智能机器人',
+      '3. 返回这里等待连接完成',
+    ],
+    scannedHint: '已扫码，请在手机上确认',
+    verifyHint: '',
+    connectingHint: '企业微信已授权，正在连接机器人…',
+  };
+}
+
+function ImBotProvisionDrawer(props: {
+  open: boolean;
+  channelKey: string;
+  rebindBotId?: number; // > 0 = 为既有 bot 换绑凭据（0/undefined = 扫码新建）
+  onClose: () => void;
+  onRegenerate: () => void;
+}) {
+  const { open, channelKey } = props;
+  const rebind = (props.rebindBotId ?? 0) > 0;
   const beginMutation = useProvisionBegin();
   const pollMutation = useProvisionPoll();
   const cancelMutation = useProvisionCancel();
+  const verifyMutation = useProvisionVerifyCode();
+  const copy = channelCopy(channelKey);
 
   // 回调经 ref 消费：父组件内联箭头每次渲染变化，若入 effect 依赖会使扫码流程随父渲染重启。
   // begin/poll 走 state 层 mutation（connected 时失效列表缓存的副作用收口在 hook 内），
   // mutateAsync 是 MutationObserver 构造期绑定的稳定引用，effect/定时器链可直接捕获。
   const onCloseRef = useRef(props.onClose);
   onCloseRef.current = props.onClose;
+  // begin 参数同样经 ref 进 effect（换绑目标由父组件在打开前设定，打开后不再变化）。
+  const beginArgsRef = useRef({ channel: channelKey, botId: props.rebindBotId ?? 0 });
+  beginArgsRef.current = { channel: channelKey, botId: props.rebindBotId ?? 0 };
 
   const [starting, setStarting] = useState(true);
   const [beginError, setBeginError] = useState('');
   const [attempt, setAttempt] = useState<ImBotProvisionView | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
   const [qrError, setQrError] = useState(false);
+  const [verifyCode, setVerifyCode] = useState('');
   const [now, setNow] = useState(() => Date.now());
 
   // resetLocal 清抽屉本地态到「申请中」初值：handleClose 与 connected 收尾共用，防下次打开
@@ -59,6 +122,7 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
     setBeginError('');
     setQrDataUrl('');
     setQrError(false);
+    setVerifyCode('');
   };
 
   // 主流程：open 触发一次（begin → 起轮询链）；卸载/关闭清理全部定时器；
@@ -77,9 +141,10 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
       }
     };
 
+    // 轮询步进：中间态（含 scanned / needs_verification）按宿主节奏续轮询；终态停链。
     const tick = async (attemptId: string, fallbackInterval: number) => {
       try {
-        const view = await pollMutation.mutateAsync({ attemptId });
+        const view = await pollMutation.mutateAsync({ channel: beginArgsRef.current.channel, attemptId });
         if (disposed) {
           return;
         }
@@ -87,10 +152,10 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
         if (view.state === 'connected') {
           stopPoll();
           resetLocal(); // 本地态一并重置（列表缓存已由 poll hook 在 connected 时失效刷新）
-          onCloseRef.current(); // 新 bot 已建并连接，收抽屉回列表
+          onCloseRef.current(); // bot 已建/换绑并连接，收抽屉回列表
           return;
         }
-        if (view.state === 'pending' || view.state === 'connecting') {
+        if (IN_FLIGHT_STATES.has(view.state)) {
           pollTimer = window.setTimeout(() => void tick(attemptId, fallbackInterval), view.pollIntervalMs || fallbackInterval);
         }
         // failed / expired / cancelled：终态停轮询，UI 停在错误分支
@@ -105,13 +170,13 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
     // 状态重置在 handleClose（事件处理器）完成：本 effect 仅跑异步流程，无同步 setState。
     void (async () => {
       try {
-        const view = await beginMutation.mutateAsync();
+        const view = await beginMutation.mutateAsync(beginArgsRef.current);
         if (disposed) {
           return;
         }
         setAttempt(view);
         setStarting(false);
-        renderQr(view.qrContent ?? '')
+        resolveQrSrc(beginArgsRef.current.channel, view.qrContent ?? '')
           .then((url) => {
             if (!disposed) {
               setQrDataUrl(url);
@@ -148,12 +213,23 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
 
   const handleClose = () => {
     // 进行中关闭：服务端会话一并取消（防止僵尸 attempt 占住单会话槽）。
-    if (attempt && (attempt.state === 'pending' || attempt.state === 'connecting')) {
-      cancelMutation.mutate({ attemptId: attempt.attemptId });
+    if (attempt && IN_FLIGHT_STATES.has(attempt.state)) {
+      cancelMutation.mutate({ channel: channelKey, attemptId: attempt.attemptId });
     }
     // 重置到「申请中」初态：下次打开由本组件 effect 直接进入异步流程（无同步 setState）。
     resetLocal();
     onCloseRef.current();
+  };
+
+  // 配对码提交：受理后服务端推进状态机，UI 随下一次轮询快照自然收敛（无需本地翻态）。
+  const submitVerifyCode = () => {
+    if (!attempt || !VERIFY_CODE_PATTERN.test(verifyCode)) {
+      return;
+    }
+    verifyMutation.mutate(
+      { channel: channelKey, attemptId: attempt.attemptId, verifyCode },
+      { onSuccess: () => setVerifyCode('') },
+    );
   };
 
   const remainingMs = attempt && attempt.expiresAt > 0 ? Math.max(0, attempt.expiresAt - now) : 0;
@@ -167,11 +243,21 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <Box sx={{ px: '24px', py: '16px', borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Typography sx={{ fontSize: '16px', fontWeight: 600 }}>扫码接入机器人</Typography>
+          <Typography sx={{ fontSize: '16px', fontWeight: 600 }}>
+            {rebind ? '重新扫码授权' : '扫码接入机器人'}
+          </Typography>
           <IconButton size="small" onClick={handleClose} sx={{ 'ml': 'auto', '& svg': { fontSize: '18px' } }}>
             <CloseOutlinedIcon />
           </IconButton>
         </Box>
+
+        {rebind && (
+          <Box sx={{ px: '24px', pt: '16px' }}>
+            <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
+              扫码成功后替换该机器人的连接凭据，绑定关系与配置保持不变。
+            </Typography>
+          </Box>
+        )}
 
         <Box sx={{ flex: 1, overflow: 'auto', p: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
           {starting && (
@@ -187,7 +273,7 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
                 {`扫码会话申请失败：${beginError}`}
               </Typography>
               <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
-                可改用「手动接入」，或稍后重试。
+                可稍后重试，或重新打开扫码接入。
               </Typography>
             </>
           )}
@@ -195,13 +281,13 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
           {!starting && !beginError && attempt?.state === 'pending' && (
             <>
               <Typography sx={{ fontSize: '13px', color: 'text.secondary' }}>
-                等待企业微信 App 扫码
+                {`等待${channelKey === 'weixin' ? '微信' : '企业微信'} App 扫码`}
               </Typography>
               <Box sx={{ p: '12px', borderRadius: '8px', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
                 {qrError
-                  ? <Typography sx={{ width: '240px', height: '240px', display: 'flex', alignItems: 'center', fontSize: '12px', color: 'text.secondary' }}>二维码渲染失败，请重新生成</Typography>
+                  ? <Typography sx={{ width: '240px', height: '240px', display: 'flex', alignItems: 'center', fontSize: '12px', color: 'text.secondary' }}>二维码加载失败，请重新生成</Typography>
                   : (qrDataUrl
-                      ? <Box component="img" src={qrDataUrl} alt="企业微信扫码授权二维码" sx={{ width: '240px', height: '240px', display: 'block' }} />
+                      ? <Box component="img" src={qrDataUrl} alt="扫码授权二维码" sx={{ width: '240px', height: '240px', display: 'block' }} />
                       : <Box sx={{ width: '240px', height: '240px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CircularProgress size={22} /></Box>)}
               </Box>
               <Box sx={{ width: '100%', maxWidth: '320px' }}>
@@ -215,9 +301,44 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: '4px', alignSelf: 'flex-start', pl: '8px' }}>
-                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>1. 打开企业微信 App，扫描左侧二维码</Typography>
-                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>2. 在腾讯授权页面确认创建智能机器人</Typography>
-                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>3. 返回这里等待连接完成</Typography>
+                {copy.steps.map(step => (
+                  <Typography key={step} sx={{ fontSize: '12px', color: 'text.secondary' }}>{step}</Typography>
+                ))}
+              </Box>
+            </>
+          )}
+
+          {!starting && !beginError && attempt?.state === 'scanned' && (
+            <>
+              <CircularProgress size={28} sx={{ mt: '48px' }} />
+              <Typography sx={{ fontSize: '13px', color: 'text.secondary' }}>{copy.scannedHint}</Typography>
+            </>
+          )}
+
+          {!starting && !beginError && attempt?.state === 'needs_verification' && (
+            <>
+              <Typography sx={{ mt: '48px', fontSize: '13px' }}>{copy.verifyHint}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', maxWidth: '320px' }}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  autoFocus
+                  label="配对码"
+                  placeholder="4-8 位数字"
+                  value={verifyCode}
+                  onChange={e => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                  onKeyDown={e => e.key === 'Enter' && submitVerifyCode()}
+                  error={verifyCode !== '' && !VERIFY_CODE_PATTERN.test(verifyCode)}
+                  helperText={verifyMutation.error ? verifyMutation.error.message : ' '}
+                />
+                <Button
+                  variant="contained"
+                  loading={verifyMutation.isPending}
+                  disabled={!VERIFY_CODE_PATTERN.test(verifyCode)}
+                  onClick={submitVerifyCode}
+                >
+                  提交
+                </Button>
               </Box>
             </>
           )}
@@ -225,9 +346,7 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
           {!starting && !beginError && attempt?.state === 'connecting' && (
             <>
               <CircularProgress size={28} sx={{ mt: '48px' }} />
-              <Typography sx={{ fontSize: '13px', color: 'text.secondary' }}>
-                企业微信已授权，正在连接机器人…
-              </Typography>
+              <Typography sx={{ fontSize: '13px', color: 'text.secondary' }}>{copy.connectingHint}</Typography>
             </>
           )}
 
@@ -239,6 +358,13 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
               {attempt.errCode && (
                 <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
                   {`错误码：${attempt.errCode}`}
+                </Typography>
+              )}
+              {attempt.state === 'failed' && (attempt.errCode === 'already-bound' || attempt.errCode === 'account-mismatch') && (
+                <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
+                  {attempt.errCode === 'already-bound'
+                    ? '该微信账号已被其他机器人绑定；如需改绑，请先删除对应机器人再扫码。'
+                    : '扫码账号与该机器人原绑定不一致：换绑仅限同账号重授权，更换账号请删除原机器人后重新扫码。'}
                 </Typography>
               )}
             </>
@@ -256,7 +382,7 @@ function ImBotProvisionDrawer(props: { open: boolean; onClose: () => void; onReg
               重新生成二维码
             </Button>
           )}
-          <Button onClick={handleClose} color="inherit">取消</Button>
+          <Button onClick={handleClose} color="inherit">{IN_FLIGHT_STATES.has(attempt?.state ?? '') ? '取消' : '关闭'}</Button>
         </Box>
       </Box>
     </Drawer>

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -172,6 +173,35 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 			return
 		}
 	}
+	/*
+	 * 绑定卡编号快路径（无卡渠道的绑定选择降级）：纯数字 + 本流无卡能力 + 会话槽内未消费
+	 * 绑定族卡 → 合成卡片点击交互走统一消费链，命中即终帧收口（不入队不占并发槽）；未命中
+	 * 落回主路径。幂等前置与数字快路径同款——本路径变更状态（绑定落库）却不入队。
+	 */
+	if o.interactions != nil {
+		if n, ok := parseNumberedSelection(msg.Text); ok {
+			if _, isCard := rs.(CardReplyStream); !isCard {
+				if in, ok := o.synthNumberedInteraction(cfg, msg, n); ok {
+					msg.Interaction = in
+					seen, err := o.store.HasSeen(cfg.BotID, msg.ConversationKey, msg.MessageID)
+					if err != nil {
+						o.log.Error("bot 幂等查询失败（放行编号快路径）", zap.Error(err))
+					}
+					if seen {
+						_ = rs.Flush(msgAlreadySeenText, true)
+						return
+					}
+					if text, _, handled := o.interactions.TryHandleInteraction(cfg, msg); handled {
+						if err := o.store.MarkSeen(cfg.BotID, msg.ConversationKey, msg.MessageID); err != nil {
+							o.log.Error("bot markSeen 失败", zap.Error(err))
+						}
+						_ = rs.Flush(text, true)
+						return
+					}
+				}
+			}
+		}
+	}
 	if err := rs.Flush("正在思考…", false); err != nil {
 		o.log.Warn("bot 占位帧发送失败（继续回合）", zap.Error(err))
 	}
@@ -191,6 +221,18 @@ func accessDeniedText(reason string) string {
 		return "机器人访问策略配置异常，暂无法处理消息，请检查 bot 配置。"
 	}
 	return "您不在该机器人的使用白名单内，请联系机器人管理员。"
+}
+
+/*
+ * synthNumberedInteraction 把编号选择合成为绑定卡点击交互（DeliveryID/TaskID = 槽内最近卡
+ * 锚，编号越界交卡域消费链的越界防御收口）。ok=false = 无槽/槽已消费/非绑定族——落回主路径。
+ */
+func (o *Orchestrator) synthNumberedInteraction(cfg BotRuntimeConfig, msg InboundMessage, n int) (*Interaction, bool) {
+	lc, ok := o.store.LastMessageCard(cfg.BotID, msg.ConversationKey)
+	if !ok || lc.Status == lastMessageCardProcessed || bindingCardKind(lc.Spec.TaskID) == "" {
+		return nil, false
+	}
+	return &Interaction{DeliveryID: lc.Spec.TaskID, ActionIndex: n - 1, TaskID: lc.Spec.TaskID}, true
 }
 
 // bindingKind 绑定卡域别（sendBindingCard 的候选查询与文案分派因子）。
@@ -225,6 +267,7 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage,
 	var spec CardSpec
 	var has bool
 	var text string
+	_, cardCapable := rs.(CardReplyStream) // 无卡渠道：编号文本渲染，选择走编号快路径
 	switch kind {
 	case bindingWorkspace:
 		wss, err := bindingWorkspaces(o.store.DB, keyword)
@@ -237,6 +280,9 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage,
 		spec, has = workspaceCardSpec(wss, keyword)
 		if has {
 			text = workspaceCardText(keyword, wss)
+			if !cardCapable {
+				text = workspaceNumberedText(keyword, wss)
+			}
 		} else {
 			text = workspaceEmptyText(keyword)
 		}
@@ -251,6 +297,9 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage,
 		spec, has = issueCardSpec(issues, keyword)
 		if has {
 			text = issueCardText(keyword, issues)
+			if !cardCapable {
+				text = issueNumberedText(keyword, issues)
+			}
 		} else {
 			text = issueEmptyText(keyword)
 		}
@@ -308,6 +357,9 @@ func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, 
 	}
 	spec := taskunbindCardSpec(issue)
 	text := taskunbindCardText(issue)
+	if _, ok := rs.(CardReplyStream); !ok {
+		text = taskunbindNumberedText(issue)
+	}
 	if cs, ok := rs.(CardReplyStream); ok {
 		// 先登记后发卡（与 sendBindingCard 同款时序语义）。
 		if err := o.store.SaveLastMessageCard(cfg.BotID, msg.ConversationKey, "taskunbind", spec); err != nil {
@@ -449,6 +501,29 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	sink := o.overflowSink(cfg, msg)
 
 	/*
+	 * 产物交付目录（仅 ArtifactReplyStream 渠道启用）：回合内 claude 把待交付文件写进
+	 * <workspaceDir>/.bot-outbox/delivery/<nonce>/ 顶层，回合成功后按文件名序逐个投递，
+	 * 收尾整目录清理（defer 覆盖失败路径）；wecom 等未实现该接口的渠道零变化。
+	 */
+	var ars ArtifactReplyStream
+	var deliveryDir string
+	if a, ok := job.reply.(ArtifactReplyStream); ok {
+		ars = a
+		nonce := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), shortID(msg.MessageID))
+		dir := filepath.Join(cfg.WorkspaceDir, ".bot-outbox", "delivery", nonce)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			o.log.Warn("bot 交付目录创建失败（本轮跳过产物投递）", zap.Error(err))
+		} else {
+			deliveryDir = dir
+			defer os.RemoveAll(deliveryDir) // 投递完成/回合失败/Stop 取消统一清理
+		}
+	}
+	systemPrompt := ComposeSystemPrompt()
+	if deliveryDir != "" {
+		systemPrompt += deliveryPromptSuffix(deliveryDir)
+	}
+
+	/*
 	 * 全局并发护栏：拿槽位才 spawn（排队等待可被 Stop 取消）。会话队列已保证同会话串行，
 	 * 信号量只约束跨会话的总进程数。
 	 */
@@ -466,7 +541,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		ConversationKey: key,
 		SessionID:       prevSessionID,
 		Prompt:          prompt,
-		SystemPrompt:    ComposeSystemPrompt(),
+		SystemPrompt:    systemPrompt,
 		Display:         buildTurnDisplay(msg),
 		Port:            cfg.Port,
 	})
@@ -501,9 +576,48 @@ func (o *Orchestrator) runTurn(job turnJob) {
 			o.log.Error("bot 会话回写失败", zap.Error(err))
 		}
 	}
+	/*
+	 * 产物投递（仅交付目录就绪且回合成功）：终帧之后按文件名序逐个 SendArtifact——
+	 * 失败会话不投（可能是不完整产物），Stop 取消同样跳过。
+	 */
+	if deliveryDir != "" && outcome.Err == nil && o.ctx.Err() == nil {
+		o.deliverArtifacts(ars, deliveryDir)
+	}
 	// 取消（SIGTERM/Stop）导致的回合中断不是会话失效：claude 侧锚点仍可用，不做自愈清除。
 	if outcome.Err != nil && o.ctx.Err() == nil {
 		o.healAfterFailure(cfg.BotID, key, prevSessionID)
+	}
+}
+
+/*
+ * deliveryPromptSuffix 注入 SystemPrompt 的交付指引（绝对路径 + 约束）：
+ * 仅顶层文件参与投递，回合结束自动送达用户。
+ */
+func deliveryPromptSuffix(dir string) string {
+	return "\n\n## 产物交付\n本轮产生的待交付文件（生成物、导出结果等）直接写入目录：" + dir +
+		"\n仅写顶层文件（子目录不投递），回合结束时会自动投递给用户，无需自行发送。"
+}
+
+// deliverArtifacts 交付目录顶层常规文件按文件名序逐个投递；单个失败 SendNotice 交代后继续。
+func (o *Orchestrator) deliverArtifacts(ars ArtifactReplyStream, dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		o.log.Warn("bot 交付目录读取失败", zap.Error(err))
+		return
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.Type().IsRegular() {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	nonce := filepath.Base(dir)
+	for _, name := range names {
+		if err := ars.SendArtifact(nonce+"/"+name, name, filepath.Join(dir, name)); err != nil {
+			o.log.Warn("bot 产物投递失败", zap.String("file", name), zap.Error(err))
+			_ = ars.SendNotice("文件「" + name + "」投递失败：" + firstLine(err.Error()))
+		}
 	}
 }
 

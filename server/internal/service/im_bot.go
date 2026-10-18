@@ -14,6 +14,7 @@ import (
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/bot"
 	"ocean-harness/server/internal/bot/wecom"
+	"ocean-harness/server/internal/bot/weixin"
 	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
@@ -67,7 +68,11 @@ func (svc ImBot) GetInfo(req *types.ImBotGetInfoRequest) (*types.ImBotResponseDa
 }
 
 // Create 新增 bot：校验（工作空间存在 / botId 查重）→ 落库 → 启用则拉起连接。
+// 渠道边界：仅 wecom 可手工创建（凭据来自企微后台）；weixin 凭据唯一来源是扫码授权。
 func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData, error) {
+	if req.Channel != enums.CHANNEL_WECOM {
+		return nil, errors.New("微信机器人请通过「扫码授权」接入，不支持手工创建")
+	}
 	if err := svc.ensureWorkspaceExists(req.WorkspaceId); err != nil {
 		return nil, err
 	}
@@ -76,7 +81,7 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 	}
 	row := &model.ImBot{
 		Name:         req.Name,
-		Channel:      enums.CHANNEL_WECOM,
+		Channel:      req.Channel,
 		Credential:   credentialJSON(req.BotId, req.Secret),
 		WorkspaceID:  req.WorkspaceId,
 		AccessPolicy: accessPolicyJSON(req.AccessPolicy),
@@ -92,7 +97,11 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 	return &item, nil
 }
 
-// Update 更新 bot：secret 留空 = 沿用原值；启用 → ApplyBot（Stop→Start 重启生效），停用 → StopBot。
+/*
+ * Update 更新 bot：secret 留空 = 沿用原值；启用 → ApplyBot（Stop→Start 重启生效），停用 → StopBot。
+ * 渠道分支按行 channel（SSOT）：weixin 行仅更新非凭据字段（凭据唯一来源是扫码换绑，botId/secret
+ * 不参与校验与回写）。
+ */
 func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData, error) {
 	row, err := svc.mustGet(req.ID)
 	if err != nil {
@@ -101,18 +110,22 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	if err := svc.ensureWorkspaceExists(req.WorkspaceId); err != nil {
 		return nil, err
 	}
-	if err := svc.ensureBotIdAvailable(req.BotId, req.ID); err != nil {
-		return nil, err
-	}
-	secret := req.Secret
-	if secret == "" {
-		var cred types.ImBotCredential
-		_ = json.Unmarshal([]byte(row.Credential), &cred) // 旧凭据损坏则按空处理
-		secret = cred.Secret
+	credential := row.Credential
+	if row.Channel == enums.CHANNEL_WECOM {
+		if err := svc.ensureBotIdAvailable(req.BotId, req.ID); err != nil {
+			return nil, err
+		}
+		secret := req.Secret
+		if secret == "" {
+			var cred types.ImBotCredential
+			_ = json.Unmarshal([]byte(row.Credential), &cred) // 旧凭据损坏则按空处理
+			secret = cred.Secret
+		}
+		credential = credentialJSON(req.BotId, secret)
 	}
 
 	row.Name = req.Name
-	row.Credential = credentialJSON(req.BotId, secret)
+	row.Credential = credential
 	row.WorkspaceID = req.WorkspaceId
 	row.AccessPolicy = accessPolicyJSON(req.AccessPolicy)
 	row.Enabled = enabledYesNo(req.Enabled)
@@ -120,7 +133,8 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	q := query.Use(svc.Orm)
 	/*
 	 * 显式列 Updates 而非基线 Save：row 是 mustGet 的陈旧快照，Save 整行回写会把 supervisor
-	 * 并发写入的 last_error 覆盖回旧值；map 更新恰好绕开该列的竞态（有意偏离基线，勿"纠正"）。
+	 * 并发写入的 last_error/channel_state 覆盖回旧值；map 更新恰好绕开这两列的竞态（有意偏离
+	 * 基线，勿"纠正"）。
 	 */
 	if _, err := q.ImBot.WithContext(svc.Context).Where(q.ImBot.ID.Eq(row.ID)).
 		Updates(map[string]any{
@@ -129,6 +143,12 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 		}); err != nil {
 		return nil, err
 	}
+	// channel_state 列不回写（weixin 运行态游标，supervisor 侧自管）；重读行取最新投影。
+	fresh, err := svc.mustGet(req.ID)
+	if err != nil {
+		return nil, err
+	}
+	row = fresh
 	svc.applyRuntime(row)
 	item := types.ImBotResponseData{}.FromModel(row)
 	svc.mergeCurrentStatus(&item, row)
@@ -289,33 +309,94 @@ func chatTypeOfKey(key string) string {
 	return "single"
 }
 
-// ---------- 扫码授权接入（provision） ----------
+// ---------- 扫码授权接入（provision，渠道分发） ----------
 
-// ProvisionBegin 开新扫码会话（返回二维码内容 + 轮询节奏；已有会话自动取消）。
-func (svc ImBot) ProvisionBegin() (*types.ImBotProvisionView, error) {
-	view, err := wecom.StartProvisioning()
-	if err != nil {
-		return nil, err
+// ProvisionBegin 开新扫码会话（返回二维码内容 + 轮询节奏；同渠道已有会话自动取消）。
+func (svc ImBot) ProvisionBegin(req *types.ImBotProvisionBeginRequest) (*types.ImBotProvisionView, error) {
+	switch req.Channel {
+	case enums.CHANNEL_WEIXIN:
+		view, err := weixin.StartProvisioning(req.BotID, svc.weixinLocalTokens())
+		if err != nil {
+			return nil, err
+		}
+		return weixinProvisionView(view), nil
+	default:
+		view, err := wecom.StartProvisioning()
+		if err != nil {
+			return nil, err
+		}
+		return provisionView(view), nil
 	}
-	return provisionView(view), nil
 }
 
-// ProvisionPoll 惰性单飞轮询一次扫码结果；connected 时激活已完成（新 bot 已建并连接）。
+// ProvisionPoll 轮询一次扫码结果；connected 时激活已完成（bot 已建/换绑并连接）。
 func (svc ImBot) ProvisionPoll(req *types.ImBotProvisionPollRequest) (*types.ImBotProvisionView, error) {
-	view, err := wecom.RegistrationStatus(req.AttemptID)
-	if err != nil {
-		return nil, err
+	switch req.Channel {
+	case enums.CHANNEL_WEIXIN:
+		view, err := weixin.RegistrationStatus(req.AttemptID)
+		if err != nil {
+			return nil, err
+		}
+		return weixinProvisionView(view), nil
+	default:
+		view, err := wecom.RegistrationStatus(req.AttemptID)
+		if err != nil {
+			return nil, err
+		}
+		return provisionView(view), nil
 	}
-	return provisionView(view), nil
 }
 
 // ProvisionCancel 取消扫码会话。
 func (svc ImBot) ProvisionCancel(req *types.ImBotProvisionCancelRequest) error {
-	return wecom.CancelProvisioning(req.AttemptID)
+	switch req.Channel {
+	case enums.CHANNEL_WEIXIN:
+		return weixin.CancelProvisioning(req.AttemptID)
+	default:
+		return wecom.CancelProvisioning(req.AttemptID)
+	}
+}
+
+// ProvisionVerifyCode 提交微信扫码配对码（仅 needs_verification 态受理；wecom 无此环节）。
+func (svc ImBot) ProvisionVerifyCode(req *types.ImBotProvisionVerifyCodeRequest) error {
+	if req.Channel != enums.CHANNEL_WEIXIN {
+		return errors.New("该渠道无需配对码")
+	}
+	return weixin.SubmitVerifyCode(req.AttemptID, req.VerifyCode)
+}
+
+// weixinLocalTokens 既有 weixin bot 行的 token 清单（BeginLogin 服务端绑定感知入参）。
+func (svc ImBot) weixinLocalTokens() []string {
+	q := query.Use(svc.Orm)
+	rows, err := q.ImBot.WithContext(svc.Context).Where(q.ImBot.Channel.Eq(enums.CHANNEL_WEIXIN)).Find()
+	if err != nil {
+		return nil
+	}
+	tokens := make([]string, 0, len(rows))
+	for _, row := range rows {
+		var cred weixin.Credential
+		if json.Unmarshal([]byte(row.Credential), &cred) == nil && cred.Token != "" {
+			tokens = append(tokens, cred.Token)
+		}
+	}
+	return tokens
 }
 
 // provisionView wecom.AttemptView → DTO（同构字段直拷， secrets 已在源头剥除）。
 func provisionView(v wecom.AttemptView) *types.ImBotProvisionView {
+	return &types.ImBotProvisionView{
+		AttemptID:      v.AttemptID,
+		State:          v.State,
+		QRContent:      v.QRContent,
+		ExpiresAt:      v.ExpiresAt,
+		PollIntervalMs: v.PollIntervalMs,
+		ErrCode:        v.ErrCode,
+		BotID:          v.BotID,
+	}
+}
+
+// weixinProvisionView weixin.AttemptView → DTO（同构字段直拷，凭据已在源头剥除）。
+func weixinProvisionView(v weixin.AttemptView) *types.ImBotProvisionView {
 	return &types.ImBotProvisionView{
 		AttemptID:      v.AttemptID,
 		State:          v.State,
@@ -357,6 +438,92 @@ func ProvisionActivateBot(remoteBotID, secret string) (int, error) {
 		Enabled:      enums.YES_NO_YES,
 	}
 	if err := q.ImBot.WithContext(context.Background()).Create(row); err != nil {
+		return 0, err
+	}
+	if err := global.BotSupervisor.ApplyBot(row); err != nil {
+		return 0, err
+	}
+	return row.ID, nil
+}
+
+/*
+ * ProvisionActivateWeixin 微信扫码授权成功的激活回调（main 装配注入 weixin.SetProvisionActivator，
+ * 进程级函数——不依赖请求上下文，同 ProvisionActivateBot 口径）。rebindBotID>0 = 换绑（仅更新
+ * 凭据，锚点/白名单全保留）；否则 accountId 查重 → 新建 bot 行（白名单 [ownerUserId]，工作空间
+ * 待补选）→ 拉起连接。
+ */
+func ProvisionActivateWeixin(cred weixin.Credential, rebindBotID int) (int, error) {
+	if global.BotSupervisor == nil {
+		return 0, errors.New("bot 运行时未就绪")
+	}
+	if cred.Token == "" || cred.BaseURL == "" || cred.AccountID == "" {
+		return 0, errors.New("微信授权凭据不完整")
+	}
+	q := query.Use(global.SqliteDB)
+	rows, err := q.ImBot.WithContext(context.Background()).Find()
+	if err != nil {
+		return 0, err
+	}
+	if rebindBotID > 0 {
+		return rebindWeixinBot(q, rows, cred, rebindBotID)
+	}
+	for _, row := range rows {
+		var existing weixin.Credential
+		if row.Channel == enums.CHANNEL_WEIXIN &&
+			json.Unmarshal([]byte(row.Credential), &existing) == nil && existing.AccountID == cred.AccountID {
+			return 0, fmt.Errorf("该微信账号已接入（%s），无需重复扫码", row.Name)
+		}
+	}
+	credJSON, _ := json.Marshal(cred)
+	policy, _ := json.Marshal(types.ImBotAccessPolicy{Mode: bot.AccessModeAllowlist, AllowUsers: []string{cred.OwnerUserID}})
+	row := &model.ImBot{
+		Name:         "微信机器人",
+		Channel:      enums.CHANNEL_WEIXIN,
+		Credential:   string(credJSON),
+		WorkspaceID:  0,
+		AccessPolicy: string(policy),
+		Enabled:      enums.YES_NO_YES,
+	}
+	if err := q.ImBot.WithContext(context.Background()).Create(row); err != nil {
+		return 0, err
+	}
+	if err := global.BotSupervisor.ApplyBot(row); err != nil {
+		return 0, err
+	}
+	return row.ID, nil
+}
+
+/*
+ * rebindWeixinBot 换绑路径：目标行须为 weixin 渠道且与扫码同账号（防白名单机主错位死锁），
+ * 仅更新凭据列并清 channel_state（游标与旧 token 绑定，换凭据必须归零防旧游标上线），
+ * 其余配置全保留。
+ */
+func rebindWeixinBot(q *query.Query, rows []*model.ImBot, cred weixin.Credential, rebindBotID int) (int, error) {
+	found := false
+	for _, row := range rows {
+		if row.ID == rebindBotID {
+			if row.Channel != enums.CHANNEL_WEIXIN {
+				return 0, errors.New("目标机器人不是微信渠道，无法换绑")
+			}
+			var existing weixin.Credential
+			if json.Unmarshal([]byte(row.Credential), &existing) == nil &&
+				existing.AccountID != "" && existing.AccountID != cred.AccountID {
+				return 0, weixin.ErrAccountMismatch
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		return 0, errors.New("目标机器人不存在，无法换绑")
+	}
+	credJSON, _ := json.Marshal(cred)
+	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(rebindBotID)).
+		UpdateSimple(q.ImBot.Credential.Value(string(credJSON)), q.ImBot.ChannelState.Value("{}")); err != nil {
+		return 0, err
+	}
+	row, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(rebindBotID)).First()
+	if err != nil {
 		return 0, err
 	}
 	if err := global.BotSupervisor.ApplyBot(row); err != nil {

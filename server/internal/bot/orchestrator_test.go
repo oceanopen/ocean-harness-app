@@ -232,8 +232,8 @@ func TestSendUnbindCard(t *testing.T) {
 		if err != nil {
 			t.Fatalf("读回任务行: %v", err)
 		}
-		if len(frames) != 1 || !frames[0].final || frames[0].content != taskunbindCardText(issue) {
-			t.Fatalf("无卡能力应回落纯文本终帧: %+v", frames)
+		if len(frames) != 1 || !frames[0].final || frames[0].content != taskunbindNumberedText(issue) {
+			t.Fatalf("无卡能力应回落编号文本终帧: %+v", frames)
 		}
 	})
 }
@@ -314,8 +314,8 @@ func TestSendBindingCardIssueNoCardFallback(t *testing.T) {
 	o.sendBindingCard(issueCmdCfg(), InboundMessage{ConversationKey: "single:u1"}, bindingIssue, "登录页", "", rs)
 	frames := rs.snapshot()
 	issues, _ := bindingIssueCandidates(store.DB, 1, "登录页")
-	if len(frames) != 1 || !frames[0].final || frames[0].content != issueCardText("登录页", issues) {
-		t.Fatalf("无卡能力应回落纯文本终帧: %+v", frames)
+	if len(frames) != 1 || !frames[0].final || frames[0].content != issueNumberedText("登录页", issues) {
+		t.Fatalf("无卡能力应回落编号文本终帧: %+v", frames)
 	}
 }
 
@@ -507,8 +507,8 @@ func TestRunTurnProbeCard(t *testing.T) {
 		})
 		frames := rs.snapshot()
 		issues, _ := bindingIssueCandidates(store.DB, 1, "")
-		if len(frames) != 2 || frames[1].content != issueCardText("", issues) || !frames[1].final {
-			t.Fatalf("无卡能力应回落纯文本终帧: %+v", frames)
+		if len(frames) != 2 || frames[1].content != issueNumberedText("", issues) || !frames[1].final {
+			t.Fatalf("无卡能力应回落编号文本终帧: %+v", frames)
 		}
 		if driver.callCount() != 0 {
 			t.Fatalf("回落纯文本同样不出回合: calls=%d", driver.callCount())

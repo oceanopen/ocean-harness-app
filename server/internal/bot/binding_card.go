@@ -266,6 +266,50 @@ func bindingMoreHint(n int, token string) string {
 	return "\n（列表已截前 " + strconv.Itoa(bindingOptionLimit) + " 项，更多请用 " + token + " <关键词> 缩小范围）"
 }
 
+/*
+ * numberedOptionList 编号列表渲染（1 基）：无卡渠道（未实现 CardReplyStream）的绑定选择
+ * 降级形态——编号回复由 HandleInbound 的编号快路径合成卡点击消费，两处序号语义同源（选项序）。
+ */
+func numberedOptionList(lead string, texts []string) string {
+	var b strings.Builder
+	b.WriteString(lead)
+	for i, t := range texts {
+		b.WriteString("\n" + strconv.Itoa(i+1) + ". " + t)
+	}
+	return b.String()
+}
+
+// workspaceNumberedText workspace 绑定的编号文本渲染（无卡渠道）。
+func workspaceNumberedText(keyword string, workspaces []*model.Workspace) string {
+	lead := "请回复编号选择要关联的工作空间："
+	if keyword != "" {
+		lead = "匹配到 " + strconv.Itoa(len(workspaces)) + " 个工作空间，请回复编号选择："
+	}
+	texts := make([]string, 0, len(workspaces))
+	for _, ws := range workspaces {
+		texts = append(texts, ws.Name)
+	}
+	return numberedOptionList(lead, texts) + bindingMoreHint(len(workspaces), workspaceCommandToken)
+}
+
+// issueNumberedText 任务绑定的编号文本渲染（无卡渠道）。
+func issueNumberedText(keyword string, issues []*model.ProjectIssue) string {
+	lead := "请回复编号选择要绑定的任务："
+	if keyword != "" {
+		lead = "匹配到 " + strconv.Itoa(len(issues)) + " 个任务，请回复编号选择："
+	}
+	texts := make([]string, 0, len(issues))
+	for _, issue := range issues {
+		texts = append(texts, issue.Name)
+	}
+	return numberedOptionList(lead, texts) + bindingMoreHint(len(issues), issueCommandToken)
+}
+
+// taskunbindNumberedText 解绑确认的编号文本渲染（无卡渠道，单选项恒 1）。
+func taskunbindNumberedText(issue *model.ProjectIssue) string {
+	return numberedOptionList("当前会话已绑定任务，回复 1 确认解绑：", []string{issue.Name})
+}
+
 // workspaceEmptyText / issueEmptyText 触发侧零候选文案（库空与关键词零命中分开教学）。
 func workspaceEmptyText(keyword string) string {
 	if keyword == "" {
@@ -299,6 +343,22 @@ func issueIDKeys(issues []*model.ProjectIssue) []string {
 		ids = append(ids, issue.ID)
 	}
 	return ids
+}
+
+/*
+ * parseNumberedSelection 编号选择解析：1-2 位纯数字 → 1 基编号。非数字/0/超位一律不命中
+ * （落回主路径，数字作普通消息出回合）。
+ */
+func parseNumberedSelection(text string) (int, bool) {
+	t := strings.TrimSpace(text)
+	if t == "" || len(t) > 2 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(t)
+	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
 }
 
 /*

@@ -21,17 +21,13 @@ import { useWorkspaces } from '@src/state/tracker';
 import { useState } from 'react';
 import { IM_BOT_CHANNELS } from './imBotChannels';
 
-// IM bot 编辑抽屉（ResizableDrawer 右滑、左缘可拖宽）。secret 明文回显（数据全本地）：
-// 默认 password 掩码、右侧小眼睛切换明文；保存留空 = 沿用原值、非空 = 覆盖，创建必填。
-// 工作空间必选下拉（会话目录取其 dir）；工具白名单恒为后端默认集（bot 级执行权限配置已
-// 废弃，权限表达走工作空间启动设置）。渠道为表单首位的禁用下拉（新建 = 列表页当前渠道，
-// 编辑 = bot.channel）。文案约定：中文直出（仅菜单标题走 i18n）。
-//
-// 由父组件按需挂载（{drawer && <ImBotDrawer/>}）：每次打开都是全新 useState 初值（首帧即终值，
-// 草稿含 secret 不残留），关闭即卸载。
+// IM bot 编辑抽屉（ResizableDrawer 右滑可拖宽）：secret 掩码回显、保存留空 = 沿用原值；
+// 工作空间必选（会话目录取其 dir），渠道为首位禁用下拉。weixin 行无手工凭据（隐藏
+// botId/secret，换凭据走「重新扫码授权」换绑链路）。由父组件按需挂载：每次打开全新草稿，关闭即卸载。
 interface ImBotDrawerProps {
   bot: ImBotModel | null; // null = 新建（手动接入），非 null = 编辑该 bot
-  channelKey: string; // 新建时列表页当前选中渠道（编辑以 bot.channel 为准）
+  channelKey: string; // 新建时列表页当前渠道（编辑以 bot.channel 为准）
+  onRebind: (bot: ImBotModel) => void; // weixin 重新扫码授权（父组件收本抽屉开扫码换绑）
   onClose: () => void;
 }
 
@@ -67,10 +63,11 @@ function splitList(text: string): string[] {
 }
 
 function ImBotDrawer(props: ImBotDrawerProps) {
-  const { bot, channelKey, onClose } = props;
+  const { bot, channelKey, onRebind, onClose } = props;
   const editing = bot != null;
   // 渠道展示值：编辑取 bot.channel，新建取列表页传入的当前渠道；禁用不可改。
   const displayChannelKey = bot ? bot.channel : channelKey;
+  const isWeixin = displayChannelKey === 'weixin';
   const [draft, setDraft] = useState<ImBotDraft>(() => draftFromBot(bot));
   // secret 显隐：默认掩码（password），点小眼睛切换明文（数据全本地，明文展示无风险）。
   const [showSecret, setShowSecret] = useState(false);
@@ -82,11 +79,12 @@ function ImBotDrawer(props: ImBotDrawerProps) {
   // saving 中的禁用是既有交互，保持不动。
   const saving = createMutation.isPending || updateMutation.isPending;
 
-  // 必填校验：名称/botId 恒必填；secret 仅创建必填（编辑清空 = 沿用原值）；工作空间必选。
+  // 必填校验：名称/工作空间恒必填；wecom 另需 botId 与 secret（创建必填，编辑清空 = 沿用
+  // 原值）；weixin 无手工凭据字段，校验面更窄。
   const invalid
     = draft.name.trim() === ''
-      || draft.botId.trim() === ''
-      || (!editing && draft.secret.trim() === '')
+      || (!isWeixin && draft.botId.trim() === '')
+      || (!editing && !isWeixin && draft.secret.trim() === '')
       || draft.workspaceId <= 0;
 
   const setField = <K extends keyof ImBotDraft>(key: K, value: ImBotDraft[K]) => {
@@ -113,7 +111,7 @@ function ImBotDrawer(props: ImBotDrawerProps) {
       );
     } else {
       createMutation.mutate(
-        { ...shared },
+        { channel: displayChannelKey, ...shared },
         { onSuccess: onClose },
       );
     }
@@ -171,44 +169,66 @@ function ImBotDrawer(props: ImBotDrawerProps) {
             onChange={e => setField('name', e.target.value)}
           />
 
-          <TextField
-            size="small"
-            fullWidth
-            required
-            label="Bot ID"
-            value={draft.botId}
-            onChange={e => setField('botId', e.target.value)}
-            helperText={helpText('企业微信后台「智能机器人」详情页的 botId')}
-          />
+          {/* weixin 无手工凭据：botId/secret 仅 wecom 渲染；weixin 编辑态展示扫码登记的账号 id + 换绑入口 */}
+          {!isWeixin && (
+            <>
+              <TextField
+                size="small"
+                fullWidth
+                required
+                label="Bot ID"
+                value={draft.botId}
+                onChange={e => setField('botId', e.target.value)}
+                helperText={helpText('企业微信后台「智能机器人」详情页的 botId')}
+              />
 
-          <TextField
-            size="small"
-            fullWidth
-            type={showSecret ? 'text' : 'password'}
-            autoComplete="off"
-            required={!editing}
-            label="Secret"
-            placeholder={editing ? '清空 = 沿用原值' : '企业微信后台颁发的 Secret'}
-            value={draft.secret}
-            onChange={e => setField('secret', e.target.value)}
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      size="small"
-                      aria-label={showSecret ? '隐藏 Secret' : '显示 Secret'}
-                      onClick={() => setShowSecret(v => !v)}
-                      sx={{ '& svg': { fontSize: '18px' } }}
-                    >
-                      {showSecret ? <VisibilityOffOutlinedIcon /> : <VisibilityOutlinedIcon />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              },
-            }}
-            helperText={helpText('默认掩码展示，点右侧图标切换明文；同一凭据全局仅允许一条活跃连接')}
-          />
+              <TextField
+                size="small"
+                fullWidth
+                type={showSecret ? 'text' : 'password'}
+                autoComplete="off"
+                required={!editing}
+                label="Secret"
+                placeholder={editing ? '清空 = 沿用原值' : '企业微信后台颁发的 Secret'}
+                value={draft.secret}
+                onChange={e => setField('secret', e.target.value)}
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          aria-label={showSecret ? '隐藏 Secret' : '显示 Secret'}
+                          onClick={() => setShowSecret(v => !v)}
+                          sx={{ '& svg': { fontSize: '18px' } }}
+                        >
+                          {showSecret ? <VisibilityOffOutlinedIcon /> : <VisibilityOutlinedIcon />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+                helperText={helpText('默认掩码展示，点右侧图标切换明文；同一凭据全局仅允许一条活跃连接')}
+              />
+            </>
+          )}
+
+          {isWeixin && bot && (
+            <>
+              <TextField
+                size="small"
+                fullWidth
+                disabled
+                label="微信账号"
+                value={bot.accountId}
+                helperText={helpText('扫码授权时自动登记的 iLink 账号 id（不可手改）')}
+              />
+              <Alert severity="info" sx={{ fontSize: '12px' }}>
+                微信连接凭据由扫码授权管理：token 失效、被踢下线或更换微信账号时，请重新扫码授权。
+              </Alert>
+              <Button variant="outlined" onClick={() => onRebind(bot)}>重新扫码授权</Button>
+            </>
+          )}
 
           <TextField
             size="small"
@@ -262,7 +282,11 @@ function ImBotDrawer(props: ImBotDrawerProps) {
               placeholder="逗号分隔的 userid"
               value={draft.allowUsersText}
               onChange={e => setField('allowUsersText', e.target.value)}
-              helperText={helpText('白名单模式下仅名单内用户可使用（单聊与群聊 @ 均按发送者判定）')}
+              helperText={helpText(
+                isWeixin
+                  ? '仅名单内用户可使用；扫码创建的机器人默认白名单仅机主本人（按微信号判定），可按需调整'
+                  : '白名单模式下仅名单内用户可使用（单聊与群聊 @ 均按发送者判定）',
+              )}
             />
           )}
 

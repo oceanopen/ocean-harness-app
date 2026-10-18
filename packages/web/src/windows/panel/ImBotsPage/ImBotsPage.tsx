@@ -30,9 +30,9 @@ import ImBotDrawer from './ImBotDrawer';
 import ImBotProvisionDrawer from './ImBotProvisionDrawer';
 import { imBotStateChip } from './imBotStateChip';
 
-// IM 机器人顶层菜单页（/imBots）：左栏渠道小卡片列表 + 右栏当前渠道机器人满行卡片列表，
-// 头部「扫码接入 / 手动接入」双入口。编辑/新增均右侧 Drawer。手动接入路径当前会话列表
-// 无 bot 的提示：凭据从企微后台复制。文案约定：仅菜单标题走 i18n。
+// IM 机器人顶层菜单页（/imBots）：左栏渠道卡片 + 右栏机器人卡片列表，接入入口与引导文案由
+// imBotChannels 渠道元数据驱动（weixin 仅扫码授权，无手工凭据路径）；weixin 换绑 = 编辑抽屉
+// 「重新扫码授权」切扫码抽屉。文案约定：中文直出（仅菜单标题走 i18n）。
 
 /** 健康徽标形态（T3.5 doctor 四态派生）；tooltip 为引导文案（unhealthy 时直显探测原因）。 */
 interface HealthChip {
@@ -185,7 +185,8 @@ function ImBotsPage() {
   const checkDoctor = useDoctorCheck();
   const [channelKey, setChannelKey] = useState(IM_BOT_CHANNELS[0].key);
   const [drawer, setDrawer] = useState<{ bot: ImBotModel | null; channelKey: string } | null>(null);
-  const [provisionOpen, setProvisionOpen] = useState(false);
+  // 扫码抽屉会话：rebindBotId = 0 扫码新建，> 0 为既有 weixin bot 换绑凭据（编辑抽屉跳转而来）。
+  const [provision, setProvision] = useState<{ rebindBotId: number } | null>(null);
   const [provisionKey, setProvisionKey] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<ImBotModel | null>(null);
 
@@ -260,23 +261,25 @@ function ImBotsPage() {
             <Button
               variant="outlined"
               startIcon={<QrCode2OutlinedIcon sx={{ '& svg': { fontSize: '18px' } }} />}
-              onClick={() => setProvisionOpen(true)}
+              onClick={() => setProvision({ rebindBotId: 0 })}
             >
-              扫码接入
+              {channel.provisionLabel}
             </Button>
-            <Button
-              variant="contained"
-              startIcon={<AddOutlinedIcon sx={{ '& svg': { fontSize: '18px' } }} />}
-              onClick={() => setDrawer({ bot: null, channelKey })}
-            >
-              手动接入
-            </Button>
+            {channel.manualProvision && (
+              <Button
+                variant="contained"
+                startIcon={<AddOutlinedIcon sx={{ '& svg': { fontSize: '18px' } }} />}
+                onClick={() => setDrawer({ bot: null, channelKey })}
+              >
+                手动接入
+              </Button>
+            )}
           </Box>
         </Box>
 
         <Box sx={{ px: '24px', pb: '24px', flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
-            接入企业微信智能机器人：消息驱动本机 Claude Code 会话，流式回复，支持引用与附件。
+            {channel.intro}
           </Typography>
 
           {isLoading && <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>…</Typography>}
@@ -287,7 +290,7 @@ function ImBotsPage() {
           )}
           {!isLoading && !error && channelBots.length === 0 && (
             <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
-              还没有机器人：推荐「扫码接入」（企业微信 App 授权自动创建），或「手动接入」填写后台凭据。
+              {channel.emptyHint}
             </Typography>
           )}
           {channelBots.map(bot => (
@@ -307,6 +310,11 @@ function ImBotsPage() {
         <ImBotDrawer
           bot={drawer.bot}
           channelKey={drawer.channelKey}
+          onRebind={(bot) => {
+            // weixin 换凭据：收编辑抽屉，切扫码抽屉换绑语境（connected 后列表缓存自动刷新）。
+            setDrawer(null);
+            setProvision({ rebindBotId: bot.id });
+          }}
           onClose={() => setDrawer(null)}
         />
       )}
@@ -314,8 +322,10 @@ function ImBotsPage() {
       {/* 扫码接入抽屉：key 重挂载即「重新生成二维码」（卸载清定时器，新 begin 自动取消旧会话） */}
       <ImBotProvisionDrawer
         key={provisionKey}
-        open={provisionOpen}
-        onClose={() => setProvisionOpen(false)}
+        open={provision != null}
+        channelKey={channelKey}
+        rebindBotId={provision?.rebindBotId ?? 0}
+        onClose={() => setProvision(null)}
         onRegenerate={() => setProvisionKey(k => k + 1)}
       />
 

@@ -38,6 +38,7 @@ func newImBot(db *gorm.DB, opts ...gen.DOOption) imBot {
 	_imBot.LastError = field.NewString(tableName, "last_error")
 	_imBot.CreatedAt = field.NewTime(tableName, "created_at")
 	_imBot.UpdatedAt = field.NewTime(tableName, "updated_at")
+	_imBot.ChannelState = field.NewString(tableName, "channel_state")
 
 	_imBot.fillFieldMap()
 
@@ -58,6 +59,7 @@ type imBot struct {
 	LastError    field.String
 	CreatedAt    field.Time
 	UpdatedAt    field.Time
+	ChannelState field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -84,6 +86,7 @@ func (i *imBot) updateTableName(table string) *imBot {
 	i.LastError = field.NewString(table, "last_error")
 	i.CreatedAt = field.NewTime(table, "created_at")
 	i.UpdatedAt = field.NewTime(table, "updated_at")
+	i.ChannelState = field.NewString(table, "channel_state")
 
 	i.fillFieldMap()
 
@@ -108,7 +111,7 @@ func (i *imBot) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (i *imBot) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 10)
+	i.fieldMap = make(map[string]field.Expr, 11)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["name"] = i.Name
 	i.fieldMap["channel"] = i.Channel
@@ -119,6 +122,7 @@ func (i *imBot) fillFieldMap() {
 	i.fieldMap["last_error"] = i.LastError
 	i.fieldMap["created_at"] = i.CreatedAt
 	i.fieldMap["updated_at"] = i.UpdatedAt
+	i.fieldMap["channel_state"] = i.ChannelState
 }
 
 func (i imBot) clone(db *gorm.DB) imBot {

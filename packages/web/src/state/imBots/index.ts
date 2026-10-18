@@ -12,6 +12,7 @@ export {
   useProvisionBegin,
   useProvisionCancel,
   useProvisionPoll,
+  useProvisionVerifyCode,
   useRestartImBot,
   useUpdateImBot,
 } from './queries';

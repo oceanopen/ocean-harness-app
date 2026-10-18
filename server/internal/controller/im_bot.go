@@ -147,7 +147,7 @@ func (api ImBot) BindIssue(ctx *gin.Context) {
 	api.JsonOK(nil)
 }
 
-// ProvisionBegin POST /api/imBot/provisionBegin：开新扫码授权会话（返回二维码内容 + 轮询节奏）。
+// ProvisionBegin POST /api/imBot/provisionBegin：开新扫码授权会话（渠道分发；返回二维码内容 + 轮询节奏）。
 func (api ImBot) ProvisionBegin(ctx *gin.Context) {
 	req := &types.ImBotProvisionBeginRequest{}
 	svc := service.ImBot{}
@@ -155,7 +155,7 @@ func (api ImBot) ProvisionBegin(ctx *gin.Context) {
 		api.JsonFail(err)
 		return
 	}
-	data, err := svc.ProvisionBegin()
+	data, err := svc.ProvisionBegin(req)
 	if err != nil {
 		api.JsonFail(err)
 		return
@@ -163,7 +163,7 @@ func (api ImBot) ProvisionBegin(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// ProvisionPoll POST /api/imBot/provisionPoll：轮询扫码结果（惰性单飞；connected 即激活完成）。
+// ProvisionPoll POST /api/imBot/provisionPoll：轮询扫码结果（后台自驱/惰性单飞；connected 即激活完成）。
 func (api ImBot) ProvisionPoll(ctx *gin.Context) {
 	req := &types.ImBotProvisionPollRequest{}
 	svc := service.ImBot{}
@@ -177,6 +177,21 @@ func (api ImBot) ProvisionPoll(ctx *gin.Context) {
 		return
 	}
 	api.JsonOK(data)
+}
+
+// ProvisionVerifyCode POST /api/imBot/provisionVerifyCode：提交微信扫码配对码（needs_verification 态）。
+func (api ImBot) ProvisionVerifyCode(ctx *gin.Context) {
+	req := &types.ImBotProvisionVerifyCodeRequest{}
+	svc := service.ImBot{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	if err := svc.ProvisionVerifyCode(req); err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(nil)
 }
 
 // ProvisionCancel POST /api/imBot/provisionCancel：取消扫码会话。

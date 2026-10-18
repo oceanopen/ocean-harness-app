@@ -263,12 +263,25 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 		}
 	}
 	return BotRuntimeConfig{
-		BotID:        b.ID,
-		Channel:      b.Channel,
-		Credential:   b.Credential,
-		WorkspaceID:  b.WorkspaceID,
-		WorkspaceDir: wsDir,
-		AccessPolicy: policy,
-		Port:         s.port,
+		BotID:            b.ID,
+		Channel:          b.Channel,
+		Credential:       b.Credential,
+		WorkspaceID:      b.WorkspaceID,
+		WorkspaceDir:     wsDir,
+		AccessPolicy:     policy,
+		Port:             s.port,
+		ChannelState:     b.ChannelState,
+		SaveChannelState: s.setChannelState,
 	}, nil
+}
+
+// setChannelState 回写 channel_state 列（渠道适配器自管运行态，如微信长轮询游标；尽力而为，失败仅日志——重启重放由核心幂等兜住）。
+func (s *Supervisor) setChannelState(botID int, raw string) error {
+	q := query.Use(s.db)
+	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(botID)).
+		UpdateSimple(q.ImBot.ChannelState.Value(raw)); err != nil {
+		s.log.Warn("bot channel_state 回写失败", zap.Int("botID", botID), zap.Error(err))
+		return err
+	}
+	return nil
 }
