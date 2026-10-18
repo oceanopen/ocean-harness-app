@@ -3,20 +3,20 @@
   "source": {
     "url": "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json",
     "registryVersion": "1.0.0",
-    "fetchedAt": "2026-10-01T05:19:43.095Z"
+    "fetchedAt": "2026-10-18T23:20:54.943Z"
   },
   "agents": [
     {
       "id": "claude-acp",
       "code": "claude-acp",
       "label": "Claude Code",
-      "version": "0.84.0",
+      "version": "0.93.0",
       "description": "ACP wrapper for Anthropic's Claude",
       "strategy": "npx-adapter",
       "command": "npx",
       "args": [
         "-y",
-        "@agentclientprotocol/claude-agent-acp@0.84.0"
+        "@agentclientprotocol/claude-agent-acp@0.93.0"
       ],
       "env": {},
       "enabled": true,
