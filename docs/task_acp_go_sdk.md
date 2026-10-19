@@ -11,7 +11,7 @@
 | P1 正式接入 | T3 golden SSE 契约测试 | ✅ |
 | P1 正式接入 | T4 internal/acp 换底 | ✅ |
 | P1 正式接入 | T5 下游泄漏面对位 | ✅ |
-| P1 正式接入 | T6 fakeagent 重写 | 🔲 |
+| P1 正式接入 | T6 fakeagent 重写 | ✅ |
 | P1 正式接入 | T7 测试迁移收绿 | 🔲 |
 | P1 正式接入 | T8 依赖收口与真握手 | 🔲 |
 
@@ -110,11 +110,12 @@ server 的 ACP 客户端当前基于 BrokkAi/acp-go v0.11.0，其生成模型丢
 
 ### 任务 T6：fakeagent 重写
 
-- 状态：🔲
+- 状态：✅
 - 功能：测试桩从 BrokkAi 接口面迁到 ironpark Agent 面
 - 技术方案：按 ironpark acp1.Agent 接口重写 fakeagent；ironpark agent 侧全 typed，raw JSON 直发通道可删
 - 依赖：T4
 - 验收：依赖 fakeagent 的测试全绿
+- 实施定稿：**全绿落地，消费者测试零改动**。装配 `acp1.NewAgentSideConnection(闭包存 conn, acp.NewStdioTransport(os.Stdin, os.Stdout))` + `conn.Start`；必需 4 方法全指针签名（CancelSession 为通知、与 Prompt handler 并发）；可选能力承载于可选接口 `SessionLoader`/`SessionModeSetter`。D3 落地：raw JSON 直发通道整体删除，elicitation 改 `NewCreateElicitationRequest(FormSession{...})` typed 直发（扁平 wire 形态由 typed 变体序列化自然保真），应答 union 走 `As[T]()` 判别（accept 的 `Content["choice"].As[string]` 回显）。能力门控：Initialize **手工填** AgentCapabilities（仅 load 置 LoadSession），保留「能力未声明 → 客户端 requireCapability 拒绝」路径——单类型恒实现 SessionLoader（库按接口实现路由、与能力广告解耦），非 load 脚本防御路径返回 `acp.MethodNotFound("session/load")`；T4 遗留的「TestLoadSessionCapabilityRejected 断言待真机验证」由此定论：拒绝来源是客户端能力预检，agent 侧报错仅纵深防御。软取消：CancelSession 置 canceled 标记 + permission 返回后查标记收敛 cancelled，与 client 侧「cancel 通知先行直发」构成确定性收敛（库保证响应等待其前读入通知处理完毕，非竞速）。9 个脚本名/回显文本/时序语义逐字保留；`ptr[T]` 泛型助手合并旧 strPtr/boolPtr。typed 换底固有形态：late-permission 请求 wire 携带零值 toolCall（值类型无法省略字段），客户端无活动回合路径不读该字段，无消费影响。验证：gofmt/vet/build 全净，acp/acpdoctor/acpsession/bot 四包 `go test` 全绿，`-race -count=2`（acp/acpsession）复验绿；BrokkAi 源码引用清零（go.mod 条目留 T8 出清）；审查（正确性/规范/简洁三组）无 ≥80% 置信度缺陷
 
 ### 任务 T7：测试迁移收绿
 
