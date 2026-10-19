@@ -42,6 +42,7 @@
     "branchLabel": "Current branch",
     "defaultBranchLabel": "Default branch",
     "commitLabel": "Last commit",
+    "worktreeLabel": "worktree",
     "noRemote": "No remote configured",
     "noBranch": "No branch",
     "noDefaultBranch": "Not set",
@@ -52,6 +53,14 @@
     "refresh": "Refresh",
     "edit": "Edit",
     "delete": "Delete"
+  },
+  "worktrees": {
+    "title": "Worktrees of {{name}}",
+    "noBranch": "No branch",
+    "empty": "No worktrees",
+    "emptyDesc": "Worktrees created via git worktree add will appear here",
+    "loadFailed": "Failed to load worktrees: {{message}}",
+    "refresh": "Refresh"
   },
   "toast": {
     "added": "Repository \"{{name}}\" added",

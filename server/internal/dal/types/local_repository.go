@@ -60,6 +60,21 @@ type LocalRepositoryGetLocalBranchesRequest struct {
 	ID int `json:"id" binding:"required"`
 }
 
+// LocalRepositoryGetWorktreeListRequest 是 POST /api/localRepository/getWorktreeList 的入参（无筛选，列全部仓库）。
+type LocalRepositoryGetWorktreeListRequest struct{}
+
+// RepoWorktree 是仓库的一个 worktree 条目（不含主仓库目录），字段对齐前端 RepoWorktreeModel。
+type RepoWorktree struct {
+	Dir    string `json:"dir"`
+	Branch string `json:"branch"`
+}
+
+// LocalRepositoryWorktreeListData 是 GET 全量 worktree 列表的单仓条目（id 对应 t_local_repositories.id）。
+type LocalRepositoryWorktreeListData struct {
+	ID        int            `json:"id"`
+	Worktrees []RepoWorktree `json:"worktrees"`
+}
+
 /*
  * LocalRepositoryResponseData 是仓库响应：DO 字段平铺 + subDirList 由 JSON 文本反序列化为数组；
  * 不嵌入 *model.LocalRepository（其 SubDirList 为 string），改为扁平结构由 FromModel 装配，与 issue 响应「service 层组装呈现形态」的思路一致。

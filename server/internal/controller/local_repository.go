@@ -142,3 +142,19 @@ func (api LocalRepository) GetLocalBranches(ctx *gin.Context) {
 	}
 	api.JsonOK(data)
 }
+
+// GetWorktreeList POST /api/localRepository/getWorktreeList：并行返回全部仓库的额外 worktree 列表。
+func (api LocalRepository) GetWorktreeList(ctx *gin.Context) {
+	req := &types.LocalRepositoryGetWorktreeListRequest{}
+	svc := service.LocalRepository{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.GetWorktreeList()
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}

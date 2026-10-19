@@ -42,6 +42,7 @@
     "branchLabel": "当前分支",
     "defaultBranchLabel": "默认分支",
     "commitLabel": "最近提交",
+    "worktreeLabel": "worktree",
     "noRemote": "未配置远程",
     "noBranch": "无分支",
     "noDefaultBranch": "未设置",
@@ -52,6 +53,14 @@
     "refresh": "刷新",
     "edit": "编辑",
     "delete": "删除"
+  },
+  "worktrees": {
+    "title": "{{name}} 的 worktree",
+    "noBranch": "无分支",
+    "empty": "暂无 worktree",
+    "emptyDesc": "通过 git worktree add 创建后此处展示",
+    "loadFailed": "加载 worktree 失败：{{message}}",
+    "refresh": "刷新"
   },
   "toast": {
     "added": "仓库「{{name}}」添加成功",

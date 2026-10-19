@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -252,6 +253,34 @@ func applyGitInfo(r *model.LocalRepository, info gitutil.Info) {
 	r.DefaultBranch = info.DefaultBranch
 	r.LastCommitAt = int(info.LastCommitAt) // DO LastCommitAt 为 int（64 位平台等价 int64）
 	r.LastCommitMessage = info.LastCommitMessage
+}
+
+/*
+ * GetWorktreeList 返回全部仓库的额外 worktree 列表（不含主仓库目录）。
+ * 各仓库并行解析（git 进程 spawn 主导耗时，并行后总耗时 ≈ 最慢一仓）；失败仓库的 worktrees 兜底空数组。
+ */
+func (svc LocalRepository) GetWorktreeList() ([]types.LocalRepositoryWorktreeListData, error) {
+	q := query.Use(svc.Orm)
+	repos, err := q.LocalRepository.WithContext(svc.Context).Find()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]types.LocalRepositoryWorktreeListData, len(repos))
+	var wg sync.WaitGroup
+	for i, r := range repos {
+		wg.Add(1)
+		go func(i int, dir string) {
+			defer wg.Done()
+			list := gitutil.ExtraWorktrees(dir)
+			entries := make([]types.RepoWorktree, 0, len(list))
+			for _, wt := range list {
+				entries = append(entries, types.RepoWorktree{Dir: wt.Dir, Branch: wt.Branch})
+			}
+			out[i] = types.LocalRepositoryWorktreeListData{ID: r.ID, Worktrees: entries}
+		}(i, r.LocalDir)
+	}
+	wg.Wait()
+	return out, nil
 }
 
 // validateRepoDir 校验 localDir 为存在的绝对路径且为 git 仓库（add/update 共用）。

@@ -21,6 +21,18 @@ export interface LocalRepositoryModel {
   updatedAt: string;
 }
 
+// 仓库的一个 worktree 条目（不含主仓库目录），对齐后端 types.RepoWorktree。
+export interface RepoWorktreeModel {
+  dir: string;
+  branch: string;
+}
+
+// getWorktreeList 返回的单仓条目（id 对应仓库 id），数量与抽屉展示共用此列表。
+export interface LocalRepositoryWorktreeListModel {
+  id: number;
+  worktrees: RepoWorktreeModel[];
+}
+
 // POST /api/localRepository/getList 的入参（无筛选，列全部）。
 export type LocalRepositoryGetListRequest = Record<string, never>;
 
@@ -56,6 +68,9 @@ export interface LocalRepositoryGetLocalBranchesRequest {
   id: number;
 }
 
+// POST /api/localRepository/getWorktreeList 的入参（无筛选，列全部仓库）。
+export type LocalRepositoryGetWorktreeListRequest = Record<string, never>;
+
 export class LocalRepositoryService {
   // getList：返回全部本地仓库（按 lastCommitAt 倒序、id 升序）。
   static getList(): Promise<LocalRepositoryModel[]> {
@@ -90,5 +105,10 @@ export class LocalRepositoryService {
   // getLocalBranches：列出仓库的本地分支名（供 issue 分支选择器）。
   static getLocalBranches(req: LocalRepositoryGetLocalBranchesRequest): Promise<string[]> {
     return request<string[]>('POST', '/api/localRepository/getLocalBranches', req);
+  }
+
+  // getWorktreeList：并行解析全部仓库的额外 worktree（不含主仓库目录），卡片数量与抽屉列表同源。
+  static getWorktreeList(): Promise<LocalRepositoryWorktreeListModel[]> {
+    return request<LocalRepositoryWorktreeListModel[]>('POST', '/api/localRepository/getWorktreeList', {});
   }
 }

@@ -7,6 +7,7 @@ export {
   useDeleteLocalRepository,
   useLocalBranches,
   useLocalRepositories,
+  useLocalRepositoryWorktreeList,
   useRefreshAllLocalRepositories,
   useRefreshLocalRepository,
   useUpdateLocalRepository,

@@ -4,6 +4,7 @@ import { SiIntellijidea, SiIterm2 } from '@icons-pack/react-simple-icons';
 import {
   AccountTree as AccountTreeIcon,
   Autorenew as AutorenewIcon,
+  CallSplitOutlined as CallSplitOutlinedIcon,
   CloudOutlined as CloudOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
@@ -31,6 +32,7 @@ import { commands } from '@src/shared/bindings';
 import { unwrap } from '@src/shared/commands';
 import { joinRepoDir } from '@src/shared/repoPath';
 import { formatDate, formatRelativeTime } from '@src/shared/time';
+import { useLocalRepositoryWorktreeList } from '@src/state/localRepositories';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -41,7 +43,8 @@ const truncateSx = {
 } as const;
 
 // VSCode 官方单色品牌图标（src/assets/vscode.svg 通过 ?raw 注入，保留 currentColor 主题色跟随；同 ClaudeSessionCard）。
-function VsCodeIcon() {
+// 导出供 WorktreesDrawer 操作栏复用。
+export function VsCodeIcon() {
   return (
     <span
       style={{ display: 'inline-flex', width: '1.25rem', height: '1.25rem' }}
@@ -51,9 +54,11 @@ function VsCodeIcon() {
   );
 }
 
-// 单卡片：Header 仓库名 + 刷新/编辑/删除；Content 仓库目录(点击打开)/仓库地址/当前分支/最近提交；
+// 单卡片：Header 仓库名 + 刷新/编辑/删除；Content 仓库目录(点击打开)/仓库地址/当前分支/最近提交/worktree 数量(点击开抽屉)；
 // Actions 左下 VSCode/IDEA、右下 iTerm2——点击弹出 Menu 选择目标子目录（无子目录则直接打开仓库根目录）。
 // 卡片 height:100% + flex column，保证网格内同行卡片高度对齐、操作栏贴底。
+//
+// 目录/worktree 数量的 Link 热区仅限文字本身（inline-block + maxWidth 收窄），避免整行误触跳转。
 //
 // 数据来自 Go 服务 LocalRepositoryModel（localDir/currentBranch）。OS 原生动作（打开 IDE/终端/Finder、
 // Java 判断）仍走 Rust commands，传入 repo.localDir 作为目标目录。
@@ -62,6 +67,7 @@ interface RepositoryCardProps {
   refreshing: boolean;
   onOpenFolder: (dir: string) => void;
   onOpenInTerminal: (dir: string, terminal: 'iterm2' | 'terminal') => void;
+  onOpenWorktrees: (repo: LocalRepositoryModel) => void;
   onRefresh: (repo: LocalRepositoryModel) => void;
   onEdit: (repo: LocalRepositoryModel) => void;
   onDelete: (repo: LocalRepositoryModel) => void;
@@ -94,13 +100,15 @@ function InfoRow({ icon, label, children }: { icon: ReactNode; label?: string; c
   );
 }
 
-function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRefresh, onEdit, onDelete }: RepositoryCardProps) {
+function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onOpenWorktrees, onRefresh, onEdit, onDelete }: RepositoryCardProps) {
   const { t } = useTranslation();
   const hasRemote = repo.remoteUrl.length > 0;
   const hasBranch = repo.currentBranch.length > 0;
   const hasDefaultBranch = repo.defaultBranch.length > 0;
   const hasCommit = repo.lastCommitAt > 0;
   const hasSubDirs = repo.subDirList.length > 0;
+  // 额外 worktree 数量：与抽屉同源（共享 worktreeList 缓存，多卡片同 query 只发一次请求）。
+  const worktreeCount = useLocalRepositoryWorktreeList().data?.find(e => e.id === repo.id)?.worktrees.length ?? 0;
 
   // 打开目标选择菜单：VSCode/IDEA/iTerm2 点击后若有子目录则弹 Menu 选择，无则直接打开仓库根目录。
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -199,8 +207,10 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
               fontFamily: 'monospace',
               fontSize: '12px',
               textAlign: 'left',
-              display: 'block',
-              width: '100%',
+              // inline-block + maxWidth 让热区收窄到文字本身（block + 100% 会让整行都可点击误触），
+              // maxWidth 同时保留 ellipsis 截断能力。
+              display: 'inline-block',
+              maxWidth: '100%',
               minWidth: '0px',
               ...truncateSx,
             }}
@@ -245,6 +255,27 @@ function RepositoryCard({ repo, refreshing, onOpenFolder, onOpenInTerminal, onRe
               ? `${formatRelativeTime(repo.lastCommitAt, t, 'repositories')} | ${formatDate(repo.lastCommitAt, 'YYYY-MM-DD HH:mm:ss')}`
               : t('repositories:card.noCommit')}
           </Typography>
+        </InfoRow>
+
+        {/* worktree 数量：>0 为可点 link 开抽屉，未就绪/为 0 显示 '--' 不可点。 */}
+        <InfoRow icon={<CallSplitOutlinedIcon sx={{ fontSize: '15px' }} />} label={t('repositories:card.worktreeLabel')}>
+          {worktreeCount > 0
+            ? (
+                <Link
+                  component="button"
+                  type="button"
+                  onClick={() => onOpenWorktrees(repo)}
+                  underline="hover"
+                  sx={{ fontSize: '12px', display: 'inline-block' }}
+                >
+                  {worktreeCount} 个
+                </Link>
+              )
+            : (
+                <Typography variant="caption" sx={{ color: 'text.disabled' }}>
+                  --
+                </Typography>
+              )}
         </InfoRow>
       </CardContent>
       <Divider />

@@ -59,6 +59,7 @@ func SetupRouter() *gin.Engine {
 			localRepositoryGroup.POST("/refresh", controller.LocalRepository{}.Refresh)
 			localRepositoryGroup.POST("/refreshAll", controller.LocalRepository{}.RefreshAll)
 			localRepositoryGroup.POST("/getLocalBranches", controller.LocalRepository{}.GetLocalBranches)
+			localRepositoryGroup.POST("/getWorktreeList", controller.LocalRepository{}.GetWorktreeList)
 		}
 
 		/*

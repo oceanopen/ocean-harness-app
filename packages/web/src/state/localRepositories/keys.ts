@@ -8,4 +8,6 @@ export const localRepositoryKeys = {
   detail: (id: number) => [...localRepositoryKeys.root, 'detail', { id }] as const,
   // 仓库的本地分支列表（git branch，仅本地分支）。
   localBranches: (id: number) => [...localRepositoryKeys.root, 'localBranches', { id }] as const,
+  // 全部仓库的额外 worktree 列表（并行实时解析），卡片数量与抽屉同源。
+  worktreeList: () => [...localRepositoryKeys.root, 'worktreeList'] as const,
 } as const;

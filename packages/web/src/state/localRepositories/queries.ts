@@ -27,6 +27,14 @@ export function useLocalBranches(localRepositoryId: number) {
   });
 }
 
+/** 全部仓库的额外 worktree 列表（并行实时解析）；卡片数量与抽屉列表共用同一缓存，挂载即查。 */
+export function useLocalRepositoryWorktreeList() {
+  return useQuery({
+    queryKey: localRepositoryKeys.worktreeList(),
+    queryFn: () => LocalRepositoryService.getWorktreeList(),
+  });
+}
+
 /**
  * ─── 写操作（mutation）───
  * create/update/delete 走 invalidate（与 tracker 域一致）；refresh/refreshAll 返回最新数据，

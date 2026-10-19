@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import AddRepositoryDrawer from './components/AddRepositoryDrawer';
 import RepositoryCard from './components/RepositoryCard';
+import WorktreesDrawer from './components/WorktreesDrawer';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
 
@@ -47,6 +48,9 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<LocalRepositoryModel | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<LocalRepositoryModel | null>(null);
+  // worktree 抽屉目标仓库 id：从列表缓存派生模型（刷新回填后抽屉数据同步更新）。
+  const [worktreeTargetId, setWorktreeTargetId] = useState<number | null>(null);
+  const worktreeTarget = worktreeTargetId !== null ? repos.find(r => r.id === worktreeTargetId) ?? null : null;
 
   const showToast = useCallback((text: string, severity: ToastSeverity) => {
     setToast({ text, severity });
@@ -255,6 +259,7 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
                 refreshing={refreshingId === repo.id}
                 onOpenFolder={handleOpenFolder}
                 onOpenInTerminal={handleOpenInTerminal}
+                onOpenWorktrees={repo => setWorktreeTargetId(repo.id)}
                 onRefresh={handleRefreshOne}
                 onEdit={setEditTarget}
                 onDelete={setDeleteTarget}
@@ -285,6 +290,14 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
         <AddRepositoryDrawer
           repo={editTarget}
           onClose={() => setEditTarget(null)}
+        />
+      )}
+
+      {worktreeTarget && (
+        <WorktreesDrawer
+          repo={worktreeTarget}
+          onClose={() => setWorktreeTargetId(null)}
+          onOpenInTerminal={handleOpenInTerminal}
         />
       )}
 

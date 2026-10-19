@@ -113,10 +113,13 @@ export type {
   LocalRepositoryDeleteRequest,
   LocalRepositoryGetListRequest,
   LocalRepositoryGetLocalBranchesRequest,
+  LocalRepositoryGetWorktreeListRequest,
   LocalRepositoryModel,
   LocalRepositoryRefreshRequest,
   LocalRepositoryUpdateRequest,
+  LocalRepositoryWorktreeListModel,
   RepoSubDir,
+  RepoWorktreeModel,
 } from './LocalRepositoryService';
 
 export { PluginMarketplaceService } from './PluginMarketplaceService';

@@ -18,10 +18,10 @@ type ImBotConversation struct {
 	ClaudeSessionID string     `gorm:"column:claude_session_id;type:TEXT;not null;default:''" json:"claudeSessionId"`
 	BoundIssueID    string     `gorm:"column:bound_issue_id;type:TEXT;not null;default:''" json:"boundIssueId"`
 	SeenMessageIds  string     `gorm:"column:seen_message_ids;type:TEXT;not null;default:'[]'" json:"seenMessageIds"`
+	LastMessageCard string     `gorm:"column:last_message_card;type:TEXT;not null;default:''" json:"lastMessageCard"`
 	LastMessageAt   *time.Time `gorm:"column:last_message_at;type:DATETIME" json:"lastMessageAt"`
 	CreatedAt       time.Time  `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt       time.Time  `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	LastMessageCard string     `gorm:"column:last_message_card;type:TEXT;not null;default:''" json:"lastMessageCard"`
 }
 
 // TableName ImBotConversation's table name

@@ -34,10 +34,10 @@ func newImBotConversation(db *gorm.DB, opts ...gen.DOOption) imBotConversation {
 	_imBotConversation.ClaudeSessionID = field.NewString(tableName, "claude_session_id")
 	_imBotConversation.BoundIssueID = field.NewString(tableName, "bound_issue_id")
 	_imBotConversation.SeenMessageIds = field.NewString(tableName, "seen_message_ids")
+	_imBotConversation.LastMessageCard = field.NewString(tableName, "last_message_card")
 	_imBotConversation.LastMessageAt = field.NewTime(tableName, "last_message_at")
 	_imBotConversation.CreatedAt = field.NewTime(tableName, "created_at")
 	_imBotConversation.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_imBotConversation.LastMessageCard = field.NewString(tableName, "last_message_card")
 
 	_imBotConversation.fillFieldMap()
 
@@ -54,10 +54,10 @@ type imBotConversation struct {
 	ClaudeSessionID field.String
 	BoundIssueID    field.String
 	SeenMessageIds  field.String
+	LastMessageCard field.String
 	LastMessageAt   field.Time
 	CreatedAt       field.Time
 	UpdatedAt       field.Time
-	LastMessageCard field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -80,10 +80,10 @@ func (i *imBotConversation) updateTableName(table string) *imBotConversation {
 	i.ClaudeSessionID = field.NewString(table, "claude_session_id")
 	i.BoundIssueID = field.NewString(table, "bound_issue_id")
 	i.SeenMessageIds = field.NewString(table, "seen_message_ids")
+	i.LastMessageCard = field.NewString(table, "last_message_card")
 	i.LastMessageAt = field.NewTime(table, "last_message_at")
 	i.CreatedAt = field.NewTime(table, "created_at")
 	i.UpdatedAt = field.NewTime(table, "updated_at")
-	i.LastMessageCard = field.NewString(table, "last_message_card")
 
 	i.fillFieldMap()
 
@@ -119,10 +119,10 @@ func (i *imBotConversation) fillFieldMap() {
 	i.fieldMap["claude_session_id"] = i.ClaudeSessionID
 	i.fieldMap["bound_issue_id"] = i.BoundIssueID
 	i.fieldMap["seen_message_ids"] = i.SeenMessageIds
+	i.fieldMap["last_message_card"] = i.LastMessageCard
 	i.fieldMap["last_message_at"] = i.LastMessageAt
 	i.fieldMap["created_at"] = i.CreatedAt
 	i.fieldMap["updated_at"] = i.UpdatedAt
-	i.fieldMap["last_message_card"] = i.LastMessageCard
 }
 
 func (i imBotConversation) clone(db *gorm.DB) imBotConversation {
