@@ -35,9 +35,10 @@ func newLiveTestEnv(t *testing.T) *liveTestEnv {
 	}
 	writePortFile(t, dir, ts.port)
 	zeroLiveDelays(t)
-	m.view.apply("default", func(row *SessionView) {
-		row.Pages = []PageView{{Index: 0, TargetID: "t1", URL: "https://x.test/", Title: "例页", Current: true}}
-	})
+	// 页面投影经 SSOT store 种子并发布（view 只是投影，与生产路径同源）。
+	now := time.Now().UnixMilli()
+	m.pageHist.observe("default", "t1", "https://x.test/", "例页", true, now)
+	m.publishPages("default")
 	return &liveTestEnv{m: m, ts: ts}
 }
 

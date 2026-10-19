@@ -7,8 +7,8 @@ import (
 
 /*
  * pagehistory.go：per-profile per-target 页面状态与操作流水存储（页面维度调试视图的
- * SSOT）。观察者只上报事件，行状态归本层；页面关闭即出列（列表恒等当前真实 tab 集），
- * 同 URL 重建由新 target 行顶替旧行。
+ * SSOT）。观察者只上报事件，行状态归本层；页面关闭/对账即出列（列表恒等当前真实
+ * tab 集，同 URL 多 tab 各占一行）。
  */
 
 // pageActionsCap 单页操作流水上限（环形淘汰最旧）。
@@ -53,12 +53,6 @@ func (s *pageHistoryStore) observe(profile, targetID, url, title string, visible
 	s.seq++
 	h, ok := pages[targetID]
 	if !ok {
-		// 同 URL 旧行（targetId 已换代）先行出列，防同页多行。
-		for id, old := range pages {
-			if old.url == url {
-				delete(pages, id)
-			}
-		}
 		// 新开 tab 即浏览器激活语义：其余在开页可见态置否，保证激活页唯一。
 		for _, old := range pages {
 			old.visible = false
@@ -69,16 +63,6 @@ func (s *pageHistoryStore) observe(profile, targetID, url, title string, visible
 	h.url, h.title, h.visible = url, title, visible
 	h.lastActive, h.lastActiveMs = s.seq, atMs
 	return false
-}
-
-// bump 仅推进活动序与时刻（targetInfoChanged 的轻量路径）。
-func (s *pageHistoryStore) bump(profile, targetID string, atMs int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if h, ok := s.entries[profile][targetID]; ok {
-		s.seq++
-		h.lastActiveMs = atMs
-	}
 }
 
 // close 页面关闭即出列（操作流水随行移除，列表恒等当前真实 tab 集）。
@@ -113,7 +97,7 @@ func (s *pageHistoryStore) closeAll(profile string) {
 	delete(s.entries, profile)
 }
 
-// record 追加一条操作流水（环形 cap 兜底）并刷新活动时刻；targetID 空 = 无法归因，丢弃。
+// record 追加一条操作流水（环形 cap 兜底）并把落点页锚为投影当前页；targetID 空 = 无法归因，丢弃。
 func (s *pageHistoryStore) record(profile, targetID string, call RecentCall, atMs int64) {
 	if targetID == "" {
 		return
@@ -132,6 +116,16 @@ func (s *pageHistoryStore) record(profile, targetID string, call RecentCall, atM
 	}
 	s.seq++
 	h.lastActive, h.lastActiveMs = s.seq, atMs
+	/*
+	 * 操作落点即激活语义：引擎调用/画面订阅把该页锚为当前（引擎参数压制后台页
+	 * visibility，手动切 tab 无信号可观测，激活态只能跟随自动化与订阅动作）。
+	 */
+	h.visible = true
+	for _, other := range pages {
+		if other != h {
+			other.visible = false
+		}
+	}
 	h.actions = append(h.actions, call)
 	if len(h.actions) > pageActionsCap {
 		h.actions = h.actions[len(h.actions)-pageActionsCap:]

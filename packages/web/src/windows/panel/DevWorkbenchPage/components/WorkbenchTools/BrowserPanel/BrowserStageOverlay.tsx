@@ -99,7 +99,7 @@ function StageContent({ profile }: { profile: string }) {
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '12px', height: '40px', flexShrink: 0, borderBottom: '1px solid', borderColor: 'divider' }}>
-        <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>浏览器操作台</Typography>
+        <Typography sx={{ fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>浏览器操作台</Typography>
         <Typography sx={{ fontSize: '12px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {stream.target != null
             ? `正在投送：${stream.target.title || stream.target.url}`
