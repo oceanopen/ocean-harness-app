@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	acpgo "github.com/BrokkAi/acp-go"
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 
 	"ocean-harness/server/internal/acp"
 )
@@ -78,6 +77,22 @@ type EntryFile struct {
 }
 
 /*
+ * PlanView / UsageView plan/usage 帧载荷的防腐映射类型：wire 形态与换底前契约逐字段
+ * 一致（ironpark 的 SessionUpdate 变体 marshal 携带 "sessionUpdate" 判别键，须剔除）。
+ */
+type PlanView struct {
+	Meta    acp1.Meta        `json:"_meta,omitempty"`
+	Entries []acp1.PlanEntry `json:"entries"`
+}
+
+type UsageView struct {
+	Meta acp1.Meta  `json:"_meta,omitempty"`
+	Cost *acp1.Cost `json:"cost,omitempty"`
+	Size uint64     `json:"size"`
+	Used uint64     `json:"used"`
+}
+
+/*
  * PromptMeta 回合受理携带的消息来源元数据（T1.1）：Source 标记发起入口（EntrySource*），Display 为展示元数据（bot 路径组装，panel 恒零值）。
  * 进程内参数不经序列化——Source / Display 随 beginTurn 落 user 条目，经 SSE entry 帧与快照透出。
  */
@@ -88,24 +103,24 @@ type PromptMeta struct {
 
 // ToolCallView 工具调用条目（ACP wire 原样透传，前端按 kind/status 选择呈现形态）。
 type ToolCallView struct {
-	ToolCallID string                    `json:"toolCallId"`
-	Title      string                    `json:"title,omitempty"`
-	Kind       string                    `json:"kind,omitempty"`
-	Status     string                    `json:"status,omitempty"`
-	Name       string                    `json:"name,omitempty"`
-	Content    []schema.ToolCallContent  `json:"content,omitempty"`
-	Locations  []schema.ToolCallLocation `json:"locations,omitempty"`
-	RawInput   json.RawMessage           `json:"rawInput,omitempty"`
-	RawOutput  json.RawMessage           `json:"rawOutput,omitempty"`
+	ToolCallID string                  `json:"toolCallId"`
+	Title      string                  `json:"title,omitempty"`
+	Kind       string                  `json:"kind,omitempty"`
+	Status     string                  `json:"status,omitempty"`
+	Name       string                  `json:"name,omitempty"`
+	Content    []acp1.ToolCallContent  `json:"content,omitempty"`
+	Locations  []acp1.ToolCallLocation `json:"locations,omitempty"`
+	RawInput   json.RawMessage         `json:"rawInput,omitempty"`
+	RawOutput  json.RawMessage         `json:"rawOutput,omitempty"`
 }
 
 // PendingView 挂起交互投影（permission / elicitation 二选一，字段按 kind 取舍）。
 type PendingView struct {
-	PendingID uint64                    `json:"pendingId"`
-	Kind      string                    `json:"kind"`               // permission | elicitation
-	Options   []schema.PermissionOption `json:"options,omitempty"`  // permission 专用
-	ToolCall  *schema.ToolCallUpdate    `json:"toolCall,omitempty"` // permission 专用：审批详情
-	Request   *acp.ElicitationWire      `json:"request,omitempty"`  // elicitation 专用：全保真 wire（acp-go 生成模型丢 requestedSchema/url，见 acp/elicitation.go）
+	PendingID uint64                  `json:"pendingId"`
+	Kind      string                  `json:"kind"`               // permission | elicitation
+	Options   []acp1.PermissionOption `json:"options,omitempty"`  // permission 专用
+	ToolCall  *acp1.ToolCallUpdate    `json:"toolCall,omitempty"` // permission 专用：审批详情
+	Request   *acp.ElicitationWire    `json:"request,omitempty"`  // elicitation 专用：全保真 wire（acp-go 生成模型丢 requestedSchema/url，见 acp/elicitation.go）
 }
 
 /*
@@ -129,20 +144,20 @@ func (p PendingView) ToolTitle() string {
  * 嵌套的 ACP wire 结构原样透传不转译。
  */
 type ViewSnapshot struct {
-	Status            SessionStatus             `json:"status"`
-	AgentCode         string                    `json:"agentCode,omitempty"`
-	AcpSessionID      string                    `json:"acpSessionId,omitempty"`
-	PermissionMode    string                    `json:"permissionMode,omitempty"`
-	CurrentModeID     string                    `json:"currentModeId,omitempty"`
-	AvailableModes    []schema.SessionMode      `json:"availableModes,omitempty"`
-	Entries           []ConversationEntry       `json:"entries"`
-	Pendings          []PendingView             `json:"pendings"`
-	Plan              *schema.Plan              `json:"plan,omitempty"`
-	Usage             *schema.UsageUpdate       `json:"usage,omitempty"`
-	AvailableCommands []schema.AvailableCommand `json:"availableCommands,omitempty"`
-	TurnActive        bool                      `json:"turnActive"`
-	StopReason        string                    `json:"stopReason,omitempty"` // 最近回合终态
-	Error             string                    `json:"error,omitempty"`      // failed/terminated 原因
+	Status            SessionStatus           `json:"status"`
+	AgentCode         string                  `json:"agentCode,omitempty"`
+	AcpSessionID      string                  `json:"acpSessionId,omitempty"`
+	PermissionMode    string                  `json:"permissionMode,omitempty"`
+	CurrentModeID     string                  `json:"currentModeId,omitempty"`
+	AvailableModes    []acp1.SessionMode      `json:"availableModes,omitempty"`
+	Entries           []ConversationEntry     `json:"entries"`
+	Pendings          []PendingView           `json:"pendings"`
+	Plan              *PlanView               `json:"plan,omitempty"`
+	Usage             *UsageView              `json:"usage,omitempty"`
+	AvailableCommands []acp1.AvailableCommand `json:"availableCommands,omitempty"`
+	TurnActive        bool                    `json:"turnActive"`
+	StopReason        string                  `json:"stopReason,omitempty"` // 最近回合终态
+	Error             string                  `json:"error,omitempty"`      // failed/terminated 原因
 }
 
 // pendingSlot 挂起交互注册表槽位：视图投影 + acp 挂起句柄（投影走 view，应答走句柄）。
@@ -216,14 +231,14 @@ type closedPending struct {
  * kind → 中文（allow_once=允许 / allow_always=允许并记住 / reject_once=拒绝 / reject_always=始终拒绝），未知 kind 回落 agent 原始 name。
  */
 func PermissionOptionLabel(kind, name string) string {
-	switch schema.PermissionOptionKind(kind) {
-	case schema.PermissionOptionKindAllowOnce:
+	switch acp1.PermissionOptionKind(kind) {
+	case acp1.PermissionOptionKindAllowOnce:
 		return "允许"
-	case schema.PermissionOptionKindAllowAlways:
+	case acp1.PermissionOptionKindAllowAlways:
 		return "允许并记住"
-	case schema.PermissionOptionKindRejectOnce:
+	case acp1.PermissionOptionKindRejectOnce:
 		return "拒绝"
-	case schema.PermissionOptionKindRejectAlways:
+	case acp1.PermissionOptionKindRejectAlways:
 		return "始终拒绝"
 	}
 	return name
@@ -232,13 +247,13 @@ func PermissionOptionLabel(kind, name string) string {
 /*
  * findPermissionOption 按 optionId 查审批选项目录（应答预检与标签取值共用一次查找；不存在返回 ok=false）。
  */
-func findPermissionOption(options []schema.PermissionOption, optionID string) (schema.PermissionOption, bool) {
+func findPermissionOption(options []acp1.PermissionOption, optionID string) (acp1.PermissionOption, bool) {
 	for i := range options {
 		if string(options[i].OptionID) == optionID {
 			return options[i], true
 		}
 	}
-	return schema.PermissionOption{}, false
+	return acp1.PermissionOption{}, false
 }
 
 // elicitationActionLabel elicitation 三态应答动作的展示标签。
@@ -268,10 +283,10 @@ type sessionView struct {
 	permMode  string
 	errText   string
 
-	modes    *schema.SessionModeState
-	plan     *schema.Plan
-	usage    *schema.UsageUpdate
-	commands []schema.AvailableCommand
+	modes    *acp1.SessionModeState
+	plan     *PlanView
+	usage    *UsageView
+	commands []acp1.AvailableCommand
 
 	entries    []ConversationEntry
 	entryIndex map[string]int // entryId → entries 下标（覆写式 upsert）
@@ -309,7 +324,7 @@ func (v *sessionView) setStarting(cfg SessionConfig) []Frame {
 }
 
 // setReady 会话就绪：记 sessionId + 初始模式目录（ACP wire 原样）。
-func (v *sessionView) setReady(sessionID string, cfg SessionConfig, modes *schema.SessionModeState) []Frame {
+func (v *sessionView) setReady(sessionID string, cfg SessionConfig, modes *acp1.SessionModeState) []Frame {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.status = StatusReady
@@ -374,45 +389,41 @@ func (v *sessionView) applyEvent(event *acp.SessionEvent) []Frame {
 		}, &pendingSlot{permission: event.Permission})
 	}
 	if event.Elicitation != nil {
-		wire := event.Elicitation.Wire()
-		if wire == nil {
-			wire = acp.WireFromRequest(event.Elicitation.Request())
-		}
 		return v.registerPendingLocked(PendingView{
 			PendingID: uint64(event.Elicitation.ID()),
 			Kind:      "elicitation",
-			Request:   wire,
+			Request:   event.Elicitation.Wire(),
 		}, &pendingSlot{elicitation: event.Elicitation})
 	}
 	return nil
 }
 
-// applyUpdateLocked session/update 变体消费（wire 顺序即调用顺序）。
-func (v *sessionView) applyUpdateLocked(update *acpgo.Update) []Frame {
-	switch inner := update.Update; {
-	case inner.AgentMessageChunk != nil:
-		return v.appendChunkLocked(entryKindAgentMessage, textOfChunk(inner.AgentMessageChunk))
-	case inner.AgentThoughtChunk != nil:
-		return v.appendChunkLocked(entryKindAgentThought, textOfChunk(inner.AgentThoughtChunk))
-	case inner.ToolCall != nil:
-		return v.upsertToolCallLocked(toolCallViewFromCall(inner.ToolCall))
-	case inner.ToolCallUpdate != nil:
-		return v.applyToolCallUpdateLocked(inner.ToolCallUpdate)
-	case inner.Plan != nil:
-		v.plan = inner.Plan
-		return []Frame{{Type: FramePlanUpdated, Plan: inner.Plan}}
-	case inner.UsageUpdate != nil:
-		v.usage = inner.UsageUpdate
-		return []Frame{{Type: FrameUsageUpdated, Usage: inner.UsageUpdate}}
-	case inner.AvailableCommandsUpdate != nil:
-		v.commands = inner.AvailableCommandsUpdate.AvailableCommands
+// applyUpdateLocked session/update 变体消费（Variant 判别联合，wire 顺序即调用顺序）。
+func (v *sessionView) applyUpdateLocked(n *acp1.SessionNotification) []Frame {
+	switch inner := n.Update.Variant().(type) {
+	case acp1.SessionUpdateAgentMessageChunk:
+		return v.appendChunkLocked(entryKindAgentMessage, textOfChunk(inner.Content))
+	case acp1.SessionUpdateAgentThoughtChunk:
+		return v.appendChunkLocked(entryKindAgentThought, textOfChunk(inner.Content))
+	case acp1.SessionUpdateToolCall:
+		return v.upsertToolCallLocked(toolCallViewFromCall(inner))
+	case acp1.SessionUpdateToolCallUpdate:
+		return v.applyToolCallUpdateLocked(acp1.ToolCallUpdate(inner))
+	case acp1.SessionUpdatePlan:
+		v.plan = &PlanView{Meta: inner.Meta, Entries: inner.Entries}
+		return []Frame{{Type: FramePlanUpdated, Plan: v.plan}}
+	case acp1.SessionUpdateUsageUpdate:
+		v.usage = &UsageView{Meta: inner.Meta, Cost: inner.Cost, Size: inner.Size, Used: inner.Used}
+		return []Frame{{Type: FrameUsageUpdated, Usage: v.usage}}
+	case acp1.SessionUpdateAvailableCommandsUpdate:
+		v.commands = inner.AvailableCommands
 		return []Frame{{Type: FrameCommandsUpdated, Commands: v.commands}}
-	case inner.CurrentModeUpdate != nil:
+	case acp1.SessionUpdateCurrentModeUpdate:
 		/*
 		 * 替换式回写：mode 帧共享 v.modes 指针在锁外序列化，就地改 CurrentModeID 同构数据竞态——以值拷贝新建（AvailableModes 目录创建后只读，共享安全），帧携带新指针；
 		 * acp 层 setReady 交来的快照副本同样不被就地触碰。
 		 */
-		modes := &schema.SessionModeState{CurrentModeID: inner.CurrentModeUpdate.CurrentModeID}
+		modes := &acp1.SessionModeState{CurrentModeID: inner.CurrentModeID}
 		if v.modes != nil {
 			modes.AvailableModes = v.modes.AvailableModes
 		}
@@ -466,7 +477,7 @@ func (v *sessionView) upsertToolCallLocked(view *ToolCallView) []Frame {
 /*
  * applyToolCallUpdateLocked 部分更新合并。已发布的 *ToolCallView 被帧与快照共享、在锁外序列化，就地 merge 构成数据竞态——先克隆再 merge，经 upsert 整体换指针（恢复「发布后不可变」不变量；浅拷贝足够：切片/RawMessage 字段 merge 中只整体替换）。
  */
-func (v *sessionView) applyToolCallUpdateLocked(upd *schema.ToolCallUpdate) []Frame {
+func (v *sessionView) applyToolCallUpdateLocked(upd acp1.ToolCallUpdate) []Frame {
 	entryID := "tool:" + string(upd.ToolCallID)
 	var view *ToolCallView
 	if idx, ok := v.entryIndex[entryID]; ok && v.entries[idx].ToolCall != nil {
@@ -484,7 +495,7 @@ func (v *sessionView) applyToolCallUpdateLocked(upd *schema.ToolCallUpdate) []Fr
  * mergeToolCallUpdate 部分合并语义：指针/切片字段非空才覆盖（ACP wire 部分更新契约），其余保留。
  * wire 解码对象不可变，字段引用直接共享安全。
  */
-func mergeToolCallUpdate(view *ToolCallView, upd *schema.ToolCallUpdate) {
+func mergeToolCallUpdate(view *ToolCallView, upd acp1.ToolCallUpdate) {
 	if upd.Title != nil {
 		view.Title = *upd.Title
 	}
@@ -504,14 +515,14 @@ func mergeToolCallUpdate(view *ToolCallView, upd *schema.ToolCallUpdate) {
 		view.Locations = upd.Locations
 	}
 	if upd.RawInput != nil {
-		view.RawInput = upd.RawInput
+		view.RawInput = json.RawMessage(upd.RawInput)
 	}
 	if upd.RawOutput != nil {
-		view.RawOutput = upd.RawOutput
+		view.RawOutput = json.RawMessage(upd.RawOutput)
 	}
 }
 
-func toolCallViewFromCall(call *schema.ToolCall) *ToolCallView {
+func toolCallViewFromCall(call acp1.SessionUpdateToolCall) *ToolCallView {
 	view := &ToolCallView{ToolCallID: string(call.ToolCallID), Title: call.Title}
 	if call.Kind != nil {
 		view.Kind = string(*call.Kind)
@@ -524,8 +535,8 @@ func toolCallViewFromCall(call *schema.ToolCall) *ToolCallView {
 	}
 	view.Content = call.Content
 	view.Locations = call.Locations
-	view.RawInput = call.RawInput
-	view.RawOutput = call.RawOutput
+	view.RawInput = json.RawMessage(call.RawInput)
+	view.RawOutput = json.RawMessage(call.RawOutput)
 	return view
 }
 
@@ -573,7 +584,7 @@ func (v *sessionView) respondPending(pendingID uint64, noun, source string, prec
  * respondPermission 以 optionId 应答挂起权限审批（差异步：句柄预检 + 选项预检与标签取值共用一次目录查找）。
  */
 func (v *sessionView) respondPermission(pendingID uint64, optionID, source string) ([]Frame, error) {
-	var pick schema.PermissionOption
+	var pick acp1.PermissionOption
 	return v.respondPending(pendingID, "审批", source,
 		func(slot pendingSlot) error {
 			if slot.permission == nil {
@@ -597,7 +608,7 @@ func (v *sessionView) respondPermission(pendingID uint64, optionID, source strin
 /*
  * respondElicitation 以完整三态应答挂起 elicitation（构造见 acpgo.AcceptElicitation 等；差异步仅句柄预检，应答标签取动作三态）。
  */
-func (v *sessionView) respondElicitation(pendingID uint64, action string, response schema.CreateElicitationResponse, source string) ([]Frame, error) {
+func (v *sessionView) respondElicitation(pendingID uint64, action string, response acp1.CreateElicitationResponse, source string) ([]Frame, error) {
 	return v.respondPending(pendingID, "表单", source,
 		func(slot pendingSlot) error {
 			if slot.elicitation == nil {
@@ -731,9 +742,9 @@ func pendingViewsOf(slots []pendingSlot) []PendingView {
 }
 
 // textOfChunk 提取文本内容块文本（非文本块返回空串——一期仅文本流）。
-func textOfChunk(chunk *schema.ContentChunk) string {
-	if chunk != nil && chunk.Content.Text != nil {
-		return chunk.Content.Text.Text
+func textOfChunk(content acp1.ContentBlock) string {
+	if text, ok := acp1.TextOf(content); ok {
+		return text
 	}
 	return ""
 }

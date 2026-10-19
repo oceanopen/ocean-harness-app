@@ -15,7 +15,8 @@ import (
 	"strings"
 	"time"
 
-	acpgo "github.com/BrokkAi/acp-go"
+	acpgo "github.com/ironpark/acp-go"
+	"github.com/ironpark/acp-go/acp1"
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acp"
@@ -215,7 +216,7 @@ func handshakeProbe(ctx context.Context, cfg acp.SpawnConfig, window time.Durati
  * （纯函数，单元可测——假 agent 侧无法回指定错误码）。
  */
 func authRequired(err error) (string, bool) {
-	if acpgo.IsAuthRequired(err) {
+	if acpgo.IsCode(err, acpgo.ErrorCodeAuthRequired) {
 		return authRequiredHint, true
 	}
 	return "", false
@@ -241,8 +242,10 @@ func waitAvailableCommands(ctx context.Context, events <-chan acp.SessionEvent, 
 			if event.Terminated {
 				return 0, errors.New("会话在等待 available_commands 期间终结")
 			}
-			if event.Update != nil && event.Update.Update.AvailableCommandsUpdate != nil {
-				return len(event.Update.Update.AvailableCommandsUpdate.AvailableCommands), nil
+			if event.Update != nil {
+				if commands, ok := event.Update.Update.Variant().(acp1.SessionUpdateAvailableCommandsUpdate); ok {
+					return len(commands.AvailableCommands), nil
+				}
 			}
 		}
 	}

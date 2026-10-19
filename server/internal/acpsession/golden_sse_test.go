@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 
 	"ocean-harness/server/internal/acp"
 )
@@ -24,33 +24,33 @@ var goldenUpdate = flag.Bool("update", false, "回写 golden 快照文件")
 // goldenPtr 样例装配辅助（指针型字段的取址）。
 func goldenPtr[T any](v T) *T { return &v }
 
-func goldenSampleModes() []schema.SessionMode {
-	return []schema.SessionMode{
+func goldenSampleModes() []acp1.SessionMode {
+	return []acp1.SessionMode{
 		{ID: "code", Name: "Code", Description: goldenPtr("直接执行编码任务")},
 		{ID: "architect", Name: "Architect"},
 	}
 }
 
-func goldenSamplePlan() *schema.Plan {
-	return &schema.Plan{Entries: []schema.PlanEntry{
-		{Content: "定位回归根因", Priority: schema.PlanEntryPriorityHigh, Status: schema.PlanEntryStatusCompleted},
-		{Content: "补回归测试", Priority: schema.PlanEntryPriorityMedium, Status: schema.PlanEntryStatusInProgress},
-		{Content: "更新文档", Priority: schema.PlanEntryPriorityLow, Status: schema.PlanEntryStatusPending},
+func goldenSamplePlan() *PlanView {
+	return &PlanView{Entries: []acp1.PlanEntry{
+		{Content: "定位回归根因", Priority: acp1.PlanEntryPriorityHigh, Status: acp1.PlanEntryStatusCompleted},
+		{Content: "补回归测试", Priority: acp1.PlanEntryPriorityMedium, Status: acp1.PlanEntryStatusInProgress},
+		{Content: "更新文档", Priority: acp1.PlanEntryPriorityLow, Status: acp1.PlanEntryStatusPending},
 	}}
 }
 
-func goldenSampleUsage() *schema.UsageUpdate {
-	return &schema.UsageUpdate{
+func goldenSampleUsage() *UsageView {
+	return &UsageView{
 		Size: 200000,
 		Used: 123456,
-		Cost: &schema.Cost{Amount: 0.42, Currency: "USD"},
+		Cost: &acp1.Cost{Amount: 0.42, Currency: "USD"},
 	}
 }
 
-func goldenSampleCommands() []schema.AvailableCommand {
-	return []schema.AvailableCommand{
+func goldenSampleCommands() []acp1.AvailableCommand {
+	return []acp1.AvailableCommand{
 		{Name: "review", Description: "审查当前变更"},
-		{Name: "plan", Description: "制定计划", Input: &schema.AvailableCommandInput{Hint: "输入计划目标"}},
+		{Name: "plan", Description: "制定计划", Input: &acp1.AvailableCommandInput{Hint: "输入计划目标"}},
 	}
 }
 
@@ -58,15 +58,15 @@ func goldenSampleToolCallView() *ToolCallView {
 	return &ToolCallView{
 		ToolCallID: "call-1",
 		Title:      "读取文件",
-		Kind:       string(schema.ToolKindRead),
-		Status:     string(schema.ToolCallStatusInProgress),
+		Kind:       string(acp1.ToolKindRead),
+		Status:     string(acp1.ToolCallStatusInProgress),
 		Name:       "Read",
-		Content: []schema.ToolCallContent{
-			{Content: &schema.Content{Content: schema.ContentBlock{Text: &schema.TextContent{Text: "文件前 42 行"}}}},
-			{Diff: &schema.Diff{Path: "src/main.go", OldText: goldenPtr("func old()"), NewText: "func new()"}},
-			{Terminal: &schema.Terminal{TerminalID: "term-1"}},
+		Content: []acp1.ToolCallContent{
+			acp1.NewToolCallContent(acp1.ToolCallContentContent{Content: acp1.NewContentBlock(acp1.ContentBlockText{Text: "文件前 42 行"})}),
+			acp1.NewToolCallContent(acp1.ToolCallContentDiff{Path: "src/main.go", OldText: goldenPtr("func old()"), NewText: "func new()"}),
+			acp1.NewToolCallContent(acp1.ToolCallContentTerminal{TerminalID: "term-1"}),
 		},
-		Locations: []schema.ToolCallLocation{
+		Locations: []acp1.ToolCallLocation{
 			{Path: "src/main.go", Line: goldenPtr(uint32(12))},
 			{Path: "src/util.go"},
 		},
@@ -79,20 +79,20 @@ func goldenSamplePermissionPending() PendingView {
 	return PendingView{
 		PendingID: 7,
 		Kind:      "permission",
-		Options: []schema.PermissionOption{
-			{OptionID: "opt-allow", Kind: schema.PermissionOptionKindAllowOnce, Name: "Allow"},
-			{OptionID: "opt-reject-always", Kind: schema.PermissionOptionKindRejectAlways, Name: "Reject"},
+		Options: []acp1.PermissionOption{
+			{OptionID: "opt-allow", Kind: acp1.PermissionOptionKindAllowOnce, Name: "Allow"},
+			{OptionID: "opt-reject-always", Kind: acp1.PermissionOptionKindRejectAlways, Name: "Reject"},
 		},
-		ToolCall: &schema.ToolCallUpdate{
+		ToolCall: &acp1.ToolCallUpdate{
 			ToolCallID: "call-1",
 			Title:      goldenPtr("读取文件"),
-			Kind:       goldenPtr(schema.ToolKindRead),
-			Status:     goldenPtr(schema.ToolCallStatusPending),
+			Kind:       goldenPtr(acp1.ToolKindRead),
+			Status:     goldenPtr(acp1.ToolCallStatusPending),
 			Name:       goldenPtr("Read"),
-			Content: []schema.ToolCallContent{
-				{Content: &schema.Content{Content: schema.ContentBlock{Text: &schema.TextContent{Text: "工具调用详情"}}}},
+			Content: []acp1.ToolCallContent{
+				acp1.NewToolCallContent(acp1.ToolCallContentContent{Content: acp1.NewContentBlock(acp1.ContentBlockText{Text: "工具调用详情"})}),
 			},
-			Locations: []schema.ToolCallLocation{{Path: "src/main.go"}},
+			Locations: []acp1.ToolCallLocation{{Path: "src/main.go"}},
 			RawInput:  json.RawMessage(`{"file_path":"src/main.go"}`),
 		},
 	}
@@ -188,7 +188,7 @@ var goldenCases = []struct {
 	},
 	{
 		name:  "mode_updated",
-		frame: Frame{Seq: 11, IssueID: "iss-1", Type: FrameModeUpdated, Mode: &schema.SessionModeState{CurrentModeID: "architect", AvailableModes: goldenSampleModes()}},
+		frame: Frame{Seq: 11, IssueID: "iss-1", Type: FrameModeUpdated, Mode: &acp1.SessionModeState{CurrentModeID: "architect", AvailableModes: goldenSampleModes()}},
 	},
 	{
 		name:  "pending_opened_permission",

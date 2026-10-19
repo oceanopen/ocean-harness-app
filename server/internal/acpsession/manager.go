@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	acpgo "github.com/BrokkAi/acp-go"
-	"github.com/BrokkAi/acp-go/schema"
+	acpgo "github.com/ironpark/acp-go"
+	"github.com/ironpark/acp-go/acp1"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -267,7 +267,7 @@ func newOrResumedSession(ctx context.Context, client *acp.AgentClient, cfg Sessi
  * 同源同语义，纯函数便于测试对齐文案）。
  */
 func authRequired(err error) (string, bool) {
-	if acpgo.IsAuthRequired(err) {
+	if acpgo.IsCode(err, acpgo.ErrorCodeAuthRequired) {
 		return authRequiredHint, true
 	}
 	return "", false
@@ -462,26 +462,30 @@ func (m *Manager) RespondPermission(issueID string, pendingID uint64, optionID, 
 
 /*
  * RespondElicitation 应答挂起 elicitation（三态：accept 带 content / decline / cancel；
- * content 键值对透传 ACP wire——schema.ElicitationContentValue 为 any 别名）。source
- * 标记应答入口（同 RespondPermission）。
+ * content 键值对经 elicitationContentValue 收敛透传 ACP wire）。source 标记应答入口
+ * （同 RespondPermission）。
  */
 func (m *Manager) RespondElicitation(issueID string, pendingID uint64, action string, content map[string]any, source string) error {
 	entry, err := m.readyEntry(issueID)
 	if err != nil {
 		return err
 	}
-	var response schema.CreateElicitationResponse
+	var response acp1.CreateElicitationResponse
 	switch action {
 	case "accept":
-		values := make(map[string]schema.ElicitationContentValue, len(content))
+		values := make(map[string]acp1.ElicitationContentValue, len(content))
 		for k, v := range content {
-			values[k] = v
+			value, err := elicitationContentValue(v)
+			if err != nil {
+				return err
+			}
+			values[k] = value
 		}
-		response = acpgo.AcceptElicitation(values)
+		response = acp1.NewCreateElicitationResponse(acp1.CreateElicitationResponseAccept{Content: values})
 	case "decline":
-		response = acpgo.DeclineElicitation()
+		response = acp1.NewCreateElicitationResponse(acp1.CreateElicitationResponseDecline{})
 	case "cancel":
-		response = acpgo.CancelElicitation()
+		response = acp1.NewCreateElicitationResponse(acp1.CreateElicitationResponseCancel{})
 	default:
 		return fmt.Errorf("elicitation 应答 action %q 非法（可选 accept / decline / cancel）", action)
 	}
@@ -491,6 +495,24 @@ func (m *Manager) RespondElicitation(issueID string, pendingID uint64, action st
 	}
 	m.hub.broadcast(issueID, frames)
 	return nil
+}
+
+/*
+ * elicitationContentValue HTTP 入参 any → ElicitationContentValue 收敛（wire 值域
+ * string/float64/bool/[]string 四型）；其余类型显式拒绝，不静默丢内容。
+ */
+func elicitationContentValue(v any) (acp1.ElicitationContentValue, error) {
+	switch value := v.(type) {
+	case string:
+		return acp1.NewElicitationContentValue(value)
+	case float64:
+		return acp1.NewElicitationContentValue(value)
+	case bool:
+		return acp1.NewElicitationContentValue(value)
+	case []string:
+		return acp1.NewElicitationContentValue(value)
+	}
+	return acp1.ElicitationContentValue{}, fmt.Errorf("elicitation 应答值类型不支持: %T", v)
 }
 
 /*

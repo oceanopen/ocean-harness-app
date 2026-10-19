@@ -3,7 +3,7 @@ package acpsession
 import (
 	"sync"
 
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 )
 
 /*
@@ -38,16 +38,16 @@ type Frame struct {
 	IssueID string    `json:"issueId"`
 	Type    FrameType `json:"type"`
 
-	Snapshot  *ViewSnapshot             `json:"snapshot,omitempty"`
-	Status    *StatusPayload            `json:"status,omitempty"`
-	Entry     *ConversationEntry        `json:"entry,omitempty"`
-	Plan      *schema.Plan              `json:"plan,omitempty"`
-	Usage     *schema.UsageUpdate       `json:"usage,omitempty"`
-	Commands  []schema.AvailableCommand `json:"commands,omitempty"`
-	Mode      *schema.SessionModeState  `json:"mode,omitempty"`
-	Pending   *PendingView              `json:"pending,omitempty"`
-	PendingID uint64                    `json:"pendingId,omitempty"`
-	Turn      *TurnPayload              `json:"turn,omitempty"`
+	Snapshot  *ViewSnapshot           `json:"snapshot,omitempty"`
+	Status    *StatusPayload          `json:"status,omitempty"`
+	Entry     *ConversationEntry      `json:"entry,omitempty"`
+	Plan      *PlanView               `json:"plan,omitempty"`
+	Usage     *UsageView              `json:"usage,omitempty"`
+	Commands  []acp1.AvailableCommand `json:"commands,omitempty"`
+	Mode      *acp1.SessionModeState  `json:"mode,omitempty"`
+	Pending   *PendingView            `json:"pending,omitempty"`
+	PendingID uint64                  `json:"pendingId,omitempty"`
+	Turn      *TurnPayload            `json:"turn,omitempty"`
 }
 
 // StatusPayload sessionStatus / terminated 帧载荷。

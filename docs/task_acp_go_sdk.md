@@ -10,7 +10,7 @@
 | P0 spike 验收（闸门） | T2 spike 集成验收 | ✅ |
 | P1 正式接入 | T3 golden SSE 契约测试 | ✅ |
 | P1 正式接入 | T4 internal/acp 换底 | ✅ |
-| P1 正式接入 | T5 下游泄漏面对位 | 🔲 |
+| P1 正式接入 | T5 下游泄漏面对位 | ✅ |
 | P1 正式接入 | T6 fakeagent 重写 | 🔲 |
 | P1 正式接入 | T7 测试迁移收绿 | 🔲 |
 | P1 正式接入 | T8 依赖收口与真握手 | 🔲 |
@@ -101,11 +101,12 @@ server 的 ACP 客户端当前基于 BrokkAi/acp-go v0.11.0，其生成模型丢
 
 ### 任务 T5：下游泄漏面对位
 
-- 状态：🔲
+- 状态：✅
 - 功能：生产代码 BrokkAi 类型引用替换为 ironpark schema/v1 对位类型，SSE JSON 契约不变
 - 技术方案：`acpsession/hub.go` Frame 的 Plan/Usage/Commands/Mode 换 schema/v1 对位类型；`view.go`（约 25 符号）、`manager.go`、`acpdoctor/doctor.go` 逐符号对位；若 ironpark 类型 JSON tag 与旧值不一致，在防腐层做显式映射而非改 Frame tag
 - 依赖：T3、T4
 - 验收：`go build ./...` 全绿；T3 golden 全部通过（SSE 契约零漂移）
+- 实施定稿：**全绿落地，golden 全部通过（SSE 契约零漂移）**。统一 import `github.com/ironpark/acp-go/acp1`（对 schema/v1 全别名）。三处需显式映射/转换的契约差异：①ironpark 的 SessionUpdate 变体 marshal 携带 `"sessionUpdate"` 判别键而旧契约 plan/usage 是纯载荷——防腐层新增 `PlanView`/`UsageView` 映射类型（view.go，字段与旧契约逐字段一致含 `_meta`），applyUpdateLocked 从变体收敛，Frame tag 不动；②ironpark v1 无独立 `Plan`/`UsageUpdate` 顶层类型（计划/用量即变体本身，wire 形态相同）；③`ToolCallUpdate` 与 `SessionUpdateToolCallUpdate` 字段全同的两个类型经显式结构体转换对位。逐符号对位：applyUpdateLocked 改 `Update.Variant()` 类型开关（chunk×2/toolCall/toolCallUpdate/plan/usage/commands/mode 七变体，default 丢弃 user_message_chunk 等）；elicitation 事件删 WireFromRequest fallback（wire 恒非 nil）；RawInput/RawOutput `jsontext.Value` → `json.RawMessage` 转换（raw bytes 保真）；`IsAuthRequired` → `IsCode(err, ErrorCodeAuthRequired)`（同为 -32000）；RespondElicitation 的 any 直赋改 `elicitationContentValue` 四型收敛（string/float64/bool/[]string，其余显式拒绝）。测试对位：view_test/manager_test/doctor_test/golden_sse_test + bot 两测试文件（driver_acp_test/pending_gate_test）BrokkAi 符号全清，update 构造走 `NewSessionUpdate(variant)` 泛型 helper。验证：`go build ./...` + `go vet ./...` 全绿；`go test` acpsession/acpdoctor/acp/bot 全绿；BrokkAi 残留仅 fakeagent（T6 范围）
 
 ### 任务 T6：fakeagent 重写
 

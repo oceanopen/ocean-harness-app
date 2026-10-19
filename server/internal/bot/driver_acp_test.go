@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acpsession"
@@ -1136,7 +1136,7 @@ func TestAcpDriverPendingStatusLine(t *testing.T) {
 	sessions.push(t, turnStartedFrame())
 	sessions.push(t, pendingOpenedFrame(acpsession.PendingView{
 		PendingID: 7, Kind: "permission", Options: permOptions(),
-		ToolCall: &schema.ToolCallUpdate{ToolCallID: "tc-7", Title: &title},
+		ToolCall: &acp1.ToolCallUpdate{ToolCallID: "tc-7", Title: &title},
 	}))
 	sessions.push(t, pendingClosedFrame(7))
 	sessions.push(t, agentTextFrame("t1-agentMessage", "审批后的回复"))

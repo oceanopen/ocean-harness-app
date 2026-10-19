@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acpsession"
@@ -30,10 +30,10 @@ func headlessResolve(botID, workspaceID int, conversationKey string) (routeTarge
 }
 
 // permOptions 与 fakeagent permissionOptions 同款（allow/reject，kind 完整覆盖两档）。
-func permOptions() []schema.PermissionOption {
-	return []schema.PermissionOption{
-		{OptionID: "allow", Kind: schema.PermissionOptionKindAllowOnce, Name: "Allow"},
-		{OptionID: "reject", Kind: schema.PermissionOptionKindRejectOnce, Name: "Reject"},
+func permOptions() []acp1.PermissionOption {
+	return []acp1.PermissionOption{
+		{OptionID: "allow", Kind: acp1.PermissionOptionKindAllowOnce, Name: "Allow"},
+		{OptionID: "reject", Kind: acp1.PermissionOptionKindRejectOnce, Name: "Reject"},
 	}
 }
 
@@ -43,7 +43,7 @@ func permPendingView(id uint64) acpsession.PendingView {
 		PendingID: id,
 		Kind:      "permission",
 		Options:   permOptions(),
-		ToolCall:  &schema.ToolCallUpdate{ToolCallID: "tc-1", Title: &title},
+		ToolCall:  &acp1.ToolCallUpdate{ToolCallID: "tc-1", Title: &title},
 	}
 }
 

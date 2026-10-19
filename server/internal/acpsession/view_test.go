@@ -2,33 +2,38 @@ package acpsession
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"strings"
 	"testing"
 
-	acpgo "github.com/BrokkAi/acp-go"
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 
 	"ocean-harness/server/internal/acp"
 )
 
-// textChunkUpdate 构造 agent_message_chunk / agent_thought_chunk 的 update。
-func textChunkUpdate(sessionID string, thought bool, text string) acp.SessionEvent {
-	chunk := &schema.ContentChunk{Content: schema.ContentBlock{Text: &schema.TextContent{Text: text}}}
-	update := schema.SessionUpdate{}
-	if thought {
-		update.AgentThoughtChunk = chunk
-	} else {
-		update.AgentMessageChunk = chunk
-	}
-	return acp.SessionEvent{Update: &acpgo.Update{SessionID: schema.SessionId(sessionID), Update: update}}
+// updateEvent 构造指定会话的 update 事件（变体经 NewSessionUpdate 包装；applyEvent 直接收指针）。
+func updateEvent[V acp1.SessionUpdateVariants](sessionID string, variant V) *acp.SessionEvent {
+	return &acp.SessionEvent{Update: &acp1.SessionNotification{
+		SessionID: acp1.SessionID(sessionID),
+		Update:    acp1.NewSessionUpdate(variant),
+	}}
 }
 
-func framesOf(t *testing.T, view *sessionView, events ...acp.SessionEvent) []Frame {
+// textChunkUpdate 构造 agent_message_chunk / agent_thought_chunk 的 update。
+func textChunkUpdate(sessionID string, thought bool, text string) *acp.SessionEvent {
+	chunk := acp1.NewContentBlock(acp1.ContentBlockText{Text: text})
+	if thought {
+		return updateEvent(sessionID, acp1.SessionUpdateAgentThoughtChunk{Content: chunk})
+	}
+	return updateEvent(sessionID, acp1.SessionUpdateAgentMessageChunk{Content: chunk})
+}
+
+func framesOf(t *testing.T, view *sessionView, events ...*acp.SessionEvent) []Frame {
 	t.Helper()
 	var frames []Frame
 	for i := range events {
-		frames = append(frames, view.applyEvent(&events[i])...)
+		frames = append(frames, view.applyEvent(events[i])...)
 	}
 	return frames
 }
@@ -84,27 +89,19 @@ func TestViewChunkAggregation(t *testing.T) {
 func TestViewToolCallPartialMerge(t *testing.T) {
 	view := newSessionView()
 	// 初建（tool_call 变体，Title 为值类型）。
-	call := &schema.ToolCall{
+	view.applyEvent(updateEvent("s1", acp1.SessionUpdateToolCall{
 		ToolCallID: "tc-1",
 		Title:      "Bash: echo",
-		Kind:       kindPtr(schema.ToolKindExecute),
-		Status:     statusPtr(schema.ToolCallStatusPending),
-		RawInput:   json.RawMessage(`{"cmd":"echo"}`),
-	}
-	view.applyEvent(&acp.SessionEvent{Update: &acpgo.Update{
-		SessionID: "s1",
-		Update:    schema.SessionUpdate{ToolCall: call},
-	}})
+		Kind:       kindPtr(acp1.ToolKindExecute),
+		Status:     statusPtr(acp1.ToolCallStatusPending),
+		RawInput:   jsontext.Value(`{"cmd":"echo"}`),
+	}))
 	// 部分更新：仅 status + rawOutput 非空，其余保留。
-	upd := &schema.ToolCallUpdate{
+	view.applyEvent(updateEvent("s1", acp1.SessionUpdateToolCallUpdate{
 		ToolCallID: "tc-1",
-		Status:     statusPtr(schema.ToolCallStatusCompleted),
-		RawOutput:  json.RawMessage(`{"ok":true}`),
-	}
-	view.applyEvent(&acp.SessionEvent{Update: &acpgo.Update{
-		SessionID: "s1",
-		Update:    schema.SessionUpdate{ToolCallUpdate: upd},
-	}})
+		Status:     statusPtr(acp1.ToolCallStatusCompleted),
+		RawOutput:  jsontext.Value(`{"ok":true}`),
+	}))
 	snap := view.snapshot()
 	if len(snap.Entries) != 1 {
 		t.Fatalf("同一 toolCallId 应单条目，got %+v", snap.Entries)
@@ -113,19 +110,15 @@ func TestViewToolCallPartialMerge(t *testing.T) {
 	if tc == nil || tc.ToolCallID != "tc-1" {
 		t.Fatalf("工具条目缺失，got %+v", snap.Entries[0])
 	}
-	if tc.Title != "Bash: echo" || string(tc.Kind) != string(schema.ToolKindExecute) || string(tc.RawInput) != `{"cmd":"echo"}` {
+	if tc.Title != "Bash: echo" || string(tc.Kind) != string(acp1.ToolKindExecute) || string(tc.RawInput) != `{"cmd":"echo"}` {
 		t.Fatalf("未更新字段应保留，got %+v", tc)
 	}
-	if tc.Status != string(schema.ToolCallStatusCompleted) || string(tc.RawOutput) != `{"ok":true}` {
+	if tc.Status != string(acp1.ToolCallStatusCompleted) || string(tc.RawOutput) != `{"ok":true}` {
 		t.Fatalf("更新字段应覆盖，got %+v", tc)
 	}
 
 	// update 先于初建到达（异常时序）：建空壳再合并。
-	orphan := &schema.ToolCallUpdate{ToolCallID: "tc-2", Title: strPtr("孤儿")}
-	view.applyEvent(&acp.SessionEvent{Update: &acpgo.Update{
-		SessionID: "s1",
-		Update:    schema.SessionUpdate{ToolCallUpdate: orphan},
-	}})
+	view.applyEvent(updateEvent("s1", acp1.SessionUpdateToolCallUpdate{ToolCallID: "tc-2", Title: strPtr("孤儿")}))
 	snap = view.snapshot()
 	if len(snap.Entries) != 2 {
 		t.Fatalf("孤儿 update 应建条目，got %+v", snap.Entries)
@@ -134,14 +127,11 @@ func TestViewToolCallPartialMerge(t *testing.T) {
 
 func TestViewSnapshotReplacement(t *testing.T) {
 	view := newSessionView()
-	plan := &schema.Plan{Entries: []schema.PlanEntry{{Content: "步骤一", Priority: schema.PlanEntryPriorityMedium, Status: schema.PlanEntryStatusPending}}}
-	usage := &schema.UsageUpdate{Size: 100, Used: 42}
-	commands := []schema.AvailableCommand{{Name: "create_plan", Description: "创建计划"}}
-	events := []acp.SessionEvent{
-		{Update: &acpgo.Update{SessionID: "s1", Update: schema.SessionUpdate{Plan: plan}}},
-		{Update: &acpgo.Update{SessionID: "s1", Update: schema.SessionUpdate{UsageUpdate: usage}}},
-		{Update: &acpgo.Update{SessionID: "s1", Update: schema.SessionUpdate{AvailableCommandsUpdate: &schema.AvailableCommandsUpdate{AvailableCommands: commands}}}},
-		{Update: &acpgo.Update{SessionID: "s1", Update: schema.SessionUpdate{CurrentModeUpdate: &schema.CurrentModeUpdate{CurrentModeID: "acceptEdits"}}}},
+	events := []*acp.SessionEvent{
+		updateEvent("s1", acp1.SessionUpdatePlan{Entries: []acp1.PlanEntry{{Content: "步骤一", Priority: acp1.PlanEntryPriorityMedium, Status: acp1.PlanEntryStatusPending}}}),
+		updateEvent("s1", acp1.SessionUpdateUsageUpdate{Size: 100, Used: 42}),
+		updateEvent("s1", acp1.SessionUpdateAvailableCommandsUpdate{AvailableCommands: []acp1.AvailableCommand{{Name: "create_plan", Description: "创建计划"}}}),
+		updateEvent("s1", acp1.SessionUpdateCurrentModeUpdate{CurrentModeID: "acceptEdits"}),
 	}
 	frames := framesOf(t, view, events...)
 	wantTypes := []FrameType{FramePlanUpdated, FrameUsageUpdated, FrameCommandsUpdated, FrameModeUpdated}
@@ -151,13 +141,12 @@ func TestViewSnapshotReplacement(t *testing.T) {
 		}
 	}
 	snap := view.snapshot()
-	if snap.Plan != plan || snap.Usage != usage || len(snap.AvailableCommands) != 1 || snap.CurrentModeID != "acceptEdits" {
+	if snap.Plan == nil || snap.Plan.Entries[0].Content != "步骤一" || snap.Usage == nil || snap.Usage.Used != 42 || len(snap.AvailableCommands) != 1 || snap.CurrentModeID != "acceptEdits" {
 		t.Fatalf("快照类字段应最新替换，got %+v", snap)
 	}
 	// 最新替换：plan 二次推送覆盖。
-	plan2 := &schema.Plan{Entries: []schema.PlanEntry{{Content: "步骤二", Priority: schema.PlanEntryPriorityHigh, Status: schema.PlanEntryStatusCompleted}}}
-	framesOf(t, view, acp.SessionEvent{Update: &acpgo.Update{SessionID: "s1", Update: schema.SessionUpdate{Plan: plan2}}})
-	if view.snapshot().Plan != plan2 {
+	framesOf(t, view, updateEvent("s1", acp1.SessionUpdatePlan{Entries: []acp1.PlanEntry{{Content: "步骤二", Priority: acp1.PlanEntryPriorityHigh, Status: acp1.PlanEntryStatusCompleted}}}))
+	if view.snapshot().Plan == nil || view.snapshot().Plan.Entries[0].Content != "步骤二" {
 		t.Fatal("plan 应被最新替换")
 	}
 }
@@ -179,16 +168,16 @@ func TestViewTurnGateAndEndFrames(t *testing.T) {
 		t.Fatalf("并发回合应拒绝，got %v", err)
 	}
 	// 终态合成 turnEnded（StopReason 只从 Prompt 返回值可见的 gap 补齐）。
-	frames = view.endTurn(string(schema.StopReasonEndTurn), "")
+	frames = view.endTurn(string(acp1.StopReasonEndTurn), "")
 	if len(frames) != 1 || frames[0].Type != FrameTurnEnded || frames[0].Turn.Active {
 		t.Fatalf("应出 turnEnded 帧，got %+v", frames)
 	}
 	snap := view.snapshot()
-	if snap.TurnActive || snap.StopReason != string(schema.StopReasonEndTurn) {
+	if snap.TurnActive || snap.StopReason != string(acp1.StopReasonEndTurn) {
 		t.Fatalf("终态应落快照，got %+v", snap)
 	}
 	// 二次 endTurn（无活动回合）无帧。
-	if frames := view.endTurn(string(schema.StopReasonEndTurn), ""); frames != nil {
+	if frames := view.endTurn(string(acp1.StopReasonEndTurn), ""); frames != nil {
 		t.Fatalf("非活动回合 endTurn 应无帧，got %+v", frames)
 	}
 }
@@ -331,8 +320,8 @@ func TestPendingConvergenceLabels(t *testing.T) {
 func TestViewSetReadyAndSnapshot(t *testing.T) {
 	view := newSessionView()
 	cfg := SessionConfig{AgentCode: "claude-acp", PermissionMode: acp.PermissionModeAcceptEdits}
-	modes := &schema.SessionModeState{
-		AvailableModes: []schema.SessionMode{{ID: "acceptEdits", Name: "Accept Edits"}, {ID: "bypassPermissions", Name: "Bypass"}},
+	modes := &acp1.SessionModeState{
+		AvailableModes: []acp1.SessionMode{{ID: "acceptEdits", Name: "Accept Edits"}, {ID: "bypassPermissions", Name: "Bypass"}},
 		CurrentModeID:  "acceptEdits",
 	}
 	frames := view.setReady("sess-1", cfg, modes)
@@ -365,6 +354,6 @@ func TestViewSnapshotEmptyIsArray(t *testing.T) {
 	}
 }
 
-func kindPtr(k schema.ToolKind) *schema.ToolKind               { return &k }
-func statusPtr(s schema.ToolCallStatus) *schema.ToolCallStatus { return &s }
-func strPtr(s string) *string                                  { return &s }
+func kindPtr(k acp1.ToolKind) *acp1.ToolKind               { return &k }
+func statusPtr(s acp1.ToolCallStatus) *acp1.ToolCallStatus { return &s }
+func strPtr(s string) *string                              { return &s }
