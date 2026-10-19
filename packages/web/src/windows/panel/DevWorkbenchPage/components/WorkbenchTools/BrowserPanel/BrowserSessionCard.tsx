@@ -51,17 +51,18 @@ const decodePreviewRefreshMs = (raw: string | null) => parseBrowserRefreshMs(raw
 const PREVIEW_REFRESH_CONFIG_KEYS = [BROWSER_PREVIEW_REFRESH_MS_KEY];
 
 /**
- * 页面操作流水行 key（时刻 + 工具 + 结果指纹 + 同指纹序号）：流水行无业务 id，
- * 指纹去重序号防同毫秒同操作下 key 串位。
+ * 页面操作流水行（倒序输出：最近操作在最上）：行 key 按正序指纹去重，
+ * 序号防同毫秒同操作下 key 串位。
  */
 function pageActionRows(actions: BrowserRecentCall[]): Array<{ call: BrowserRecentCall; key: string }> {
   const seen = new Map<string, number>();
-  return actions.map((call) => {
+  const rows = actions.map((call) => {
     const base = `${call.atMs}|${call.tool}|${call.outcome}|${call.error ?? ''}`;
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);
     return { call, key: `${base}#${n}` };
   });
+  return rows.reverse();
 }
 
 /** 迷你预览固定高度（px，含边框）：低频节流帧的纯展示窗口。 */

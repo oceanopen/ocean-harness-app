@@ -327,6 +327,19 @@ func (m *Manager) ensureSpawned(ctx context.Context, entry *sessionEntry, profil
 		}
 		if old != nil {
 			/*
+			 * 切换前对齐 Close 收尾语义：重捕获页面现场（restorePages 仅 Close 赋值，不重捕获
+			 * 则拿陈旧现场恢复）；清页面投影并显式广播空行（publishPages 对空记录不广播）。
+			 */
+			captureCtx, cancel := context.WithTimeout(context.Background(), closePagesCaptureTimeout)
+			captured := m.capturePagesCtx(captureCtx, old, profile)
+			cancel()
+			m.pageHist.closeAll(profile)
+			svCleared := m.view.apply(profile, func(row *SessionView) { row.Pages = nil })
+			m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{svCleared}}})
+			entry.mu.Lock()
+			entry.restorePages = captured
+			entry.mu.Unlock()
+			/*
 			 * 页面观察者与观察通道收敛（重建后端口变化，残连接必死）：显式停机/拆让在订
 			 * 方拿到终态，新会话就绪后各自重建。
 			 */
@@ -479,7 +492,7 @@ func (m *Manager) restorePages(profile string, entry *sessionEntry) {
 			continue
 		}
 		if !p.Current {
-			if _, err := m.Forward(ctx, profile, EngineToolTabs, map[string]any{"action": "new"}, "恢复页面"); err != nil {
+			if err := m.openRestoredTab(ctx, profile); err != nil {
 				m.log.Warn("页面恢复新建 tab 失败（跳过该页）", zap.String("profile", profile), zap.String("url", p.URL), zap.Error(err))
 				continue
 			}
@@ -489,6 +502,48 @@ func (m *Manager) restorePages(profile string, entry *sessionEntry) {
 			continue
 		}
 	}
+}
+
+/*
+ * openRestoredTab 新建 tab 并把引擎 current 对齐到它：tabs new 的选中语义不可依赖，
+ * 不纠偏时 navigate 覆盖原激活页、新 tab 残留 about:blank。新 tab 以新建前后 tab 序
+ * 差集定位（恢复期无 tab 关闭，序稳定），定位失败仅跳过 select（navigate 兜底）。
+ */
+func (m *Manager) openRestoredTab(ctx context.Context, profile string) error {
+	before, err := m.tabPageIndexes(ctx, profile)
+	if err != nil {
+		return err
+	}
+	if _, err := m.Forward(ctx, profile, EngineToolTabs, map[string]any{"action": "new"}, "恢复页面"); err != nil {
+		return err
+	}
+	after, err := m.tabPageIndexes(ctx, profile)
+	if err != nil {
+		return nil // 新 tab 已建成，对齐失败不阻断：navigate 落旧 current 属可接受降级
+	}
+	for idx := range after {
+		if !before[idx] {
+			_, _ = m.Forward(ctx, profile, EngineToolTabs, map[string]any{"action": "select", "index": idx}, "恢复页面")
+			return nil
+		}
+	}
+	return nil
+}
+
+// tabPageIndexes 引擎当前 tab 序号集（tabs list 调用失败或被引擎拒绝即报错）。
+func (m *Manager) tabPageIndexes(ctx context.Context, profile string) (map[int]bool, error) {
+	res, err := m.Forward(ctx, profile, EngineToolTabs, map[string]any{"action": "list"}, "恢复页面")
+	if err != nil {
+		return nil, err
+	}
+	if res.IsError {
+		return nil, fmt.Errorf("tabs list: %s", ResultText(res))
+	}
+	indexes := make(map[int]bool, 4)
+	for _, p := range ParseTabsOutput(ResultText(res)) {
+		indexes[p.Index] = true
+	}
+	return indexes, nil
 }
 
 /*

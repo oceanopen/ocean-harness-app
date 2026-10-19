@@ -83,9 +83,9 @@ func (s *LiveStream) Unsubscribe() {
 }
 
 /*
- * SubscribeLive 订阅实时画面（T4.5 SSE 端点消费）：targetId 投影解析 → 同目标复用在订
- * viewer / 异页或断连重建 → refs 计数 → 0→1 时停 idle 计时。连接阶段经 connectMu 串行
- * （并发订阅同页复用同一 viewer，不重复拨号）。
+ * SubscribeLive 订阅实时画面（SSE 端点消费）：投影解析 → 同目标复用 / 异页重建 → refs
+ * 计数驱动 idle 闸，连接经 connectMu 串行。订阅不落流水不改投影——前端未点选页时跟随
+ * current 重订，订阅侧任何投影写入都会自激成重订风暴。
  */
 func (m *Manager) SubscribeLive(ctx context.Context, profile string, targetID string) (*LiveStream, error) {
 	if err := ValidateProfileName(profile); err != nil {

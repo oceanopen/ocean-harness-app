@@ -95,29 +95,15 @@ func (o *pageObserver) record(tg cdpTargetInfo) bool {
 	return created
 }
 
-// touch 页面活动序推进（「当前」回退判据）。
-func (o *pageObserver) touch(targetID string) {
-	o.m.pageHist.bump(o.profile, targetID, time.Now().UnixMilli())
-}
-
 /*
  * attachProbe 单页 attach + visibility 探测：flatten attach → Runtime binding 与新文档
- * 脚本注册 → 初始 visibilityState 探测（当前文档初始态；binding 事件仅触发重探测）。
+ * 脚本注册 → 当前文档补注同一监听（新文档脚本不覆盖已加载文档，无导航的手动
+ * 切 tab 全靠它上报）→ 初始 visibilityState 探测。
  */
 func (o *pageObserver) attachProbe(targetID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), observerStepTimeout)
 	defer cancel()
-	raw, err := o.conn.call(ctx, "", "Target.getTargets", map[string]any{"targetIds": []string{targetID}})
-	if err == nil {
-		var out struct {
-			TargetInfos []cdpTargetInfo `json:"targetInfos"`
-		}
-		if json.Unmarshal(raw, &out) == nil && len(out.TargetInfos) > 0 {
-			tg := out.TargetInfos[0]
-			o.m.pageHist.observe(o.profile, tg.ID, tg.URL, tg.Title, false, time.Now().UnixMilli())
-		}
-	}
-	raw, err = o.conn.call(ctx, "", "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true})
+	raw, err := o.conn.call(ctx, "", "Target.attachToTarget", map[string]any{"targetId": targetID, "flatten": true})
 	if err != nil {
 		o.log.Debug("观察者 attach 失败", zap.String("profile", o.profile), zap.String("targetId", targetID), zap.Error(err))
 		return
@@ -135,6 +121,7 @@ func (o *pageObserver) attachProbe(targetID string) {
 		return
 	}
 	_, _ = o.conn.call(ctx, out.SessionID, "Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": observerVisScript})
+	_, _ = o.conn.call(ctx, out.SessionID, "Runtime.evaluate", map[string]any{"expression": observerVisScript})
 	o.mu.Lock()
 	o.sessions[out.SessionID] = targetID
 	o.mu.Unlock()
