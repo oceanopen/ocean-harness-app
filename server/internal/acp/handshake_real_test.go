@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 
 	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/agentcatalog"
@@ -83,7 +83,7 @@ func TestRealHandshake(t *testing.T) {
 	}
 
 	type promptResult struct {
-		stop schema.StopReason
+		stop acp1.StopReason
 		err  error
 	}
 	results := make(chan promptResult, 1)
@@ -100,10 +100,12 @@ func TestRealHandshake(t *testing.T) {
 			if event.Terminated {
 				t.Fatal("会话在回合收敛前终结")
 			}
-			if event.Update != nil && event.Update.Update.AgentMessageChunk != nil {
-				if text := event.Update.Update.AgentMessageChunk.Content.Text.Text; strings.TrimSpace(text) != "" {
-					sawText = true
-					t.Logf("chunk: %s", text)
+			if event.Update != nil {
+				if chunk, ok := event.Update.Update.Variant().(acp1.SessionUpdateAgentMessageChunk); ok {
+					if text, _ := acp1.TextOf(chunk.Content); strings.TrimSpace(text) != "" {
+						sawText = true
+						t.Logf("chunk: %s", text)
+					}
 				}
 			}
 			if event.Permission != nil {
@@ -114,7 +116,7 @@ func TestRealHandshake(t *testing.T) {
 			if result.err != nil {
 				t.Fatalf("Prompt: %v\n进程诊断: %v", result.err, client.Err())
 			}
-			if result.stop != schema.StopReasonEndTurn {
+			if result.stop != acp1.StopReasonEndTurn {
 				t.Fatalf("stopReason = %q, want end_turn", result.stop)
 			}
 			if !sawText {

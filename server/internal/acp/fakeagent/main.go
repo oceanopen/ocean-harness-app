@@ -162,6 +162,13 @@ func (a *fakeAgent) Prompt(ctx context.Context, client agent.Client, request sch
 		if err != nil {
 			return schema.PromptResponse{}, err
 		}
+		// session/cancel 已达（真实 agent 的取消收敛语义）：回合以 cancelled 终止，不推进回显。
+		a.mu.Lock()
+		canceled := a.canceled[string(request.SessionID)]
+		a.mu.Unlock()
+		if canceled {
+			return schema.PromptResponse{StopReason: schema.StopReasonCancelled}, nil
+		}
 		echo := "permission:cancelled"
 		if response.Outcome.Selected != nil {
 			echo = "permission:selected:" + string(response.Outcome.Selected.OptionID)

@@ -9,7 +9,7 @@
 | P0 spike 验收（闸门） | T1 构建链路验收 | ✅ |
 | P0 spike 验收（闸门） | T2 spike 集成验收 | ✅ |
 | P1 正式接入 | T3 golden SSE 契约测试 | ✅ |
-| P1 正式接入 | T4 internal/acp 换底 | 🔲 |
+| P1 正式接入 | T4 internal/acp 换底 | ✅ |
 | P1 正式接入 | T5 下游泄漏面对位 | 🔲 |
 | P1 正式接入 | T6 fakeagent 重写 | 🔲 |
 | P1 正式接入 | T7 测试迁移收绿 | 🔲 |
@@ -92,12 +92,12 @@ server 的 ACP 客户端当前基于 BrokkAi/acp-go v0.11.0，其生成模型丢
 
 ### 任务 T4：internal/acp 换底
 
-- 状态：🔲
+- 状态：✅
 - 功能：ACP 客户端实现从 BrokkAi 换到 ironpark acp1，导出面不变
 - 技术方案：`client.go`/`session.go`/`interact.go`/`mode.go`/`events.go` 换 ironpark acp1 对位 API；`elicitation.go` 的 ElicitationWire/parseElicitationWire/elicitationWireInterceptor 整体删除（D3）；Initialize 的 elicitation 能力声明与 NewSession _meta 透传按 ironpark API 对位；软取消/收敛序映射 ctx cancel → `session/cancel`；锁序红线保持
 - 依赖：T2
 - 验收：internal/acp 编译通过；包内单测迁移后全绿；防腐层导出面签名零变化
-- 实施定稿：（执行方补）
+- 实施定稿：**全绿落地，fakeagent 暂留 BrokkAi agent 侧（v1 协议兼容，T6 重写）**。连接装配 `acp1.ConnectAgent(background, acp.NewStdioTransport(stdout, stdin), newClient)`（AgentClient 实现 acp1.Client + ElicitationHandler，caps 显式装 Elicitation.Form + Session.ConfigOptions.Boolean）；HasClaudeCodeExtension 改读 `AgentCapabilities.Meta`（T2 定稿位置）；unknown session 路由拒绝用 `acp.InvalidParams`（-32602）。软取消映射：prompt 走 `ClientSession.Prompt(turnCtx)`（turnCtx 与调用方 ctx 解耦，库内建「ctx 取消 → 发 session/cancel 且请求不灭 → 代理应答收敛」），桥接 = 调用方 ctx done → **先同步直发 `handle.Cancel`（保 wire 序：cancel 通知先于取消应答落管道，不依赖竞速）** → settlePendings → turnCtx 收口（库 AfterFunc 兜底幂等重发）；预算超时改为「关闭 giveup 信号放弃 Wait」（库请求 detached 无强拆手段，库侧回合待代理应答后自清理，窗口期新回合被库 ErrTurnInProgress 拒 → 映射 ErrTurnActive），-32800/request-cancelled 仍归一 StopReasonCancelled。D3 落地形态细化：拦截器/ctx 透传/WireFromRequest 降级/PendingElicitation.Request() 整体删除；ElicitationWire DTO 保留（SSE 契约面），投影改为从 `params.RawJSON()` 直接解析（typed 变体虽全字段在位，但 requestedSchema 经 typed 解码再编码有键序/未知字段漂移风险，保真优先）；wire 解析恒成功（库已校验合法 wire），parseElicitationWire 返回值简化。mode.go：SetSessionMode 对位 + 本地目录预检保留，成功后 setModeID 确认合并（通知回写兜底），锁序红线保持；BrokkAi 双轨错误类型无对位（agent 侧报错透传）。早到帧缓冲/背压 256/CAS-once/turnGen 代际/收敛序全部原样保留；NewSessionParams.Meta 换 acp1.Meta。fakeagent 最小调整：permission 脚本在 RequestPermission 返回后检查 canceled 标记 → cancelled 终止（模拟真实 agent 尊重 session/cancel 的收敛语义，配合 cancel 先行直发保序）。测试迁移：chain_test/interact_test/handshake_real_test 的 BrokkAi 符号换 acp1 对位（chunk 判别走 `Update.Variant()` 类型开关、应答构造走 NewCreateElicitationResponse/NewElicitationContentValue、wire 解析测试改走 typed 变体构造 + CustomSession 覆盖未知 mode）；TestLoadSessionCapabilityRejected 断言待真机验证（能力未声明错误来源从库本地协商变 agent 报错，fakeagent 侧路径不变）。验证：`go build ./internal/acp/` + `go vet` + `go test -race -count=2 ./internal/acp/` 全绿；下游破损面精确限于 acpsession/acpdoctor（T5 范围）；go.mod 中 BrokkAi 仍被 fakeagent 引用（T8 出清）。**审查修复（4 项）**：①cancelTurn 预算定时器改 CAS-once 武装（同 gen 二次取消排布的陈旧定时器不得对已关闭 giveup 二次 close——状态翻转滞后于 close 会击穿 panic），TestCancelTurnSoftCancel 加双触发回归；②SessionUpdate 改锁内只查表、锁外分发（修正与 registerSession 不变量自述矛盾的旧继承模式——满通道入队持 sessMu 会队头阻塞其他会话的交互路由；迟到事件由 enqueue 的 terminated 闸门丢弃）；③注释收敛 5 处至 ≤3 内容行；④删除零调用死代码 initialization()。审查确认无问题项：软取消桥接主路径、锁序红线（无持 stateMu/turnMu 网络调用）、converge 幂等、早到帧缓冲边界、elicitation 三变体路由、D1/D3/D4 对齐、防腐层导出面零变化
 
 ### 任务 T5：下游泄漏面对位
 
