@@ -12,7 +12,7 @@
 | P1 正式接入 | T4 internal/acp 换底 | ✅ |
 | P1 正式接入 | T5 下游泄漏面对位 | ✅ |
 | P1 正式接入 | T6 fakeagent 重写 | ✅ |
-| P1 正式接入 | T7 测试迁移收绿 | 🔲 |
+| P1 正式接入 | T7 测试迁移收绿 | ✅ |
 | P1 正式接入 | T8 依赖收口与真握手 | 🔲 |
 
 ## 需求背景
@@ -119,11 +119,12 @@ server 的 ACP 客户端当前基于 BrokkAi/acp-go v0.11.0，其生成模型丢
 
 ### 任务 T7：测试迁移收绿
 
-- 状态：🔲
+- 状态：✅
 - 功能：acp / acpsession / acpdoctor 全部测试在 ironpark 底座迁移完成
 - 技术方案：既有测试文件迁移；T2 spike 断言收编（并入常规 mock 测试或保留 env 门禁）；`pnpm server:dev` 产物下常规测试轮次全绿
 - 依赖：T5、T6
 - 验收：server 相关包 `go test ./...` 全绿
+- 实施定稿：**全绿落地，T2 spike 断言收编进 TestRealHandshake（env 门禁保留）**。测试迁移主体已随 T4/T5/T6 完成（含 mock 链路对 spike 可 mock 断言的既有覆盖），本任务实测验收 + spike 收编。spike 独立文件删除——「独立于生产代码直连验证」前提在 T4 换底后失效，四组真机断言全部改走生产面对位：claudeCode 扩展（`HasClaudeCodeExtension` 由日志升级为硬断言）、modes 双轨形状（`session.Modes()` 快照：default/acceptEdits/plan/auto 目录齐全 + currentModeId 在表内）、`_meta.systemPrompt` 透传闭环（NewSessionParams.Meta 注名 token 问名轮）、elicitation 全字段（`SessionEvent.Elicitation` → ElicitationWire 断言 sessionId 会话归属、toolCallId 与先前 tool_call update 一致、requestedSchema form 载荷保真，accept 应答后 end_turn 收敛）。新增 runHandshakeTurn 轮级运行器：事件排空至收敛、权限事件防御性取消、回合应答后非阻塞排空尾随 chunk（chunk 入队先于应答解析的 select 竞速兜底）、轮级 180s 上限；原「只回复 OK」轮由问名轮取代。验收实测：`go test ./...` 全 server 包 exit=0（19 包 ok）、`-race` acp/acpsession/acpdoctor/bot 四包全绿、gofmt/vet/build 全净；BrokkAi 代码级引用清零（golden_sse_test 仅存历史背景注释）；T8 真机验收载体即本用例（elicitation 真机回归随之并入，T8 技术方案不变）
 
 ### 任务 T8：依赖收口与真握手验收
 
