@@ -75,7 +75,7 @@ export function useDeleteLocalRepository() {
   });
 }
 
-/** 刷新单个仓库：用返回值就地替换缓存中对应项。variables.id 用于卡片级 loading 判定。 */
+/** 刷新单个仓库：list 就地替换 + worktreeList 失效重拉（worktree 数量随刷新更新）。variables.id 用于卡片级 loading 判定。 */
 export function useRefreshLocalRepository() {
   const qc = useQueryClient();
   return useMutation({
@@ -83,15 +83,19 @@ export function useRefreshLocalRepository() {
     onSuccess: (updated) => {
       qc.setQueryData<LocalRepositoryModel[]>(localRepositoryKeys.list(), old =>
         (old ?? []).map(r => (r.id === updated.id ? updated : r)));
+      qc.invalidateQueries({ queryKey: localRepositoryKeys.worktreeList() });
     },
   });
 }
 
-/** 全量刷新：用返回的完整列表替换缓存；loading 由消费方用 isPending 驱动（同 useRefreshLocalRepository）。 */
+/** 全量刷新：list 用返回列表替换 + worktreeList 失效重拉；loading 由消费方用 isPending 驱动（同 useRefreshLocalRepository）。 */
 export function useRefreshAllLocalRepositories() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => LocalRepositoryService.refreshAll(),
-    onSuccess: list => qc.setQueryData<LocalRepositoryModel[]>(localRepositoryKeys.list(), list),
+    onSuccess: (list) => {
+      qc.setQueryData<LocalRepositoryModel[]>(localRepositoryKeys.list(), list);
+      qc.invalidateQueries({ queryKey: localRepositoryKeys.worktreeList() });
+    },
   });
 }

@@ -35,12 +35,7 @@ import { formatDate, formatRelativeTime } from '@src/shared/time';
 import { useLocalRepositoryWorktreeList } from '@src/state/localRepositories';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
-const truncateSx = {
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-} as const;
+import { truncateSx } from './shared';
 
 // VSCode 官方单色品牌图标（src/assets/vscode.svg 通过 ?raw 注入，保留 currentColor 主题色跟随；同 ClaudeSessionCard）。
 // 导出供 WorktreesDrawer 操作栏复用。
@@ -75,7 +70,8 @@ interface RepositoryCardProps {
 
 type OpenAction = 'vscode' | 'idea' | 'iterm2';
 
-function InfoRow({ icon, label, children }: { icon: ReactNode; label?: string; children: ReactNode }) {
+// 通用信息行：icon + 可选 label + 内容，导出供 WorktreesDrawer 复用（同仓库卡布局）。
+export function InfoRow({ icon, label, children }: { icon: ReactNode; label?: string; children: ReactNode }) {
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', mb: '6px' }}>
       <Box

@@ -297,6 +297,7 @@ function RepositoriesPage({ windowShownTrigger }: { windowShownTrigger: number }
         <WorktreesDrawer
           repo={worktreeTarget}
           onClose={() => setWorktreeTargetId(null)}
+          onOpenFolder={handleOpenFolder}
           onOpenInTerminal={handleOpenInTerminal}
         />
       )}

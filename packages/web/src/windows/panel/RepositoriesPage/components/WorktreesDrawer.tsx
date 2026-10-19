@@ -1,6 +1,6 @@
 import type { LocalRepositoryModel, RepoWorktreeModel } from '@src/services';
 import { SiIterm2 } from '@icons-pack/react-simple-icons';
-import { AccountTree as AccountTreeIcon, CloseOutlined as CloseOutlinedIcon, RefreshOutlined as RefreshOutlinedIcon } from '@mui/icons-material';
+import { AccountTree as AccountTreeIcon, CloseOutlined as CloseOutlinedIcon, FolderOutlined as FolderOutlinedIcon, RefreshOutlined as RefreshOutlinedIcon } from '@mui/icons-material';
 import {
   Alert,
   Box,
@@ -8,9 +8,12 @@ import {
   Card,
   CardActions,
   CardContent,
+  CardHeader,
   Chip,
   CircularProgress,
+  Divider,
   IconButton,
+  Link,
   Typography,
 } from '@mui/material';
 import { commands } from '@src/shared/bindings';
@@ -18,12 +21,15 @@ import { unwrap } from '@src/shared/commands';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useLocalRepositoryWorktreeList } from '@src/state/localRepositories';
 import { useTranslation } from 'react-i18next';
-import { VsCodeIcon } from './RepositoryCard';
+import { InfoRow, VsCodeIcon } from './RepositoryCard';
+import { truncateSx } from './shared';
 
 // worktree 抽屉。
 interface WorktreesDrawerProps {
   repo: LocalRepositoryModel;
   onClose: () => void;
+  // Finder 打开走页面级回调（失败 toast 归口页面，同 onOpenInTerminal）。
+  onOpenFolder: (dir: string) => void;
   // iTerm2 打开走页面级回调（失败 toast 归口页面）；VS Code 失败静默 warn（同仓库卡）。
   onOpenInTerminal: (dir: string, terminal: 'iterm2' | 'terminal') => void;
 }
@@ -41,38 +47,58 @@ function openInVsCode(dir: string) {
 }
 
 /*
- * 单个 worktree 卡片：目录（monospace ellipsis + title）+ 分支 Chip；操作栏与仓库卡同布局
- * （space-between：左 VS Code、右 iTerm2，点击直接打开该 worktree 目录，无子目录 Menu、无 IDEA）。
+ * 单个 worktree 卡片，与仓库卡同 anatomy：Header 目录名 → Divider → Content 信息行（目录 Link 点击 Finder 打开、
+ * 分支 Chip）→ Divider → 操作栏（space-between：左 VS Code、右 iTerm2，无子目录 Menu、无 IDEA）。
+ * 标题取目录路径末段，tooltip 保留完整路径。
  */
-function WorktreeCard({ wt, onOpenInTerminal }: { wt: RepoWorktreeModel; onOpenInTerminal: WorktreesDrawerProps['onOpenInTerminal'] }) {
+function WorktreeCard({ wt, onOpenFolder, onOpenInTerminal }: {
+  wt: RepoWorktreeModel;
+  onOpenFolder: WorktreesDrawerProps['onOpenFolder'];
+  onOpenInTerminal: WorktreesDrawerProps['onOpenInTerminal'];
+}) {
   const { t } = useTranslation();
+  const name = wt.dir.split(/[\\/]/).filter(Boolean).pop() ?? wt.dir;
 
   return (
     <Card variant="outlined" sx={{ display: 'flex', flexDirection: 'column' }}>
-      <CardContent sx={{ flex: 1, pb: '8px' }}>
-        <Typography
-          variant="caption"
-          sx={{
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            color: 'text.primary',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            display: 'block',
-          }}
-          title={wt.dir}
-        >
-          {wt.dir}
-        </Typography>
-        {wt.branch
-          ? <Chip size="small" variant="outlined" icon={<AccountTreeIcon />} label={wt.branch} sx={{ mt: '8px' }} />
-          : (
-              <Typography variant="caption" sx={{ color: 'text.disabled', display: 'block', mt: '8px' }}>
-                {t('repositories:worktrees.noBranch')}
-              </Typography>
-            )}
+      <CardHeader
+        title={name}
+        slotProps={{ title: { fontWeight: 600, noWrap: true, title: wt.dir } }}
+      />
+      <Divider />
+      <CardContent sx={{ flex: 1 }}>
+        <InfoRow icon={<FolderOutlinedIcon sx={{ fontSize: '15px' }} />} label={t('repositories:card.dirLabel')}>
+          <Link
+            component="button"
+            type="button"
+            onClick={() => onOpenFolder(wt.dir)}
+            title={wt.dir}
+            underline="hover"
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              textAlign: 'left',
+              // inline-block + maxWidth 让热区收窄到文字本身（同仓库卡目录行）。
+              display: 'inline-block',
+              maxWidth: '100%',
+              minWidth: '0px',
+              ...truncateSx,
+            }}
+          >
+            {wt.dir}
+          </Link>
+        </InfoRow>
+        <InfoRow icon={<AccountTreeIcon sx={{ fontSize: '15px' }} />} label={t('repositories:card.branchLabel')}>
+          {wt.branch
+            ? <Chip size="small" variant="outlined" label={wt.branch} />
+            : (
+                <Typography variant="caption" sx={{ color: 'text.disabled' }}>
+                  {t('repositories:worktrees.noBranch')}
+                </Typography>
+              )}
+        </InfoRow>
       </CardContent>
+      <Divider />
       <CardActions sx={{ display: 'flex', justifyContent: 'space-between' }}>
         <Button size="small" onClick={() => openInVsCode(wt.dir)} startIcon={<VsCodeIcon />}>
           {t('repositories:card.vscode')}
@@ -91,7 +117,7 @@ function WorktreeCard({ wt, onOpenInTerminal }: { wt: RepoWorktreeModel; onOpenI
 
 // worktree 列表抽屉：ResizableDrawer 壳 + 头部（标题 + 刷新/关闭）+ 卡片纵向列表（loading/error/空状态）。
 // 数据与卡片数量同源（worktreeList 共享缓存），刷新 = refetch 该接口（仅解析 worktree，轻量）。
-function WorktreesDrawer({ repo, onClose, onOpenInTerminal }: WorktreesDrawerProps) {
+function WorktreesDrawer({ repo, onClose, onOpenFolder, onOpenInTerminal }: WorktreesDrawerProps) {
   const { t } = useTranslation();
   const { data, isPending, isError, error, refetch, isFetching } = useLocalRepositoryWorktreeList();
   const worktrees = data?.find(e => e.id === repo.id)?.worktrees ?? [];
@@ -139,7 +165,7 @@ function WorktreesDrawer({ repo, onClose, onOpenInTerminal }: WorktreesDrawerPro
             </Box>
           )}
           {worktrees.map(wt => (
-            <WorktreeCard key={wt.dir} wt={wt} onOpenInTerminal={onOpenInTerminal} />
+            <WorktreeCard key={wt.dir} wt={wt} onOpenFolder={onOpenFolder} onOpenInTerminal={onOpenInTerminal} />
           ))}
         </Box>
       </Box>
