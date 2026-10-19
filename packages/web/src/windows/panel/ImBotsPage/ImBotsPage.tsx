@@ -54,7 +54,7 @@ function acpHealthChip(
   agentOptions: AcpAgentOption[],
   doctorEntries: DoctorEntryState[] | undefined,
 ): HealthChip | null {
-  if (bot.workspaceId <= 0 || !workspaces || !doctorEntries) {
+  if (bot.workspaceId === '' || !workspaces || !doctorEntries) {
     return null;
   }
   const ws = workspaces.find(w => w.id === bot.workspaceId);
@@ -133,7 +133,7 @@ function ImBotCard(props: {
             <Chip size="small" label={health.label} color={health.color} variant="outlined" />
           </Tooltip>
         )}
-        {bot.workspaceId <= 0 && (
+        {bot.workspaceId === '' && (
           <Tooltip title="尚未选择工作空间，对话时将收到补选提醒">
             <Chip size="small" label="待配置" color="warning" variant="outlined" sx={{ fontSize: '12px' }} />
           </Tooltip>
@@ -157,7 +157,7 @@ function ImBotCard(props: {
       </Box>
       <Box sx={{ px: '16px', pb: '12px', display: 'flex', gap: '24px', alignItems: 'center' }}>
         <Typography sx={{ fontSize: '12px', color: 'text.secondary', flex: 2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {bot.workspaceId > 0 ? `工作空间：${bot.workspaceName || `#${bot.workspaceId}`}` : '工作空间：未选择'}
+          {bot.workspaceId !== '' ? `工作空间：${bot.workspaceName || bot.workspaceId}` : '工作空间：未选择'}
         </Typography>
         <Typography sx={{ fontSize: '12px', color: 'text.secondary', flex: 1 }}>
           {bot.accessPolicy.mode === 'open'
@@ -185,8 +185,8 @@ function ImBotsPage() {
   const checkDoctor = useDoctorCheck();
   const [channelKey, setChannelKey] = useState(IM_BOT_CHANNELS[0].key);
   const [drawer, setDrawer] = useState<{ bot: ImBotModel | null; channelKey: string } | null>(null);
-  // 扫码抽屉会话：rebindBotId = 0 扫码新建，> 0 为既有 weixin bot 换绑凭据（编辑抽屉跳转而来）。
-  const [provision, setProvision] = useState<{ rebindBotId: number } | null>(null);
+  // 扫码抽屉会话：rebindBotId 空 = 扫码新建，非空为既有 weixin bot 换绑凭据（编辑抽屉跳转而来）。
+  const [provision, setProvision] = useState<{ rebindBotId: string } | null>(null);
   const [provisionKey, setProvisionKey] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<ImBotModel | null>(null);
 
@@ -261,7 +261,7 @@ function ImBotsPage() {
             <Button
               variant="outlined"
               startIcon={<QrCode2OutlinedIcon sx={{ '& svg': { fontSize: '18px' } }} />}
-              onClick={() => setProvision({ rebindBotId: 0 })}
+              onClick={() => setProvision({ rebindBotId: '' })}
             >
               {channel.provisionLabel}
             </Button>
@@ -324,7 +324,7 @@ function ImBotsPage() {
         key={provisionKey}
         open={provision != null}
         channelKey={channelKey}
-        rebindBotId={provision?.rebindBotId ?? 0}
+        rebindBotId={provision?.rebindBotId ?? ''}
         onClose={() => setProvision(null)}
         onRegenerate={() => setProvisionKey(k => k + 1)}
       />

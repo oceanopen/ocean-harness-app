@@ -6,7 +6,7 @@ import { request } from './http';
  */
 export interface WorkspaceTypeModel {
   id: number;
-  workspaceId: number;
+  workspaceId: string; // 归属工作空间 uuid
   name: string;
   color: string;
   description: string;
@@ -17,12 +17,12 @@ export interface WorkspaceTypeModel {
 
 // POST /api/tracker/workspaceType/getList 的入参（按 workspaceId 查全部）。
 export interface WorkspaceTypeGetListRequest {
-  workspaceId: number;
+  workspaceId: string;
 }
 
 // POST /api/tracker/workspaceType/create 的入参。
 export interface WorkspaceTypeCreateRequest {
-  workspaceId: number;
+  workspaceId: string;
   name: string;
   color?: string;
   description?: string;

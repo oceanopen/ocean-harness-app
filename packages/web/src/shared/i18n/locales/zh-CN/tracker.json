@@ -28,7 +28,6 @@
     },
     "edit": {
       "title": "编辑工作空间",
-      "idLabel": "ID",
       "confirm": "保存"
     },
     "card": {

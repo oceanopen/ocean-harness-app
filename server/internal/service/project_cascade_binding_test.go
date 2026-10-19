@@ -40,7 +40,7 @@ func mkCascadeFixture(t *testing.T, db *gorm.DB) (int, string, string, string) {
 	t.Helper()
 	q := query.Use(db)
 	ctx := context.Background()
-	project := &model.WorkspaceProject{WorkspaceID: 1, Name: "p"}
+	project := &model.WorkspaceProject{WorkspaceID: "ws-1", Name: "p"}
 	if err := q.WorkspaceProject.WithContext(ctx).Create(project); err != nil {
 		t.Fatalf("建 project: %v", err)
 	}
@@ -48,18 +48,18 @@ func mkCascadeFixture(t *testing.T, db *gorm.DB) (int, string, string, string) {
 	const childID = "0198eeee-0000-7111-8111-3b6ac9e1f202"
 	const otherID = "0198eeee-0000-7111-8111-3b6ac9e1f299"
 	for _, is := range []*model.ProjectIssue{
-		{ID: parentID, ProjectID: project.ID, WorkspaceID: 1, Name: "父任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
-		{ID: childID, ProjectID: project.ID, WorkspaceID: 1, Name: "子任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1, ParentID: parentID},
-		{ID: otherID, ProjectID: project.ID + 1, WorkspaceID: 1, Name: "无关任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1}, // 独立 project：两删除场景均不被级联，充当「未删 issue」对照组
+		{ID: parentID, ProjectID: project.ID, WorkspaceID: "ws-1", Name: "父任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
+		{ID: childID, ProjectID: project.ID, WorkspaceID: "ws-1", Name: "子任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1, ParentID: parentID},
+		{ID: otherID, ProjectID: project.ID + 1, WorkspaceID: "ws-1", Name: "无关任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1}, // 独立 project：两删除场景均不被级联，充当「未删 issue」对照组
 	} {
 		if err := q.ProjectIssue.WithContext(ctx).Create(is); err != nil {
 			t.Fatalf("建 issue: %v", err)
 		}
 	}
 	for _, conv := range []*model.ImBotConversation{
-		{BotID: 1, ConversationKey: "single:u1", BoundIssueID: parentID},
-		{BotID: 1, ConversationKey: "single:u2", BoundIssueID: childID},
-		{BotID: 1, ConversationKey: "single:u3", BoundIssueID: otherID, ClaudeSessionID: "sess-keep"},
+		{ID: "conv-u1", BotID: "bot-1", ConversationKey: "single:u1", BoundIssueID: parentID},
+		{ID: "conv-u2", BotID: "bot-1", ConversationKey: "single:u2", BoundIssueID: childID},
+		{ID: "conv-u3", BotID: "bot-1", ConversationKey: "single:u3", BoundIssueID: otherID, ClaudeSessionID: "sess-keep"},
 	} {
 		if err := q.ImBotConversation.WithContext(ctx).Create(conv); err != nil {
 			t.Fatalf("建会话行: %v", err)

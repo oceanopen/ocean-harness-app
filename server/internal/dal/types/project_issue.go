@@ -41,7 +41,7 @@ type IssueRepositoryBranch struct {
  */
 type ProjectIssueCreateRequest struct {
 	ProjectID            int                      `json:"projectId" binding:"required"`
-	WorkspaceID          int                      `json:"workspaceId" binding:"required"`
+	WorkspaceID          string                   `json:"workspaceId" binding:"required"`
 	Name                 string                   `json:"name" binding:"required,max=255"`
 	Description          string                   `json:"description" binding:"omitempty"`
 	Priority             enums.Priority           `json:"priority"`

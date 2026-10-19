@@ -142,7 +142,7 @@ func openAccess() AccessPolicy { return AccessPolicy{Mode: AccessModeOpen} }
 
 // issueCmdCfg 测试用运行配置。
 func issueCmdCfg() BotRuntimeConfig {
-	return BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: openAccess()}
+	return BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: openAccess()}
 }
 
 // queryIssueByID 直查 issue 行（解绑卡用例的卡构造同源数据取回）。
@@ -161,12 +161,12 @@ func TestSendUnbindCard(t *testing.T) {
 	t.Run("已绑定出确认卡不清锚", func(t *testing.T) {
 		o, store := newOrchestratorWithDB(t)
 		db := store.DB
-		mkIssue(t, db, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
+		mkIssue(t, db, "ws-1", "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
 		// 生产链路 runTurn 先 MarkSeen（GetOrCreate 建行）再进指令步——测试等价预置。
-		if _, err := store.GetOrCreate(1, "single:u1"); err != nil {
+		if _, err := store.GetOrCreate("bot-1", "single:u1"); err != nil {
 			t.Fatalf("预置会话行: %v", err)
 		}
-		if _, err := store.SaveBoundIssueID(1, "single:u1", "0198aaa1-0000-7111-8111-3b6ac9e1f201"); err != nil {
+		if _, err := store.SaveBoundIssueID("bot-1", "single:u1", "0198aaa1-0000-7111-8111-3b6ac9e1f201"); err != nil {
 			t.Fatalf("预置绑定: %v", err)
 		}
 
@@ -184,7 +184,7 @@ func TestSendUnbindCard(t *testing.T) {
 			cards[0].content != taskunbindCardText(issue) {
 			t.Fatalf("卡锚与同帧文本应与绑定任务同源: %+v", cards[0])
 		}
-		if bound, _ := store.BoundIssueID(1, "single:u1"); bound != "0198aaa1-0000-7111-8111-3b6ac9e1f201" {
+		if bound, _ := store.BoundIssueID("bot-1", "single:u1"); bound != "0198aaa1-0000-7111-8111-3b6ac9e1f201" {
 			t.Fatalf("出卡不得清锚（解绑唯一入口是点击）: %q", bound)
 		}
 	})
@@ -201,10 +201,10 @@ func TestSendUnbindCard(t *testing.T) {
 
 	t.Run("悬空锚按未绑定收口", func(t *testing.T) {
 		o, store := newOrchestratorWithDB(t)
-		if _, err := store.GetOrCreate(1, "single:u1"); err != nil {
+		if _, err := store.GetOrCreate("bot-1", "single:u1"); err != nil {
 			t.Fatalf("预置会话行: %v", err)
 		}
-		if _, err := store.SaveBoundIssueID(1, "single:u1", "i-gone"); err != nil { // 无对应 issue 行
+		if _, err := store.SaveBoundIssueID("bot-1", "single:u1", "i-gone"); err != nil { // 无对应 issue 行
 			t.Fatalf("预置悬空绑定: %v", err)
 		}
 		rs := &fakeCardReplyStream{}
@@ -217,11 +217,11 @@ func TestSendUnbindCard(t *testing.T) {
 
 	t.Run("无卡能力回落纯文本", func(t *testing.T) {
 		o, store := newOrchestratorWithDB(t)
-		mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
-		if _, err := store.GetOrCreate(1, "single:u1"); err != nil {
+		mkIssue(t, store.DB, "ws-1", "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
+		if _, err := store.GetOrCreate("bot-1", "single:u1"); err != nil {
 			t.Fatalf("预置会话行: %v", err)
 		}
-		if _, err := store.SaveBoundIssueID(1, "single:u1", "0198aaa1-0000-7111-8111-3b6ac9e1f201"); err != nil {
+		if _, err := store.SaveBoundIssueID("bot-1", "single:u1", "0198aaa1-0000-7111-8111-3b6ac9e1f201"); err != nil {
 			t.Fatalf("预置绑定: %v", err)
 		}
 
@@ -245,9 +245,9 @@ func TestSendUnbindCard(t *testing.T) {
 func TestSendBindingCardIssueCards(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
 	db := store.DB
-	mkIssue(t, db, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
-	mkIssue(t, db, 1, "0198aaa2-0000-7111-8111-3b6ac9e1f202", "登录页接口", 2)
-	mkIssue(t, db, 1, "0198aaa3-0000-7111-8111-3b6ac9e1f203", "网关重构", 3)
+	mkIssue(t, db, "ws-1", "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
+	mkIssue(t, db, "ws-1", "0198aaa2-0000-7111-8111-3b6ac9e1f202", "登录页接口", 2)
+	mkIssue(t, db, "ws-1", "0198aaa3-0000-7111-8111-3b6ac9e1f203", "网关重构", 3)
 
 	card := func(keyword string) *fakeCardReplyStream {
 		rs := &fakeCardReplyStream{}
@@ -261,13 +261,13 @@ func TestSendBindingCardIssueCards(t *testing.T) {
 		if len(frames) != 0 || len(cards) != 1 || !cards[0].final || cards[0].update {
 			t.Fatalf("应恰一张终帧卡: frames=%+v cards=%+v", frames, cards)
 		}
-		issues, _ := bindingIssueCandidates(db, 1, "")
+		issues, _ := bindingIssueCandidates(db, "ws-1", "")
 		if !bindingTaskIDMatches(cards[0].spec.TaskID, taskbindCardPrefix, "", issueIDKeys(issues)) ||
 			cards[0].content != issueCardText("", issues) {
 			t.Fatalf("卡锚与同帧文本应与候选同源: %+v", cards[0])
 		}
 		// 出卡即登记 last_message_card（pending，spec 快照与所发卡同锚）——点击消费闸的 SSOT。
-		lc, ok := store.LastMessageCard(1, "single:u1")
+		lc, ok := store.LastMessageCard("bot-1", "single:u1")
 		if !ok || lc.Kind != "taskbind" || lc.Status != lastMessageCardPending || lc.Spec.TaskID != cards[0].spec.TaskID {
 			t.Fatalf("出卡应登记 last_message_card（taskbind/pending/同锚）: %+v ok=%v", lc, ok)
 		}
@@ -296,7 +296,7 @@ func TestSendBindingCardIssueCards(t *testing.T) {
 
 	t.Run("出卡不写绑定", func(t *testing.T) {
 		card("登录页")
-		if bound, _ := store.BoundIssueID(1, "single:u1"); bound != "" {
+		if bound, _ := store.BoundIssueID("bot-1", "single:u1"); bound != "" {
 			t.Fatalf("指令步不得写绑定: %q", bound)
 		}
 	})
@@ -308,12 +308,12 @@ func TestSendBindingCardIssueCards(t *testing.T) {
  */
 func TestSendBindingCardIssueNoCardFallback(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
-	mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
+	mkIssue(t, store.DB, "ws-1", "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
 
 	rs := &fakeReplyStream{}
 	o.sendBindingCard(issueCmdCfg(), InboundMessage{ConversationKey: "single:u1"}, bindingIssue, "登录页", "", rs)
 	frames := rs.snapshot()
-	issues, _ := bindingIssueCandidates(store.DB, 1, "登录页")
+	issues, _ := bindingIssueCandidates(store.DB, "ws-1", "登录页")
 	if len(frames) != 1 || !frames[0].final || frames[0].content != issueNumberedText("登录页", issues) {
 		t.Fatalf("无卡能力应回落编号文本终帧: %+v", frames)
 	}
@@ -330,7 +330,7 @@ func TestRunTurnWorkspaceCommandCard(t *testing.T) {
 	o := NewOrchestrator(store, nil, nil, nil, zap.NewNop())
 
 	rs := &fakeCardReplyStream{}
-	cfg := BotRuntimeConfig{BotID: 1, AccessPolicy: openAccess()} // 无 WorkspaceDir：门禁态
+	cfg := BotRuntimeConfig{BotID: "bot-1", AccessPolicy: openAccess()} // 无 WorkspaceDir：门禁态
 	o.HandleInbound(cfg, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "#工作空间 前端"}, func() (ReplyStream, error) {
 		return rs, nil
 	})
@@ -357,17 +357,17 @@ func TestRunTurnWorkspaceCommandCard(t *testing.T) {
  */
 func TestRunTurnUnbindCommandCard(t *testing.T) {
 	store := &ConversationStore{DB: newIssueTestDB(t)}
-	mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
-	if _, err := store.GetOrCreate(1, "single:u1"); err != nil {
+	mkIssue(t, store.DB, "ws-1", "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
+	if _, err := store.GetOrCreate("bot-1", "single:u1"); err != nil {
 		t.Fatalf("预置会话行: %v", err)
 	}
-	if _, err := store.SaveBoundIssueID(1, "single:u1", "0198aaa1-0000-7111-8111-3b6ac9e1f201"); err != nil {
+	if _, err := store.SaveBoundIssueID("bot-1", "single:u1", "0198aaa1-0000-7111-8111-3b6ac9e1f201"); err != nil {
 		t.Fatalf("预置绑定: %v", err)
 	}
 	o := NewOrchestrator(store, nil, nil, nil, zap.NewNop())
 
 	rs := &fakeCardReplyStream{}
-	cfg := BotRuntimeConfig{BotID: 1, AccessPolicy: openAccess()} // 无 WorkspaceDir：门禁态——解绑步在前不受拦
+	cfg := BotRuntimeConfig{BotID: "bot-1", AccessPolicy: openAccess()} // 无 WorkspaceDir：门禁态——解绑步在前不受拦
 	o.HandleInbound(cfg, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "#任务解绑"}, func() (ReplyStream, error) {
 		return rs, nil
 	})
@@ -389,7 +389,7 @@ func TestRunTurnUnbindCommandCard(t *testing.T) {
 		cards[0].content != taskunbindCardText(issue) {
 		t.Fatalf("卡锚与同帧文本应与绑定任务同源: %+v", cards[0])
 	}
-	if bound, _ := store.BoundIssueID(1, "single:u1"); bound != "0198aaa1-0000-7111-8111-3b6ac9e1f201" {
+	if bound, _ := store.BoundIssueID("bot-1", "single:u1"); bound != "0198aaa1-0000-7111-8111-3b6ac9e1f201" {
 		t.Fatalf("出卡不得清锚（解绑唯一入口是点击）: %q", bound)
 	}
 }
@@ -405,7 +405,7 @@ func TestRunTurnGateCard(t *testing.T) {
 		rs := &fakeCardReplyStream{}
 		return o, rs
 	}
-	cfg := BotRuntimeConfig{BotID: 1, AccessPolicy: openAccess()} // WorkspaceDir 空：门禁态
+	cfg := BotRuntimeConfig{BotID: "bot-1", AccessPolicy: openAccess()} // WorkspaceDir 空：门禁态
 
 	t.Run("指引与卡同帧", func(t *testing.T) {
 		o, rs := newGateOrch(t)
@@ -456,7 +456,7 @@ func TestRunTurnProbeCard(t *testing.T) {
 	t.Run("ACP 未绑出卡不出回合", func(t *testing.T) {
 		driver := &stubProberDriver{acp: true}
 		o, store := newOrchestratorWithDriver(t, driver)
-		mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
+		mkIssue(t, store.DB, "ws-1", "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
 		rs := &fakeCardReplyStream{}
 		o.HandleInbound(issueCmdCfg(), msg, func() (ReplyStream, error) { return rs, nil })
 		waitFor(t, "探针出卡", func() bool { return len(rs.cardSnapshot()) > 0 })
@@ -494,7 +494,7 @@ func TestRunTurnProbeCard(t *testing.T) {
 	t.Run("无卡能力回落纯文本", func(t *testing.T) {
 		driver := &stubProberDriver{acp: true}
 		o, store := newOrchestratorWithDriver(t, driver)
-		mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
+		mkIssue(t, store.DB, "ws-1", "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
 		rs := &fakeReplyStream{}
 		o.HandleInbound(issueCmdCfg(), msg, func() (ReplyStream, error) { return rs, nil })
 		waitFor(t, "探针纯文本回落", func() bool {
@@ -506,7 +506,7 @@ func TestRunTurnProbeCard(t *testing.T) {
 			return false
 		})
 		frames := rs.snapshot()
-		issues, _ := bindingIssueCandidates(store.DB, 1, "")
+		issues, _ := bindingIssueCandidates(store.DB, "ws-1", "")
 		if len(frames) != 2 || frames[1].content != issueNumberedText("", issues) || !frames[1].final {
 			t.Fatalf("无卡能力应回落编号文本终帧: %+v", frames)
 		}
@@ -522,7 +522,7 @@ func TestRunTurnProbeCard(t *testing.T) {
  */
 func TestRunTurnIssueCommandFullPath(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
-	mkIssue(t, store.DB, 1, "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
+	mkIssue(t, store.DB, "ws-1", "0198aaa1-0000-7111-8111-3b6ac9e1f201", "登录页样式", 1)
 	rs := &fakeCardReplyStream{}
 	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "#任务 登录页"}, func() (ReplyStream, error) {
 		return rs, nil
@@ -536,7 +536,7 @@ func TestRunTurnIssueCommandFullPath(t *testing.T) {
 	if len(cards) != 1 || !cards[0].final || len(cards[0].spec.Options) != 1 {
 		t.Fatalf("应恰一张终帧任务卡: %+v", cards)
 	}
-	if bound, _ := store.BoundIssueID(1, "single:u1"); bound != "" {
+	if bound, _ := store.BoundIssueID("bot-1", "single:u1"); bound != "" {
 		t.Fatalf("指令步不得写绑定: %q", bound)
 	}
 }
@@ -550,11 +550,11 @@ func TestRunTurnMarkSeenGate(t *testing.T) {
 	mkWorkspace(t, store.DB, "仓")
 	o := NewOrchestrator(store, nil, nil, nil, zap.NewNop())
 	rs := &fakeCardReplyStream{}
-	o.HandleInbound(BotRuntimeConfig{BotID: 1, AccessPolicy: openAccess()}, InboundMessage{MessageID: "m-42", ConversationKey: "single:u1", SenderID: "u1", Text: "#工作空间"}, func() (ReplyStream, error) {
+	o.HandleInbound(BotRuntimeConfig{BotID: "bot-1", AccessPolicy: openAccess()}, InboundMessage{MessageID: "m-42", ConversationKey: "single:u1", SenderID: "u1", Text: "#工作空间"}, func() (ReplyStream, error) {
 		return rs, nil
 	})
 	waitFor(t, "#工作空间 出卡", func() bool { return len(rs.cardSnapshot()) > 0 })
-	if seen, err := store.HasSeen(1, "single:u1", "m-42"); err != nil || !seen {
+	if seen, err := store.HasSeen("bot-1", "single:u1", "m-42"); err != nil || !seen {
 		t.Fatalf("MarkSeen 应落库: seen=%v err=%v", seen, err)
 	}
 }
@@ -567,7 +567,7 @@ func TestRunTurnMarkSeenGate(t *testing.T) {
 func TestRunTurnHelpCommand(t *testing.T) {
 	o, _ := newOrchestratorWithDB(t) // 无 workspace 数据：帮助步须先于门禁收口
 	rs := &fakeCardReplyStream{}
-	o.HandleInbound(BotRuntimeConfig{BotID: 1, AccessPolicy: openAccess()}, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "#帮助"}, func() (ReplyStream, error) {
+	o.HandleInbound(BotRuntimeConfig{BotID: "bot-1", AccessPolicy: openAccess()}, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "#帮助"}, func() (ReplyStream, error) {
 		return rs, nil
 	})
 	waitFor(t, "#帮助 终帧", func() bool {

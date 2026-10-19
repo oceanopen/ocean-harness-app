@@ -3,7 +3,7 @@ import { request } from './http';
 // WorkspaceProjectModel：对齐后端 types.ProjectResponseData 的 JSON 形态（嵌入 DO 平铺 + localRepositoryIds 装配）。
 export interface WorkspaceProjectModel {
   id: number;
-  workspaceId: number;
+  workspaceId: string; // 归属工作空间 uuid
   name: string;
   description: string;
   emoji: string;
@@ -14,7 +14,7 @@ export interface WorkspaceProjectModel {
 
 // POST /api/tracker/project/getList 的入参（按 workspaceId 查）。
 export interface WorkspaceProjectGetListRequest {
-  workspaceId: number;
+  workspaceId: string;
 }
 
 /**
@@ -22,7 +22,7 @@ export interface WorkspaceProjectGetListRequest {
  * localRepositoryIds 为关联仓库最终列表（全量，随项目一起保存，后端事务内全量写入）。
  */
 export interface WorkspaceProjectCreateRequest {
-  workspaceId: number;
+  workspaceId: string;
   name: string;
   description?: string;
   emoji?: string;

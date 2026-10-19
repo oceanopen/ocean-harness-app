@@ -28,7 +28,6 @@
     },
     "edit": {
       "title": "Edit workspace",
-      "idLabel": "ID",
       "confirm": "Save"
     },
     "card": {

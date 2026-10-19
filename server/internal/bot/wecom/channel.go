@@ -77,7 +77,7 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 		return errors.New("企微凭据缺失：credential JSON 须含 botId 与 secret")
 	}
 
-	log := zap.L().With(zap.String("component", "bot.wecom"), zap.Int("botID", cfg.BotID))
+	log := zap.L().With(zap.String("component", "bot.wecom"), zap.String("botID", cfg.BotID))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	/*

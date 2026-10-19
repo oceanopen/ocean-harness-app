@@ -41,7 +41,7 @@ export interface CommandPaletteContextValue {
   toggleSidebar: () => void;
 
   // 宿主：tracker 跳转（二级页面选中实体后回写）
-  currentWorkspaceId: number | null;
+  currentWorkspaceId: string | null;
   // 当前选中工作空间 / 项目的名称（派生自 tracker store），供 jump 命令声明式渲染名称注释。
   currentWorkspaceName: string | null;
   currentWorkspaceProjectName: string | null;

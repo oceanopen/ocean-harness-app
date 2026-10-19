@@ -36,18 +36,18 @@ export function useWorkspaces() {
 }
 
 /** 指定工作空间下的项目。workspaceId 为 null 时不查询（如命令面板在某工作空间选中前不查项目）。 */
-export function useWorkspaceProjects(workspaceId: number | null) {
+export function useWorkspaceProjects(workspaceId: string | null) {
   return useQuery({
-    queryKey: trackerKeys.workspaceProjects(workspaceId ?? 0),
+    queryKey: trackerKeys.workspaceProjects(workspaceId ?? ''),
     queryFn: () => WorkspaceProjectService.getList({ workspaceId: workspaceId! }),
     enabled: workspaceId != null,
   });
 }
 
 /** 指定工作空间下的全部类型。workspaceId 为 null 时不查询。 */
-export function useWorkspaceTypes(workspaceId: number | null) {
+export function useWorkspaceTypes(workspaceId: string | null) {
   return useQuery({
-    queryKey: trackerKeys.workspaceTypes(workspaceId ?? 0),
+    queryKey: trackerKeys.workspaceTypes(workspaceId ?? ''),
     queryFn: () => WorkspaceTypeService.getList({ workspaceId: workspaceId! }),
     enabled: workspaceId != null,
   });
@@ -93,7 +93,7 @@ export function useUpdateWorkspace() {
 export function useDeleteWorkspace() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => WorkspaceService.delete({ id }),
+    mutationFn: (id: string) => WorkspaceService.delete({ id }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: trackerKeys.workspaces() });
       void qc.invalidateQueries({ queryKey: imBotsKeys.list() });
@@ -102,7 +102,7 @@ export function useDeleteWorkspace() {
 }
 
 /** 创建项目（workspaceId 用于失效该工作空间的项目缓存）。 */
-export function useCreateWorkspaceProject(workspaceId: number) {
+export function useCreateWorkspaceProject(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: WorkspaceProjectCreateRequest) => WorkspaceProjectService.create(req),
@@ -111,7 +111,7 @@ export function useCreateWorkspaceProject(workspaceId: number) {
 }
 
 /** 更新项目。 */
-export function useUpdateWorkspaceProject(workspaceId: number) {
+export function useUpdateWorkspaceProject(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: WorkspaceProjectUpdateRequest) => WorkspaceProjectService.update(req),
@@ -120,7 +120,7 @@ export function useUpdateWorkspaceProject(workspaceId: number) {
 }
 
 /** 删除项目；若删的正是当前选中项目，联动清空 store 选中态（替代原 WorkspaceProjectList onSelect(null) 副作用）。 */
-export function useDeleteWorkspaceProject(workspaceId: number) {
+export function useDeleteWorkspaceProject(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => WorkspaceProjectService.delete({ id }),
@@ -140,7 +140,7 @@ export function useDeleteWorkspaceProject(workspaceId: number) {
  */
 
 /** 创建类型（workspaceId 用于失效该工作空间的类型缓存）。 */
-export function useCreateWorkspaceType(workspaceId: number) {
+export function useCreateWorkspaceType(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: WorkspaceTypeCreateRequest) => WorkspaceTypeService.create(req),
@@ -149,7 +149,7 @@ export function useCreateWorkspaceType(workspaceId: number) {
 }
 
 /** 更新类型。 */
-export function useUpdateWorkspaceType(workspaceId: number) {
+export function useUpdateWorkspaceType(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: WorkspaceTypeUpdateRequest) => WorkspaceTypeService.update(req),
@@ -158,7 +158,7 @@ export function useUpdateWorkspaceType(workspaceId: number) {
 }
 
 /** 删除类型（后端将引用该类型的 issue 置为未分类）。 */
-export function useDeleteWorkspaceType(workspaceId: number) {
+export function useDeleteWorkspaceType(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => WorkspaceTypeService.delete({ id }),

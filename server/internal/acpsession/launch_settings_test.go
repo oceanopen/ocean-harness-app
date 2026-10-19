@@ -101,7 +101,8 @@ var seedIssueSeq atomic.Int64
 func seedIssue(t *testing.T, db *gorm.DB, wsDir, wsLaunchSettings, issueLaunchSettings string) string {
 	t.Helper()
 	q := queryOf(db)
-	ws := &model.Workspace{Name: "ws", Dir: wsDir, LaunchSettings: wsLaunchSettings}
+	// workspace 为 uuid 文本主键（无自增），显式赋唯一 id。
+	ws := &model.Workspace{ID: fmt.Sprintf("ws-%d", seedIssueSeq.Add(1)), Name: "ws", Dir: wsDir, LaunchSettings: wsLaunchSettings}
 	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
 		t.Fatalf("建 workspace: %v", err)
 	}

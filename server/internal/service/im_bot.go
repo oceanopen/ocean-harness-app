@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"github.com/google/uuid"
+
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/bot"
 	"ocean-harness/server/internal/bot/wecom"
@@ -38,7 +40,7 @@ func (svc ImBot) GetList() ([]types.ImBotResponseData, error) {
 		return nil, err
 	}
 	names := svc.workspaceNames()
-	statuses := map[int]bot.BotStatusView{}
+	statuses := map[string]bot.BotStatusView{}
 	if global.BotSupervisor != nil {
 		for _, st := range global.BotSupervisor.Statuses() {
 			statuses[st.BotID] = st
@@ -76,10 +78,11 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 	if err := svc.ensureWorkspaceExists(req.WorkspaceId); err != nil {
 		return nil, err
 	}
-	if err := svc.ensureBotIdAvailable(req.BotId, 0); err != nil {
+	if err := svc.ensureBotIdAvailable(req.BotId, ""); err != nil {
 		return nil, err
 	}
 	row := &model.ImBot{
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		Name:         req.Name,
 		Channel:      req.Channel,
 		Credential:   credentialJSON(req.BotId, req.Secret),
@@ -240,7 +243,7 @@ func (svc ImBot) BindConversationIssue(req *types.ImBotBindIssueRequest) error {
 	}
 	q := query.Use(svc.Orm)
 	if req.IssueId != "" {
-		if botRow.WorkspaceID == 0 {
+		if botRow.WorkspaceID == "" {
 			return errors.New("请先为机器人选择工作空间")
 		}
 		issue, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.IssueId)).First()
@@ -413,82 +416,84 @@ func weixinProvisionView(v weixin.AttemptView) *types.ImBotProvisionView {
  * 进程级函数——不依赖请求上下文，同 StartEnabled 口径）。botId 查重 → 建 bot 行
  * （enabled=Y、工作空间待补选、默认开放白名单、名称默认可后改）→ 拉起连接。
  */
-func ProvisionActivateBot(remoteBotID, secret string) (int, error) {
+func ProvisionActivateBot(remoteBotID, secret string) (string, error) {
 	if global.BotSupervisor == nil {
-		return 0, errors.New("bot 运行时未就绪")
+		return "", errors.New("bot 运行时未就绪")
 	}
 	q := query.Use(global.SqliteDB)
 	rows, err := q.ImBot.WithContext(context.Background()).Find()
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	for _, row := range rows {
 		var cred types.ImBotCredential
 		if json.Unmarshal([]byte(row.Credential), &cred) == nil && cred.BotId == remoteBotID {
-			return 0, fmt.Errorf("该机器人已接入（%s），无需重复扫码", row.Name)
+			return "", fmt.Errorf("该机器人已接入（%s），无需重复扫码", row.Name)
 		}
 	}
 	policy, _ := json.Marshal(types.ImBotAccessPolicy{Mode: bot.AccessModeOpen, AllowUsers: []string{}})
 	row := &model.ImBot{
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		Name:         "企业微信机器人",
 		Channel:      enums.CHANNEL_WECOM,
 		Credential:   credentialJSON(remoteBotID, secret),
-		WorkspaceID:  0,
+		WorkspaceID:  "",
 		AccessPolicy: string(policy),
 		Enabled:      enums.YES_NO_YES,
 	}
 	if err := q.ImBot.WithContext(context.Background()).Create(row); err != nil {
-		return 0, err
+		return "", err
 	}
 	if err := global.BotSupervisor.ApplyBot(row); err != nil {
-		return 0, err
+		return "", err
 	}
 	return row.ID, nil
 }
 
 /*
  * ProvisionActivateWeixin 微信扫码授权成功的激活回调（main 装配注入 weixin.SetProvisionActivator，
- * 进程级函数——不依赖请求上下文，同 ProvisionActivateBot 口径）。rebindBotID>0 = 换绑（仅更新
+ * 进程级函数——不依赖请求上下文，同 ProvisionActivateBot 口径）。rebindBotID 非空 = 换绑（仅更新
  * 凭据，锚点/白名单全保留）；否则 accountId 查重 → 新建 bot 行（白名单 [ownerUserId]，工作空间
  * 待补选）→ 拉起连接。
  */
-func ProvisionActivateWeixin(cred weixin.Credential, rebindBotID int) (int, error) {
+func ProvisionActivateWeixin(cred weixin.Credential, rebindBotID string) (string, error) {
 	if global.BotSupervisor == nil {
-		return 0, errors.New("bot 运行时未就绪")
+		return "", errors.New("bot 运行时未就绪")
 	}
 	if cred.Token == "" || cred.BaseURL == "" || cred.AccountID == "" {
-		return 0, errors.New("微信授权凭据不完整")
+		return "", errors.New("微信授权凭据不完整")
 	}
 	q := query.Use(global.SqliteDB)
 	rows, err := q.ImBot.WithContext(context.Background()).Find()
 	if err != nil {
-		return 0, err
+		return "", err
 	}
-	if rebindBotID > 0 {
+	if rebindBotID != "" {
 		return rebindWeixinBot(q, rows, cred, rebindBotID)
 	}
 	for _, row := range rows {
 		var existing weixin.Credential
 		if row.Channel == enums.CHANNEL_WEIXIN &&
 			json.Unmarshal([]byte(row.Credential), &existing) == nil && existing.AccountID == cred.AccountID {
-			return 0, fmt.Errorf("该微信账号已接入（%s），无需重复扫码", row.Name)
+			return "", fmt.Errorf("该微信账号已接入（%s），无需重复扫码", row.Name)
 		}
 	}
 	credJSON, _ := json.Marshal(cred)
 	policy, _ := json.Marshal(types.ImBotAccessPolicy{Mode: bot.AccessModeAllowlist, AllowUsers: []string{cred.OwnerUserID}})
 	row := &model.ImBot{
+		ID:           uuid.Must(uuid.NewV7()).String(),
 		Name:         "微信机器人",
 		Channel:      enums.CHANNEL_WEIXIN,
 		Credential:   string(credJSON),
-		WorkspaceID:  0,
+		WorkspaceID:  "",
 		AccessPolicy: string(policy),
 		Enabled:      enums.YES_NO_YES,
 	}
 	if err := q.ImBot.WithContext(context.Background()).Create(row); err != nil {
-		return 0, err
+		return "", err
 	}
 	if err := global.BotSupervisor.ApplyBot(row); err != nil {
-		return 0, err
+		return "", err
 	}
 	return row.ID, nil
 }
@@ -498,36 +503,36 @@ func ProvisionActivateWeixin(cred weixin.Credential, rebindBotID int) (int, erro
  * 仅更新凭据列并清 channel_state（游标与旧 token 绑定，换凭据必须归零防旧游标上线），
  * 其余配置全保留。
  */
-func rebindWeixinBot(q *query.Query, rows []*model.ImBot, cred weixin.Credential, rebindBotID int) (int, error) {
+func rebindWeixinBot(q *query.Query, rows []*model.ImBot, cred weixin.Credential, rebindBotID string) (string, error) {
 	found := false
 	for _, row := range rows {
 		if row.ID == rebindBotID {
 			if row.Channel != enums.CHANNEL_WEIXIN {
-				return 0, errors.New("目标机器人不是微信渠道，无法换绑")
+				return "", errors.New("目标机器人不是微信渠道，无法换绑")
 			}
 			var existing weixin.Credential
 			if json.Unmarshal([]byte(row.Credential), &existing) == nil &&
 				existing.AccountID != "" && existing.AccountID != cred.AccountID {
-				return 0, weixin.ErrAccountMismatch
+				return "", weixin.ErrAccountMismatch
 			}
 			found = true
 			break
 		}
 	}
 	if !found {
-		return 0, errors.New("目标机器人不存在，无法换绑")
+		return "", errors.New("目标机器人不存在，无法换绑")
 	}
 	credJSON, _ := json.Marshal(cred)
 	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(rebindBotID)).
 		UpdateSimple(q.ImBot.Credential.Value(string(credJSON)), q.ImBot.ChannelState.Value("{}")); err != nil {
-		return 0, err
+		return "", err
 	}
 	row, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(rebindBotID)).First()
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	if err := global.BotSupervisor.ApplyBot(row); err != nil {
-		return 0, err
+		return "", err
 	}
 	return row.ID, nil
 }
@@ -535,7 +540,7 @@ func rebindWeixinBot(q *query.Query, rows []*model.ImBot, cred weixin.Credential
 // ---------- 内部工具 ----------
 
 // mustGet 按 id 取 bot 行（不存在给中文错误）。
-func (svc ImBot) mustGet(id int) (*model.ImBot, error) {
+func (svc ImBot) mustGet(id string) (*model.ImBot, error) {
 	q := query.Use(svc.Orm)
 	row, err := q.ImBot.WithContext(svc.Context).Where(q.ImBot.ID.Eq(id)).First()
 	if err != nil {
@@ -563,7 +568,7 @@ func (svc ImBot) applyRuntime(row *model.ImBot) {
 	}
 	if err != nil {
 		svc.Logger.Warn("bot 连接热更新失败（DB 已保存，可重启连接恢复）",
-			zap.Int("botID", row.ID), zap.Error(err))
+			zap.String("botID", row.ID), zap.Error(err))
 	}
 }
 
@@ -596,7 +601,7 @@ func mergeRuntimeStatus(item *types.ImBotResponseData, row *model.ImBot, st bot.
 }
 
 // ensureWorkspaceExists 工作空间存在性校验（bot 必选工作空间）。
-func (svc ImBot) ensureWorkspaceExists(id int) error {
+func (svc ImBot) ensureWorkspaceExists(id string) error {
 	q := query.Use(svc.Orm)
 	if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(id)).First(); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -608,13 +613,13 @@ func (svc ImBot) ensureWorkspaceExists(id int) error {
 }
 
 // workspaceNames id → name 一次性映射（响应装配展示用）。
-func (svc ImBot) workspaceNames() map[int]string {
+func (svc ImBot) workspaceNames() map[string]string {
 	q := query.Use(svc.Orm)
 	rows, err := q.Workspace.WithContext(svc.Context).Find()
 	if err != nil {
-		return map[int]string{}
+		return map[string]string{}
 	}
-	names := make(map[int]string, len(rows))
+	names := make(map[string]string, len(rows))
 	for _, row := range rows {
 		names[row.ID] = row.Name
 	}
@@ -625,7 +630,7 @@ func (svc ImBot) workspaceNames() map[int]string {
  * ensureBotIdAvailable credential.botId 查重（JSON 列无法建唯一索引，service 层扫描校验；
  * excludeID 供 update 排除自身）。
  */
-func (svc ImBot) ensureBotIdAvailable(botId string, excludeID int) error {
+func (svc ImBot) ensureBotIdAvailable(botId string, excludeID string) error {
 	q := query.Use(svc.Orm)
 	rows, err := q.ImBot.WithContext(svc.Context).Find()
 	if err != nil {

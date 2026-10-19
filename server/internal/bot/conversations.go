@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/dal/model"
@@ -24,7 +25,7 @@ type ConversationStore struct {
 }
 
 // GetOrCreate 取会话映射行，不存在则建（空会话 = 未开场：claude_session_id 空、seen 空表）。
-func (s *ConversationStore) GetOrCreate(botID int, conversationKey string) (*model.ImBotConversation, error) {
+func (s *ConversationStore) GetOrCreate(botID string, conversationKey string) (*model.ImBotConversation, error) {
 	q := query.Use(s.DB)
 	conv, err := q.ImBotConversation.WithContext(context.Background()).Where(
 		q.ImBotConversation.BotID.Eq(botID),
@@ -37,6 +38,7 @@ func (s *ConversationStore) GetOrCreate(botID int, conversationKey string) (*mod
 		return nil, err
 	}
 	conv = &model.ImBotConversation{
+		ID:              uuid.Must(uuid.NewV7()).String(),
 		BotID:           botID,
 		ConversationKey: conversationKey,
 		ClaudeSessionID: "",
@@ -49,7 +51,7 @@ func (s *ConversationStore) GetOrCreate(botID int, conversationKey string) (*mod
 }
 
 // SessionID 读当前 claude 会话 id（空 = 下条消息开新会话）。
-func (s *ConversationStore) SessionID(botID int, conversationKey string) (string, error) {
+func (s *ConversationStore) SessionID(botID string, conversationKey string) (string, error) {
 	conv, err := s.GetOrCreate(botID, conversationKey)
 	if err != nil {
 		return "", err
@@ -61,7 +63,7 @@ func (s *ConversationStore) SessionID(botID int, conversationKey string) (string
  * SaveSessionID 回写 claude 会话 id（每回合以 init/result 捕获值为准——--resume 后 id 可能
  * 刷新，每回合回写保证下一轮 -r 正确）。
  */
-func (s *ConversationStore) SaveSessionID(botID int, conversationKey, sessionID string) error {
+func (s *ConversationStore) SaveSessionID(botID string, conversationKey, sessionID string) error {
 	q := query.Use(s.DB)
 	_, err := q.ImBotConversation.WithContext(context.Background()).Where(
 		q.ImBotConversation.BotID.Eq(botID),
@@ -74,7 +76,7 @@ func (s *ConversationStore) SaveSessionID(botID int, conversationKey, sessionID 
 }
 
 // FinishTurn 回合收尾持久化：会话 id + 最近消息时间（一次性落两项，语义原子）。
-func (s *ConversationStore) FinishTurn(botID int, conversationKey, sessionID string, at time.Time) error {
+func (s *ConversationStore) FinishTurn(botID string, conversationKey, sessionID string, at time.Time) error {
 	q := query.Use(s.DB)
 	_, err := q.ImBotConversation.WithContext(context.Background()).Where(
 		q.ImBotConversation.BotID.Eq(botID),
@@ -91,7 +93,7 @@ func (s *ConversationStore) FinishTurn(botID int, conversationKey, sessionID str
  * BoundIssueID 读会话显式绑定的目标 issue id（空串 = 未绑定）。读失败交由调用方定降级
  * （消费方按未绑定处理，与 SessionID/HasSeen 同款「尽力读」惯例）。
  */
-func (s *ConversationStore) BoundIssueID(botID int, conversationKey string) (string, error) {
+func (s *ConversationStore) BoundIssueID(botID string, conversationKey string) (string, error) {
 	conv, err := s.GetOrCreate(botID, conversationKey)
 	if err != nil {
 		return "", err
@@ -104,7 +106,7 @@ func (s *ConversationStore) BoundIssueID(botID int, conversationKey string) (str
  * 解绑路径幂等语义天然忽略行数。与 claude_session_id 正交：headless 续聊锚与任务绑定无耦合，绑定/解绑均不动它；
  * ACP 模式本就不写会话锚。调用横跨 worker（#任务 指令）与拦截步回调（taskbind 卡点击）两上下文——只写绑定列，与 worker 侧写列正交（见类型注释）。
  */
-func (s *ConversationStore) SaveBoundIssueID(botID int, conversationKey, issueID string) (int, error) {
+func (s *ConversationStore) SaveBoundIssueID(botID string, conversationKey, issueID string) (int, error) {
 	q := query.Use(s.DB)
 	res, err := q.ImBotConversation.WithContext(context.Background()).Where(
 		q.ImBotConversation.BotID.Eq(botID),
@@ -117,12 +119,12 @@ func (s *ConversationStore) SaveBoundIssueID(botID int, conversationKey, issueID
 }
 
 // ClearSessionID resume 失效自愈：清空会话 id（下条消息开新会话）。
-func (s *ConversationStore) ClearSessionID(botID int, conversationKey string) error {
+func (s *ConversationStore) ClearSessionID(botID string, conversationKey string) error {
 	return s.SaveSessionID(botID, conversationKey, "")
 }
 
 // HasSeen 幂等查询：msgid 是否在滚窗内。
-func (s *ConversationStore) HasSeen(botID int, conversationKey, msgID string) (bool, error) {
+func (s *ConversationStore) HasSeen(botID string, conversationKey, msgID string) (bool, error) {
 	conv, err := s.GetOrCreate(botID, conversationKey)
 	if err != nil {
 		return false, err
@@ -139,7 +141,7 @@ func (s *ConversationStore) HasSeen(botID int, conversationKey, msgID string) (b
  * MarkSeen 受理时落定（不回滚）：回合失败也已用错误终帧回复了用户，视为已处理；
  * 避免失败重推永远卡死的墓碑问题。滚窗超限丢最旧。
  */
-func (s *ConversationStore) MarkSeen(botID int, conversationKey, msgID string) error {
+func (s *ConversationStore) MarkSeen(botID string, conversationKey, msgID string) error {
 	q := query.Use(s.DB)
 	conv, err := s.GetOrCreate(botID, conversationKey)
 	if err != nil {
@@ -194,7 +196,7 @@ type lastMessageCard struct {
  * 调用方不得出卡（防「刚收到的卡一点就提示已失效」）；写库成功而发卡失败则槽指向未送达
  * 卡，旧卡点击按已失效收口，用户重发指令即可自愈。
  */
-func (s *ConversationStore) SaveLastMessageCard(botID int, conversationKey, kind string, spec CardSpec) error {
+func (s *ConversationStore) SaveLastMessageCard(botID string, conversationKey, kind string, spec CardSpec) error {
 	q := query.Use(s.DB)
 	conv, err := s.GetOrCreate(botID, conversationKey)
 	if err != nil {
@@ -216,7 +218,7 @@ func (s *ConversationStore) SaveLastMessageCard(botID int, conversationKey, kind
  * 与 decodeSeenIDs 同款尽力语义）。纯读不建行——点击路径不得因登记查询顺手创建会话行
  * （生产上行由受理步 GetOrCreate 保证在场，缺席即防御分支）。
  */
-func (s *ConversationStore) LastMessageCard(botID int, conversationKey string) (lastMessageCard, bool) {
+func (s *ConversationStore) LastMessageCard(botID string, conversationKey string) (lastMessageCard, bool) {
 	q := query.Use(s.DB)
 	conv, err := q.ImBotConversation.WithContext(context.Background()).Where(
 		q.ImBotConversation.BotID.Eq(botID),
@@ -233,7 +235,7 @@ func (s *ConversationStore) LastMessageCard(botID int, conversationKey string) (
  * taskID 且列原文未变才写——置位与并发出卡（指令步 vs 拦截步回调）互相顶掉的窗口下不误标
  * 新卡；不匹配/0 行静默（卡已被新卡取代，重复点击走已失效收口）。返回是否实际置位。
  */
-func (s *ConversationStore) MarkLastMessageCardProcessed(botID int, conversationKey, taskID string) bool {
+func (s *ConversationStore) MarkLastMessageCardProcessed(botID string, conversationKey, taskID string) bool {
 	q := query.Use(s.DB)
 	conv, err := q.ImBotConversation.WithContext(context.Background()).Where(
 		q.ImBotConversation.BotID.Eq(botID),

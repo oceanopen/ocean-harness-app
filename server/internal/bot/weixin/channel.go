@@ -109,7 +109,7 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 		return fmt.Errorf("baseUrl 不受信任: %w", err)
 	}
 
-	log := zap.L().With(zap.String("component", "bot.weixin"), zap.Int("botID", cfg.BotID))
+	log := zap.L().With(zap.String("component", "bot.weixin"), zap.String("botID", cfg.BotID))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// 幂等防御：先停旧代连接（supervisor 常规路径已保证先 Stop，这里兜底）。

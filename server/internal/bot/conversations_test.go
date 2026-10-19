@@ -38,7 +38,7 @@ func newConversationTestDB(t *testing.T) *gorm.DB {
  */
 func TestConversationStoreBoundIssueRoundtrip(t *testing.T) {
 	store := &ConversationStore{DB: newConversationTestDB(t)}
-	const botID = 1
+	const botID = "bot-1"
 	const convKey = "single:u1"
 
 	if got, err := store.BoundIssueID(botID, convKey); err != nil || got != "" {
@@ -76,7 +76,7 @@ func TestConversationStoreBoundIssueRoundtrip(t *testing.T) {
  */
 func TestConversationStoreBoundIssueOrthogonalToSession(t *testing.T) {
 	store := &ConversationStore{DB: newConversationTestDB(t)}
-	const botID, convKey = 1, "group:c1"
+	const botID, convKey = "bot-1", "group:c1"
 
 	// SaveSessionID/SaveBoundIssueID 均为 UPDATE 语义（无行空转）：先显式建行。
 	if _, err := store.GetOrCreate(botID, convKey); err != nil {
@@ -109,7 +109,7 @@ func TestConversationStoreBoundIssueOrthogonalToSession(t *testing.T) {
  */
 func TestConversationStoreSaveBoundIssueZeroRows(t *testing.T) {
 	store := &ConversationStore{DB: newConversationTestDB(t)}
-	rows, err := store.SaveBoundIssueID(1, "single:ghost", "issue-1") // 不预置行
+	rows, err := store.SaveBoundIssueID("bot-1", "single:ghost", "issue-1") // 不预置行
 	if err != nil || rows != 0 {
 		t.Fatalf("行不在场应为 0 行且非 error: rows=%d err=%v", rows, err)
 	}

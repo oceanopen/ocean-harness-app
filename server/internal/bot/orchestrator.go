@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -93,7 +92,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 	allowed, reason := EvaluateAccess(cfg.AccessPolicy, msg.SenderID)
 	if !allowed {
 		o.log.Warn("bot 消息被访问策略拒绝",
-			zap.Int("botID", cfg.BotID), zap.String("conversation", msg.ConversationKey),
+			zap.String("botID", cfg.BotID), zap.String("conversation", msg.ConversationKey),
 			zap.String("reason", reason))
 		if msg.ChatType == ChatDirect {
 			// 单聊拒绝回一句提示（fail closed 语义可见）；群聊静默（不向陌生群成员泄露策略）。
@@ -106,7 +105,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 
 	rs, err := openStream()
 	if err != nil {
-		o.log.Error("bot 开启回复流失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+		o.log.Error("bot 开启回复流失败", zap.String("botID", cfg.BotID), zap.Error(err))
 		return
 	}
 	/*
@@ -144,7 +143,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 			}
 			if cs, ok := rs.(CardReplyStream); ok {
 				if err := cs.UpdateCard(*update); err != nil {
-					o.log.Warn("bot 卡片置灰失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+					o.log.Warn("bot 卡片置灰失败", zap.String("botID", cfg.BotID), zap.Error(err))
 				}
 			}
 		}
@@ -273,7 +272,7 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage,
 		wss, err := bindingWorkspaces(o.store.DB, keyword)
 		if err != nil {
 			o.log.Error("bot workspace 绑定候选查询失败",
-				zap.Int("botID", cfg.BotID), zap.String("keyword", keyword), zap.Error(err))
+				zap.String("botID", cfg.BotID), zap.String("keyword", keyword), zap.Error(err))
 			text = workspaceLookupFailedText
 			break
 		}
@@ -290,7 +289,7 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage,
 		issues, err := bindingIssueCandidates(o.store.DB, cfg.WorkspaceID, keyword)
 		if err != nil {
 			o.log.Error("bot 任务绑定候选查询失败",
-				zap.Int("botID", cfg.BotID), zap.String("keyword", keyword), zap.Error(err))
+				zap.String("botID", cfg.BotID), zap.String("keyword", keyword), zap.Error(err))
 			text = issueLookupFailedText
 			break
 		}
@@ -318,9 +317,9 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage,
 				kindName = "taskbind"
 			}
 			if err := o.store.SaveLastMessageCard(cfg.BotID, msg.ConversationKey, kindName, spec); err != nil {
-				o.log.Error("bot 绑定卡登记失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
+				o.log.Error("bot 绑定卡登记失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.Error(err))
 			} else if err := cs.SendCard(spec, text, true); err != nil {
-				o.log.Warn("bot 绑定卡发送失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
+				o.log.Warn("bot 绑定卡发送失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.Error(err))
 			} else {
 				return
 			}
@@ -337,7 +336,7 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage,
 func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) {
 	bound, err := o.store.BoundIssueID(cfg.BotID, msg.ConversationKey)
 	if err != nil {
-		o.log.Error("bot 任务绑定读取失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+		o.log.Error("bot 任务绑定读取失败", zap.String("botID", cfg.BotID), zap.Error(err))
 		_ = rs.Flush(issueUnbindFailedText(), true)
 		return
 	}
@@ -347,7 +346,7 @@ func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, 
 	}
 	issue, found, err := issueRowByID(o.store.DB, bound)
 	if err != nil {
-		o.log.Error("bot 解绑卡任务行读取失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+		o.log.Error("bot 解绑卡任务行读取失败", zap.String("botID", cfg.BotID), zap.Error(err))
 		_ = rs.Flush(issueUnbindFailedText(), true)
 		return
 	}
@@ -363,9 +362,9 @@ func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, 
 	if cs, ok := rs.(CardReplyStream); ok {
 		// 先登记后发卡（与 sendBindingCard 同款时序语义）。
 		if err := o.store.SaveLastMessageCard(cfg.BotID, msg.ConversationKey, "taskunbind", spec); err != nil {
-			o.log.Error("bot 解绑卡登记失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
+			o.log.Error("bot 解绑卡登记失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.Error(err))
 		} else if err := cs.SendCard(spec, text, true); err != nil {
-			o.log.Warn("bot 解绑卡发送失败（回落纯文本）", zap.Int("botID", cfg.BotID), zap.Error(err))
+			o.log.Warn("bot 解绑卡发送失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.Error(err))
 		} else {
 			return
 		}
@@ -405,8 +404,8 @@ func (o *Orchestrator) worker(ch chan turnJob) {
 }
 
 // queueKey 队列键。
-func queueKey(botID int, conversationKey string) string {
-	return strconv.Itoa(botID) + ":" + conversationKey
+func queueKey(botID string, conversationKey string) string {
+	return botID + ":" + conversationKey
 }
 
 /*
@@ -556,7 +555,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		 * spawn 即失败（如 claude 不在场）：终态帧 + 自愈（若带 resume 尝试则清锚点，下条消息开新会话——失败后不复用旧锚点是确定性单步恢复，不做脆弱的文案匹配）。
 		 * 引擎受理拒绝（turnNotAcceptedError，如 ACP 模式的引导报错）除外：回合未发生， headless 锚点有效性不受影响，误清会丢既有会话上下文。
 		 */
-		o.log.Error("bot 回合启动失败", zap.Int("botID", cfg.BotID), zap.Error(err))
+		o.log.Error("bot 回合启动失败", zap.String("botID", cfg.BotID), zap.Error(err))
 		_ = job.reply.Flush("❌ 无法启动 claude 会话："+firstLine(err.Error()), true)
 		var rejected turnNotAcceptedError
 		if !errors.As(err, &rejected) {
@@ -568,7 +567,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	outcome := PumpReply(o.ctx, job.reply, events, sink, o.log)
 	<-o.turns
 	if outcome.Err != nil {
-		o.log.Warn("bot 回合失败", zap.Int("botID", cfg.BotID),
+		o.log.Warn("bot 回合失败", zap.String("botID", cfg.BotID),
 			zap.String("conversation", key), zap.Error(outcome.Err))
 	}
 	if outcome.SessionID != "" {
@@ -625,7 +624,7 @@ func (o *Orchestrator) deliverArtifacts(ars ArtifactReplyStream, dir string) {
  * healAfterFailure 回合失败后的会话自愈：本轮尝试过 resume（prev 非空）→ 清空锚点，
  * 用户重发即开新会话（失败文案已提示重试）。本轮本是新会话则无事可做。
  */
-func (o *Orchestrator) healAfterFailure(botID int, conversationKey, prevSessionID string) {
+func (o *Orchestrator) healAfterFailure(botID string, conversationKey, prevSessionID string) {
 	if prevSessionID == "" {
 		return
 	}

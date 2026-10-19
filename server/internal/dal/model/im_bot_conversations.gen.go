@@ -12,8 +12,8 @@ const TableNameImBotConversation = "t_im_bot_conversations"
 
 // ImBotConversation mapped from table <t_im_bot_conversations>
 type ImBotConversation struct {
-	ID              int        `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
-	BotID           int        `gorm:"column:bot_id;type:INTEGER;not null;uniqueIndex:udx_im_bot_conversations_bot_conversation,priority:1" json:"botId"`
+	ID              string     `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
+	BotID           string     `gorm:"column:bot_id;type:TEXT;not null;uniqueIndex:udx_im_bot_conversations_bot_conversation,priority:1" json:"botId"`
 	ConversationKey string     `gorm:"column:conversation_key;type:TEXT;not null;uniqueIndex:udx_im_bot_conversations_bot_conversation,priority:2" json:"conversationKey"`
 	ClaudeSessionID string     `gorm:"column:claude_session_id;type:TEXT;not null;default:''" json:"claudeSessionId"`
 	BoundIssueID    string     `gorm:"column:bound_issue_id;type:TEXT;not null;default:''" json:"boundIssueId"`

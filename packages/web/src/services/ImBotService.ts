@@ -10,10 +10,10 @@ export interface ImBotAccessPolicy {
 }
 
 export interface ImBotModel {
-  id: number;
+  id: string; // uuid
   name: string;
   channel: string; // 渠道枚举（wecom | weixin）
-  workspaceId: number; // 0 = 未选择（扫码接入待补选）
+  workspaceId: string; // '' = 未选择（扫码接入待补选）
   workspaceName: string; // 关联工作空间名（展示用）
   accessPolicy: ImBotAccessPolicy;
   enabled: boolean;
@@ -32,30 +32,30 @@ export interface ImBotCreateRequest {
   name: string;
   botId: string;
   secret: string;
-  workspaceId: number; // 必选工作空间（会话目录取其 dir）
+  workspaceId: string; // 必选工作空间（会话目录取其 dir）
   accessPolicy: ImBotAccessPolicy;
   enabled?: boolean;
 }
 
 // POST /api/imBot/update 的入参（secret 留空 = 沿用原值；weixin 行后端不触凭据列）。
 export interface ImBotUpdateRequest {
-  id: number;
+  id: string;
   name: string;
   botId: string;
   secret?: string;
-  workspaceId: number;
+  workspaceId: string;
   accessPolicy: ImBotAccessPolicy;
   enabled?: boolean;
 }
 
 // POST /api/imBot/delete 的入参。
 export interface ImBotDeleteRequest {
-  id: number;
+  id: string;
 }
 
 // POST /api/imBot/restart 的入参（以当前配置重连：被踢/挂死后恢复）。
 export interface ImBotRestartRequest {
-  id: number;
+  id: string;
 }
 
 /**
@@ -72,7 +72,7 @@ export interface ImBotConversationModel {
 
 // POST /api/imBot/getConversations 的入参。
 export interface ImBotGetConversationsRequest {
-  botId: number;
+  botId: string;
 }
 
 /**
@@ -80,7 +80,7 @@ export interface ImBotGetConversationsRequest {
  * 绑定每回合现读、无需热重载连接）。
  */
 export interface ImBotBindIssueRequest {
-  botId: number;
+  botId: string;
   conversationKey: string;
   issueId: string;
 }
@@ -102,10 +102,10 @@ export type ImBotProvisionState
     | 'expired'
     | 'cancelled';
 
-// POST /api/imBot/provisionBegin 的入参（weixin 传 botId>0 = 对既有 bot 换绑凭据，0 = 新建）。
+// POST /api/imBot/provisionBegin 的入参（weixin 传非空 botId = 对既有 bot 换绑凭据，省略/空 = 新建）。
 export interface ImBotProvisionBeginRequest {
   channel: string;
-  botId?: number;
+  botId?: string;
 }
 
 // POST /api/imBot/provisionPoll 的入参。
@@ -135,7 +135,7 @@ export interface ImBotProvisionView {
   expiresAt: number; // 毫秒时间戳（0 = 无 QR 语境）
   pollIntervalMs: number; // 宿主下发轮询节奏（前端不自造）
   errCode?: string;
-  botId?: number; // connected 后的 bot 行 id（含换绑目标）
+  botId?: string; // connected 后的 bot 行 id（含换绑目标）
 }
 
 export class ImBotService {
@@ -145,7 +145,7 @@ export class ImBotService {
   }
 
   // getInfo：返回单个 bot。
-  static getInfo(req: { id: number }): Promise<ImBotModel> {
+  static getInfo(req: { id: string }): Promise<ImBotModel> {
     return request<ImBotModel>('POST', '/api/imBot/getInfo', req);
   }
 
@@ -179,7 +179,7 @@ export class ImBotService {
     return request<void>('POST', '/api/imBot/bindIssue', req);
   }
 
-  // provisionBegin：开新扫码授权会话（渠道分发；已有会话自动取消；weixin botId>0 = 换绑）。
+  // provisionBegin：开新扫码授权会话（渠道分发；已有会话自动取消；weixin 非空 botId = 换绑）。
   static provisionBegin(req: ImBotProvisionBeginRequest): Promise<ImBotProvisionView> {
     return request<ImBotProvisionView>('POST', '/api/imBot/provisionBegin', req);
   }

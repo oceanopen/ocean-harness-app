@@ -60,13 +60,13 @@ func shortenApplyDelay(t *testing.T) {
 }
 
 /*
- * newSupervisorHarness 装配被测 supervisor + 已注册渠道替身（bot 行恒 ID 1，
- * WorkspaceID 0 = 不触工作空间表，故夹具库只建 ImBot 表）。
+ * newSupervisorHarness 装配被测 supervisor + 已注册渠道替身（bot 行恒 bot-1，
+ * WorkspaceID 空 = 不触工作空间表，故夹具库只建 ImBot 表）。
  */
 func newSupervisorHarness(t *testing.T) (*Supervisor, *stubChannelRuntime) {
 	t.Helper()
 	db := newBotTestDB(t, &model.ImBot{})
-	mkBot(t, db, 0)
+	mkBot(t, db, "")
 	rt := &stubChannelRuntime{}
 	s := NewSupervisor(db, 9100, nil, zap.NewNop())
 	s.Register(&stubChannelFactory{rt: rt})
@@ -86,7 +86,7 @@ func TestApplyBotAsyncReload(t *testing.T) {
 		t.Fatal("NewSupervisor 应将自身以 botApplier 注入路由驱动")
 	}
 
-	s.ApplyBotAsync(1)
+	s.ApplyBotAsync("bot-1")
 	waitFor(t, "延迟热重载拉起渠道", func() bool { return rt.startCount() == 1 })
 }
 
@@ -99,10 +99,10 @@ func TestApplyBotAsyncBotDeleted(t *testing.T) {
 	s, rt := newSupervisorHarness(t)
 
 	q := query.Use(s.db)
-	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(1)).Delete(); err != nil {
+	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq("bot-1")).Delete(); err != nil {
 		t.Fatalf("删 bot 行: %v", err)
 	}
-	s.ApplyBotAsync(1)
+	s.ApplyBotAsync("bot-1")
 	time.Sleep(150 * time.Millisecond)
 	if rt.startCount() != 0 {
 		t.Fatalf("行已删应跳过热重载: starts=%d", rt.startCount())
@@ -118,11 +118,11 @@ func TestApplyBotAsyncDisabled(t *testing.T) {
 	s, rt := newSupervisorHarness(t)
 
 	q := query.Use(s.db)
-	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(1)).
+	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq("bot-1")).
 		UpdateSimple(q.ImBot.Enabled.Value(enums.YES_NO_NO)); err != nil {
 		t.Fatalf("停用 bot: %v", err)
 	}
-	s.ApplyBotAsync(1)
+	s.ApplyBotAsync("bot-1")
 	time.Sleep(150 * time.Millisecond)
 	if rt.startCount() != 0 {
 		t.Fatalf("停用行应走 StopBot 而非拉渠道: starts=%d", rt.startCount())
@@ -140,9 +140,9 @@ func TestApplyBotAsyncDisabledWithinWindow(t *testing.T) {
 	t.Cleanup(func() { applyBotAsyncDelay = old })
 	s, rt := newSupervisorHarness(t)
 
-	s.ApplyBotAsync(1) // goroutine 已起未醒
+	s.ApplyBotAsync("bot-1") // goroutine 已起未醒
 	q := query.Use(s.db)
-	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(1)).
+	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq("bot-1")).
 		UpdateSimple(q.ImBot.Enabled.Value(enums.YES_NO_NO)); err != nil {
 		t.Fatalf("窗口内停用 bot: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestApplyBotAsyncAfterStopAll(t *testing.T) {
 	s, rt := newSupervisorHarness(t)
 	s.StopAll()
 
-	s.ApplyBotAsync(1)
+	s.ApplyBotAsync("bot-1")
 	time.Sleep(150 * time.Millisecond)
 	if rt.startCount() != 0 {
 		t.Fatalf("StopAll 后不应复活渠道: starts=%d", rt.startCount())

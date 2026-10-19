@@ -165,7 +165,7 @@ func newIssueTestDB(t *testing.T) *gorm.DB {
 }
 
 // mkIssue 建行辅助（必填列兜底，SortOrder 显式控制排序断言；ParentID 缺省空串 = 顶级）。
-func mkIssue(t *testing.T, db *gorm.DB, workspaceID int, id, name string, sortOrder float64) {
+func mkIssue(t *testing.T, db *gorm.DB, workspaceID string, id, name string, sortOrder float64) {
 	t.Helper()
 	issue := &model.ProjectIssue{
 		ID: id, ProjectID: 1, WorkspaceID: workspaceID, Name: name,

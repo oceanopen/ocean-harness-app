@@ -11,7 +11,7 @@ import (
 
 // ProjectGetListRequest 是 POST /api/tracker/project/getList 的入参（按 workspaceId 查）。
 type ProjectGetListRequest struct {
-	WorkspaceID int `json:"workspaceId" binding:"required"`
+	WorkspaceID string `json:"workspaceId" binding:"required"`
 }
 
 // ProjectGetInfoRequest 是 POST /api/tracker/project/getInfo 的入参。
@@ -24,7 +24,7 @@ type ProjectGetInfoRequest struct {
  * LocalRepositoryIDs 为关联仓库最终列表（全量，随项目一起保存，事务内全量写入）。
  */
 type ProjectCreateRequest struct {
-	WorkspaceID        int    `json:"workspaceId" binding:"required"`
+	WorkspaceID        string `json:"workspaceId" binding:"required"`
 	Name               string `json:"name" binding:"required,max=100"`
 	Description        string `json:"description" binding:"omitempty,max=500"`
 	Emoji              string `json:"emoji" binding:"omitempty,max=20"`

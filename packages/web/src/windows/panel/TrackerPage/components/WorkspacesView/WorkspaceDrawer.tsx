@@ -121,7 +121,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
         <Box sx={{ flex: 1, overflow: 'auto', p: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {isEdit && (
             <TextField
-              label={t('tracker:workspace.edit.idLabel')}
+              label="工作空间ID"
               value={workspace!.id}
               fullWidth
               slotProps={{ input: { readOnly: true } }}

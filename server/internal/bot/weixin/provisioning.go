@@ -50,11 +50,11 @@ func (s provisionState) terminal() bool {
 }
 
 /*
- * ProvisionActivator 扫码确认后的激活回调：新建 bot 行或对 rebindBotID>0 换绑凭据，
+ * ProvisionActivator 扫码确认后的激活回调：新建 bot 行或对非空 rebindBotID 换绑凭据，
  * 并拉起连接，返回 bot 行 id。由 main 装配注入（service 层实现）——weixin 包不反向依赖
  * service。实现方保证：token 仅落库，不进日志、不回传。
  */
-type ProvisionActivator func(cred Credential, rebindBotID int) (botRowID int, err error)
+type ProvisionActivator func(cred Credential, rebindBotID string) (botRowID string, err error)
 
 // ErrAccountMismatch 换绑目标与扫码账号不一致（service 激活回调返回；attempt 映射具名错误码）。
 var ErrAccountMismatch = errors.New("该微信账号与原绑定不一致：换绑仅限同账号重授权，更换账号请删除原机器人后重新扫码")
@@ -67,7 +67,7 @@ type AttemptView struct {
 	ExpiresAt      int64  `json:"expiresAt"`           // 毫秒时间戳
 	PollIntervalMs int    `json:"pollIntervalMs"`
 	ErrCode        string `json:"errCode,omitempty"` // 终态原因（expired/verification-blocked/already-bound/activation-failed 等）
-	BotID          int    `json:"botId,omitempty"`   // connected 后的 bot 行 id
+	BotID          string `json:"botId,omitempty"`   // connected 后的 bot 行 id
 }
 
 /*
@@ -85,8 +85,8 @@ type provisionAttempt struct {
 	baseURL    string // 当前轮询 base（scaned_but_redirect 时切换）
 	expiresAt  time.Time
 	errCode    string
-	botRowID   int
-	rebindID   int
+	botRowID   string
+	rebindID   string
 	verifyCode string
 	verifyCh   chan string // SubmitVerifyCode → 后台循环（容量 1，非阻塞投递）
 }
@@ -119,10 +119,10 @@ var beginMu sync.Mutex
 
 /*
  * StartProvisioning 发起新扫码会话（已有进行中会话先取消——同 dsh-im begin 内建取消）。
- * rebindBotID>0 = 对既有 bot 换绑（confirmed 后更新该行凭据而非新建）；localTokens 传
+ * rebindBotID 非空 = 对既有 bot 换绑（confirmed 后更新该行凭据而非新建）；localTokens 传
  * 既有 weixin bot token（服务端绑定感知）。
  */
-func StartProvisioning(rebindBotID int, localTokens []string) (AttemptView, error) {
+func StartProvisioning(rebindBotID string, localTokens []string) (AttemptView, error) {
 	beginMu.Lock()
 	defer beginMu.Unlock()
 	// 先摘旧会话占住单会话槽（网络往返期间也持占位，并发 begin 经 beginMu 排队后正确互踢）。
@@ -413,7 +413,7 @@ func (a *provisionAttempt) verifySnap() string {
 	return a.verifyCode
 }
 
-func (a *provisionAttempt) rebindSnap() int {
+func (a *provisionAttempt) rebindSnap() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.rebindID

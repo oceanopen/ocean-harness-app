@@ -64,7 +64,7 @@ func interactionMsg() InboundMessage {
 }
 
 func interactionCfg() BotRuntimeConfig {
-	return BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	return BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 }
 
 /*
@@ -100,7 +100,7 @@ func TestOrchestratorInteractionFallback(t *testing.T) {
 	if n := driver.turnCount(); n != 0 {
 		t.Fatalf("交互不应出回合，got %d", n)
 	}
-	seen, err := store.HasSeen(1, "single:u1", "ev-1")
+	seen, err := store.HasSeen("bot-1", "single:u1", "ev-1")
 	if err != nil || !seen {
 		t.Fatalf("兜底处理应 MarkSeen: seen=%v err=%v", seen, err)
 	}

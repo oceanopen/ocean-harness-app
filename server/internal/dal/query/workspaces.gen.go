@@ -28,7 +28,7 @@ func newWorkspace(db *gorm.DB, opts ...gen.DOOption) workspace {
 
 	tableName := _workspace.workspaceDo.TableName()
 	_workspace.ALL = field.NewAsterisk(tableName)
-	_workspace.ID = field.NewInt(tableName, "id")
+	_workspace.ID = field.NewString(tableName, "id")
 	_workspace.Name = field.NewString(tableName, "name")
 	_workspace.Dir = field.NewString(tableName, "dir")
 	_workspace.Description = field.NewString(tableName, "description")
@@ -74,7 +74,7 @@ type workspace struct {
 	workspaceDo workspaceDo
 
 	ALL                  field.Asterisk
-	ID                   field.Int
+	ID                   field.String
 	Name                 field.String
 	Dir                  field.String
 	Description          field.String
@@ -100,7 +100,7 @@ func (w workspace) As(alias string) *workspace {
 
 func (w *workspace) updateTableName(table string) *workspace {
 	w.ALL = field.NewAsterisk(table)
-	w.ID = field.NewInt(table, "id")
+	w.ID = field.NewString(table, "id")
 	w.Name = field.NewString(table, "name")
 	w.Dir = field.NewString(table, "dir")
 	w.Description = field.NewString(table, "description")

@@ -28,8 +28,8 @@ func newImBotConversation(db *gorm.DB, opts ...gen.DOOption) imBotConversation {
 
 	tableName := _imBotConversation.imBotConversationDo.TableName()
 	_imBotConversation.ALL = field.NewAsterisk(tableName)
-	_imBotConversation.ID = field.NewInt(tableName, "id")
-	_imBotConversation.BotID = field.NewInt(tableName, "bot_id")
+	_imBotConversation.ID = field.NewString(tableName, "id")
+	_imBotConversation.BotID = field.NewString(tableName, "bot_id")
 	_imBotConversation.ConversationKey = field.NewString(tableName, "conversation_key")
 	_imBotConversation.ClaudeSessionID = field.NewString(tableName, "claude_session_id")
 	_imBotConversation.BoundIssueID = field.NewString(tableName, "bound_issue_id")
@@ -48,8 +48,8 @@ type imBotConversation struct {
 	imBotConversationDo imBotConversationDo
 
 	ALL             field.Asterisk
-	ID              field.Int
-	BotID           field.Int
+	ID              field.String
+	BotID           field.String
 	ConversationKey field.String
 	ClaudeSessionID field.String
 	BoundIssueID    field.String
@@ -74,8 +74,8 @@ func (i imBotConversation) As(alias string) *imBotConversation {
 
 func (i *imBotConversation) updateTableName(table string) *imBotConversation {
 	i.ALL = field.NewAsterisk(table)
-	i.ID = field.NewInt(table, "id")
-	i.BotID = field.NewInt(table, "bot_id")
+	i.ID = field.NewString(table, "id")
+	i.BotID = field.NewString(table, "bot_id")
 	i.ConversationKey = field.NewString(table, "conversation_key")
 	i.ClaudeSessionID = field.NewString(table, "claude_session_id")
 	i.BoundIssueID = field.NewString(table, "bound_issue_id")

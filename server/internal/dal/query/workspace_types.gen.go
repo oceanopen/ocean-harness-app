@@ -29,7 +29,7 @@ func newWorkspaceType(db *gorm.DB, opts ...gen.DOOption) workspaceType {
 	tableName := _workspaceType.workspaceTypeDo.TableName()
 	_workspaceType.ALL = field.NewAsterisk(tableName)
 	_workspaceType.ID = field.NewInt(tableName, "id")
-	_workspaceType.WorkspaceID = field.NewInt(tableName, "workspace_id")
+	_workspaceType.WorkspaceID = field.NewString(tableName, "workspace_id")
 	_workspaceType.Name = field.NewString(tableName, "name")
 	_workspaceType.Color = field.NewString(tableName, "color")
 	_workspaceType.Description = field.NewString(tableName, "description")
@@ -47,7 +47,7 @@ type workspaceType struct {
 
 	ALL         field.Asterisk
 	ID          field.Int
-	WorkspaceID field.Int
+	WorkspaceID field.String
 	Name        field.String
 	Color       field.String
 	Description field.String
@@ -71,7 +71,7 @@ func (w workspaceType) As(alias string) *workspaceType {
 func (w *workspaceType) updateTableName(table string) *workspaceType {
 	w.ALL = field.NewAsterisk(table)
 	w.ID = field.NewInt(table, "id")
-	w.WorkspaceID = field.NewInt(table, "workspace_id")
+	w.WorkspaceID = field.NewString(table, "workspace_id")
 	w.Name = field.NewString(table, "name")
 	w.Color = field.NewString(table, "color")
 	w.Description = field.NewString(table, "description")

@@ -17,15 +17,15 @@ import (
  * gateTestRoute 快路径单测构造：resolve 与 sessions 均为注入替身（headless/acp 引擎
  * 不参与快路径，置 nil 安全）。
  */
-func gateTestRoute(resolve func(botID, workspaceID int, conversationKey string) (routeTarget, error), sessions acpSessions) *driverRoute {
+func gateTestRoute(resolve func(botID, workspaceID string, conversationKey string) (routeTarget, error), sessions acpSessions) *driverRoute {
 	return &driverRoute{resolve: resolve, sessions: sessions}
 }
 
-func acpResolve(botID, workspaceID int, conversationKey string) (routeTarget, error) {
+func acpResolve(botID, workspaceID string, conversationKey string) (routeTarget, error) {
 	return routeTarget{IssueID: "i-1", ACP: true}, nil
 }
 
-func headlessResolve(botID, workspaceID int, conversationKey string) (routeTarget, error) {
+func headlessResolve(botID, workspaceID string, conversationKey string) (routeTarget, error) {
 	return routeTarget{}, nil
 }
 
@@ -52,7 +52,7 @@ func gateMsg(text string) InboundMessage {
 }
 
 func gateCfg() BotRuntimeConfig {
-	return BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test"}
+	return BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test"}
 }
 
 // gateSnap 快路径消费的会话快照夹具（就绪态 + 给定挂起——挂起仅在就绪会话上可应答）。
@@ -156,7 +156,7 @@ func TestPendingGateMisses(t *testing.T) {
 		t.Fatal("非 ACP 会话不应命中")
 	}
 
-	errRoute := gateTestRoute(func(botID, workspaceID int, conversationKey string) (routeTarget, error) {
+	errRoute := gateTestRoute(func(botID, workspaceID string, conversationKey string) (routeTarget, error) {
 		return routeTarget{}, errors.New("读库失败")
 	}, sessions)
 	if _, handled := errRoute.TryRespondPending(gateCfg(), gateMsg("1")); handled {
@@ -247,7 +247,7 @@ func TestOrchestratorPendingGateHit(t *testing.T) {
 	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
-	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	cfg := BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 	o.HandleInbound(cfg, gateMsg("1"), func() (ReplyStream, error) { return rs, nil })
 
 	if gate.calls != 1 {
@@ -274,7 +274,7 @@ func TestOrchestratorPendingGateRedelivery(t *testing.T) {
 	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
-	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	cfg := BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 	msg := InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "1"}
 	open := func() (ReplyStream, error) { return rs, nil }
 
@@ -306,7 +306,7 @@ func TestOrchestratorPendingGateMiss(t *testing.T) {
 	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
-	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	cfg := BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 	o.HandleInbound(cfg, gateMsg("1"), func() (ReplyStream, error) { return rs, nil })
 
 	if gate.calls != 1 {
@@ -334,7 +334,7 @@ func TestOrchestratorPendingGateNil(t *testing.T) {
 	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
-	cfg := BotRuntimeConfig{BotID: 1, WorkspaceID: 1, WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	cfg := BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 	o.HandleInbound(cfg, gateMsg("1"), func() (ReplyStream, error) { return rs, nil })
 
 	waitFor(t, "回合完成", func() bool { return driver.turnCount() == 1 })

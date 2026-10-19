@@ -1085,7 +1085,7 @@ func TestAcpDriverTurnContextCancel(t *testing.T) {
 func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
 	db := newBotTestDB(t, &model.Workspace{}, &model.ProjectIssue{}, &model.IssueAcpSession{})
 	q := query.Use(db)
-	ws := &model.Workspace{Name: "ws", Dir: t.TempDir(), LaunchSettings: `{"mode":"acp"}`}
+	ws := &model.Workspace{ID: "ws-acp", Name: "ws", Dir: t.TempDir(), LaunchSettings: `{"mode":"acp"}`}
 	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
 		t.Fatalf("建 workspace: %v", err)
 	}

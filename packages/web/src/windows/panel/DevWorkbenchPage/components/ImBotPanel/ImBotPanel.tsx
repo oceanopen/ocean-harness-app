@@ -27,9 +27,9 @@ import RefreshIconButton from '../RefreshIconButton';
 import { chatTypeLabel, conversationShortCode } from './format';
 import ImBotBotCard from './ImBotBotCard';
 
-/** bot 关联工作空间短名（名缺失回落 #id，与 ImBotsPage 卡片同规则）。 */
+/** bot 关联工作空间短名（名缺失回落 id 原文，与 ImBotsPage 卡片同规则）。 */
 function workspaceShortLabel(bot: ImBotModel): string {
-  return bot.workspaceName || `#${bot.workspaceId}`;
+  return bot.workspaceName || bot.workspaceId;
 }
 
 /** 确认弹窗待确认动作：面板内一切写操作（会话绑定三态 + 补绑迁移）统一经此弹窗二次确认。 */
@@ -41,7 +41,7 @@ type PendingAction
 function confirmSpec(action: PendingAction, issue: ProjectIssueResponseData): { title: string; text: string; confirm: string } {
   if (action.kind === 'addBot') {
     const { bot } = action;
-    if (bot.workspaceId > 0) {
+    if (bot.workspaceId !== '') {
       return {
         title: '迁移机器人',
         text: `将机器人「${bot.name}」从工作空间「${workspaceShortLabel(bot)}」迁移到当前工作空间？迁移后其全部会话跟随到新工作空间，连接将自动重载。`,
@@ -96,7 +96,7 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
   const workspaceBots = bots.filter(bot => bot.workspaceId === issue.workspaceId);
-  // 补绑候选：不属于本工作空间的 bot（含未配置 workspaceId = 0）。
+  // 补绑候选：不属于本工作空间的 bot（含未配置 = 空）。
   const candidateBots = bots.filter(bot => bot.workspaceId !== issue.workspaceId);
 
   // 在飞绑定请求（面板级单飞行中操作）：下传 bot 卡做行级 loading/disabled。
@@ -257,7 +257,7 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
                 <MenuItem key={bot.id} onClick={() => handleAddBotAsk(bot)}>
                   <ListItemText
                     primary={bot.name}
-                    secondary={bot.workspaceId > 0 ? `工作空间：${workspaceShortLabel(bot)}` : '未配置工作空间'}
+                    secondary={bot.workspaceId !== '' ? `工作空间：${workspaceShortLabel(bot)}` : '未配置工作空间'}
                   />
                 </MenuItem>
               ))}

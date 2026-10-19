@@ -214,7 +214,7 @@ const (
  * 由 main 装配注入（service 层实现）——wecom 包不反向依赖 service。
  * 实现方保证：secret 仅落库，不进日志、不回传。
  */
-type ProvisionActivator func(remoteBotID, secret string) (botRowID int, err error)
+type ProvisionActivator func(remoteBotID, secret string) (botRowID string, err error)
 
 // AttemptView attempt 对外投影（剥除 scode/secret；qrContent 为授权页 URL=二维码内容，公开可回传）。
 type AttemptView struct {
@@ -224,7 +224,7 @@ type AttemptView struct {
 	ExpiresAt      int64  `json:"expiresAt"`           // 毫秒时间戳（0 = 无 QR 语境）
 	PollIntervalMs int    `json:"pollIntervalMs"`
 	ErrCode        string `json:"errCode,omitempty"` // failed 终态原因（qr-start-failed/qr-connect-failed/activation-failed/expired）
-	BotID          int    `json:"botId,omitempty"`   // connected 后的新 bot 行 id
+	BotID          string `json:"botId,omitempty"`   // connected 后的新 bot 行 id
 }
 
 /*
@@ -241,7 +241,7 @@ type provisionAttempt struct {
 	expiresAt      time.Time
 	pollIntervalMs int
 	errCode        string
-	botRowID       int
+	botRowID       string
 	cancel         context.CancelFunc
 	polling        bool // 惰性单飞标记：并发 RegistrationStatus 只有一轮真实腾讯请求
 }

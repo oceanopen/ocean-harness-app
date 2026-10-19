@@ -7,7 +7,7 @@ package types
 
 // WorkspaceTypeGetListRequest 是 POST /api/tracker/workspaceType/getList 的入参（按 workspaceId 查全部）。
 type WorkspaceTypeGetListRequest struct {
-	WorkspaceID int `json:"workspaceId" binding:"required"`
+	WorkspaceID string `json:"workspaceId" binding:"required"`
 }
 
 // WorkspaceTypeGetInfoRequest 是 POST /api/tracker/workspaceType/getInfo 的入参。
@@ -17,7 +17,7 @@ type WorkspaceTypeGetInfoRequest struct {
 
 // WorkspaceTypeCreateRequest 是 POST /api/tracker/workspaceType/create 的入参。
 type WorkspaceTypeCreateRequest struct {
-	WorkspaceID int    `json:"workspaceId" binding:"required"`
+	WorkspaceID string `json:"workspaceId" binding:"required"`
 	Name        string `json:"name" binding:"required,max=100"`
 	Color       string `json:"color" binding:"omitempty,max=20"`
 	Description string `json:"description" binding:"omitempty,max=500"`

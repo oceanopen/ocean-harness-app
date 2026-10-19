@@ -12,6 +12,8 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"github.com/google/uuid"
+
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
@@ -64,6 +66,7 @@ func (svc Workspace) Create(req *types.WorkspaceCreateRequest) (*types.Workspace
 	}
 	q := query.Use(svc.Orm)
 	ws := &model.Workspace{
+		ID:             uuid.Must(uuid.NewV7()).String(),
 		Name:           req.Name,
 		Dir:            strings.TrimSpace(req.Dir),
 		Description:    req.Description,
@@ -121,7 +124,7 @@ func launchSettingsJSON(ls *types.WorkspaceLaunchSettings) string {
  * type 属 workspace 维度（所有项目共享），issue 的 type_id 引用随 issue 行删除自然消失，此处删 type 本体即可。
  */
 func (svc Workspace) Delete(req *types.WorkspaceDeleteRequest) error {
-	var botIDs []int
+	var botIDs []string
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
 		if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(req.ID)).First(); err != nil {
@@ -158,7 +161,7 @@ func (svc Workspace) Delete(req *types.WorkspaceDeleteRequest) error {
 			botIDs = append(botIDs, b.ID)
 		}
 		if _, e := q.ImBot.WithContext(svc.Context).Where(q.ImBot.WorkspaceID.Eq(req.ID)).
-			UpdateSimple(q.ImBot.WorkspaceID.Value(0)); e != nil {
+			UpdateSimple(q.ImBot.WorkspaceID.Value("")); e != nil {
 			return e
 		}
 		return nil
@@ -188,13 +191,13 @@ func validateWorkspaceDir(dir string) error {
 }
 
 // reapplyBots 目录变更后的 bot 连接热更新：重拉关联该工作空间的 bot 并 ApplyBot/StopBot。
-func reapplyBots(orm *gorm.DB, logger *zap.Logger, workspaceID int) {
+func reapplyBots(orm *gorm.DB, logger *zap.Logger, workspaceID string) {
 	q := query.Use(orm)
 	rows, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.WorkspaceID.Eq(workspaceID)).Find()
 	if err != nil {
 		return
 	}
-	ids := make([]int, 0, len(rows))
+	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
 		ids = append(ids, row.ID)
 	}
@@ -205,7 +208,7 @@ func reapplyBots(orm *gorm.DB, logger *zap.Logger, workspaceID int) {
  * reapplyBotIDs 按 id 重拉 bot 行并热更新连接（启用 → ApplyBot，停用 → StopBot）。
  * 失败仅日志（DB 已是 SSOT，运行时漂移可经重启连接/重启应用收敛）。
  */
-func reapplyBotIDs(orm *gorm.DB, logger *zap.Logger, ids ...int) {
+func reapplyBotIDs(orm *gorm.DB, logger *zap.Logger, ids ...string) {
 	if global.BotSupervisor == nil || len(ids) == 0 {
 		return
 	}
@@ -217,7 +220,7 @@ func reapplyBotIDs(orm *gorm.DB, logger *zap.Logger, ids ...int) {
 	for _, row := range rows {
 		if row.Enabled.IsYes() {
 			if err := global.BotSupervisor.ApplyBot(row); err != nil && logger != nil {
-				logger.Warn("bot 连接热更新失败（DB 已保存，可重启连接恢复）", zap.Int("botID", row.ID), zap.Error(err))
+				logger.Warn("bot 连接热更新失败（DB 已保存，可重启连接恢复）", zap.String("botID", row.ID), zap.Error(err))
 			}
 		} else {
 			global.BotSupervisor.StopBot(row.ID)
