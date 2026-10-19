@@ -6,7 +6,7 @@
 
 | 阶段 | 任务 | 状态 |
 |---|---|---|
-| P0 spike 验收（闸门） | T1 构建链路验收 | 🔲 |
+| P0 spike 验收（闸门） | T1 构建链路验收 | ✅ |
 | P0 spike 验收（闸门） | T2 spike 集成验收 | 🔲 |
 | P1 正式接入 | T3 golden SSE 契约测试 | 🔲 |
 | P1 正式接入 | T4 internal/acp 换底 | 🔲 |
@@ -63,11 +63,12 @@ server 的 ACP 客户端当前基于 BrokkAi/acp-go v0.11.0，其生成模型丢
 
 ### 任务 T1：构建链路验收
 
-- 状态：🔲
+- 状态：✅
 - 功能：确认 ironpark/acp-go 在本项目构建链可编译可链接
 - 技术方案：`server/go.mod` 引入 `github.com/ironpark/acp-go v0.2.0`；`go build ./...` 探测 `encoding/json/v2` 是否要求 GOEXPERIMENT=jsonv2；CGO_ENABLED=0 复验 release 构建链（`pnpm server:release`）
 - 依赖：无
 - 验收：构建全绿；GOEXPERIMENT 结论明确（需要/不需要）；如需要，构建环境变更已单独经用户确认
+- 实施定稿：**GOEXPERIMENT 不需要**——go1.27.1 下 `encoding/json/v2` 默认在 std 可用（库内引用为生产性，非仅测试），库全包编译 + `CGO_ENABLED=0 -ldflags '-s -w'` 链接探针（acp1/schema/v1 真实解码运行）均无实验开关通过，R2 环境变更分支未触发；依赖经 `go get` 引入（主模块 + `acphttp` 传递补 `coder/websocket v1.8.15`），暂为 `// indirect` 形态，T2 引用后 ironpark 转正；**T2 落地前勿跑 `pnpm setup`/`server:mod:tidy`**（未被引用的依赖会被清出 go.mod）；elicitation 全家族类型（6 变体 + `CompleteElicitationNotification`）在 schema/v1 确认在位
 
 ### 任务 T2：spike 集成验收
 
