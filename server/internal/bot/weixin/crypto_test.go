@@ -2,6 +2,7 @@ package weixin
 
 import (
 	"bytes"
+	"crypto/aes"
 	"testing"
 )
 
@@ -52,7 +53,15 @@ func TestAESDecryptRejectsCorrupt(t *testing.T) {
 		t.Fatal("expected error for non-block-aligned ciphertext")
 	}
 	ciphertext, _ := aesECBEncrypt([]byte("hello"), key)
-	ciphertext[len(ciphertext)-1] ^= 0xFF
+	/*
+	 * 末块整块替换为全零明文块的密文：解出 padLen = 0 恒非法。
+	 * 单密文字节翻转经雪崩解出随机块，padding 合法性沦为概率事件，断言不成立。
+	 */
+	block, _ := aes.NewCipher(key)
+	zero := make([]byte, aes.BlockSize)
+	bad := make([]byte, aes.BlockSize)
+	block.Encrypt(bad, zero)
+	copy(ciphertext[len(ciphertext)-aes.BlockSize:], bad)
 	if _, err := aesECBDecrypt(ciphertext, key); err == nil {
 		t.Fatal("expected error for corrupted padding")
 	}

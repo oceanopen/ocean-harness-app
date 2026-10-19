@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -35,15 +36,15 @@ func TestDriverRouteBranching(t *testing.T) {
 	r := driverRoute{
 		headless: headless,
 		acp:      acpDrv,
-		resolve: func(botID, workspaceID int, conversationKey string) (routeTarget, error) {
-			return routeTarget{ACP: workspaceID == 7}, nil
+		resolve: func(botID, workspaceID string, conversationKey string) (routeTarget, error) {
+			return routeTarget{ACP: workspaceID == "ws-acp"}, nil
 		},
 	}
 	ctx := context.Background()
-	if _, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: 7}); err != nil {
+	if _, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: "ws-acp"}); err != nil {
 		t.Fatalf("acp 路由受理失败: %v", err)
 	}
-	if _, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: 0}); err != nil { // 0 = 未选择工作空间 → headless
+	if _, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: ""}); err != nil { // 空 = 未选择工作空间 → headless
 		t.Fatalf("headless 路由受理失败: %v", err)
 	}
 	if acpDrv.calls != 1 || headless.calls != 1 {
@@ -52,8 +53,8 @@ func TestDriverRouteBranching(t *testing.T) {
 }
 
 func TestDriverRouteResolverErrorFailClosed(t *testing.T) {
-	r := driverRoute{resolve: func(int, int, string) (routeTarget, error) { return routeTarget{}, errors.New("db boom") }}
-	_, err := r.RunTurn(context.Background(), TurnRequest{WorkspaceID: 1})
+	r := driverRoute{resolve: func(string, string, string) (routeTarget, error) { return routeTarget{}, errors.New("db boom") }}
+	_, err := r.RunTurn(context.Background(), TurnRequest{WorkspaceID: "ws-1"})
 	if err == nil || !strings.Contains(err.Error(), "读取工作空间启动配置失败") || !strings.Contains(err.Error(), "db boom") {
 		t.Fatalf("解析失败应 fail closed 同步报错: %v", err)
 	}
@@ -75,9 +76,9 @@ func TestDriverRouteAcpErrorsMarkedNotAccepted(t *testing.T) {
 	r := driverRoute{
 		headless: headlessErrStub,
 		acp:      acpErrStub,
-		resolve:  func(int, int, string) (routeTarget, error) { return routeTarget{ACP: true}, nil },
+		resolve:  func(string, string, string) (routeTarget, error) { return routeTarget{ACP: true}, nil },
 	}
-	_, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: 7})
+	_, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: "ws-acp"})
 	if err == nil || !isNotAccepted(err) || acpErrStub.calls != 1 {
 		t.Fatalf("ACP 引擎失败应包受理拒绝标记: %v", err)
 	}
@@ -85,15 +86,15 @@ func TestDriverRouteAcpErrorsMarkedNotAccepted(t *testing.T) {
 	r2 := driverRoute{
 		headless: headlessErrStub,
 		acp:      acpErrStub,
-		resolve:  func(int, int, string) (routeTarget, error) { return routeTarget{}, nil },
+		resolve:  func(string, string, string) (routeTarget, error) { return routeTarget{}, nil },
 	}
-	_, err = r2.RunTurn(ctx, TurnRequest{WorkspaceID: 1})
+	_, err = r2.RunTurn(ctx, TurnRequest{WorkspaceID: "ws-1"})
 	if err == nil || isNotAccepted(err) || headlessErrStub.calls != 1 {
 		t.Fatalf("headless 引擎失败不得包受理拒绝标记（自愈语义不变）: %v", err)
 	}
 
-	r3 := driverRoute{resolve: func(int, int, string) (routeTarget, error) { return routeTarget{}, errors.New("db boom") }}
-	_, err = r3.RunTurn(ctx, TurnRequest{WorkspaceID: 1})
+	r3 := driverRoute{resolve: func(string, string, string) (routeTarget, error) { return routeTarget{}, errors.New("db boom") }}
+	_, err = r3.RunTurn(ctx, TurnRequest{WorkspaceID: "ws-1"})
 	if err == nil || !isNotAccepted(err) || !strings.Contains(err.Error(), "读取工作空间启动配置失败") {
 		t.Fatalf("路由解析失败应包受理拒绝标记且保留原文案: %v", err)
 	}
@@ -107,8 +108,10 @@ func TestDriverRouteAcpErrorsMarkedNotAccepted(t *testing.T) {
 func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
 	db := newBotTestDB(t, &model.Workspace{}, &model.ImBotConversation{})
 	q := query.Use(db)
-	mk := func(settings string) int {
-		ws := &model.Workspace{Name: "ws", Dir: "/tmp/ocean-test", LaunchSettings: settings}
+	seq := 0
+	mk := func(settings string) string {
+		seq++
+		ws := &model.Workspace{ID: fmt.Sprintf("ws-%d", seq), Name: "ws", Dir: "/tmp/ocean-test", LaunchSettings: settings}
 		if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
 			t.Fatalf("建 workspace: %v", err)
 		}
@@ -124,19 +127,19 @@ func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
 		{"空配置", "", routeTarget{}},
 		{"损坏 JSON（未配置语义）", "{bad json", routeTarget{}},
 	}
-	ids := make([]int, 0, len(cases))
+	ids := make([]string, 0, len(cases))
 	for _, tc := range cases {
 		ids = append(ids, mk(tc.settings))
 	}
 
 	route := newDriverRoute(db, nil, nil) // 解析不触达会话域/绑定卡，nil sessions/applier 安全
 	for i, tc := range cases {
-		got, err := route.resolve(0, ids[i], "single:u1")
+		got, err := route.resolve("", ids[i], "single:u1")
 		if err != nil || got != tc.want {
 			t.Fatalf("%s: got=%v want=%v err=%v", tc.name, got, tc.want, err)
 		}
 	}
-	if got, err := route.resolve(0, 999999, "single:u1"); err != nil || got != (routeTarget{}) {
+	if got, err := route.resolve("", "ws-missing", "single:u1"); err != nil || got != (routeTarget{}) {
 		t.Fatalf("行缺失应按未启用处理: got=%v err=%v", got, err)
 	}
 }
@@ -145,11 +148,11 @@ func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
  * mkRouteBindingFixture 建路由绑定解析的三表夹具，返回 (wsID, issueID, 存活 helper)。
  * launchSettings 可为空串（未配置语义）。
  */
-func mkRouteBindingFixture(t *testing.T, wsSettings, issueSettings string) (int, string, *gorm.DB) {
+func mkRouteBindingFixture(t *testing.T, wsSettings, issueSettings string) (string, string, *gorm.DB) {
 	t.Helper()
 	db := newBotTestDB(t, &model.Workspace{}, &model.ImBotConversation{}, &model.ProjectIssue{})
 	q := query.Use(db)
-	ws := &model.Workspace{Name: "ws", Dir: "/tmp/ocean-test", LaunchSettings: wsSettings}
+	ws := &model.Workspace{ID: "ws-route", Name: "ws", Dir: "/tmp/ocean-test", LaunchSettings: wsSettings}
 	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
 		t.Fatalf("建 workspace: %v", err)
 	}
@@ -164,7 +167,7 @@ func mkRouteBindingFixture(t *testing.T, wsSettings, issueSettings string) (int,
 }
 
 // setConvBinding 写会话绑定行（issueID 空串 = 绑定锚为空）。
-func setConvBinding(t *testing.T, db *gorm.DB, botID int, convKey, issueID string) {
+func setConvBinding(t *testing.T, db *gorm.DB, botID string, convKey, issueID string) {
 	t.Helper()
 	q := query.Use(db)
 	conv := &model.ImBotConversation{BotID: botID, ConversationKey: convKey, BoundIssueID: issueID}
@@ -180,10 +183,10 @@ func setConvBinding(t *testing.T, db *gorm.DB, botID int, convKey, issueID strin
  */
 func TestDriverRouteBindingResolution(t *testing.T) {
 	const acpSettings = `{"mode":"acp"}`
-	const botID = 1
+	const botID = "bot-1"
 	const convKey = "single:u1"
 	// resolve 收敛装配样板：各子测试共享 botID/convKey，仅 db 与 wsID 变化。
-	resolve := func(db *gorm.DB, wsID int) (routeTarget, error) {
+	resolve := func(db *gorm.DB, wsID string) (routeTarget, error) {
 		return newDriverRoute(db, nil, nil).resolve(botID, wsID, convKey)
 	}
 
@@ -213,7 +216,7 @@ func TestDriverRouteBindingResolution(t *testing.T) {
 		// 跨 workspace 绑定（issue 归属其他域）。
 		wsID3, _, db3 := mkRouteBindingFixture(t, acpSettings, "")
 		setConvBinding(t, db3, botID, convKey, "0198dddd-0000-7111-8111-3b6ac9e1f201")
-		if err := db3.Model(&model.ProjectIssue{}).Where("1=1").Update("workspace_id", wsID3+999).Error; err != nil {
+		if err := db3.Model(&model.ProjectIssue{}).Where("1=1").Update("workspace_id", "ws-other").Error; err != nil {
 			t.Fatalf("挪 issue 出域: %v", err)
 		}
 		if got, err = resolve(db3, wsID3); err != nil || got != (routeTarget{ACP: true}) {
@@ -255,9 +258,9 @@ func TestDriverRouteBindingResolution(t *testing.T) {
  */
 func TestDriverRouteProbeTarget(t *testing.T) {
 	const acpSettings = `{"mode":"acp"}`
-	const botID = 1
+	const botID = "bot-1"
 	const convKey = "single:u1"
-	probe := func(db *gorm.DB, wsID int) (bool, string, error) {
+	probe := func(db *gorm.DB, wsID string) (bool, string, error) {
 		return newDriverRoute(db, nil, nil).ProbeTarget(BotRuntimeConfig{BotID: botID, WorkspaceID: wsID}, convKey)
 	}
 

@@ -29,7 +29,7 @@ func newWorkspaceProject(db *gorm.DB, opts ...gen.DOOption) workspaceProject {
 	tableName := _workspaceProject.workspaceProjectDo.TableName()
 	_workspaceProject.ALL = field.NewAsterisk(tableName)
 	_workspaceProject.ID = field.NewInt(tableName, "id")
-	_workspaceProject.WorkspaceID = field.NewInt(tableName, "workspace_id")
+	_workspaceProject.WorkspaceID = field.NewString(tableName, "workspace_id")
 	_workspaceProject.Name = field.NewString(tableName, "name")
 	_workspaceProject.Description = field.NewString(tableName, "description")
 	_workspaceProject.Emoji = field.NewString(tableName, "emoji")
@@ -62,7 +62,7 @@ type workspaceProject struct {
 
 	ALL              field.Asterisk
 	ID               field.Int
-	WorkspaceID      field.Int
+	WorkspaceID      field.String
 	Name             field.String
 	Description      field.String
 	Emoji            field.String
@@ -88,7 +88,7 @@ func (w workspaceProject) As(alias string) *workspaceProject {
 func (w *workspaceProject) updateTableName(table string) *workspaceProject {
 	w.ALL = field.NewAsterisk(table)
 	w.ID = field.NewInt(table, "id")
-	w.WorkspaceID = field.NewInt(table, "workspace_id")
+	w.WorkspaceID = field.NewString(table, "workspace_id")
 	w.Name = field.NewString(table, "name")
 	w.Description = field.NewString(table, "description")
 	w.Emoji = field.NewString(table, "emoji")

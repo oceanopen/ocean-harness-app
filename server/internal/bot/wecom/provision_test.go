@@ -102,12 +102,12 @@ func TestProvisionFlow(t *testing.T) {
 		})
 		restore(t, srv.URL)
 
-		var activatedBotID int
+		var activatedBotID string
 		var gotID, gotSecret string
-		SetProvisionActivator(func(remoteBotID, secret string) (int, error) {
+		SetProvisionActivator(func(remoteBotID, secret string) (string, error) {
 			gotID, gotSecret = remoteBotID, secret
-			activatedBotID = 42
-			return 42, nil
+			activatedBotID = "bot-a"
+			return "bot-a", nil
 		})
 
 		view, err := StartProvisioning()
@@ -128,7 +128,7 @@ func TestProvisionFlow(t *testing.T) {
 		if err != nil {
 			t.Fatalf("success 轮: %v", err)
 		}
-		if v2.State != string(provConnected) || v2.BotID != 42 {
+		if v2.State != string(provConnected) || v2.BotID != "bot-a" {
 			t.Fatalf("connected 视图: %+v", v2)
 		}
 		if gotID != "wb-123" || gotSecret != "sec-abc" {
@@ -144,9 +144,9 @@ func TestProvisionFlow(t *testing.T) {
 	t.Run("expired 终态与本地 TTL", func(t *testing.T) {
 		srv := fakeTencentQR(t, []string{`{"code":0,"data":{"status":"expired"}}`})
 		restore(t, srv.URL)
-		SetProvisionActivator(func(string, string) (int, error) {
+		SetProvisionActivator(func(string, string) (string, error) {
 			t.Fatal("expired 不应触发激活")
-			return 0, nil
+			return "", nil
 		})
 		view, err := StartProvisioning()
 		if err != nil {
@@ -198,7 +198,7 @@ func TestProvisionFlow(t *testing.T) {
 			`{"code":0,"data":{"status":"success","bot_info":{"botid":"wb-x","secret":"s"}}}`,
 		})
 		restore(t, srv.URL)
-		SetProvisionActivator(func(string, string) (int, error) { return 0, context.DeadlineExceeded })
+		SetProvisionActivator(func(string, string) (string, error) { return "", context.DeadlineExceeded })
 		view, err := StartProvisioning()
 		if err != nil {
 			t.Fatalf("begin: %v", err)

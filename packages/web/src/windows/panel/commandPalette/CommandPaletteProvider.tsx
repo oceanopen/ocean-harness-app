@@ -13,7 +13,7 @@ interface CommandPaletteProviderProps {
   activeMenu: MenuKey;
   navigate: (menu: MenuKey) => void;
   toggleSidebar: () => void;
-  currentWorkspaceId: number | null;
+  currentWorkspaceId: string | null;
   currentWorkspaceName: string | null;
   currentWorkspaceProjectName: string | null;
   selectWorkspace: (ws: WorkspaceModel) => void;

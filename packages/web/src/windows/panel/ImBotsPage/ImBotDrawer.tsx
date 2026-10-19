@@ -31,12 +31,12 @@ interface ImBotDrawerProps {
   onClose: () => void;
 }
 
-/** 表单 draft（secret/allowUsers 以文本态编辑，提交时拆分）。workspaceId 0 = 未选。 */
+/** 表单 draft（secret/allowUsers 以文本态编辑，提交时拆分）。workspaceId 空 = 未选。 */
 interface ImBotDraft {
   name: string;
   botId: string;
   secret: string;
-  workspaceId: number;
+  workspaceId: string;
   accessMode: ImBotAccessPolicy['mode'];
   allowUsersText: string;
   enabled: boolean;
@@ -47,7 +47,7 @@ function draftFromBot(bot: ImBotModel | null): ImBotDraft {
     name: bot?.name ?? '',
     botId: bot?.botId ?? '',
     secret: bot?.secret ?? '',
-    workspaceId: bot?.workspaceId ?? 0,
+    workspaceId: bot?.workspaceId ?? '',
     accessMode: bot?.accessPolicy.mode ?? 'allowlist',
     allowUsersText: bot?.accessPolicy.allowUsers.join(', ') ?? '',
     enabled: bot?.enabled ?? true,
@@ -85,7 +85,7 @@ function ImBotDrawer(props: ImBotDrawerProps) {
     = draft.name.trim() === ''
       || (!isWeixin && draft.botId.trim() === '')
       || (!editing && !isWeixin && draft.secret.trim() === '')
-      || draft.workspaceId <= 0;
+      || draft.workspaceId === '';
 
   const setField = <K extends keyof ImBotDraft>(key: K, value: ImBotDraft[K]) => {
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -237,9 +237,9 @@ function ImBotDrawer(props: ImBotDrawerProps) {
             select
             label="工作空间"
             value={draft.workspaceId}
-            onChange={e => setField('workspaceId', Number(e.target.value))}
+            onChange={e => setField('workspaceId', e.target.value)}
             helperText={helpText(
-              draft.workspaceId > 0
+              draft.workspaceId !== ''
                 ? `会话目录取该工作空间的目录：${workspaces.find(ws => ws.id === draft.workspaceId)?.dir ?? ''}`
                 : '每个机器人绑定一个工作空间（会话目录取其工作区目录）',
             )}

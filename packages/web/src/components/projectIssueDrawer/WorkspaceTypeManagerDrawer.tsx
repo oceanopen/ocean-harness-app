@@ -44,7 +44,7 @@ const COLOR_PRESETS = [
  * create 不传 sortOrder（后端 MAX+10000），update 直接覆盖，delete 将引用该类型的 issue 置未分类；列表为空时展示「需求」「缺陷」两条默认建议项（含预设色），点「添加」才真正落库生效。
  */
 interface TypeManagerDrawerProps {
-  workspaceId: number;
+  workspaceId: string;
   onClose: () => void;
 }
 

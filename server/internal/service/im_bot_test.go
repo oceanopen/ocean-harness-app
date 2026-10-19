@@ -46,24 +46,24 @@ func mkImBotFixture(t *testing.T, db *gorm.DB) {
 	q := query.Use(db)
 	ctx := context.Background()
 	for _, ws := range []*model.Workspace{
-		{ID: 1, Name: "ws1", Dir: t.TempDir()},
-		{ID: 2, Name: "ws2", Dir: t.TempDir()},
+		{ID: "ws-1", Name: "ws1", Dir: t.TempDir()},
+		{ID: "ws-2", Name: "ws2", Dir: t.TempDir()},
 	} {
 		if err := q.Workspace.WithContext(ctx).Create(ws); err != nil {
 			t.Fatalf("建 workspace: %v", err)
 		}
 	}
 	for _, is := range []*model.ProjectIssue{
-		{ID: imBotIssueLocal, ProjectID: 1, WorkspaceID: 1, Name: "本域任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
-		{ID: imBotIssueForeign, ProjectID: 2, WorkspaceID: 2, Name: "外域任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
+		{ID: imBotIssueLocal, ProjectID: 1, WorkspaceID: "ws-1", Name: "本域任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
+		{ID: imBotIssueForeign, ProjectID: 2, WorkspaceID: "ws-2", Name: "外域任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
 	} {
 		if err := q.ProjectIssue.WithContext(ctx).Create(is); err != nil {
 			t.Fatalf("建 issue: %v", err)
 		}
 	}
 	for _, b := range []*model.ImBot{
-		{ID: 1, Name: "b1", Channel: enums.CHANNEL_WECOM, WorkspaceID: 1, AccessPolicy: "{}", Enabled: enums.YES_NO_NO},
-		{ID: 2, Name: "b2", Channel: enums.CHANNEL_WECOM, WorkspaceID: 0, AccessPolicy: "{}", Enabled: enums.YES_NO_NO},
+		{ID: "bot-1", Name: "b1", Channel: enums.CHANNEL_WECOM, WorkspaceID: "ws-1", AccessPolicy: "{}", Enabled: enums.YES_NO_NO},
+		{ID: "bot-2", Name: "b2", Channel: enums.CHANNEL_WECOM, WorkspaceID: "", AccessPolicy: "{}", Enabled: enums.YES_NO_NO},
 	} {
 		if err := q.ImBot.WithContext(ctx).Create(b); err != nil {
 			t.Fatalf("建 bot: %v", err)
@@ -72,9 +72,9 @@ func mkImBotFixture(t *testing.T, db *gorm.DB) {
 	latest := time.Now()
 	earlier := latest.Add(-time.Hour)
 	for _, conv := range []*model.ImBotConversation{
-		{BotID: 1, ConversationKey: "single:u1", BoundIssueID: imBotIssueLocal, LastMessageAt: &latest},
-		{BotID: 1, ConversationKey: "group:g1", ClaudeSessionID: "sess-keep", LastMessageAt: &earlier},
-		{BotID: 1, ConversationKey: "single:u2"},
+		{ID: "conv-1", BotID: "bot-1", ConversationKey: "single:u1", BoundIssueID: imBotIssueLocal, LastMessageAt: &latest},
+		{ID: "conv-2", BotID: "bot-1", ConversationKey: "group:g1", ClaudeSessionID: "sess-keep", LastMessageAt: &earlier},
+		{ID: "conv-3", BotID: "bot-1", ConversationKey: "single:u2"},
 	} {
 		if err := q.ImBotConversation.WithContext(ctx).Create(conv); err != nil {
 			t.Fatalf("建会话行: %v", err)
@@ -91,7 +91,7 @@ func TestImBotGetConversations(t *testing.T) {
 	mkImBotFixture(t, db)
 	svc := ImBot{Service: apis.Service{Context: context.Background(), Orm: db, Logger: zap.NewNop()}}
 
-	rows, err := svc.GetConversations(&types.ImBotGetConversationsRequest{BotId: 1})
+	rows, err := svc.GetConversations(&types.ImBotGetConversationsRequest{BotId: "bot-1"})
 	if err != nil {
 		t.Fatalf("GetConversations: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestImBotGetConversations(t *testing.T) {
 	if rows[1].BoundIssueId != "" || rows[1].BoundIssueName != "" || rows[2].LastMessageAt != nil {
 		t.Fatalf("未绑定/从未活跃形态错误: %+v %+v", rows[1], rows[2])
 	}
-	if _, err := svc.GetConversations(&types.ImBotGetConversationsRequest{BotId: 99}); err == nil {
+	if _, err := svc.GetConversations(&types.ImBotGetConversationsRequest{BotId: "bot-99"}); err == nil {
 		t.Fatal("bot 不存在应拒绝")
 	}
 }
@@ -127,20 +127,20 @@ func TestImBotBindConversationIssue(t *testing.T) {
 	svc := ImBot{Service: apis.Service{Context: context.Background(), Orm: db, Logger: zap.NewNop()}}
 
 	if err := svc.BindConversationIssue(&types.ImBotBindIssueRequest{
-		BotId: 1, ConversationKey: "group:g1", IssueId: imBotIssueLocal,
+		BotId: "bot-1", ConversationKey: "group:g1", IssueId: imBotIssueLocal,
 	}); err != nil {
 		t.Fatalf("绑定: %v", err)
 	}
 	q := query.Use(db)
 	conv, err := q.ImBotConversation.WithContext(context.Background()).
-		Where(q.ImBotConversation.BotID.Eq(1), q.ImBotConversation.ConversationKey.Eq("group:g1")).First()
+		Where(q.ImBotConversation.BotID.Eq("bot-1"), q.ImBotConversation.ConversationKey.Eq("group:g1")).First()
 	if err != nil || conv.BoundIssueID != imBotIssueLocal {
 		t.Fatalf("绑定未落库: %+v err=%v", conv, err)
 	}
 	if conv.ClaudeSessionID != "sess-keep" {
 		t.Fatalf("绑定不得扰动 headless 续聊锚: %q", conv.ClaudeSessionID)
 	}
-	rows, err := svc.GetConversations(&types.ImBotGetConversationsRequest{BotId: 1})
+	rows, err := svc.GetConversations(&types.ImBotGetConversationsRequest{BotId: "bot-1"})
 	if err != nil {
 		t.Fatalf("GetConversations: %v", err)
 	}
@@ -151,12 +151,12 @@ func TestImBotBindConversationIssue(t *testing.T) {
 	}
 
 	if err := svc.BindConversationIssue(&types.ImBotBindIssueRequest{
-		BotId: 1, ConversationKey: "group:g1",
+		BotId: "bot-1", ConversationKey: "group:g1",
 	}); err != nil {
 		t.Fatalf("解绑: %v", err)
 	}
 	conv, err = q.ImBotConversation.WithContext(context.Background()).
-		Where(q.ImBotConversation.BotID.Eq(1), q.ImBotConversation.ConversationKey.Eq("group:g1")).First()
+		Where(q.ImBotConversation.BotID.Eq("bot-1"), q.ImBotConversation.ConversationKey.Eq("group:g1")).First()
 	if err != nil || conv.BoundIssueID != "" {
 		t.Fatalf("解绑未清锚: %+v err=%v", conv, err)
 	}
@@ -176,12 +176,12 @@ func TestImBotBindConversationIssueRejects(t *testing.T) {
 		req  *types.ImBotBindIssueRequest
 		want string
 	}{
-		{"issue 不存在", &types.ImBotBindIssueRequest{BotId: 1, ConversationKey: "single:u1", IssueId: "nope"}, "任务不存在"},
-		{"跨工作空间 issue", &types.ImBotBindIssueRequest{BotId: 1, ConversationKey: "single:u1", IssueId: imBotIssueForeign}, "不属于"},
-		{"bot 无工作空间", &types.ImBotBindIssueRequest{BotId: 2, ConversationKey: "single:u1", IssueId: imBotIssueLocal}, "请先为机器人选择工作空间"},
-		{"会话行不在场（绑定）", &types.ImBotBindIssueRequest{BotId: 1, ConversationKey: "single:none", IssueId: imBotIssueLocal}, "会话不存在"},
-		{"会话行不在场（解绑）", &types.ImBotBindIssueRequest{BotId: 1, ConversationKey: "single:none"}, "会话不存在"},
-		{"bot 不存在", &types.ImBotBindIssueRequest{BotId: 99, ConversationKey: "single:u1", IssueId: imBotIssueLocal}, "bot 不存在"},
+		{"issue 不存在", &types.ImBotBindIssueRequest{BotId: "bot-1", ConversationKey: "single:u1", IssueId: "nope"}, "任务不存在"},
+		{"跨工作空间 issue", &types.ImBotBindIssueRequest{BotId: "bot-1", ConversationKey: "single:u1", IssueId: imBotIssueForeign}, "不属于"},
+		{"bot 无工作空间", &types.ImBotBindIssueRequest{BotId: "bot-2", ConversationKey: "single:u1", IssueId: imBotIssueLocal}, "请先为机器人选择工作空间"},
+		{"会话行不在场（绑定）", &types.ImBotBindIssueRequest{BotId: "bot-1", ConversationKey: "single:none", IssueId: imBotIssueLocal}, "会话不存在"},
+		{"会话行不在场（解绑）", &types.ImBotBindIssueRequest{BotId: "bot-1", ConversationKey: "single:none"}, "会话不存在"},
+		{"bot 不存在", &types.ImBotBindIssueRequest{BotId: "bot-99", ConversationKey: "single:u1", IssueId: imBotIssueLocal}, "bot 不存在"},
 	}
 	for _, tc := range cases {
 		err := svc.BindConversationIssue(tc.req)

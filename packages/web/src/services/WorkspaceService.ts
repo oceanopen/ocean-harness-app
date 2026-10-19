@@ -13,7 +13,7 @@ export interface WorkspaceLaunchSettings {
 }
 
 export interface WorkspaceModel {
-  id: number;
+  id: string; // uuid
   name: string;
   dir: string;
   description: string;
@@ -35,7 +35,7 @@ export interface WorkspaceCreateRequest {
 
 // POST /api/tracker/workspace/update 的入参。
 export interface WorkspaceUpdateRequest {
-  id: number;
+  id: string;
   name: string;
   dir: string;
   description?: string;
@@ -44,7 +44,7 @@ export interface WorkspaceUpdateRequest {
 
 // POST /api/tracker/workspace/delete 的入参。
 export interface WorkspaceDeleteRequest {
-  id: number;
+  id: string;
 }
 
 export class WorkspaceService {

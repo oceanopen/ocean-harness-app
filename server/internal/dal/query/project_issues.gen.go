@@ -30,7 +30,7 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	_projectIssue.ALL = field.NewAsterisk(tableName)
 	_projectIssue.ID = field.NewString(tableName, "id")
 	_projectIssue.ProjectID = field.NewInt(tableName, "project_id")
-	_projectIssue.WorkspaceID = field.NewInt(tableName, "workspace_id")
+	_projectIssue.WorkspaceID = field.NewString(tableName, "workspace_id")
 	_projectIssue.Name = field.NewString(tableName, "name")
 	_projectIssue.Description = field.NewString(tableName, "description")
 	_projectIssue.LaunchSettings = field.NewString(tableName, "launch_settings")
@@ -61,7 +61,7 @@ type projectIssue struct {
 	ALL                      field.Asterisk
 	ID                       field.String
 	ProjectID                field.Int
-	WorkspaceID              field.Int
+	WorkspaceID              field.String
 	Name                     field.String
 	Description              field.String
 	LaunchSettings           field.String
@@ -94,7 +94,7 @@ func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.ALL = field.NewAsterisk(table)
 	p.ID = field.NewString(table, "id")
 	p.ProjectID = field.NewInt(table, "project_id")
-	p.WorkspaceID = field.NewInt(table, "workspace_id")
+	p.WorkspaceID = field.NewString(table, "workspace_id")
 	p.Name = field.NewString(table, "name")
 	p.Description = field.NewString(table, "description")
 	p.LaunchSettings = field.NewString(table, "launch_settings")

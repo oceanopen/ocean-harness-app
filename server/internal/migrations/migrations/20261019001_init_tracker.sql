@@ -2,11 +2,13 @@
 -- 全量基线：工作空间 / 项目 / Issue / 本地仓库 / IM bot 域 / ACP 会话域 10 张业务表。
 -- 约定：t_ 前缀；无 DB 外键（级联清理由 service 层处理）；全表物理删除；
 -- 枚举列 TEXT NOT NULL 无默认值（代码显式赋值）；索引命名 idx_/udx_{表名去t_}_{列名}。
+-- workspace/bot/会话主键与 workspace_id/bot_id 为 uuid 文本（service 层 Create 生成 uuid v7，
+-- 时间有序；未选哨兵为空串），其余 id 保持自增 INTEGER。
 
 -- t_workspaces：工作空间（个人可建多个）；dir 为绝对路径，是 issue 任务目录与 bot 会话目录的根。
 -- launch_settings 为启动设置 JSON 文本（shape 见 dal/types/workspace.go），空串 = 未配置 → 消费端回落全局。
 CREATE TABLE t_workspaces (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    id              TEXT PRIMARY KEY,
     name            TEXT     NOT NULL,
     dir             TEXT     NOT NULL,
     description     TEXT     NOT NULL DEFAULT '',
@@ -18,10 +20,10 @@ CREATE TABLE t_workspaces (
 -- t_workspace_projects：项目，所属 workspace；允许重名，靠 id 区分。
 CREATE TABLE t_workspace_projects (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    workspace_id     INTEGER  NOT NULL,
-    name             TEXT     NOT NULL,
-    description      TEXT     NOT NULL DEFAULT '',
-    emoji            TEXT     NOT NULL DEFAULT '',
+    workspace_id     TEXT    NOT NULL,
+    name             TEXT    NOT NULL,
+    description      TEXT    NOT NULL DEFAULT '',
+    emoji            TEXT    NOT NULL DEFAULT '',
     created_at       DATETIME NOT NULL,
     updated_at       DATETIME NOT NULL
 );
@@ -33,7 +35,7 @@ CREATE TABLE t_workspace_projects (
 CREATE TABLE t_project_issues (
     id                  TEXT PRIMARY KEY,
     project_id          INTEGER  NOT NULL,
-    workspace_id        INTEGER  NOT NULL,
+    workspace_id        TEXT     NOT NULL,
     name                TEXT     NOT NULL,
     description         TEXT     NOT NULL DEFAULT '',
     launch_settings     TEXT     NOT NULL DEFAULT '',
@@ -52,7 +54,7 @@ CREATE TABLE t_project_issues (
 -- t_workspace_types：issue 类型，所属 workspace，项目间共享；是否必选为前端语义，后端不校验。
 CREATE TABLE t_workspace_types (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    workspace_id INTEGER  NOT NULL,
+    workspace_id TEXT     NOT NULL,
     name         TEXT     NOT NULL,
     color        TEXT     NOT NULL DEFAULT '',
     description  TEXT     NOT NULL DEFAULT '',
@@ -102,16 +104,19 @@ CREATE UNIQUE INDEX udx_issue_local_repositories_iid_lrid
     ON t_issue_local_repositories (issue_id, local_repository_id);
 
 -- t_im_bots：IM 数字人 bot 定义（渠道凭据 + claude 编排配置 + 启停）。
--- credential/access_policy 为 JSON 文本，shape 见 dal/types/im_bot.go；
--- workspace_id 关联 t_workspaces（0=未选择）；enabled='Y' 的 bot 随 sidecar 启动拉起。
+-- credential/access_policy/channel_state 为 JSON 文本，shape 见 dal/types/im_bot.go；
+-- id 与 workspace_id 均为 uuid 文本（workspace_id ''=未选择）；
+-- channel_state 为渠道适配器自管运行态（首个使用方为微信长轮询游标，跨重启续传）；
+-- enabled='Y' 的 bot 随 sidecar 启动拉起。
 CREATE TABLE t_im_bots (
-    id            INTEGER  PRIMARY KEY AUTOINCREMENT,
+    id            TEXT PRIMARY KEY,
     name          TEXT     NOT NULL,
     channel       TEXT     NOT NULL,
     credential    TEXT     NOT NULL DEFAULT '{}',
-    workspace_id INTEGER  NOT NULL DEFAULT 0,
+    workspace_id  TEXT     NOT NULL DEFAULT '',
     access_policy TEXT     NOT NULL,
     enabled       TEXT     NOT NULL,
+    channel_state TEXT     NOT NULL DEFAULT '{}',
     last_error    TEXT     NOT NULL DEFAULT '',
     created_at    DATETIME NOT NULL,
     updated_at    DATETIME NOT NULL
@@ -125,8 +130,8 @@ CREATE TABLE t_im_bots (
 -- 即覆盖实现旧卡失效语义（审批/表单卡不进槽：域内快照判别已覆盖）；空串 = 无登记（点击
 -- 消费 fail open 走原链）。
 CREATE TABLE t_im_bot_conversations (
-    id                INTEGER  PRIMARY KEY AUTOINCREMENT,
-    bot_id            INTEGER  NOT NULL,
+    id                TEXT PRIMARY KEY,
+    bot_id            TEXT     NOT NULL,
     conversation_key  TEXT     NOT NULL,
     claude_session_id TEXT     NOT NULL DEFAULT '',
     bound_issue_id    TEXT     NOT NULL DEFAULT '',

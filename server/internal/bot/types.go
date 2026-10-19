@@ -127,17 +127,17 @@ const (
 
 // BotRuntimeConfig supervisor → Factory 的装配参数（t_im_bots 行 + 进程环境的合并视图）。
 type BotRuntimeConfig struct {
-	BotID        int
+	BotID        string
 	Channel      enums.Channel
 	Credential   string // 渠道凭据 JSON，适配器自行解析（核心不解引用）
-	WorkspaceID  int    // 工作空间行 id（引擎路由按 workspace 级 launch_settings 解析；0 = 未选择）
+	WorkspaceID  string // 工作空间行 id uuid（引擎路由按 workspace 级 launch_settings 解析；'' = 未选择）
 	WorkspaceDir string
 	AccessPolicy AccessPolicy
 	Port         int // sidecar HTTP 端口，driver 注入 claude 子进程 OCEAN_HARNESS_PORT
 	// ChannelState 渠道自管运行态 JSON（t_im_bots.channel_state 启动快照，如微信长轮询游标；
 	// 核心不解释内容）。SaveChannelState 回写通道（nil = 忽略；失败由适配器自行兜底）。
 	ChannelState     string
-	SaveChannelState func(botID int, raw string) error
+	SaveChannelState func(botID string, raw string) error
 }
 
 /*
@@ -145,8 +145,8 @@ type BotRuntimeConfig struct {
  * --resume 续聊）；ACP 驱动不消费它（共享会话无 resume，bot 侧不写会话锚点）。
  */
 type TurnRequest struct {
-	BotID           int // bot 行 id（与 ConversationKey 组成绑定查询键 (bot_id, conversation_key)；headless 不消费）
-	WorkspaceID     int // 工作空间行 id（引擎路由解析合并后 launch_settings.mode 的键之一）
+	BotID           string // bot 行 id uuid（与 ConversationKey 组成绑定查询键 (bot_id, conversation_key)；headless 不消费）
+	WorkspaceID     string // 工作空间行 id uuid（引擎路由解析合并后 launch_settings.mode 的键之一）
 	WorkspaceDir    string
 	ConversationKey string // FormatConversationKey 产物（路由层按 (BotID, ConversationKey) 解析绑定）
 	IssueID         string // 路由层回填的绑定产物：目标 issue（空 = 未绑定）；仅 ACP 引擎消费，headless 忽略

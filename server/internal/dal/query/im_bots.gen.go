@@ -28,17 +28,17 @@ func newImBot(db *gorm.DB, opts ...gen.DOOption) imBot {
 
 	tableName := _imBot.imBotDo.TableName()
 	_imBot.ALL = field.NewAsterisk(tableName)
-	_imBot.ID = field.NewInt(tableName, "id")
+	_imBot.ID = field.NewString(tableName, "id")
 	_imBot.Name = field.NewString(tableName, "name")
 	_imBot.Channel = field.NewField(tableName, "channel")
 	_imBot.Credential = field.NewString(tableName, "credential")
-	_imBot.WorkspaceID = field.NewInt(tableName, "workspace_id")
+	_imBot.WorkspaceID = field.NewString(tableName, "workspace_id")
 	_imBot.AccessPolicy = field.NewString(tableName, "access_policy")
 	_imBot.Enabled = field.NewField(tableName, "enabled")
+	_imBot.ChannelState = field.NewString(tableName, "channel_state")
 	_imBot.LastError = field.NewString(tableName, "last_error")
 	_imBot.CreatedAt = field.NewTime(tableName, "created_at")
 	_imBot.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_imBot.ChannelState = field.NewString(tableName, "channel_state")
 
 	_imBot.fillFieldMap()
 
@@ -49,17 +49,17 @@ type imBot struct {
 	imBotDo imBotDo
 
 	ALL          field.Asterisk
-	ID           field.Int
+	ID           field.String
 	Name         field.String
 	Channel      field.Field
 	Credential   field.String
-	WorkspaceID  field.Int
+	WorkspaceID  field.String
 	AccessPolicy field.String
 	Enabled      field.Field
+	ChannelState field.String
 	LastError    field.String
 	CreatedAt    field.Time
 	UpdatedAt    field.Time
-	ChannelState field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -76,17 +76,17 @@ func (i imBot) As(alias string) *imBot {
 
 func (i *imBot) updateTableName(table string) *imBot {
 	i.ALL = field.NewAsterisk(table)
-	i.ID = field.NewInt(table, "id")
+	i.ID = field.NewString(table, "id")
 	i.Name = field.NewString(table, "name")
 	i.Channel = field.NewField(table, "channel")
 	i.Credential = field.NewString(table, "credential")
-	i.WorkspaceID = field.NewInt(table, "workspace_id")
+	i.WorkspaceID = field.NewString(table, "workspace_id")
 	i.AccessPolicy = field.NewString(table, "access_policy")
 	i.Enabled = field.NewField(table, "enabled")
+	i.ChannelState = field.NewString(table, "channel_state")
 	i.LastError = field.NewString(table, "last_error")
 	i.CreatedAt = field.NewTime(table, "created_at")
 	i.UpdatedAt = field.NewTime(table, "updated_at")
-	i.ChannelState = field.NewString(table, "channel_state")
 
 	i.fillFieldMap()
 
@@ -119,10 +119,10 @@ func (i *imBot) fillFieldMap() {
 	i.fieldMap["workspace_id"] = i.WorkspaceID
 	i.fieldMap["access_policy"] = i.AccessPolicy
 	i.fieldMap["enabled"] = i.Enabled
+	i.fieldMap["channel_state"] = i.ChannelState
 	i.fieldMap["last_error"] = i.LastError
 	i.fieldMap["created_at"] = i.CreatedAt
 	i.fieldMap["updated_at"] = i.UpdatedAt
-	i.fieldMap["channel_state"] = i.ChannelState
 }
 
 func (i imBot) clone(db *gorm.DB) imBot {

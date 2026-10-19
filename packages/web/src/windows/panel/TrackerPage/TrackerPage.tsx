@@ -1,7 +1,7 @@
 import { Apps as AppsIcon, AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
 import { Box, CircularProgress, IconButton, Link, Typography } from '@mui/material';
 import { useTrackerStore, useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
-import { numParam, TRACKER_WID_PARAM } from '@src/windows/panel/routes';
+import { strParam, TRACKER_WID_PARAM } from '@src/windows/panel/routes';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -24,7 +24,7 @@ export default function TrackerPage() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const urlWid = numParam(searchParams.get(TRACKER_WID_PARAM));
+  const urlWid = strParam(searchParams.get(TRACKER_WID_PARAM));
 
   const selected = useTrackerStore(s => s.selectedWorkspace);
   const selectWorkspace = useTrackerStore(s => s.selectWorkspace);

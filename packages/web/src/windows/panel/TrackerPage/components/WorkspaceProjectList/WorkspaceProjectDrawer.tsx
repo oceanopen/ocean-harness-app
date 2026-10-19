@@ -32,7 +32,7 @@ import { useTranslation } from 'react-i18next';
 // 与 WorkspaceDialog 的差异：项目无 slug（去 slugify/slugTouched 整套逻辑），改为 emoji 字段；
 // create 带 workspaceId、update 不带（对齐后端 ProjectCreate/UpdateRequest）。
 interface WorkspaceProjectDrawerProps {
-  workspaceId: number;
+  workspaceId: string;
   workspaceName: string;
   onClose: () => void;
   onCreated: (p: WorkspaceProjectModel) => void;

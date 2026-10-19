@@ -35,12 +35,12 @@ export function useImBots() {
 // ─── 会话域（T3.1 会话级绑定面，T3.2 工具栏面板消费）───
 
 /** 指定 bot 的会话列表（绑定锚 + 活跃时间，最近活跃在前）。 */
-export function useImBotConversations(botId: number) {
+export function useImBotConversations(botId: string) {
   return useQuery({
     queryKey: imBotsKeys.conversations(botId),
     queryFn: () => ImBotService.getConversations({ botId }),
     // 无效 bot 行 id（面板过滤/竞态窗口）不发请求。
-    enabled: botId > 0,
+    enabled: botId !== '',
   });
 }
 
@@ -80,7 +80,7 @@ export function useUpdateImBot() {
 export function useDeleteImBot() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: { id: number }) => ImBotService.delete(req),
+    mutationFn: (req: { id: string }) => ImBotService.delete(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: imBotsKeys.list() }),
   });
 }
@@ -89,7 +89,7 @@ export function useDeleteImBot() {
 export function useRestartImBot() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: { id: number }) => ImBotService.restart(req),
+    mutationFn: (req: { id: string }) => ImBotService.restart(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: imBotsKeys.list() }),
   });
 }
@@ -111,7 +111,7 @@ export function useBindImBotIssue() {
  * refetchInterval）；connected 即激活完成（服务端已建 bot 并连接），此处只负责失效列表缓存。
  */
 
-/** 开新扫码会话（渠道分发；已有会话自动取消；weixin botId>0 = 对既有 bot 换绑凭据）。 */
+/** 开新扫码会话（渠道分发；已有会话自动取消；weixin 非空 botId = 对既有 bot 换绑凭据）。 */
 export function useProvisionBegin() {
   return useMutation({
     mutationFn: (req: ImBotProvisionBeginRequest) => ImBotService.provisionBegin(req),

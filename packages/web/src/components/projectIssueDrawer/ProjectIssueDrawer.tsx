@@ -302,11 +302,11 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   };
 
   /**
-   * 头部标题：edit 完整显示 uuid + 名称（用户定稿——详情抽屉不隐藏 id，便于核对/复制；
-   * 卡片/工作台等列表位仍用尾 8 位截断）；create-sub 显示"新建子 Issue"；其余 create 显示"新建 Issue"。
+   * 头部标题：仅名称（uuid 由表单只读「任务ID」项承载）；create-sub 显示"新建子 Issue"；
+   * 其余 create 显示"新建 Issue"。
    */
   const title = mode === 'edit'
-    ? `${projectIssue?.id ?? ''} - ${projectIssue?.name ?? ''}`
+    ? projectIssue?.name ?? ''
     : isCreateSub
       ? t('tracker:projectIssue.create.subTitle')
       : t('tracker:projectIssue.create.title');
@@ -338,6 +338,16 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
             <TextField
               label={t('tracker:projectIssue.detail.belongingParentTask')}
               value={parentTaskLabel}
+              fullWidth
+              slotProps={{ input: { readOnly: true } }}
+              variant="filled"
+            />
+          )}
+          {/* 任务ID（只读，edit 显）：uuid 生成于后端，create 尚无值不渲染。 */}
+          {mode === 'edit' && projectIssue && (
+            <TextField
+              label="任务ID"
+              value={projectIssue.id}
               fullWidth
               slotProps={{ input: { readOnly: true } }}
               variant="filled"

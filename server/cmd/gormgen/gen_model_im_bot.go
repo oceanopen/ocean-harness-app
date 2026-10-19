@@ -11,11 +11,17 @@ import (
  */
 func GenModelImBot() {
 	imBot := G.GenerateModelAs("t_im_bots", "ImBot",
+		// 主键为 TEXT uuid 字符串（Create 时生成 uuid v7）；workspace_id 同为 uuid（''=未选择）。
+		gen.FieldType("id", "string"),
+		gen.FieldType("workspace_id", "string"),
 		gen.FieldType("channel", "enums.Channel"),
 		// 启停开关走公共是否型映射 enums.YesNo（"Y"/"N"，对齐 Rust 侧 app_config 词汇）。
 		gen.FieldType("enabled", "enums.YesNo"),
 	)
 	conversation := G.GenerateModelAs("t_im_bot_conversations", "ImBotConversation",
+		// 主键与所属 bot 均为 TEXT uuid 字符串（bot 域整域 uuid 化）。
+		gen.FieldType("id", "string"),
+		gen.FieldType("bot_id", "string"),
 		// 可空时间指针：未开场/未完成回合 = nil（写 NULL），语义同 t_project_issues.completed_at。
 		gen.FieldType("last_message_at", "*time.Time"),
 	)

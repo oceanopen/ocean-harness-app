@@ -71,7 +71,7 @@ type driverRoute struct {
 	 * 读库失败 fail closed 同步报错（不静默回落 headless——配置读不出时「以为没配 ACP」是危险默认）；
 	 * 挂空绑定（issue 已删/换工作空间）降级为未绑定。惯例实现是 resolveTarget 方法（构造器赋值）；保留字段形态供白盒测试注入替身。
 	 */
-	resolve func(botID, workspaceID int, conversationKey string) (routeTarget, error)
+	resolve func(botID, workspaceID string, conversationKey string) (routeTarget, error)
 }
 
 /*
@@ -95,8 +95,8 @@ func newDriverRoute(db *gorm.DB, sessions acpSessions, applier botApplier) *driv
  * resolveTarget 路由判定实现（RunTurn 与 ProbeTarget 共用；原构造器内联闭包，T2.2 探针
  * 步抽取为方法）。
  */
-func (r *driverRoute) resolveTarget(botID, workspaceID int, conversationKey string) (routeTarget, error) {
-	if workspaceID <= 0 {
+func (r *driverRoute) resolveTarget(botID, workspaceID string, conversationKey string) (routeTarget, error) {
+	if workspaceID == "" {
 		return routeTarget{}, nil // 未选工作空间已被编排器门禁拦截，此处兜底 headless
 	}
 	q := query.Use(r.db)

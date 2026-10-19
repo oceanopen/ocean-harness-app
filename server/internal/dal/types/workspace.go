@@ -18,7 +18,7 @@ type WorkspaceGetListRequest struct{}
 
 // WorkspaceGetInfoRequest 是 POST /api/tracker/workspace/getInfo 的入参。
 type WorkspaceGetInfoRequest struct {
-	ID int `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
 }
 
 /*
@@ -48,7 +48,7 @@ type WorkspaceCreateRequest struct {
  * launchSettings 为 nil = 清空配置（等同 none），空对象同视为未配置。
  */
 type WorkspaceUpdateRequest struct {
-	ID             int                      `json:"id" binding:"required"`
+	ID             string                   `json:"id" binding:"required"`
 	Name           string                   `json:"name" binding:"required,max=100"`
 	Dir            string                   `json:"dir" binding:"required"`
 	Description    string                   `json:"description" binding:"omitempty,max=500"`
@@ -57,14 +57,14 @@ type WorkspaceUpdateRequest struct {
 
 // WorkspaceDeleteRequest 是 POST /api/tracker/workspace/delete 的入参。
 type WorkspaceDeleteRequest struct {
-	ID int `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
 }
 
 /*
  * WorkspaceResponseData workspace 响应：launch_settings JSON 列反序列化为结构（空串/损坏 → nil，未配置语义），扁平呈现形态由 FromModel 装配（不嵌入 DO model，对齐 im_bot 域）。
  */
 type WorkspaceResponseData struct {
-	ID             int                      `json:"id"`
+	ID             string                   `json:"id"`
 	Name           string                   `json:"name"`
 	Dir            string                   `json:"dir"`
 	Description    string                   `json:"description"`

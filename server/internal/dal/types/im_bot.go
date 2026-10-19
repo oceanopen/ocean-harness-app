@@ -37,7 +37,7 @@ type ImBotGetListRequest struct{}
 
 // ImBotGetInfoRequest 是 POST /api/imBot/getInfo 的入参。
 type ImBotGetInfoRequest struct {
-	ID int `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
 }
 
 // ImBotCreateRequest 是 POST /api/imBot/create 的入参（仅 wecom 可手工创建；weixin 由 service 拒绝并引导扫码）。
@@ -46,35 +46,35 @@ type ImBotCreateRequest struct {
 	Name         string            `json:"name" binding:"required,max=100"`
 	BotId        string            `json:"botId" binding:"required"`
 	Secret       string            `json:"secret" binding:"required"`
-	WorkspaceId  int               `json:"workspaceId" binding:"required"` // 必选工作空间（会话目录取其 dir）
+	WorkspaceId  string            `json:"workspaceId" binding:"required"` // 必选工作空间 uuid（会话目录取其 dir）
 	AccessPolicy ImBotAccessPolicy `json:"accessPolicy" binding:"required"`
 	Enabled      bool              `json:"enabled"`
 }
 
 // ImBotUpdateRequest 是 POST /api/imBot/update 的入参（secret 留空 = 沿用原值；weixin 行仅更新非凭据字段）。
 type ImBotUpdateRequest struct {
-	ID           int               `json:"id" binding:"required"`
+	ID           string            `json:"id" binding:"required"`
 	Name         string            `json:"name" binding:"required,max=100"`
 	BotId        string            `json:"botId" binding:"omitempty"`
 	Secret       string            `json:"secret" binding:"omitempty"`
-	WorkspaceId  int               `json:"workspaceId" binding:"required"`
+	WorkspaceId  string            `json:"workspaceId" binding:"required"`
 	AccessPolicy ImBotAccessPolicy `json:"accessPolicy" binding:"required"`
 	Enabled      bool              `json:"enabled"`
 }
 
 // ImBotDeleteRequest 是 POST /api/imBot/delete 的入参（物理删除 + 级联删会话映射）。
 type ImBotDeleteRequest struct {
-	ID int `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
 }
 
 // ImBotRestartRequest 是 POST /api/imBot/restart 的入参（以当前配置重连，被踢/改配置后恢复用）。
 type ImBotRestartRequest struct {
-	ID int `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
 }
 
 // ImBotGetConversationsRequest 是 POST /api/imBot/getConversations 的入参（bot 的会话列表）。
 type ImBotGetConversationsRequest struct {
-	BotId int `json:"botId" binding:"required"`
+	BotId string `json:"botId" binding:"required"`
 }
 
 /*
@@ -94,18 +94,18 @@ type ImBotConversationData struct {
  * issueId 空 = 解绑）。
  */
 type ImBotBindIssueRequest struct {
-	BotId           int    `json:"botId" binding:"required"`
+	BotId           string `json:"botId" binding:"required"`
 	ConversationKey string `json:"conversationKey" binding:"required"`
 	IssueId         string `json:"issueId"` // 空 = 解绑
 }
 
 /*
  * ImBotProvisionBeginRequest 是 POST /api/imBot/provisionBegin 的入参（开新扫码会话，已有进行中
- * 会话自动取消；weixin 传 botId>0 = 对既有 bot 换绑凭据，0 = 新建；wecom 忽略 botId）。
+ * 会话自动取消；weixin 传非空 botId = 对既有 bot 换绑凭据，空 = 新建；wecom 忽略 botId）。
  */
 type ImBotProvisionBeginRequest struct {
 	Channel enums.Channel `json:"channel" binding:"required,oneof=wecom weixin"`
-	BotID   int           `json:"botId"`
+	BotID   string        `json:"botId"`
 }
 
 // ImBotProvisionPollRequest 是 POST /api/imBot/provisionPoll 的入参（轮询一次扫码结果）。
@@ -142,7 +142,7 @@ type ImBotProvisionView struct {
 	ExpiresAt      int64  `json:"expiresAt"` // 毫秒时间戳
 	PollIntervalMs int    `json:"pollIntervalMs"`
 	ErrCode        string `json:"errCode,omitempty"`
-	BotID          int    `json:"botId,omitempty"` // connected 后的 bot 行 id（含换绑目标）
+	BotID          string `json:"botId,omitempty"` // connected 后的 bot 行 id uuid（含换绑目标）
 }
 
 /*
@@ -150,10 +150,10 @@ type ImBotProvisionView struct {
  * 不嵌入 *model.ImBot（JSON 列为 string、enabled 为 YesNo），扁平呈现形态由 FromModel 装配。
  */
 type ImBotResponseData struct {
-	ID            int               `json:"id"`
+	ID            string            `json:"id"`
 	Name          string            `json:"name"`
 	Channel       enums.Channel     `json:"channel"`
-	WorkspaceId   int               `json:"workspaceId"`   // 0 = 未选择（扫码接入待补选）
+	WorkspaceId   string            `json:"workspaceId"`   // '' = 未选择（扫码接入待补选）
 	WorkspaceName string            `json:"workspaceName"` // 关联工作空间名（service 合并装配）
 	AccessPolicy  ImBotAccessPolicy `json:"accessPolicy"`
 	Enabled       bool              `json:"enabled"`

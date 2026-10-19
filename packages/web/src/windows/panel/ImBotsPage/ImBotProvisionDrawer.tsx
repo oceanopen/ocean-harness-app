@@ -22,7 +22,7 @@ import { useEffect, useRef, useState } from 'react';
 
 // 扫码授权接入抽屉（渠道化）：按渠道申请二维码 → 扫码 → 中间态推进 → 服务端自动建 bot/换绑
 // 并连接；轮询走宿主 pollIntervalMs 链式 setTimeout（终态即停），scanned/needs_verification
-// 仅微信渠道。二维码渠道差异收口在 resolveQrSrc；rebindBotId>0 为换绑语境。
+// 仅微信渠道。二维码渠道差异收口在 resolveQrSrc；rebindBotId 非空为换绑语境。
 // 「重新生成二维码」由父组件以 key 重挂载实现（卸载清定时器 + 新 begin 自动取消旧会话）。
 
 const DRAWER_WIDTH = '480px';
@@ -85,12 +85,12 @@ function channelCopy(channel: string): { steps: string[]; scannedHint: string; v
 function ImBotProvisionDrawer(props: {
   open: boolean;
   channelKey: string;
-  rebindBotId?: number; // > 0 = 为既有 bot 换绑凭据（0/undefined = 扫码新建）
+  rebindBotId?: string; // 非空 = 为既有 bot 换绑凭据（空/undefined = 扫码新建）
   onClose: () => void;
   onRegenerate: () => void;
 }) {
   const { open, channelKey } = props;
-  const rebind = (props.rebindBotId ?? 0) > 0;
+  const rebind = (props.rebindBotId ?? '') !== '';
   const beginMutation = useProvisionBegin();
   const pollMutation = useProvisionPoll();
   const cancelMutation = useProvisionCancel();
@@ -103,8 +103,8 @@ function ImBotProvisionDrawer(props: {
   const onCloseRef = useRef(props.onClose);
   onCloseRef.current = props.onClose;
   // begin 参数同样经 ref 进 effect（换绑目标由父组件在打开前设定，打开后不再变化）。
-  const beginArgsRef = useRef({ channel: channelKey, botId: props.rebindBotId ?? 0 });
-  beginArgsRef.current = { channel: channelKey, botId: props.rebindBotId ?? 0 };
+  const beginArgsRef = useRef({ channel: channelKey, botId: props.rebindBotId ?? '' });
+  beginArgsRef.current = { channel: channelKey, botId: props.rebindBotId ?? '' };
 
   const [starting, setStarting] = useState(true);
   const [beginError, setBeginError] = useState('');

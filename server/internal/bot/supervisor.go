@@ -27,13 +27,13 @@ type Supervisor struct {
 	log     *zap.Logger
 	mu      sync.Mutex
 	facs    map[enums.Channel]Factory
-	lives   map[int]ChannelRuntime // botID → 运行时
-	stopped bool                   // StopAll 已置位：后续 EnsureStarted 一律拒绝（applier 延迟 goroutine 不得复活连接）
+	lives   map[string]ChannelRuntime // botID → 运行时
+	stopped bool                      // StopAll 已置位：后续 EnsureStarted 一律拒绝（applier 延迟 goroutine 不得复活连接）
 }
 
 // BotStatusView 状态投影行（getList/getInfo 合并到 ImBotResponseData 呈现）。
 type BotStatusView struct {
-	BotID     int
+	BotID     string
 	State     string
 	LastError string
 }
@@ -49,7 +49,7 @@ func NewSupervisor(db *gorm.DB, port int, sessions acpSessions, log *zap.Logger)
 		port:  port,
 		log:   log,
 		facs:  make(map[enums.Channel]Factory),
-		lives: make(map[int]ChannelRuntime),
+		lives: make(map[string]ChannelRuntime),
 	}
 	route := newDriverRoute(db, sessions, s)
 	s.orch = NewOrchestrator(&ConversationStore{DB: db}, route, route, route, log)
@@ -73,7 +73,7 @@ func (s *Supervisor) StartEnabled() {
 	}
 	for _, b := range bots {
 		if err := s.ApplyBot(b); err != nil {
-			s.log.Error("bot 启动失败（跳过）", zap.Int("botID", b.ID), zap.Error(err))
+			s.log.Error("bot 启动失败（跳过）", zap.String("botID", b.ID), zap.Error(err))
 		}
 	}
 }
@@ -107,7 +107,7 @@ func (s *Supervisor) EnsureStarted(cfg BotRuntimeConfig) error {
 	defer s.mu.Unlock()
 
 	if s.stopped { // 生命周期守卫：StopAll 后无新启（与置位同持 s.mu，无交错窗口）
-		return fmt.Errorf("supervisor 已停止，拒绝启动 bot %d", cfg.BotID)
+		return fmt.Errorf("supervisor 已停止，拒绝启动 bot %s", cfg.BotID)
 	}
 	f, ok := s.facs[cfg.Channel]
 	if !ok {
@@ -127,7 +127,7 @@ func (s *Supervisor) EnsureStarted(cfg BotRuntimeConfig) error {
 	}
 
 	s.lives[cfg.BotID] = rt
-	s.log.Info("bot 已启动", zap.Int("botID", cfg.BotID), zap.String("channel", string(cfg.Channel)))
+	s.log.Info("bot 已启动", zap.String("botID", cfg.BotID), zap.String("channel", string(cfg.Channel)))
 	return nil
 }
 
@@ -146,7 +146,7 @@ var _ botApplier = (*Supervisor)(nil)
  * 重拉 bot 行按 service 层 applyRuntime 同款禁用语义：行已删跳过；停用 → StopBot（幂等）；
  * 启用 → ApplyBot（成败照常回写 last_error）。supervisor 已停止（StopAll）则醒后早退不复活连接（EnsureStarted 侧守卫兜住检查后的交错窗口）。
  */
-func (s *Supervisor) ApplyBotAsync(botID int) {
+func (s *Supervisor) ApplyBotAsync(botID string) {
 	delay := applyBotAsyncDelay // 调用时点捕获：goroutine 不触包级变量（测试缩短/还原不构成数据竞争）
 	go func() {
 		time.Sleep(delay)
@@ -160,13 +160,13 @@ func (s *Supervisor) ApplyBotAsync(botID int) {
 		b, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(botID)).First()
 		if err != nil {
 			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				s.log.Warn("bot 热重载读取失败", zap.Int("botID", botID), zap.Error(err))
+				s.log.Warn("bot 热重载读取失败", zap.String("botID", botID), zap.Error(err))
 			}
 			return
 		}
 		if b.Enabled.IsYes() {
 			if err := s.ApplyBot(b); err != nil {
-				s.log.Warn("bot 热重载失败（DB 已保存，可重启连接恢复）", zap.Int("botID", botID), zap.Error(err))
+				s.log.Warn("bot 热重载失败（DB 已保存，可重启连接恢复）", zap.String("botID", botID), zap.Error(err))
 			}
 		} else {
 			s.StopBot(botID)
@@ -175,18 +175,18 @@ func (s *Supervisor) ApplyBotAsync(botID int) {
 }
 
 // StopBot 停止单个 bot（未在跑为 no-op；幂等）。
-func (s *Supervisor) StopBot(botID int) {
+func (s *Supervisor) StopBot(botID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stopBotLocked(botID)
 }
 
 // stopBotLocked 停止并移出注册表（须持 s.mu）。
-func (s *Supervisor) stopBotLocked(botID int) {
+func (s *Supervisor) stopBotLocked(botID string) {
 	if rt, ok := s.lives[botID]; ok {
 		delete(s.lives, botID)
 		rt.Stop()
-		s.log.Info("bot 已停止", zap.Int("botID", botID))
+		s.log.Info("bot 已停止", zap.String("botID", botID))
 	}
 }
 
@@ -199,7 +199,7 @@ func (s *Supervisor) StopAll() {
 	s.mu.Lock()
 	s.stopped = true
 	lives := s.lives
-	s.lives = make(map[int]ChannelRuntime)
+	s.lives = make(map[string]ChannelRuntime)
 	s.mu.Unlock()
 	for _, rt := range lives {
 		rt.Stop()
@@ -220,7 +220,7 @@ func (s *Supervisor) Statuses() []BotStatusView {
 }
 
 // StatusOf 单 bot 运行状态；未在运行返回 (零值, false)。
-func (s *Supervisor) StatusOf(botID int) (BotStatusView, bool) {
+func (s *Supervisor) StatusOf(botID string) (BotStatusView, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rt, ok := s.lives[botID]
@@ -232,20 +232,20 @@ func (s *Supervisor) StatusOf(botID int) (BotStatusView, bool) {
 }
 
 // setLastError 回写 last_error 列（尽力而为，失败仅日志——该列是排障可见性，非关键数据）。
-func (s *Supervisor) setLastError(botID int, msg string) {
+func (s *Supervisor) setLastError(botID string, msg string) {
 	if rs := []rune(msg); len(rs) > 500 {
 		msg = string(rs[:500]) + "…"
 	}
 	q := query.Use(s.db)
 	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(botID)).
 		UpdateSimple(q.ImBot.LastError.Value(msg)); err != nil {
-		s.log.Warn("bot last_error 回写失败", zap.Int("botID", botID), zap.Error(err))
+		s.log.Warn("bot last_error 回写失败", zap.String("botID", botID), zap.Error(err))
 	}
 }
 
 /*
  * botRuntimeConfig t_im_bots 行 → 运行时装配参数（JSON 列在此解析，渠道凭据保持 JSON 透传）。
- * 会话目录取工作空间 dir（workspace_id 关联，0/行缺失 = 未选 → 空串）。
+ * 会话目录取工作空间 dir（workspace_id 关联，''/行缺失 = 未选 → 空串）。
  */
 func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) {
 	policy, err := ParseAccessPolicy(b.AccessPolicy)
@@ -253,7 +253,7 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 		return BotRuntimeConfig{}, fmt.Errorf("access_policy 解析失败: %w", err)
 	}
 	wsDir := ""
-	if b.WorkspaceID > 0 {
+	if b.WorkspaceID != "" {
 		q := query.Use(s.db)
 		ws, err := q.Workspace.WithContext(context.Background()).Where(q.Workspace.ID.Eq(b.WorkspaceID)).First()
 		if err == nil {
@@ -276,11 +276,11 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 }
 
 // setChannelState 回写 channel_state 列（渠道适配器自管运行态，如微信长轮询游标；尽力而为，失败仅日志——重启重放由核心幂等兜住）。
-func (s *Supervisor) setChannelState(botID int, raw string) error {
+func (s *Supervisor) setChannelState(botID string, raw string) error {
 	q := query.Use(s.db)
 	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(botID)).
 		UpdateSimple(q.ImBot.ChannelState.Value(raw)); err != nil {
-		s.log.Warn("bot channel_state 回写失败", zap.Int("botID", botID), zap.Error(err))
+		s.log.Warn("bot channel_state 回写失败", zap.String("botID", botID), zap.Error(err))
 		return err
 	}
 	return nil

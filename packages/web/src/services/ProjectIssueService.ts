@@ -17,7 +17,7 @@ export interface IssueRepositoryBranchModel {
 export interface ProjectIssueResponseData {
   id: string; // uuid 字符串
   projectId: number;
-  workspaceId: number;
+  workspaceId: string; // 归属工作空间 uuid
   name: string;
   description: string; // issue 描述：markdown 源文本（前端 Milkdown 编辑器产出，非 HTML）
   stateCode: StateCode; // 固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，见 stateMeta）
@@ -48,7 +48,7 @@ export interface ProjectIssueGetListRequest {
 // POST /api/tracker/projectIssue/create 的入参。
 export interface ProjectIssueCreateRequest {
   projectId: number;
-  workspaceId: number;
+  workspaceId: string;
   name: string;
   description?: string;
   priority?: Priority;

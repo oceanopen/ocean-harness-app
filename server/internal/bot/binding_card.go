@@ -66,7 +66,7 @@ const (
  * nil = 跳过热重载仅落库（测试装配；落库行 DB 侧已生效，运行时 cfg 须经重启连接收敛）。
  */
 type botApplier interface {
-	ApplyBotAsync(botID int)
+	ApplyBotAsync(botID string)
 }
 
 /*
@@ -175,7 +175,7 @@ func bindingWorkspaces(db *gorm.DB, keyword string) ([]*model.Workspace, error) 
 /*
  * bindingIssueCandidates 任务卡候选（候选口径拍板）：bot workspace 域内非终态（state_code ∉ 终态集）且顶级（parent_id 空——对齐前端 isDevIssue 左树口径，写入方空串与 NULL 两形态都算顶级）的 issue，可选关键词名称模糊，SortOrder 排序 + ID 次序键（防并列抖动致指纹假性不符）取前 bindingOptionLimit。
  */
-func bindingIssueCandidates(db *gorm.DB, workspaceID int, keyword string) ([]*model.ProjectIssue, error) {
+func bindingIssueCandidates(db *gorm.DB, workspaceID string, keyword string) ([]*model.ProjectIssue, error) {
 	q := query.Use(db)
 	pi := q.ProjectIssue.WithContext(context.Background())
 	if keyword != "" {
@@ -199,7 +199,7 @@ func workspaceCardSpec(workspaces []*model.Workspace, keyword string) (CardSpec,
 	}
 	options := make([]CardOption, 0, len(workspaces))
 	for _, ws := range workspaces {
-		options = append(options, CardOption{ID: strconv.Itoa(ws.ID), Text: ws.Name})
+		options = append(options, CardOption{ID: ws.ID, Text: ws.Name})
 	}
 	return CardSpec{
 		Title:       "关联工作空间",
@@ -332,7 +332,7 @@ func issueEmptyText(keyword string) string {
 func workspaceIDKeys(workspaces []*model.Workspace) []string {
 	ids := make([]string, 0, len(workspaces))
 	for _, ws := range workspaces {
-		ids = append(ids, strconv.Itoa(ws.ID))
+		ids = append(ids, ws.ID)
 	}
 	return ids
 }

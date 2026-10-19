@@ -15,7 +15,7 @@ const TableNameProjectIssue = "t_project_issues"
 type ProjectIssue struct {
 	ID                       string                  `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
 	ProjectID                int                     `gorm:"column:project_id;type:INTEGER;not null" json:"projectId"`
-	WorkspaceID              int                     `gorm:"column:workspace_id;type:INTEGER;not null" json:"workspaceId"`
+	WorkspaceID              string                  `gorm:"column:workspace_id;type:TEXT;not null" json:"workspaceId"`
 	Name                     string                  `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Description              string                  `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
 	LaunchSettings           string                  `gorm:"column:launch_settings;type:TEXT;not null;default:''" json:"launchSettings"`
