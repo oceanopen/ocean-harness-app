@@ -13,7 +13,7 @@
 | P1 正式接入 | T5 下游泄漏面对位 | ✅ |
 | P1 正式接入 | T6 fakeagent 重写 | ✅ |
 | P1 正式接入 | T7 测试迁移收绿 | ✅ |
-| P1 正式接入 | T8 依赖收口与真握手 | 🔲 |
+| P1 正式接入 | T8 依赖收口与真握手 | ✅ |
 
 ## 需求背景
 
@@ -128,11 +128,12 @@ server 的 ACP 客户端当前基于 BrokkAi/acp-go v0.11.0，其生成模型丢
 
 ### 任务 T8：依赖收口与真握手验收
 
-- 状态：🔲
+- 状态：✅
 - 功能：BrokkAi 依赖出清，真链路验收
 - 技术方案：go.mod 移除 BrokkAi/acp-go 及无引用间接依赖；`OCEAN_ACP_REAL_HANDSHAKE=1` 跑 `handshake_real_test.go` 全链路（catalog→EnsureVendored→Launch→Initialize→NewSession→PromptText→end_turn + 文本 chunk）；elicitation 路由回归（删补偿层后确认澄清表单仍按 `sessionId` 正确路由）
 - 依赖：T7
 - 验收：go.mod 无 BrokkAi 残留；真握手验收通过；elicitation 回归通过
+- 实施定稿：**三项验收全过，8 任务收口**。依赖出清：`go mod tidy` 移除 BrokkAi（go.mod direct require 1 行 + go.sum 哈希 2 行；v0.11.0 自身零依赖，无引用间接依赖为空集故零连带），出清后 `go build` + `go vet` + `go test ./...` 全 server 包全绿。真握手：`TestRealHandshake` PASS（27.5s，claude-agent-acp 0.93.0 / 协议 v1），四组真机断言全过——claudeCode 扩展、modes 双轨目录、`_meta.systemPrompt` 透传闭环（轮 1 实机答出注入 token）、elicitation 全字段（轮 2 form 触发：sessionId 会话归属、toolCallId 与先前 tool_call update 一致、requestedSchema 载荷保真、accept 应答后 end_turn 收敛），elicitation 路由回归随之完成。过程发现并修复 T7 遗留测试缺陷：`runHandshakeTurn` 排空循环 default 分支仅赋值不退出，事件排空后主 goroutine 无限热自旋直至 go test 看门狗（两轮超时 dump 钉死同点）；修复为 default 直接 return 排空结果（仅 `handshake_real_test.go` 测试代码，生产面零改动）。连带核验库侧 Close 收敛序：`acpconn.Run` 在 conn.Done() 后 ExitGrace(5s) 兜底 transport.Close 解除 readLoop 阻塞，`agent.Close()` 先于 kill 的 converge 顺序有界无死锁，维持原序
 
 ## 兜底：自建 acp-go-sdk（不排期，记录进入条件）
 

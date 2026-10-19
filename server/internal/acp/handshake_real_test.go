@@ -158,8 +158,7 @@ func runHandshakeTurn(t *testing.T, client *acp.AgentClient, session *acp.Sessio
 	}
 
 	deadline := time.After(180 * time.Second)
-	settled := false
-	for !settled {
+	for {
 		select {
 		case event := <-session.Events():
 			handleEvent(event)
@@ -179,14 +178,13 @@ func runHandshakeTurn(t *testing.T, client *acp.AgentClient, session *acp.Sessio
 				case event := <-session.Events():
 					handleEvent(event)
 				default:
-					settled = true
+					return text.String(), toolCalls
 				}
 			}
 		case <-deadline:
 			t.Fatalf("回合 180s 未收敛（进程诊断: %v）", client.Err())
 		}
 	}
-	return text.String(), toolCalls
 }
 
 // assertAvailableModes modes 双轨形状断言：基本模式目录齐全且 currentModeId 在表内。
