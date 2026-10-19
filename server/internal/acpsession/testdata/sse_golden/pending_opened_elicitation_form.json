@@ -1,0 +1,25 @@
+{
+  "seq": 13,
+  "issueId": "iss-1",
+  "type": "pendingOpened",
+  "pending": {
+    "pendingId": 8,
+    "kind": "elicitation",
+    "request": {
+      "mode": "form",
+      "message": "请填写部署参数",
+      "sessionId": "acp-sess-1",
+      "toolCallId": "call-2",
+      "requestId": "req-1",
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "region": {
+            "type": "string"
+          }
+        }
+      },
+      "elicitationId": "elc-1"
+    }
+  }
+}

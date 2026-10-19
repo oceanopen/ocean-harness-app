@@ -1,0 +1,199 @@
+{
+  "seq": 1,
+  "issueId": "iss-1",
+  "type": "snapshot",
+  "snapshot": {
+    "status": "ready",
+    "agentCode": "claude-code",
+    "acpSessionId": "acp-sess-1",
+    "permissionMode": "approve-per-tool",
+    "currentModeId": "code",
+    "availableModes": [
+      {
+        "description": "直接执行编码任务",
+        "id": "code",
+        "name": "Code"
+      },
+      {
+        "id": "architect",
+        "name": "Architect"
+      }
+    ],
+    "entries": [
+      {
+        "entryId": "t1-user",
+        "kind": "user",
+        "text": "修复登录回归",
+        "source": "bot",
+        "display": {
+          "text": "修复登录回归",
+          "quote": {
+            "author": "张三",
+            "text": "登录页 500",
+            "truncated": true
+          },
+          "files": [
+            {
+              "name": "report.log",
+              "path": "/tmp/report.log"
+            }
+          ]
+        }
+      },
+      {
+        "entryId": "t1-agentMessage",
+        "kind": "agentMessage",
+        "text": "已定位到会话过期判断缺陷"
+      },
+      {
+        "entryId": "tool:call-1",
+        "kind": "toolCall",
+        "toolCall": {
+          "toolCallId": "call-1",
+          "title": "读取文件",
+          "kind": "read",
+          "status": "in_progress",
+          "name": "Read",
+          "content": [
+            {
+              "content": {
+                "text": "文件前 42 行",
+                "type": "text"
+              },
+              "type": "content"
+            },
+            {
+              "newText": "func new()",
+              "oldText": "func old()",
+              "path": "src/main.go",
+              "type": "diff"
+            },
+            {
+              "terminalId": "term-1",
+              "type": "terminal"
+            }
+          ],
+          "locations": [
+            {
+              "line": 12,
+              "path": "src/main.go"
+            },
+            {
+              "path": "src/util.go"
+            }
+          ],
+          "rawInput": {
+            "file_path": "src/main.go"
+          },
+          "rawOutput": {
+            "lines": 42
+          }
+        }
+      }
+    ],
+    "pendings": [
+      {
+        "pendingId": 7,
+        "kind": "permission",
+        "options": [
+          {
+            "kind": "allow_once",
+            "name": "Allow",
+            "optionId": "opt-allow"
+          },
+          {
+            "kind": "reject_always",
+            "name": "Reject",
+            "optionId": "opt-reject-always"
+          }
+        ],
+        "toolCall": {
+          "content": [
+            {
+              "content": {
+                "text": "工具调用详情",
+                "type": "text"
+              },
+              "type": "content"
+            }
+          ],
+          "kind": "read",
+          "locations": [
+            {
+              "path": "src/main.go"
+            }
+          ],
+          "name": "Read",
+          "rawInput": {
+            "file_path": "src/main.go"
+          },
+          "status": "pending",
+          "title": "读取文件",
+          "toolCallId": "call-1"
+        }
+      },
+      {
+        "pendingId": 8,
+        "kind": "elicitation",
+        "request": {
+          "mode": "form",
+          "message": "请填写部署参数",
+          "sessionId": "acp-sess-1",
+          "toolCallId": "call-2",
+          "requestId": "req-1",
+          "requestedSchema": {
+            "type": "object",
+            "properties": {
+              "region": {
+                "type": "string"
+              }
+            }
+          },
+          "elicitationId": "elc-1"
+        }
+      }
+    ],
+    "plan": {
+      "entries": [
+        {
+          "content": "定位回归根因",
+          "priority": "high",
+          "status": "completed"
+        },
+        {
+          "content": "补回归测试",
+          "priority": "medium",
+          "status": "in_progress"
+        },
+        {
+          "content": "更新文档",
+          "priority": "low",
+          "status": "pending"
+        }
+      ]
+    },
+    "usage": {
+      "cost": {
+        "amount": 0.42,
+        "currency": "USD"
+      },
+      "size": 200000,
+      "used": 123456
+    },
+    "availableCommands": [
+      {
+        "description": "审查当前变更",
+        "name": "review"
+      },
+      {
+        "description": "制定计划",
+        "input": {
+          "hint": "输入计划目标"
+        },
+        "name": "plan"
+      }
+    ],
+    "turnActive": true,
+    "stopReason": "end_turn"
+  }
+}

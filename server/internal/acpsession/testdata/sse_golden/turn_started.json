@@ -1,0 +1,8 @@
+{
+  "seq": 16,
+  "issueId": "iss-1",
+  "type": "turnStarted",
+  "turn": {
+    "active": true
+  }
+}

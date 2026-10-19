@@ -1,0 +1,11 @@
+{
+  "seq": 5,
+  "issueId": "iss-1",
+  "type": "terminated",
+  "status": {
+    "status": "terminated",
+    "agentCode": "claude-code",
+    "acpSessionId": "acp-sess-1",
+    "error": "进程意外退出"
+  }
+}

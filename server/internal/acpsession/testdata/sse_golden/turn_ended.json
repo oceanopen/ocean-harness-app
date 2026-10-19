@@ -1,0 +1,9 @@
+{
+  "seq": 17,
+  "issueId": "iss-1",
+  "type": "turnEnded",
+  "turn": {
+    "active": false,
+    "stopReason": "end_turn"
+  }
+}

@@ -8,7 +8,7 @@
 |---|---|---|
 | P0 spike 验收（闸门） | T1 构建链路验收 | ✅ |
 | P0 spike 验收（闸门） | T2 spike 集成验收 | ✅ |
-| P1 正式接入 | T3 golden SSE 契约测试 | 🔲 |
+| P1 正式接入 | T3 golden SSE 契约测试 | ✅ |
 | P1 正式接入 | T4 internal/acp 换底 | 🔲 |
 | P1 正式接入 | T5 下游泄漏面对位 | 🔲 |
 | P1 正式接入 | T6 fakeagent 重写 | 🔲 |
@@ -83,11 +83,12 @@ server 的 ACP 客户端当前基于 BrokkAi/acp-go v0.11.0，其生成模型丢
 
 ### 任务 T3：golden SSE 契约测试先行
 
-- 状态：🔲
+- 状态：✅
 - 功能：把 acpsession hub 的 SSE JSON 契约钉死，换底后下游零感知
 - 技术方案：对 Frame 序列化输出建 golden 快照（Snapshot/Status/Entry/Plan/Usage/Commands/Mode 等字段），换底期间 golden 不许变
 - 依赖：无（可与 P0 并行）
 - 验收：golden 测试进常规轮次且当前 BrokkAi 实现下通过
+- 实施定稿：`server/internal/acpsession/golden_sse_test.go`（TestGoldenSSEFrames，18 个子用例逐 FrameType 全字段装配）+ `testdata/sse_golden/*.json`（18 个基线）；比对按解码后语义等价（键序无关，DeepEqual），漂移 diff 以缩进 JSON 呈现；`-update` flag 回写基线。覆盖面：Frame 信封 seq/issueId/type、ViewSnapshot 全字段（modes/plan/usage/commands/entries 四类条目含 EntryDisplay/Quote/Files、pendings 双形态）、StatusPayload 四变体、ToolCallView 三种 ToolCallContent 变体（content/diff/terminal）+ locations/rawInput/rawOutput、PendingView permission（PermissionOption 目录 + ToolCallUpdate）与 elicitation form/url 两变体（ElicitationWire 全字段含 requestedSchema/elicitationId）、TurnPayload 三态（started/ended+stopReason/ended+error）——omitempty 取舍全部钉死。wire 形态依据：SSE handler 直接 `SSEvent("message", frame)` 直出，Frame 的 json.Marshal 即契约。常规轮次（无环境门禁）`go test ./internal/acpsession/` 全绿，gofmt/vet 干净
 
 ### 任务 T4：internal/acp 换底
 

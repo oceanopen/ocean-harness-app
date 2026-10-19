@@ -1,0 +1,45 @@
+{
+  "seq": 12,
+  "issueId": "iss-1",
+  "type": "pendingOpened",
+  "pending": {
+    "pendingId": 7,
+    "kind": "permission",
+    "options": [
+      {
+        "kind": "allow_once",
+        "name": "Allow",
+        "optionId": "opt-allow"
+      },
+      {
+        "kind": "reject_always",
+        "name": "Reject",
+        "optionId": "opt-reject-always"
+      }
+    ],
+    "toolCall": {
+      "content": [
+        {
+          "content": {
+            "text": "工具调用详情",
+            "type": "text"
+          },
+          "type": "content"
+        }
+      ],
+      "kind": "read",
+      "locations": [
+        {
+          "path": "src/main.go"
+        }
+      ],
+      "name": "Read",
+      "rawInput": {
+        "file_path": "src/main.go"
+      },
+      "status": "pending",
+      "title": "读取文件",
+      "toolCallId": "call-1"
+    }
+  }
+}

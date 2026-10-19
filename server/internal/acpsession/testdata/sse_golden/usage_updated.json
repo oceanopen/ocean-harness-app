@@ -1,0 +1,13 @@
+{
+  "seq": 9,
+  "issueId": "iss-1",
+  "type": "usageUpdated",
+  "usage": {
+    "cost": {
+      "amount": 0.42,
+      "currency": "USD"
+    },
+    "size": 200000,
+    "used": 123456
+  }
+}

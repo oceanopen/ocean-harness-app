@@ -1,0 +1,19 @@
+{
+  "seq": 11,
+  "issueId": "iss-1",
+  "type": "modeUpdated",
+  "mode": {
+    "availableModes": [
+      {
+        "description": "直接执行编码任务",
+        "id": "code",
+        "name": "Code"
+      },
+      {
+        "id": "architect",
+        "name": "Architect"
+      }
+    ],
+    "currentModeId": "architect"
+  }
+}

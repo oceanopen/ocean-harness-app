@@ -1,0 +1,50 @@
+{
+  "seq": 7,
+  "issueId": "iss-1",
+  "type": "entry",
+  "entry": {
+    "entryId": "tool:call-1",
+    "kind": "toolCall",
+    "toolCall": {
+      "toolCallId": "call-1",
+      "title": "读取文件",
+      "kind": "read",
+      "status": "in_progress",
+      "name": "Read",
+      "content": [
+        {
+          "content": {
+            "text": "文件前 42 行",
+            "type": "text"
+          },
+          "type": "content"
+        },
+        {
+          "newText": "func new()",
+          "oldText": "func old()",
+          "path": "src/main.go",
+          "type": "diff"
+        },
+        {
+          "terminalId": "term-1",
+          "type": "terminal"
+        }
+      ],
+      "locations": [
+        {
+          "line": 12,
+          "path": "src/main.go"
+        },
+        {
+          "path": "src/util.go"
+        }
+      ],
+      "rawInput": {
+        "file_path": "src/main.go"
+      },
+      "rawOutput": {
+        "lines": 42
+      }
+    }
+  }
+}
