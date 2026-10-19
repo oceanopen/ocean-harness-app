@@ -7,7 +7,7 @@
 | 阶段 | 任务 | 状态 |
 |---|---|---|
 | P0 spike 验收（闸门） | T1 构建链路验收 | ✅ |
-| P0 spike 验收（闸门） | T2 spike 集成验收 | 🔲 |
+| P0 spike 验收（闸门） | T2 spike 集成验收 | ✅ |
 | P1 正式接入 | T3 golden SSE 契约测试 | 🔲 |
 | P1 正式接入 | T4 internal/acp 换底 | 🔲 |
 | P1 正式接入 | T5 下游泄漏面对位 | 🔲 |
@@ -72,11 +72,12 @@ server 的 ACP 客户端当前基于 BrokkAi/acp-go v0.11.0，其生成模型丢
 
 ### 任务 T2：spike 集成验收
 
-- 状态：🔲
+- 状态：✅
 - 功能：ironpark 直连 vendored adapter 跑通最小链路并验证扩展兼容
 - 技术方案：env 门禁 spike 测试（参照 `handshake_real_test.go` 门禁模式，独立文件不触碰生产代码）：catalog→VendoredSpawnConfig→ironpark acp1 连接 vendored claude-agent-acp 0.93.0→initialize（声明 elicitation 能力）→session/new（携带 configOptions 的 _meta 透传）→prompt→收流；断言：init 结果可读 `Meta["claudeCode"]`、modes 双轨字段形状（availableModes/currentModeId）、elicitation 请求解码含 `sessionId`/`toolCallId`
 - 依赖：T1
 - 验收：spike 测试在 `OCEAN_ACP_REAL_HANDSHAKE=1` 下全断言通过；claudeCode 扩展 / modes 双轨 / elicitation 全字段三项逐项有结论
+- 实施定稿：**三项验收全过，无硬阻塞（P1 放行）**。①claudeCode 扩展：标记实际在 `agentCapabilities._meta.claudeCode = {promptQueueing:true}`（顶层 _meta 仅 steering，任务原假设的位置有误），ironpark `InitializeResponse.AgentCapabilities.Meta` typed 可读——移交 T4：现 `HasClaudeCodeExtension` 查顶层对真实 adapter 恒 false，换底时改读 agentCapabilities._meta。②modes 双轨：`NewSessionResponse.Modes{CurrentModeID, AvailableModes}` 直接可读；初始 currentModeId 只来自文件级 settings（newSession 仅透 resume，options.settings 只进 SDK programmatic settings，_meta 无法控制初始模式）。③elicitation 全字段：FormSession 变体解码 SessionID/ToolCallID/RequestedSchema 均 typed 不丢；触发路径 = prompt 显式点名 AskUserQuestion → adapter canUseTool 拦截转 form elicitation（client 须声明 elicitation.form，否则工具进 disallowedTools），且先收 tool_call update、toolCallId 与 elicitation 一致。_meta 透传闭环以 `_meta.systemPrompt` 注入名字 token 行为验证（ironpark Meta → wire → adapter 消费）。落地：`server/internal/acp/spike_ironpark_test.go`（TestIronparkSpike，与 TestRealHandshake 同门禁同装配链路），ironpark 转正 direct 依赖
 
 ## P1 正式接入（T2 通过后执行）
 
