@@ -97,6 +97,11 @@ pub fn navigate_to_claude_session(pid: u32, app: AppHandle) -> Result<(), String
             session.host_app,
             err
         );
+        // tty 已失效：先重扫清掉死项并广播 changed（force_git=false 复用缓存 git 态），
+        // 再 emit 失败事件，列表刷新与 toast 同帧到达。
+        if matches!(err, NavErr::StaleSession { .. }) {
+            crate::sessions::rescan(&app, false);
+        }
         let _ = app.emit(EVENT_CLAUDE_SESSION_NAV_FAILED, &err);
     }
     Ok(())

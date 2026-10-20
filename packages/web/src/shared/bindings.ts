@@ -142,7 +142,7 @@ export type HttpServerStatus = {
 	startRecentLog: string | null,
 };
 
-export type NavErr = { kind: "unsupportedHostApp" } | { kind: "osaScriptFailed"; stderr: string } | { kind: "sessionNotFound" } | { kind: "io"; message: string };
+export type NavErr = { kind: "unsupportedHostApp" } | { kind: "osaScriptFailed"; stderr: string } | { kind: "staleSession"; stderr: string } | { kind: "sessionNotFound" } | { kind: "io"; message: string };
 
 export type PtyEvent = { kind: "data"; data: string } | { kind: "exit" };
 

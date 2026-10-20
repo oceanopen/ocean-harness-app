@@ -34,6 +34,7 @@
   "toast": {
     "unsupportedHostApp": "Unrecognized host terminal. Please launch Claude Code in iTerm2 or Terminal.app",
     "osaScriptFailed": "Failed to navigate: {{stderr}}",
+    "staleSession": "Session is no longer available, list refreshed",
     "sessionNotFound": "Session expired, please refresh",
     "io": "System error: {{message}}",
     "refreshSuccess": "Refreshed",

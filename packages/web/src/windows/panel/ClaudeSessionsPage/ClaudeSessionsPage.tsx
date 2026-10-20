@@ -33,6 +33,8 @@ function navErrToToastKey(err: NavErr): { key: string; opts?: Record<string, unk
       return { key: 'claudeSessions:toast.unsupportedHostApp' };
     case 'osaScriptFailed':
       return { key: 'claudeSessions:toast.osaScriptFailed', opts: { stderr: err.stderr } };
+    case 'staleSession':
+      return { key: 'claudeSessions:toast.staleSession' };
     case 'sessionNotFound':
       return { key: 'claudeSessions:toast.sessionNotFound' };
     case 'io':

@@ -28,6 +28,8 @@ pub enum NavErr {
     UnsupportedHostApp,
     // osascript 执行失败（exit code 非零）。
     OsaScriptFailed { stderr: String },
+    // 目标 tty 在宿主终端中已不存在（终端会话已关闭等竞态），列表待刷新。
+    StaleSession { stderr: String },
     // ClaudeSessionStore 找不到对应 pid 的会话（可能刚过期）。
     SessionNotFound,
     // 其他 IO 错误。
@@ -79,8 +81,9 @@ pub fn open_directory_dispatch(
 }
 
 /*
- * 执行 AppleScript：非零退出返回 OsaScriptFailed（含 stderr）。
- * 两个子模块（iterm2 / terminal_app）共用，保持退出码 → NavErr 的映射单一。
+ * 执行 AppleScript：非零退出返回 OsaScriptFailed（含 stderr）；
+ * stderr 含 "session not found" 时改返回 StaleSession（目标 tty 已从宿主终端消失的语义错误，
+ * 供调用方触发列表刷新）。两个子模块（iterm2 / terminal_app）共用，保持退出码 → NavErr 的映射单一。
  */
 pub(super) fn run_osascript(script: &str) -> Result<(), NavErr> {
     let output = Command::new("osascript")
@@ -88,6 +91,9 @@ pub(super) fn run_osascript(script: &str) -> Result<(), NavErr> {
         .output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        if stderr.contains("session not found") {
+            return Err(NavErr::StaleSession { stderr });
+        }
         return Err(NavErr::OsaScriptFailed { stderr });
     }
     Ok(())

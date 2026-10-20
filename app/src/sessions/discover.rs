@@ -1,5 +1,5 @@
 /*
- * 扫描 `~/.claude/sessions/` 下所有 `<pid>.json`，过滤出活跃会话：文件名 stem 须为纯数字 pid（Claude Code 写入约定）、进程须存活（kill -0 等价检查，Dead 残留跳过）、文件须能成功反序列化为 RawSessionFile（损坏 silently skip）。
+ * 扫描 `~/.claude/sessions/` 下所有 `<pid>.json`，过滤出活跃会话：文件名 stem 须为纯数字 pid（Claude Code 写入约定）、进程须存活（kill -0 等价检查，Dead 残留跳过）、文件须能成功反序列化为 RawSessionFile（损坏 silently skip）、bg 后台会话跳过（kind:"bg"，自建 pty 不可跳转）。
  * 存活检查不引入 nix/libc 依赖：用 `ps -p <pid> -o pid=` 检查 stdout 非空，跨平台兼容（macOS / Linux 行为一致），实现极简。
  */
 use std::fs;
@@ -65,10 +65,13 @@ pub fn list_active() -> Vec<RawSessionFile> {
         };
 
         /*
-         * 双重校验：文件名 pid 与 json 内 pid 必须一致；进程必须存活。
-         * 不一致说明文件被外部污染，跳过避免脏数据进入 store。
+         * 三重校验：文件名 pid 与 json 内 pid 必须一致；进程必须存活；bg 后台会话
+         * 跳过（跑在 claude 自建私有 pty 上，宿主反查失真且不可跳转）。
          */
         if stem != raw_file.pid.to_string() {
+            continue;
+        }
+        if raw_file.is_bg() {
             continue;
         }
         if !is_process_alive(raw_file.pid) {

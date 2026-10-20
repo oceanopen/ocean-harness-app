@@ -25,6 +25,19 @@ pub struct RawSessionFile {
     // 最后状态更新时间（毫秒时间戳）。
     #[serde(rename = "updatedAt")]
     pub updated_at: i64,
+    // 会话类别："interactive" 交互会话 / "bg" 后台会话；老版本缺省视为 interactive。
+    #[serde(default, rename = "kind")]
+    pub kind: Option<String>,
+}
+
+impl RawSessionFile {
+    /*
+     * 是否后台会话。bg 由 claude 派生、跑在自建私有 pty 上，宿主终端反查结果
+     * 失真且不可跳转，发现层据此过滤。
+     */
+    pub fn is_bg(&self) -> bool {
+        self.kind.as_deref() == Some("bg")
+    }
 }
 
 /*
@@ -57,6 +70,19 @@ mod tests {
         assert_eq!(s.started_at, 1700000000000);
         assert_eq!(s.status, "idle");
         assert_eq!(s.updated_at, 1700000000000);
+        assert!(!s.is_bg());
+    }
+
+    #[test]
+    fn bg_kind_is_detected() {
+        let bg = SAMPLE.replace("\"kind\":\"interactive\"", "\"kind\":\"bg\"");
+        assert!(parse(&bg).unwrap().is_bg());
+    }
+
+    #[test]
+    fn missing_kind_is_not_bg() {
+        let legacy = SAMPLE.replace("\"kind\":\"interactive\",", "");
+        assert!(!parse(&legacy).unwrap().is_bg());
     }
 
     #[test]
