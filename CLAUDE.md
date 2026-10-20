@@ -17,13 +17,12 @@ ocean-harness-app/
 │   ├── web/              # 前端（workspace 包 "web"，vite 多页构建，产物 packages/web/dist）
 │   └── docs/             # vitepress 文档项目占位（.gitkeep，后续嵌入 app）
 ├── server/               # Go sidecar（原 src-server，module ocean-harness/server）
-├── plugins/              # Claude Code 插件（ocean-harness-plugin；根 .claude-plugin/marketplace.json 自成 marketplace 分发）
 ├── docs/                 # 临时开发文档（agent_dev_*.md，非 workspace 包，与 packages/docs 无关）
 └── scripts/              # 根编排辅助脚本（build-server.ts）
 ```
 
-- `app/`、`server/`、`plugins/`、`docs/` 游离于 pnpm workspace 之外（非 Node 包/纯文档），由根脚本 `go -C server` / `cargo --manifest-path app/Cargo.toml` 编排；后续 `cli/`、`bot/` 等新 Node 包落 `packages/` 下即被 `packages/*` glob 自动收编。
-- 版本号 SSOT 在根 `package.json`，`pnpm release`（bumpp）同步 `app/tauri.conf.json` + `app/Cargo.{toml,lock}` + `plugins/ocean-harness-plugin/.claude-plugin/plugin.json`；`web` 包 private 无版本。
+- `app/`、`server/`、`docs/` 游离于 pnpm workspace 之外（非 Node 包/纯文档），由根脚本 `go -C server` / `cargo --manifest-path app/Cargo.toml` 编排；后续 `cli/`、`bot/` 等新 Node 包落 `packages/` 下即被 `packages/*` glob 自动收编。
+- 版本号 SSOT 在根 `package.json`，`pnpm release`（bumpp）同步 `app/tauri.conf.json` + `app/Cargo.{toml,lock}`；`web` 包 private 无版本。
 - 前端依赖装在 `packages/web/package.json`，公共版本（typescript/vite/vitest/@types/node）走 `pnpm-workspace.yaml` 的 catalog（包内以 `catalog:` 引用）。
 
 ## 常用命令

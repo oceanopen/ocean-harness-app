@@ -42,15 +42,13 @@ xattr -cr "/Applications/Ocean Harness.app"
 
 ## Claude Code 插件安装（ocean-harness）
 
-本仓库自带 Claude Code 插件 marketplace（`.claude-plugin/marketplace.json`），提供 issue 驱动的 agent 开发流程插件 **ocean-harness**。安装：
-
 ```bash
-claude plugin marketplace add oceanopen/ocean-harness-app
-claude plugin install ocean-harness@ocean-harness-app
+claude plugin marketplace add oceanopen/ocean-claude-plugins
+claude plugin install ocean-harness@ocean-claude-plugins
 ```
 
 安装后会话内 `/reload-plugins` 生效，命令以 `/ocean-harness:xxx` 调用。
-更新：仓库内插件改动发布后执行 `claude plugin update ocean-harness@ocean-harness-app`（更新检测以 `plugin.json` 版本为准，随本仓库 `pnpm release` 同步 bump）。
+更新：插件改动发布后执行 `claude plugin update ocean-harness@ocean-claude-plugins`（更新检测以 `plugin.json` 版本为准）。
 
 ## ocean-harness CLI
 
