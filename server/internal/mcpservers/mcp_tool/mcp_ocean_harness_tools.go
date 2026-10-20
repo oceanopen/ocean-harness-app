@@ -166,6 +166,75 @@ func (mt McpOceanHarnessTool) WorkspaceStatus(ctx context.Context, _ *mcp.CallTo
 	return nil, newWorkspaceStatusContent(data), nil
 }
 
+// WorkspaceList 列出全部工作空间（新建在前），透传既有 Workspace.GetList（当前无筛选条件）。
+func (mt McpOceanHarnessTool) WorkspaceList(ctx context.Context, _ *mcp.CallToolRequest,
+	_ mcpdto.WorkspaceListArgs) (*mcp.CallToolResult, mcpdto.WorkspaceListContent, error) {
+
+	wsSvc := service.Workspace{}
+	if err := mt.MakeContext(ctx).MakeService(&wsSvc.Service).Errors; err != nil {
+		return nil, mcpdto.WorkspaceListContent{}, mt.Fail(err)
+	}
+	rows, err := wsSvc.GetList(&types.WorkspaceGetListRequest{})
+	if err != nil {
+		return nil, mcpdto.WorkspaceListContent{}, mt.Fail(err)
+	}
+	list := make([]*mcpdto.WorkspaceContent, 0, len(rows))
+	for i := range rows {
+		list = append(list, &mcpdto.WorkspaceContent{
+			ID:          rows[i].ID,
+			Name:        rows[i].Name,
+			Dir:         rows[i].Dir,
+			Description: rows[i].Description,
+		})
+	}
+	return nil, mcpdto.WorkspaceListContent{Workspaces: list}, nil
+}
+
+// ProjectList 列出某工作空间下的全部项目（新建在前），透传既有 Project.GetList。
+func (mt McpOceanHarnessTool) ProjectList(ctx context.Context, _ *mcp.CallToolRequest,
+	input mcpdto.ProjectListArgs) (*mcp.CallToolResult, mcpdto.ProjectListContent, error) {
+
+	projSvc := service.Project{}
+	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&projSvc.Service).Errors; err != nil {
+		return nil, mcpdto.ProjectListContent{}, mt.Fail(err)
+	}
+	rows, err := projSvc.GetList(&types.ProjectGetListRequest{WorkspaceID: input.WorkspaceID})
+	if err != nil {
+		return nil, mcpdto.ProjectListContent{}, mt.Fail(err)
+	}
+	list := make([]*mcpdto.ProjectContent, 0, len(rows))
+	for _, p := range rows {
+		list = append(list, &mcpdto.ProjectContent{
+			ID:          p.ID,
+			WorkspaceID: p.WorkspaceID,
+			Name:        p.Name,
+			Emoji:       p.Emoji,
+			Description: p.Description,
+		})
+	}
+	return nil, mcpdto.ProjectListContent{Projects: list}, nil
+}
+
+// IssueList 列出某项目下的全部任务（按看板顺序，含子任务，parentId 区分层级），
+// 透传既有 ProjectIssue.GetList（stateCode 留空返回全部状态）。
+func (mt McpOceanHarnessTool) IssueList(ctx context.Context, _ *mcp.CallToolRequest,
+	input mcpdto.IssueListArgs) (*mcp.CallToolResult, mcpdto.IssueListContent, error) {
+
+	issueSvc := service.ProjectIssue{}
+	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&issueSvc.Service).Errors; err != nil {
+		return nil, mcpdto.IssueListContent{}, mt.Fail(err)
+	}
+	rows, err := issueSvc.GetList(&types.ProjectIssueGetListRequest{ProjectID: input.ProjectID, StateCode: input.StateCode})
+	if err != nil {
+		return nil, mcpdto.IssueListContent{}, mt.Fail(err)
+	}
+	list := make([]*mcpdto.IssueContent, 0, len(rows))
+	for _, it := range rows {
+		list = append(list, issueContentPtr(it))
+	}
+	return nil, mcpdto.IssueListContent{Issues: list}, nil
+}
+
 // partialUpdate 是 issue_update 的合并入口（GetInfo → buildIssueUpdateRequest → Update）。
 func (mt McpOceanHarnessTool) partialUpdate(issueSvc *service.ProjectIssue, args *mcpdto.IssueUpdateArgs) (*types.ProjectIssueResponseData, error) {
 	cur, err := issueSvc.GetInfo(&types.ProjectIssueGetInfoRequest{ID: args.IssueID})

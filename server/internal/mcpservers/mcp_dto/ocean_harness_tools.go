@@ -46,6 +46,23 @@ type WorkspaceStatusArgs struct {
 	IssueID string `json:"issueId" jsonschema:"issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
 }
 
+/*
+ * WorkspaceListArgs 是 workspace_list 的入参（当前无筛选条件，预留位；
+ * 无字段结构体同样经反射推导出空 object schema）。
+ */
+type WorkspaceListArgs struct{}
+
+// ProjectListArgs 是 project_list 的入参（项目挂在工作空间维度下）。
+type ProjectListArgs struct {
+	WorkspaceID string `json:"workspaceId" jsonschema:"工作空间主键（uuid 文本，workspace_list 返回的 id）" vd:"@:$!=''; msg:'workspaceId 不能为空'"`
+}
+
+// IssueListArgs 是 issue_list 的入参（stateCode 留空返回全部状态）。
+type IssueListArgs struct {
+	ProjectID int             `json:"projectId" jsonschema:"项目主键（project_list 返回的 id）"`
+	StateCode enums.StateCode `json:"stateCode,omitempty" jsonschema:"按状态过滤，留空返回全部状态。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
+}
+
 // —— 出参 Content（平铺镜像，见包注释） ——
 
 // IssueContent 是单个 issue 的出参（issue_get_info 返回单对象；issue_child_create 返回新建对象）。
@@ -126,4 +143,36 @@ type WorkspaceRepoRefContent struct {
 	LocalRepositoryID int    `json:"localRepositoryId" jsonschema:"本地仓库 id"`
 	RemoteURL         string `json:"remoteUrl" jsonschema:"克隆地址（SSH）"`
 	BaseBranch        string `json:"baseBranch,omitempty" jsonschema:"基准分支，留空表示仓库默认分支"`
+}
+
+// WorkspaceContent 是单个工作空间的出参项（workspace_list）。
+type WorkspaceContent struct {
+	ID          string `json:"id" jsonschema:"工作空间主键（uuid）"`
+	Name        string `json:"name" jsonschema:"名称"`
+	Dir         string `json:"dir" jsonschema:"工作区目录（绝对路径；各任务运行目录为 {dir}/{issueId}）"`
+	Description string `json:"description,omitempty" jsonschema:"描述"`
+}
+
+// WorkspaceListContent 是 workspace_list 的出参（顶层须为对象，列表包在字段内）。
+type WorkspaceListContent struct {
+	Workspaces []*WorkspaceContent `json:"workspaces" jsonschema:"工作空间列表（新建在前）；无工作空间为空数组"`
+}
+
+// ProjectContent 是单个项目的出参项（project_list）。
+type ProjectContent struct {
+	ID          int    `json:"id" jsonschema:"项目主键（自增）"`
+	WorkspaceID string `json:"workspaceId" jsonschema:"所属工作空间主键（uuid）"`
+	Name        string `json:"name" jsonschema:"名称"`
+	Emoji       string `json:"emoji,omitempty" jsonschema:"图标 emoji，留空表示未设置"`
+	Description string `json:"description,omitempty" jsonschema:"描述"`
+}
+
+// ProjectListContent 是 project_list 的出参。
+type ProjectListContent struct {
+	Projects []*ProjectContent `json:"projects" jsonschema:"项目列表（新建在前）；无项目为空数组"`
+}
+
+// IssueListContent 是 issue_list 的出参（复用 IssueContent 平铺镜像）。
+type IssueListContent struct {
+	Issues []*IssueContent `json:"issues" jsonschema:"任务列表（按看板顺序，含子任务，parentId 区分层级）；无任务为空数组"`
 }

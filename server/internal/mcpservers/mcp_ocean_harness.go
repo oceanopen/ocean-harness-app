@@ -63,6 +63,24 @@ func init() {
 			"cloneRepos 各步骤与仓库级进度）。workspace 基目录取应用设置，无需传入。",
 	}, mcptool.McpOceanHarnessTool{}.WorkspaceStatus)
 
+	// —— 列举工具（workspace / project / issue 清单，供选择类工作流逐级定位）——
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "workspace_list",
+		Description: "列出全部工作空间（新建在前）：id/名称/工作区目录/描述。无副作用读。",
+	}, mcptool.McpOceanHarnessTool{}.WorkspaceList)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name:        "project_list",
+		Description: "列出某工作空间下的全部项目（新建在前）：id/名称/emoji/描述。workspaceId 取 workspace_list 返回的 id。",
+	}, mcptool.McpOceanHarnessTool{}.ProjectList)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "issue_list",
+		Description: "列出某项目下的全部任务（按看板顺序，含子任务，parentId 区分层级）；" +
+			"projectId 取 project_list 返回的 id，stateCode 留空返回全部状态。单任务详情请用 issue_get_info。",
+	}, mcptool.McpOceanHarnessTool{}.IssueList)
+
 	// —— GitHub 外部服务工具（T4.1，github_ 前缀分组；PAT 经设置 → 个人中心录入）——
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
