@@ -65,11 +65,11 @@ export const DEFAULT_LANGUAGE: Language = 'system';
  */
 export type Iterm2SplitDirection = 'horizontal' | 'vertical' | 'none';
 
-// 嵌入式终端字号。离散选项：脏值一律回落默认 12。
+// 嵌入式终端字号。离散选项：脏值一律回落默认 13。
 export const TERMINAL_FONT_SIZE_KEY = 'terminal_font_size';
-export const TERMINAL_FONT_SIZE_OPTIONS = [10, 11, 12, 13, 14, 15, 16] as const;
+export const TERMINAL_FONT_SIZE_OPTIONS = [12, 13, 14, 15, 16] as const;
 export type TerminalFontSize = (typeof TERMINAL_FONT_SIZE_OPTIONS)[number];
-export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
+export const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 13;
 
 export function parseTerminalFontSize(value: string | null): TerminalFontSize {
   const parsed = value != null ? Number.parseInt(value, 10) : Number.NaN;
