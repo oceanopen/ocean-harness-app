@@ -29,13 +29,12 @@ func newProjectIssue(db *gorm.DB, opts ...gen.DOOption) projectIssue {
 	tableName := _projectIssue.projectIssueDo.TableName()
 	_projectIssue.ALL = field.NewAsterisk(tableName)
 	_projectIssue.ID = field.NewString(tableName, "id")
-	_projectIssue.ProjectID = field.NewInt(tableName, "project_id")
+	_projectIssue.ProjectID = field.NewString(tableName, "project_id")
 	_projectIssue.WorkspaceID = field.NewString(tableName, "workspace_id")
 	_projectIssue.Name = field.NewString(tableName, "name")
 	_projectIssue.Description = field.NewString(tableName, "description")
 	_projectIssue.LaunchSettings = field.NewString(tableName, "launch_settings")
 	_projectIssue.StateCode = field.NewField(tableName, "state_code")
-	_projectIssue.Priority = field.NewField(tableName, "priority")
 	_projectIssue.SortOrder = field.NewFloat64(tableName, "sort_order")
 	_projectIssue.ParentID = field.NewString(tableName, "parent_id")
 	_projectIssue.TypeID = field.NewInt(tableName, "type_id")
@@ -60,13 +59,12 @@ type projectIssue struct {
 
 	ALL                      field.Asterisk
 	ID                       field.String
-	ProjectID                field.Int
+	ProjectID                field.String
 	WorkspaceID              field.String
 	Name                     field.String
 	Description              field.String
 	LaunchSettings           field.String
 	StateCode                field.Field
-	Priority                 field.Field
 	SortOrder                field.Float64
 	ParentID                 field.String
 	TypeID                   field.Int
@@ -93,13 +91,12 @@ func (p projectIssue) As(alias string) *projectIssue {
 func (p *projectIssue) updateTableName(table string) *projectIssue {
 	p.ALL = field.NewAsterisk(table)
 	p.ID = field.NewString(table, "id")
-	p.ProjectID = field.NewInt(table, "project_id")
+	p.ProjectID = field.NewString(table, "project_id")
 	p.WorkspaceID = field.NewString(table, "workspace_id")
 	p.Name = field.NewString(table, "name")
 	p.Description = field.NewString(table, "description")
 	p.LaunchSettings = field.NewString(table, "launch_settings")
 	p.StateCode = field.NewField(table, "state_code")
-	p.Priority = field.NewField(table, "priority")
 	p.SortOrder = field.NewFloat64(table, "sort_order")
 	p.ParentID = field.NewString(table, "parent_id")
 	p.TypeID = field.NewInt(table, "type_id")
@@ -136,7 +133,7 @@ func (p *projectIssue) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (p *projectIssue) fillFieldMap() {
-	p.fieldMap = make(map[string]field.Expr, 17)
+	p.fieldMap = make(map[string]field.Expr, 16)
 	p.fieldMap["id"] = p.ID
 	p.fieldMap["project_id"] = p.ProjectID
 	p.fieldMap["workspace_id"] = p.WorkspaceID
@@ -144,7 +141,6 @@ func (p *projectIssue) fillFieldMap() {
 	p.fieldMap["description"] = p.Description
 	p.fieldMap["launch_settings"] = p.LaunchSettings
 	p.fieldMap["state_code"] = p.StateCode
-	p.fieldMap["priority"] = p.Priority
 	p.fieldMap["sort_order"] = p.SortOrder
 	p.fieldMap["parent_id"] = p.ParentID
 	p.fieldMap["type_id"] = p.TypeID

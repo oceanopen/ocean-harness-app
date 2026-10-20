@@ -157,8 +157,8 @@ func mkRouteBindingFixture(t *testing.T, wsSettings, issueSettings string) (stri
 		t.Fatalf("建 workspace: %v", err)
 	}
 	issue := &model.ProjectIssue{
-		ID: "0198dddd-0000-7111-8111-3b6ac9e1f201", ProjectID: 1, WorkspaceID: ws.ID, Name: "绑定目标",
-		StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, LaunchSettings: issueSettings,
+		ID: "0198dddd-0000-7111-8111-3b6ac9e1f201", ProjectID: "proj-1", WorkspaceID: ws.ID, Name: "绑定目标",
+		StateCode: enums.STATE_CODE_BACKLOG, LaunchSettings: issueSettings,
 	}
 	if err := q.ProjectIssue.WithContext(context.Background()).Create(issue); err != nil {
 		t.Fatalf("建 issue: %v", err)

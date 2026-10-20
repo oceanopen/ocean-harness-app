@@ -14,7 +14,6 @@ import {
   KeyboardArrowRightRounded as KeyboardArrowRightRoundedIcon,
 } from '@mui/icons-material';
 import { Box, Chip, IconButton, Tooltip, Typography } from '@mui/material';
-import { PRIORITY_COLOR } from '@src/components/priorityMeta';
 import { formatDate } from '@src/shared/time';
 import { isSessionLive } from '@src/state/browserSession';
 import { STATE_MAP } from '@src/state/tracker';
@@ -26,7 +25,7 @@ import { GUTTER_WIDTH, truncateSx } from './shared';
 
 /**
  * 子卡片容器缩进：gutter(28px) + 首行 gap(8px) - 子卡 px(8px) = 28px，使子卡内容起点恰为 gutter+gap，
- * 从而子 issue 优先级色点落在父 issue 优先级色点正下方。
+ * 从而子 issue 状态徽章落在父 issue 状态徽章正下方。
  */
 const CHILD_INDENT_PL = '28px';
 
@@ -264,19 +263,6 @@ function IssueCard({
     </Box>
   );
 
-  const priorityBadge = (
-    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>「</Typography>
-      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>
-        {`${t('tracker:projectIssue.detail.priority')}:`}
-      </Typography>
-      <Box sx={{ width: '8px', height: '8px', borderRadius: '50%', bgcolor: PRIORITY_COLOR[issue.priority], flexShrink: 0 }} />
-      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, ...truncateSx }}>
-        {t(`tracker:projectIssue.priority.${issue.priority}`)}
-      </Typography>
-      <Typography variant="caption" sx={{ color: 'text.secondary', lineHeight: 1, flexShrink: 0 }}>」</Typography>
-    </Box>
-  );
   /**
    * F2：进行中（IN_PROGRESS）状态徽章可点击，跳转开发工作台定位该 issue。
    * 仅 tracker 场景开放：devWorkbench 场景卡片本身可点开编辑抽屉（onEdit），徽章若再
@@ -397,10 +383,9 @@ function IssueCard({
         {dragIndicatorEl}
         {nameEl}
       </Box>
-      {/* 第二行：占位 优先级 状态（占位与首行拖拽标识列对齐） */}
+      {/* 第二行：占位 状态（占位与首行拖拽标识列对齐） */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', height: '24px' }}>
         {gutterPlaceholder}
-        {priorityBadge}
         {stateBadge}
       </Box>
       {/* 第三行：展开/占位 类型徽章 目标日期 子任务进度 浏览器徽标（行尾），左对齐+行尾徽标。

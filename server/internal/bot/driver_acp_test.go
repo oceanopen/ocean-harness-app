@@ -1142,8 +1142,8 @@ func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
 		t.Fatalf("建 workspace: %v", err)
 	}
 	issue := &model.ProjectIssue{
-		ID: "issue-bot-acp", ProjectID: 1, WorkspaceID: ws.ID, Name: "测试 issue",
-		StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, LaunchSettings: "",
+		ID: "issue-bot-acp", ProjectID: "proj-1", WorkspaceID: ws.ID, Name: "测试 issue",
+		StateCode: enums.STATE_CODE_BACKLOG, LaunchSettings: "",
 	}
 	if err := q.ProjectIssue.WithContext(context.Background()).Create(issue); err != nil {
 		t.Fatalf("建 issue: %v", err)

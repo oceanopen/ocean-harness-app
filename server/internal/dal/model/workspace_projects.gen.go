@@ -12,7 +12,7 @@ const TableNameWorkspaceProject = "t_workspace_projects"
 
 // WorkspaceProject mapped from table <t_workspace_projects>
 type WorkspaceProject struct {
-	ID                         int                       `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
+	ID                         string                    `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
 	WorkspaceID                string                    `gorm:"column:workspace_id;type:TEXT;not null" json:"workspaceId"`
 	Name                       string                    `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Description                string                    `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`

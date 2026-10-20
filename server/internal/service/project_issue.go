@@ -25,7 +25,7 @@ type ProjectIssue struct {
 }
 
 /*
- * GetList 按 projectId 查 issue（扁平列表），支持筛选（stateCode/priority/keyword/typeId）+ orderBy（默认 sort_order）。
+ * GetList 按 projectId 查 issue（扁平列表），支持筛选（stateCode/keyword/typeId）+ orderBy（默认 sort_order）。
  * 批量组装每个 issue 的类型与仓库+分支列表（避免 N+1）。分组由前端对扁平列表自行分组。
  */
 func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types.ProjectIssueResponseData, error) {
@@ -33,9 +33,6 @@ func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types
 	iq := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ProjectID.Eq(req.ProjectID))
 	if req.StateCode != "" {
 		iq = iq.Where(q.ProjectIssue.StateCode.Eq(req.StateCode))
-	}
-	if req.Priority != "" {
-		iq = iq.Where(q.ProjectIssue.Priority.Eq(req.Priority))
 	}
 	if req.Keyword != "" {
 		iq = iq.Where(q.ProjectIssue.Name.Like("%" + req.Keyword + "%"))
@@ -48,9 +45,6 @@ func (svc ProjectIssue) GetList(req *types.ProjectIssueGetListRequest) ([]*types
 	switch req.OrderBy {
 	case "created_at":
 		iq = iq.Order(q.ProjectIssue.CreatedAt.Desc())
-	case "priority":
-		// MVP：priority 按文本值排序（业务严格顺序 urgent>high>medium>low>none 由前端按权重重排）。
-		iq = iq.Order(q.ProjectIssue.Priority.Asc())
 	default: // sort_order 或空
 		iq = iq.Order(q.ProjectIssue.SortOrder.Asc(), q.ProjectIssue.ID.Asc())
 	}
@@ -81,7 +75,7 @@ func (svc ProjectIssue) GetInfo(req *types.ProjectIssueGetInfoRequest) (*types.P
 
 /*
  * Create 新建 issue。stateCode 空值取默认 BACKLOG；sort_order 自算（同 project MAX+10000，首个 10000）；
- * priority 空值规范为 none；typeId 单值直写（0=未分类）。事务内创建 issue + 同步仓库分支关联，
+ * typeId 单值直写（0=未分类）。事务内创建 issue + 同步仓库分支关联，
  * completed_at 默认 nil（未完成）。
  */
 func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.ProjectIssueResponseData, error) {
@@ -117,11 +111,6 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			return le
 		}
 
-		priority := req.Priority
-		if priority == "" {
-			priority = enums.PRIORITY_NONE
-		}
-
 		/*
 		 * stateCode 空值取默认；非法值报错。DONE 时同步写 completed_at（与 applyStateTransition 口径一致，
 		 * 否则留下 state=DONE 但 completed_at=nil 的记录，会阻断父任务自动完成）。
@@ -153,7 +142,6 @@ func (svc ProjectIssue) Create(req *types.ProjectIssueCreateRequest) (*types.Pro
 			Description:    req.Description,
 			LaunchSettings: launchSettingsJSON(req.LaunchSettings),
 			StateCode:      stateCode,
-			Priority:       priority,
 			SortOrder:      sortOrder,
 			ParentID:       parentID,
 			TypeID:         req.TypeID,
@@ -201,10 +189,6 @@ func (svc ProjectIssue) Update(req *types.ProjectIssueUpdateRequest) (*types.Pro
 		issue.LaunchSettings = launchSettingsJSON(req.LaunchSettings)
 		issue.StartDate = req.StartDate
 		issue.TargetDate = req.TargetDate
-		// priority/stateCode 为 typed 枚举：空值保留原值（前端不传即不改，避免 Value() 校验空串报错）。
-		if req.Priority != "" {
-			issue.Priority = req.Priority
-		}
 		// typeId 单值：nil=保留原值（MCP 部分更新），非 nil 覆写（0=未分类）。
 		if req.TypeID != nil {
 			issue.TypeID = *req.TypeID
@@ -502,7 +486,7 @@ func (svc ProjectIssue) syncIssueRepos(orm *gorm.DB, issueID string, list []type
  * 同一仓库不重复（每仓库至多一行）且属于 projectID 的关联仓库集合（一次批量查中间表，避免逐项 Count）。
  * 返回原列表（校验通过即原样落库）。orm 传 tx 以复用调用方事务。
  */
-func (svc ProjectIssue) validateIssueRepoList(orm *gorm.DB, projectID int, list []types.IssueRepositoryBranch) ([]types.IssueRepositoryBranch, error) {
+func (svc ProjectIssue) validateIssueRepoList(orm *gorm.DB, projectID string, list []types.IssueRepositoryBranch) ([]types.IssueRepositoryBranch, error) {
 	if len(list) == 0 {
 		return nil, nil
 	}

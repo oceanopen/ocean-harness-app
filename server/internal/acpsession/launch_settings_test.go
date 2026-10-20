@@ -109,11 +109,10 @@ func seedIssue(t *testing.T, db *gorm.DB, wsDir, wsLaunchSettings, issueLaunchSe
 	issueID := fmt.Sprintf("issue-%s-%d", strings.ReplaceAll(t.Name(), "/", "-"), seedIssueSeq.Add(1))
 	issue := &model.ProjectIssue{
 		ID:             issueID,
-		ProjectID:      1,
+		ProjectID:      "proj-1",
 		WorkspaceID:    ws.ID,
 		Name:           "测试 issue",
 		StateCode:      enums.STATE_CODE_BACKLOG,
-		Priority:       enums.PRIORITY_NONE,
 		LaunchSettings: issueLaunchSettings,
 	}
 	if err := q.ProjectIssue.WithContext(context.Background()).Create(issue); err != nil {
@@ -214,7 +213,7 @@ func TestResolveSessionConfigRelDir(t *testing.T) {
 	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
 		t.Fatalf("建 workspace: %v", err)
 	}
-	issue := &model.ProjectIssue{ID: "issue-rel", ProjectID: 1, WorkspaceID: ws.ID, Name: "x", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE}
+	issue := &model.ProjectIssue{ID: "issue-rel", ProjectID: "proj-1", WorkspaceID: ws.ID, Name: "x", StateCode: enums.STATE_CODE_BACKLOG}
 	if err := q.ProjectIssue.WithContext(context.Background()).Create(issue); err != nil {
 		t.Fatalf("建 issue: %v", err)
 	}

@@ -49,7 +49,7 @@ import { removeLayout } from '@src/state/terminalPanes';
 import { STATE_MAP, useProjectIssues, useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
 import { clearToolTabs } from '@src/state/workbenchTools';
 import { clearPreviewTabs, useWorkspaceFilesStore } from '@src/state/workspaceFiles';
-import { DEV_IID_PARAM, DEV_PID_PARAM, numParam, strParam } from '@src/windows/panel/routes';
+import { DEV_IID_PARAM, DEV_PID_PARAM, strParam } from '@src/windows/panel/routes';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -123,7 +123,7 @@ const PANEL_LAYOUT_CONFIG_KEYS: readonly string[] = [
 export default function DevWorkbenchPage() {
   const theme = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlPid = numParam(searchParams.get(DEV_PID_PARAM));
+  const urlPid = strParam(searchParams.get(DEV_PID_PARAM)); // project id 为 uuid 字符串
   const urlIid = strParam(searchParams.get(DEV_IID_PARAM)); // issue id 为 uuid 字符串
 
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);

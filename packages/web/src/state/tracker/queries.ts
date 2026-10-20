@@ -54,9 +54,9 @@ export function useWorkspaceTypes(workspaceId: string | null) {
 }
 
 /** 指定项目的 projectIssue（含类型）。projectId 为 null 时不查询（无选中时的无效请求守卫）。 */
-export function useProjectIssues(projectId: number | null) {
+export function useProjectIssues(projectId: string | null) {
   return useQuery({
-    queryKey: trackerKeys.projectIssues(projectId ?? 0),
+    queryKey: trackerKeys.projectIssues(projectId ?? ''),
     queryFn: () => ProjectIssueService.getList({ projectId: projectId! }),
     enabled: projectId != null,
   });
@@ -123,7 +123,7 @@ export function useUpdateWorkspaceProject(workspaceId: string) {
 export function useDeleteWorkspaceProject(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => WorkspaceProjectService.delete({ id }),
+    mutationFn: (id: string) => WorkspaceProjectService.delete({ id }),
     onSuccess: (_data, deletedId) => {
       qc.invalidateQueries({ queryKey: trackerKeys.workspaceProjects(workspaceId) });
       const cur = useTrackerStore.getState().selectedWorkspaceProject;
@@ -173,7 +173,7 @@ export function useDeleteWorkspaceType(workspaceId: string) {
  */
 
 /** 创建 projectIssue。 */
-export function useCreateProjectIssue(projectId: number) {
+export function useCreateProjectIssue(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: ProjectIssueCreateRequest) => ProjectIssueService.create(req),
@@ -182,7 +182,7 @@ export function useCreateProjectIssue(projectId: number) {
 }
 
 /** 更新 projectIssue。 */
-export function useUpdateProjectIssue(projectId: number) {
+export function useUpdateProjectIssue(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: ProjectIssueUpdateRequest) => ProjectIssueService.update(req),
@@ -194,7 +194,7 @@ export function useUpdateProjectIssue(projectId: number) {
  * 删除 projectIssue。先关其全部终端 pane（issue 即 PTY 锚点，split 后一 issue 多 pane
  * 需前缀全关；不关则孤儿会话占 store 至 app 退出）。
  */
-export function useDeleteProjectIssue(projectId: number) {
+export function useDeleteProjectIssue(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {

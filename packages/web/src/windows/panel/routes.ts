@@ -39,16 +39,7 @@ export function pathToMenu(pathname: string): MenuKey {
   return DEFAULT_MENU;
 }
 
-// 解析查询参数为整数；缺失/空/非法（含小数）返回 null。
-export function numParam(value: string | null): number | null {
-  if (value == null || value === '') {
-    return null;
-  }
-  const n = Number(value);
-  return Number.isInteger(n) ? n : null;
-}
-
-// 解析查询参数为非空字符串 id（如 issue uuid）；缺失/空返回 null。
+// 解析查询参数为非空字符串 id（如 project/issue uuid）；缺失/空返回 null。
 export function strParam(value: string | null): string | null {
   return value == null || value === '' ? null : value;
 }

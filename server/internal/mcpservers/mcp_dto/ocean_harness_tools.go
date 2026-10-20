@@ -59,7 +59,7 @@ type ProjectListArgs struct {
 
 // IssueListArgs 是 issue_list 的入参（stateCode 留空返回全部状态）。
 type IssueListArgs struct {
-	ProjectID int             `json:"projectId" jsonschema:"项目主键（project_list 返回的 id）"`
+	ProjectID string          `json:"projectId" jsonschema:"项目主键（uuid 文本，project_list 返回的 id）"`
 	StateCode enums.StateCode `json:"stateCode,omitempty" jsonschema:"按状态过滤，留空返回全部状态。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
 }
 
@@ -71,7 +71,6 @@ type IssueContent struct {
 	Name                 string                   `json:"name" jsonschema:"标题"`
 	Description          string                   `json:"description,omitempty" jsonschema:"描述（Markdown）"`
 	StateCode            string                   `json:"stateCode" jsonschema:"状态：BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
-	Priority             string                   `json:"priority" jsonschema:"优先级：urgent/high/medium/low/none"`
 	ParentID             string                   `json:"parentId,omitempty" jsonschema:"父 issue 主键；留空表示顶级任务"`
 	StartDate            string                   `json:"startDate,omitempty" jsonschema:"开始日期（yyyy-mm-dd），留空表示未设置"`
 	TargetDate           string                   `json:"targetDate,omitempty" jsonschema:"目标日期（yyyy-mm-dd），留空表示未设置"`
@@ -160,7 +159,7 @@ type WorkspaceListContent struct {
 
 // ProjectContent 是单个项目的出参项（project_list）。
 type ProjectContent struct {
-	ID          int    `json:"id" jsonschema:"项目主键（自增）"`
+	ID          string `json:"id" jsonschema:"项目主键（uuid 文本）"`
 	WorkspaceID string `json:"workspaceId" jsonschema:"所属工作空间主键（uuid）"`
 	Name        string `json:"name" jsonschema:"名称"`
 	Emoji       string `json:"emoji,omitempty" jsonschema:"图标 emoji，留空表示未设置"`

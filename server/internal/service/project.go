@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/apis"
@@ -56,11 +57,11 @@ func (svc Project) GetInfo(req *types.ProjectGetInfoRequest) (*types.ProjectResp
 }
 
 /*
- * Create 新建 project（允许重名、无业务唯一键，普通插入）。
+ * Create 新建 project（允许重名、无业务唯一键，普通插入）；主键为 uuid v7（时间有序），service 层生成。
  * 同一事务内：插入 project → 全量写入关联仓库。返回响应含本批写入的 localRepositoryIds。
  */
 func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectResponseData, error) {
-	created := &model.WorkspaceProject{}
+	created := &model.WorkspaceProject{ID: uuid.Must(uuid.NewV7()).String()}
 	var repoIDs []int
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
@@ -198,7 +199,7 @@ func (svc Project) Delete(req *types.ProjectDeleteRequest) error {
  * deleteProjectCascade 物理删除 project 及其全部下挂数据（无 DB 外键，service 层手动级联）：project 本体 → 其下 issue → 这些 issue 的 t_issue_local_repositories 关联 → 项目↔仓库中间表 t_project_local_repositories。
  * ctx 为调用方 service 的 Context；orm 传 tx 复用事务。供 Project.Delete 与 Workspace.Delete（级联删其下 project）共用。
  */
-func deleteProjectCascade(ctx context.Context, orm *gorm.DB, projectID int) error {
+func deleteProjectCascade(ctx context.Context, orm *gorm.DB, projectID string) error {
 	q := query.Use(orm)
 	// 1) 删 project 本体。
 	if _, e := q.WorkspaceProject.WithContext(ctx).
@@ -248,7 +249,7 @@ func deleteProjectCascade(ctx context.Context, orm *gorm.DB, projectID int) erro
  * 约定"无 diff、全量覆盖"——create/update 随项目信息一起保存关联，前端只传最终列表。orm 传 tx 复用事务。
  * repoIDs 内部去重 + 过滤 <=0（防唯一索引冲突）；空切片=清空全部关联。返回去重后的有效 id 列表。
  */
-func (svc Project) replaceAssociatedRepositories(orm *gorm.DB, projectID int, repoIDs []int) ([]int, error) {
+func (svc Project) replaceAssociatedRepositories(orm *gorm.DB, projectID string, repoIDs []int) ([]int, error) {
 	q := query.Use(orm)
 	jq := q.ProjectLocalRepository.WithContext(svc.Context)
 	// 1) 先全量删除该项目现有关联。

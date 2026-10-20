@@ -41,8 +41,8 @@ func mkWorkspace(t *testing.T, db *gorm.DB, name string) string {
 func mkBindIssue(t *testing.T, db *gorm.DB, workspaceID string, id, name string, sortOrder float64, state enums.StateCode, parentID string) {
 	t.Helper()
 	issue := &model.ProjectIssue{
-		ID: id, ProjectID: 1, WorkspaceID: workspaceID, Name: name,
-		StateCode: state, Priority: enums.PRIORITY_NONE,
+		ID: id, ProjectID: "proj-1", WorkspaceID: workspaceID, Name: name,
+		StateCode: state,
 		SortOrder: sortOrder, TypeID: 1, ParentID: parentID,
 	}
 	if err := db.Create(issue).Error; err != nil {

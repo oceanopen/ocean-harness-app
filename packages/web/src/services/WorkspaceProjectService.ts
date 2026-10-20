@@ -2,7 +2,7 @@ import { request } from './http';
 
 // WorkspaceProjectModel：对齐后端 types.ProjectResponseData 的 JSON 形态（嵌入 DO 平铺 + localRepositoryIds 装配）。
 export interface WorkspaceProjectModel {
-  id: number;
+  id: string; // uuid 字符串
   workspaceId: string; // 归属工作空间 uuid
   name: string;
   description: string;
@@ -34,7 +34,7 @@ export interface WorkspaceProjectCreateRequest {
  * localRepositoryIds 为关联仓库最终列表（全量覆盖：后端先删后插，无 diff）。
  */
 export interface WorkspaceProjectUpdateRequest {
-  id: number;
+  id: string; // uuid 字符串
   name: string;
   description?: string;
   emoji?: string;
@@ -43,7 +43,7 @@ export interface WorkspaceProjectUpdateRequest {
 
 // POST /api/tracker/project/delete 的入参。
 export interface WorkspaceProjectDeleteRequest {
-  id: number;
+  id: string; // uuid 字符串
 }
 
 // 项目 ↔ 本地仓库 多对多关联：随 create/update 全量保存（无独立增删接口），ids 随项目响应返回。

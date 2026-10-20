@@ -16,19 +16,22 @@ func GenModelTracker() {
 		gen.FieldType("workspace_id", "string"), // 所属工作空间 uuid
 	)
 	// 项目 ↔ 本地仓库 多对多中间表：无关联关系，service 层手动 JOIN 查询（与表间无 DB 外键约定一致）。
-	projectLocalRepository := G.GenerateModelAs("t_project_local_repositories", "ProjectLocalRepository")
+	// workspace_project_id 为项目主键 uuid 文本。
+	projectLocalRepository := G.GenerateModelAs("t_project_local_repositories", "ProjectLocalRepository",
+		gen.FieldType("workspace_project_id", "string"),
+	)
 	// issue ↔ 本地仓库+分支 关联表：issue_id 同为 TEXT uuid；service 层批量组装。
 	issueLocalRepository := G.GenerateModelAs("t_issue_local_repositories", "IssueLocalRepository",
 		gen.FieldType("issue_id", "string"),
 	)
 
 	issue := G.GenerateModelAs("t_project_issues", "ProjectIssue",
-		// issue 主键为 TEXT uuid 字符串（与 claude session_id 同格式）；parent_id 同为 uuid（顶级=NULL）。
+		// issue 主键为 TEXT uuid 字符串（与 claude session_id 同格式）；parent_id/project_id 同为 uuid 文本。
 		gen.FieldType("id", "string"),
 		gen.FieldType("parent_id", "string"),
+		gen.FieldType("project_id", "string"),
 		gen.FieldType("workspace_id", "string"), // 所属工作空间 uuid
 		gen.FieldType("state_code", "enums.StateCode"),
-		gen.FieldType("priority", "enums.Priority"),
 		// completed_at 用 *time.Time 指针：未完成=nil（写 NULL）/ 完成=&time，便于 Save 统一处理可空语义。
 		gen.FieldType("completed_at", "*time.Time"),
 		gen.FieldRelate(field.HasMany, "IssueLocalRepositoryList", issueLocalRepository, &field.RelateConfig{
@@ -42,6 +45,8 @@ func GenModelTracker() {
 	)
 
 	project := G.GenerateModelAs("t_workspace_projects", "WorkspaceProject",
+		// 主键为 TEXT uuid 字符串（Create 时生成 uuid v7，时间有序）。
+		gen.FieldType("id", "string"),
 		gen.FieldType("workspace_id", "string"), // 所属工作空间 uuid
 		gen.FieldRelate(field.HasMany, "ProjectIssueList", issue, &field.RelateConfig{
 			RelateSlicePointer: true,

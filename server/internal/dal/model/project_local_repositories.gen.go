@@ -13,7 +13,7 @@ const TableNameProjectLocalRepository = "t_project_local_repositories"
 // ProjectLocalRepository mapped from table <t_project_local_repositories>
 type ProjectLocalRepository struct {
 	ID                 int       `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
-	WorkspaceProjectID int       `gorm:"column:workspace_project_id;type:INTEGER;not null;uniqueIndex:udx_project_local_repositories_pid_lrid,priority:1" json:"workspaceProjectId"`
+	WorkspaceProjectID string    `gorm:"column:workspace_project_id;type:TEXT;not null;uniqueIndex:udx_project_local_repositories_pid_lrid,priority:1" json:"workspaceProjectId"`
 	LocalRepositoryID  int       `gorm:"column:local_repository_id;type:INTEGER;not null;uniqueIndex:udx_project_local_repositories_pid_lrid,priority:2" json:"localRepositoryId"`
 	CreatedAt          time.Time `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt          time.Time `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`

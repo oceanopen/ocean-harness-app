@@ -74,7 +74,7 @@
     },
     "edit": {
       "title": "编辑项目",
-      "idLabel": "ID",
+      "idLabel": "项目ID",
       "belongingWorkspace": "所属工作空间",
       "confirm": "保存"
     },
@@ -130,18 +130,9 @@
       "expand": "展开",
       "collapse": "折叠"
     },
-    "priority": {
-      "urgent": "紧急",
-      "high": "高",
-      "medium": "中",
-      "low": "低",
-      "none": "无"
-    },
     "filter": {
-      "all": "全部优先级",
       "allStates": "全部状态",
-      "state": "状态",
-      "priority": "优先级"
+      "state": "状态"
     },
     "view": {
       "list": "列表",
@@ -178,7 +169,6 @@
       "name": "名称",
       "description": "描述",
       "state": "状态",
-      "priority": "优先级",
       "startDate": "开始日期",
       "targetDate": "目标日期",
       "type": "类型",

@@ -3,8 +3,6 @@ import type { WorkspaceLaunchSettings } from './WorkspaceService';
 import type { WorkspaceTypeModel } from './WorkspaceTypeService';
 import { request } from './http';
 
-export type Priority = 'urgent' | 'high' | 'medium' | 'low' | 'none';
-
 /**
  * issue 关联的单个「仓库+分支」项（多选）。localRepositoryId 须属于 issue 所属项目的关联仓库；
  * repositoryBranch 为分支名（freeSolo 可手输）。
@@ -16,12 +14,11 @@ export interface IssueRepositoryBranchModel {
 
 export interface ProjectIssueResponseData {
   id: string; // uuid 字符串
-  projectId: number;
+  projectId: string; // 归属项目 uuid 字符串
   workspaceId: string; // 归属工作空间 uuid
   name: string;
   description: string; // issue 描述：markdown 源文本（前端 Milkdown 编辑器产出，非 HTML）
   stateCode: StateCode; // 固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，见 stateMeta）
-  priority: Priority;
   sortOrder: number;
   parentId: string; // 父任务 uuid（空串=顶级）
   startDate: string;
@@ -37,21 +34,19 @@ export interface ProjectIssueResponseData {
 
 // POST /api/tracker/projectIssue/getList 的入参。
 export interface ProjectIssueGetListRequest {
-  projectId: number;
-  orderBy?: string; // created_at/sort_order/priority，空则 sort_order
+  projectId: string; // uuid 字符串
+  orderBy?: string; // created_at/sort_order，空则 sort_order
   stateCode?: StateCode;
-  priority?: Priority;
   typeId?: number; // >0 按类型筛选
   keyword?: string;
 }
 
 // POST /api/tracker/projectIssue/create 的入参。
 export interface ProjectIssueCreateRequest {
-  projectId: number;
+  projectId: string; // uuid 字符串
   workspaceId: string;
   name: string;
   description?: string;
-  priority?: Priority;
   startDate?: string;
   targetDate?: string;
   stateCode?: StateCode; // 空值 → 后端默认 BACKLOG
@@ -67,7 +62,6 @@ export interface ProjectIssueUpdateRequest {
   name: string;
   description?: string;
   stateCode?: StateCode;
-  priority?: Priority;
   startDate?: string;
   targetDate?: string;
   typeId?: number; // 不传=保留原值，传值（含 0）=覆写（0=未分类）

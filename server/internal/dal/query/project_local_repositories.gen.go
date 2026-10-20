@@ -29,7 +29,7 @@ func newProjectLocalRepository(db *gorm.DB, opts ...gen.DOOption) projectLocalRe
 	tableName := _projectLocalRepository.projectLocalRepositoryDo.TableName()
 	_projectLocalRepository.ALL = field.NewAsterisk(tableName)
 	_projectLocalRepository.ID = field.NewInt(tableName, "id")
-	_projectLocalRepository.WorkspaceProjectID = field.NewInt(tableName, "workspace_project_id")
+	_projectLocalRepository.WorkspaceProjectID = field.NewString(tableName, "workspace_project_id")
 	_projectLocalRepository.LocalRepositoryID = field.NewInt(tableName, "local_repository_id")
 	_projectLocalRepository.CreatedAt = field.NewTime(tableName, "created_at")
 	_projectLocalRepository.UpdatedAt = field.NewTime(tableName, "updated_at")
@@ -44,7 +44,7 @@ type projectLocalRepository struct {
 
 	ALL                field.Asterisk
 	ID                 field.Int
-	WorkspaceProjectID field.Int
+	WorkspaceProjectID field.String
 	LocalRepositoryID  field.Int
 	CreatedAt          field.Time
 	UpdatedAt          field.Time
@@ -65,7 +65,7 @@ func (p projectLocalRepository) As(alias string) *projectLocalRepository {
 func (p *projectLocalRepository) updateTableName(table string) *projectLocalRepository {
 	p.ALL = field.NewAsterisk(table)
 	p.ID = field.NewInt(table, "id")
-	p.WorkspaceProjectID = field.NewInt(table, "workspace_project_id")
+	p.WorkspaceProjectID = field.NewString(table, "workspace_project_id")
 	p.LocalRepositoryID = field.NewInt(table, "local_repository_id")
 	p.CreatedAt = field.NewTime(table, "created_at")
 	p.UpdatedAt = field.NewTime(table, "updated_at")

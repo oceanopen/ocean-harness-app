@@ -20,7 +20,7 @@ interface DragContext {
 interface ToolPanelAreaProps {
   // 选中 issue（null = 未选中/加载中，空态文案兜底）。工具渲染上下文 + tabs 归属 key。
   issue: ProjectIssueResponseData | null;
-  projectId: number | null;
+  projectId: string | null; // uuid 字符串
   // 是否存在选中意图（URL 优先 + store 兜底的合成值，非 issue 对象就绪）：空 tab 栏时
   // 按此区分文案——无选中「请先选择左侧任务」；有选中（含列表加载瞬态）「在右侧工具条
   // 选择工具」。锚定意图而非对象，跨项目切换的加载瞬态不闪文案。

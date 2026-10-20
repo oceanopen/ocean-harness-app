@@ -54,8 +54,8 @@ func mkImBotFixture(t *testing.T, db *gorm.DB) {
 		}
 	}
 	for _, is := range []*model.ProjectIssue{
-		{ID: imBotIssueLocal, ProjectID: 1, WorkspaceID: "ws-1", Name: "本域任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
-		{ID: imBotIssueForeign, ProjectID: 2, WorkspaceID: "ws-2", Name: "外域任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
+		{ID: imBotIssueLocal, ProjectID: "proj-1", WorkspaceID: "ws-1", Name: "本域任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1},
+		{ID: imBotIssueForeign, ProjectID: "proj-2", WorkspaceID: "ws-2", Name: "外域任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1},
 	} {
 		if err := q.ProjectIssue.WithContext(ctx).Create(is); err != nil {
 			t.Fatalf("建 issue: %v", err)

@@ -74,7 +74,7 @@
     },
     "edit": {
       "title": "Edit project",
-      "idLabel": "ID",
+      "idLabel": "Project ID",
       "belongingWorkspace": "Workspace",
       "confirm": "Save"
     },
@@ -130,18 +130,9 @@
       "expand": "Expand",
       "collapse": "Collapse"
     },
-    "priority": {
-      "urgent": "Urgent",
-      "high": "High",
-      "medium": "Medium",
-      "low": "Low",
-      "none": "None"
-    },
     "filter": {
-      "all": "All priorities",
       "allStates": "All states",
-      "state": "State",
-      "priority": "Priority"
+      "state": "State"
     },
     "view": {
       "list": "List",
@@ -178,7 +169,6 @@
       "name": "Name",
       "description": "Description",
       "state": "State",
-      "priority": "Priority",
       "startDate": "Start date",
       "targetDate": "Target date",
       "type": "Type",

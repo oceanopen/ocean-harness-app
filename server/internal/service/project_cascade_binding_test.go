@@ -36,11 +36,14 @@ func newCascadeBindingTestDB(t *testing.T) *gorm.DB {
  * mkCascadeFixture 建 project + 父 issue + 子 issue + 三个会话行（绑父、绑子、绑外部 issue
  * 且带 headless 续聊锚），返回 (projectID, parentID, childID, otherIssueID)。
  */
-func mkCascadeFixture(t *testing.T, db *gorm.DB) (int, string, string, string) {
+func mkCascadeFixture(t *testing.T, db *gorm.DB) (string, string, string, string) {
 	t.Helper()
 	q := query.Use(db)
 	ctx := context.Background()
-	project := &model.WorkspaceProject{WorkspaceID: "ws-1", Name: "p"}
+	// 项目主键为 uuid 文本（无自增），两个 project 显式赋唯一 id（other 为独立 project，对照组）。
+	const projectID = "0198eeee-0000-7111-8111-3b6ac9e1f100"
+	const otherProjectID = "0198eeee-0000-7111-8111-3b6ac9e1f199"
+	project := &model.WorkspaceProject{ID: projectID, WorkspaceID: "ws-1", Name: "p"}
 	if err := q.WorkspaceProject.WithContext(ctx).Create(project); err != nil {
 		t.Fatalf("建 project: %v", err)
 	}
@@ -48,9 +51,9 @@ func mkCascadeFixture(t *testing.T, db *gorm.DB) (int, string, string, string) {
 	const childID = "0198eeee-0000-7111-8111-3b6ac9e1f202"
 	const otherID = "0198eeee-0000-7111-8111-3b6ac9e1f299"
 	for _, is := range []*model.ProjectIssue{
-		{ID: parentID, ProjectID: project.ID, WorkspaceID: "ws-1", Name: "父任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1},
-		{ID: childID, ProjectID: project.ID, WorkspaceID: "ws-1", Name: "子任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1, ParentID: parentID},
-		{ID: otherID, ProjectID: project.ID + 1, WorkspaceID: "ws-1", Name: "无关任务", StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE, TypeID: 1}, // 独立 project：两删除场景均不被级联，充当「未删 issue」对照组
+		{ID: parentID, ProjectID: projectID, WorkspaceID: "ws-1", Name: "父任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1},
+		{ID: childID, ProjectID: projectID, WorkspaceID: "ws-1", Name: "子任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1, ParentID: parentID},
+		{ID: otherID, ProjectID: otherProjectID, WorkspaceID: "ws-1", Name: "无关任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1}, // 独立 project：两删除场景均不被级联，充当「未删 issue」对照组
 	} {
 		if err := q.ProjectIssue.WithContext(ctx).Create(is); err != nil {
 			t.Fatalf("建 issue: %v", err)
@@ -65,7 +68,7 @@ func mkCascadeFixture(t *testing.T, db *gorm.DB) (int, string, string, string) {
 			t.Fatalf("建会话行: %v", err)
 		}
 	}
-	return project.ID, parentID, childID, otherID
+	return projectID, parentID, childID, otherID
 }
 
 // assertBindings 清绑断言：u1/u2 绑定清空（行保留），u3 不受牵连且 headless 续聊锚不动。

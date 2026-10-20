@@ -19,7 +19,7 @@ import BrowserPanel from './BrowserPanel/BrowserPanel';
  */
 export interface WorkbenchToolRenderCtx {
   issue: ProjectIssueResponseData;
-  projectId: number;
+  projectId: string; // uuid 字符串
   /**
    * 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：帧流类视口的暂停闸门
    * （浏览器面板实时画面「收起即停」，D4 展示侧对偶）。

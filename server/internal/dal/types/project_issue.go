@@ -8,18 +8,17 @@ import (
 /*
  * 每 action 一个独立 Request 类型：issue 主键 id 为 uuid 字符串（与 claude session_id 同格式，Create 时由 service 生成 uuid v7）；
  * stateCode 为固定 5 值枚举（BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED，新建默认 BACKLOG）；
- * sortOrder 由 service 自算（不入参）；priority 为 typed 枚举（前端传，空值由 service 规范为 none）。
+ * sortOrder 由 service 自算（不入参）。
  */
 
 /*
  * ProjectIssueGetListRequest 是 POST /api/tracker/projectIssue/getList 的入参：分组由前端对扁平列表自行分组，后端不接收；
- * orderBy 不传则按 sort_order 升序（id 无数值序，按 id 排序请传 created_at）。
+ * orderBy 不传则按 sort_order 升序。
  */
 type ProjectIssueGetListRequest struct {
-	ProjectID int             `json:"projectId" binding:"required"`
-	OrderBy   string          `json:"orderBy"` // created_at/sort_order/priority，空则 sort_order
+	ProjectID string          `json:"projectId" binding:"required"`
+	OrderBy   string          `json:"orderBy"` // created_at/sort_order，空则 sort_order
 	StateCode enums.StateCode `json:"stateCode"`
-	Priority  enums.Priority  `json:"priority"`
 	TypeID    int             `json:"typeId"` // >0 按类型筛选（issue.type_id 单值等值匹配）
 	Keyword   string          `json:"keyword"`
 }
@@ -40,11 +39,10 @@ type IssueRepositoryBranch struct {
  * parentId 非空时创建为子任务（后端校验父存在 + 同 project + 仅一层）；id 由后端生成 uuid。
  */
 type ProjectIssueCreateRequest struct {
-	ProjectID            int                      `json:"projectId" binding:"required"`
+	ProjectID            string                   `json:"projectId" binding:"required"`
 	WorkspaceID          string                   `json:"workspaceId" binding:"required"`
 	Name                 string                   `json:"name" binding:"required,max=255"`
 	Description          string                   `json:"description" binding:"omitempty"`
-	Priority             enums.Priority           `json:"priority"`
 	StartDate            string                   `json:"startDate" binding:"omitempty"`
 	TargetDate           string                   `json:"targetDate" binding:"omitempty"`
 	StateCode            enums.StateCode          `json:"stateCode"`                          // 空值 → 默认 BACKLOG
@@ -64,7 +62,6 @@ type ProjectIssueUpdateRequest struct {
 	Name                 string                   `json:"name" binding:"required,max=255"`
 	Description          string                   `json:"description" binding:"omitempty"`
 	StateCode            enums.StateCode          `json:"stateCode"`
-	Priority             enums.Priority           `json:"priority"`
 	StartDate            string                   `json:"startDate" binding:"omitempty"`
 	TargetDate           string                   `json:"targetDate" binding:"omitempty"`
 	TypeID               *int                     `json:"typeId"`                             // nil=保留原值，0=置为未分类
@@ -74,7 +71,7 @@ type ProjectIssueUpdateRequest struct {
 
 /*
  * ProjectIssueMoveRequest 是 POST /api/tracker/projectIssue/move 的入参（看板拖拽单卡移动）：前端按分数插值算好 sortOrder 传上来后端写库，stateCode 变化触发 completed_at 流转；
- * 不碰 name/description/priority 等业务字段（由 update 维护）。
+ * 不碰 name/description 等业务字段（由 update 维护）。
  */
 type ProjectIssueMoveRequest struct {
 	ID        string          `json:"id" binding:"required"`

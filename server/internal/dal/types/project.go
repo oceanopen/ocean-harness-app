@@ -5,7 +5,7 @@ import (
 )
 
 /*
- * 每 action 一个独立 Request 类型（不复用，便于各自演进与校验），常规字段用 gin binding tag 校验：项目无短码（identifier）、允许重名（无业务唯一键），issue 用 TEXT uuid 主键（Create 时 service 生成 uuid v7）；
+ * 每 action 一个独立 Request 类型（不复用，便于各自演进与校验），常规字段用 gin binding tag 校验：项目主键为 TEXT uuid（Create 时 service 生成 uuid v7，时间有序），无短码（identifier）、允许重名（无业务唯一键）；
  * workspaceId 由前端导航上下文提供（无 FK 设计）。
  */
 
@@ -16,7 +16,7 @@ type ProjectGetListRequest struct {
 
 // ProjectGetInfoRequest 是 POST /api/tracker/project/getInfo 的入参。
 type ProjectGetInfoRequest struct {
-	ID int `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
 }
 
 /*
@@ -36,7 +36,7 @@ type ProjectCreateRequest struct {
  * LocalRepositoryIDs 为关联仓库最终列表（全量覆盖：先删后插，无 diff）。
  */
 type ProjectUpdateRequest struct {
-	ID                 int    `json:"id" binding:"required"`
+	ID                 string `json:"id" binding:"required"`
 	Name               string `json:"name" binding:"required,max=100"`
 	Description        string `json:"description" binding:"omitempty,max=500"`
 	Emoji              string `json:"emoji" binding:"omitempty,max=20"`
@@ -45,7 +45,7 @@ type ProjectUpdateRequest struct {
 
 // ProjectDeleteRequest 是 POST /api/tracker/project/delete 的入参。
 type ProjectDeleteRequest struct {
-	ID int `json:"id" binding:"required"`
+	ID string `json:"id" binding:"required"`
 }
 
 /*

@@ -20,7 +20,7 @@ import PanelToolbar from '../PanelToolbar';
 import RefreshIconButton from '../RefreshIconButton';
 
 interface IssueSubTaskPanelProps {
-  projectId: number;
+  projectId: string; // uuid 字符串
   issueId: string;
   // 点子任务卡片打开编辑抽屉（抽屉挂页面层，经 toolRegistry ctx 透传）；不传 = 纯展示不可点。
   onEditIssue?: (issue: ProjectIssueResponseData) => void;

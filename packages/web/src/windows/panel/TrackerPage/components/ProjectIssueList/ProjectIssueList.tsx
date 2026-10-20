@@ -1,4 +1,4 @@
-import type { Priority, ProjectIssueResponseData, WorkspaceProjectModel } from '@src/services';
+import type { ProjectIssueResponseData, WorkspaceProjectModel } from '@src/services';
 import type { StateCode } from '@src/state/tracker';
 import type { Dispatch, SetStateAction } from 'react';
 import {
@@ -25,8 +25,6 @@ import {
   Typography,
 } from '@mui/material';
 import IssueCard from '@src/components/issueCard/IssueCard';
-import { PRIORITY_WEIGHT } from '@src/components/priorityMeta';
-import PrioritySelect from '@src/components/projectIssueDrawer/PrioritySelect';
 import ProjectIssueDrawer from '@src/components/projectIssueDrawer/ProjectIssueDrawer';
 import ProjectStateSelect from '@src/components/projectIssueDrawer/ProjectStateSelect';
 import { ProjectIssueService } from '@src/services';
@@ -55,7 +53,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
   const { data: projectIssues = [], isLoading: issuesLoading, isError: issuesError, isFetching: issuesFetching } = useProjectIssues(workspaceProject.id);
   const { show: showToast, snack } = useToast();
   const [keyword, setKeyword] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState<Priority | 'all'>('all');
   const [stateFilter, setStateFilter] = useState<StateCode | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<StateCode>>(() => new Set());
   const [drawerCreateOpen, setDrawerCreateOpen] = useState(false);
@@ -148,9 +145,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
       if (q && !i.name.toLowerCase().includes(q)) {
         return false;
       }
-      if (priorityFilter !== 'all' && i.priority !== priorityFilter) {
-        return false;
-      }
       if (stateFilter !== 'all' && i.stateCode !== stateFilter) {
         return false;
       }
@@ -162,15 +156,9 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
     filtered.forEach((i) => {
       buckets.get(i.stateCode)?.push(i);
     });
-    buckets.forEach(arr => arr.sort((a, b) => {
-      const dw = PRIORITY_WEIGHT[a.priority] - PRIORITY_WEIGHT[b.priority];
-      if (dw !== 0) {
-        return dw;
-      }
-      return a.sortOrder - b.sortOrder;
-    }));
+    buckets.forEach(arr => arr.sort((a, b) => a.sortOrder - b.sortOrder));
     return buckets;
-  }, [projectIssues, keyword, priorityFilter, stateFilter]);
+  }, [projectIssues, keyword, stateFilter]);
 
   const totalCount = useMemo(
     () => Array.from(grouped.values()).reduce((sum, arr) => sum + arr.length, 0),
@@ -251,7 +239,7 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 工具栏：搜索 + 优先级筛选 + 状态筛选 + 新建 */}
+      {/* 工具栏：搜索 + 状态筛选 + 新建 */}
       <Box
         sx={{
           p: '12px',
@@ -290,13 +278,6 @@ function ProjectIssueList({ workspaceProject }: IssueListProps) {
               value={keyword}
               onChange={e => setKeyword(e.target.value)}
               sx={{ flexGrow: 1, minWidth: '120px' }}
-            />
-            <PrioritySelect
-              value={priorityFilter}
-              onChange={setPriorityFilter}
-              label={t('tracker:projectIssue.filter.priority')}
-              allOption={t('tracker:projectIssue.filter.all')}
-              sx={{ minWidth: '110px' }}
             />
             <ProjectStateSelect
               value={stateFilter}

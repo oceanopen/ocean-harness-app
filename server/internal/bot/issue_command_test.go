@@ -168,8 +168,8 @@ func newIssueTestDB(t *testing.T) *gorm.DB {
 func mkIssue(t *testing.T, db *gorm.DB, workspaceID string, id, name string, sortOrder float64) {
 	t.Helper()
 	issue := &model.ProjectIssue{
-		ID: id, ProjectID: 1, WorkspaceID: workspaceID, Name: name,
-		StateCode: enums.STATE_CODE_BACKLOG, Priority: enums.PRIORITY_NONE,
+		ID: id, ProjectID: "proj-1", WorkspaceID: workspaceID, Name: name,
+		StateCode: enums.STATE_CODE_BACKLOG,
 		SortOrder: sortOrder, TypeID: 1,
 	}
 	if err := db.Create(issue).Error; err != nil {

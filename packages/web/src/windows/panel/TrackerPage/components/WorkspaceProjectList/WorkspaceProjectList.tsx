@@ -53,11 +53,11 @@ function WorkspaceProjectList({ workspace }: ProjectListProps) {
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceProjectModel | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // 客户端模糊过滤 + 兜底排序（id DESC，新建在前）。
+  // 客户端模糊过滤 + 兜底排序（id DESC，新建在前；uuid v7 字典序即时间序）。
   const displayed = useMemo(() => {
     const q = searchName.trim().toLowerCase();
     const filtered = workspaceProjects.filter(p => !q || p.name.toLowerCase().includes(q));
-    return [...filtered].sort((a, b) => b.id - a.id);
+    return [...filtered].sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
   }, [workspaceProjects, searchName]);
 
   // 创建/更新成功：mutation 内部已 invalidate（列表自动刷新），回调仅弹 toast。

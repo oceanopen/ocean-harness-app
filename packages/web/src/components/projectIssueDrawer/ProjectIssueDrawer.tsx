@@ -1,4 +1,4 @@
-import type { IssueRepositoryBranchModel, Priority, ProjectIssueResponseData, WorkspaceLaunchSettings, WorkspaceProjectModel, WorkspaceTypeModel } from '@src/services';
+import type { IssueRepositoryBranchModel, ProjectIssueResponseData, WorkspaceLaunchSettings, WorkspaceProjectModel, WorkspaceTypeModel } from '@src/services';
 import type { AgentCode } from '@src/shared/agentCode';
 import type { StateCode } from '@src/state/tracker';
 import { AutoFixHighOutlined as AutoFixHighOutlinedIcon, CloseOutlined as CloseOutlinedIcon, DeleteOutlined as DeleteOutlinedIcon, DeveloperModeOutlined as DeveloperModeOutlinedIcon, SettingsOutlined as SettingsOutlinedIcon } from '@mui/icons-material';
@@ -29,7 +29,6 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate as useRouterNavigate } from 'react-router-dom';
 import IssueRepoBranchTable from './IssueRepoBranchTable';
 import MarkdownEditor from './MarkdownEditor/MarkdownEditor';
-import PrioritySelect from './PrioritySelect';
 import ProjectStateSelect from './ProjectStateSelect';
 import TypeSelect from './TypeSelect';
 import WorkspaceTypeManagerDrawer from './WorkspaceTypeManagerDrawer';
@@ -74,7 +73,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
   const [name, setName] = useState(projectIssue?.name ?? '');
   const [description, setDescription] = useState(projectIssue?.description ?? '');
   const [stateCode, setStateCode] = useState<StateCode>(projectIssue?.stateCode ?? initialStateCode ?? parentIssue?.stateCode ?? STATE_CODE_DEFAULT);
-  const [priority, setPriority] = useState<Priority>(projectIssue?.priority ?? 'none');
   const [startDate, setStartDate] = useState(projectIssue?.startDate ?? '');
   const [targetDate, setTargetDate] = useState(projectIssue?.targetDate ?? '');
   // 类型可选列表（TanStack Query 共享缓存，与类型管理抽屉同源）。
@@ -184,7 +182,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
     name !== projectIssue.name
     || description !== projectIssue.description
     || stateCode !== projectIssue.stateCode
-    || priority !== projectIssue.priority
     || startDate !== projectIssue.startDate
     || targetDate !== projectIssue.targetDate
     || repoBranchDirty
@@ -243,7 +240,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           workspaceId: workspaceProject.workspaceId,
           name: name.trim(),
           description,
-          priority,
           startDate,
           targetDate,
           stateCode,
@@ -260,7 +256,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
           name: name.trim(),
           description,
           stateCode,
-          priority,
           startDate,
           targetDate,
           typeId: currentType?.id ?? 0,
@@ -377,8 +372,6 @@ function ProjectIssueDrawer({ mode, workspaceProject, projectIssue, initialState
             <Box sx={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '12px', alignItems: 'center' }}>
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.state')}</Typography>
               <ProjectStateSelect value={stateCode} onChange={setStateCode} disabled={submitting || deleting} />
-              <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.priority')}</Typography>
-              <PrioritySelect value={priority} onChange={setPriority} disabled={submitting || deleting} />
               <Typography variant="body2" color="text.secondary">{t('tracker:projectIssue.detail.type')}</Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                 <TypeSelect value={currentType?.id ?? 0} types={wsTypes ?? []} onChange={handleTypeChange} disabled={submitting || deleting} />

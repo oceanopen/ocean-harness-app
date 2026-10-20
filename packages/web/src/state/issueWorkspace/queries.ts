@@ -47,7 +47,7 @@ export function useInitIssueWorkspace() {
 
 /** useArchiveIssueWorkspace 的入参（projectId 用于成功后失效 issue 列表缓存；force 仅用于警告二次确认后的执行段）。 */
 export interface ArchiveIssueWorkspaceArgs {
-  projectId: number;
+  projectId: string; // uuid 字符串
   issueId: string;
   action: IssueWorkspaceArchiveAction;
   force?: boolean;
