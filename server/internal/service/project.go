@@ -61,14 +61,15 @@ func (svc Project) GetInfo(req *types.ProjectGetInfoRequest) (*types.ProjectResp
  * 同一事务内：插入 project → 全量写入关联仓库。返回响应含本批写入的 localRepositoryIds。
  */
 func (svc Project) Create(req *types.ProjectCreateRequest) (*types.ProjectResponseData, error) {
-	created := &model.WorkspaceProject{ID: uuid.Must(uuid.NewV7()).String()}
+	var created *model.WorkspaceProject
 	var repoIDs []int
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
 		pq := q.WorkspaceProject.WithContext(svc.Context)
 
-		// 1) 普通插入 project（无 upsert，允许重名）。
+		// 1) 普通插入 project（无 upsert，允许重名）；主键 uuid v7 就地生成。
 		created = &model.WorkspaceProject{
+			ID:          uuid.Must(uuid.NewV7()).String(),
 			WorkspaceID: req.WorkspaceID,
 			Name:        req.Name,
 			Description: req.Description,

@@ -53,12 +53,12 @@ export function useWorkspaceTypes(workspaceId: string | null) {
   });
 }
 
-/** 指定项目的 projectIssue（含类型）。projectId 为 null 时不查询（无选中时的无效请求守卫）。 */
+/** 指定项目的 projectIssue（含类型）。projectId 为 null/空串时不查询（无选中/无效 id 的无效请求守卫）。 */
 export function useProjectIssues(projectId: string | null) {
   return useQuery({
     queryKey: trackerKeys.projectIssues(projectId ?? ''),
     queryFn: () => ProjectIssueService.getList({ projectId: projectId! }),
-    enabled: projectId != null,
+    enabled: projectId != null && projectId !== '',
   });
 }
 
