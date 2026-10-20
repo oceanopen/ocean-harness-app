@@ -1,0 +1,10 @@
+{
+  "seq": 3,
+  "issueId": "iss-1",
+  "type": "sessionStatus",
+  "status": {
+    "status": "ready",
+    "agentCode": "claude-code",
+    "acpSessionId": "acp-sess-1"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "seq": 6,
+  "issueId": "iss-1",
+  "type": "entry",
+  "entry": {
+    "entryId": "t1-user",
+    "kind": "user",
+    "text": "修复登录回归",
+    "source": "bot",
+    "display": {
+      "text": "修复登录回归",
+      "quote": {
+        "author": "张三",
+        "text": "登录页 500",
+        "truncated": true
+      },
+      "files": [
+        {
+          "name": "report.log",
+          "path": "/tmp/report.log"
+        }
+      ]
+    }
+  }
+}

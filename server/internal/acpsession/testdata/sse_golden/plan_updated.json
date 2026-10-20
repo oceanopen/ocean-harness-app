@@ -1,0 +1,24 @@
+{
+  "seq": 8,
+  "issueId": "iss-1",
+  "type": "planUpdated",
+  "plan": {
+    "entries": [
+      {
+        "content": "定位回归根因",
+        "priority": "high",
+        "status": "completed"
+      },
+      {
+        "content": "补回归测试",
+        "priority": "medium",
+        "status": "in_progress"
+      },
+      {
+        "content": "更新文档",
+        "priority": "low",
+        "status": "pending"
+      }
+    ]
+  }
+}

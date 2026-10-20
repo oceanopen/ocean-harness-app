@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
@@ -202,7 +202,7 @@ func TestEnsureReadyPromptAndAnchor(t *testing.T) {
 		t.Fatalf("turnStarted 应 active，got %+v", turnStarted.Turn)
 	}
 	ended := waitFrame(t, frames, "turnEnded", func(f Frame) bool { return f.Type == FrameTurnEnded })
-	if ended.Turn.Active || ended.Turn.StopReason != string(schema.StopReasonEndTurn) {
+	if ended.Turn.Active || ended.Turn.StopReason != string(acp1.StopReasonEndTurn) {
 		t.Fatalf("turnEnded 应 end_turn 收敛，got %+v", ended.Turn)
 	}
 
@@ -218,7 +218,7 @@ func TestEnsureReadyPromptAndAnchor(t *testing.T) {
 	if snap.Entries[1].Kind != entryKindAgentMessage || !strings.Contains(snap.Entries[1].Text, "ACP 回合完成") {
 		t.Fatalf("agent 条目应聚合 chunk，got %+v", snap.Entries[1])
 	}
-	if snap.StopReason != string(schema.StopReasonEndTurn) || snap.TurnActive {
+	if snap.StopReason != string(acp1.StopReasonEndTurn) || snap.TurnActive {
 		t.Fatalf("回合终态应落快照，got %+v", snap)
 	}
 
@@ -325,7 +325,7 @@ func TestPromptTurnGateAndCancel(t *testing.T) {
 		t.Fatalf("Cancel: %v", err)
 	}
 	ended := waitFrame(t, frames, "cancelled 终态", func(f Frame) bool { return f.Type == FrameTurnEnded })
-	if ended.Turn.StopReason != string(schema.StopReasonCancelled) {
+	if ended.Turn.StopReason != string(acp1.StopReasonCancelled) {
 		t.Fatalf("取消应 cancelled 收敛，got %+v", ended.Turn)
 	}
 	/*
@@ -336,7 +336,7 @@ func TestPromptTurnGateAndCancel(t *testing.T) {
 		t.Fatalf("取消后应可再受理回合，got %v", err)
 	}
 	ended2 := waitFrame(t, frames, "第二轮 cancelled", func(f Frame) bool { return f.Type == FrameTurnEnded })
-	if ended2.Turn.StopReason != string(schema.StopReasonCancelled) {
+	if ended2.Turn.StopReason != string(acp1.StopReasonCancelled) {
 		t.Fatalf("第二轮应 cancelled 收敛，got %+v", ended2.Turn)
 	}
 }
@@ -394,7 +394,7 @@ func TestRespondPermissionFlow(t *testing.T) {
 			if frame.Type == FrameEntry && frame.Entry != nil && strings.Contains(frame.Entry.Text, "permission:selected:allow") {
 				sawEcho = true
 			}
-			if frame.Type == FrameTurnEnded && frame.Turn.StopReason == string(schema.StopReasonEndTurn) {
+			if frame.Type == FrameTurnEnded && frame.Turn.StopReason == string(acp1.StopReasonEndTurn) {
 				sawEnd = true
 			}
 		case <-deadline:
@@ -465,7 +465,7 @@ func TestRespondElicitationFlow(t *testing.T) {
 			if frame.Type == FrameEntry && frame.Entry != nil && strings.Contains(frame.Entry.Text, "elicitation:accept:choice=b") {
 				sawEcho = true
 			}
-			if frame.Type == FrameTurnEnded && frame.Turn.StopReason == string(schema.StopReasonEndTurn) {
+			if frame.Type == FrameTurnEnded && frame.Turn.StopReason == string(acp1.StopReasonEndTurn) {
 				sawEnd = true
 			}
 		case <-deadline:

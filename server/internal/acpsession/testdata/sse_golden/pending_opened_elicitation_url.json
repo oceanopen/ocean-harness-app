@@ -1,0 +1,15 @@
+{
+  "seq": 14,
+  "issueId": "iss-1",
+  "type": "pendingOpened",
+  "pending": {
+    "pendingId": 9,
+    "kind": "elicitation",
+    "request": {
+      "mode": "url",
+      "message": "前往授权页",
+      "sessionId": "acp-sess-1",
+      "url": "https://example.com/auth"
+    }
+  }
+}

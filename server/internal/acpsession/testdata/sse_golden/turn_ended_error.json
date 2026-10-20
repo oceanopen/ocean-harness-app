@@ -1,0 +1,9 @@
+{
+  "seq": 18,
+  "issueId": "iss-1",
+  "type": "turnEnded",
+  "turn": {
+    "active": false,
+    "error": "上游连接中断"
+  }
+}

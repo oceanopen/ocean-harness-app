@@ -1,0 +1,10 @@
+{
+  "seq": 4,
+  "issueId": "iss-1",
+  "type": "sessionStatus",
+  "status": {
+    "status": "failed",
+    "agentCode": "claude-code",
+    "error": "spawn 失败: 进程退出"
+  }
+}

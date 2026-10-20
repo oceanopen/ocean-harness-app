@@ -1,0 +1,9 @@
+{
+  "seq": 2,
+  "issueId": "iss-1",
+  "type": "sessionStatus",
+  "status": {
+    "status": "starting",
+    "agentCode": "claude-code"
+  }
+}

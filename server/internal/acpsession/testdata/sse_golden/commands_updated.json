@@ -1,0 +1,18 @@
+{
+  "seq": 10,
+  "issueId": "iss-1",
+  "type": "commandsUpdated",
+  "commands": [
+    {
+      "description": "审查当前变更",
+      "name": "review"
+    },
+    {
+      "description": "制定计划",
+      "input": {
+        "hint": "输入计划目标"
+      },
+      "name": "plan"
+    }
+  ]
+}

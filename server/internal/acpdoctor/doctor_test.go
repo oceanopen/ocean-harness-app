@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	acpgo "github.com/BrokkAi/acp-go"
-	"github.com/BrokkAi/acp-go/schema"
+	acpgo "github.com/ironpark/acp-go"
+	"github.com/ironpark/acp-go/acp1"
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acp"
@@ -86,11 +86,11 @@ func TestCheckNodeMinVersion(t *testing.T) {
 }
 
 func TestAuthRequired(t *testing.T) {
-	hint, ok := authRequired(&acpgo.RPCError{Code: -32000, Message: "Not authenticated"})
+	hint, ok := authRequired(&acpgo.RequestError{Code: acpgo.ErrorCodeAuthRequired, Message: "Not authenticated"})
 	if !ok || hint != authRequiredHint {
 		t.Fatalf("-32000 应命中未登录提示，got (%q, %v)", hint, ok)
 	}
-	if _, ok := authRequired(&acpgo.RPCError{Code: -32603, Message: "internal"}); ok {
+	if _, ok := authRequired(&acpgo.RequestError{Code: acpgo.ErrorCodeInternalError, Message: "internal"}); ok {
 		t.Fatal("-32603 不应命中未登录特判")
 	}
 	if _, ok := authRequired(errors.New("普通错误")); ok {
@@ -100,13 +100,13 @@ func TestAuthRequired(t *testing.T) {
 
 // event helpers 构造等待窗口测试用的事件流载荷。
 func commandsEvent(n int) acp.SessionEvent {
-	commands := make([]schema.AvailableCommand, n)
+	commands := make([]acp1.AvailableCommand, n)
 	for i := range commands {
-		commands[i] = schema.AvailableCommand{Name: "cmd", Description: "d"}
+		commands[i] = acp1.AvailableCommand{Name: "cmd", Description: "d"}
 	}
-	return acp.SessionEvent{Update: &acpgo.Update{Update: schema.SessionUpdate{
-		AvailableCommandsUpdate: &schema.AvailableCommandsUpdate{AvailableCommands: commands},
-	}}}
+	return acp.SessionEvent{Update: &acp1.SessionNotification{
+		Update: acp1.NewSessionUpdate(acp1.SessionUpdateAvailableCommandsUpdate{AvailableCommands: commands}),
+	}}
 }
 
 func TestWaitAvailableCommandsArrival(t *testing.T) {

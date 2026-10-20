@@ -12,8 +12,7 @@ import (
 	"testing"
 	"time"
 
-	acpgo "github.com/BrokkAi/acp-go"
-	"github.com/BrokkAi/acp-go/schema"
+	"github.com/ironpark/acp-go/acp1"
 	"go.uber.org/zap"
 )
 
@@ -66,8 +65,11 @@ func launchFakeLog(t *testing.T, script string, log *zap.Logger) (*AgentClient, 
 }
 
 func chunkText(event SessionEvent) (string, bool) {
-	if event.Update != nil && event.Update.Update.AgentMessageChunk != nil {
-		return event.Update.Update.AgentMessageChunk.Content.Text.Text, true
+	if event.Update == nil {
+		return "", false
+	}
+	if chunk, ok := event.Update.Update.Variant().(acp1.SessionUpdateAgentMessageChunk); ok {
+		return acp1.TextOf(chunk.Content)
 	}
 	return "", false
 }
@@ -123,7 +125,7 @@ func startDrain(events <-chan SessionEvent) (chunks func() []string, stop func()
 }
 
 type promptResult struct {
-	stop schema.StopReason
+	stop acp1.StopReason
 	err  error
 }
 
@@ -170,7 +172,7 @@ func TestLaunchHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
-	if stop != schema.StopReasonEndTurn {
+	if stop != acp1.StopReasonEndTurn {
 		t.Fatalf("stopReason = %q, want end_turn", stop)
 	}
 	// 两段 chunk 按序到达（wire 顺序保持）
@@ -229,7 +231,7 @@ func TestPermissionAllow(t *testing.T) {
 	if err := pending.Respond("allow"); !errors.Is(err, ErrAlreadyResolved) {
 		t.Fatalf("重复应答应 ErrAlreadyResolved，got %v", err)
 	}
-	if result := waitPrompt(t, results); result.err != nil || result.stop != schema.StopReasonEndTurn {
+	if result := waitPrompt(t, results); result.err != nil || result.stop != acp1.StopReasonEndTurn {
 		t.Fatalf("回合应 end_turn 收敛，got %+v", result)
 	}
 	if text := waitForChunk(t, session.Events(), "permission:selected:allow"); text == "" {
@@ -262,7 +264,7 @@ func TestPermissionCancelledByTurnCancel(t *testing.T) {
 		t.Fatalf("取消后应答应 ErrAlreadyResolved，got %v", err)
 	}
 	// 软取消以干净终态收敛（agent 侧 host 请求随回合被取消，无决策回显）
-	if result := waitPrompt(t, results); result.err != nil || result.stop != schema.StopReasonCancelled {
+	if result := waitPrompt(t, results); result.err != nil || result.stop != acp1.StopReasonCancelled {
 		t.Fatalf("软取消应返回 stopReason=cancelled，got %+v", result)
 	}
 }
@@ -314,21 +316,24 @@ func TestElicitationAccept(t *testing.T) {
 			t.Fatal("等待 elicitation 事件超时")
 		}
 	}
-	if pending.Request().Message != "请选择一个选项" {
-		t.Fatalf("请求文案不符，got %q", pending.Request().Message)
-	}
 	/*
-	 * 拦截层端到端：typed 模型不承载的 requestedSchema 必须经 wire 投影保真到达
-	 * （fakeagent 以线上扁平格式直发，客户端 typed 解码会丢该字段）。
+	 * wire 投影端到端：fakeagent 以线上扁平格式直发，requestedSchema 必须经原始参数
+	 * 解析全保真到达（前端表单渲染的事实源）。
 	 */
 	wire := pending.Wire()
 	if wire == nil || wire.Mode != "form" || wire.Message != "请选择一个选项" || wire.SessionID == "" {
-		t.Fatalf("wire 投影应携带拦截层解析结果，got %+v", wire)
+		t.Fatalf("wire 投影应携带全保真解析结果，got %+v", wire)
 	}
 	if !strings.Contains(string(wire.RequestedSchema), `"choice"`) {
 		t.Fatalf("requestedSchema 应全保真透传，got %s", wire.RequestedSchema)
 	}
-	if err := pending.Respond(acpgo.AcceptElicitation(map[string]schema.ElicitationContentValue{"choice": "b"})); err != nil {
+	answer, err := acp1.NewElicitationContentValue("b")
+	if err != nil {
+		t.Fatalf("构造应答内容: %v", err)
+	}
+	if err := pending.Respond(acp1.NewCreateElicitationResponse(acp1.CreateElicitationResponseAccept{
+		Content: map[string]acp1.ElicitationContentValue{"choice": answer},
+	})); err != nil {
 		t.Fatalf("Respond(accept): %v", err)
 	}
 	waitPrompt(t, results)
@@ -362,8 +367,9 @@ func TestCancelTurnSoftCancel(t *testing.T) {
 		}
 	}
 	client.CancelTurn(session)
+	client.CancelTurn(session) // 同 gen 二次触发：陈旧预算定时器不得对已关闭 giveup 二次 close
 	result := waitPrompt(t, results)
-	if result.err != nil || result.stop != schema.StopReasonCancelled {
+	if result.err != nil || result.stop != acp1.StopReasonCancelled {
 		t.Fatalf("软取消应返回 stopReason=cancelled，got %+v", result)
 	}
 }
@@ -420,9 +426,11 @@ func TestCloseDuringActiveTurn(t *testing.T) {
 
 func TestNewSessionMetaPassthrough(t *testing.T) {
 	client, _ := launchFake(t, "happy")
-	session, err := client.NewSession(context.Background(), NewSessionParams{
-		Meta: schema.Meta{"custom": "value"},
-	})
+	meta := acp1.Meta{}
+	if err := meta.Set("custom", "value"); err != nil {
+		t.Fatalf("构造 _meta: %v", err)
+	}
+	session, err := client.NewSession(context.Background(), NewSessionParams{Meta: meta})
 	if err != nil {
 		t.Fatalf("带 Meta 建会话: %v", err)
 	}
