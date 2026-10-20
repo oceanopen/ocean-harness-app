@@ -29,7 +29,7 @@
     "gen:bindings": "cargo run --manifest-path app/Cargo.toml --features gen-bindings --bin export_bindings && node scripts/strip-bindings-comments.mjs",
     "gen:app:icons": "tauri icon packages/web/src/assets/app-icon.svg && rm -rf app/icons/android && rm -rf app/icons/ios && cp app/icons/icon.png packages/web/src/assets/app-icon.png && cp packages/web/src/assets/app-icon.svg packages/web/public/favicon.svg",
     "verify:bindings": "pnpm gen:bindings && git ls-files --error-unmatch packages/web/src/shared/bindings.ts && git diff --exit-code packages/web/src/shared/bindings.ts",
-    "release": "bumpp"
+    "release": "node scripts/release.ts"
   },
   "devDependencies": {
     "@agentclientprotocol/claude-agent-acp": "catalog:",
