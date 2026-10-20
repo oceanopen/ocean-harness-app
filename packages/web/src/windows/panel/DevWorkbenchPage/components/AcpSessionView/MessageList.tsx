@@ -1,8 +1,9 @@
 import type { SxProps, Theme } from '@mui/material';
 import type { AcpConversationEntry, AcpEntryDisplay } from '@src/services';
+import type { ReactNode } from 'react';
 import type { VirtualizerHandle } from 'virtua';
-import { AttachFileOutlined as AttachFileOutlinedIcon } from '@mui/icons-material';
-import { Box, Chip, Tooltip, Typography } from '@mui/material';
+import { AttachFileOutlined as AttachFileOutlinedIcon, Person as PersonIcon } from '@mui/icons-material';
+import { Avatar, Box, Chip, Tooltip, Typography } from '@mui/material';
 import ImChannelIcon from '@src/shared/ImChannelIcon';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
@@ -166,45 +167,66 @@ export default function MessageList({ entries }: { entries: AcpConversationEntry
 }
 
 /**
- * user 条目：IM 来源（source=bot 且携带 display）以「IM 徽标 + 引用块 + 正文原文 +
- * 附件 chips」呈现（显示-发送文本分离——条目 text 的围栏全文只归模型侧）；panel 来源或
+ * user 条目发送侧统一「气泡 + 头像」行布局：IM（source=bot 且携带 display）气泡为引用块 +
+ * 正文原文 + 附件 chips（显示-发送文本分离——条目 text 的围栏全文只归模型侧）；panel 来源或
  * display 缺失（旧 sidecar + 新前端混跑窗口）原样直显 text。
  */
 function UserEntry({ entry }: { entry: AcpConversationEntry }) {
   if (entry.source === 'bot' && entry.display) {
-    return <ImUserBubble display={entry.display} />;
+    return (
+      <UserEntryRow channel={entry.display.channel}>
+        <ImUserBubble display={entry.display} />
+      </UserEntryRow>
+    );
   }
   return (
-    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: '8px', px: '12px', py: '8px' }}>
-      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{entry.text}</Typography>
+    <UserEntryRow>
+      <Box sx={{ bgcolor: 'action.selected', borderRadius: '8px', px: '12px', py: '8px', minWidth: '0px' }}>
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{entry.text}</Typography>
+      </Box>
+    </UserEntryRow>
+  );
+}
+
+// 发送侧行布局：气泡在左、头像于右上侧顶对齐（企微对话式），行整体右对齐限宽。
+function UserEntryRow({ channel, children }: { channel?: string; children: ReactNode }) {
+  return (
+    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+      {children}
+      <UserAvatar channel={channel} />
     </Box>
   );
 }
 
 /**
- * IM 来源 user 气泡：右对齐与 panel 消息同位（同一会话双入口混排），引用块用
- * action.hover 淡化（对齐 agentThought 视觉语言）；正文行内联渠道官方图标（IM 消息
- * 一行式呈现），空正文（纯引用/附件消息）仅图标行，渠道未知回落通用 Forum。
+ * 发送侧头像（32px 圆角方）：IM 消息用渠道官方品牌图标（品牌色内联 path 不随主题着色，
+ * 未知渠道回落 Forum），panel 本地消息用通用人形。
+ */
+function UserAvatar({ channel }: { channel?: string }) {
+  return (
+    <Avatar variant="rounded" sx={{ width: '32px', height: '32px', borderRadius: '6px', bgcolor: 'action.selected', color: 'text.secondary', flexShrink: 0 }}>
+      {channel ? <ImChannelIcon channel={channel} sx={{ fontSize: '20px' }} /> : <PersonIcon sx={{ fontSize: '18px' }} />}
+    </Avatar>
+  );
+}
+
+/**
+ * IM 来源 user 气泡：引用块用 action.hover 淡化（对齐 agentThought 视觉语言）且不透出
+ * 渠道 userid 前缀，正文原文直显（渠道标识归头像位）；空正文（纯引用/附件消息）不产空行。
  */
 function ImUserBubble({ display }: { display: AcpEntryDisplay }) {
   return (
-    <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: '8px', px: '12px', py: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+    <Box sx={{ bgcolor: 'action.selected', borderRadius: '8px', px: '12px', py: '8px', display: 'flex', flexDirection: 'column', gap: '6px', minWidth: '0px' }}>
       {display.quote && (
         <Box sx={{ bgcolor: 'action.hover', borderRadius: '4px', px: '8px', py: '4px' }}>
-          <Typography variant="caption" color="text.secondary">
-            {display.quote.author ? `${display.quote.author}：` : '引用消息'}
-          </Typography>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-            {display.quote.text}{display.quote.truncated ? '…' : ''}
+            {display.quote.text || '引用消息'}{display.quote.truncated ? '…' : ''}
           </Typography>
         </Box>
       )}
-      <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: '4px' }}>
-        {display.text && (
-          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', minWidth: '0px' }}>{display.text}</Typography>
-        )}
-        <ImChannelIcon channel={display.channel} sx={{ fontSize: '16px', flexShrink: 0, mb: '2px', color: 'text.secondary' }} />
-      </Box>
+      {display.text && (
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{display.text}</Typography>
+      )}
       {display.files && display.files.length > 0 && (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {display.files.map(f => (
