@@ -15,3 +15,11 @@ type ClaudeDriver interface {
 	 */
 	RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error)
 }
+
+// toolSettledText 工具终态状态行文案（ACP 覆写帧与 headless tool_result 两路共用）。
+func toolSettledText(name string, failed bool) string {
+	if failed {
+		return "❌ " + name + " 失败"
+	}
+	return "🔧 " + name + " 已完成"
+}

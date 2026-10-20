@@ -33,9 +33,9 @@ var errStopped = errors.New("编排器已停止")
 const msgAlreadySeenText = "该消息已处理过，重复推送已忽略。"
 
 /*
- * turnJob 一个待执行回合。reply 是受理时已开出并发过「正在思考…」占位帧的回复流——
- * 企微 5 秒被动回复窗口在受理瞬间被占住，排队多久都不超窗（两写者一次交接：适配器在
- * 回调 goroutine 发占位帧，此后全部帧只由 worker 的回复泵写）。
+ * turnJob 一个待执行回合。reply 是受理时已开出并发过「收到，处理中…」占位帧的回复流——
+ * 企微 5 秒被动回复窗口在受理瞬间被占住，排队多久都不超窗（写者三段交接恒单写者：适配器
+ * 回调 goroutine 发占位帧 → worker 发执行期状态帧 → 回复泵接管至终帧）。
  */
 type turnJob struct {
 	cfg   BotRuntimeConfig
@@ -201,7 +201,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 			}
 		}
 	}
-	if err := rs.Flush("正在思考…", false); err != nil {
+	if err := rs.Flush("收到，处理中…", false); err != nil {
 		o.log.Warn("bot 占位帧发送失败（继续回合）", zap.Error(err))
 	}
 
@@ -410,7 +410,7 @@ func queueKey(botID string, conversationKey string) string {
 
 /*
  * runTurn 执行单回合（会话内串行）。
- * 固定时序：幂等复查 → markSeen → #帮助 指令步 → #工作空间 指令步 → #任务解绑 指令步（确认卡）→ 工作空间门禁（指引 + workspace 卡同帧）→ #任务 指令步（统一出卡）→ ACP 未绑探针步 → load session → 组 prompt → RunTurn → PumpReply → 持久化（含 resume 失效自愈）。
+ * 固定时序：幂等复查 → markSeen → #帮助 指令步 → #工作空间 指令步 → #任务解绑 指令步（确认卡）→ 工作空间门禁（指引 + workspace 卡同帧）→ #任务 指令步（统一出卡）→ ACP 未绑探针步 → load session → 组 prompt → 执行期状态帧 → RunTurn → PumpReply → 持久化（含 resume 失效自愈）。
  * 指令步/门禁/探针步均终帧收口：不出回合、不占全局信号量。Stop 后排空的残余 job 走「已停止」短路径，不触发失败自愈（取消 ≠ 会话失效）。
  */
 func (o *Orchestrator) runTurn(job turnJob) {
@@ -520,6 +520,14 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	systemPrompt := ComposeSystemPrompt()
 	if deliveryDir != "" {
 		systemPrompt += deliveryPromptSuffix(deliveryDir)
+	}
+
+	/*
+	 * 执行期状态帧：填充占位帧到首个流式内容之间的静默期（排队 + 会话冷启动）。此刻
+	 * PumpReply 未启动，worker 是回复流唯一写者，交接纪律不破。
+	 */
+	if err := job.reply.Flush("已开始处理，正在连接会话…", false); err != nil {
+		o.log.Warn("bot 执行期状态帧发送失败（继续回合）", zap.Error(err))
 	}
 
 	/*

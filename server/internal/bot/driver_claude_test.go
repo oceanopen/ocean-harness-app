@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -24,11 +25,24 @@ const (
 	fxResultError = `{"is_error":true,"subtype":"error_max_turns","session_id":"553310e2","result":"stopped","type":"result"}`
 
 	fxUserToolResult = `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"file.txt"}]},"session_id":"553310e2"}`
+
+	fxUserToolResultError = `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","is_error":true,"content":"boom"}]},"session_id":"553310e2"}`
 )
 
 func eventsOf(t *testing.T, line string) []TurnEvent {
 	t.Helper()
-	return parseClaudeLine(line)
+	return parseClaudeLine(line, &turnParseState{toolNames: map[string]string{}})
+}
+
+// eventsOfLines 多行共享解析状态回放（工具注册→终态翻译、思考累计等跨行用例）。
+func eventsOfLines(t *testing.T, lines ...string) []TurnEvent {
+	t.Helper()
+	st := &turnParseState{toolNames: map[string]string{}}
+	var evs []TurnEvent
+	for _, line := range lines {
+		evs = append(evs, parseClaudeLine(line, st)...)
+	}
+	return evs
 }
 
 func TestParseClaudeLine(t *testing.T) {
@@ -44,9 +58,27 @@ func TestParseClaudeLine(t *testing.T) {
 			t.Fatalf("got %+v", evs)
 		}
 	})
-	t.Run("thinking 增量过滤", func(t *testing.T) {
-		if evs := eventsOf(t, fxThinkingDelta); len(evs) != 0 {
-			t.Fatalf("thinking_delta 应被过滤: %+v", evs)
+	t.Run("thinking 增量转思考尾部摘要", func(t *testing.T) {
+		evs := eventsOf(t, fxThinkingDelta)
+		if len(evs) != 1 || evs[0].Type != TurnStatus || evs[0].Status != "思考中: The user" {
+			t.Fatalf("thinking_delta 应转尾部摘要状态行: %+v", evs)
+		}
+	})
+	t.Run("thinking 多增量累计且尾部截断", func(t *testing.T) {
+		long := strings.Repeat("思", 300)
+		first := `{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"起手"}},"session_id":"s"}`
+		second, err := json.Marshal(map[string]any{"type": "stream_event", "session_id": "s", "event": map[string]any{
+			"type":  "content_block_delta",
+			"index": 0,
+			"delta": map[string]any{"type": "thinking_delta", "thinking": long},
+		}})
+		if err != nil {
+			t.Fatalf("构造夹具: %v", err)
+		}
+		evs := eventsOfLines(t, first, string(second))
+		want := "思考中: …" + strings.Repeat("思", 220)
+		if len(evs) != 2 || evs[0].Status != "思考中: 起手" || evs[1].Type != TurnStatus || evs[1].Status != want {
+			t.Fatalf("思考累计应滚动覆写且尾部截 220 rune:\n%+v\nwant %s", evs, want)
 		}
 	})
 	t.Run("thinking_tokens 噪声过滤", func(t *testing.T) {
@@ -77,9 +109,22 @@ func TestParseClaudeLine(t *testing.T) {
 			t.Fatalf("got %+v", evs)
 		}
 	})
-	t.Run("user 工具结果不产事件", func(t *testing.T) {
-		if evs := eventsOf(t, fxUserToolResult); len(evs) != 0 {
-			t.Fatalf("got %+v", evs)
+	t.Run("user 工具结果转完成状态行", func(t *testing.T) {
+		evs := eventsOfLines(t, fxAssistantToolUse, fxUserToolResult)
+		if len(evs) != 2 || evs[0].Type != TurnToolUse || evs[1].Type != TurnStatus || evs[1].Status != "🔧 Bash 已完成" {
+			t.Fatalf("tool_result 应经 id→名映射转完成状态行: %+v", evs)
+		}
+	})
+	t.Run("user 工具失败结果转失败状态行", func(t *testing.T) {
+		evs := eventsOfLines(t, fxAssistantToolUse, fxUserToolResultError)
+		if len(evs) != 2 || evs[1].Type != TurnStatus || evs[1].Status != "❌ Bash 失败" {
+			t.Fatalf("is_error 的 tool_result 应转失败状态行: %+v", evs)
+		}
+	})
+	t.Run("未注册 id 的工具结果回落中性名", func(t *testing.T) {
+		evs := eventsOf(t, fxUserToolResult)
+		if len(evs) != 1 || evs[0].Type != TurnStatus || evs[0].Status != "🔧 工具 已完成" {
+			t.Fatalf("未知 tool_use_id 应回落中性名: %+v", evs)
 		}
 	})
 	t.Run("非法行静默丢弃", func(t *testing.T) {
