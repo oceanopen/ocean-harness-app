@@ -57,7 +57,7 @@ type AuthedResponse struct {
 }
 
 /*
- * AuthedRequest 带态请求统一入口：ensure 引擎 → browser_cookie_list 实时拉登录态（纯内存，勿走 browser_storage_state 落文件语义）→ 解析后按声明域落锚进 cookiejar（见 injectCookies）→ browser_evaluate 探测浏览器真实 UA → http.Client 直发（默认跟随重定向，浏览器同款语义）。
+ * AuthedRequest 带态请求统一入口：ensure 引擎 → browser_cookie_list 实时拉登录态（纯内存；storageState 落盘仅限工作空间共享登录态域 authstate_sync.go，本函数不经文件）→ 解析后按声明域落锚进 cookiejar（见 injectCookies）→ browser_evaluate 探测浏览器真实 UA → http.Client 直发（默认跟随重定向，浏览器同款语义）。
  * 显式 headers 全透传，显式 User-Agent 优先于探测值（token 类凭据由调用方从 localStorage 提取后传入，本函数不碰 localStorage）。
  * cookies 与 UA 为两次独立调用的尽力快照，中间被并发调用穿插属预期；issueTag 供两次内部调用的操作流水归因。
  */

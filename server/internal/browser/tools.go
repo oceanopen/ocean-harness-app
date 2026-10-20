@@ -38,6 +38,14 @@ const (
 	 */
 	EngineToolCookieList       = "browser_cookie_list"
 	EngineToolLocalstorageList = "browser_localstorage_list"
+
+	/*
+	 * EngineToolStorageState / EngineToolSetStorageState 工作空间共享登录态导出/注入
+	 * （不在转发集；经 downloads/<profile>/ 内 staging 中转——引擎文件沙箱只放行
+	 * output-dir 与 cwd，共享文件路径不可直传）。
+	 */
+	EngineToolStorageState    = "browser_storage_state"
+	EngineToolSetStorageState = "browser_set_storage_state"
 )
 
 /*

@@ -109,7 +109,7 @@ func withEngineCtlDial(t *testing.T, ctl *fakeEngineCtl, onSpawn func(ss *mcp.Se
 		srv := mcp.NewServer(&mcp.Implementation{Name: "fake-engine", Version: "test"}, nil)
 		for _, name := range []string{
 			EngineToolNavigate, EngineToolTabs, EngineToolTakeScreenshot, EngineToolEvaluate,
-			EngineToolCookieList,
+			EngineToolCookieList, EngineToolStorageState, EngineToolSetStorageState,
 		} {
 			tool := name
 			mcp.AddTool(srv, &mcp.Tool{Name: tool, Description: "fake"},
