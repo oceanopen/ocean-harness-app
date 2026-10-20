@@ -62,8 +62,8 @@ func TestBuildTurnPrompt(t *testing.T) {
  */
 func TestBuildTurnDisplay(t *testing.T) {
 	t.Run("纯文本", func(t *testing.T) {
-		d := buildTurnDisplay(InboundMessage{Text: "  帮我看看构建为什么挂了  "})
-		if d == nil || d.Text != "帮我看看构建为什么挂了" || d.Quote != nil || d.Files != nil {
+		d := buildTurnDisplay(InboundMessage{Text: "  帮我看看构建为什么挂了  "}, "weixin")
+		if d == nil || d.Text != "帮我看看构建为什么挂了" || d.Quote != nil || d.Files != nil || d.Channel != "weixin" {
 			t.Fatalf("纯文本 Display 不符: %+v", d)
 		}
 	})
@@ -72,7 +72,7 @@ func TestBuildTurnDisplay(t *testing.T) {
 			Text:  "照这个报错修一下",
 			Quote: &QuoteRef{AuthorID: "alice", Text: "panic: nil map", Truncated: true},
 			Files: []InboundFile{{Path: "/ws/.wecom-attachments/m1/log.txt", Name: "log.txt"}},
-		})
+		}, "wecom")
 		if d.Text != "照这个报错修一下" {
 			t.Fatalf("正文原文不符: %+v", d)
 		}
@@ -84,7 +84,7 @@ func TestBuildTurnDisplay(t *testing.T) {
 		}
 	})
 	t.Run("空正文仅有引用不占位", func(t *testing.T) {
-		d := buildTurnDisplay(InboundMessage{Quote: &QuoteRef{AuthorID: "a", Text: "hi"}})
+		d := buildTurnDisplay(InboundMessage{Quote: &QuoteRef{AuthorID: "a", Text: "hi"}}, "")
 		if d.Text != "" || d.Quote == nil || d.Quote.Author != "a" {
 			t.Fatalf("空正文 Display 应保持原文空（占位仅模型侧）: %+v", d)
 		}

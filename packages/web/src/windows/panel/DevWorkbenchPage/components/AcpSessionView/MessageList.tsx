@@ -1,8 +1,9 @@
 import type { SxProps, Theme } from '@mui/material';
 import type { AcpConversationEntry, AcpEntryDisplay } from '@src/services';
 import type { VirtualizerHandle } from 'virtua';
-import { AttachFileOutlined as AttachFileOutlinedIcon, ForumOutlined as ForumOutlinedIcon } from '@mui/icons-material';
+import { AttachFileOutlined as AttachFileOutlinedIcon } from '@mui/icons-material';
 import { Box, Chip, Tooltip, Typography } from '@mui/material';
+import ImChannelIcon from '@src/shared/ImChannelIcon';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import { Virtualizer } from 'virtua';
@@ -181,17 +182,13 @@ function UserEntry({ entry }: { entry: AcpConversationEntry }) {
 }
 
 /**
- * IM 来源 user 气泡：右对齐与 panel 消息同位（同一会话双入口混排），徽标与引用块用
- * text.secondary / action.hover 淡化（对齐 agentThought 视觉语言）；正文为 display.text
- * 原文，空正文（纯引用/附件消息）不渲染正文行——占位文案只存在于模型侧围栏。
+ * IM 来源 user 气泡：右对齐与 panel 消息同位（同一会话双入口混排），引用块用
+ * action.hover 淡化（对齐 agentThought 视觉语言）；正文行内联渠道官方图标（IM 消息
+ * 一行式呈现），空正文（纯引用/附件消息）仅图标行，渠道未知回落通用 Forum。
  */
 function ImUserBubble({ display }: { display: AcpEntryDisplay }) {
   return (
     <Box sx={{ alignSelf: 'flex-end', maxWidth: '85%', bgcolor: 'action.selected', borderRadius: '8px', px: '12px', py: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <ForumOutlinedIcon sx={{ fontSize: '14px', color: 'text.secondary' }} />
-        <Typography variant="caption" color="text.secondary">IM</Typography>
-      </Box>
       {display.quote && (
         <Box sx={{ bgcolor: 'action.hover', borderRadius: '4px', px: '8px', py: '4px' }}>
           <Typography variant="caption" color="text.secondary">
@@ -202,9 +199,12 @@ function ImUserBubble({ display }: { display: AcpEntryDisplay }) {
           </Typography>
         </Box>
       )}
-      {display.text && (
-        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{display.text}</Typography>
-      )}
+      <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: '4px' }}>
+        {display.text && (
+          <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', minWidth: '0px' }}>{display.text}</Typography>
+        )}
+        <ImChannelIcon channel={display.channel} sx={{ fontSize: '16px', flexShrink: 0, mb: '2px', color: 'text.secondary' }} />
+      </Box>
       {display.files && display.files.length > 0 && (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
           {display.files.map(f => (

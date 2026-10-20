@@ -53,14 +53,15 @@ type ConversationEntry struct {
 }
 
 /*
- * EntryDisplay user 条目展示元数据（显示-发送文本分离，D2）：Text 为正文原文（区别于条目 Text 的围栏全文），Quote / Files 为 IM 引用与附件的展示投影。
+ * EntryDisplay user 条目展示元数据（显示-发送文本分离，D2）：Text 为正文原文（区别于条目 Text 的围栏全文），Quote / Files 为 IM 引用与附件的展示投影，Channel 为 bot 渠道（前端渠道图标）。
  * nil = 无展示元数据，前端回落条目 Text 原样直显（旧 sidecar + 新前端混跑窗口兼容）。
  * 一经落条目即只读共享（帧与快照锁外序列化），构造方不得再触碰。
  */
 type EntryDisplay struct {
-	Text  string      `json:"text,omitempty"`
-	Quote *EntryQuote `json:"quote,omitempty"`
-	Files []EntryFile `json:"files,omitempty"`
+	Text    string      `json:"text,omitempty"`
+	Channel string      `json:"channel,omitempty"`
+	Quote   *EntryQuote `json:"quote,omitempty"`
+	Files   []EntryFile `json:"files,omitempty"`
 }
 
 // EntryQuote 引用块展示元数据（IM 引用回复）。

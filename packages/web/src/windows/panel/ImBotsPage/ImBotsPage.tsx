@@ -2,7 +2,6 @@ import type { DoctorEntryState, ImBotModel, WorkspaceModel } from '@src/services
 import type { AcpAgentOption } from '@src/state/agentCatalog';
 import type { ImBotChannelMeta } from './imBotChannels';
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
-import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
 import QrCode2OutlinedIcon from '@mui/icons-material/QrCode2Outlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
@@ -20,11 +19,13 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import ImChannelIcon from '@src/shared/ImChannelIcon';
+import { useToast } from '@src/shared/useToast';
 import { effectiveAcpAgentCode, useAcpAgentOptions } from '@src/state/agentCatalog';
-import { useDoctorCheck, useDoctorReports } from '@src/state/doctor';
+import { isDoctorBusy, useDoctorCheck, useDoctorReports } from '@src/state/doctor';
 import { useDeleteImBot, useImBots, useRestartImBot } from '@src/state/imBots';
 import { useWorkspaces } from '@src/state/tracker';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IM_BOT_CHANNELS } from './imBotChannels';
 import ImBotDrawer from './ImBotDrawer';
 import ImBotProvisionDrawer from './ImBotProvisionDrawer';
@@ -34,7 +35,7 @@ import { imBotStateChip } from './imBotStateChip';
 // imBotChannels 渠道元数据驱动（weixin 仅扫码授权，无手工凭据路径）；weixin 换绑 = 编辑抽屉
 // 「重新扫码授权」切扫码抽屉。文案约定：中文直出（仅菜单标题走 i18n）。
 
-/** 健康徽标形态（T3.5 doctor 四态派生）；tooltip 为引导文案（unhealthy 时直显探测原因）。 */
+/** 健康徽标形态（T3.5 doctor 四态派生）；tooltip 为引导文案（unhealthy 直显探测原因，healthy 说明就绪范围）。 */
 interface HealthChip {
   label: string;
   color: 'success' | 'error' | 'info' | 'default';
@@ -68,7 +69,7 @@ function acpHealthChip(
   }
   switch (entry.status) {
     case 'healthy':
-      return { label: 'Agent 正常', color: 'success' };
+      return { label: 'Agent 正常', color: 'success', tooltip: 'ACP 运行环境就绪（node / claude / 适配器握手探测通过）' };
     case 'unhealthy':
       return { label: 'Agent 不可用', color: 'error', tooltip: entry.reason ?? 'ACP 运行环境不可用，请检查后重新检测' };
     case 'checking':
@@ -98,7 +99,8 @@ function ChannelCard(props: { channel: ImBotChannelMeta; total: number; online: 
         '&:hover': { bgcolor: 'action.hover' },
       }}
     >
-      <ForumOutlinedIcon sx={{ '& svg': { fontSize: '20px' }, 'fontSize': '20px', 'color': selected ? 'primary.main' : 'text.secondary' }} />
+      {/* 渠道品牌图标（品牌色内联于 path，选中态由卡片边框/底色表达） */}
+      <ImChannelIcon channel={channel.key} sx={{ fontSize: '20px' }} />
       <Typography sx={{ fontSize: '13px', fontWeight: selected ? 600 : 400 }}>{channel.label}</Typography>
       <Chip
         size="small"
@@ -125,7 +127,7 @@ function ImBotCard(props: {
     <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
       <Box sx={{ px: '16px', py: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <Typography sx={{ fontSize: '14px', fontWeight: 600 }}>{bot.name}</Typography>
-        <Tooltip title={bot.lastError || undefined}>
+        <Tooltip title={bot.lastError || chip.tooltip}>
           <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
         </Tooltip>
         {health && (
@@ -183,6 +185,22 @@ function ImBotsPage() {
   const agentOptions = useAcpAgentOptions();
   const { data: doctorEntries } = useDoctorReports();
   const checkDoctor = useDoctorCheck();
+  const { show: showToast, snack } = useToast();
+  // 手动检测回合三态：requested（已受理，待条目翻 checking）→ running（探测中）→ idle（收敛即弹中性完成提示）。
+  // 只认「见过 busy」的完整回合，受理瞬间旧快照仍全落定不会被误判为完成。
+  const checkPhaseRef = useRef<'idle' | 'requested' | 'running'>('idle');
+  useEffect(() => {
+    const busy = isDoctorBusy(doctorEntries);
+    if (checkPhaseRef.current === 'requested' && busy) {
+      checkPhaseRef.current = 'running';
+      return;
+    }
+    if (checkPhaseRef.current === 'running' && !busy) {
+      checkPhaseRef.current = 'idle';
+      // 中性完成提示：结果经各机器人徽标呈现，toast 只报完成不带计数。
+      showToast('检测完成', 'info');
+    }
+  }, [doctorEntries, showToast]);
   const [channelKey, setChannelKey] = useState(IM_BOT_CHANNELS[0].key);
   const [drawer, setDrawer] = useState<{ bot: ImBotModel | null; channelKey: string } | null>(null);
   // 扫码抽屉会话：rebindBotId 空 = 扫码新建，非空为既有 weixin bot 换绑凭据（编辑抽屉跳转而来）。
@@ -237,11 +255,22 @@ function ImBotsPage() {
           <Typography sx={{ fontSize: '15px', fontWeight: 600 }}>{channel.label}</Typography>
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {/* 检测 Agent（T3.5）：受理全局 doctor 探测（doctor 结论 per-agentCode 全局共享，同
-                agent 的 bot 共用一份），受理与探测异步解耦，收敛经四态轮询自动呈现于徽标。 */}
+                agent 的 bot 共用一份），受理与探测异步解耦，收敛经四态轮询呈现于徽标并弹 toast。 */}
             <Tooltip title="检测 Agent 运行环境（node / claude / 适配器握手）">
               <IconButton
                 size="small"
-                onClick={() => checkDoctor.mutate(undefined)}
+                onClick={() => {
+                  checkPhaseRef.current = 'requested';
+                  void checkDoctor.mutateAsync(undefined).then((res) => {
+                    // 受理为空（无 ACP 模式工作空间的 bot）：不进等待回合，直接给出口提示。
+                    if (res.accepted.length === 0) {
+                      checkPhaseRef.current = 'idle';
+                      showToast('没有可检测的 Agent 环境（ACP 模式工作空间的机器人才参与检测）', 'info');
+                    }
+                  }).catch(() => {
+                    checkPhaseRef.current = 'idle';
+                  });
+                }}
                 loading={checkDoctor.isPending}
                 sx={{ '& svg': { fontSize: '20px' } }}
               >
@@ -342,6 +371,7 @@ function ImBotsPage() {
         </DialogActions>
       </Dialog>
 
+      {snack}
     </Box>
   );
 }

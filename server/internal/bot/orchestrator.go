@@ -549,7 +549,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		SessionID:       prevSessionID,
 		Prompt:          prompt,
 		SystemPrompt:    systemPrompt,
-		Display:         buildTurnDisplay(msg),
+		Display:         buildTurnDisplay(msg, string(cfg.Channel)),
 		Port:            cfg.Port,
 	})
 	if err != nil {

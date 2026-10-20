@@ -87,13 +87,13 @@ export default function ImBotBotCard({ bot, issue, bindPending, onConversationAc
 
   return (
     <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
-      {/* 聚合头：点按整行展开/收起；连接徽标 tooltip 显 lastError（同 ImBotsPage 卡片） */}
+      {/* 聚合头：点按整行展开/收起；连接徽标 tooltip 显 lastError 或状态说明（同 ImBotsPage 卡片） */}
       <Box
         onClick={() => setExpanded(v => !v)}
         sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '12px', py: '10px', cursor: 'pointer' }}
       >
         <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>{bot.name}</Typography>
-        <Tooltip title={bot.lastError || undefined}>
+        <Tooltip title={bot.lastError || chip.tooltip}>
           <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
         </Tooltip>
         {isLoading
