@@ -8,13 +8,16 @@ package mcpdto
 // —— 共用基座 ——
 
 /*
- * BrowserProfileArgs browser_* 工具集共用基座（匿名嵌入平铺）：profile 留空且 issueId 在手时
- * 由任务派生（issue-<issueId>，与面板「+」新建同一命名约定），否则用 default（mcp_tool 层归一，
- * 引擎会话自动 ensure，idle 冷启动 1-3s 属预期）；issueId 兼作服务端操作流水归因（面板 recentCalls 徽标）。
+ * BrowserProfileArgs browser_* 工具集共用基座（匿名嵌入平铺）：profile 留空时按
+ * issueId → workspaceId 次序派生会话（issue-<issueId> 任务派生 / workspace-<workspaceId>
+ * 工作空间派生，享工作空间共享登录态），均留空用 default（mcp_tool 层归一，引擎会话
+ * 自动 ensure，idle 冷启动 1-3s 属预期）；issueId 兼作服务端操作流水归因（面板 recentCalls 徽标）。
  */
 type BrowserProfileArgs struct {
-	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名；留空且带 issueId 时由任务派生（issue-<issueId>），否则用 default；不同 profile 各自独立引擎进程与登录态"`
-	IssueID string `json:"issueId,omitempty" jsonschema:"归因 issue 主键（uuid 文本）；profile 留空时同时决定目标会话（任务派生），可留空"`
+	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名；留空时按 issueId → workspaceId 次序派生（issue-<issueId> / workspace-<workspaceId>），否则用 default；不同 profile 各自独立引擎进程与登录态"`
+	IssueID string `json:"issueId,omitempty" jsonschema:"归因 issue 主键（uuid 文本）；profile 留空时优先决定目标会话（任务派生），可留空"`
+	// WorkspaceID 工作空间派生次序低于 issueId（任务归属工作空间，workspace 执行语义更宽）。
+	WorkspaceID string `json:"workspaceId,omitempty" jsonschema:"工作空间主键（uuid 文本）；profile 与 issueId 均留空时决定目标会话（workspace-<workspaceId>，共享该工作空间登录态），可留空"`
 }
 
 // —— 原生 6 工具入参 ——

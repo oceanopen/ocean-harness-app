@@ -11,7 +11,7 @@ import (
 )
 
 /*
- * 目录布局 SSOT（D2/D3/D10）：~/.ocean-harness/browser/ 下 profiles/<name>/（per-profile Chrome user-data-dir，登录态活 SSOT，Chromium 自管；内含 prefs.json 非凭据偏好元数据 headless 等 D10、.engine.pid 引擎进程 pid 文件 T1.3 recoverOrphans 消费）与 downloads/<name>/（引擎 --output-dir，下载与产物落点）。
+ * 目录布局 SSOT（D2/D3/D10）：profiles/<name>/（per-profile Chrome user-data-dir，登录态活 SSOT，Chromium 自管；内含 prefs.json 非凭据偏好 D10、.engine.pid pid 锚点）、downloads/<name>/（引擎 --output-dir，下载与产物落点）、auth-states/<workspaceId>.json（工作空间共享登录态，D3 修订：凭据仅此一份落盘，不进数据库）。
  * prefs.json / .engine.pid 落在 user-data-dir 根部：Chrome 忽略未知文件，无冲突。
  */
 
@@ -75,6 +75,29 @@ func ValidateProfileName(name string) error {
 }
 
 /*
+ * profile 命名空间前缀（前后端各单点 SSOT，前端 derive.ts 同规则）：issue-<issueId>
+ * 任务派生；workspace-<id> 工作空间维度（预留入口，共享登录态直通）。
+ */
+const (
+	IssueProfilePrefix     = "issue-"
+	WorkspaceProfilePrefix = "workspace-"
+)
+
+/*
+ * ParseProfileNamespace 解析 profile 命名空间：返回命中前缀与前缀后的 id；
+ * default/自定义名无命名空间（前缀为空，即无共享登录态）。
+ */
+func ParseProfileNamespace(profile string) (prefix, id string) {
+	if id, ok := strings.CutPrefix(profile, IssueProfilePrefix); ok && id != "" {
+		return IssueProfilePrefix, id
+	}
+	if id, ok := strings.CutPrefix(profile, WorkspaceProfilePrefix); ok && id != "" {
+		return WorkspaceProfilePrefix, id
+	}
+	return "", ""
+}
+
+/*
  * ProfileDir 返回 per-profile Chrome user-data-dir（profiles/<name>/）。只推导不创建——
  * 目录由 Chrome 首次启动自建（user-data-dir 语义）。
  */
@@ -98,6 +121,17 @@ func DownloadsDir(name string) (string, error) {
 		return "", fmt.Errorf("创建 profile 下载目录: %w", err)
 	}
 	return dir, nil
+}
+
+/*
+ * AuthStatePath 工作空间共享登录态文件（auth-states/<workspaceId>.json，Playwright
+ * storageState 格式）。只推导不创建——目录与文件归写入方（原子写）负责。
+ */
+func AuthStatePath(workspaceID string) (string, error) {
+	if err := ValidateProfileName(workspaceID); err != nil {
+		return "", fmt.Errorf("工作空间 id 非法: %w", err)
+	}
+	return filepath.Join(Root(), "auth-states", workspaceID+".json"), nil
 }
 
 /*

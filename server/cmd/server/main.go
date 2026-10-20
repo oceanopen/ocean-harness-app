@@ -82,6 +82,8 @@ func main() {
 		Resources: cfg.AcpResourcesDir,
 		Adapters:  cfg.AcpAdaptersDir,
 	}, global.Logger)
+	// 工作空间共享登录态：issue→workspace 查询注入（browser 域不进 dal，见 authstate_sync.go）。
+	browser.SetIssueWorkspaceResolver(service.ResolveIssueWorkspaceID)
 
 	/*
 	 * 5.6) bot 运行时装配：注册渠道适配器工厂（wecom 长连接 / weixin 长轮询）+ 拉起全部

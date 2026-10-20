@@ -171,6 +171,12 @@ type sessionEntry struct {
 	 */
 	restorePages []PageView
 
+	/*
+	 * authInjectedHash 已注入共享登录态的内容指纹（跨 idle 重建留存）：重开遇同内容
+	 * 共享文件跳过二次注入。仅 spawn 路径读写（置 ready 前单线程，无并发触达）。
+	 */
+	authInjectedHash string
+
 	callMu sync.Mutex
 }
 
@@ -345,6 +351,10 @@ func (m *Manager) ensureSpawned(ctx context.Context, entry *sessionEntry, profil
 			 */
 			m.stopObserver(profile)
 			m.dropLiveViewer(profile, "无头模式切换，实时画面已断开")
+			// 切换前导出旧引擎共享登录态（对齐 Close 收尾语义，best-effort）。
+			if wsID := m.resolveWorkspaceID(context.Background(), profile); wsID != "" {
+				m.exportAuthState(profile, wsID, old)
+			}
 			_ = old.Close() // 旧引擎优雅关停（锁外慢操作）
 		}
 		m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
@@ -457,6 +467,32 @@ func (m *Manager) runSpawn(entry *sessionEntry) {
 		close(spawnDone)
 		return
 	}
+
+	entry.mu.Unlock()
+	m.mu.Unlock()
+
+	/*
+	 * 工作空间共享登录态注入（置 ready 前锁外同步完成）：ready 即放行外部调用，注入
+	 * 晚于 ready 会与首导航竞速——此刻 state 仍 starting，外部调用一律 waitSpawn 等待。
+	 */
+	wsID := m.resolveWorkspaceID(context.Background(), profile)
+	if wsID != "" {
+		m.injectAuthState(entry, profile, wsID, handle)
+	}
+
+	m.mu.Lock()
+	entry.mu.Lock()
+	if entry.state != StatusStarting || entry.spawnDone != spawnDone || entry.closing {
+		// 注入窗口期条目被关闭/替换：按关闭收尾回收引擎（复刻上方防御分支语义）。
+		entry.state = StatusIdle
+		m.activeCount--
+		entry.closing = false
+		entry.mu.Unlock()
+		m.mu.Unlock()
+		_ = handle.Close()
+		close(spawnDone)
+		return
+	}
 	entry.state = StatusReady
 	entry.handle = handle
 	entry.resetIdleTimerLocked(m)
@@ -470,6 +506,9 @@ func (m *Manager) runSpawn(entry *sessionEntry) {
 	m.startObserver(profile)          // 页面投影观察者随会话就绪启动（后台自愈，不阻塞）
 	go m.restorePages(profile, entry) // 页面现场恢复（best-effort，不阻塞就绪返回）
 	go m.watchExit(entry, handle)
+	if wsID != "" {
+		go m.runAuthSync(entry, profile, wsID, handle) // 周期导出（Exited 即退，随引擎生命周期收敛）
+	}
 	close(spawnDone)
 }
 
@@ -869,6 +908,13 @@ func (m *Manager) Close(profile string) error {
 		entry.mu.Lock()
 		entry.restorePages = captured
 		entry.mu.Unlock()
+		/*
+		 * 引擎收尾前导出共享登录态（引擎仍活、localStorage 可全集收集；best-effort 不
+		 * 阻塞关闭，周期导出兜底）。工作空间缺失/解析失败时自然跳过。
+		 */
+		if wsID := m.resolveWorkspaceID(context.Background(), profile); wsID != "" {
+			m.exportAuthState(profile, wsID, handle)
+		}
 		_ = handle.Close() // 锁外慢操作
 	}
 	return nil
