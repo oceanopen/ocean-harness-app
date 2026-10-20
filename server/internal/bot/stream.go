@@ -35,13 +35,14 @@ type TurnOutcome struct {
 }
 
 /*
- * PumpReply 回复泵：消费 TurnEvent 流 → 覆写式流式回复。时序固定（两写者一次交接零并发写）：主 goroutine 消费事件累积状态；ticker goroutine 周期取快照 Flush 中间帧（唯一周期写者）；事件流关闭后停 ticker，由主 goroutine 写 finish=true 终帧。
- * tool_use 到达时清空已累计文本、置「正在执行 …」状态行（丢弃工具前泄漏文本，SDK agent 示例同款）；result 终文本优先于增量累计。回合失败同样以终帧收尾（失败文案），保证每条流式消息恰好一个 finish 帧。卡片（T3.2 审批卡）：TurnStatus 携带的 Card 入 mu 保护状态，由 ticker 周期写者随中间帧 SendCard 一并下发（保住单写者纪律；
- * 200ms 节奏下延迟无感）。卡是一次性消费——本 tick 发卡尝试（含失败回落）或回合收尾后不再附发；收尾时未发出的卡直接丢弃（挂起随回合终态结算，再发即置灰态误导）。流无卡能力（未实现 CardReplyStream）自动回落纯文本帧。
+ * PumpReply 回复泵：消费 TurnEvent 流 → 覆写式流式回复；主 goroutine 消费事件、ticker 唯一周期写者、终帧由主 goroutine 收口（两写者一次交接）。
+ * 帧优先级：正文 > 思考面板+工具行 > 覆写型状态行（TurnStatus：审批/工具终态）；正文到达清面板，
+ * 面板存活期「思考中」前缀恒在。卡随 tick 一次性消费，收尾未发出的卡直接丢弃（挂起随回合终态结算）。
  */
 func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sink OverflowSink, log *zap.Logger) TurnOutcome {
 	var mu sync.Mutex
-	var statusText, currentText, sessionID string
+	var statusText, toolLine, thinkingBuf, currentText, sessionID string
+	var thinkingDone bool // 思考段收口：工具行出现后头部窗口展示，新思考段到达时重开面板
 	var pendingCard *CardSpec
 	var turnErr error
 	var isError bool
@@ -51,6 +52,9 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 		defer mu.Unlock()
 		if currentText != "" {
 			return currentText
+		}
+		if thinkingBuf != "" || toolLine != "" {
+			return composePanel(thinkingBuf, thinkingDone, toolLine)
 		}
 		return statusText
 	}
@@ -114,15 +118,30 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 		case TurnText:
 			mu.Lock()
 			currentText += ev.Delta
+			thinkingBuf = "" // 正文到达：思考面板整体让位
+			thinkingDone = false
+			toolLine = ""
+			mu.Unlock()
+		case TurnThinking:
+			mu.Lock()
+			if thinkingDone {
+				thinkingBuf = "" // 新思考段：重开面板
+				thinkingDone = false
+			}
+			thinkingBuf += ev.Delta
 			mu.Unlock()
 		case TurnToolUse:
 			mu.Lock()
-			currentText = ""
-			statusText = "🔧 正在执行 " + ev.ToolName + " …"
+			currentText = "" // 工具前泄漏正文丢弃（SDK agent 示例同款）；思考面板保留共存
+			thinkingDone = true
+			toolLine = "🔧 正在执行 " + ev.ToolName + " …"
 			mu.Unlock()
 		case TurnStatus:
 			mu.Lock()
 			currentText = ""
+			thinkingBuf = ""
+			thinkingDone = false
+			toolLine = ""
 			statusText = ev.Status
 			if ev.Card != nil {
 				pendingCard = ev.Card
@@ -166,6 +185,8 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	switch {
 	case errors.Is(out.Err, errTurnFailed):
 		out.FinalText = "❌ 处理未完成（回合被中断）：\n" + truncateForFrame(final, rs.ByteLimit(), nil)
+	case out.Err != nil && ctx.Err() != nil:
+		out.FinalText = "⏹ 已停止当前回复。" // /stop 或编排器停止：取消叙事，非失败
 	case out.Err != nil:
 		out.FinalText = "❌ 处理失败：" + firstLine(out.Err.Error()) + "\n请重试或调整后重新发送。"
 		if strings.TrimSpace(final) != "" {
@@ -185,6 +206,49 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 
 // errTurnFailed result 帧标记 is_error（回合被 max-turns 等中断，进程本身正常退出）。
 var errTurnFailed = errors.New("claude 回合被中断")
+
+// thinkingPanelHeader 思考面板标题（面板存活期恒在）。
+const thinkingPanelHeader = "**🤔 思考中**"
+
+// thoughtWindowRunes 思考内容展示窗口（流式期取尾部、收口后取头部的 rune 数）。
+const thoughtWindowRunes = 300
+
+/*
+ * composePanel 思考面板帧：标题 + quote 块（左侧竖线渲染）+ 工具行，三者可任意缺席。
+ */
+func composePanel(thinkingBuf string, thinkingDone bool, toolLine string) string {
+	var b strings.Builder
+	if thinkingBuf != "" {
+		b.WriteString(thinkingPanelHeader)
+		body := thoughtWindow(thinkingBuf, thinkingDone)
+		for line := range strings.SplitSeq(strings.TrimRight(body, "\n"), "\n") {
+			b.WriteString("\n> ")
+			b.WriteString(line)
+		}
+	}
+	if toolLine != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(toolLine)
+	}
+	return b.String()
+}
+
+/*
+ * thoughtWindow 思考内容展示窗口（rune 安全）：流式期尾部窗口（前缀 … 标识所见非从头）、
+ * 收口后头部窗口（尾部 … 标识后续未完）；未超限原样。
+ */
+func thoughtWindow(s string, done bool) string {
+	rs := []rune(s)
+	if len(rs) <= thoughtWindowRunes {
+		return s
+	}
+	if done {
+		return string(rs[:thoughtWindowRunes]) + " …"
+	}
+	return "…" + string(rs[len(rs)-thoughtWindowRunes:])
+}
 
 /*
  * truncateForFrame 把内容截到 limit 字节内（rune 边界安全）。超限时调用 sink 落盘全文并把

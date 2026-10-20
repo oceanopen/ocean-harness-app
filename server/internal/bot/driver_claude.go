@@ -43,25 +43,10 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	if err != nil {
 		return nil, err
 	}
-
-	args := []string{
-		"-p", // headless print 模式（程序化驱动官方接口）
-		"--output-format", "stream-json",
-		// stream-json 必须配 --verbose（CLI 强制校验）；逐 token 增量供流式回复泵消费。
-		"--verbose", "--include-partial-messages",
-		"--permission-mode", "acceptEdits",
+	args, cleanup, err := buildClaudeArgs(req)
+	if err != nil {
+		return nil, err
 	}
-	if req.SessionID != "" {
-		args = append(args, "--resume", req.SessionID)
-	}
-	if strings.TrimSpace(req.SystemPrompt) != "" {
-		args = append(args, "--append-system-prompt", req.SystemPrompt)
-	}
-	/*
-	 * 工具白名单恒用默认集（P6：bot 级「执行权限」配置已废弃，权限表达上移 workspace 级
-	 * launch_settings.permissionMode，ACP 模式接管审批语义；headless 路径安全周界不变）。
-	 */
-	args = append(args, "--allowedTools", strings.Join(DefaultAllowedTools(), ","))
 
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = req.WorkspaceDir
@@ -79,16 +64,19 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("claude stdin 管道创建失败: %w", err)
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		cleanup()
 		return nil, fmt.Errorf("claude stdout 管道创建失败: %w", err)
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
+		cleanup()
 		return nil, fmt.Errorf("claude 启动失败: %w", err)
 	}
 	// prompt 写入独立 goroutine：pipe 缓冲有限，大 prompt 同步写会与读循环互锁死。
@@ -100,6 +88,7 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	events := make(chan TurnEvent, 128)
 	go func() {
 		defer close(events)
+		defer cleanup() // 临时 MCP 配置文件随进程收尾删除
 		doneEmitted := false
 		st := &turnParseState{toolNames: map[string]string{}}
 		reader := bufio.NewReader(stdout)
@@ -122,6 +111,84 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 		}
 	}()
 	return events, nil
+}
+
+// imSendFileToolName claude 侧投递工具全名（server 名 im × 工具名 send_file，与 mcpservers 投递端点定义互为镜像）。
+const imSendFileToolName = "mcp__im__send_file"
+
+/*
+ * buildClaudeArgs 组装 claude argv。带投递令牌时注入 per-turn MCP 配置（im 投递端点的
+ * send_file 工具）并把它加进工具白名单；返回的 cleanup 删除临时配置文件，调用方保证在
+ * claude 进程收尾后执行。
+ */
+func buildClaudeArgs(req TurnRequest) (args []string, cleanup func(), err error) {
+	args = []string{
+		"-p", // headless print 模式（程序化驱动官方接口）
+		"--output-format", "stream-json",
+		// stream-json 必须配 --verbose（CLI 强制校验）；逐 token 增量供流式回复泵消费。
+		"--verbose", "--include-partial-messages",
+		"--permission-mode", "acceptEdits",
+	}
+	if req.SessionID != "" {
+		args = append(args, "--resume", req.SessionID)
+	}
+	if strings.TrimSpace(req.SystemPrompt) != "" {
+		args = append(args, "--append-system-prompt", req.SystemPrompt)
+	}
+	allowed := DefaultAllowedTools()
+	cleanup = func() {}
+	if req.DeliveryToken != "" {
+		/*
+		 * 回合内文件投递：MCP server「im」指向本 sidecar 投递端点，模型经 send_file
+		 * 即时推文件给用户（独立气泡，不占流）；配置文件进程私有，收尾删除。
+		 */
+		path, werr := writeIMMcpConfig(req.Port, req.DeliveryToken)
+		if werr != nil {
+			return nil, func() {}, werr
+		}
+		cleanup = func() { _ = os.Remove(path) }
+		args = append(args, "--mcp-config", path)
+		allowed = append(allowed, imSendFileToolName)
+	}
+	/*
+	 * 工具白名单恒用默认集（P6：bot 级「执行权限」配置已废弃，权限表达上移 workspace 级
+	 * launch_settings.permissionMode，ACP 模式接管审批语义；headless 路径安全周界不变）。
+	 */
+	args = append(args, "--allowedTools", strings.Join(allowed, ","))
+	return args, cleanup, nil
+}
+
+/*
+ * writeIMMcpConfig 写 per-turn 临时 MCP 配置：单 server「im」指向本 sidecar 的 im 投递
+ * 端点（token 即回合投递注册键）。落 os.TempDir，删除由调用方 cleanup 负责。
+ */
+func writeIMMcpConfig(port int, token string) (string, error) {
+	cfg := map[string]any{
+		"mcpServers": map[string]any{
+			"im": map[string]any{
+				"type": "http",
+				"url":  fmt.Sprintf("http://127.0.0.1:%d/mcp/streamableHttp/im/%s", port, token),
+			},
+		},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp("", "ocean-im-mcp-*.json")
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 /*
@@ -192,7 +259,7 @@ type rawClaudeLine struct {
 
 /*
  * turnParseState 回合内解析状态（RunTurn reader goroutine 私有，单线程消费）：工具调用
- * id→名映射（tool_result 终态翻译锚）与思考累计全量（滚动摘要水位线，同 ACP 驱动语义）。
+ * id→名映射（tool_result 终态翻译锚）与思考累计全量（差分水位线，同 ACP 驱动语义）。
  */
 type turnParseState struct {
 	toolNames   map[string]string
@@ -202,8 +269,8 @@ type turnParseState struct {
 
 /*
  * parseClaudeLine 单行 stream-json → 0..n 个 TurnEvent。schema 漂移时的表现为事件退化
- * （text 增量丢失、只剩 assistant 整段/result 兜底），不致挂死。thinking 增量转「思考中: 」
- * 尾部摘要状态行；tool_result 转工具终态状态行——两者均被正文/后续状态行自然让位。
+ * （text 增量丢失、只剩 assistant 整段/result 兜底），不致挂死。thinking 增量转 TurnThinking
+ * 增量事件（面板组帧在泵侧）；tool_result 转工具终态状态行——被正文/后续状态行自然让位。
  */
 func parseClaudeLine(line string, st *turnParseState) []TurnEvent {
 	line = strings.TrimSpace(line)
@@ -227,14 +294,14 @@ func parseClaudeLine(line string, st *turnParseState) []TurnEvent {
 		case "text_delta":
 			return []TurnEvent{{Type: TurnText, Delta: raw.Event.Delta.Text}}
 		case "thinking_delta":
-			// 思考滚动摘要：累计全量 + 水位线差分仅在增长时发状态行（ACP 驱动同款语义）。
+			// 思考增量差分：累计全量 + 水位线仅在有新增长时发增量事件（ACP 驱动同款语义）。
 			st.thought += raw.Event.Delta.Thinking
 			if !strings.HasPrefix(st.thought, st.thoughtSent) {
 				st.thoughtSent = ""
 			}
 			if delta := st.thought[len(st.thoughtSent):]; delta != "" {
 				st.thoughtSent = st.thought
-				return []TurnEvent{{Type: TurnStatus, Status: "思考中: " + tailLines(st.thought, thoughtTailLines, thoughtTailRunes)}}
+				return []TurnEvent{{Type: TurnThinking, Delta: delta}}
 			}
 			return nil
 		}

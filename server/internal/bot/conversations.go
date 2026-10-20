@@ -90,6 +90,22 @@ func (s *ConversationStore) FinishTurn(botID string, conversationKey, sessionID 
 }
 
 /*
+ * TouchLastMessage 活动时间戳顺延（受理即触碰）：会话时基的兜底写入——ACP 等无锚回写
+ * 链路（FinishTurn 不触发）由此获得准确的 last_message_at，闲置判定不受引擎差异失真。
+ */
+func (s *ConversationStore) TouchLastMessage(botID string, conversationKey string, at time.Time) error {
+	q := query.Use(s.DB)
+	_, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.BotID.Eq(botID),
+		q.ImBotConversation.ConversationKey.Eq(conversationKey),
+	).UpdateSimple(
+		q.ImBotConversation.LastMessageAt.Value(at),
+		q.ImBotConversation.UpdatedAt.Value(time.Now()),
+	)
+	return err
+}
+
+/*
  * BoundIssueID 读会话显式绑定的目标 issue id（空串 = 未绑定）。读失败交由调用方定降级
  * （消费方按未绑定处理，与 SessionID/HasSeen 同款「尽力读」惯例）。
  */
@@ -121,6 +137,69 @@ func (s *ConversationStore) SaveBoundIssueID(botID string, conversationKey, issu
 // ClearSessionID resume 失效自愈：清空会话 id（下条消息开新会话）。
 func (s *ConversationStore) ClearSessionID(botID string, conversationKey string) error {
 	return s.SaveSessionID(botID, conversationKey, "")
+}
+
+// sessionIdleExpiry 会话闲置边界：超过即视为上一会话结束（下条消息开新会话，锚点备份供 /继续 接回）。
+const sessionIdleExpiry = 2 * time.Hour
+
+/*
+ * ExpireIdleSession 闲置过期判定 + 锚点备份（判定在 Go、备份单语句乐观写：主锚仍为读到的
+ * 值才写——并发回合已换锚则放弃，宁可漏判不错杀）。expired=true 时 prevID 即备份的上一会话
+ * 锚；headless 消费（ACP 模式不写主锚，天然不命中）。
+ */
+func (s *ConversationStore) ExpireIdleSession(botID string, conversationKey string, now time.Time) (prevID string, expired bool, err error) {
+	conv, err := s.GetOrCreate(botID, conversationKey)
+	if err != nil {
+		return "", false, err
+	}
+	if conv.ClaudeSessionID == "" || conv.LastMessageAt == nil || now.Sub(*conv.LastMessageAt) <= sessionIdleExpiry {
+		return "", false, nil
+	}
+	q := query.Use(s.DB)
+	res, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.ID.Eq(conv.ID),
+		q.ImBotConversation.ClaudeSessionID.Eq(conv.ClaudeSessionID),
+	).UpdateSimple(
+		q.ImBotConversation.PrevSessionID.Value(conv.ClaudeSessionID),
+		q.ImBotConversation.UpdatedAt.Value(now),
+	)
+	if err != nil {
+		return "", false, err
+	}
+	return conv.ClaudeSessionID, res.RowsAffected == 1, nil
+}
+
+// ResumePrevSession /继续 接回：备份锚回填主锚并清备份（幂等）。返回是否确有备份可接。
+func (s *ConversationStore) ResumePrevSession(botID string, conversationKey string) (bool, error) {
+	conv, err := s.GetOrCreate(botID, conversationKey)
+	if err != nil {
+		return false, err
+	}
+	if conv.PrevSessionID == "" {
+		return false, nil
+	}
+	q := query.Use(s.DB)
+	_, err = q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.ID.Eq(conv.ID),
+	).UpdateSimple(
+		q.ImBotConversation.ClaudeSessionID.Value(conv.PrevSessionID),
+		q.ImBotConversation.PrevSessionID.Value(""),
+		q.ImBotConversation.UpdatedAt.Value(time.Now()),
+	)
+	return err == nil, err
+}
+
+// ClearPrevSessionID 清过期备份锚（/clear 同步清除，防止 /继续 接回已声明清空的会话）。
+func (s *ConversationStore) ClearPrevSessionID(botID string, conversationKey string) error {
+	q := query.Use(s.DB)
+	_, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.BotID.Eq(botID),
+		q.ImBotConversation.ConversationKey.Eq(conversationKey),
+	).UpdateSimple(
+		q.ImBotConversation.PrevSessionID.Value(""),
+		q.ImBotConversation.UpdatedAt.Value(time.Now()),
+	)
+	return err
 }
 
 // HasSeen 幂等查询：msgid 是否在滚窗内。

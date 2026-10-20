@@ -14,3 +14,11 @@ type ArtifactReplyStream interface {
 	// SendNotice 产物链路的附带说明（投递失败交代等；纯文本，复用渠道文本通道）。
 	SendNotice(text string) error
 }
+
+/*
+ * NoticeReplyStream 附带说明的独立文本投递面（会话边界提醒等非回合气泡；ArtifactReplyStream
+ * 的子面，实现方天然满足）。
+ */
+type NoticeReplyStream interface {
+	SendNotice(text string) error
+}

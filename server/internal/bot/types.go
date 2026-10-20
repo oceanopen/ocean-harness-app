@@ -155,22 +155,24 @@ type TurnRequest struct {
 	SystemPrompt    string                   // ComposeSystemPrompt 产物（固定守则段）
 	Display         *acpsession.EntryDisplay // prompt.go buildTurnDisplay 产物：展示元数据（正文原文 + 引用/附件投影）；仅 ACP 引擎随 PromptMeta 落条目，headless 忽略
 	Port            int
+	DeliveryToken   string // 回合内 MCP im 投递端点令牌（空 = 投递链路禁用）；headless 驱动据此注入 send_file 工具
 }
 
 // TurnEventType claude 回合事件类型（driver_claude 解析 stream-json 产出）。
 type TurnEventType string
 
 const (
-	TurnInit    TurnEventType = "init"     // system/init：携带 session_id（持久化回会话映射）
-	TurnText    TurnEventType = "text"     // 文本增量（thinking 增量已在 driver 层过滤）
-	TurnToolUse TurnEventType = "tool_use" // 工具调用开始（回复泵置状态行）
-	TurnStatus  TurnEventType = "status"   // 状态行覆写（非文本语义：审批挂起提示等，T2.4）
-	TurnDone    TurnEventType = "done"     // result 终态帧
-	TurnError   TurnEventType = "error"    // 进程非零退出 / spawn 失败 / 解析失败
+	TurnInit     TurnEventType = "init"     // system/init：携带 session_id（持久化回会话映射）
+	TurnText     TurnEventType = "text"     // 正文文本增量
+	TurnThinking TurnEventType = "thinking" // 思考文本增量（回复泵组「思考中」面板）
+	TurnToolUse  TurnEventType = "tool_use" // 工具调用开始（回复泵置状态行）
+	TurnStatus   TurnEventType = "status"   // 状态行覆写（非文本语义：审批挂起提示等，T2.4）
+	TurnDone     TurnEventType = "done"     // result 终态帧
+	TurnError    TurnEventType = "error"    // 进程非零退出 / spawn 失败 / 解析失败
 )
 
 /*
- * TurnEvent 回合事件。Delta 仅 TurnText 携带；ToolName 仅 TurnToolUse；Status 仅 TurnStatus；
+ * TurnEvent 回合事件。Delta 仅 TurnText/TurnThinking 携带；ToolName 仅 TurnToolUse；Status 仅 TurnStatus；
  * Result/IsError 仅 TurnDone；Err 仅 TurnError（spawn 失败时 RunTurn 同步返回 error 而不发本事件）；
  * Card 仅 TurnStatus 携带（T3.2 审批卡随状态行出卡，一回合至多一张；headless 引擎不产卡，纯文本渠道由泵回落纯文本帧）。
  */

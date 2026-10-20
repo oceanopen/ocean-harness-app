@@ -156,7 +156,7 @@ func sessionStateError(snap acpsession.ViewSnapshot) error {
 
 /*
  * collectTurn 回合输出收集（RunTurn 受理成功后开启，订阅与退订所有权在此；订阅为受理后重开的干净通道，缓冲里只可能有本回合生命周期帧）。armed 窗口装填：首帧快照的 TurnActive（本回合 turnStarted 帧广播早于订阅建立，收不到）或收到的 FrameTurnStarted；
- * 窗口内视图侧回合闸门保证不存在别的回合，agentMessage entry 即本轮回复——帧携带本回合累计全量文本，差分转 TurnText 增量流式（T3.4，水位线 sent 经 user 锚从首帧快照装填）； agentThought 差分出「思考中: + 尾部多行摘要」滚动状态行（T4.1，正文流自然让位）；toolCall 按 id 首见发进度事件。终态唯一性： turnEnded / terminated / 帧通道关闭三者先到先收，收即返回。
+ * 窗口内视图侧回合闸门保证不存在别的回合，agentMessage entry 即本轮回复——帧携带本回合累计全量文本，差分转 TurnText 增量流式（T3.4，水位线 sent 经 user 锚从首帧快照装填）； agentThought 差分转 TurnThinking 增量事件（T4.1，组帧在泵侧）；toolCall 按 id 首见发进度事件。终态唯一性： turnEnded / terminated / 帧通道关闭三者先到先收，收即返回。
  * ctx 取消 = 软取消（Manager.Cancel → acp 层预算内强制收口，终态帧必达），继续消费直至终态帧；不自建超时——终结时序统一由 acp 层取消预算与帧到达表达，不引入时间性兜底。取消信号消费一次即摘出 select（置 nil）——Done 恒就绪，留在集合里会在等终态帧期间空转烧 CPU。
  */
 func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionID string, frames <-chan acpsession.Frame, stop func(), events chan<- TurnEvent) {
@@ -236,14 +236,14 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 					sent = text
 				case "agentThought":
 					/*
-					 * 思考滚动摘要（T4.1，D4）：帧携带本回合累计全量（与 agentMessage 同构），水位线差分仅在增长时覆写状态行「思考中: + 尾部多行摘要」（rune 安全截断，截断以省略号前缀标识）；
-					 * 泵侧 lastSent 去重兜底重复帧，正文 TurnText / 工具状态行到来自然让位（既有覆写语义）。
+					 * 思考增量差分（T4.1，D4）：帧携带本回合累计全量（与 agentMessage 同构），水位线差分
+					 * 仅在有新增长时发 TurnThinking 增量事件（截取与组帧在泵侧统一）。
 					 */
 					if !strings.HasPrefix(frame.Entry.Text, thoughtSent) {
 						thoughtSent = ""
 					}
 					if delta := frame.Entry.Text[len(thoughtSent):]; delta != "" {
-						events <- TurnEvent{Type: TurnStatus, Status: "思考中: " + tailLines(frame.Entry.Text, thoughtTailLines, thoughtTailRunes)}
+						events <- TurnEvent{Type: TurnThinking, Delta: delta}
 					}
 					thoughtSent = frame.Entry.Text
 				case "toolCall":
@@ -336,35 +336,6 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 			}
 		}
 	}
-}
-
-/*
- * thoughtTailLines/thoughtTailRunes 思考滚动摘要的尾部截取上限（行数 + 总 rune 数双限）：
- * 状态行可读体量；「思考中: 」前缀与截断省略号不占额度。
- */
-const (
-	thoughtTailLines = 3
-	thoughtTailRunes = 220
-)
-
-/*
- * tailLines 取文本尾部至多 maxLines 行、总量至多 maxRunes rune（rune 安全，不切半个多字节
- * 序列）；行数或字数超限均以前缀省略号标识（读者可知所见非全文开头）。
- */
-func tailLines(s string, maxLines, maxRunes int) string {
-	dropped := false
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	if len(lines) > maxLines {
-		lines, dropped = lines[len(lines)-maxLines:], true
-	}
-	out := strings.Join(lines, "\n")
-	if rs := []rune(out); len(rs) > maxRunes {
-		out, dropped = string(rs[len(rs)-maxRunes:]), true
-	}
-	if dropped {
-		return "…" + out
-	}
-	return out
 }
 
 /*
