@@ -1,9 +1,11 @@
 package wecom
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	aibot "github.com/oceanopen/wecom-aibot-go-sdk/aibot"
 	aibottypes "github.com/oceanopen/wecom-aibot-go-sdk/aibot/types"
 
 	"ocean-harness/server/internal/bot"
@@ -59,5 +61,65 @@ func TestInteractionLaneBypassesInboundQueue(t *testing.T) {
 	}
 	if len(inbound) != inboundBufferCapacity {
 		t.Fatalf("交互事件不得占用/插队消息队列: %d", len(inbound))
+	}
+}
+
+/*
+ * TestTakeoverRetryExhaustedTerminal 预算耗尽：维持 disconnected 终态，lastError 追加
+ * 「已自动重连未成功」提示；耗尽分支同步返回（无等待、无建连）。
+ */
+func TestTakeoverRetryExhaustedTerminal(t *testing.T) {
+	client := aibot.NewWsClient(aibottypes.WsClientOptions{BotId: "b", Secret: "s"})
+	rt := &channelRuntime{
+		client:          client,
+		state:           "disconnected",
+		lastErr:         "连接被其他会话接管（同一 botId/Secret 在别处建立了新连接）",
+		takeoverRetries: len(takeoverRetryDelays),
+	}
+	rt.retryTakeover(client)
+	st := rt.Status()
+	if st.State != "disconnected" || !strings.Contains(st.LastError, "已自动重连 3 次未成功") {
+		t.Fatalf("耗尽后应维持终态并改写提示: %+v", st)
+	}
+}
+
+/*
+ * TestTakeoverRetryYieldsToManualStop 手动 Stop 优先：旧代重试在代际守卫处失效——不建连、
+ * stopped 终态不被覆盖。
+ */
+func TestTakeoverRetryYieldsToManualStop(t *testing.T) {
+	client := aibot.NewWsClient(aibottypes.WsClientOptions{BotId: "b", Secret: "s"})
+	rt := &channelRuntime{client: client, state: "disconnected", lastErr: "被接管"}
+	rt.Stop()
+	rt.retryTakeover(client)
+	if st := rt.Status(); st.State != "stopped" {
+		t.Fatalf("手动 Stop 后旧代重试不得复活连接: %+v", st)
+	}
+}
+
+/*
+ * TestTakeoverRetryWaitInterruptedByStop 在途退避等待被 Stop 提前唤醒（等待挂起零轮询），
+ * 重试 goroutine 即刻退出不建连。
+ */
+func TestTakeoverRetryWaitInterruptedByStop(t *testing.T) {
+	oldDelays, oldJitter := takeoverRetryDelays, takeoverRetryJitter
+	takeoverRetryDelays, takeoverRetryJitter = []time.Duration{30 * time.Second}, time.Duration(0)
+	t.Cleanup(func() { takeoverRetryDelays, takeoverRetryJitter = oldDelays, oldJitter })
+
+	client := aibot.NewWsClient(aibottypes.WsClientOptions{BotId: "b", Secret: "s"})
+	rt := &channelRuntime{client: client, state: "disconnected"}
+	done := make(chan struct{})
+	go func() {
+		rt.retryTakeover(client)
+		close(done)
+	}()
+	rt.Stop()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop 应提前唤醒在途重连等待")
+	}
+	if st := rt.Status(); st.State != "stopped" {
+		t.Fatalf("唤醒后不得建连: %+v", st)
 	}
 }

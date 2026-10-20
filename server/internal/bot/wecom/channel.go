@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
+	"time"
 
 	aibot "github.com/oceanopen/wecom-aibot-go-sdk/aibot"
 	aibottypes "github.com/oceanopen/wecom-aibot-go-sdk/aibot/types"
@@ -35,6 +37,15 @@ const inboundBufferCapacity = 32
  */
 const interactionBufferCapacity = 16
 
+/*
+ * takeoverRetryDelays 被接管终态的自动重连退避节奏（有限次，防双实例互踢死循环）；
+ * takeoverRetryJitter 为每次附加的随机抖动上限（互踢错峰收敛）。包级变量，测试可缩短。
+ */
+var (
+	takeoverRetryDelays = []time.Duration{5 * time.Second, 20 * time.Second, 60 * time.Second}
+	takeoverRetryJitter = 5 * time.Second
+)
+
 // Factory 渠道工厂（main 装配注册）。
 type Factory struct{}
 
@@ -52,23 +63,38 @@ type wecomCredential struct {
 
 // channelRuntime 单个企微 bot 的连接运行时。state/lastErr 由 SDK 回调驱动写入，Status 投影读取。
 type channelRuntime struct {
-	mu            sync.Mutex
-	cfg           bot.BotRuntimeConfig
-	client        *aibot.WsClient
-	replyOverride replyClient // 仅单测注入的出站 fake（clientSnapshot 优先取它）；生产恒 nil
-	cancel        context.CancelFunc
-	state         string // connecting | connected | disconnected | stopped
-	lastErr       string
-	log           *zap.Logger
-	onInbound     func(bot.InboundMessage) // supervisor 装配注入的入站出口
+	mu              sync.Mutex
+	startMu         sync.Mutex // 串行化 Start/Stop/自动重连的换代（手动操作优先，防旧代重试复活已停实例）
+	cfg             bot.BotRuntimeConfig
+	client          *aibot.WsClient
+	replyOverride   replyClient // 仅单测注入的出站 fake（clientSnapshot 优先取它）；生产恒 nil
+	cancel          context.CancelFunc
+	state           string // connecting | connected | disconnected | stopped
+	lastErr         string
+	takeoverRetries int // 被接管自动重连已用预算（Start 重置，自动路径不重置）
+	log             *zap.Logger
+	onInbound       func(bot.InboundMessage) // supervisor 装配注入的入站出口
 
 	inbound  chan func(*bot.InboundMessage) // 入站构建任务（保序串行消费）
 	actions  chan func(*bot.InboundMessage) // 交互事件构建任务（快车道独立串行消费，T3.2）
 	stopProc chan struct{}
 }
 
-// Start 实现 bot.ChannelRuntime：构造 WsClient、装配回调、后台连接（不阻塞）。
+// Start 实现 bot.ChannelRuntime：人工启动/重启入口——重置自动重连预算后装配一代新连接（不阻塞）。
 func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.InboundMessage)) error {
+	r.startMu.Lock()
+	defer r.startMu.Unlock()
+	r.mu.Lock()
+	r.takeoverRetries = 0
+	r.mu.Unlock()
+	return r.launch(cfg, onInbound)
+}
+
+/*
+ * launch 装配一代新连接（Start 与自动重连共用）：解析凭据 → 停旧代 → 建客户端/回调/消费
+ * loop → 后台连接。不重置重连预算（有限次语义只在人工 Start 处归零）。
+ */
+func (r *channelRuntime) launch(cfg bot.BotRuntimeConfig, onInbound func(bot.InboundMessage)) error {
 	var cred wecomCredential
 	if err := json.Unmarshal([]byte(cfg.Credential), &cred); err != nil {
 		return fmt.Errorf("credential 解析失败: %w", err)
@@ -121,9 +147,11 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	client.OnAuthenticated = func() { r.setStateForClient(client, "connected", "") }
 	client.OnReconnecting = func(int) { r.setStateForClient(client, "connecting", "") }
 	client.OnDisconnected = func(reason string) { r.setStateForClient(client, "disconnected", reason) }
-	// 被新连接踢下线：终态不重连（SDK 已置 started=false），恢复手段是 UI 重启连接。
+	// 被新连接踢下线：终态 + 有限次自动重连（守卫通过才排程，手动 Stop/重启后的迟到事件不触发）。
 	client.OnDisconnectedEvent = func(*aibottypes.WsFrame[aibottypes.EventMessage]) {
-		r.setStateForClient(client, "disconnected", "连接被其他会话接管（同一 botId/Secret 在别处建立了新连接）；如需在本机恢复请重启连接")
+		if r.setStateForClient(client, "disconnected", "连接被其他会话接管（同一 botId/Secret 在别处建立了新连接）") {
+			go r.retryTakeover(client)
+		}
 	}
 	client.OnError = func(err error) { log.Warn("企微连接错误", zap.Error(err)) }
 
@@ -199,8 +227,12 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	return nil
 }
 
-// Stop 实现 bot.ChannelRuntime：断开连接 + 停处理通道（幂等）。
-func (r *channelRuntime) Stop() { r.stopAndRelease() }
+// Stop 实现 bot.ChannelRuntime：断开连接 + 停处理通道 + 掐灭在途自动重连（幂等）。
+func (r *channelRuntime) Stop() {
+	r.startMu.Lock()
+	defer r.startMu.Unlock()
+	r.stopAndRelease()
+}
 
 /*
  * stopAndRelease 停止当前代连接并释放资源（Stop / Start 防御路径共用）；锁内只做快照、字段置空与置终态。
@@ -233,16 +265,70 @@ func releaseGeneration(cancel context.CancelFunc, client *aibot.WsClient, stop c
 
 /*
  * setStateForClient 回调驱动的状态写入，代际守卫：仅当 client 仍是当前代连接（r.client ==
- * client）时生效。停止/换代后 r.client 已置空，迟到的 SDK 回调（含 Disconnect 内联触发的
- * OnDisconnected）在此自然忽略——stopped 终态不被覆盖，且写入方永远拿得到锁。
+ * client）时生效并返回 true。停止/换代后 r.client 已置空，迟到的 SDK 回调（含 Disconnect 内联
+ * 触发的 OnDisconnected）在此自然忽略——stopped 终态不被覆盖，且写入方永远拿得到锁。
  */
-func (r *channelRuntime) setStateForClient(client *aibot.WsClient, state, lastErr string) {
+func (r *channelRuntime) setStateForClient(client *aibot.WsClient, state, lastErr string) bool {
 	r.mu.Lock()
-	if r.client == client {
+	applied := r.client == client
+	if applied {
 		r.state = state
 		r.lastErr = lastErr
 	}
 	r.mu.Unlock()
+	return applied
+}
+
+/*
+ * retryTakeover 被接管后的有限次自动重连：退避+抖动等待后以保存的 cfg/onInbound 经 launch
+ * 重建连接。等待挂起零轮询；代际守卫（client 指针 + startMu）确保手动 Stop/重启优先；预算
+ * 耗尽维持终态并改写提示，goroutine 随即消亡。
+ */
+func (r *channelRuntime) retryTakeover(client *aibot.WsClient) {
+	r.startMu.Lock()
+	r.mu.Lock()
+	attempt := r.takeoverRetries
+	r.takeoverRetries++
+	current := r.client == client
+	cfg, onInbound, log, stop := r.cfg, r.onInbound, r.log, r.stopProc
+	r.mu.Unlock()
+	r.startMu.Unlock()
+
+	if !current || attempt >= len(takeoverRetryDelays) {
+		if current {
+			r.setStateForClient(client, "disconnected", fmt.Sprintf(
+				"连接被其他会话接管（同一 botId/Secret 在别处建立了新连接）；已自动重连 %d 次未成功，请手动重启连接",
+				len(takeoverRetryDelays)))
+		}
+		return
+	}
+
+	delay := takeoverRetryDelays[attempt]
+	if takeoverRetryJitter > 0 {
+		delay += rand.N(takeoverRetryJitter)
+	}
+	select {
+	case <-time.After(delay):
+	case <-stop:
+		return
+	}
+
+	r.startMu.Lock()
+	defer r.startMu.Unlock()
+	r.mu.Lock()
+	current = r.client == client
+	r.mu.Unlock()
+	if !current {
+		return
+	}
+	log.Info("企微连接被接管，自动重连", zap.Int("attempt", attempt+1))
+	if err := r.launch(cfg, onInbound); err != nil {
+		// 重试路径同 cfg 已验证过，此处不可达；防御性落终态。
+		log.Error("企微自动重连失败", zap.Error(err))
+		r.mu.Lock()
+		r.state, r.lastErr = "disconnected", "自动重连失败: "+err.Error()
+		r.mu.Unlock()
+	}
 }
 
 // Status 实现 bot.ChannelRuntime。

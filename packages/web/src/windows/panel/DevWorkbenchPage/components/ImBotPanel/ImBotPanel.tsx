@@ -98,6 +98,8 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
   const workspaceBots = bots.filter(bot => bot.workspaceId === issue.workspaceId);
   // 补绑候选：不属于本工作空间的 bot（含未配置 = 空）。
   const candidateBots = bots.filter(bot => bot.workspaceId !== issue.workspaceId);
+  // 离线提示：存在启用中但断连的 bot（渠道无关），标题红点 + 卡片红色徽标（后者已有）。
+  const hasOfflineBot = workspaceBots.some(bot => bot.enabled && bot.connState === 'disconnected');
 
   // 在飞绑定请求（面板级单飞行中操作）：下传 bot 卡做行级 loading/disabled。
   const bindPending = bindMutation.isPending ? bindMutation.variables ?? null : null;
@@ -169,7 +171,16 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
       {/* 头部：机器人计数 + 补绑（+）+ 刷新（RefreshIconButton，isFetching 旋转） */}
       <PanelToolbar
         left={!isLoading && workspaceBots.length > 0
-          ? <Typography variant="caption" color="text.secondary">{`机器人 ${workspaceBots.length}`}</Typography>
+          ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Typography variant="caption" color="text.secondary">{`机器人 ${workspaceBots.length}`}</Typography>
+                {hasOfflineBot && (
+                  <Tooltip title="存在离线 bot，@消息将丢失直至重新连接">
+                    <Box sx={{ width: '6px', height: '6px', borderRadius: '50%', bgcolor: 'error.main' }} />
+                  </Tooltip>
+                )}
+              </Box>
+            )
           : null}
         right={(
           <>

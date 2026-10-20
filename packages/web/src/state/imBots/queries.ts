@@ -13,9 +13,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { imBotsKeys } from './keys';
 
 /**
- * ─── 读取（query）─── 手动刷新模型：操作后由 mutation invalidate 自动刷新，页面提供手动刷新入口。
- * 唯一例外是 connecting 瞬态的临时轮询（见 useImBots）——restart 后 connecting → connected
- * 迁移无推送通道，不轮询则「连接中」徽标滞留。
+ * ─── 读取（query）─── 手动刷新为主：操作后由 mutation invalidate 自动刷新，页面提供手动刷新入口。
+ * 两处受控轮询偏差（见 useImBots）：connecting 瞬态 2s 回填 + 稳定态 30s 掉线感知。
  */
 
 /** 全部 IM bot（含运行态投影）。 */
@@ -24,11 +23,12 @@ export function useImBots() {
     queryKey: imBotsKeys.list(),
     queryFn: () => ImBotService.getList(),
     /**
-     * 瞬态回填：存在 connecting 态 bot 时临时轮询（数据条件驱动，非定时补发），全部进入
-     * 稳定态后自动停；窗口失焦不轮询（refetchIntervalInBackground 默认 false）。
+     * 瞬态回填：存在 connecting 态 bot 时 2s 快轮询，全部进入稳定态后回落。
+     * 稳定态常驻 30s 轻轮询：掉线无推送通道，不轮询则徽标滞留旧态（掉线感知的
+     * 受控偏差，其余实时性仍靠手动刷新；失焦不轮询，refetchIntervalInBackground 默认 false）。
      */
     refetchInterval: query =>
-      query.state.data?.some(bot => bot.connState === 'connecting') ? 2000 : false,
+      query.state.data?.some(bot => bot.connState === 'connecting') ? 2000 : 30000,
   });
 }
 
