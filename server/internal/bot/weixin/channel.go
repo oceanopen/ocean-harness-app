@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -22,6 +23,15 @@ const inboundBufferCapacity = 32
 
 // startRetryDelays notifystart 重试节奏；retryableStart 网络族错误可重试（超时/网络/408/425/429/5xx）。
 var startRetryDelays = []time.Duration{250 * time.Millisecond, time.Second, 3 * time.Second}
+
+/*
+ * rejectRetryDelays 连续被拒终态的自动重连退避节奏（有限次；凭据失效终态不重试，须人工
+ * 重扫）；rejectRetryJitter 为每次附加的随机抖动上限。包级变量，测试可缩短。
+ */
+var (
+	rejectRetryDelays = []time.Duration{5 * time.Second, 20 * time.Second, 60 * time.Second}
+	rejectRetryJitter = 5 * time.Second
+)
 
 func retryableStart(err error) bool {
 	var ae *APIError
@@ -65,15 +75,18 @@ type channelState struct {
  * 迟到的旧代写入自然忽略（对齐 wecom 的 client 指针代际守卫）。
  */
 type channelRuntime struct {
-	mu      sync.Mutex
-	cred    Credential
-	baseURL string
-	client  *apiClient
-	cancel  context.CancelFunc
-	gen     int
-	state   string // connecting | connected | disconnected | stopped
-	lastErr string
-	cursor  channelState
+	mu            sync.Mutex
+	startMu       sync.Mutex // 串行化 Start/Stop/自动重连的换代（手动操作优先，防旧代重试复活已停实例）
+	cred          Credential
+	baseURL       string
+	client        *apiClient
+	cancel        context.CancelFunc
+	gen           int
+	state         string // connecting | connected | disconnected | stopped
+	lastErr       string
+	cursor        channelState
+	onInbound     func(bot.InboundMessage) // supervisor 装配注入的入站出口（自动重连经 launch 复用）
+	rejectRetries int                      // 连续被拒自动重连已用预算（Start 重置，自动路径不重置）
 
 	inbound  chan *inboundMessage
 	stopProc chan struct{}
@@ -95,8 +108,21 @@ type connGen struct {
 	gen     int
 }
 
-// Start 实现 bot.ChannelRuntime：解析凭据 → 后台 notifyStart + 长轮询（不阻塞）。
+// Start 实现 bot.ChannelRuntime：人工启动/重启入口——重置自动重连预算后装配一代新连接（不阻塞）。
 func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.InboundMessage)) error {
+	r.startMu.Lock()
+	defer r.startMu.Unlock()
+	r.mu.Lock()
+	r.rejectRetries = 0
+	r.mu.Unlock()
+	return r.launch(cfg, onInbound)
+}
+
+/*
+ * launch 装配一代新连接（Start 与自动重连共用）：解析凭据 → 停旧代 → 后台 notifyStart +
+ * 长轮询。不重置重连预算（有限次语义只在人工 Start 处归零）。
+ */
+func (r *channelRuntime) launch(cfg bot.BotRuntimeConfig, onInbound func(bot.InboundMessage)) error {
 	var cred Credential
 	if err := json.Unmarshal([]byte(cfg.Credential), &cred); err != nil {
 		return fmt.Errorf("credential 解析失败: %w", err)
@@ -123,6 +149,7 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
 	r.state = "connecting"
 	r.lastErr = ""
 	r.cursor = loadChannelState(cfg.ChannelState)
+	r.onInbound = onInbound
 	ch := make(chan *inboundMessage, inboundBufferCapacity)
 	stop := make(chan struct{})
 	r.inbound = ch
@@ -141,6 +168,7 @@ func (r *channelRuntime) Start(cfg bot.BotRuntimeConfig, onInbound func(bot.Inbo
  * run 连接主循环：notifyStart（重试 3 档）→ 长轮询循环 → 收尾 notifyStop。全程消费 connGen
  * 快照（含收尾下线通知的 token/baseURL），收尾与新 Start 交错也不会误用新代凭据。
  * -14（token 失效）为终态：置 disconnected + 换绑指引，不再自动重试（token 无法自愈）。
+ * 连续被拒终态：notifyStop 收尾后交 retryAfterRejects 有限次自动重连。
  */
 func (r *channelRuntime) run(ctx context.Context, cg connGen) {
 	if err := r.notifyStartWithRetry(ctx, cg); err != nil {
@@ -156,13 +184,16 @@ func (r *channelRuntime) run(ctx context.Context, cg connGen) {
 		return
 	}
 	r.setStateForGen(cg.gen, "connected", "")
-	r.pollLoop(ctx, cg)
+	rejected := r.pollLoop(ctx, cg)
 
 	if ctx.Err() == nil {
 		// 非取消退出（终态断连等）：补发下线通知，尽力而为（本代快照，不误伤新连接）。
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		_ = cg.client.NotifyStop(stopCtx, cg.token, cg.baseURL)
+	}
+	if rejected && ctx.Err() == nil {
+		go r.retryAfterRejects(cg)
 	}
 }
 
@@ -187,25 +218,25 @@ func transientPollErr(err error) bool {
 /*
  * pollLoop 长轮询主循环：失败分两族——网络族无限退避自愈（2s 翻倍封顶 60s，不计惩罚，
  * 对齐 wecom 断网自愈）；服务端明确拒绝（凭据/协议异常无法自愈）三振终止须人工介入。
- * Stop 取消即退。
+ * Stop 取消即退。返回 true = 连续被拒终态（交 run 收尾后自动重连）。
  */
-func (r *channelRuntime) pollLoop(ctx context.Context, cg connGen) {
+func (r *channelRuntime) pollLoop(ctx context.Context, cg connGen) bool {
 	consecutiveRejects := 0
 	backoff := 2 * time.Second
 	for {
 		if ctx.Err() != nil {
-			return
+			return false
 		}
 		resp, err := cg.client.GetUpdates(ctx, cg.token, cg.baseURL, r.cursorSnapshot())
 		if err != nil {
 			if ctx.Err() != nil {
-				return
+				return false
 			}
 			var ae *APIError
 			if errors.As(err, &ae) && ae.Code == errStaleToken {
 				r.setStateForGen(cg.gen, "disconnected", "微信登录凭据已失效，请在机器人列表对该 bot 执行「重新扫码授权」")
 				cg.log.Error("微信 token 已失效，连接终止", zap.String("providerCode", ae.ProviderCode))
-				return
+				return false
 			}
 			if !transientPollErr(err) {
 				consecutiveRejects++
@@ -213,17 +244,17 @@ func (r *channelRuntime) pollLoop(ctx context.Context, cg connGen) {
 				if consecutiveRejects >= 3 {
 					r.setStateForGen(cg.gen, "disconnected", fmt.Sprintf("连续 %d 次拉取消息被拒绝: %v", consecutiveRejects, err))
 					cg.log.Error("微信长轮询连续被拒，连接终止", zap.Error(err))
-					return
+					return true
 				}
 				backoff = 2 * time.Second
 				if r.sleepCtx(ctx, time.Duration(1<<(consecutiveRejects-1))*2*time.Second) {
-					return
+					return false
 				}
 				continue
 			}
 			r.setStateForGen(cg.gen, "connecting", err.Error())
 			if r.sleepCtx(ctx, backoff) {
-				return
+				return false
 			}
 			backoff = min(backoff*2, pollBackoffCap)
 			continue
@@ -234,6 +265,60 @@ func (r *channelRuntime) pollLoop(ctx context.Context, cg connGen) {
 		if r.dispatchBatch(cg, resp) && resp.GetUpdatesBuf != "" {
 			r.saveCursor(cg, resp.GetUpdatesBuf)
 		}
+	}
+}
+
+/*
+ * retryAfterRejects 连续被拒终态的有限次自动重连：退避+抖动等待后经 launch 重建轮询连接。
+ * 等待挂起零轮询；代际守卫（gen + startMu）确保手动 Stop/重启优先；预算耗尽维持终态并
+ * 改写提示，goroutine 随即消亡。
+ */
+func (r *channelRuntime) retryAfterRejects(cg connGen) {
+	r.startMu.Lock()
+	r.mu.Lock()
+	attempt := r.rejectRetries
+	r.rejectRetries++
+	current := r.gen == cg.gen
+	onInbound, stop := r.onInbound, r.stopProc
+	r.mu.Unlock()
+	r.startMu.Unlock()
+
+	if !current || attempt >= len(rejectRetryDelays) {
+		if current {
+			r.mu.Lock()
+			if r.gen == cg.gen {
+				r.lastErr = fmt.Sprintf("%s；已自动重连 %d 次未成功，请手动重启连接", r.lastErr, len(rejectRetryDelays))
+			}
+			r.mu.Unlock()
+		}
+		return
+	}
+
+	delay := rejectRetryDelays[attempt]
+	if rejectRetryJitter > 0 {
+		delay += rand.N(rejectRetryJitter)
+	}
+	select {
+	case <-time.After(delay):
+	case <-stop:
+		return
+	}
+
+	r.startMu.Lock()
+	defer r.startMu.Unlock()
+	r.mu.Lock()
+	current = r.gen == cg.gen
+	r.mu.Unlock()
+	if !current {
+		return
+	}
+	cg.log.Info("微信连续被拒，自动重连", zap.Int("attempt", attempt+1))
+	if err := r.launch(cg.cfg, onInbound); err != nil {
+		// 重试路径同 cfg 已验证过，此处不可达；防御性落终态。
+		cg.log.Error("微信自动重连失败", zap.Error(err))
+		r.mu.Lock()
+		r.state, r.lastErr = "disconnected", "自动重连失败: "+err.Error()
+		r.mu.Unlock()
 	}
 }
 
@@ -311,8 +396,12 @@ func (r *channelRuntime) notifyStartWithRetry(ctx context.Context, cg connGen) e
 	}
 }
 
-// Stop 实现 bot.ChannelRuntime：取消轮询 + 停消费通道（幂等；notifyStop 由 run goroutine 收尾）。
-func (r *channelRuntime) Stop() { r.stopAndRelease() }
+// Stop 实现 bot.ChannelRuntime：取消轮询 + 停消费通道 + 掐灭在途自动重连（幂等；notifyStop 由 run goroutine 收尾）。
+func (r *channelRuntime) Stop() {
+	r.startMu.Lock()
+	defer r.startMu.Unlock()
+	r.stopAndRelease()
+}
 
 // stopAndRelease 停止当前代连接（锁内只做快照、置空与置终态，通道关闭在锁外）。
 func (r *channelRuntime) stopAndRelease() {
