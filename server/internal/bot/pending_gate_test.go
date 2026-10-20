@@ -321,7 +321,7 @@ func TestOrchestratorPendingGateMiss(t *testing.T) {
 		return false
 	})
 	frames := rs.snapshot()
-	if len(frames) < 2 || frames[0].content != "正在思考…" {
+	if len(frames) < 2 || frames[0].content != "收到，处理中…" {
 		t.Fatalf("未命中应照发占位帧并出回合: %+v", frames)
 	}
 	waitFor(t, "引擎恰一回合", func() bool { return driver.turnCount() == 1 })

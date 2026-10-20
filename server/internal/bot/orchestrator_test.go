@@ -337,7 +337,7 @@ func TestRunTurnWorkspaceCommandCard(t *testing.T) {
 	waitFor(t, "workspace 指令出卡", func() bool { return len(rs.cardSnapshot()) > 0 })
 
 	frames, cards := rs.snapshot(), rs.cardSnapshot()
-	if len(frames) != 1 || frames[0].content != "正在思考…" || frames[0].final {
+	if len(frames) != 1 || frames[0].content != "收到，处理中…" || frames[0].final {
 		t.Fatalf("受理占位帧应恰一帧非终态: %+v", frames)
 	}
 	if len(cards) != 1 || !cards[0].final || len(cards[0].spec.Options) != 2 {
@@ -374,7 +374,7 @@ func TestRunTurnUnbindCommandCard(t *testing.T) {
 	waitFor(t, "解绑指令出卡", func() bool { return len(rs.cardSnapshot()) > 0 })
 
 	frames, cards := rs.snapshot(), rs.cardSnapshot()
-	if len(frames) != 1 || frames[0].content != "正在思考…" || frames[0].final {
+	if len(frames) != 1 || frames[0].content != "收到，处理中…" || frames[0].final {
 		t.Fatalf("受理占位帧应恰一帧非终态: %+v", frames)
 	}
 	if len(cards) != 1 || !cards[0].final || len(cards[0].spec.Options) != 1 ||
@@ -489,6 +489,20 @@ func TestRunTurnProbeCard(t *testing.T) {
 		if cards := rs2.cardSnapshot(); len(cards) != 0 {
 			t.Fatalf("已绑定不得出卡: %+v", cards)
 		}
+		waitFor(t, "终帧收口", func() bool {
+			frames := rs2.snapshot()
+			return len(frames) > 0 && frames[len(frames)-1].final
+		})
+		/*
+		 * 主路径帧序：占位帧 → 执行期状态帧（填充静默期）→ 回合终帧；指令步/门禁/探针等
+		 * 终帧收口路径不得出现状态帧（各指令步用例的帧数断言即证明）。
+		 */
+		frames := rs2.snapshot()
+		if len(frames) != 3 || frames[0].content != "收到，处理中…" ||
+			frames[1].content != "已开始处理，正在连接会话…" || frames[1].final ||
+			frames[2].content != "ok" || !frames[2].final {
+			t.Fatalf("主路径应含执行期状态帧且恰一终帧: %+v", frames)
+		}
 	})
 
 	t.Run("无卡能力回落纯文本", func(t *testing.T) {
@@ -530,7 +544,7 @@ func TestRunTurnIssueCommandFullPath(t *testing.T) {
 	waitFor(t, "#任务 指令出卡", func() bool { return len(rs.cardSnapshot()) > 0 })
 
 	frames, cards := rs.snapshot(), rs.cardSnapshot()
-	if len(frames) != 1 || frames[0].content != "正在思考…" {
+	if len(frames) != 1 || frames[0].content != "收到，处理中…" {
 		t.Fatalf("受理占位帧应恰一帧: %+v", frames)
 	}
 	if len(cards) != 1 || !cards[0].final || len(cards[0].spec.Options) != 1 {
@@ -579,7 +593,7 @@ func TestRunTurnHelpCommand(t *testing.T) {
 		return false
 	})
 	frames, cards := rs.snapshot(), rs.cardSnapshot()
-	if len(frames) != 2 || frames[0].content != "正在思考…" || frames[1].content != helpText() || !frames[1].final {
+	if len(frames) != 2 || frames[0].content != "收到，处理中…" || frames[1].content != helpText() || !frames[1].final {
 		t.Fatalf("帮助应占位帧后接纯文本指令列表终帧: %+v", frames)
 	}
 	if len(cards) != 0 {

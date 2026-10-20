@@ -101,11 +101,12 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	go func() {
 		defer close(events)
 		doneEmitted := false
+		st := &turnParseState{toolNames: map[string]string{}}
 		reader := bufio.NewReader(stdout)
 		for {
 			line, readErr := reader.ReadString('\n')
 			if line != "" {
-				for _, ev := range parseClaudeLine(line) {
+				for _, ev := range parseClaudeLine(line, st) {
 					if ev.Type == TurnDone {
 						doneEmitted = true
 					}
@@ -171,14 +172,18 @@ type rawClaudeLine struct {
 	Event     *struct {
 		Type  string `json:"type"` // content_block_delta 等
 		Delta *struct {
-			Type string `json:"type"` // text_delta | thinking_delta | …
-			Text string `json:"text"`
+			Type     string `json:"type"` // text_delta | thinking_delta | …
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
 		} `json:"delta"`
 	} `json:"event"`
 	Message *struct {
 		Content []struct {
-			Type string `json:"type"` // text | thinking | tool_use
-			Name string `json:"name"` // tool_use 的工具名
+			Type      string `json:"type"`        // text | thinking | tool_use | tool_result
+			Name      string `json:"name"`        // tool_use 的工具名
+			ID        string `json:"id"`          // tool_use 的调用 id（tool_result 终态翻译锚）
+			ToolUseID string `json:"tool_use_id"` // tool_result 对应的 tool_use id
+			IsError   bool   `json:"is_error"`    // tool_result 失败标记
 		} `json:"content"`
 	} `json:"message"`
 	Result  string `json:"result"`
@@ -186,10 +191,21 @@ type rawClaudeLine struct {
 }
 
 /*
- * parseClaudeLine 单行 stream-json → 0..n 个 TurnEvent。schema 漂移时的表现为事件退化
- * （text 增量丢失、只剩 assistant 整段/result 兜底），不致挂死。thinking 增量在本层过滤。
+ * turnParseState 回合内解析状态（RunTurn reader goroutine 私有，单线程消费）：工具调用
+ * id→名映射（tool_result 终态翻译锚）与思考累计全量（滚动摘要水位线，同 ACP 驱动语义）。
  */
-func parseClaudeLine(line string) []TurnEvent {
+type turnParseState struct {
+	toolNames   map[string]string
+	thought     string
+	thoughtSent string
+}
+
+/*
+ * parseClaudeLine 单行 stream-json → 0..n 个 TurnEvent。schema 漂移时的表现为事件退化
+ * （text 增量丢失、只剩 assistant 整段/result 兜底），不致挂死。thinking 增量转「思考中: 」
+ * 尾部摘要状态行；tool_result 转工具终态状态行——两者均被正文/后续状态行自然让位。
+ */
+func parseClaudeLine(line string, st *turnParseState) []TurnEvent {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return nil
@@ -204,9 +220,23 @@ func parseClaudeLine(line string) []TurnEvent {
 			return []TurnEvent{{Type: TurnInit, SessionID: raw.SessionID}}
 		}
 	case "stream_event":
-		if raw.Event != nil && raw.Event.Type == "content_block_delta" &&
-			raw.Event.Delta != nil && raw.Event.Delta.Type == "text_delta" {
+		if raw.Event == nil || raw.Event.Type != "content_block_delta" || raw.Event.Delta == nil {
+			return nil
+		}
+		switch raw.Event.Delta.Type {
+		case "text_delta":
 			return []TurnEvent{{Type: TurnText, Delta: raw.Event.Delta.Text}}
+		case "thinking_delta":
+			// 思考滚动摘要：累计全量 + 水位线差分仅在增长时发状态行（ACP 驱动同款语义）。
+			st.thought += raw.Event.Delta.Thinking
+			if !strings.HasPrefix(st.thought, st.thoughtSent) {
+				st.thoughtSent = ""
+			}
+			if delta := st.thought[len(st.thoughtSent):]; delta != "" {
+				st.thoughtSent = st.thought
+				return []TurnEvent{{Type: TurnStatus, Status: "思考中: " + tailLines(st.thought, thoughtTailLines, thoughtTailRunes)}}
+			}
+			return nil
 		}
 	case "assistant":
 		if raw.Message == nil {
@@ -215,8 +245,31 @@ func parseClaudeLine(line string) []TurnEvent {
 		var evs []TurnEvent
 		for _, block := range raw.Message.Content {
 			if block.Type == "tool_use" && block.Name != "" {
+				if block.ID != "" {
+					st.toolNames[block.ID] = block.Name
+				}
 				evs = append(evs, TurnEvent{Type: TurnToolUse, ToolName: block.Name})
 			}
+		}
+		return evs
+	case "user":
+		/*
+		 * 工具终态：stream-json 事件只达一次，无需去重；id 未注册（schema 漂移防御）
+		 * 回落中性名。
+		 */
+		if raw.Message == nil {
+			return nil
+		}
+		var evs []TurnEvent
+		for _, block := range raw.Message.Content {
+			if block.Type != "tool_result" {
+				continue
+			}
+			name := st.toolNames[block.ToolUseID]
+			if name == "" {
+				name = "工具"
+			}
+			evs = append(evs, TurnEvent{Type: TurnStatus, Status: toolSettledText(name, block.IsError)})
 		}
 		return evs
 	case "result":

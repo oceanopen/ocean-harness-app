@@ -7,9 +7,9 @@ import (
 )
 
 /*
- * subscriberBuffer 单订户有界缓冲：满即断开（溢出策略见 broadcast）——pump 永不阻塞于慢 SSE 客户端，保住 acp 事件流背压契约、慢消费不拖连接读循环；断开客户端由 EventSource 自动重连取全新快照（对齐 PTY scrollback 重挂载语义，不做 Last-Event-ID 续传）。
+ * subscriberBuffer 单订户有界缓冲：满即断开（溢出策略见 broadcast）——pump 永不阻塞于慢 SSE 客户端，保住 acp 事件流背压契约、慢消费不拖连接读循环；断开客户端由 EventSource 自动重连取全新快照（对齐 PTY scrollback 重挂载语义，不做 Last-Event-ID 续传）。容量按长回复峰值帧率预留余量：条目帧逐 chunk 全量下发，前端渲染偶发落后时缓冲吸收抖动，避免动辄触发断连重连（秒级停更体感）。
  */
-const subscriberBuffer = 256
+const subscriberBuffer = 1024
 
 // FrameType SSE 帧型全集（信封 type 字段取值域）。
 type FrameType string

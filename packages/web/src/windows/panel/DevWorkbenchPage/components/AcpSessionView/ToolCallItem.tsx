@@ -43,7 +43,7 @@ export default function ToolCallItem({ toolCall, expanded, onToggle }: {
             </Typography>
           )}
         </Typography>
-        {toolCall.status === 'in_progress' && <CircularProgress size={14} />}
+        {(toolCall.status === 'pending' || toolCall.status === 'in_progress') && <CircularProgress size={14} />}
         {meta && <Chip size="small" label={meta.label} color={meta.color} sx={{ height: '20px', fontSize: '12px' }} />}
       </Box>
       {hasPayload && (

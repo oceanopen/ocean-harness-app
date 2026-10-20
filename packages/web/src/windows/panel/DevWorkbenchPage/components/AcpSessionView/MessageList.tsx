@@ -218,15 +218,14 @@ function ImUserBubble({ display }: { display: AcpEntryDisplay }) {
   );
 }
 
-// agent 消息 markdown 渲染：MarkdownViewer 同款排版（proseSx）与插件链（模块级常量防
-// 击穿块级 memo），简化自 fileViewer 全功能版——无 math/mermaid 插件、无自绘代码块
-// （罕见语言走内置块，proseSx 兜底 pre 规则保证多行不挤行）、链接/图片按默认渲染。
-// TODO：随会话视图演进按需补 math/mermaid 与代码块复制控件。
+// agent 消息 markdown 渲染：MarkdownViewer 同款排版（proseSx）与插件链（模块级常量防击穿
+// 块级 memo），无 math/mermaid、无自绘代码块；streaming 模式增量解析流式更新（fileViewer
+// 静态场景仍 static）。TODO：随会话视图演进按需补 math/mermaid 与代码块复制控件。
 function MarkdownMessage({ text, messageSx }: { text: string; messageSx?: SxProps<Theme> }) {
   return (
     <Box sx={[proseSx, { '& p': { my: '6px', lineHeight: 1.7 } }, ...(messageSx ? [messageSx] : [])] as SxProps<Theme>}>
       <Streamdown
-        mode="static"
+        mode="streaming"
         // controls 全关：streamdown 块控件样式依赖 tailwind，本项目无 tailwind（同 MarkdownViewer）。
         controls={false}
         // shikiTheme 兜底：内置代码块缺省 themes 会同步崩溃（同 MarkdownViewer 注释）。

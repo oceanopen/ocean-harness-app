@@ -252,6 +252,13 @@ func toolCallFrame(toolCallID, name string) acpsession.Frame {
 	}}
 }
 
+// toolStatusFrame 带状态的工具调用覆写帧（终态同步用例）。
+func toolStatusFrame(toolCallID, name, status string) acpsession.Frame {
+	return acpsession.Frame{Type: acpsession.FrameEntry, Entry: &acpsession.ConversationEntry{
+		EntryID: "tool:" + toolCallID, Kind: "toolCall", ToolCall: &acpsession.ToolCallView{ToolCallID: toolCallID, Name: name, Status: status},
+	}}
+}
+
 // recvEvent 收一个回合事件（超时失败，防测试悬挂）。
 func recvEvent(t *testing.T, events <-chan TurnEvent) TurnEvent {
 	t.Helper()
@@ -322,7 +329,7 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameEntry, Entry: &acpsession.ConversationEntry{
 		EntryID: "tool:1", Kind: "toolCall", ToolCall: &acpsession.ToolCallView{ToolCallID: "tc1", Name: "Bash", Title: "运行命令"},
 	}})
-	// 同 id 工具 upsert 覆写帧不重复发进度事件
+	// 同 id 工具 upsert 覆写帧不重复发进度事件；终态覆写帧发一次完成状态行
 	sessions.push(t, acpsession.Frame{Type: acpsession.FrameEntry, Entry: &acpsession.ConversationEntry{
 		EntryID: "tool:1", Kind: "toolCall", ToolCall: &acpsession.ToolCallView{ToolCallID: "tc1", Name: "Bash", Status: "completed"},
 	}})
@@ -338,6 +345,9 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 	ev := recvEvent(t, events)
 	if ev.Type != TurnToolUse || ev.ToolName != "Bash" {
 		t.Fatalf("工具进度事件不符: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "🔧 Bash 已完成" {
+		t.Fatalf("工具完成覆写帧应发一次完成状态行: %+v", ev)
 	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || done.IsError || done.Result != "Hello!" {
@@ -496,9 +506,46 @@ func TestAcpDriverTurnTextAfterToolUse(t *testing.T) {
 }
 
 /*
+ * TestAcpDriverToolSettledStatus 工具终态同步：已见工具的 completed/failed 覆写帧各发一次
+ * 终态状态行（填充「工具已结束、下一段内容未到」的气泡滞留），重复终态帧不重发，中间态
+ * 覆写帧不发事件。
+ */
+func TestAcpDriverToolSettledStatus(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, toolStatusFrame("tc1", "Bash", "in_progress"))
+	sessions.push(t, toolStatusFrame("tc1", "Bash", "completed"))
+	sessions.push(t, toolStatusFrame("tc1", "Bash", "completed")) // 重复终态帧：不重发
+	sessions.push(t, toolStatusFrame("tc2", "Read", "failed"))
+	sessions.push(t, turnEndedFrame("end_turn"))
+
+	if ev := recvEvent(t, events); ev.Type != TurnToolUse || ev.ToolName != "Bash" {
+		t.Fatalf("首见应发执行事件: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "🔧 Bash 已完成" {
+		t.Fatalf("完成覆写帧应发完成状态行: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnToolUse || ev.ToolName != "Read" {
+		t.Fatalf("第二个工具首见应发执行事件: %+v", ev)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "❌ Read 失败" {
+		t.Fatalf("失败覆写帧应发失败状态行: %+v", ev)
+	}
+	if done := recvEvent(t, events); done.Type != TurnDone {
+		t.Fatalf("终态事件不符: %+v", done)
+	}
+}
+
+/*
  * TestAcpDriverThoughtScrollingSummary 思考滚动摘要（T4.1，D4）：agentThought 帧携带本回合
- * 累计全量，水位线差分仅在增长时覆写状态行「💭 + 尾部摘要」——≤72 rune 原样直出、超限截
- * 尾部 72 rune 且以省略号前缀标识（多字节安全），重复帧不重发；正文 TurnText 到来自然让位。
+ * 累计全量，水位线差分仅在增长时覆写状态行「思考中: + 尾部摘要」——短摘要原样直出、单行
+ * 超限截尾部 220 rune、多行超限截尾部 3 行，超限均以省略号前缀标识（rune 安全），重复帧不
+ * 重发；正文 TurnText 到来自然让位。
  */
 func TestAcpDriverThoughtScrollingSummary(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
@@ -507,20 +554,25 @@ func TestAcpDriverThoughtScrollingSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
-	long := strings.Repeat("思", 80) // 80 rune 长思考：摘要应截尾部 72 rune 且带省略号前缀
+	long := strings.Repeat("思", 300) // 300 rune 单行长思考：摘要应截尾部 220 rune 且带省略号前缀
+	multi := "一\n二\n三\n四\n五"         // 5 行长思考：摘要应截尾部 3 行且带省略号前缀
 	sessions.push(t, turnStartedFrame())
 	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题"))
 	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题")) // 重复帧：水位线无增长不重发
 	sessions.push(t, thoughtFrame("t1-agentThought", long))
+	sessions.push(t, thoughtFrame("t1-agentThought", multi))
 	sessions.push(t, agentTextFrame("t1-agentMessage", "方案如下"))
 	sessions.push(t, turnEndedFrame("end_turn"))
 
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 先分析问题" {
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 先分析问题" {
 		t.Fatalf("短摘要应原样直出: %+v", ev)
 	}
-	wantTail := "💭 …" + strings.Repeat("思", 72)
+	wantTail := "思考中: …" + strings.Repeat("思", 220)
 	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != wantTail {
-		t.Fatalf("长摘要应截尾部 72 rune 且带省略号前缀:\ngot:  %s\nwant: %s", ev.Status, wantTail)
+		t.Fatalf("长摘要应截尾部 220 rune 且带省略号前缀:\ngot:  %s\nwant: %s", ev.Status, wantTail)
+	}
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: …三\n四\n五" {
+		t.Fatalf("多行摘要应截尾部 3 行且带省略号前缀: %+v", ev)
 	}
 	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "方案如下" {
 		t.Fatalf("思考后的正文增量事件不符（重复帧不得额外发状态行）: %+v", ev)
@@ -548,13 +600,13 @@ func TestAcpDriverThoughtWatermarkReset(t *testing.T) {
 	sessions.push(t, thoughtFrame("t1-agentThought", "崭新思考续")) // 前缀恢复：正常增长
 	sessions.push(t, turnEndedFrame("end_turn"))
 
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 旧思考" {
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 旧思考" {
 		t.Fatalf("首条思考摘要不符: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 崭新思考" {
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 崭新思考" {
 		t.Fatalf("前缀错配应重置全量重发摘要: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 崭新思考续" {
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 崭新思考续" {
 		t.Fatalf("前缀恢复后应正常续接: %+v", ev)
 	}
 	if done := recvEvent(t, events); done.Type != TurnDone {
@@ -651,7 +703,7 @@ func TestAcpDriverZeroTextTurnNotContaminated(t *testing.T) {
 	sessions.push(t, thoughtFrame("t1-agentThought", "思考中"))
 	sessions.push(t, turnEndedFrame("cancelled"))
 
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "💭 思考中" {
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 思考中" {
 		t.Fatalf("思考摘要状态行不符: %+v", ev)
 	}
 	done := recvEvent(t, events)

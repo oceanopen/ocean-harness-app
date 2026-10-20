@@ -1,4 +1,4 @@
-import type { AcpViewSnapshot } from '@src/services';
+import type { AcpConversationEntry, AcpViewSnapshot } from '@src/services';
 import type { AcpEventsStream } from '@src/state/acpSession';
 import { Alert, Box, Button, CircularProgress, Typography } from '@mui/material';
 import { isAcpSessionSubscribable, useAcpSessionEvents, useAcpSessionView, useEnsureAcpSession } from '@src/state/acpSession';
@@ -70,8 +70,7 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
   return <StatusBranch issueId={issueId} snapshot={snapshot} events={events} onRestart={() => ensure.mutate({ issueId, pickedLaunchMode: 'acp' })} ensurePending={ensure.isPending} />;
 }
 
-/** 按快照 status 分支：starting 启动中 / failed+terminated 原因与重启 / idle+ready 会话视图。 */
-function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
+/** 按快照 status 分支：starting 启动中 / failed+terminated 原因与重启 / idle+ready 会话视图。 */function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
   issueId: string;
   snapshot: AcpViewSnapshot;
   events: AcpEventsStream;
@@ -118,6 +117,8 @@ function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
               呈现仍由快照 status 分支驱动，此处只管订阅通道本身的失败。 */}
           <SubscriptionFailedAlert events={events} sx={{ flexShrink: 0 }} />
           <MessageList entries={snapshot.entries} />
+          {/* 回合即时占位：发送后即刻反馈，首个内容条目（思考/正文/工具）到达即让位 */}
+          {snapshot.turnActive && showTurnPendingHint(snapshot.entries) && <TurnPendingRow />}
           {snapshot.pendings.length > 0 && (
             /**
              * 固定挂起区（MessageList 与输入区之间）：pending 逐项平铺卡片，全部应答
@@ -133,6 +134,26 @@ function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
         </Box>
       );
   }
+}
+
+// 回合即时占位判定：回合进行中且尚无任何内容条目（最后一条是 user 输入）——首个内容块到达即让位。
+function showTurnPendingHint(entries: AcpConversationEntry[]): boolean {
+  return entries.length > 0 && entries[entries.length - 1].kind === 'user';
+}
+
+/**
+ * 回合即时占位行：填充发送到首个流式内容之间的空白死区（受理/冷启动期无任何可见反馈）。
+ * 固定行不随滚动，宽度对齐消息列容器。
+ */
+function TurnPendingRow() {
+  return (
+    <Box sx={{ flexShrink: 0, display: 'flex', justifyContent: 'center', py: '6px' }}>
+      <Box sx={{ maxWidth: '860px', width: '100%', px: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <CircularProgress size={14} sx={{ color: 'text.secondary' }} />
+        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '12px' }}>收到，处理中...</Typography>
+      </Box>
+    </Box>
+  );
 }
 
 /** 全区居中外壳（启动/失败/加载态共用）。 */
