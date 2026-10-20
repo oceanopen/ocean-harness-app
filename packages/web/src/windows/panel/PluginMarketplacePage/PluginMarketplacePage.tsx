@@ -53,7 +53,7 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
   const status: LoadStatus = isPending ? 'loading' : isError ? 'error' : 'ready';
 
   // toast：保留最近一次内容，toastOpen 控制显隐（退出动画期间内容不闪烁）。
-  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity }>({ text: '', severity: 'success' });
+  const [toast, setToast] = useState<{ text: string; severity: ToastSeverity; duration?: number }>({ text: '', severity: 'success' });
   const [toastOpen, setToastOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [addDrawerOpen, setAddDrawerOpen] = useState(false);
@@ -62,8 +62,8 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
   const [drawerName, setDrawerName] = useState<string | null>(null);
   const [removeTargetName, setRemoveTargetName] = useState<string | null>(null);
 
-  const showToast = useCallback((text: string, severity: ToastSeverity) => {
-    setToast({ text, severity });
+  const showToast = useCallback((text: string, severity: ToastSeverity, autoHideDurationMs?: number) => {
+    setToast({ text, severity, duration: autoHideDurationMs });
     setToastOpen(true);
   }, []);
 
@@ -281,7 +281,7 @@ function PluginMarketplacePage({ windowShownTrigger }: { windowShownTrigger: num
 
       <Snackbar
         open={toastOpen}
-        autoHideDuration={2000}
+        autoHideDuration={toast.duration ?? 2000}
         onClose={() => setToastOpen(false)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >

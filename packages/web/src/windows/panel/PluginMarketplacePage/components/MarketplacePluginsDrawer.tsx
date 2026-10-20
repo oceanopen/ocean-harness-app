@@ -24,7 +24,7 @@ import { clamp2Sx, truncateSx } from '../styles';
 // 投影（写操作后整体替换），行内状态随数据刷新自动更新，无需本地维护。
 interface MarketplacePluginsDrawerProps {
   marketplace: PluginMarketplaceModel;
-  showToast: (text: string, severity: 'success' | 'error') => void;
+  showToast: (text: string, severity: 'success' | 'error', autoHideDurationMs?: number) => void;
   onClose: () => void;
 }
 
@@ -43,6 +43,10 @@ const ACTION_LABEL: Record<PluginAction, string> = {
   disable: '禁用',
   update: '更新',
 };
+
+// 写操作成功 toast 的生效提示与展示时长：claude 侧落盘即成，运行中会话须重载后才加载/卸载。
+const APPLY_HINT = '；已开会话内执行 /reload-plugins 或重启会话后生效';
+const OP_TOAST_DURATION_MS = 5000;
 
 // 操作进行中标识的唯一拼装点（pending 判定与按钮 spinner 匹配共用，防两处拼接漂移）。
 function opKey(action: PluginAction, pluginName: string): string {
@@ -122,7 +126,7 @@ function MarketplacePluginsDrawer({ marketplace, showToast, onClose }: Marketpla
   const handleOperate = async (action: PluginAction, plugin: MarketplacePluginModel) => {
     try {
       await mutations[action].mutateAsync({ name: plugin.name, marketplace: marketplace.name });
-      showToast(`${ACTION_LABEL[action]}成功：${plugin.name}`, 'success');
+      showToast(`${ACTION_LABEL[action]}成功：${plugin.name}${APPLY_HINT}`, 'success', OP_TOAST_DURATION_MS);
     } catch (e) {
       showToast(`${ACTION_LABEL[action]}失败：${errMsg(e)}`, 'error');
     }
