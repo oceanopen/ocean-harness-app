@@ -152,26 +152,37 @@ func (e Entry) VendoredSpawnConfig(resourcesRoot, installDir, cwd string, envOve
 }
 
 /*
- * ResolveNodeBin 解析 node 可执行文件绝对路径（vendored spawn 翻译与 T1.4 doctor 探测共用，单一 SSOT）。
+ * ResolveNodeBin 解析 node 可执行文件绝对路径（薄封装：vendored spawn 翻译消费；
+ * 需区分内嵌命中/本机回退的归因场景走 ResolveNodeBinWithSource）。
  * 查找顺序：内嵌运行时（<resourcesRoot>/runtime/node/<semver>/node，semver 最高，构建期 vendor-node-runtime.ts 随包分发，保证与 vendored 适配器的构建期兼容组合）→ LookPath → login PATH 逐目录兜底——GUI 拉起的 sidecar PATH 常缺 nvm/volta 目录（claude 同源问题）。
  * resourcesRoot 空 = 资源源未配置，跳过内嵌查找（降级语义同 GO_SERVER_ACP_RESOURCES_DIR）；落成绝对路径后，拉起不受 spawn env 的 PATH 覆盖影响。
  */
 func ResolveNodeBin(resourcesRoot string) (string, error) {
+	bin, _, err := ResolveNodeBinWithSource(resourcesRoot)
+	return bin, err
+}
+
+/*
+ * ResolveNodeBinWithSource 带命中来源的 node 解析（查找链同 ResolveNodeBin）：
+ * embedded=true 命中内嵌运行时；false = 回退本机（LookPath → login PATH）。
+ * 供浏览器预检等需归因「内嵌缺失」的消费方使用。
+ */
+func ResolveNodeBinWithSource(resourcesRoot string) (bin string, embedded bool, err error) {
 	if bin := embeddedNodeBin(resourcesRoot); bin != "" {
-		return bin, nil
+		return bin, true, nil
 	}
 	if p, err := exec.LookPath("node"); err == nil {
-		return p, nil
+		return p, false, nil
 	}
 	loginPath, err := clibin.LoginPath()
 	if err != nil {
-		return "", fmt.Errorf("解析 node 可执行文件: %w", err)
+		return "", false, fmt.Errorf("解析 node 可执行文件: %w", err)
 	}
-	bin, err := nodeBinFromDirs(filepath.SplitList(loginPath))
+	bin, err = nodeBinFromDirs(filepath.SplitList(loginPath))
 	if err != nil {
-		return "", fmt.Errorf("解析 node 可执行文件（内嵌运行时、PATH 与 login shell 均未命中）: %w", err)
+		return "", false, fmt.Errorf("解析 node 可执行文件（内嵌运行时、PATH 与 login shell 均未命中）: %w", err)
 	}
-	return bin, nil
+	return bin, false, nil
 }
 
 /*
@@ -180,13 +191,22 @@ func ResolveNodeBin(resourcesRoot string) (string, error) {
  * 无命中（未配置/未打包/目录损坏）返回空串交由调用链回落，不报错——内嵌是优选非硬门槛。
  */
 func embeddedNodeBin(resourcesRoot string) string {
+	bin, _ := embeddedNodeBest(resourcesRoot)
+	return bin
+}
+
+/*
+ * embeddedNodeBest 内嵌 node 扫描出口：返回 (绝对路径, 版本目录名)。
+ * 版本目录名供内置运行时版本信息展示（VendoredRuntimeInfo）消费。
+ */
+func embeddedNodeBest(resourcesRoot string) (bin, version string) {
 	if resourcesRoot == "" {
-		return ""
+		return "", ""
 	}
 	versionDir := filepath.Join(resourcesRoot, "runtime", "node")
 	entries, err := os.ReadDir(versionDir)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	best := ""
 	for _, e := range entries {
@@ -198,18 +218,40 @@ func embeddedNodeBin(resourcesRoot string) string {
 		}
 	}
 	if best == "" {
-		return ""
+		return "", ""
 	}
-	bin, err := nodeBinFromDirs([]string{filepath.Join(versionDir, best)})
+	bin, err = nodeBinFromDirs([]string{filepath.Join(versionDir, best)})
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	// 出口落成绝对路径：相对 resourcesRoot 会按子进程 cwd（cmd.Dir）解析而错位。
 	abs, err := filepath.Abs(bin)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return abs
+	return abs, best
+}
+
+/*
+ * VendoredRuntimeInfo 内置运行时版本信息（运行状态页展示）：node 版本取内嵌
+ * runtime/node/<semver> 目录名；claude 版本定位二进制后执行 --version 一次。
+ * 任一缺失返回对应空串，由展示方标注「未打包」。
+ */
+func VendoredRuntimeInfo(resourcesRoot string) (nodeVersion, claudeVersion string) {
+	_, nodeVersion = embeddedNodeBest(resourcesRoot)
+	claudeVersion = vendoredClaudeVersion(resourcesRoot)
+	return
+}
+
+/*
+ * EmbeddedNodeDirDesc 内嵌 node 目录描述（归因文案用）：资源未配置归一为可读
+ * 提示，browser 预检与 doctor 同源消费，口径不漂移。
+ */
+func EmbeddedNodeDirDesc(resourcesRoot string) string {
+	if resourcesRoot == "" {
+		return "未配置（GO_SERVER_ACP_RESOURCES_DIR 未注入）"
+	}
+	return filepath.Join(resourcesRoot, "runtime", "node")
 }
 
 // isPlainSemver 纯数字点分版本名判定（如 24.18.0；含空段/非数字段即否）。

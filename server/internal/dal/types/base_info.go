@@ -22,8 +22,15 @@ type ServerInfo struct {
 	SqliteDir string `json:"sqliteDir"` // sqlite 数据目录（绝对路径）
 }
 
+// RuntimeInfo 内置运行时版本信息（随包分发的 vendored 运行时；缺失为空串，展示方标注「未打包」）。
+type RuntimeInfo struct {
+	NodeVersion   string `json:"nodeVersion"`   // 内嵌 node 版本（runtime/node/<semver> 目录名）
+	ClaudeVersion string `json:"claudeVersion"` // vendored claude --version 输出
+}
+
 // ServerRunInfoResponseData 是 GET /api/baseInfo/getServerRunInfo 的返回数据。
 type ServerRunInfoResponseData struct {
-	SysInfo    SysInfo    `json:"sysInfo"`
-	ServerInfo ServerInfo `json:"serverInfo"`
+	SysInfo     SysInfo     `json:"sysInfo"`
+	ServerInfo  ServerInfo  `json:"serverInfo"`
+	RuntimeInfo RuntimeInfo `json:"runtimeInfo"`
 }

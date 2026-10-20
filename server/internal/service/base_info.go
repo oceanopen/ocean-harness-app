@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime"
 
+	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/dal/types"
 	"ocean-harness/server/internal/global"
@@ -17,11 +18,12 @@ type BaseInfo struct {
 }
 
 /*
- * GetServerRunInfo 采集系统信息（SysInfo）+ 服务运行信息（ServerInfo）。
+ * GetServerRunInfo 采集系统信息（SysInfo）+ 服务运行信息（ServerInfo）+ 内置运行时版本（RuntimeInfo）。
  * 服务地址、日志/数据目录一并放在 ServerInfo 返回，前端按接口展示（不依赖 Rust IPC）。
  */
 func (svc BaseInfo) GetServerRunInfo(_ *types.ServerRunInfoRequest) (*types.ServerRunInfoResponseData, error) {
 	hostname, _ := os.Hostname()
+	nodeVersion, claudeVersion := agentcatalog.VendoredRuntimeInfo(global.Config.AcpResourcesDir)
 	return &types.ServerRunInfoResponseData{
 		SysInfo: types.SysInfo{
 			Hostname:  hostname,
@@ -34,6 +36,10 @@ func (svc BaseInfo) GetServerRunInfo(_ *types.ServerRunInfoRequest) (*types.Serv
 			Address:   fmt.Sprintf("http://127.0.0.1:%d", global.Config.Port),
 			LogDir:    global.Config.LogDir,
 			SqliteDir: global.Config.SqliteDir,
+		},
+		RuntimeInfo: types.RuntimeInfo{
+			NodeVersion:   nodeVersion,
+			ClaudeVersion: claudeVersion,
 		},
 	}, nil
 }

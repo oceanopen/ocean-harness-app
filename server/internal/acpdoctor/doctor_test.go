@@ -41,50 +41,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestMajorFromVersion(t *testing.T) {
-	cases := []struct {
-		in     string
-		want   int
-		parsed bool
-	}{
-		{"v22.14.0", 22, true},
-		{"22.3.1", 22, true},
-		{"v22", 22, true},
-		{" v22.14.0 ", 22, true},
-		{"", 0, false},
-		{"v", 0, false},
-		{"v-1.2", 0, false},
-		{"latest", 0, false},
-	}
-	for _, c := range cases {
-		got, ok := majorFromVersion(c.in)
-		if ok != c.parsed || (ok && got != c.want) {
-			t.Fatalf("majorFromVersion(%q) = (%d, %v), want (%d, %v)", c.in, got, ok, c.want, c.parsed)
-		}
-	}
-}
-
-func TestCheckNodeMinVersion(t *testing.T) {
-	// 通过：等于/高于下限、下限为空（不校验）。
-	for _, c := range [][2]string{{"v22.14.0", "22"}, {"v23.1.0", "22"}, {"v22", "22"}, {"v20.0.0", ""}} {
-		if reason := checkNodeMinVersion(c[0], c[1]); reason != "" {
-			t.Fatalf("checkNodeMinVersion(%q, %q) 应通过，got %q", c[0], c[1], reason)
-		}
-	}
-	// 过低：原因携带实测版本与下限（用户可读，前端直显）。
-	if reason := checkNodeMinVersion("v20.11.1", "22"); reason == "" ||
-		!strings.Contains(reason, "v20.11.1") || !strings.Contains(reason, "22") {
-		t.Fatalf("过低版本原因应含实测版本与下限，got %q", reason)
-	}
-	// 任一侧无法解析即落败（宁失败不静默）。
-	if reason := checkNodeMinVersion("latest", "22"); !strings.Contains(reason, "无法解析") {
-		t.Fatalf("版本不可解析应落败，got %q", reason)
-	}
-	if reason := checkNodeMinVersion("v22", "x"); !strings.Contains(reason, "无法解析") {
-		t.Fatalf("下限不可解析应落败，got %q", reason)
-	}
-}
-
 func TestAuthRequired(t *testing.T) {
 	hint, ok := authRequired(&acpgo.RequestError{Code: acpgo.ErrorCodeAuthRequired, Message: "Not authenticated"})
 	if !ok || hint != authRequiredHint {

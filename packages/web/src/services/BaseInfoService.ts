@@ -16,10 +16,17 @@ export interface ServerInfo {
   sqliteDir: string; // sqlite 数据目录（绝对路径）
 }
 
+// 内置运行时版本信息（对齐 Go RuntimeInfo：随包分发的 vendored 运行时，缺失为空串）。
+export interface RuntimeInfo {
+  nodeVersion: string; // 内嵌 node 版本（runtime/node/<semver> 目录名）
+  claudeVersion: string; // vendored claude --version 输出
+}
+
 // getServerRunInfo 返回数据（对齐 Go ServerRunInfoResponseData）。
 export interface ServerRunInfoResponseData {
   sysInfo: SysInfo;
   serverInfo: ServerInfo;
+  runtimeInfo: RuntimeInfo;
 }
 
 // GET /api/baseInfo/getServerRunInfo 的入参（当前无入参，预留扩展）。

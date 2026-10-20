@@ -10,9 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"strconv"
-	"strings"
 	"time"
 
 	acpgo "github.com/ironpark/acp-go"
@@ -117,17 +114,26 @@ func CheckEntry(ctx context.Context, entry agentcatalog.Entry, dirs Dirs, log *z
 		return fail(StageVendored, "策略 %s 的 doctor 探测暂未支持（随 catalog 扩展启用）", entry.Strategy)
 	}
 
-	// 探测项 1：node 可用 + 版本下限（复用 vendored spawn 同一份解析，单一 SSOT）。
-	nodeBin, err := agentcatalog.ResolveNodeBin(dirs.Resources)
+	/*
+	 * 探测项 1：node 可用 + 版本下限（解析/探测/校验全走 agentcatalog SSOT）。
+	 * 未命中内嵌运行时的失败附归因前缀（与 browser 预检口径一致）。
+	 */
+	nodeBin, nodeEmbedded, err := agentcatalog.ResolveNodeBinWithSource(dirs.Resources)
 	if err != nil {
 		return fail(StageNode, "%v", err)
 	}
-	version, err := nodeVersion(ctx, nodeBin)
+	version, err := agentcatalog.NodeVersion(ctx, nodeBin)
 	if err != nil {
 		return fail(StageNode, "node 版本探测失败: %v", err)
 	}
 	report.NodeVersion = version
-	if reason := checkNodeMinVersion(version, entry.NodeMinVersion); reason != "" {
+	if reason := agentcatalog.CheckNodeMinVersion(version, entry.NodeMinVersion); reason != "" {
+		if !nodeEmbedded {
+			reason = fmt.Sprintf(
+				"内置 Node 运行时缺失（资源目录：%s），已回退本机 node：%s",
+				agentcatalog.EmbeddedNodeDirDesc(dirs.Resources), reason,
+			)
+		}
 		return fail(StageNode, "%s", reason)
 	}
 
@@ -260,55 +266,4 @@ func withProcessEvidence(client *acp.AgentClient, err error) error {
 		return fmt.Errorf("%w（进程诊断: %v）", err, derr)
 	}
 	return err
-}
-
-/*
- * nodeVersion 执行 `node --version`（以解析到的绝对路径执行，防 PATH 漂移），返回形如
- * v22.14.0 的版本串。
- */
-func nodeVersion(ctx context.Context, nodeBin string) (string, error) {
-	out, err := exec.CommandContext(ctx, nodeBin, "--version").Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
-/*
- * checkNodeMinVersion 主版本下限校验：返回空串 = 通过；非空 = 用户可读原因。
- * min 为空 = 不校验（catalog 条目语义）；任一侧无法解析即落败（宁失败不静默，
- * 与 catalog parse 同哲学——产物缺陷不该被静默放行）。
- */
-func checkNodeMinVersion(version, min string) string {
-	if min == "" {
-		return ""
-	}
-	major, ok := majorFromVersion(version)
-	if !ok {
-		return fmt.Sprintf("node 版本输出无法解析: %q", version)
-	}
-	minMajor, ok := majorFromVersion(min)
-	if !ok {
-		return fmt.Sprintf("catalog nodeMinVersion 无法解析: %q", min)
-	}
-	if major < minMajor {
-		return fmt.Sprintf("node 版本过低（%s）：ACP 模式需要 Node.js ≥%s，或切换终端模式", version, min)
-	}
-	return ""
-}
-
-/*
- * majorFromVersion 取主版本号（容忍 v 前缀与任意后缀，如 v22.14.0 → 22）；无法解析
- * 返回 false。
- */
-func majorFromVersion(version string) (int, bool) {
-	v := strings.TrimPrefix(strings.TrimSpace(version), "v")
-	if dot := strings.IndexByte(v, '.'); dot >= 0 {
-		v = v[:dot]
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
-		return 0, false
-	}
-	return n, true
 }

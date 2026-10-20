@@ -52,8 +52,8 @@ type Dirs struct {
 
 // 测试替换点（spawnFunc 惯例，对齐 acpsession/acpdoctor）。
 var (
-	// resolveNodeBin node 绝对路径解析（生产 = agentcatalog.ResolveNodeBin SSOT）。
-	resolveNodeBin = agentcatalog.ResolveNodeBin
+	// resolveNodeBin node 解析（生产 = agentcatalog.ResolveNodeBinWithSource SSOT，带内嵌命中归因）。
+	resolveNodeBin = agentcatalog.ResolveNodeBinWithSource
 	/*
 	 * nodeVersionOf 执行 node --version（生产 = agentcatalog.NodeVersion SSOT；测试
 	 * 注入假版本）。
@@ -137,7 +137,7 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 	}
 
 	// node 预检：@playwright/mcp engines 口径 node≥18。
-	nodeBin, err := resolveNodeBin(dirs.Resources)
+	nodeBin, nodeEmbedded, err := resolveNodeBin(dirs.Resources)
 	if err != nil {
 		return nil, fmt.Errorf("浏览器引擎拉起: %w", err)
 	}
@@ -146,6 +146,16 @@ func LaunchEngine(ctx context.Context, dirs Dirs, profile string, headless bool,
 		return nil, err
 	}
 	if reason := agentcatalog.CheckNodeMinVersion(version, strconv.Itoa(nodeMinMajor)); reason != "" {
+		/*
+		 * 归因分流：内嵌运行时在位仍过低属异常态（打包组合破坏），报 SSOT 原文；
+		 * 内嵌缺失回退本机过低才是常态根因，指向 app 自身问题与回退版本双线索。
+		 */
+		if !nodeEmbedded {
+			return nil, fmt.Errorf(
+				"内置 Node 运行时缺失（资源目录：%s），回退本机 node（%s）版本过低：需要 Node.js ≥%d，请重新安装应用或升级本机 Node.js",
+				agentcatalog.EmbeddedNodeDirDesc(dirs.Resources), version, nodeMinMajor,
+			)
+		}
 		return nil, errors.New(reason)
 	}
 

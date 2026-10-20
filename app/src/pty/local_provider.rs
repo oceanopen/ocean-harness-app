@@ -65,38 +65,27 @@ impl LocalPtyProvider {
          */
         if let Some(direct) = &opts.direct_command {
             let token = direct.split_whitespace().next().unwrap_or("");
-            match cli_bin::resolve_direct_bin(token) {
-                Some((bin, login_path)) => {
-                    /*
-                     * 首 token（CLI 名）由 vendored 绝对路径顶替；余参原样透传
-                     *（含 flag 形态，如 --model xxx）。
-                     */
-                    cmd = CommandBuilder::new(&bin);
-                    for arg in direct.split_whitespace().skip(1) {
-                        cmd.arg(arg);
-                    }
-                    /*
-                     * login PATH best-effort 注入（None = 探测失败，保留 app 继承
-                     * PATH）：vendored claude 为原生二进制不依赖 node，注入只服务
-                     * 其派生的工具子进程（Bash 工具跑 npm 等）。
-                     */
-                    if let Some(path) = &login_path {
-                        cmd.env("PATH", path);
-                    }
-                    cmd.cwd(&opts.cwd);
-                    log::info!(
-                        "[pty] direct spawn session_id={} token={token} bin={}",
-                        opts.session_id,
-                        bin
-                    );
+            if let Some(bin) = cli_bin::resolve_direct_bin(token) {
+                /*
+                 * 首 token（CLI 名）由 vendored 绝对路径顶替；余参原样透传
+                 *（含 flag 形态，如 --model xxx）。
+                 */
+                cmd = CommandBuilder::new(&bin);
+                for arg in direct.split_whitespace().skip(1) {
+                    cmd.arg(arg);
                 }
-                None => {
-                    log::warn!(
-                        "[pty] direct spawn '{token}' unresolvable, \
-                         fallback to plain shell session_id={}",
-                        opts.session_id
-                    );
-                }
+                cmd.cwd(&opts.cwd);
+                log::info!(
+                    "[pty] direct spawn session_id={} token={token} bin={}",
+                    opts.session_id,
+                    bin
+                );
+            } else {
+                log::warn!(
+                    "[pty] direct spawn '{token}' unresolvable, \
+                     fallback to plain shell session_id={}",
+                    opts.session_id
+                );
             }
         }
 
@@ -107,6 +96,15 @@ impl LocalPtyProvider {
          */
         for (k, v) in envs {
             cmd.env(k, v);
+        }
+
+        /*
+         * PATH 同源注入（两分支统一，装配见 cli_bin::assembled_child_path）：vendored
+         * 目录 + login PATH 前置，裸 shell 手敲/图标/AI 润色的 claude、node 命中自带
+         * 运行时；None 保持继承 PATH。
+         */
+        if let Some(path) = cli_bin::assembled_child_path() {
+            cmd.env("PATH", path);
         }
 
         let child = pair
@@ -589,6 +587,9 @@ mod tests {
             // stub 脚本形态（#!/bin/sh）不适用于 Windows，跳过。
             return;
         }
+        let _guard = cli_bin::TEST_ROOT_GUARD
+            .lock()
+            .expect("cli_bin test root guard mutex poisoned");
         /*
          * fake staging：<root>/claude-acp/0.84.0/node_modules/@anthropic-ai/
          * claude-agent-sdk-<triple>/<bin>（布局同真实 vendored 安装）。
@@ -627,6 +628,9 @@ mod tests {
         *cli_bin::DIRECT_BIN_CACHE
             .lock()
             .expect("cli_bin direct bin cache mutex poisoned") = None;
+        *cli_bin::VENDORED_DIRS_CACHE
+            .lock()
+            .expect("cli_bin vendored dirs cache mutex poisoned") = None;
         *cli_bin::TEST_RESOURCES_ROOT
             .lock()
             .expect("cli_bin test resources root mutex poisoned") = Some(root.clone());
@@ -691,7 +695,126 @@ mod tests {
         *cli_bin::DIRECT_BIN_CACHE
             .lock()
             .expect("cli_bin direct bin cache mutex poisoned") = None;
+        *cli_bin::VENDORED_DIRS_CACHE
+            .lock()
+            .expect("cli_bin vendored dirs cache mutex poisoned") = None;
         provider.shutdown(&session_id).unwrap();
+        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /*
+     * 裸 shell vendored PATH 注入：fake staging（claude 二进制 + runtime/node）注入后
+     * spawn 裸 shell，echo $PATH 应含 claude 目录与 node 目录（前置生效、无 direct 参与）。
+     */
+    #[test]
+    fn plain_shell_path_contains_vendored_dirs() {
+        if std::env::consts::OS == "windows" {
+            // stub 脚本形态（#!/bin/sh）不适用于 Windows，跳过。
+            return;
+        }
+        let _guard = cli_bin::TEST_ROOT_GUARD
+            .lock()
+            .expect("cli_bin test root guard mutex poisoned");
+        let Some(triple) = cli_bin::platform_triple() else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!(
+            "pty-vendored-path-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let claude_dir = root
+            .join("claude-acp")
+            .join("0.84.0")
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join(format!("claude-agent-sdk-{triple}"));
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(
+            claude_dir.join(cli_bin::claude_bin_name()),
+            "#!/bin/sh\n",
+        )
+        .unwrap();
+        let node_dir = root.join("runtime").join("node").join("24.18.0");
+        std::fs::create_dir_all(&node_dir).unwrap();
+        std::fs::write(node_dir.join("node"), "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                claude_dir.join(cli_bin::claude_bin_name()),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+            std::fs::set_permissions(
+                node_dir.join("node"),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
+
+        *cli_bin::DIRECT_BIN_CACHE
+            .lock()
+            .expect("cli_bin direct bin cache mutex poisoned") = None;
+        *cli_bin::VENDORED_DIRS_CACHE
+            .lock()
+            .expect("cli_bin vendored dirs cache mutex poisoned") = None;
+        *cli_bin::TEST_RESOURCES_ROOT
+            .lock()
+            .expect("cli_bin test resources root mutex poisoned") = Some(root.clone());
+
+        let provider = LocalPtyProvider::new();
+        let tmp = std::env::temp_dir().join("pty-vendored-path-shell-test");
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let session_id = "vendored-path-issue::main";
+        let opts = SpawnOpts {
+            session_id: session_id.to_string(),
+            cwd: tmp.to_string_lossy().into_owned(),
+            cols: 80,
+            rows: 24,
+            direct_command: None,
+        };
+        provider
+            .spawn(opts, Channel::new(|_| Ok(())), &[])
+            .unwrap();
+
+        provider
+            .write(session_id, b"echo PTY_PATH_MARK=$PATH\n")
+            .unwrap();
+        let claude_dir_str = claude_dir.to_string_lossy().into_owned();
+        let node_dir_str = node_dir.to_string_lossy().into_owned();
+        let deadline = Instant::now() + Duration::from_secs(8);
+        let mut ring = String::new();
+        while Instant::now() < deadline {
+            ring = provider
+                .with_session(session_id, &mut |s| s.io.snapshot())
+                .unwrap();
+            if ring.contains("PTY_PATH_MARK=") && ring.contains(&claude_dir_str) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            ring.contains("PTY_PATH_MARK=") && ring.contains(&claude_dir_str),
+            "裸 shell PATH 应含 vendored claude 目录，ring: {ring}"
+        );
+        assert!(
+            ring.contains(&node_dir_str),
+            "裸 shell PATH 应含 vendored node 目录，ring: {ring}"
+        );
+
+        *cli_bin::TEST_RESOURCES_ROOT
+            .lock()
+            .expect("cli_bin test resources root mutex poisoned") = None;
+        *cli_bin::DIRECT_BIN_CACHE
+            .lock()
+            .expect("cli_bin direct bin cache mutex poisoned") = None;
+        *cli_bin::VENDORED_DIRS_CACHE
+            .lock()
+            .expect("cli_bin vendored dirs cache mutex poisoned") = None;
+        provider.shutdown(session_id).unwrap();
         let _ = std::fs::remove_dir_all(&tmp);
         let _ = std::fs::remove_dir_all(&root);
     }
