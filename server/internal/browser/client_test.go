@@ -13,11 +13,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// withFakeNode 注入假 node（版本探测返回固定串），收尾恢复生产替换点。
+// withFakeNode 注入假 node（版本探测返回固定串，embedded=false 走回退归因口径），收尾恢复生产替换点。
 func withFakeNode(t *testing.T, version string) {
 	t.Helper()
 	oldBin, oldVer := resolveNodeBin, nodeVersionOf
-	resolveNodeBin = func(string) (string, error) { return "/fake/node", nil }
+	resolveNodeBin = func(string) (string, bool, error) { return "/fake/node", false, nil }
 	nodeVersionOf = func(context.Context, string) (string, error) { return version, nil }
 	t.Cleanup(func() { resolveNodeBin, nodeVersionOf = oldBin, oldVer })
 }
@@ -80,8 +80,26 @@ func TestLaunchEngineNodeTooLow(t *testing.T) {
 	withTestRoot(t)
 	withFakeNode(t, "v16.20.2")
 	_, err := LaunchEngine(context.Background(), fakeStaging(t), "default", false, nil)
-	if err == nil || !strings.Contains(err.Error(), "Node.js") {
-		t.Fatalf("err = %v, want node 版本过低报错", err)
+	if err == nil || !strings.Contains(err.Error(), "内置 Node 运行时缺失") ||
+		!strings.Contains(err.Error(), "v16.20.2") {
+		t.Fatalf("err = %v, want 内嵌缺失归因报错（含回退版本）", err)
+	}
+}
+
+/*
+ * TestLaunchEngineNodeTooLowEmbedded 内嵌命中仍过低属异常态（打包组合破坏）：
+ * 报 SSOT 原文，不带「内置缺失」归因。
+ */
+func TestLaunchEngineNodeTooLowEmbedded(t *testing.T) {
+	withTestRoot(t)
+	oldBin, oldVer := resolveNodeBin, nodeVersionOf
+	resolveNodeBin = func(string) (string, bool, error) { return "/fake/node", true, nil }
+	nodeVersionOf = func(context.Context, string) (string, error) { return "v16.20.2", nil }
+	t.Cleanup(func() { resolveNodeBin, nodeVersionOf = oldBin, oldVer })
+	_, err := LaunchEngine(context.Background(), fakeStaging(t), "default", false, nil)
+	if err == nil || !strings.Contains(err.Error(), "node 版本过低") ||
+		strings.Contains(err.Error(), "内置 Node 运行时缺失") {
+		t.Fatalf("err = %v, want SSOT 原文报错（无内嵌缺失归因）", err)
 	}
 }
 

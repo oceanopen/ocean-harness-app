@@ -6,11 +6,15 @@
 package agentcatalog
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
+	"time"
 )
 
 /*
@@ -92,6 +96,12 @@ var (
 	claudeBinCached string
 )
 
+// claude 版本探测成功缓存（--version 一次；失败不缓存，扫描廉价可重试）。
+var (
+	claudeVersionMu     sync.Mutex
+	claudeVersionCached string
+)
+
 /*
  * ResolveVendoredClaudeBin 一步式解析 vendored 自带 claude：catalog 条目 → EnsureVendored 受管安装 → 平台二进制定位；vendoring 两目录取启动期注入值（SetVendoredDirs）。
  * 成功结果进程级缓存，供 bot driver 与 marketplace 共用；doctor 走分步编排以归因探测阶段，真握手测试用显式目录装配，均不经此缓存路径。
@@ -117,4 +127,71 @@ func ResolveVendoredClaudeBin(agentCode string) (string, error) {
 	}
 	claudeBinCached = bin
 	return bin, nil
+}
+
+/*
+ * vendoredClaudeVersion vendored 自带 claude 的版本号（运行状态页展示）：资源源直扫
+ * 定位二进制后执行 --version 一次（进程级缓存成功结果；探测失败返回空串不缓存，
+ * 扫描廉价可重试）。
+ */
+func vendoredClaudeVersion(resourcesRoot string) string {
+	claudeVersionMu.Lock()
+	defer claudeVersionMu.Unlock()
+	if claudeVersionCached != "" {
+		return claudeVersionCached
+	}
+	bin, err := resourcesClaudeBin(resourcesRoot)
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	v := strings.TrimSpace(string(out))
+	claudeVersionCached = v
+	return v
+}
+
+/*
+ * resourcesClaudeBin 资源源直扫定位平台 claude 二进制：<root>/<id>/<semver 最高>/
+ * 布局复用 VendoredClaudeBin 校验（不经 EnsureVendored 受管复制，纯只读探测）。
+ */
+func resourcesClaudeBin(resourcesRoot string) (string, error) {
+	if resourcesRoot == "" {
+		return "", fmt.Errorf("资源源未配置")
+	}
+	ids, err := os.ReadDir(resourcesRoot)
+	if err != nil {
+		return "", fmt.Errorf("读取资源源目录: %w", err)
+	}
+	var best string
+	var bestBin string
+	for _, id := range ids {
+		if !id.IsDir() {
+			continue
+		}
+		versions, err := os.ReadDir(filepath.Join(resourcesRoot, id.Name()))
+		if err != nil {
+			continue
+		}
+		for _, v := range versions {
+			if !v.IsDir() || !isPlainSemver(v.Name()) {
+				continue
+			}
+			if best != "" && compareSemver(v.Name(), best) <= 0 {
+				continue
+			}
+			installDir := filepath.Join(resourcesRoot, id.Name(), v.Name())
+			if bin, err := VendoredClaudeBin(installDir); err == nil {
+				best, bestBin = v.Name(), bin
+			}
+		}
+	}
+	if bestBin == "" {
+		return "", fmt.Errorf("资源源内未找到平台 claude 二进制: %s", resourcesRoot)
+	}
+	return bestBin, nil
 }

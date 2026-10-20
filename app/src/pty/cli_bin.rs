@@ -31,6 +31,15 @@ pub(crate) fn claude_bin_name() -> &'static str {
     }
 }
 
+// 平台 node 二进制文件名（同 Go nodeBinFromDirs 命名：Windows 带 .exe 后缀）。
+fn node_bin_name() -> &'static str {
+    if std::env::consts::OS == "windows" {
+        "node.exe"
+    } else {
+        "node"
+    }
+}
+
 // semver 三元组解析（严格 major.minor.patch 纯数字；npm 版本目录名形态）。
 fn parse_semver(name: &str) -> Option<(u64, u64, u64)> {
     let mut parts = name.split('.');
@@ -57,6 +66,13 @@ static LOGIN_PATH_CACHE: std::sync::LazyLock<std::sync::Mutex<Option<String>>> =
  * pub(crate) 供 local_provider 测试在注入 fake staging 前复位（进程级状态不跨测试漂移）。
  */
 pub(crate) static DIRECT_BIN_CACHE: std::sync::LazyLock<std::sync::Mutex<Option<String>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+/*
+ * vendored PATH 注入目录解析成功缓存（claude 目录 + node 目录；语义同
+ * DIRECT_BIN_CACHE：失败不落缓存，vendoring 就绪后无需重启 app）。
+ */
+pub(crate) static VENDORED_DIRS_CACHE: std::sync::LazyLock<std::sync::Mutex<Option<Vec<String>>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
 
 /*
@@ -93,6 +109,14 @@ pub(crate) fn ensure_resources_base(app: &tauri::AppHandle) {
 #[cfg(test)]
 pub(crate) static TEST_RESOURCES_ROOT: std::sync::LazyLock<std::sync::Mutex<Option<PathBuf>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+/*
+ * TEST_RESOURCES_ROOT 单槽注入互斥（仅测试构建）：多个测试并发注入会互相覆盖，
+ * 解析窗口内扫到他人 root。持锁者独占整个「注入 → spawn/解析 → 断言 → 复位」窗口。
+ */
+#[cfg(test)]
+pub(crate) static TEST_ROOT_GUARD: std::sync::LazyLock<std::sync::Mutex<()>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
 
 /*
  * login shell 环境收割：`$SHELL -l -i -c /usr/bin/env`（外部二进制，输出格式跨
@@ -219,35 +243,120 @@ fn resolve_vendored_claude_in(root: &Path) -> Option<PathBuf> {
 }
 
 /*
- * 解析直启所需信息。返回 (vendored claude 绝对路径, login PATH best-effort)。
+ * 扫描 <root>/runtime/node/<semver>/：取版本最高且内含平台 node 二进制的目录
+ * （布局同 Go embeddedNodeBin，node 运行时随包分发见 vendor-node-runtime.ts）。
+ */
+fn resolve_vendored_node_dir_in(root: &Path) -> Option<PathBuf> {
+    let version_dir = root.join("runtime").join("node");
+    let mut best: Option<((u64, u64, u64), PathBuf)> = None;
+    for version in subdirs(&version_dir)? {
+        let Some(v) = version
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(parse_semver)
+        else {
+            continue;
+        };
+        if !version.join(node_bin_name()).is_file() {
+            continue;
+        }
+        if best.as_ref().map_or(true, |(bv, _)| v > *bv) {
+            best = Some((v, version));
+        }
+    }
+    best.map(|(_, dir)| dir)
+}
+
+/*
+ * vendored PATH 注入目录（先 claude 后 node）：任一命中即返回命中集合，全缺失返回
+ * None 不注入。claude 目录即二进制所在目录（shell 据此解析裸 claude 命令）。
+ */
+pub(crate) fn vendored_path_dirs() -> Option<Vec<String>> {
+    {
+        let cache = VENDORED_DIRS_CACHE
+            .lock()
+            .expect("cli_bin vendored dirs cache mutex poisoned");
+        if let Some(hit) = cache.as_ref() {
+            return Some(hit.clone());
+        }
+    }
+    let root = acp_resources_root()?;
+    let mut dirs: Vec<String> = Vec::new();
+    if let Some(bin) = resolve_vendored_claude_in(&root) {
+        if let Some(dir) = bin.parent() {
+            dirs.push(dir.to_string_lossy().into_owned());
+        }
+    }
+    if let Some(dir) = resolve_vendored_node_dir_in(&root) {
+        dirs.push(dir.to_string_lossy().into_owned());
+    }
+    if dirs.is_empty() {
+        return None;
+    }
+    *VENDORED_DIRS_CACHE
+        .lock()
+        .expect("cli_bin vendored dirs cache mutex poisoned") = Some(dirs.clone());
+    Some(dirs)
+}
+
+/*
+ * 子进程 PATH 同源装配（裸 shell / direct 两分支统一）：vendored 目录前置 → login
+ * PATH → 继承 PATH，保序去重。None = 无任何可注入成分（保持继承 PATH）。
+ */
+pub(crate) fn assembled_child_path() -> Option<String> {
+    let sep = if cfg!(windows) {
+        ";"
+    } else {
+        ":"
+    };
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(dirs) = vendored_path_dirs() {
+        parts.extend(dirs);
+    }
+    if let Some(login) = login_path() {
+        parts.push(login);
+    }
+    if let Ok(inherited) = std::env::var("PATH") {
+        parts.push(inherited);
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let mut entries: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for part in &parts {
+        for entry in part.split(sep) {
+            if !entry.is_empty() && seen.insert(entry.to_string()) {
+                entries.push(entry.to_string());
+            }
+        }
+    }
+    Some(entries.join(sep))
+}
+
+/*
+ * 解析直启 vendored claude 绝对路径。
  * None = 不可直启（token 不在白名单 / vendored 资源缺失 / 平台无 SDK 二进制
  * 形态），调用方回落普通裸 shell。
  */
-pub(crate) fn resolve_direct_bin(token: &str) -> Option<(String, Option<String>)> {
+pub(crate) fn resolve_direct_bin(token: &str) -> Option<String> {
     // 直启 token 白名单：一期 autoCommand 固定 claude；新 CLI 直启在此扩展（TODO(P4)）。
     if token != "claude" {
         return None;
     }
-    /*
-     * bin 进程内一次扫描（成功缓存，失败不缓存）；login PATH 每次现查——成功命中
-     * LOGIN_PATH_CACHE 廉价，失败不固化、下次 spawn 重探（缓存只存 bin 的原因）。
-     */
-    let bin = {
-        let mut cache = DIRECT_BIN_CACHE
-            .lock()
-            .expect("cli_bin direct bin cache mutex poisoned");
-        if let Some(hit) = cache.as_ref() {
-            hit.clone()
-        } else {
-            let root = acp_resources_root()?;
-            let bin = resolve_vendored_claude_in(&root)?
-                .to_string_lossy()
-                .into_owned();
-            *cache = Some(bin.clone());
-            bin
-        }
-    };
-    Some((bin, login_path()))
+    // bin 进程内一次扫描（成功缓存，失败不缓存）。
+    let mut cache = DIRECT_BIN_CACHE
+        .lock()
+        .expect("cli_bin direct bin cache mutex poisoned");
+    if let Some(hit) = cache.as_ref() {
+        return Some(hit.clone());
+    }
+    let root = acp_resources_root()?;
+    let bin = resolve_vendored_claude_in(&root)?
+        .to_string_lossy()
+        .into_owned();
+    *cache = Some(bin.clone());
+    Some(bin)
 }
 
 #[cfg(test)]
@@ -345,5 +454,119 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /*
+     * node 目录扫描：版本最高且平台二进制在位者入选，缺失二进制的
+     * 高版本不入选（口径同 claude 扫描）。
+     */
+    #[test]
+    fn resolve_vendored_node_dir_in_rules() {
+        let root = std::env::temp_dir().join(format!(
+            "cli-bin-node-scan-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let old = root.join("runtime").join("node").join("24.17.0");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join(node_bin_name()), "#!/bin/sh\n").unwrap();
+        // 24.18.0 目录存在但缺二进制 → 不入选，命中 24.17.0。
+        std::fs::create_dir_all(root.join("runtime").join("node").join("24.18.0")).unwrap();
+        let got = resolve_vendored_node_dir_in(&root).expect("应命中 24.17.0");
+        assert!(
+            got.to_string_lossy().contains("24.17.0"),
+            "缺失二进制的高版本不应入选: {}",
+            got.display()
+        );
+        // 补齐二进制 → semver 最高胜出。
+        std::fs::write(
+            root.join("runtime")
+                .join("node")
+                .join("24.18.0")
+                .join(node_bin_name()),
+            "#!/bin/sh\n",
+        )
+        .unwrap();
+        let got = resolve_vendored_node_dir_in(&root).expect("应命中 24.18.0");
+        assert!(
+            got.to_string_lossy().contains("24.18.0"),
+            "got: {}",
+            got.display()
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /*
+     * vendored_path_dirs：fake staging 双条目命中返回 [claude 目录, node 目录]；
+     * 全缺失返回 None。
+     */
+    #[test]
+    fn vendored_path_dirs_rules() {
+        let _guard = TEST_ROOT_GUARD
+            .lock()
+            .expect("cli_bin test root guard mutex poisoned");
+        let Some(triple) = platform_triple() else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!(
+            "cli-bin-vendored-dirs-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let claude_dir = root
+            .join("claude-acp")
+            .join("0.84.0")
+            .join("node_modules")
+            .join("@anthropic-ai")
+            .join(format!("claude-agent-sdk-{triple}"));
+        std::fs::create_dir_all(&claude_dir).unwrap();
+        std::fs::write(claude_dir.join(claude_bin_name()), "#!/bin/sh\n").unwrap();
+        let node_dir = root.join("runtime").join("node").join("24.18.0");
+        std::fs::create_dir_all(&node_dir).unwrap();
+        std::fs::write(node_dir.join(node_bin_name()), "#!/bin/sh\n").unwrap();
+
+        *VENDORED_DIRS_CACHE
+            .lock()
+            .expect("cli_bin vendored dirs cache mutex poisoned") = None;
+        *TEST_RESOURCES_ROOT
+            .lock()
+            .expect("cli_bin test resources root mutex poisoned") = Some(root.clone());
+        let dirs = vendored_path_dirs().expect("双目录应命中");
+        assert_eq!(dirs.len(), 2, "dirs: {dirs:?}");
+        assert!(
+            dirs[0].contains(&format!("claude-agent-sdk-{triple}")),
+            "首个应为 claude 目录: {dirs:?}"
+        );
+        assert!(
+            dirs[1].contains("24.18.0"),
+            "次个应为 node 目录: {dirs:?}"
+        );
+
+        // 全缺失（空根）→ None。
+        let empty_root = std::env::temp_dir().join(format!(
+            "cli-bin-vendored-empty-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&empty_root).unwrap();
+        *VENDORED_DIRS_CACHE
+            .lock()
+            .expect("cli_bin vendored dirs cache mutex poisoned") = None;
+        *TEST_RESOURCES_ROOT
+            .lock()
+            .expect("cli_bin test resources root mutex poisoned") = Some(empty_root.clone());
+        assert!(
+            vendored_path_dirs().is_none(),
+            "全缺失应返回 None"
+        );
+
+        // 收尾复位（进程级状态不跨测试漂移）。
+        *TEST_RESOURCES_ROOT
+            .lock()
+            .expect("cli_bin test resources root mutex poisoned") = None;
+        *VENDORED_DIRS_CACHE
+            .lock()
+            .expect("cli_bin vendored dirs cache mutex poisoned") = None;
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&empty_root);
     }
 }

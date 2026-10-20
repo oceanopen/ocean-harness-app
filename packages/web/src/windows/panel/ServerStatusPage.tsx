@@ -292,6 +292,19 @@ function ServerStatusPage() {
                     <TableCell sx={labelCellSx}>架构</TableCell>
                     <TableCell>{runInfo?.sysInfo.arch ?? '-'}</TableCell>
                   </TableRow>
+                  {/* 内置运行时版本（随包分发的 vendored 运行时；服务在跑但资源缺失显示「未打包」——打包/安装问题的诊断线索） */}
+                  <TableRow>
+                    <TableCell sx={labelCellSx}>自带 Node</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }}>
+                      {runInfo ? (runInfo.runtimeInfo.nodeVersion || '未打包') : '-'}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell sx={labelCellSx}>自带 Claude</TableCell>
+                    <TableCell sx={{ fontFamily: 'monospace' }}>
+                      {runInfo ? (runInfo.runtimeInfo.claudeVersion || '未打包') : '-'}
+                    </TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             </TableContainer>
