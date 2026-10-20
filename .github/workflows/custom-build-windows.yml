@@ -143,11 +143,18 @@ jobs:
             echo "| \`$name\` | $size | \`$sha\` |" >> "$GITHUB_STEP_SUMMARY"
           done
 
+      # Artifact 名 = 产品名（空格→"."）+ tauri.conf.json 版本 + windows
+      - name: Compute artifact name
+        shell: bash
+        run: |
+          version=$(node -p "require('./app/tauri.conf.json').version")
+          echo "ARTIFACT_NAME=${CUSTOM_APP_PRODUCT_NAME// /.}_${version}_windows" >> "$GITHUB_ENV"
+
       # 上传 NSIS 到 Artifact（运行页面底部下载）
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: custom-build-windows
+          name: ${{ env.ARTIFACT_NAME }}
           path: |
             app/target/release/bundle/nsis/*.exe
           if-no-files-found: error

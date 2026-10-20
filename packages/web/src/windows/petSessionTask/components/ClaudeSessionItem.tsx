@@ -1,6 +1,7 @@
 import type { ClaudeSessionInfo, TerminalApp } from '@src/shared/bindings';
-import { Box, ListItemButton, Typography } from '@mui/material';
+import { Box, ListItemButton, Tooltip, Typography } from '@mui/material';
 import { CLAUDE_SESSION_STATUS_COLOR, CLAUDE_SESSION_STATUS_I18N_KEY } from '@src/shared/claudeSessionStatus';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // status → i18n key 映射 SSOT（claudeSessionStatus.ts，复用 claudeSessions:status.* 文案），与 ClaudeSessionCard 共用。
@@ -18,6 +19,15 @@ function ClaudeSessionItem({ session, onClick }: ClaudeSessionItemProps) {
   const { t } = useTranslation();
   const unsupported = UNSUPPORTED_HOST.includes(session.hostApp);
   const color = CLAUDE_SESSION_STATUS_COLOR[session.status];
+  const text = session.projectName || session.cwd;
+  const textRef = useRef<HTMLElement>(null);
+  const [clamped, setClamped] = useState(false);
+
+  /** 悬停实测是否被行数上限截断，仅截断时以 tooltip 展示全文 */
+  const handleTextHover = () => {
+    const el = textRef.current;
+    setClamped(!!el && el.scrollHeight > el.clientHeight + 1);
+  };
 
   return (
     <ListItemButton
@@ -31,18 +41,25 @@ function ClaudeSessionItem({ session, onClick }: ClaudeSessionItemProps) {
         '&.Mui-disabled': { opacity: 0.5 },
       }}
     >
-      <Typography
-        sx={{
-          flex: 1,
-          fontWeight: 600,
-          fontSize: '14px',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {session.projectName || session.cwd}
-      </Typography>
+      <Tooltip title={clamped ? text : ''}>
+        <Typography
+          ref={textRef}
+          onMouseEnter={handleTextHover}
+          sx={{
+            flex: 1,
+            minWidth: '0px',
+            fontWeight: 600,
+            fontSize: '14px',
+            overflow: 'hidden',
+            overflowWrap: 'break-word',
+            display: '-webkit-box',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: 3,
+          }}
+        >
+          {text}
+        </Typography>
+      </Tooltip>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px', ml: '8px', flexShrink: 0 }}>
         <Box sx={{ width: '8px', height: '8px', borderRadius: '50%', bgcolor: color }} />
         <Typography
