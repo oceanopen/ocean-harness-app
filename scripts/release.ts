@@ -19,12 +19,20 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+// 步骤进度日志：每步开始即输出，避免静默执行时不知卡在哪一步
+function log(message: string): void {
+  console.log(`▸ ${message}`);
+}
+
+log('[1/5] 校验当前分支...');
 const currentBranch = gitOutput(['branch', '--show-current']);
 if (!currentBranch) {
   fail('当前处于 detached HEAD，release 需在默认分支上执行');
 }
+log(`当前分支：${currentBranch}`);
 
 // 默认分支从 origin/HEAD 动态检测，仓库更换默认分支无需改本脚本
+log('[2/5] 检测默认分支...');
 let defaultBranch: string;
 try {
   defaultBranch = gitOutput(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']).replace(/^origin\//, '');
@@ -34,21 +42,25 @@ try {
 if (currentBranch !== defaultBranch) {
   fail(`当前分支 ${currentBranch} 不是默认分支 ${defaultBranch}，release 已中止`);
 }
+log(`默认分支：${defaultBranch}`);
 
 // 含未跟踪文件；脏工作区会让 pull/bumpp 中途失败留下半成品状态
+log('[3/5] 校验工作区...');
 if (gitOutput(['status', '--porcelain'])) {
   fail('工作区不干净（存在未提交改动或未跟踪文件），请先提交或清理后再 release');
 }
+log('工作区干净');
 
+log('[4/5] 拉取远端最新（git pull --rebase）...');
 try {
-  // 输出直显（stdio 继承）；rebase 避免产生多余 merge commit
   execFileSync('git', ['pull', '--rebase'], { cwd: repoRoot, stdio: 'inherit' });
 } catch {
   fail('git pull --rebase 失败，请处理后再重试 release');
 }
 
+// 转发 bumpp（pnpm 运行时已注入 node_modules/.bin 到 PATH），透传额外参数保持交互式选版本可用
+log('[5/5] 执行 bumpp...');
 try {
-  // 转发 bumpp（pnpm 运行时已注入 node_modules/.bin 到 PATH），透传额外参数保持交互式选版本可用
   execFileSync('bumpp', process.argv.slice(2), { cwd: repoRoot, stdio: 'inherit' });
 } catch {
   fail('bumpp 执行失败');
