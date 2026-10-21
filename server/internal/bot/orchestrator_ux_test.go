@@ -208,7 +208,7 @@ func TestSlashStopKillsTurn(t *testing.T) {
 	o.HandleInbound(cfg, InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "再来一条"}, func() (ReplyStream, error) {
 		return rs2, nil
 	})
-	if frames := rs2.snapshot(); len(frames) != 1 || frames[0].content != "收到。当前有任务处理中，排队中，稍后自动继续…" {
+	if frames := rs2.snapshot(); len(frames) != 1 || frames[0].content != "> 收到。当前有任务处理中，排队中，稍后自动继续…" {
 		t.Fatalf("忙碌会话占位帧应为排队文案: %+v", frames)
 	}
 
@@ -359,7 +359,7 @@ func TestUnknownSlashCommandReply(t *testing.T) {
 		return rs, nil
 	})
 	frames := finalFrameOf(t, "未识别指令终帧", rs)
-	if len(frames) != 2 || frames[0].content != "收到，处理中…" ||
+	if len(frames) != 2 || frames[0].content != "> 收到，处理中…" ||
 		frames[1].content != "未识别的指令。回复 /help 查看支持的指令。" || !frames[1].final {
 		t.Fatalf("未识别指令应占位帧 + 指引终帧: %+v", frames)
 	}

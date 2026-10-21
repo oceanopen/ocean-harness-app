@@ -36,27 +36,34 @@ type TurnOutcome struct {
 
 /*
  * PumpReply 回复泵：消费 TurnEvent 流 → 覆写式流式回复；主 goroutine 消费事件、ticker 唯一周期写者、终帧由主 goroutine 收口（两写者一次交接）。
- * 帧优先级：正文 > 思考面板+工具行 > 覆写型状态行（TurnStatus：审批/工具终态）；正文到达清面板，
- * 面板存活期「思考中」前缀恒在。卡随 tick 一次性消费，收尾未发出的卡直接丢弃（挂起随回合终态结算）。
+ * 帧形态：quote 面板（思考+工具两大段，整回合累计不清）+ quote 挂起状态行 + 正文共存；终帧保留面板。
+ * 思考分区窗口：思考/工具期尾部跟随，正文期与终帧头部摘要。卡随 tick 一次性消费，收尾未发出的卡直接丢弃（挂起随回合终态结算）。
  */
 func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sink OverflowSink, log *zap.Logger) TurnOutcome {
 	var mu sync.Mutex
-	var statusText, toolLine, thinkingBuf, currentText, sessionID string
-	var thinkingDone bool // 思考段收口：工具行出现后头部窗口展示，新思考段到达时重开面板
+	var statusText, thinkingBuf, currentText, sessionID string
+	var headWindow bool // 思考分区窗口方向：正文期头部摘要 / 思考工具期尾部跟随
+	var tools []toolEntry
 	var pendingCard *CardSpec
 	var turnErr error
 	var isError bool
 
+	/*
+	 * 卡能力探测一次：headless 引擎不产卡、纯文本渠道不实现 CardReplyStream，两种场景都
+	 * 无需分支处理（无卡即回落 Flush）。
+	 */
+	cardStream, hasCard := rs.(CardReplyStream)
+
+	// 渲染能力探测一次：无 markdown 能力渠道降级纯文本帧（quote/粗体剥离）。
+	useMarkdown := false
+	if mfs, ok := rs.(MarkdownFrameStream); ok {
+		useMarkdown = mfs.MarkdownFrames()
+	}
+
 	snapshot := func() string {
 		mu.Lock()
 		defer mu.Unlock()
-		if currentText != "" {
-			return currentText
-		}
-		if thinkingBuf != "" || toolLine != "" {
-			return composePanel(thinkingBuf, thinkingDone, toolLine)
-		}
-		return statusText
+		return composeFrame(panelContent(thinkingBuf, headWindow, tools, useMarkdown), statusText, currentText, useMarkdown)
 	}
 
 	// takePendingCard 取走待发卡（一次性消费语义的收口点）。
@@ -67,12 +74,6 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 		pendingCard = nil
 		return card
 	}
-
-	/*
-	 * 卡能力探测一次：headless 引擎不产卡、纯文本渠道不实现 CardReplyStream，两种场景都
-	 * 无需分支处理（无卡即回落 Flush）。
-	 */
-	cardStream, hasCard := rs.(CardReplyStream)
 
 	done := make(chan struct{})
 	tickerDone := make(chan struct{})
@@ -118,40 +119,37 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 		case TurnText:
 			mu.Lock()
 			currentText += ev.Delta
-			thinkingBuf = "" // 正文到达：思考面板整体让位
-			thinkingDone = false
-			toolLine = ""
+			headWindow = true // 正文期：思考分区冻结为头部摘要
+			statusText = ""   // 内容推进即解除挂起提示
 			mu.Unlock()
 		case TurnThinking:
 			mu.Lock()
-			if thinkingDone {
-				thinkingBuf = "" // 新思考段：重开面板
-				thinkingDone = false
-			}
 			thinkingBuf += ev.Delta
+			headWindow = false // 思考工具期：尾部窗口跟随最新思考
+			statusText = ""
 			mu.Unlock()
 		case TurnToolUse:
 			mu.Lock()
-			currentText = "" // 工具前泄漏正文丢弃（SDK agent 示例同款）；思考面板保留共存
-			thinkingDone = true
-			toolLine = "🔧 正在执行 " + ev.ToolName + " …"
+			tools = append(tools, toolEntry{name: ev.ToolName})
+			headWindow = false
+			statusText = ""
 			mu.Unlock()
 		case TurnStatus:
 			mu.Lock()
-			currentText = ""
-			thinkingBuf = ""
-			thinkingDone = false
-			toolLine = ""
-			statusText = ev.Status
-			if ev.Card != nil {
-				pendingCard = ev.Card
+			if ev.ToolName != "" {
+				settleTool(tools, ev.ToolName, ev.Status) // 工具终态：面板对应行就地结算
+			} else {
+				statusText = ev.Status // 挂起状态行：面板下方临时段，随内容推进让位
+				if ev.Card != nil {
+					pendingCard = ev.Card
+				}
 			}
 			mu.Unlock()
 		case TurnDone:
 			mu.Lock()
 			isError = ev.IsError
-			if strings.TrimSpace(ev.Result) != "" {
-				currentText = ev.Result
+			if strings.TrimSpace(ev.Result) != "" && strings.TrimSpace(currentText) == "" {
+				currentText = ev.Result // Result 仅空正文兜底：headless 只含末段正文，不覆盖整回合累计
 			}
 			if ev.SessionID != "" {
 				sessionID = ev.SessionID
@@ -168,12 +166,13 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	<-tickerDone
 
 	mu.Lock()
+	panel := panelContent(thinkingBuf, true, tools, useMarkdown) // 终帧恒头部摘要
 	final := currentText
 	mu.Unlock()
 
 	/*
 	 * 终帧文案单点决策：Err 三态（nil 成功 / errTurnFailed 中断 / 其他失败）各一条路径，
-	 * 失败文案保留诊断首行（含 resume 失效信号）与失败前已产出的部分文本。
+	 * 失败文案保留诊断首行（含 resume 失效信号）与失败前已产出的部分文本；面板全程保留。
 	 */
 	out := TurnOutcome{SessionID: sessionID}
 	switch {
@@ -184,20 +183,26 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	}
 	switch {
 	case errors.Is(out.Err, errTurnFailed):
-		out.FinalText = "❌ 处理未完成（回合被中断）：\n" + truncateForFrame(final, rs.ByteLimit(), nil)
+		final = "❌ 处理未完成（回合被中断）：\n" + final
 	case out.Err != nil && ctx.Err() != nil:
-		out.FinalText = "⏹ 已停止当前回复。" // /stop 或编排器停止：取消叙事，非失败
+		final = "⏹ 已停止当前回复。" // /stop 或编排器停止：取消叙事，非失败
 	case out.Err != nil:
-		out.FinalText = "❌ 处理失败：" + firstLine(out.Err.Error()) + "\n请重试或调整后重新发送。"
-		if strings.TrimSpace(final) != "" {
-			out.FinalText += "\n\n（失败前已产出：\n" + truncateForFrame(final, rs.ByteLimit(), nil) + "）"
+		body := final
+		final = "❌ 处理失败：" + firstLine(out.Err.Error()) + "\n请重试或调整后重新发送。"
+		if strings.TrimSpace(body) != "" {
+			final += "\n\n（失败前已产出：\n" + body + "\n）"
 		}
 	default:
 		if strings.TrimSpace(final) == "" {
 			final = "（回合结束，无文本输出）"
 		}
-		out.FinalText = truncateForFrame(final, rs.ByteLimit(), sink)
 	}
+	// 成功路径超长走落盘，失败路径静默截断。
+	frameSink := sink
+	if out.Err != nil {
+		frameSink = nil
+	}
+	out.FinalText = truncateForFrame(composeFrame(panel, "", final, useMarkdown), rs.ByteLimit(), frameSink)
 	if err := rs.Flush(out.FinalText, true); err != nil {
 		log.Error("bot 流式终帧发送失败", zap.Error(err))
 	}
@@ -207,44 +212,118 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 // errTurnFailed result 帧标记 is_error（回合被 max-turns 等中断，进程本身正常退出）。
 var errTurnFailed = errors.New("claude 回合被中断")
 
-// thinkingPanelHeader 思考面板标题（面板存活期恒在）。
-const thinkingPanelHeader = "**🤔 思考中**"
+// toolEntry 面板工具分区的一行：settled 非空为终态文案（✅/❌），空 = 执行中。
+type toolEntry struct {
+	name    string
+	settled string
+}
 
-// thoughtWindowRunes 思考内容展示窗口（流式期取尾部、收口后取头部的 rune 数）。
+// settleTool 就地结算最早同名未完结工具行（同名多次调用按序结算）。
+func settleTool(tools []toolEntry, name, settled string) {
+	for i := range tools {
+		if tools[i].name == name && tools[i].settled == "" {
+			tools[i].settled = settled
+			return
+		}
+	}
+}
+
+// thoughtWindowRunes 思考内容展示窗口的 rune 数。
 const thoughtWindowRunes = 300
 
 /*
- * composePanel 思考面板帧：标题 + quote 块（左侧竖线渲染）+ 工具行，三者可任意缺席。
+ * panelContent 面板明文形态（包 quote 前）：思考分区 + 工具分区两大段、段间空行；
+ * headWindow 决定思考窗口方向（尾部跟随 / 头部摘要），md=false 时标签剥离粗体，任一段可缺席。
  */
-func composePanel(thinkingBuf string, thinkingDone bool, toolLine string) string {
-	var b strings.Builder
+func panelContent(thinkingBuf string, headWindow bool, tools []toolEntry, md bool) string {
+	thinkingLabel, toolLabel := "🤔 思考中：", "🔧 调用工具："
+	if md {
+		thinkingLabel, toolLabel = "**🤔 思考中：**", "**🔧 调用工具：**"
+	}
+	var sections []string
 	if thinkingBuf != "" {
-		b.WriteString(thinkingPanelHeader)
-		body := thoughtWindow(thinkingBuf, thinkingDone)
-		for line := range strings.SplitSeq(strings.TrimRight(body, "\n"), "\n") {
-			b.WriteString("\n> ")
+		sections = append(sections, thinkingLabel+"\n"+thoughtWindow(thinkingBuf, headWindow))
+	}
+	if len(tools) > 0 {
+		var b strings.Builder
+		b.WriteString(toolLabel)
+		for _, t := range tools {
+			b.WriteString("\n")
+			if t.settled != "" {
+				b.WriteString(t.settled)
+			} else {
+				b.WriteString("⏳ " + t.name + " 执行中…")
+			}
+		}
+		sections = append(sections, b.String())
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+// quoteBlock 把多行文本包成 markdown quote 块（空行渲染为 > 分隔行）。
+func quoteBlock(text string) string {
+	var b strings.Builder
+	first := true
+	for line := range strings.SplitSeq(strings.TrimRight(text, "\n"), "\n") {
+		if !first {
+			b.WriteString("\n")
+		}
+		first = false
+		b.WriteString(">")
+		if line != "" {
+			b.WriteString(" ")
 			b.WriteString(line)
 		}
 	}
-	if toolLine != "" {
+	return b.String()
+}
+
+// quoteAware 状态词按渠道渲染能力包 quote（无 markdown 能力渠道原样纯文本）。
+func quoteAware(rs ReplyStream, text string) string {
+	if mfs, ok := rs.(MarkdownFrameStream); ok && mfs.MarkdownFrames() {
+		return quoteBlock(text)
+	}
+	return text
+}
+
+/*
+ * composeFrame 组一帧：quote 面板 + quote 挂起状态行 + 正文（在 quote 外），三者可任意缺席；
+ * md=false 时不包 quote（纯文本渠道降级）。
+ */
+func composeFrame(panel, status, body string, md bool) string {
+	var b strings.Builder
+	for _, part := range []string{panel, status} {
+		if part == "" {
+			continue
+		}
 		if b.Len() > 0 {
 			b.WriteString("\n\n")
 		}
-		b.WriteString(toolLine)
+		if md {
+			b.WriteString(quoteBlock(part))
+		} else {
+			b.WriteString(part)
+		}
+	}
+	if body != "" {
+		if b.Len() > 0 {
+			b.WriteString("\n\n")
+		}
+		b.WriteString(body)
 	}
 	return b.String()
 }
 
 /*
- * thoughtWindow 思考内容展示窗口（rune 安全）：流式期尾部窗口（前缀 … 标识所见非从头）、
- * 收口后头部窗口（尾部 … 标识后续未完）；未超限原样。
+ * thoughtWindow 思考内容展示窗口（rune 安全）：尾部跟随（前缀 … 标识所见非从头）或
+ * 头部摘要（尾部 … 标识后续未完）；未超限原样。
  */
-func thoughtWindow(s string, done bool) string {
+func thoughtWindow(s string, head bool) string {
 	rs := []rune(s)
 	if len(rs) <= thoughtWindowRunes {
 		return s
 	}
-	if done {
+	if head {
 		return string(rs[:thoughtWindowRunes]) + " …"
 	}
 	return "…" + string(rs[len(rs)-thoughtWindowRunes:])

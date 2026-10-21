@@ -43,6 +43,9 @@ func (f *fakeReplyStream) snapshot() []fakeFrame {
 
 func (f *fakeReplyStream) ByteLimit() int { return 20480 }
 
+// MarkdownFrames 实现 MarkdownFrameStream：测试替身默认按 markdown 渠道组帧。
+func (f *fakeReplyStream) MarkdownFrames() bool { return true }
+
 /*
  * fakeCardReplyStream 卡能力流替身（CardReplyStream 实现）：帧记录之上追加卡事件记录
  * （SendCard 附卡帧 / UpdateCard 卡更新），可注入 SendCard 失败（无卡/发送失败回落纯文本
@@ -337,7 +340,7 @@ func TestRunTurnWorkspaceCommandCard(t *testing.T) {
 	waitFor(t, "workspace 指令出卡", func() bool { return len(rs.cardSnapshot()) > 0 })
 
 	frames, cards := rs.snapshot(), rs.cardSnapshot()
-	if len(frames) != 1 || frames[0].content != "收到，处理中…" || frames[0].final {
+	if len(frames) != 1 || frames[0].content != "> 收到，处理中…" || frames[0].final {
 		t.Fatalf("受理占位帧应恰一帧非终态: %+v", frames)
 	}
 	if len(cards) != 1 || !cards[0].final || len(cards[0].spec.Options) != 2 {
@@ -374,7 +377,7 @@ func TestRunTurnUnbindCommandCard(t *testing.T) {
 	waitFor(t, "解绑指令出卡", func() bool { return len(rs.cardSnapshot()) > 0 })
 
 	frames, cards := rs.snapshot(), rs.cardSnapshot()
-	if len(frames) != 1 || frames[0].content != "收到，处理中…" || frames[0].final {
+	if len(frames) != 1 || frames[0].content != "> 收到，处理中…" || frames[0].final {
 		t.Fatalf("受理占位帧应恰一帧非终态: %+v", frames)
 	}
 	if len(cards) != 1 || !cards[0].final || len(cards[0].spec.Options) != 1 ||
@@ -498,8 +501,8 @@ func TestRunTurnProbeCard(t *testing.T) {
 		 * 终帧收口路径不得出现状态帧（各指令步用例的帧数断言即证明）。
 		 */
 		frames := rs2.snapshot()
-		if len(frames) != 3 || frames[0].content != "收到，处理中…" ||
-			frames[1].content != "已开始处理，正在连接会话…" || frames[1].final ||
+		if len(frames) != 3 || frames[0].content != "> 收到，处理中…" ||
+			frames[1].content != "> 已开始处理，正在连接会话…" || frames[1].final ||
 			frames[2].content != "ok" || !frames[2].final {
 			t.Fatalf("主路径应含执行期状态帧且恰一终帧: %+v", frames)
 		}
@@ -544,7 +547,7 @@ func TestRunTurnIssueCommandFullPath(t *testing.T) {
 	waitFor(t, "#任务 指令出卡", func() bool { return len(rs.cardSnapshot()) > 0 })
 
 	frames, cards := rs.snapshot(), rs.cardSnapshot()
-	if len(frames) != 1 || frames[0].content != "收到，处理中…" {
+	if len(frames) != 1 || frames[0].content != "> 收到，处理中…" {
 		t.Fatalf("受理占位帧应恰一帧: %+v", frames)
 	}
 	if len(cards) != 1 || !cards[0].final || len(cards[0].spec.Options) != 1 {
@@ -593,7 +596,7 @@ func TestRunTurnHelpCommand(t *testing.T) {
 		return false
 	})
 	frames, cards := rs.snapshot(), rs.cardSnapshot()
-	if len(frames) != 2 || frames[0].content != "收到，处理中…" || frames[1].content != helpText() || !frames[1].final {
+	if len(frames) != 2 || frames[0].content != "> 收到，处理中…" || frames[1].content != helpText() || !frames[1].final {
 		t.Fatalf("帮助应占位帧后接纯文本指令列表终帧: %+v", frames)
 	}
 	if len(cards) != 0 {

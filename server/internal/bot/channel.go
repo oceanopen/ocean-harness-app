@@ -31,6 +31,14 @@ type ReplyStream interface {
 }
 
 /*
+ * MarkdownFrameStream ReplyStream 的可选渲染能力面：回复泵组帧是否可用 markdown（quote 面板/
+ * 粗体标签）。纯文本渠道不实现即自动降级纯文本帧——渲染差异收窄在适配器，核心组帧逻辑共用。
+ */
+type MarkdownFrameStream interface {
+	MarkdownFrames() bool
+}
+
+/*
  * ChannelRuntime 渠道适配器运行时：连接生命周期 + 入站回调 + 开回复流。
  * 渠道身份由 Factory.Channel() 承载（注册表 key），运行时不再重复声明。
  */

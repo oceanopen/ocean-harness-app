@@ -112,8 +112,9 @@ func TestParseClaudeLine(t *testing.T) {
 	})
 	t.Run("user 工具结果转完成状态行", func(t *testing.T) {
 		evs := eventsOfLines(t, fxAssistantToolUse, fxUserToolResult)
-		if len(evs) != 2 || evs[0].Type != TurnToolUse || evs[1].Type != TurnStatus || evs[1].Status != "🔧 Bash 已完成" {
-			t.Fatalf("tool_result 应经 id→名映射转完成状态行: %+v", evs)
+		if len(evs) != 2 || evs[0].Type != TurnToolUse || evs[1].Type != TurnStatus ||
+			evs[1].Status != "✅ Bash 已完成" || evs[1].ToolName != "Bash" {
+			t.Fatalf("tool_result 应经 id→名映射转带工具名的完成终态: %+v", evs)
 		}
 	})
 	t.Run("user 工具失败结果转失败状态行", func(t *testing.T) {
@@ -124,7 +125,7 @@ func TestParseClaudeLine(t *testing.T) {
 	})
 	t.Run("未注册 id 的工具结果回落中性名", func(t *testing.T) {
 		evs := eventsOf(t, fxUserToolResult)
-		if len(evs) != 1 || evs[0].Type != TurnStatus || evs[0].Status != "🔧 工具 已完成" {
+		if len(evs) != 1 || evs[0].Type != TurnStatus || evs[0].Status != "✅ 工具 已完成" {
 			t.Fatalf("未知 tool_use_id 应回落中性名: %+v", evs)
 		}
 	})

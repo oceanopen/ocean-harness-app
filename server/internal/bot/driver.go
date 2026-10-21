@@ -1,6 +1,9 @@
 package bot
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 /*
  * ClaudeDriver claude 会话引擎接口（渠道无关：所有渠道共用同一组引擎）。
@@ -16,10 +19,21 @@ type ClaudeDriver interface {
 	RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error)
 }
 
-// toolSettledText 工具终态状态行文案（ACP 覆写帧与 headless tool_result 两路共用）。
+// toolSettledText 工具终态面板行文案（ACP toolCall 终态与 headless tool_result 两路共用）。
 func toolSettledText(name string, failed bool) string {
 	if failed {
 		return "❌ " + name + " 失败"
 	}
-	return "🔧 " + name + " 已完成"
+	return "✅ " + name + " 已完成"
+}
+
+/*
+ * diffWatermark 水位线差分：full 为累计全量、sent 为已发前缀（rune 安全，len(sent) 恒落字符
+ * 边界）。前缀错配（条目被覆写换内容）重置全量重发，返回待发增量与新水位线。
+ */
+func diffWatermark(full, sent string) (delta string, newSent string) {
+	if !strings.HasPrefix(full, sent) {
+		sent = ""
+	}
+	return full[len(sent):], full
 }

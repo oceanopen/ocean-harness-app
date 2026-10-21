@@ -29,9 +29,9 @@ type claudeDriver struct{}
 func NewClaudeDriver() ClaudeDriver { return claudeDriver{} }
 
 /*
- * claudeRuntimeBin 解析 vendored 自带 claude（P5 定稿终态：全链路 SSOT，clibin 三级
- * 探测链已退役）：vendoring 两目录由 main 启动期注入 agentcatalog（本包不依赖
- * global——global → bot 依赖方向不可逆），成功进程级缓存在 agentcatalog 内。
+ * claudeRuntimeBin 解析 vendored 自带 claude（全链路 SSOT）：vendoring 两目录由 main
+ * 启动期注入 agentcatalog（本包不依赖 global——global → bot 依赖方向不可逆），
+ * 成功进程级缓存在 agentcatalog 内。
  */
 func claudeRuntimeBin() (string, error) {
 	return agentcatalog.ResolveVendoredClaudeBin(string(enums.AGENT_CODE_CLAUDE_ACP))
@@ -151,8 +151,8 @@ func buildClaudeArgs(req TurnRequest) (args []string, cleanup func(), err error)
 		allowed = append(allowed, imSendFileToolName)
 	}
 	/*
-	 * 工具白名单恒用默认集（P6：bot 级「执行权限」配置已废弃，权限表达上移 workspace 级
-	 * launch_settings.permissionMode，ACP 模式接管审批语义；headless 路径安全周界不变）。
+	 * 工具白名单恒用默认集：权限表达上移 workspace 级 launch_settings.permissionMode，
+	 * ACP 模式接管审批语义；headless 路径安全周界不变。
 	 */
 	args = append(args, "--allowedTools", strings.Join(allowed, ","))
 	return args, cleanup, nil
@@ -270,7 +270,7 @@ type turnParseState struct {
 /*
  * parseClaudeLine 单行 stream-json → 0..n 个 TurnEvent。schema 漂移时的表现为事件退化
  * （text 增量丢失、只剩 assistant 整段/result 兜底），不致挂死。thinking 增量转 TurnThinking
- * 增量事件（面板组帧在泵侧）；tool_result 转工具终态状态行——被正文/后续状态行自然让位。
+ * 增量事件（面板组帧在泵侧）；tool_result 经 id→名映射转带工具名的终态事件（泵就地结算面板工具行）。
  */
 func parseClaudeLine(line string, st *turnParseState) []TurnEvent {
 	line = strings.TrimSpace(line)
@@ -296,11 +296,9 @@ func parseClaudeLine(line string, st *turnParseState) []TurnEvent {
 		case "thinking_delta":
 			// 思考增量差分：累计全量 + 水位线仅在有新增长时发增量事件（ACP 驱动同款语义）。
 			st.thought += raw.Event.Delta.Thinking
-			if !strings.HasPrefix(st.thought, st.thoughtSent) {
-				st.thoughtSent = ""
-			}
-			if delta := st.thought[len(st.thoughtSent):]; delta != "" {
-				st.thoughtSent = st.thought
+			delta, nsent := diffWatermark(st.thought, st.thoughtSent)
+			st.thoughtSent = nsent
+			if delta != "" {
 				return []TurnEvent{{Type: TurnThinking, Delta: delta}}
 			}
 			return nil
@@ -336,7 +334,7 @@ func parseClaudeLine(line string, st *turnParseState) []TurnEvent {
 			if name == "" {
 				name = "工具"
 			}
-			evs = append(evs, TurnEvent{Type: TurnStatus, Status: toolSettledText(name, block.IsError)})
+			evs = append(evs, TurnEvent{Type: TurnStatus, Status: toolSettledText(name, block.IsError), ToolName: name})
 		}
 		return evs
 	case "result":

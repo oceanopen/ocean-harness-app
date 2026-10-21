@@ -367,7 +367,8 @@ func TestPumpReplySendsCard(t *testing.T) {
 	<-done
 
 	frames := rs.snapshot()
-	if len(frames) != 2 || frames[0].content != status || frames[0].final || !frames[1].final {
+	want := quoteBlock(status)
+	if len(frames) != 2 || frames[0].content != want || frames[0].final || !frames[1].final {
 		t.Fatalf("应恰两帧（卡帧 + 终帧，无重复文本帧）: %+v", frames)
 	}
 	if want := []string{"send", "flush"}; len(rs.order) != 2 || rs.order[0] != want[0] || rs.order[1] != want[1] {
@@ -391,7 +392,7 @@ func TestPumpReplyCardFailureFallsBackToText(t *testing.T) {
 	<-done
 
 	frames := rs.snapshot()
-	if len(frames) != 2 || frames[0].content != "⏳ Agent 请求审批…" || frames[0].final || !frames[1].final {
+	if len(frames) != 2 || frames[0].content != "> ⏳ Agent 请求审批…" || frames[0].final || !frames[1].final {
 		t.Fatalf("失败应回落文本帧（中间帧 + 终帧）: %+v", frames)
 	}
 	// 写序：tick1 发卡失败（send-fail）→ 回落文本中间帧（flush）→ 回合收尾终帧（flush）。
@@ -419,7 +420,7 @@ func TestPumpReplyCardOnPlainStream(t *testing.T) {
 	<-done
 
 	frames := rs.snapshot()
-	if len(frames) != 2 || frames[0].content != "⏳ Agent 请求审批…" || !frames[1].final {
+	if len(frames) != 2 || frames[0].content != "> ⏳ Agent 请求审批…" || !frames[1].final {
 		t.Fatalf("无卡流应按纯文本两帧收口: %+v", frames)
 	}
 }

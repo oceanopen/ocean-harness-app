@@ -30,7 +30,7 @@ var _ acpSessions = (*acpsession.Manager)(nil)
 /*
  * acpDriver ClaudeDriver 的 ACP 实现（T2.1）：bot 回合经 sidecar acpsession 域驱动 claude，与桌面 issue 主窗口共享同一 ACP 会话（同一 agent 进程、同一会话视图、同一挂起审批状态， IM 与桌面看到的是同一段对话）。与 headless（driver_claude：每回合一个进程，--resume 锚点续聊）的差异：会话 per-issue 长驻、无 resume，因此不发 TurnInit、不写 claude_session_id 锚点（ACP session id 与--resume 不兼容）。
  * 目标 issue（T2.3）：路由层解析会话显式绑定后经 TurnRequest.IssueID 回填，本驱动是纯执行者——空值 = 未绑定，只负责回引导文案（绑定知识不进引擎）。权限面（P6）：不消费 bot 级 allowed_tools——会话权限统一由 workspace/issue 的 launch_settings.permissionMode 表达（Ensure 链下发）；
- * 「需要审批」档的挂起审批由桌面端呈现（T1.7），IM 侧交互随 T2.4/T3.2。守则注入（D3，T1.2；人设与模型两列已随 T5.1 退役）：TurnRequest.SystemPrompt（纯固定守则段，未来提示词管理模块的定制内容也经此通道）经回合级 <im_context> 块随受理 prompt 注入（ACP 无 per-turn system prompt 通道；共享会话下「仅 IM 来源回合生效」的唯一解），桌面回合零影响；会话模型跟随桌面端。
+ * 「需要审批」档的挂起审批由桌面端呈现（T1.7），IM 侧交互随 T2.4/T3.2。守则注入（D3，T1.2）：TurnRequest.SystemPrompt（纯固定守则段，提示词定制内容亦经此通道）经回合级 <im_context> 块随受理 prompt 注入（ACP 无 per-turn system prompt 通道；共享会话下「仅 IM 来源回合生效」的唯一解），桌面回合零影响；会话模型跟随桌面端。
  */
 type acpDriver struct {
 	sessions acpSessions
@@ -84,7 +84,7 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 
 /*
  * acpTurnPrompt 组装 ACP 受理全文（T1.2，D3）：围栏 prompt 尾附 <im_context> 块—— SystemPrompt（IM 守则 + 内容边界，ComposeSystemPrompt SSOT 产物；
- * 人设已随 T5.1 退役，未来提示词管理模块会重新引入外部内容）经 </ 中和防逃逸后随回合注入，仅本引擎（IM 来源回合）生效，桌面回合零影响。
+ * IM 守则 + 内容边界，ComposeSystemPrompt SSOT 产物，提示词定制内容亦经此通道）经 </ 中和防逃逸后随回合注入，仅本引擎（IM 来源回合）生效，桌面回合零影响。
  * SystemPrompt 空则防御性跳过（固定段恒非空，理论不达）。
  */
 func acpTurnPrompt(req TurnRequest) string {
@@ -155,9 +155,9 @@ func sessionStateError(snap acpsession.ViewSnapshot) error {
 }
 
 /*
- * collectTurn 回合输出收集（RunTurn 受理成功后开启，订阅与退订所有权在此；订阅为受理后重开的干净通道，缓冲里只可能有本回合生命周期帧）。armed 窗口装填：首帧快照的 TurnActive（本回合 turnStarted 帧广播早于订阅建立，收不到）或收到的 FrameTurnStarted；
- * 窗口内视图侧回合闸门保证不存在别的回合，agentMessage entry 即本轮回复——帧携带本回合累计全量文本，差分转 TurnText 增量流式（T3.4，水位线 sent 经 user 锚从首帧快照装填）； agentThought 差分转 TurnThinking 增量事件（T4.1，组帧在泵侧）；toolCall 按 id 首见发进度事件。终态唯一性： turnEnded / terminated / 帧通道关闭三者先到先收，收即返回。
- * ctx 取消 = 软取消（Manager.Cancel → acp 层预算内强制收口，终态帧必达），继续消费直至终态帧；不自建超时——终结时序统一由 acp 层取消预算与帧到达表达，不引入时间性兜底。取消信号消费一次即摘出 select（置 nil）——Done 恒就绪，留在集合里会在等终态帧期间空转烧 CPU。
+ * collectTurn 回合输出收集（RunTurn 受理成功后开启；订阅为受理后重开的干净通道，缓冲里只含本回合生命周期帧）。armed 窗口装填：首帧快照 TurnActive（turnStarted 广播早于订阅建立收不到）或收到的 FrameTurnStarted。
+ * 终态唯一性：turnEnded/terminated/通道关闭先到先收。差分：回合闸门保证无他回合，agentMessage/agentThought 帧携带本回合累计全量，水位线差分转增量事件（基线经 user 锚从首帧快照装填）。
+ * ctx 取消 = 软取消（Manager.Cancel → acp 层强制收口，终态帧必达），不自建超时；取消信号消费一次即摘出 select。
  */
 func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionID string, frames <-chan acpsession.Frame, stop func(), events chan<- TurnEvent) {
 	defer close(events)
@@ -166,12 +166,12 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 	seenTools := map[string]bool{}
 	settledTools := map[string]bool{}         // 工具终态去重（completed/failed 覆写帧各只发一次）
 	var text string                           // 本回合 agentMessage 累计全量（终态 Result）
-	sent := ""                                // 差分水位线：已发增量到达的完整前缀串（HasPrefix 校验，见 agentMessage 分支）
-	thoughtSent := ""                         // 思考差分水位线（agentThought 滚动摘要，见该分支）
+	sent := ""                                // 差分水位线：已发增量到达的完整前缀串（校验在 diffWatermark）
+	thoughtSent := ""                         // 思考差分水位线（agentThought 滚动摘要）
 	var openPendings []acpsession.PendingView // 回合内开放挂起（状态行编号与摘除追踪）
 	cardSent := false                         // 本回合卡已出（企微一消息一卡，至多一张——首个可出卡挂起先到先得）
-	elicitCardPendingID := uint64(0)          // 已出表单卡对应的挂起 id（0=未出；表单状态行按挂起粒度两态——
-	// 首表单已答后接开的次表单虽可表示也不出卡，状态行不得指向已置灰首卡）
+	// elicitCardPendingID 已出表单卡对应的挂起 id（0=未出；次表单虽可表示也不出卡，状态行不得指向已置灰首卡）
+	var elicitCardPendingID uint64
 	acpSess := acpSessionID // 会话代锚初值来自就绪快照，随后帧快照覆写
 	armed := false
 	notify := ctx.Done()
@@ -224,33 +224,25 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 					/*
 					 * 差分流式（T3.4）：帧携带本回合累计全量（视图按 (回合,kind) 聚合、Text 只增长），泵的 TurnText 是增量语义——以已发前缀串差分补发；
 					 * 前缀错配（防御：条目覆写换回合的理论态——更短/等长不同/头部不一致）重置全量重发。
-					 * sent 恒为 text 的完整前缀，len(sent) 落字符边界，多字节安全。工具调用后泵已清屏，差分恰只补新文本，与 headless 同构。
+					 * 差分不变式在 diffWatermark 单点维护；泵侧正文整回合累计，差分增量纯追加。
 					 */
 					text = frame.Entry.Text
-					if !strings.HasPrefix(text, sent) {
-						sent = ""
-					}
-					if delta := text[len(sent):]; delta != "" {
+					delta, nsent := diffWatermark(text, sent)
+					sent = nsent
+					if delta != "" {
 						events <- TurnEvent{Type: TurnText, Delta: delta}
 					}
-					sent = text
 				case "agentThought":
-					/*
-					 * 思考增量差分（T4.1，D4）：帧携带本回合累计全量（与 agentMessage 同构），水位线差分
-					 * 仅在有新增长时发 TurnThinking 增量事件（截取与组帧在泵侧统一）。
-					 */
-					if !strings.HasPrefix(frame.Entry.Text, thoughtSent) {
-						thoughtSent = ""
-					}
-					if delta := frame.Entry.Text[len(thoughtSent):]; delta != "" {
+					// 思考增量差分：帧携带累计全量，水位线差分仅在有新增长时发 TurnThinking 增量（组帧在泵侧）。
+					delta, nsent := diffWatermark(frame.Entry.Text, thoughtSent)
+					thoughtSent = nsent
+					if delta != "" {
 						events <- TurnEvent{Type: TurnThinking, Delta: delta}
 					}
-					thoughtSent = frame.Entry.Text
 				case "toolCall":
 					/*
-					 * 工具进度：首见发执行事件（「🔧 正在执行 …」状态行）；已见工具的终态
-					 * 覆写帧发一次完成/失败状态行——填充「工具已结束、下一段内容未到」的
-					 * 气泡滞留（正文/思考状态行到来自然让位）。
+					 * 工具进度：首见发执行事件（面板工具分区追加一行）；已见工具的终态
+					 * 事件发一次、携带工具名（泵就地更新面板对应工具行）。
 					 */
 					if tc := frame.Entry.ToolCall; tc != nil {
 						if !seenTools[tc.ToolCallID] {
@@ -259,7 +251,7 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 						}
 						if line := toolSettledLine(tc); line != "" && !settledTools[tc.ToolCallID] {
 							settledTools[tc.ToolCallID] = true
-							events <- TurnEvent{Type: TurnStatus, Status: line}
+							events <- TurnEvent{Type: TurnStatus, Status: line, ToolName: toolDisplayName(tc)}
 						}
 					}
 				}
@@ -408,7 +400,7 @@ func toolDisplayName(tc *acpsession.ToolCallView) string {
 }
 
 /*
- * toolSettledLine 工具终态状态行：completed/failed 覆写帧对应的进度文案，其余状态返回
+ * toolSettledLine 工具终态面板行文案：completed/failed 覆写帧对应的进度文案，其余状态返回
  * 空串（不发事件）。
  */
 func toolSettledLine(tc *acpsession.ToolCallView) string {

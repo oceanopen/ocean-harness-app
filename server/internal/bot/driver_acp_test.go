@@ -346,8 +346,8 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 	if ev.Type != TurnToolUse || ev.ToolName != "Bash" {
 		t.Fatalf("工具进度事件不符: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "🔧 Bash 已完成" {
-		t.Fatalf("工具完成覆写帧应发一次完成状态行: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "✅ Bash 已完成" || ev.ToolName != "Bash" {
+		t.Fatalf("工具完成覆写帧应发一次带工具名的完成终态: %+v", ev)
 	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || done.IsError || done.Result != "Hello!" {
@@ -527,8 +527,8 @@ func TestAcpDriverToolSettledStatus(t *testing.T) {
 	if ev := recvEvent(t, events); ev.Type != TurnToolUse || ev.ToolName != "Bash" {
 		t.Fatalf("首见应发执行事件: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "🔧 Bash 已完成" {
-		t.Fatalf("完成覆写帧应发完成状态行: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "✅ Bash 已完成" || ev.ToolName != "Bash" {
+		t.Fatalf("完成覆写帧应发带工具名的完成终态: %+v", ev)
 	}
 	if ev := recvEvent(t, events); ev.Type != TurnToolUse || ev.ToolName != "Read" {
 		t.Fatalf("第二个工具首见应发执行事件: %+v", ev)
