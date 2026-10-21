@@ -2,7 +2,7 @@ import type { BrowserSessionView, WorkspaceIssueResponseData, WorkspaceModel } f
 import { WorkspacesOutlined as WorkspacesOutlinedIcon } from '@mui/icons-material';
 import { Box, CircularProgress, List, ListSubheader, Tooltip, Typography } from '@mui/material';
 import IssueCard from '@src/components/issueCard/IssueCard';
-import { deriveIssueProfile, useBrowserSessionEvents, useBrowserSessionView } from '@src/state/browserSession';
+import { isSessionLive, parseTaskSessionProfile, useBrowserSessionEvents, useBrowserSessionView } from '@src/state/browserSession';
 import { filterDevIssues, useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useWorkspaceIssues, useWorkspaces } from '@src/state/tracker';
 import { DEV_IID_PARAM, DEV_WID_PARAM } from '@src/windows/panel/routes';
@@ -16,13 +16,22 @@ import { useNavigate } from 'react-router-dom';
  */
 export default function DevTaskTree() {
   const { data: workspaces = [], isLoading } = useWorkspaces();
-  // 浏览器会话投影（SSE 驱动缓存，树级单订阅）按 profile 键映射，卡片徽标按任务派生 profile 直查。
   useBrowserSessionEvents();
   const { data: browserSnapshot } = useBrowserSessionView();
-  const browserSessions = useMemo(
-    () => new Map((browserSnapshot?.sessions ?? []).map(row => [row.profile, row])),
-    [browserSnapshot],
-  );
+  // 浏览器会话投影（SSE 驱动缓存，树级单订阅）按任务 id 聚合（任意槽位），卡片徽标直查。
+  const taskSessions = useMemo(() => {
+    const map = new Map<string, BrowserSessionView[]>();
+    for (const row of browserSnapshot?.sessions ?? []) {
+      const parsed = parseTaskSessionProfile(row.profile);
+      if (parsed == null) {
+        continue;
+      }
+      const list = map.get(parsed.issueId) ?? [];
+      list.push(row);
+      map.set(parsed.issueId, list);
+    }
+    return map;
+  }, [browserSnapshot]);
 
   if (isLoading && workspaces.length === 0) {
     return (
@@ -40,7 +49,7 @@ export default function DevTaskTree() {
   }
   return (
     <List dense component="nav" sx={{ flex: 1, overflow: 'auto', py: '4px' }}>
-      {workspaces.map(ws => <WorkspaceNode key={ws.id} workspace={ws} browserSessions={browserSessions} />)}
+      {workspaces.map(ws => <WorkspaceNode key={ws.id} workspace={ws} taskSessions={taskSessions} />)}
     </List>
   );
 }
@@ -49,7 +58,7 @@ export default function DevTaskTree() {
  * workspace 段标题 + 其下 dev 任务卡片。预判是否有 dev 任务（与任务管理页同 query 缓存，命中即零请求），
  * 无则整体不渲染，避免孤立分组头。
  */
-function WorkspaceNode({ workspace, browserSessions }: { workspace: WorkspaceModel; browserSessions: Map<string, BrowserSessionView> }) {
+function WorkspaceNode({ workspace, taskSessions }: { workspace: WorkspaceModel; taskSessions: Map<string, BrowserSessionView[]> }) {
   const { data: issues = [] } = useWorkspaceIssues(workspace.id);
   const devIssues = useMemo(() => filterDevIssues(issues), [issues]);
 
@@ -68,7 +77,7 @@ function WorkspaceNode({ workspace, browserSessions }: { workspace: WorkspaceMod
         </Box>
       </ListSubheader>
       {devIssues.map(issue => (
-        <DevIssueRow key={issue.id} issue={issue} browserSession={browserSessions.get(deriveIssueProfile(issue.id))} />
+        <DevIssueRow key={issue.id} issue={issue} sessions={taskSessions.get(issue.id) ?? []} />
       ))}
     </>
   );
@@ -78,11 +87,15 @@ function WorkspaceNode({ workspace, browserSessions }: { workspace: WorkspaceMod
 // onCardClick 选中任务，选中态高亮边框）。
 // 外层 Box 提供层级缩进（ml '16px'，卡缘居段标题图标区间中点，任务与空间名视觉分层）。
 // 整卡 Tooltip 右侧展示完整名称（左缘元素约定 placement="right"）。点击选中/取消。
-function DevIssueRow({ issue, browserSession }: { issue: WorkspaceIssueResponseData; browserSession?: BrowserSessionView }) {
+function DevIssueRow({ issue, sessions }: { issue: WorkspaceIssueResponseData; sessions: BrowserSessionView[] }) {
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
   const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
   const navigate = useNavigate();
   const selected = selectedIssueId === issue.id;
+  // 徽标代表行：任一会话 live 优先展示，否则取最低槽位（无会话为 undefined 不出徽标）。
+  const bySlot = (a: BrowserSessionView, b: BrowserSessionView) =>
+    (parseTaskSessionProfile(a.profile)?.slot ?? 1) - (parseTaskSessionProfile(b.profile)?.slot ?? 1);
+  const browserSession = sessions.find(s => isSessionLive(s.status)) ?? [...sessions].sort(bySlot)[0];
 
   const card = (
     <Box sx={{ mt: '12px', ml: '16px', mr: '8px' }}>

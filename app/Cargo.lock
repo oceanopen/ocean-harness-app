@@ -2865,6 +2865,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tauri-specta",
+ "winreg 0.55.0",
 ]
 
 [[package]]

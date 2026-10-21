@@ -42,13 +42,6 @@ func authReadShared(t *testing.T, path string) StorageState {
 	return state
 }
 
-// withAuthResolver 注入 issue→workspace resolver（收尾恢复 nil）。
-func withAuthResolver(t *testing.T, fn func(ctx context.Context, issueID string) (string, error)) {
-	t.Helper()
-	SetIssueWorkspaceResolver(fn)
-	t.Cleanup(func() { SetIssueWorkspaceResolver(nil) })
-}
-
 // authToolRecorder 记账 storage 工具调用（engineStateJSON 非空时模拟引擎写 staging）。
 type authToolRecorder struct {
 	mu          sync.Mutex
@@ -93,13 +86,12 @@ func TestAuthInjectBeforeReadyAndMergeOnClose(t *testing.T) {
 	ctl := withEngineCtl(t)
 	rec := &authToolRecorder{}
 	rec.bind(ctl, `{"cookies":[{"name":"engine_c","value":"v","domain":".e.com","path":"/","expires":-1,"httpOnly":false,"secure":false,"sameSite":"Lax"}],"origins":[]}`)
-	withAuthResolver(t, func(_ context.Context, issueID string) (string, error) { return "ws1", nil })
 	shared := authSeedShared(t, "ws1", StorageState{Cookies: []StorageCookie{
 		{Name: "shared_c", Value: "s", Domain: ".s.com", Path: "/", Expires: -1, SameSite: "Lax"},
 	}})
 
 	// Ensure 返回即就绪——注入（set_storage_state）必然已完成（置 ready 前同步执行）。
-	sv, err := m.Ensure(context.Background(), "issue-iss1", nil)
+	sv, err := m.Ensure(context.Background(), "issue-iss1", nil, "ws1")
 	if err != nil || sv.Status != StatusReady {
 		t.Fatalf("Ensure = %v, %v; want ready", sv.Status, err)
 	}
@@ -137,10 +129,9 @@ func TestAuthInjectSkips(t *testing.T) {
 	ctl := withEngineCtl(t)
 	rec := &authToolRecorder{}
 	rec.bind(ctl, "")
-	withAuthResolver(t, func(_ context.Context, issueID string) (string, error) { return "ws1", nil })
 
 	// 共享文件缺失：跳过注入，会话照常就绪。
-	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil); err != nil || sv.Status != StatusReady {
+	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil, "ws1"); err != nil || sv.Status != StatusReady {
 		t.Fatalf("缺失文件 Ensure = %v, %v; want ready", sv.Status, err)
 	}
 	if setCalls, _, _ := rec.stats(); setCalls != 0 {
@@ -154,7 +145,7 @@ func TestAuthInjectSkips(t *testing.T) {
 	if err := m.Close("issue-iss1"); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil); err != nil || sv.Status != StatusReady {
+	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil, "ws1"); err != nil || sv.Status != StatusReady {
 		t.Fatalf("播种后 Ensure = %v, %v; want ready", sv.Status, err)
 	}
 	if setCalls, _, _ := rec.stats(); setCalls != 1 {
@@ -166,7 +157,7 @@ func TestAuthInjectSkips(t *testing.T) {
 	if err := m.Close("issue-iss1"); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil); err != nil || sv.Status != StatusReady {
+	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil, "ws1"); err != nil || sv.Status != StatusReady {
 		t.Fatalf("同内容重开 Ensure = %v, %v; want ready", sv.Status, err)
 	}
 	if setCalls, _, _ := rec.stats(); setCalls != 1 {
@@ -180,11 +171,26 @@ func TestAuthInjectSkips(t *testing.T) {
 	if err := m.Close("issue-iss1"); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil); err != nil || sv.Status != StatusReady {
+	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil, "ws1"); err != nil || sv.Status != StatusReady {
 		t.Fatalf("内容变化后重开 Ensure = %v, %v; want ready", sv.Status, err)
 	}
 	if setCalls, _, _ := rec.stats(); setCalls != 2 {
 		t.Fatalf("共享文件变化后应重新注入: setCalls = %d", setCalls)
+	}
+
+	// prefs 持久化：不显式传 workspaceId 重开（forward 冷启动/换调用方同路径），
+	// 共享键从偏好文件读回，内容变化仍触发注入。
+	authSeedShared(t, "ws1", StorageState{Cookies: []StorageCookie{
+		{Name: "c3", Value: "v3", Domain: ".s.com", Path: "/", Expires: -1, SameSite: "Lax"},
+	}})
+	if err := m.Close("issue-iss1"); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil, ""); err != nil || sv.Status != StatusReady {
+		t.Fatalf("缺省参数重开 Ensure = %v, %v; want ready", sv.Status, err)
+	}
+	if setCalls, _, _ := rec.stats(); setCalls != 3 {
+		t.Fatalf("偏好读回应注入: setCalls = %d", setCalls)
 	}
 }
 
@@ -199,13 +205,12 @@ func TestAuthInjectFailureDegrades(t *testing.T) {
 		return "ok: " + tool, false
 	}
 	ctl.mu.Unlock()
-	withAuthResolver(t, func(_ context.Context, issueID string) (string, error) { return "ws1", nil })
 	authSeedShared(t, "ws1", StorageState{Cookies: []StorageCookie{
 		{Name: "c", Value: "v", Domain: ".s.com", Path: "/", Expires: -1, SameSite: "Lax"},
 	}})
 
 	// 注入失败：会话照常就绪（降级 profile 自管），不阻断 Ensure。
-	sv, err := m.Ensure(context.Background(), "issue-iss1", nil)
+	sv, err := m.Ensure(context.Background(), "issue-iss1", nil, "ws1")
 	if err != nil || sv.Status != StatusReady {
 		t.Fatalf("注入失败 Ensure = %v, %v; want ready", sv.Status, err)
 	}
@@ -220,12 +225,12 @@ func TestAuthNoNamespaceNoSync(t *testing.T) {
 		{Name: "c", Value: "v", Domain: ".s.com", Path: "/", Expires: -1, SameSite: "Lax"},
 	}})
 
-	// resolver 未注入（nil）：issue- 前缀无共享，零注入零导出。
-	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil); err != nil || sv.Status != StatusReady {
-		t.Fatalf("nil resolver Ensure = %v, %v; want ready", sv.Status, err)
+	// issue- 前缀无偏好 workspaceId：无共享，零注入零导出。
+	if sv, err := m.Ensure(context.Background(), "issue-iss1", nil, ""); err != nil || sv.Status != StatusReady {
+		t.Fatalf("无 workspaceId Ensure = %v, %v; want ready", sv.Status, err)
 	}
 	// workspace- 前缀直通（无需 resolver）：注入发生。
-	if sv, err := m.Ensure(context.Background(), "workspace-ws1", nil); err != nil || sv.Status != StatusReady {
+	if sv, err := m.Ensure(context.Background(), "workspace-ws1", nil, ""); err != nil || sv.Status != StatusReady {
 		t.Fatalf("workspace 前缀 Ensure = %v, %v; want ready", sv.Status, err)
 	}
 	setCalls, _, lastInject := rec.stats()
@@ -239,7 +244,7 @@ func TestAuthNoNamespaceNoSync(t *testing.T) {
 	if err := m.Close("workspace-ws1"); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if sv, err := m.Ensure(context.Background(), "default", nil); err != nil || sv.Status != StatusReady {
+	if sv, err := m.Ensure(context.Background(), "default", nil, ""); err != nil || sv.Status != StatusReady {
 		t.Fatalf("default Ensure = %v, %v; want ready", sv.Status, err)
 	}
 	if setCalls, _, _ := rec.stats(); setCalls != 1 {

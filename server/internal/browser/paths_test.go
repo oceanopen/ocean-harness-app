@@ -73,6 +73,52 @@ func TestDownloadsDirCreated(t *testing.T) {
 	}
 }
 
+func TestFormatIssueProfile(t *testing.T) {
+	const id = "0197c0a2-7b6a-7333-8b1a-2f4e1d6c9a01"
+	for slot, want := range map[int]string{
+		1: "issue-" + id,
+		2: "issue-" + id + "-2",
+		5: "issue-" + id + "-5",
+	} {
+		got, err := FormatIssueProfile(id, slot)
+		if err != nil || got != want {
+			t.Fatalf("FormatIssueProfile(%d) = %q, %v; want %q", slot, got, err, want)
+		}
+	}
+	for _, slot := range []int{0, 6, -1} {
+		if _, err := FormatIssueProfile(id, slot); err == nil {
+			t.Fatalf("FormatIssueProfile(%d) 越界未被拒绝", slot)
+		}
+	}
+}
+
+func TestParseIssueProfile(t *testing.T) {
+	const id = "0197c0a2-7b6a-7333-8b1a-2f4e1d6c9a01"
+	cases := []struct {
+		profile string
+		issueID string
+		slot    int
+		ok      bool
+	}{
+		{profile: "issue-" + id, issueID: id, slot: 1, ok: true},
+		{profile: "issue-" + id + "-2", issueID: id, slot: 2, ok: true},
+		{profile: "issue-" + id + "-5", issueID: id, slot: 5, ok: true},
+		{profile: "issue-" + id + "-c9a0", issueID: id + "-c9a0", slot: 1, ok: true}, // 非单数字尾缀不拆槽位：整体为基座
+		{profile: "workspace-w1"},
+		{profile: "default"},
+		{profile: "issue-"},
+		{profile: "issue-" + id + "-1"}, // -1 非合法槽位后缀
+		{profile: "issue-" + id + "-6"}, // -6 越界
+		{profile: "issue-" + id + "-22", issueID: id + "-22", slot: 1, ok: true}, // 多位尾缀非槽位形态：整体为基座
+	}
+	for _, tc := range cases {
+		gotID, gotSlot, ok := ParseIssueProfile(tc.profile)
+		if ok != tc.ok || gotID != tc.issueID || gotSlot != tc.slot {
+			t.Fatalf("ParseIssueProfile(%q) = (%q, %d, %v); want (%q, %d, %v)", tc.profile, gotID, gotSlot, ok, tc.issueID, tc.slot, tc.ok)
+		}
+	}
+}
+
 func TestProfilePrefsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
@@ -98,5 +144,14 @@ func TestProfilePrefsRoundTrip(t *testing.T) {
 	prefs, err = ReadProfilePrefs(dir)
 	if err != nil || !prefs.Headless {
 		t.Fatalf("回读偏好 = %+v, %v; want headless=true", prefs, err)
+	}
+
+	// workspaceId 与 headless 同文件互不干扰：双字段一并落盘回读。
+	if err := WriteProfilePrefs(dir, ProfilePrefs{Headless: false, WorkspaceID: "ws-1"}); err != nil {
+		t.Fatalf("WriteProfilePrefs: %v", err)
+	}
+	prefs, err = ReadProfilePrefs(dir)
+	if err != nil || prefs.Headless || prefs.WorkspaceID != "ws-1" {
+		t.Fatalf("回读偏好 = %+v, %v; want headless=false workspaceId=ws-1", prefs, err)
 	}
 }

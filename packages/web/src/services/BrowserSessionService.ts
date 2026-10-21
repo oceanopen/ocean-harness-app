@@ -112,11 +112,13 @@ export interface BrowserLiveEvent {
 
 /**
  * POST /api/browserSession/ensure：拉起/复用 profile 会话（同步等就绪）。Headless 为 D10 覆盖：
- * 缺省（undefined = 键省略）读 profile 偏好文件，显式传入覆写并回存。
+ * 缺省（undefined = 键省略）读 profile 偏好文件，显式传入覆写并回存。workspaceId 为共享
+ * 登录态键：非空写入 profile 偏好持久化（后续冷启动/重建自动读回），缺省读偏好。
  */
 export interface BrowserSessionEnsureRequest {
   profile: string;
   headless?: boolean;
+  workspaceId?: string;
 }
 
 // POST /api/browserSession/close：释放会话（幂等，登录态在 profile 目录续存）。

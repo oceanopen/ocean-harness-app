@@ -10,14 +10,18 @@ package mcpdto
 /*
  * BrowserProfileArgs browser_* 工具集共用基座（匿名嵌入平铺）：profile 留空时按
  * issueId → workspaceId 次序派生会话（issue-<issueId> 任务派生 / workspace-<workspaceId>
- * 工作空间派生，享工作空间共享登录态），均留空用 default（mcp_tool 层归一，引擎会话
- * 自动 ensure，idle 冷启动 1-3s 属预期）；issueId 兼作服务端操作流水归因（面板 recentCalls 徽标）。
+ * 工作空间派生），均留空用 default（mcp_tool 层归一，引擎会话自动 ensure，idle 冷启动
+ * 1-3s 属预期）；issueId 兼作服务端操作流水归因（面板 recentCalls 徽标）。同工作空间的
+ * 会话共享登录态（workspaceId 为共享键，spawn 注入/导出 auth-states/<workspaceId>.json）；
+ * 任务多开会话（issue-<issueId>-2..-5）经 browser_profile_open 的 slot 创建，其余工具按
+ * 显式 profile 名寻址。
  */
 type BrowserProfileArgs struct {
-	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名；留空时按 issueId → workspaceId 次序派生（issue-<issueId> / workspace-<workspaceId>），否则用 default；不同 profile 各自独立引擎进程与登录态"`
+	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名；留空时按 issueId → workspaceId 次序派生（issue-<issueId> / workspace-<workspaceId>），否则用 default；不同 profile 各自独立引擎进程，同工作空间会话共享登录态"`
 	IssueID string `json:"issueId,omitempty" jsonschema:"归因 issue 主键（uuid 文本）；profile 留空时优先决定目标会话（任务派生），可留空"`
-	// WorkspaceID 工作空间派生次序低于 issueId（任务归属工作空间，workspace 执行语义更宽）。
-	WorkspaceID string `json:"workspaceId,omitempty" jsonschema:"工作空间主键（uuid 文本）；profile 与 issueId 均留空时决定目标会话（workspace-<workspaceId>，共享该工作空间登录态），可留空"`
+	// WorkspaceID 共享登录态键（任务上下文推荐携带，落盘偏好持久化）；profile 与 issueId
+	// 均留空时兼作会话派生（workspace-<id>，工作空间自身实例）。
+	WorkspaceID string `json:"workspaceId,omitempty" jsonschema:"工作空间主键（uuid 文本）：作为该会话共享登录态的键（spawn 时注入/导出该工作空间登录态）；profile 与 issueId 均留空时兼作会话派生（workspace-<workspaceId>），可留空"`
 }
 
 // —— 原生 6 工具入参 ——
@@ -29,6 +33,9 @@ type BrowserStatusArgs struct{}
 type BrowserProfileOpenArgs struct {
 	BrowserProfileArgs
 	Headless *bool `json:"headless,omitempty" jsonschema:"无头模式；留空读 profile 偏好文件，显式传入覆写并回存（模式切换会关掉重开，登录态在 profile 目录续存）"`
+	// Slot 任务多开槽位：仅 issueId 派生时生效，1 = 第 1 会话（基名），2-5 多开
+	// （issue-<issueId>-N）；profile 显式传入时忽略。
+	Slot *int `json:"slot,omitempty" jsonschema:"任务会话槽位（1-5，缺省 1）：仅按 issueId 派生时生效，2 起创建任务多开会话（issue-<issueId>-N），后续操作按返回的 profile 名寻址；profile 显式传入时忽略"`
 }
 
 /*

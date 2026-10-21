@@ -142,7 +142,7 @@ func TestManagerLiveIdleKeepAlive(t *testing.T) {
 	env := newLiveTestEnv(t)
 	env.ctl = withEngineCtl(t)
 	m := env.m
-	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", nil, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if idleTimerOf(t, m, "default") == nil {
@@ -183,7 +183,7 @@ func TestManagerLiveDropOnClose(t *testing.T) {
 	env := newLiveTestEnv(t)
 	env.ctl = withEngineCtl(t)
 	m := env.m
-	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", nil, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -217,7 +217,7 @@ func TestManagerLiveDropOnHeadlessSwitch(t *testing.T) {
 	env := newLiveTestEnv(t)
 	env.ctl = withEngineCtl(t)
 	m := env.m
-	if _, err := m.Ensure(context.Background(), "default", boolPtr(false)); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", boolPtr(false), ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -227,7 +227,7 @@ func TestManagerLiveDropOnHeadlessSwitch(t *testing.T) {
 		t.Fatalf("SubscribeLive: %v", err)
 	}
 
-	if _, err := m.Ensure(context.Background(), "default", boolPtr(true)); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", boolPtr(true), ""); err != nil {
 		t.Fatalf("切换 Ensure: %v", err)
 	}
 	waitClosed(t, s.Done(), "无头切换强拆断连")
@@ -269,7 +269,7 @@ func TestManagerLiveDropOnWatchExit(t *testing.T) {
 	ctl, kill := withKillableEngineCtl(t)
 	env.ctl = ctl
 	m := env.m
-	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", nil, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

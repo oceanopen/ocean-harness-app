@@ -52,7 +52,7 @@ claude plugin install ocean-harness@ocean-claude-plugins
 
 ## ocean-harness CLI
 
-app 启动时自动将随包 CLI 命令注册到用户级 `~/.local/bin`（release 构建注册 `ocean-harness-cli`，dev 构建注册 `ocean-harness-dev-cli`；首次会向 `~/.zshrc` 幂等注入 PATH 行，fish 等其他 shell 需手动将 `~/.local/bin` 加入 PATH）。CLI 内置 MCP 客户端直连本机服务的 MCP 端点，是插件 skill ↔ MCP 之间的可调试中间层——插件所有命令的后端读写均经它完成，也可在终端直接手工调用：
+app 启动时自动将随包 CLI 命令注册为用户级终端命令（release 构建注册 `ocean-harness-cli`，dev 构建注册 `ocean-harness-dev-cli`）：macOS symlink 到 `~/.local/bin`（悬空旧链自动重建）并首次向 `~/.zshrc` 幂等注入 PATH 行，fish 等其他 shell 需手动将 `~/.local/bin` 加入 PATH；Windows 写 `.cmd` shim 到 `%LOCALAPPDATA%\OceanHarness\bin` 并注入用户级注册表 PATH（已开终端需重开生效），卸载时自动清理。CLI 内置 MCP 客户端直连本机服务的 MCP 端点，是插件 skill ↔ MCP 之间的可调试中间层——插件所有命令的后端读写均经它完成，也可在终端直接手工调用：
 
 ```bash
 ocean-harness-cli --version                          # 版本与构建模式

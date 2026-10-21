@@ -78,3 +78,7 @@ portable-pty = "0.9"
 # 0.6 已在依赖树（tauri/tao 传递），此处仅声明直接引用，无新增外部 crate。
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+
+# CLI 命令注册（shared/cli_register）：用户 PATH 注册表读写（HKCU\Environment）。
+[target.'cfg(target_os = "windows")'.dependencies]
+winreg = "0.55"

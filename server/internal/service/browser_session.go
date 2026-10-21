@@ -49,7 +49,7 @@ func (svc BrowserSession) GetInfo() *browser.BrowserViewSnapshot {
  * D10 覆盖：nil 读 profile 偏好文件，显式传入覆写并回存。
  */
 func (svc BrowserSession) Ensure(req *types.BrowserEnsureRequest) (browser.SessionView, error) {
-	return global.Browser.Ensure(svc.Context, req.Profile, req.Headless)
+	return global.Browser.Ensure(svc.Context, req.Profile, req.Headless, req.WorkspaceID)
 }
 
 /*

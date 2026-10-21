@@ -1,5 +1,12 @@
 export { useBrowserStageStore } from './activation';
-export { deriveIssueProfile, isSessionLive } from './derive';
+export {
+  deriveIssueProfile,
+  deriveIssueProfileSlot,
+  isSessionLive,
+  isTaskSessionProfile,
+  parseTaskSessionProfile,
+  TASK_SESSION_SLOT_COUNT,
+} from './derive';
 export { browserSessionKeys } from './keys';
 export {
   useAnalyzeBrowserSession,

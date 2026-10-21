@@ -196,7 +196,7 @@ func TestManagerEnsureReuseAndHeadlessSwitch(t *testing.T) {
 	ctl := withEngineCtl(t)
 	m := newTestManager(t)
 
-	sv, err := m.Ensure(context.Background(), "default", boolPtr(false)) // 显式有头（新建 profile 缺省无头后，显式传参保持本用例的有头起点）
+	sv, err := m.Ensure(context.Background(), "default", boolPtr(false), "") // 显式有头（新建 profile 缺省无头后，显式传参保持本用例的有头起点）
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestManagerEnsureReuseAndHeadlessSwitch(t *testing.T) {
 		t.Fatalf("sv = %+v, want ready 有头", sv)
 	}
 	// 同名复用：不重拉。
-	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", nil, ""); err != nil {
 		t.Fatalf("二次 Ensure: %v", err)
 	}
 	if spawns, _, _ := ctl.stats(); spawns != 1 {
@@ -212,7 +212,7 @@ func TestManagerEnsureReuseAndHeadlessSwitch(t *testing.T) {
 	}
 
 	// 显式 headless 覆写回存 + close+reopen（D10 切换）。
-	sv, err = m.Ensure(context.Background(), "default", boolPtr(true))
+	sv, err = m.Ensure(context.Background(), "default", boolPtr(true), "")
 	if err != nil {
 		t.Fatalf("headless 切换 Ensure: %v", err)
 	}
@@ -234,11 +234,12 @@ func TestManagerConcurrentProfilesCap(t *testing.T) {
 	m := newTestManager(t)
 
 	for i := 0; i < maxConcurrentProfiles; i++ {
-		if _, err := m.Ensure(context.Background(), fmt.Sprintf("p%d", i), nil); err != nil {
+		if _, err := m.Ensure(context.Background(), fmt.Sprintf("p%d", i), nil, ""); err != nil {
 			t.Fatalf("Ensure p%d: %v", i, err)
 		}
 	}
-	_, err := m.Ensure(context.Background(), "p3", nil)
+	next := fmt.Sprintf("p%d", maxConcurrentProfiles)
+	_, err := m.Ensure(context.Background(), next, nil, "")
 	if err == nil || !strings.Contains(err.Error(), "上限") {
 		t.Fatalf("err = %v, want 并发上限报错", err)
 	}
@@ -246,7 +247,49 @@ func TestManagerConcurrentProfilesCap(t *testing.T) {
 	if err := m.Close("p0"); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := m.Ensure(context.Background(), "p3", nil); err != nil {
+	if _, err := m.Ensure(context.Background(), next, nil, ""); err != nil {
+		t.Fatalf("释放后再 Ensure: %v", err)
+	}
+}
+
+func TestManagerPerTaskSessionsCap(t *testing.T) {
+	withEngineCtl(t)
+	m := newTestManager(t)
+	const id = "0197c0a2-7b6a-7333-8b1a-2f4e1d6c9a01"
+
+	slotName := func(slot int) string {
+		t.Helper()
+		name, err := FormatIssueProfile(id, slot)
+		if err != nil {
+			t.Fatalf("FormatIssueProfile(%d): %v", slot, err)
+		}
+		return name
+	}
+
+	// 5 槽位并发拉起全部成功，任务活跃计数随之到位。
+	for slot := 1; slot <= MaxSessionsPerTask; slot++ {
+		if _, err := m.Ensure(context.Background(), slotName(slot), nil, ""); err != nil {
+			t.Fatalf("槽位 %d Ensure: %v", slot, err)
+		}
+	}
+	m.mu.Lock()
+	n := m.taskActiveCount(nil, id)
+	m.mu.Unlock()
+	if n != MaxSessionsPerTask {
+		t.Fatalf("taskActiveCount = %d, want %d", n, MaxSessionsPerTask)
+	}
+
+	// 越界槽位名与目标任务同配额（issueQuotaBase 归组）：第 6 个拒绝。
+	sixth := "issue-" + id + "-6"
+	if _, err := m.Ensure(context.Background(), sixth, nil, ""); err == nil || !strings.Contains(err.Error(), "上限") {
+		t.Fatalf("err = %v, want 任务并发上限报错", err)
+	}
+
+	// 释放一个槽位腾出配额后可再拉。
+	if err := m.Close(slotName(2)); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := m.Ensure(context.Background(), sixth, nil, ""); err != nil {
 		t.Fatalf("释放后再 Ensure: %v", err)
 	}
 }
@@ -407,7 +450,7 @@ func TestManagerCloseCapturesPages(t *testing.T) {
 	}
 	ctl.mu.Unlock()
 
-	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", nil, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if row := sessionRow(t, m, "default"); len(row.Pages) != 0 {
@@ -445,7 +488,7 @@ func TestManagerCloseRace(t *testing.T) {
 	}
 	m := newTestManager(t)
 	seedPage(m, "default", "t0")
-	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", nil, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 
@@ -477,7 +520,7 @@ func TestManagerCloseDuringStartingThenEnsure(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := m.Ensure(context.Background(), "default", nil)
+		_, err := m.Ensure(context.Background(), "default", nil, "")
 		done <- err
 	}()
 	waitSpawns(t, ctl, 1)
@@ -493,7 +536,7 @@ func TestManagerCloseDuringStartingThenEnsure(t *testing.T) {
 	waitForStatus(t, m, "default", StatusIdle)
 
 	// closing 已复位：再 Ensure 正常重拉（不报「正在关闭」）。
-	sv, err := m.Ensure(context.Background(), "default", nil)
+	sv, err := m.Ensure(context.Background(), "default", nil, "")
 	if err != nil {
 		t.Fatalf("Close 后再 Ensure: %v", err)
 	}
@@ -513,7 +556,7 @@ func TestManagerCloseFailedThenEnsure(t *testing.T) {
 		return nil, fmt.Errorf("boom")
 	})
 	m := NewManager(fakeStaging(t), nil)
-	if _, err := m.Ensure(context.Background(), "default", nil); err == nil {
+	if _, err := m.Ensure(context.Background(), "default", nil, ""); err == nil {
 		t.Fatal("want 拉起失败报错")
 	}
 	waitForStatus(t, m, "default", StatusFailed)
@@ -531,7 +574,7 @@ func TestManagerCloseFailedThenEnsure(t *testing.T) {
 
 	// 恢复可用引擎 → Close 后重拉成功。
 	withEngineCtl(t)
-	sv, err := m.Ensure(context.Background(), "default", nil)
+	sv, err := m.Ensure(context.Background(), "default", nil, "")
 	if err != nil || sv.Status != StatusReady {
 		t.Fatalf("Close 后再 Ensure: sv=%+v err=%v", sv, err)
 	}
@@ -547,7 +590,7 @@ func TestManagerEnsureJoinHeadlessMismatch(t *testing.T) {
 
 	aDone := make(chan error, 1)
 	go func() {
-		_, err := m.Ensure(context.Background(), "default", boolPtr(false)) // 显式有头
+		_, err := m.Ensure(context.Background(), "default", boolPtr(false), "") // 显式有头
 		aDone <- err
 	}()
 	waitSpawns(t, ctl, 1)
@@ -555,7 +598,7 @@ func TestManagerEnsureJoinHeadlessMismatch(t *testing.T) {
 	// B 并发显式 headless=true（join 在途 spawn 或就绪后撞见不一致，均应走重建）。
 	bDone := make(chan SessionView, 1)
 	go func() {
-		sv, err := m.Ensure(context.Background(), "default", boolPtr(true))
+		sv, err := m.Ensure(context.Background(), "default", boolPtr(true), "")
 		if err != nil {
 			t.Errorf("B Ensure: %v", err)
 		}
@@ -603,7 +646,7 @@ func TestManagerSubscribeFrames(t *testing.T) {
 	}
 
 	// Ensure 产生 starting → ready 两帧 sessions。
-	if _, err := m.Ensure(context.Background(), "default", nil); err != nil {
+	if _, err := m.Ensure(context.Background(), "default", nil, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	for _, wantStatus := range []SessionStatus{StatusStarting, StatusReady} {
