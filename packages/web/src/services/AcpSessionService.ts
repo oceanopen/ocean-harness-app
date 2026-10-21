@@ -58,11 +58,12 @@ export interface AcpConversationEntry {
 
 /**
  * user 条目展示元数据（view.go EntryDisplay，显示-发送文本分离）：text 为正文原文
- * （区别于条目 text 的围栏全文，围栏只归模型侧），quote / files 为 IM 引用与附件的展示投影；
- * display 缺失（历史条目随 sidecar 重启即消失）前端回落条目 text 原样直显。
+ * （区别于条目 text 的围栏全文，围栏只归模型侧），quote / files 为 IM 引用与附件的展示投影，
+ * channel 为 bot 渠道（前端渠道图标）；display 缺失（历史条目随 sidecar 重启即消失）前端回落条目 text 原样直显。
  */
 export interface AcpEntryDisplay {
   text?: string;
+  channel?: string;
   quote?: AcpEntryQuote;
   files?: AcpEntryFile[];
 }

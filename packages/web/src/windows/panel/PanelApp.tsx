@@ -25,6 +25,7 @@ import { commands } from '@src/shared/bindings';
 import { EVENT_PANEL_NAVIGATE, EVENT_PANEL_SHOWN } from '@src/shared/events';
 import { isMacOS, TRAFFIC_LIGHT_CLEARANCE } from '@src/shared/platform';
 import { useCloseWindowShortcut } from '@src/shared/useCloseWindowShortcut';
+import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useTrackerStore } from '@src/state/tracker';
@@ -51,6 +52,9 @@ import TrackerPage from './TrackerPage/TrackerPage';
 function decodeSidebarCollapsed(raw: string | null): boolean {
   return isYes(parseYesNo(raw, DEFAULT_PANEL_SIDEBAR_COLLAPSED));
 }
+
+// 就绪闸门的 key 集：模块级保证引用稳定（useConfigReady 依赖项要求）。
+const SIDEBAR_READY_KEYS = [PANEL_SIDEBAR_COLLAPSED_KEY];
 
 // 顶部栏高度：全宽独立行（macOS Overlay 窗口，panel.rs TitleBarStyle::Overlay）——吃进
 // 原生标题栏区域的 44px 单条自定义标题栏（红绿灯纵向居中其中），带 data-tauri-drag-region
@@ -87,6 +91,9 @@ function PanelApp() {
   const theme = useTheme();
   // 侧边栏折叠状态：订阅 config（跨重启持久化、多窗口同步）。setAppConfig 触发 app-config-changed 事件，hook 自动回写，无需手动 setState。
   const collapsed = useConfigValue(PANEL_SIDEBAR_COLLAPSED_KEY, decodeSidebarCollapsed, false);
+  // 就绪闸门：折叠配置回填完成前不挂载外壳——首帧即终值（新挂载元素无前值可过渡），
+  // 杜绝 reload 时侧栏以默认展开态首绘再动画收起；就绪后宽度过渡恒开，手动切换照常播动画。
+  const sidebarConfigReady = useConfigReady(SIDEBAR_READY_KEYS);
   const toggleCollapsed = () => {
     void setAppConfig(PANEL_SIDEBAR_COLLAPSED_KEY, toYesNo(!collapsed));
   };
@@ -181,6 +188,11 @@ function PanelApp() {
       console.warn('[PanelApp] 应用名获取失败:', err);
     });
   }, []);
+
+  // 回填未就绪时整壳不挂载（见 sidebarConfigReady 注释）：占位仅铺底色，无布局无过渡。
+  if (!sidebarConfigReady) {
+    return <Box sx={{ height: '100vh', bgcolor: 'background.default' }} />;
+  }
 
   return (
     <CommandPaletteProvider

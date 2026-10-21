@@ -1,6 +1,6 @@
 import type { SubtaskStats } from '@src/components/issueCard/shared';
 import type { BrowserSessionView, ProjectIssueResponseData, WorkspaceModel, WorkspaceProjectModel } from '@src/services';
-import { KeyboardArrowDownRounded as KeyboardArrowDownRoundedIcon, KeyboardArrowRightRounded as KeyboardArrowRightRoundedIcon } from '@mui/icons-material';
+import { KeyboardArrowDownRounded as KeyboardArrowDownRoundedIcon, KeyboardArrowRightRounded as KeyboardArrowRightRoundedIcon, WorkspacesOutlined as WorkspacesOutlinedIcon } from '@mui/icons-material';
 import { Box, Chip, CircularProgress, List, ListItemButton, ListItemIcon, ListItemText, ListSubheader, Tooltip, Typography } from '@mui/material';
 import IssueCard from '@src/components/issueCard/IssueCard';
 import { ProjectIssueService } from '@src/services';
@@ -73,8 +73,12 @@ function WorkspaceNode({ workspace, browserSessions }: { workspace: WorkspaceMod
 
   return (
     <>
-      <ListSubheader disableSticky sx={{ pt: '12px', pb: '14.4px', color: 'text.secondary', lineHeight: 1.4 }}>
-        {workspace.name}
+      {/* 工作空间图标占位于项目折叠头 chevron 同列（20px + 4px），两级名称左缘对齐于 32px。 */}
+      <ListSubheader disableSticky sx={{ pt: '12px', pb: '14.4px', color: 'text.secondary', lineHeight: 1.4, pl: '8px' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <WorkspacesOutlinedIcon sx={{ fontSize: '20px' }} />
+          <Box component="span" sx={{ minWidth: 0 }}>{workspace.name}</Box>
+        </Box>
       </ListSubheader>
       {projects.map((p, i) => (devProjectFlags[i] ? <ProjectNode key={p.id} project={p} browserSessions={browserSessions} /> : null))}
     </>
