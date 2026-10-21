@@ -1,15 +1,20 @@
 # 浏览器工作空间共享登录态
 
-登录态按工作空间共享一份，浏览器实例保持 per-task 隔离（profile 目录各自独立、并行互不干扰），登录态经注入/导出在实例间流转。
+登录态按工作空间共享一份（无任务维度），浏览器实例按 profile 目录相互隔离、并行互不干扰，单任务可并发多开实例，登录态经注入/导出在实例间流转。
 
 ## 数据布局
 
 - 共享文件：`~/.ocean-harness/browser/auth-states/<workspaceId>.json`（Playwright storageState 格式：cookies + origins[].localStorage，0600）。D3 修订：凭据仅此一份落盘，不进数据库。
 - profile 命名空间（前后端各单点 SSOT：`browser/paths.go` ParseProfileNamespace / 前端 `derive.ts`）：
-  - `issue-<issueId>` → 经 DB（t_project_issues.workspace_id）解析归属工作空间，享受共享；
+  - `issue-<issueId>`（第 1 会话基名）与 `issue-<issueId>-2..-5`（多开槽位后缀）→ 共享任务归属工作空间的登录态；共享键（workspaceId）由调用方 ensure 直传（面板传 issue.workspaceId、MCP `browser_profile_open` 传 workspaceId 入参），落 profile prefs 持久化，后续 idle 冷启/无头切换重建从 prefs 读回，不做 DB 解析；
   - `workspace-<id>` → 直通 id（MCP 工具面经 workspaceId 入参派生：profile 与 issueId 均留空时生效，issueId 优先；面板等工作空间级会话入口未来接入时即享）；
   - 其余（default/自定义名）→ 无共享登录态。
 - 文件读写侧容错：缺失 = 无共享；损坏 JSON = 导出侧按空态自愈重建、注入侧跳过；错误文案不含文件内容。
+
+## 并发上限
+
+- 单任务并发会话（starting/ready）≤ 5（`browser.MaxSessionsPerTask`，超限报错不排队）；第 1 会话为基名、2-5 加 `-N` 后缀，前端「+」新建与 MCP `browser_profile_open` 的 slot 入参共用同一派生规则，多会话间经显式 profile 名寻址。
+- 全局并发 profile 引擎 ≤ 10（`maxConcurrentProfiles`，资源兜底）。
 
 ## 注入（spawn 时）
 

@@ -16,25 +16,32 @@ import (
  */
 
 func TestResolveProfile(t *testing.T) {
-	if got := resolveProfile("", "", ""); got != defaultBrowserProfile {
-		t.Fatalf(`resolveProfile("", "", "") = %q, want %q`, got, defaultBrowserProfile)
+	if got := resolveProfile("", "", "", 1); got != defaultBrowserProfile {
+		t.Fatalf(`resolveProfile("", "", "", 1) = %q, want %q`, got, defaultBrowserProfile)
 	}
-	if got := resolveProfile("work", "", ""); got != "work" {
-		t.Fatalf(`resolveProfile("work", "", "") = %q, want 原值`, got)
+	if got := resolveProfile("work", "", "", 1); got != "work" {
+		t.Fatalf(`resolveProfile("work", "", "", 1) = %q, want 原值`, got)
 	}
-	// 任务派生约定：profile 留空且 issueId 在手 → issue-<issueId>；显式 profile 不被覆写。
-	if got := resolveProfile("", "abc-123", ""); got != "issue-abc-123" {
-		t.Fatalf(`resolveProfile("", "abc-123", "") = %q, want issue-abc-123`, got)
+	// 任务派生约定：profile 留空且 issueId 在手 → issue-<issueId>（槽位 1 基名）；显式 profile 不被覆写。
+	if got := resolveProfile("", "abc-123", "", 1); got != "issue-abc-123" {
+		t.Fatalf(`resolveProfile("", "abc-123", "", 1) = %q, want issue-abc-123`, got)
 	}
-	if got := resolveProfile("work", "abc-123", ""); got != "work" {
-		t.Fatalf(`resolveProfile("work", "abc-123", "") = %q, want 原值`, got)
+	if got := resolveProfile("work", "abc-123", "", 1); got != "work" {
+		t.Fatalf(`resolveProfile("work", "abc-123", "", 1) = %q, want 原值`, got)
+	}
+	// 多开槽位：2-5 追加 -N 后缀；越界槽位退回基名（ProfileOpen 前置显式报错，此处兜底）。
+	if got := resolveProfile("", "abc-123", "", 3); got != "issue-abc-123-3" {
+		t.Fatalf(`resolveProfile("", "abc-123", "", 3) = %q, want issue-abc-123-3`, got)
+	}
+	if got := resolveProfile("", "abc-123", "", 9); got != "issue-abc-123" {
+		t.Fatalf(`resolveProfile("", "abc-123", "", 9) = %q, want issue-abc-123（越界退基名）`, got)
 	}
 	// 工作空间派生约定：profile 与 issueId 均留空 → workspace-<workspaceId>；issueId 优先。
-	if got := resolveProfile("", "", "ws-1"); got != "workspace-ws-1" {
-		t.Fatalf(`resolveProfile("", "", "ws-1") = %q, want workspace-ws-1`, got)
+	if got := resolveProfile("", "", "ws-1", 1); got != "workspace-ws-1" {
+		t.Fatalf(`resolveProfile("", "", "ws-1", 1) = %q, want workspace-ws-1`, got)
 	}
-	if got := resolveProfile("", "abc-123", "ws-1"); got != "issue-abc-123" {
-		t.Fatalf(`resolveProfile("", "abc-123", "ws-1") = %q, want issue-abc-123（issueId 优先）`, got)
+	if got := resolveProfile("", "abc-123", "ws-1", 1); got != "issue-abc-123" {
+		t.Fatalf(`resolveProfile("", "abc-123", "ws-1", 1) = %q, want issue-abc-123（issueId 优先）`, got)
 	}
 }
 

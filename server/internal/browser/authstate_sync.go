@@ -33,37 +33,24 @@ var (
 )
 
 /*
- * issueWorkspaceResolver issue→workspaceId 查询（main 装配注入，browser 域不进 dal）；
- * nil = issue 前缀无共享登录态（测试可覆写）。
+ * resolveWorkspaceID 解析 profile 归属工作空间（共享登录态键）：workspace-<id> 名字
+ * 直通；其余读 profile 偏好（ensure 显式 workspaceId 落盘持久化，idle 冷启动/无头切换
+ * 重建自动读回）；均无 = 空（无共享登录态）。名字直通优先于偏好值。
  */
-var issueWorkspaceResolver func(ctx context.Context, issueID string) (string, error)
-
-// SetIssueWorkspaceResolver 注入 issue→workspaceId 查询（装配点，对齐 SetVendoredDirs 先例）。
-func SetIssueWorkspaceResolver(fn func(ctx context.Context, issueID string) (string, error)) {
-	issueWorkspaceResolver = fn
-}
-
-/*
- * resolveWorkspaceID 解析 profile 归属工作空间：workspace-<id> 直通 id（预留命名空间）、
- * issue-<id> 经注入 resolver 查询；无命名空间/未挂工作空间/查询失败 = 空（无共享）。
- */
-func (m *Manager) resolveWorkspaceID(ctx context.Context, profile string) string {
-	prefix, id := ParseProfileNamespace(profile)
-	if prefix == "" {
-		return ""
-	}
-	if prefix == WorkspaceProfilePrefix {
+func (m *Manager) resolveWorkspaceID(profile string) string {
+	if prefix, id := ParseProfileNamespace(profile); prefix == WorkspaceProfilePrefix {
 		return id
 	}
-	if issueWorkspaceResolver == nil {
-		return ""
-	}
-	wsID, err := issueWorkspaceResolver(ctx, id)
+	profileDir, err := ProfileDir(profile)
 	if err != nil {
-		m.log.Warn("工作空间解析失败（本会话无共享登录态）", zap.String("profile", profile), zap.Error(err))
 		return ""
 	}
-	return wsID
+	prefs, err := ReadProfilePrefs(profileDir)
+	if err != nil {
+		m.log.Warn("profile 偏好读取失败（本会话无共享登录态）", zap.String("profile", profile), zap.Error(err))
+		return ""
+	}
+	return prefs.WorkspaceID
 }
 
 // stateEmpty 空态判定（cookies 与 origins 双空，空态不注入——免无谓清空会话）。

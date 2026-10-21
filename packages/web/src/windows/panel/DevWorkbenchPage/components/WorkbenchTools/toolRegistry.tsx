@@ -74,7 +74,9 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     title: '浏览器',
     icon: LanguageIcon,
     exclusive: true,
-    render: ({ issue, panelVisible }) => <BrowserPanel issueId={issue.id} panelVisible={panelVisible} />,
+    render: ({ issue, panelVisible }) => (
+      <BrowserPanel issueId={issue.id} workspaceId={issue.workspaceId} panelVisible={panelVisible} />
+    ),
   },
 ];
 

@@ -31,6 +31,7 @@ import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
+  parseTaskSessionProfile,
   useAnalyzeBrowserSession,
   useBrowserFrameStream,
   useBrowserStageStore,
@@ -74,6 +75,8 @@ interface BrowserSessionCardProps {
   issueId: string;
   /** 面板区展开态：帧流闸门之一（收起即停，D4 展示侧对偶）。 */
   panelVisible: boolean;
+  /** 多会话在场时标题带槽位标号（单会话不标）。 */
+  showSlot?: boolean;
 }
 
 /**
@@ -81,7 +84,7 @@ interface BrowserSessionCardProps {
  * 纯展示）、地址栏/页面列表/释放/无头切换与重开（close + ensure 链恢复现场）/「AI 分析此页」受理/
  * 最近操作流水。会话状态全由 SSE sessions 帧驱动，激活与观看页 targetId 走 useBrowserStageStore。
  */
-export default function BrowserSessionCard({ session, issueId, panelVisible }: BrowserSessionCardProps) {
+export default function BrowserSessionCard({ session, issueId, panelVisible, showSlot }: BrowserSessionCardProps) {
   const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
   const activate = useBrowserStageStore(s => s.activate);
   const selectedTargetId = useBrowserStageStore(s => s.watchPage[session.profile] ?? null);
@@ -207,7 +210,9 @@ export default function BrowserSessionCard({ session, issueId, panelVisible }: B
         onClick={() => setExpanded(v => !v)}
         sx={{ 'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'px': '12px', 'py': '8px', 'cursor': 'pointer', 'bgcolor': 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}
       >
-        <Typography noWrap sx={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: '0px' }}>浏览器会话</Typography>
+        <Typography noWrap sx={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: '0px' }}>
+          {`浏览器会话${showSlot ? ` · ${parseTaskSessionProfile(session.profile)?.slot ?? 1}` : ''}`}
+        </Typography>
         <Chip size="small" variant="outlined" label={chip.label} color={chip.color} sx={{ fontSize: '12px' }} />
         <Tooltip title={session.headless ? '无头模式：无窗口，面板实时画面即页面' : '有头模式：桌面真实 Chrome 窗口（人工介入通道）'}>
           <Chip size="small" variant="outlined" label={session.headless ? '无头' : '有头'} sx={{ fontSize: '12px', color: 'text.secondary' }} />

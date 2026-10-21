@@ -97,6 +97,64 @@ func ParseProfileNamespace(profile string) (prefix, id string) {
 	return "", ""
 }
 
+// MaxSessionsPerTask 单任务浏览器会话槽位数（第 1 会话为基名，2 起加 -N 后缀）。
+const MaxSessionsPerTask = 5
+
+/*
+ * FormatIssueProfile 任务第 slot 个会话的 profile 名（slot 1 = issue-<issueId> 基名，
+ * 2-MaxSessionsPerTask 加 -N 后缀）。slot 越界显式报错。
+ */
+func FormatIssueProfile(issueID string, slot int) (string, error) {
+	if slot < 1 || slot > MaxSessionsPerTask {
+		return "", fmt.Errorf("会话槽位 %d 非法（1-%d）", slot, MaxSessionsPerTask)
+	}
+	name := IssueProfilePrefix + issueID
+	if slot > 1 {
+		name = fmt.Sprintf("%s-%d", name, slot)
+	}
+	// 校验拼接后的最终名：超长 issueId 下基名合法而 -N 名超限的不对称在此拦下。
+	if err := ValidateProfileName(name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+/*
+ * ParseIssueProfile 解析任务命名空间 profile 为基座 issueId 与槽位：尾「连字符+单数字」
+ * （-2..-MaxSessionsPerTask）识别为槽位后缀，越界数字后缀（-0/-1/-6…）整体判非任务会话；
+ * 其余（含 uuid 自带连字符尾）为槽位 1 基名——uuid 段内无连字符，尾「-数字」必为后缀。
+ */
+func ParseIssueProfile(profile string) (issueID string, slot int, ok bool) {
+	id, isIssue := strings.CutPrefix(profile, IssueProfilePrefix)
+	if !isIssue || id == "" {
+		return "", 0, false
+	}
+	if len(id) >= 2 && id[len(id)-2] == '-' && id[len(id)-1] >= '0' && id[len(id)-1] <= '9' {
+		n := int(id[len(id)-1] - '0')
+		if n < 2 || n > MaxSessionsPerTask {
+			return "", 0, false
+		}
+		return id[:len(id)-2], n, true
+	}
+	return id, 1, true
+}
+
+/*
+ * issueQuotaBase 任务配额归组键（每任务并发上限用，宽于 ParseIssueProfile）：issue-
+ * 前缀且尾随「连字符+单个数字」一律剥掉后缀归基座——越界槽位名（-0/-1/-6…）与其目标
+ * 任务同配额，杜绝借名绕过；其余整体为基座，非 issue- 前缀 ok=false。
+ */
+func issueQuotaBase(profile string) (string, bool) {
+	id, ok := strings.CutPrefix(profile, IssueProfilePrefix)
+	if !ok || id == "" {
+		return "", false
+	}
+	if n := len(id); n >= 2 && id[n-2] == '-' && id[n-1] >= '0' && id[n-1] <= '9' {
+		id = id[:n-2]
+	}
+	return id, true
+}
+
 /*
  * ProfileDir 返回 per-profile Chrome user-data-dir（profiles/<name>/）。只推导不创建——
  * 目录由 Chrome 首次启动自建（user-data-dir 语义）。
@@ -141,6 +199,9 @@ func AuthStatePath(workspaceID string) (string, error) {
  */
 type ProfilePrefs struct {
 	Headless bool `json:"headless"`
+	// WorkspaceID 共享登录态归属工作空间（ensure 显式传入时落盘持久化，idle 冷启动/
+	// 无头切换重建读回注入——共享键不依赖调用方每次携带；空 = 无共享）。
+	WorkspaceID string `json:"workspaceId,omitempty"`
 }
 
 // prefsFile 偏好文件名（user-data-dir 根部，Chrome 忽略未知文件）。
@@ -165,7 +226,10 @@ func ReadProfilePrefs(profileDir string) (ProfilePrefs, error) {
 	return prefs, nil
 }
 
-// WriteProfilePrefs 落盘 profile 偏好（ensure 重拉时读偏好、显式传参覆写回存——D10）。
+/*
+ * WriteProfilePrefs 原子落盘 profile 偏好（tmp + rename，并发读不见截断文件；
+ * ensure 重拉时读偏好、显式传参覆写回存——D10）。
+ */
 func WriteProfilePrefs(profileDir string, prefs ProfilePrefs) error {
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
 		return fmt.Errorf("创建 profile 目录: %w", err)
@@ -174,8 +238,24 @@ func WriteProfilePrefs(profileDir string, prefs ProfilePrefs) error {
 	if err != nil {
 		return fmt.Errorf("序列化 profile 偏好: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(profileDir, prefsFile), data, 0o644); err != nil {
-		return fmt.Errorf("写入 profile 偏好: %w", err)
+	tmp, err := os.CreateTemp(profileDir, ".prefs-*.tmp")
+	if err != nil {
+		return fmt.Errorf("创建 profile 偏好临时文件: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // rename 成功后为 no-op
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("写入 profile 偏好临时文件: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("关闭 profile 偏好临时文件: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		return fmt.Errorf("profile 偏好临时文件权限: %w", err)
+	}
+	if err := os.Rename(tmpName, filepath.Join(profileDir, prefsFile)); err != nil {
+		return fmt.Errorf("替换 profile 偏好: %w", err)
 	}
 	return nil
 }

@@ -9,7 +9,7 @@ import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
-  deriveIssueProfile,
+  isTaskSessionProfile,
   useBrowserFrameStream,
   useBrowserSessionEvents,
   useBrowserSessionView,
@@ -24,24 +24,21 @@ const decodeLiveRefreshMs = (raw: string | null) => parseBrowserRefreshMs(raw, D
 const LIVE_REFRESH_CONFIG_KEYS = [BROWSER_LIVE_REFRESH_MS_KEY];
 
 /**
- * BrowserStageOverlay：浏览器操作台浮层——激活 profile 接管工作台终端内容区（inset 0
- * 遮盖不挤压布局，实色背景完整接收 pointerEvents 防点击穿透被 xterm 吞掉）；激活态经
- * useBrowserStageStore 共享，激活期自持投影 SSE 订阅（浏览器工具 tab 关闭后仍随帧刷新）。
- * 激活按任务绑定：issue 切换即重估——新任务会话在场则跟随切换，否则收起（会话归属
- * 跟随任务，不跨任务残留）。
+ * BrowserStageOverlay：浏览器操作台浮层——激活 profile 接管工作台终端内容区（inset 0 遮盖
+ * 不挤压布局）；激活态经 useBrowserStageStore 共享，激活期自持投影 SSE 订阅。按任务命名
+ * 空间绑定：激活 profile 属当前任务（任意槽位）才渲染，issue 切换即收起。
  */
 export default function BrowserStageOverlay({ issueId }: { issueId: string }) {
   const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
   const deactivate = useBrowserStageStore(s => s.deactivate);
-  const profile = deriveIssueProfile(issueId);
   useEffect(() => {
     // 切走任务即收起浮层（会话归属跟随任务；新任务的浮层由用户显式激活，不代拉起）。
     deactivate();
-  }, [profile, deactivate]);
-  if (activatedProfile !== profile) {
+  }, [issueId, deactivate]);
+  if (activatedProfile == null || !isTaskSessionProfile(issueId, activatedProfile)) {
     return null;
   }
-  return <StageContent key={profile} profile={profile} />;
+  return <StageContent key={activatedProfile} profile={activatedProfile} />;
 }
 function StageContent({ profile }: { profile: string }) {
   const theme = useTheme();
