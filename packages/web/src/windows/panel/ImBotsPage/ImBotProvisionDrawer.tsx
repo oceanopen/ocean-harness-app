@@ -36,6 +36,9 @@ const VERIFY_CODE_PATTERN = /^\d{4,8}$/;
 /** 扫码会话进行中状态集合（关闭时需通知服务端取消；终态不取消）。 */
 const IN_FLIGHT_STATES = new Set(['pending', 'scanned', 'needs_verification', 'connecting']);
 
+/** 可重新生成二维码的状态集合：进行中 pending + 失败终态 failed/expired。 */
+const REGENERATABLE_STATES = new Set(['pending', 'failed', 'expired']);
+
 /**
  * 二维码来源收口：两侧均为「扫码内容 → 本地渲染 dataURL」，杜绝 webview 外链加载依赖。
  * 微信侧内容为 liteapp 扫码链接（qrcode_img_content 非图片地址），域名白名单对齐后端 isWeixinHost。
@@ -355,7 +358,7 @@ function ImBotProvisionDrawer(props: {
               <Typography sx={{ mt: '48px', fontSize: '13px', color: 'error.main' }}>
                 {attempt.state === 'expired' ? '二维码已过期' : '扫码接入失败'}
               </Typography>
-              {attempt.errCode && (
+              {attempt?.state === 'failed' && attempt.errCode && (
                 <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
                   {`错误码：${attempt.errCode}`}
                 </Typography>
@@ -373,7 +376,7 @@ function ImBotProvisionDrawer(props: {
 
         {/* 底部操作：进行中 = 重新生成 + 取消；失败态 = 重新生成 + 关闭（重新生成由父组件 key 重挂载驱动） */}
         <Box sx={{ px: '24px', py: '16px', borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          {attempt?.state === 'pending' && (
+          {REGENERATABLE_STATES.has(attempt?.state ?? '') && (
             <Button
               size="small"
               startIcon={<RefreshOutlinedIcon sx={{ '& svg': { fontSize: '16px' } }} />}
