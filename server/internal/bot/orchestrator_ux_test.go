@@ -102,8 +102,8 @@ func finalFrameOf(t *testing.T, name string, rs ReplyStream) []fakeFrame {
 }
 
 /*
- * TestIdleExpiryStartsFreshSession 2h 闲置边界（headless）：过期后先发独立提醒气泡
- * （会话结束 + 新会话标题 + /继续 指引），回合以新会话启动（resume 锚不传）。
+ * TestIdleExpiryStartsFreshSession 2h 闲置边界（headless）：过期后静默换新会话（不发提醒气泡），
+ * 回合以新会话启动（resume 锚不传）。
  */
 func TestIdleExpiryStartsFreshSession(t *testing.T) {
 	driver := &recordingDriver{}
@@ -117,10 +117,8 @@ func TestIdleExpiryStartsFreshSession(t *testing.T) {
 	})
 	waitFor(t, "过期后回合执行", func() bool { return driver.captured().Prompt != "" })
 
-	notices := rs.noticeSnapshot()
-	if len(notices) != 1 || !strings.Contains(notices[0], "上一会话已结束") ||
-		!strings.Contains(notices[0], "《继续优化登录页》") || !strings.Contains(notices[0], "/继续") {
-		t.Fatalf("过期提醒气泡不符: %v", notices)
+	if notices := rs.noticeSnapshot(); len(notices) != 0 {
+		t.Fatalf("过期后不应发提醒气泡: %v", notices)
 	}
 	if got := driver.captured().SessionID; got != "" {
 		t.Fatalf("过期后回合应以新会话启动，got 锚 %q", got)
@@ -233,11 +231,11 @@ func TestSlashStopKillsTurn(t *testing.T) {
 	}
 }
 
-// TestSlashClear 清空上下文：主锚与备份锚一并清除，下条消息开新会话。
+// TestSlashClear 清空上下文：主锚清除，下条消息开新会话。
 func TestSlashClear(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
 	presetExpiredSession(t, store)
-	if _, expired, err := store.ExpireIdleSession("bot-1", "single:u1", time.Now()); err != nil || !expired {
+	if expired, err := store.ExpireIdleSession("bot-1", "single:u1", time.Now()); err != nil || !expired {
 		t.Fatalf("预置过期态: expired=%v err=%v", expired, err)
 	}
 
@@ -251,39 +249,6 @@ func TestSlashClear(t *testing.T) {
 	}
 	if id, _ := store.SessionID("bot-1", "single:u1"); id != "" {
 		t.Fatalf("主锚应清空: %q", id)
-	}
-	if ok, _ := store.ResumePrevSession("bot-1", "single:u1"); ok {
-		t.Fatal("备份锚应一并清除（/继续 不得接回已清空会话）")
-	}
-}
-
-// TestSlashResume 接回上一会话：备份锚回填主锚；无备份时中性提示。
-func TestSlashResume(t *testing.T) {
-	o, store := newOrchestratorWithDB(t)
-	presetExpiredSession(t, store)
-	if _, expired, err := store.ExpireIdleSession("bot-1", "single:u1", time.Now()); err != nil || !expired {
-		t.Fatalf("预置过期态: expired=%v err=%v", expired, err)
-	}
-
-	rs := &fakeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "/继续"}, func() (ReplyStream, error) {
-		return rs, nil
-	})
-	frames := rs.snapshot()
-	if len(frames) != 1 || !frames[0].final || !strings.Contains(frames[0].content, "已接回上一会话") {
-		t.Fatalf("/继续 应单终帧确认: %+v", frames)
-	}
-	if id, _ := store.SessionID("bot-1", "single:u1"); id != "s-prev" {
-		t.Fatalf("备份锚应回填主锚: %q", id)
-	}
-
-	rs2 := &fakeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "/继续"}, func() (ReplyStream, error) {
-		return rs2, nil
-	})
-	frames2 := rs2.snapshot()
-	if len(frames2) != 1 || frames2[0].content != "没有可接回的上一会话。" {
-		t.Fatalf("无备份 /继续 应中性提示: %+v", frames2)
 	}
 }
 
@@ -313,41 +278,6 @@ func TestIdleTouchPreventsRepeatNotice(t *testing.T) {
 	waitFor(t, "第二条回合执行", func() bool { return driver.callCount() > 1 })
 	if notices := rs2.noticeSnapshot(); len(notices) != 0 {
 		t.Fatalf("受理触碰后紧随消息不得再提醒: %v", notices)
-	}
-}
-
-/*
- * TestSlashResumeThenNoReexpire 接回后紧随消息不得二次过期：/继续 顺延时基，恢复的锚
- * 不被闲置判定再次备份（否则接回被架空）。
- */
-func TestSlashResumeThenNoReexpire(t *testing.T) {
-	driver := &recordingDriver{}
-	store := &ConversationStore{DB: newIssueTestDB(t)}
-	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
-	presetExpiredSession(t, store)
-	if _, expired, err := store.ExpireIdleSession("bot-1", "single:u1", time.Now()); err != nil || !expired {
-		t.Fatalf("预置过期态: expired=%v err=%v", expired, err)
-	}
-
-	rsResume := &fakeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "/继续"}, func() (ReplyStream, error) {
-		return rsResume, nil
-	})
-	frames := rsResume.snapshot()
-	if len(frames) < 1 || !strings.Contains(frames[0].content, "已接回上一会话") {
-		t.Fatalf("/继续 应确认接回: %+v", frames)
-	}
-
-	rs := &fakeNoticeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "接着聊"}, func() (ReplyStream, error) {
-		return rs, nil
-	})
-	waitFor(t, "回合执行", func() bool { return driver.captured().Prompt != "" })
-	if notices := rs.noticeSnapshot(); len(notices) != 0 {
-		t.Fatalf("接回后紧随消息不得再提醒: %v", notices)
-	}
-	if got := driver.captured().SessionID; got != "s-prev" {
-		t.Fatalf("接回的锚应被消费: %q", got)
 	}
 }
 
