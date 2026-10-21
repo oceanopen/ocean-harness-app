@@ -170,11 +170,11 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 		}
 	}
 	/*
-	 * 控制指令拦截步（/stop /clear /继续）：打断在途回合/变更会话锚点却不承载正文，恒在
+	 * 控制指令拦截步（/stop /clear）：打断在途回合/变更会话锚点却不承载正文，恒在
 	 * 受理现场终帧收口（不入队——排队执行会让 /stop 失去即时性，且被打断的正是本队列）。
 	 * 幂等前置同快路径——本路径变更状态却不过 runTurn 的权威复查。
 	 */
-	if token := parseSlashCommand(msg.Text); token == slashStopToken || token == slashClearToken || token == slashResumeToken {
+	if token := parseSlashCommand(msg.Text); token == slashStopToken || token == slashClearToken {
 		if o.seenOrFlush(cfg, msg.ConversationKey, msg.MessageID, rs, "控制指令") {
 			return
 		}
@@ -184,20 +184,17 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 		return
 	}
 	/*
-	 * 会话闲置边界（2h）：命中即先发独立提示气泡（会话结束提醒 + 新会话标题 + /继续 指引），
-	 * 再走正文流——「先提示、后正文」的消息序。headless 本轮回合以新会话启动（锚已备份，
-	 * /继续 可接回）；ACP 共享会话（桌面共用）不切断、仅提醒。
+	 * 会话闲置边界（2h）：headless 命中即静默换新会话；
+	 * ACP 共享会话（桌面共用）不切断、仅提醒。
 	 */
 	freshSession := false
-	if _, expired, err := o.store.ExpireIdleSession(cfg.BotID, msg.ConversationKey, time.Now()); err != nil {
+	if expired, err := o.store.ExpireIdleSession(cfg.BotID, msg.ConversationKey, time.Now()); err != nil {
 		o.log.Error("bot 会话闲置判定失败（按未过期处理）", zap.Error(err))
 	} else if expired {
 		acp := o.isACPRoute(cfg, msg.ConversationKey)
-		if ns, ok := rs.(NoticeReplyStream); ok {
-			if acp {
+		if acp {
+			if ns, ok := rs.(NoticeReplyStream); ok {
 				_ = ns.SendNotice("⏰ 距上次对话已超过 2 小时，会话仍在延续。回复 /help 可查看支持的指令。")
-			} else {
-				_ = ns.SendNotice("⏰ 距上次对话已超过 2 小时，上一会话已结束。已开启新会话《" + sessionTitle(msg.Text) + "》；要继续上次话题，回复 /继续。")
 			}
 		}
 		freshSession = !acp
@@ -526,7 +523,7 @@ func (o *Orchestrator) deliverArtifacts(ars ArtifactReplyStream, dir string) {
 
 /*
  * applyControlCommand 控制指令的消费（拦截步专用，恒返回终帧文案）：/stop 打断在途回合 +
- * 排空队列（上下文保留）；/clear 打断 + 清主锚与备份锚；/继续 把备份锚回填主锚。
+ * 排空队列（上下文保留）；/clear 打断 + 清主锚。
  */
 func (o *Orchestrator) applyControlCommand(cfg BotRuntimeConfig, conversationKey, token string) string {
 	switch token {
@@ -540,24 +537,7 @@ func (o *Orchestrator) applyControlCommand(cfg BotRuntimeConfig, conversationKey
 		if err := o.store.ClearSessionID(cfg.BotID, conversationKey); err != nil {
 			o.log.Error("bot 会话锚点清理失败", zap.Error(err))
 		}
-		if err := o.store.ClearPrevSessionID(cfg.BotID, conversationKey); err != nil {
-			o.log.Error("bot 会话备份锚清理失败", zap.Error(err))
-		}
 		return "🧹 上下文已清空，下一条消息将开启新会话。"
-	case slashResumeToken:
-		ok, err := o.store.ResumePrevSession(cfg.BotID, conversationKey)
-		if err != nil {
-			o.log.Error("bot 会话接回失败", zap.Error(err))
-			return "❌ 会话接回失败，请稍后重试。"
-		}
-		if !ok {
-			return "没有可接回的上一会话。"
-		}
-		// 接回即活动：顺延时基，防紧随消息把刚接回的锚再次判过期备份（接回被架空）。
-		if err := o.store.TouchLastMessage(cfg.BotID, conversationKey, time.Now()); err != nil {
-			o.log.Warn("bot 会话活动时间戳写入失败", zap.Error(err))
-		}
-		return "🔗 已接回上一会话，继续对话即可。"
 	}
 	return ""
 }
@@ -606,18 +586,6 @@ func (o *Orchestrator) queueBusy(key string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.busy[key] || (o.queues[key] != nil && len(o.queues[key]) > 0)
-}
-
-// sessionTitle 新会话标题：正文首行前 20 字（超长省略号收尾；空正文回落占位）。
-func sessionTitle(text string) string {
-	line := firstLine(strings.TrimSpace(text))
-	if line == "" {
-		return "新会话"
-	}
-	if rs := []rune(line); len(rs) > 20 {
-		return string(rs[:20]) + "…"
-	}
-	return line
 }
 
 /*

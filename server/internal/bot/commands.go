@@ -9,19 +9,18 @@ import "strings"
  */
 
 /*
- * slash 系指令（/help /stop /clear /继续）：TrimSpace 后恰等于 token 才解析，粘连形态按
- * 普通文本放行。# 系为既有兼容面，/ 系对齐 IM 指令惯例。
+ * slash 系指令（/help /stop /clear）：形态同 #帮助——TrimSpace 后恰等于 token 才解析，
+ * 粘连形态按普通文本放行。# 系为既有兼容面，/ 系对齐 IM 指令惯例。
  */
 const (
-	slashHelpToken   = "/help"
-	slashStopToken   = "/stop"
-	slashClearToken  = "/clear"
-	slashResumeToken = "/继续"
+	slashHelpToken  = "/help"
+	slashStopToken  = "/stop"
+	slashClearToken = "/clear"
 )
 
 /*
  * parseSlashCommand 已知 slash 指令判定（返回命中 token，空串 = 非指令）。
- * /help 与 #帮助 同义（帮助无状态变更，走 runTurn 指令步）；其余三条由编排器拦截步消费。
+ * /help 与 #帮助 同义（帮助无状态变更，走 runTurn 指令步）；其余两条由编排器拦截步消费。
  */
 func parseSlashCommand(text string) string {
 	switch strings.TrimSpace(text) {
@@ -31,8 +30,6 @@ func parseSlashCommand(text string) string {
 		return slashStopToken
 	case slashClearToken:
 		return slashClearToken
-	case slashResumeToken:
-		return slashResumeToken
 	}
 	return ""
 }
@@ -81,6 +78,5 @@ func helpText() string {
 	return "可用指令：\n" +
 		"- " + slashStopToken + "：停止当前正在处理的回复（会话上下文保留）\n" +
 		"- " + slashClearToken + "：停止当前回复并清空上下文（后续对话开启新会话）\n" +
-		"- " + slashResumeToken + "：接回因闲置超时结束的上一会话\n" +
 		"- " + helpCommandToken + " " + slashHelpToken + "：查看本指令列表"
 }

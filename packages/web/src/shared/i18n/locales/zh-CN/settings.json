@@ -20,11 +20,13 @@
       "appearance": "外观",
       "acpIdleTimeout": "ACP 会话闲置回收",
       "browserLiveRefresh": "实时画面刷新间隔",
-      "browserPreviewRefresh": "迷你预览刷新间隔"
+      "browserPreviewRefresh": "迷你预览刷新间隔",
+      "launchAtLogin": "开机自启动"
     },
     "help": {
       "acpIdleTimeout": "空闲超过该时长的会话自动退出，重开时自动恢复",
-      "browserRefresh": "画面变化后推送新帧的最小间隔，调大更省资源、调小更流畅，改动即时生效"
+      "browserRefresh": "画面变化后推送新帧的最小间隔，调大更省资源、调小更流畅，改动即时生效",
+      "launchAtLogin": "登录系统后自动在后台启动并托盘常驻，无需手动打开"
     },
     "option": {
       "followSystem": "跟随系统",

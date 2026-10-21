@@ -128,6 +128,10 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             "DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES",
             shared::app_config::DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
         )
+        .constant(
+            "LAUNCH_AT_LOGIN_KEY",
+            shared::app_config::LAUNCH_AT_LOGIN_KEY,
+        )
         /*
          * HTTP 端口已彻底固化为编译期常量（http_server.rs：dev=9000/release=9100），
          * 不再经 .constant() 导出，前端无消费点（服务地址走 http_server_status 实时获取）。
@@ -184,6 +188,19 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
+        /*
+         * 开机自启动：dev/release 用不同 app_name 隔离登录项标识（macOS LaunchAgent
+         * plist 文件名 / Windows Registry 键名），避免 dev 调试注册覆盖 release 登录项。
+         */
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name(if cfg!(debug_assertions) {
+                    "ocean-harness-dev"
+                } else {
+                    "ocean-harness"
+                })
+                .build(),
+        )
         .invoke_handler(specta_builder.invoke_handler());
 
     /*
@@ -247,6 +264,11 @@ pub fn run() {
             app.handle().plugin(log_plugin)?;
 
             shared::app_config::init(app)?;
+            /*
+             * autostart 对齐紧随 app_config：以系统登录项真实状态回写配置镜像，
+             * 须在设置窗口（懒创建）前完成；失败仅 warn，不阻塞启动。
+             */
+            shared::autostart::init(app.handle());
             shared::state::claude_sessions::init(app)?;
             windows::tray::setup(app)?;
 
@@ -309,6 +331,10 @@ pub fn run() {
                             .and_then(|s| s.parse::<u64>().ok())
                         {
                             sessions::poll::set_interval(&handle, secs);
+                        }
+                    } else if key == Some(shared::app_config::LAUNCH_AT_LOGIN_KEY) {
+                        if let Some(v) = value.get("value").and_then(|v| v.as_str()) {
+                            shared::autostart::sync(&handle, v);
                         }
                     }
                 },
