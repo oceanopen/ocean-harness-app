@@ -20,11 +20,13 @@
       "appearance": "Appearance",
       "acpIdleTimeout": "ACP idle session reclaim",
       "browserLiveRefresh": "Live viewport refresh interval",
-      "browserPreviewRefresh": "Mini preview refresh interval"
+      "browserPreviewRefresh": "Mini preview refresh interval",
+      "launchAtLogin": "Launch at login"
     },
     "help": {
       "acpIdleTimeout": "Sessions idle beyond this duration exit automatically and restore on reopen",
-      "browserRefresh": "Minimum interval between frame pushes; larger saves resources, smaller feels smoother, changes apply immediately"
+      "browserRefresh": "Minimum interval between frame pushes; larger saves resources, smaller feels smoother, changes apply immediately",
+      "launchAtLogin": "Start automatically in the background after login and stay in the system tray"
     },
     "option": {
       "followSystem": "Follow system",
