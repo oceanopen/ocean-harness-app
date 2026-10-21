@@ -277,7 +277,7 @@ func TestAcpDriverPermissionCardEmission(t *testing.T) {
 	snap.AcpSessionID = "sess-acp-1"
 	sessions := newFakeSessions(snap)
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", AcpSessionKey: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestAcpDriverPermissionCardEmission(t *testing.T) {
 func TestAcpDriverNoCardWithoutSessionAnchor(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
-	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", AcpSessionKey: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}

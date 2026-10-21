@@ -1,4 +1,4 @@
-import type { ImBotConversationModel, ImBotModel, ProjectIssueResponseData } from '@src/services';
+import type { ImBotConversationModel, ImBotModel, WorkspaceIssueResponseData } from '@src/services';
 import AddIcon from '@mui/icons-material/Add';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
 import {
@@ -38,7 +38,7 @@ type PendingAction
     | { kind: 'addBot'; bot: ImBotModel };
 
 /** 确认弹窗文案派生：会话操作按当前绑定分关联/切换/解绑三态；补绑区分迁移与首次加入。 */
-function confirmSpec(action: PendingAction, issue: ProjectIssueResponseData): { title: string; text: string; confirm: string } {
+function confirmSpec(action: PendingAction, issue: WorkspaceIssueResponseData): { title: string; text: string; confirm: string } {
   if (action.kind === 'addBot') {
     const { bot } = action;
     if (bot.workspaceId !== '') {
@@ -79,7 +79,7 @@ function confirmSpec(action: PendingAction, issue: ProjectIssueResponseData): { 
 
 interface ImBotPanelProps {
   // 当前选中任务（挂载方经 toolRegistry ctx 保证非空；workspaceId 决定 bot 过滤域）。
-  issue: ProjectIssueResponseData;
+  issue: WorkspaceIssueResponseData;
 }
 
 /**

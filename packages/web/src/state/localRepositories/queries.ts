@@ -59,10 +59,10 @@ export function useUpdateLocalRepository() {
   });
 }
 
-/**
+/*
  * 物理删除本地仓库。入参为 id（与 tracker 域 useDelete* 签名一致）。
- * 后端删仓库会事务级联：硬删项目↔仓库中间表记录 + 硬删 issue↔仓库关联表（t_issue_local_repositories）中指向该仓库的记录，
- * 故除本地仓库列表外还需失效 tracker 整域（projectIssues，以及携带 localRepositoryIds 的 workspaceProjects），否则 UI 残留悬挂引用。
+ * 后端删仓库事务级联清工作空间↔仓库（t_workspace_local_repositories）与 issue↔仓库关联，
+ * 故除本地仓库列表外还需失效 tracker 整域，否则 UI 残留悬挂引用。
  */
 export function useDeleteLocalRepository() {
   const qc = useQueryClient();

@@ -170,28 +170,6 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 		}
 	}
 	/*
-	 * 绑定卡编号快路径（无卡渠道的绑定选择降级）：纯数字 + 本流无卡能力 + 会话槽内未消费
-	 * 绑定族卡 → 合成卡片点击交互走统一消费链，命中即终帧收口（不入队不占并发槽）；未命中
-	 * 落回主路径。幂等前置与数字快路径同款——本路径变更状态（绑定落库）却不入队。
-	 */
-	if o.interactions != nil {
-		if n, ok := parseNumberedSelection(msg.Text); ok {
-			if _, isCard := rs.(CardReplyStream); !isCard {
-				if in, ok := o.synthNumberedInteraction(cfg, msg, n); ok {
-					msg.Interaction = in
-					if o.seenOrFlush(cfg, msg.ConversationKey, msg.MessageID, rs, "编号快路径") {
-						return
-					}
-					if text, _, handled := o.interactions.TryHandleInteraction(cfg, msg); handled {
-						o.markSeen(cfg, msg.ConversationKey, msg.MessageID)
-						_ = rs.Flush(text, true)
-						return
-					}
-				}
-			}
-		}
-	}
-	/*
 	 * 控制指令拦截步（/stop /clear）：打断在途回合/变更会话锚点却不承载正文，恒在
 	 * 受理现场终帧收口（不入队——排队执行会让 /stop 失去即时性，且被打断的正是本队列）。
 	 * 幂等前置同快路径——本路径变更状态却不过 runTurn 的权威复查。
@@ -272,153 +250,16 @@ func (o *Orchestrator) markSeen(cfg BotRuntimeConfig, key, msgID string) {
 }
 
 /*
- * synthNumberedInteraction 把编号选择合成为绑定卡点击交互（DeliveryID/TaskID = 槽内最近卡
- * 锚，编号越界交卡域消费链的越界防御收口）。ok=false = 无槽/槽已消费/非绑定族——落回主路径。
- */
-func (o *Orchestrator) synthNumberedInteraction(cfg BotRuntimeConfig, msg InboundMessage, n int) (*Interaction, bool) {
-	lc, ok := o.store.LastMessageCard(cfg.BotID, msg.ConversationKey)
-	if !ok || lc.Status == lastMessageCardProcessed || bindingCardKind(lc.Spec.TaskID) == "" {
-		return nil, false
-	}
-	return &Interaction{DeliveryID: lc.Spec.TaskID, ActionIndex: n - 1, TaskID: lc.Spec.TaskID}, true
-}
-
-// bindingKind 绑定卡域别（sendBindingCard 的候选查询与文案分派因子）。
-type bindingKind int
-
-const (
-	bindingWorkspace bindingKind = iota
-	bindingIssue
-)
-
-/*
- * routeProber 路由探针消费面（T2.2 探针步）：不改状态地探明本会话下一回合会落的引擎与
- * 绑定目标。driverRoute 实现（ProbeTarget）；编排器对 o.driver 类型断言获取——headless
- * 直连装配与测试替身未实现时探针步自然跳过，主路径行为不变。
+ * routeProber 路由探针消费面：不改状态地探明本会话下一回合会落的引擎。driverRoute 实现
+ * （ProbeTarget）；编排器对 o.driver 类型断言获取——headless 直连装配与测试替身未实现时
+ * 探测按 headless 处理，主路径行为不变。
  */
 type routeProber interface {
-	ProbeTarget(cfg BotRuntimeConfig, conversationKey string) (acp bool, boundIssueID string, err error)
+	ProbeTarget(cfg BotRuntimeConfig, conversationKey string) (acp bool, err error)
 }
 
-/*
- * workspaceGateLead 门禁指引（T2.2）：说明回合为何未启动。中性措辞不预设出卡——lead 是
- * 纯文本前缀，后接域内文本（出卡时的完整名称列表 / 库空教学 / 读库失败文案）。
- */
+// workspaceGateLead 门禁指引：说明回合为何未启动（工作空间未选择）。
 const workspaceGateLead = "机器人尚未选择工作空间，请选择归属工作空间后重新发送消息；也可在应用「IM 机器人」页编辑机器人。"
-
-/*
- * sendCardOrFlush 出卡统一收口：无卡能力直接纯文本终帧；先登记 last_message_card（写库失败
- * 不出卡——点击消费闸 SSOT，防「刚收到的卡一点就提示已失效」），SendCard 终帧，任一失败
- * 回落 Flush 纯文本（渠道协议「卡同消息仅一次」，回落语义由卡契约保证）。
- */
-func (o *Orchestrator) sendCardOrFlush(cfg BotRuntimeConfig, key, kindName string, spec CardSpec, text string, rs ReplyStream) {
-	cs, ok := rs.(CardReplyStream)
-	if !ok {
-		_ = rs.Flush(text, true)
-		return
-	}
-	if err := o.store.SaveLastMessageCard(cfg.BotID, key, kindName, spec); err != nil {
-		o.log.Error("bot 卡登记失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.String("kind", kindName), zap.Error(err))
-	} else if err := cs.SendCard(spec, text, true); err != nil {
-		o.log.Warn("bot 卡发送失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.String("kind", kindName), zap.Error(err))
-	} else {
-		return
-	}
-	_ = rs.Flush(text, true)
-}
-
-/*
- * sendBindingCard 绑定卡统一收口（T2.2 统一「搜索 → 卡片 → 提交绑定」模型，指令步/门禁/ 探针步三入口的唯一出卡口）：查候选 → 组域内文本（出卡同帧完整名称列表 / 零候选教学文案/ 读库失败文案）→ lead 非空（门禁语境）时指引段前置于一切形态 → 出卡收口走 sendCardOrFlush。
- * 恒终帧，调用方一律终结本条消息（不入队、不占全局信号量）。
- */
-func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage, kind bindingKind, keyword, lead string, rs ReplyStream) {
-	var spec CardSpec
-	var has bool
-	var text string
-	_, cardCapable := rs.(CardReplyStream) // 无卡渠道：编号文本渲染，选择走编号快路径
-	switch kind {
-	case bindingWorkspace:
-		wss, err := bindingWorkspaces(o.store.DB, keyword)
-		if err != nil {
-			o.log.Error("bot workspace 绑定候选查询失败",
-				zap.String("botID", cfg.BotID), zap.String("keyword", keyword), zap.Error(err))
-			text = workspaceLookupFailedText
-			break
-		}
-		spec, has = workspaceCardSpec(wss, keyword)
-		if has {
-			text = workspaceCardText(keyword, wss)
-			if !cardCapable {
-				text = workspaceNumberedText(keyword, wss)
-			}
-		} else {
-			text = workspaceEmptyText(keyword)
-		}
-	case bindingIssue:
-		issues, err := bindingIssueCandidates(o.store.DB, cfg.WorkspaceID, keyword)
-		if err != nil {
-			o.log.Error("bot 任务绑定候选查询失败",
-				zap.String("botID", cfg.BotID), zap.String("keyword", keyword), zap.Error(err))
-			text = issueLookupFailedText
-			break
-		}
-		spec, has = issueCardSpec(issues, keyword)
-		if has {
-			text = issueCardText(keyword, issues)
-			if !cardCapable {
-				text = issueNumberedText(keyword, issues)
-			}
-		} else {
-			text = issueEmptyText(keyword)
-		}
-	}
-	if lead != "" {
-		text = lead + "\n\n" + text
-	}
-	if has {
-		kindName := "wsbind"
-		if kind == bindingIssue {
-			kindName = "taskbind"
-		}
-		o.sendCardOrFlush(cfg, msg.ConversationKey, kindName, spec, text, rs)
-		return
-	}
-	_ = rs.Flush(text, true)
-}
-
-/*
- * sendUnbindCard 解绑确认卡出口（#任务解绑 指令步，出卡收口走 sendCardOrFlush）：读当前绑定 →
- * 未绑定纯文本教学终帧 / 悬空锚按未绑定收口（issue 删除级联清列已交付，行缺失是防御分支）。
- * 解绑动作唯一入口是 taskunbind 卡点击（binding_card.go 域内消费）。恒终帧收口。
- */
-func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) {
-	bound, err := o.store.BoundIssueID(cfg.BotID, msg.ConversationKey)
-	if err != nil {
-		o.log.Error("bot 任务绑定读取失败", zap.String("botID", cfg.BotID), zap.Error(err))
-		_ = rs.Flush(issueUnbindFailedText(), true)
-		return
-	}
-	if bound == "" {
-		_ = rs.Flush(issueNotBoundText(), true)
-		return
-	}
-	issue, found, err := issueRowByID(o.store.DB, bound)
-	if err != nil {
-		o.log.Error("bot 解绑卡任务行读取失败", zap.String("botID", cfg.BotID), zap.Error(err))
-		_ = rs.Flush(issueUnbindFailedText(), true)
-		return
-	}
-	if !found {
-		_ = rs.Flush(issueNotBoundText(), true) // 悬空锚视为未绑定
-		return
-	}
-	spec := taskunbindCardSpec(issue)
-	text := taskunbindCardText(issue)
-	if _, ok := rs.(CardReplyStream); !ok {
-		text = taskunbindNumberedText(issue)
-	}
-	o.sendCardOrFlush(cfg, msg.ConversationKey, "taskunbind", spec, text, rs)
-}
 
 // enqueue 入队（不存在则惰性建会话队列 + worker）。已停止 / 队列满 fail closed。
 func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream, freshSession bool) error {
@@ -519,52 +360,15 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	}
 
 	/*
-	 * #工作空间 指令步（T2.2，置于门禁之前）：workspace 搜索不依赖已选工作空间（未选域
-	 * 恰是该指令要解决的场景），恒终帧收口（出卡/空态文案）。
-	 */
-	if cmd := parseWorkspaceCommand(msg.Text); cmd != nil {
-		o.sendBindingCard(cfg, msg, bindingWorkspace, cmd.Keyword, "", job.reply)
-		return
-	}
-
-	/*
-	 * #任务解绑 指令步（置于门禁之前）：清绑定锚不依赖已选工作空间（未选域的 bot 也要
-	 * 能解绑历史锚点），出确认卡终帧收口（解绑动作唯一入口是 taskunbind 卡点击）。
-	 */
-	if parseIssueUnbindCommand(msg.Text) {
-		o.sendUnbindCard(cfg, msg, job.reply)
-		return
-	}
-
-	/*
 	 * 工作空间未选择（扫码接入先建 bot 后补选的语义）：连接照常、回合不启动——已
-	 * markSeen（消息已被处理），不算失败、不触发会话自愈。T2.2：指引文本与 workspace
-	 * 绑定卡同帧（点卡即补选，免开桌面端）；无可选 workspace/查询失败保纯文本指引。
+	 * markSeen（消息已被处理），不算失败、不触发会话自愈，纯指引文本终帧收口。
 	 */
 	if strings.TrimSpace(cfg.WorkspaceDir) == "" {
-		o.sendBindingCard(cfg, msg, bindingWorkspace, "", workspaceGateLead, job.reply)
+		_ = job.reply.Flush(workspaceGateLead, true)
 		return
 	}
 
-	// #任务 指令步（T2.3 → T2.2 统一卡片化）：搜索出卡，恒终帧收口。
-	if cmd := parseIssueCommand(msg.Text); cmd != nil {
-		o.sendBindingCard(cfg, msg, bindingIssue, cmd.Keyword, "", job.reply)
-		return
-	}
-
-	/*
-	 * ACP 未绑探针步（T2.2）：ACP 档且本会话未绑 issue 时先递任务绑定卡终帧收口（不出回合——ACP 引擎对未绑定的同步失败只是一句引导文案，白撞一次回合没有意义）。
-	 * 探针读库失败不拦截（落回主路径，引擎侧 RunTurn 以同款错误 fail closed 收口）；
-	 * driver 未实现探针接口（headless 直连装配/测试替身）同样跳过。
-	 */
-	if prober, ok := o.driver.(routeProber); ok {
-		if acp, bound, err := prober.ProbeTarget(cfg, key); err == nil && acp && bound == "" {
-			o.sendBindingCard(cfg, msg, bindingIssue, "", "", job.reply)
-			return
-		}
-	}
-
-	// 闲置过期轮次以新会话启动，跳过 resume 锚读取。
+	// 闲置过期轮次以新会话启动（受理时锚已备份），跳过 resume 锚读取。
 	var prevSessionID string
 	if !job.freshSession {
 		var err error
@@ -773,7 +577,7 @@ func (o *Orchestrator) isACPRoute(cfg BotRuntimeConfig, conversationKey string) 
 	if !ok {
 		return false
 	}
-	acp, _, err := prober.ProbeTarget(cfg, conversationKey)
+	acp, err := prober.ProbeTarget(cfg, conversationKey)
 	return err == nil && acp
 }
 

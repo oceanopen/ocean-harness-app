@@ -7,7 +7,6 @@ package mcptool
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -27,11 +26,11 @@ type McpOceanHarnessTool struct {
 func (mt McpOceanHarnessTool) IssueGetInfo(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.IssueIDArgs) (*mcp.CallToolResult, mcpdto.IssueContent, error) {
 
-	issueSvc := service.ProjectIssue{}
+	issueSvc := service.WorkspaceIssue{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&issueSvc.Service).Errors; err != nil {
 		return nil, mcpdto.IssueContent{}, mt.Fail(err)
 	}
-	data, err := issueSvc.GetInfo(&types.ProjectIssueGetInfoRequest{ID: input.IssueID})
+	data, err := issueSvc.GetInfo(&types.WorkspaceIssueGetInfoRequest{ID: input.IssueID})
 	if err != nil {
 		return nil, mcpdto.IssueContent{}, mt.Fail(err)
 	}
@@ -40,107 +39,16 @@ func (mt McpOceanHarnessTool) IssueGetInfo(ctx context.Context, _ *mcp.CallToolR
 
 /*
  * IssueUpdate 部分更新 issue：先 GetInfo 取现值，非空入参覆盖、空值保留，
- * 再走既有全量 Update（stateCode 流转/父子联动/事务语义与 HTTP 端完全一致）。
+ * 再走既有全量 Update（stateCode 流转/事务语义与 HTTP 端完全一致）。
  */
 func (mt McpOceanHarnessTool) IssueUpdate(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.IssueUpdateArgs) (*mcp.CallToolResult, mcpdto.IssueContent, error) {
 
-	issueSvc := service.ProjectIssue{}
+	issueSvc := service.WorkspaceIssue{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&issueSvc.Service).Errors; err != nil {
 		return nil, mcpdto.IssueContent{}, mt.Fail(err)
 	}
 	data, err := mt.partialUpdate(&issueSvc, &input)
-	if err != nil {
-		return nil, mcpdto.IssueContent{}, mt.Fail(err)
-	}
-	return nil, newIssueContent(data), nil
-}
-
-/*
- * IssueChildList 列出某 issue 的全部一级子任务：GetInfo（父校验）→
- * GetList（项目扁平列表，单用户本地量级）→ 按 parentId 过滤。刻意不改 service/DTO，MCP 层纯组合。
- */
-func (mt McpOceanHarnessTool) IssueChildList(ctx context.Context, _ *mcp.CallToolRequest,
-	input mcpdto.IssueChildListArgs) (*mcp.CallToolResult, mcpdto.IssueChildListContent, error) {
-
-	issueSvc := service.ProjectIssue{}
-	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&issueSvc.Service).Errors; err != nil {
-		return nil, mcpdto.IssueChildListContent{}, mt.Fail(err)
-	}
-	parent, err := issueSvc.GetInfo(&types.ProjectIssueGetInfoRequest{ID: input.IssueID})
-	if err != nil {
-		return nil, mcpdto.IssueChildListContent{}, mt.Fail(err)
-	}
-	if parent.ParentID != "" {
-		return nil, mcpdto.IssueChildListContent{}, mt.Fail(errors.New("该 issue 已是子任务（仅支持一层子任务）"))
-	}
-	all, err := issueSvc.GetList(&types.ProjectIssueGetListRequest{ProjectID: parent.ProjectID})
-	if err != nil {
-		return nil, mcpdto.IssueChildListContent{}, mt.Fail(err)
-	}
-	children := make([]*mcpdto.IssueContent, 0, len(all))
-	for _, it := range all {
-		if it.ParentID == input.IssueID {
-			children = append(children, issueContentPtr(it))
-		}
-	}
-	return nil, mcpdto.IssueChildListContent{Children: children}, nil
-}
-
-/*
- * IssueChildCreate 为父 issue 创建一级子任务（ProjectID/WorkspaceID
- * 继承父任务）。service.Create 会再次校验父存在/同项目/仅一层；此处前置守卫仅为更早给出定向中文提示。
- */
-func (mt McpOceanHarnessTool) IssueChildCreate(ctx context.Context, _ *mcp.CallToolRequest,
-	input mcpdto.IssueChildCreateArgs) (*mcp.CallToolResult, mcpdto.IssueContent, error) {
-
-	if input.Name == "" { // schema required 的兜底（空串漏网时给出业务化提示）
-		return nil, mcpdto.IssueContent{}, mt.Fail(errors.New("name 不能为空"))
-	}
-	issueSvc := service.ProjectIssue{}
-	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&issueSvc.Service).Errors; err != nil {
-		return nil, mcpdto.IssueContent{}, mt.Fail(err)
-	}
-	parent, err := issueSvc.GetInfo(&types.ProjectIssueGetInfoRequest{ID: input.IssueID})
-	if err != nil {
-		return nil, mcpdto.IssueContent{}, mt.Fail(err)
-	}
-	if parent.ParentID != "" {
-		return nil, mcpdto.IssueContent{}, mt.Fail(errors.New("仅支持一层子任务，不能在子任务下再建子任务"))
-	}
-	data, err := issueSvc.Create(&types.ProjectIssueCreateRequest{
-		ProjectID:   parent.ProjectID,
-		WorkspaceID: parent.WorkspaceID,
-		Name:        input.Name,
-		Description: input.Description,
-		StateCode:   input.StateCode, // 空 → service 默认 BACKLOG
-		ParentID:    input.IssueID,
-	})
-	if err != nil {
-		return nil, mcpdto.IssueContent{}, mt.Fail(err)
-	}
-	return nil, newIssueContent(data), nil
-}
-
-/*
- * IssueChildUpdate 部分更新子任务（与
- * IssueUpdate 同构），差异仅：目标必须是子任务（AI 用错工具时给出定向纠正提示）。
- */
-func (mt McpOceanHarnessTool) IssueChildUpdate(ctx context.Context, _ *mcp.CallToolRequest,
-	input mcpdto.IssueUpdateArgs) (*mcp.CallToolResult, mcpdto.IssueContent, error) {
-
-	issueSvc := service.ProjectIssue{}
-	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&issueSvc.Service).Errors; err != nil {
-		return nil, mcpdto.IssueContent{}, mt.Fail(err)
-	}
-	cur, err := issueSvc.GetInfo(&types.ProjectIssueGetInfoRequest{ID: input.IssueID})
-	if err != nil {
-		return nil, mcpdto.IssueContent{}, mt.Fail(err)
-	}
-	if cur.ParentID == "" {
-		return nil, mcpdto.IssueContent{}, mt.Fail(errors.New("该 issue 不是子任务，请改用 issue_update"))
-	}
-	data, err := issueSvc.Update(buildIssueUpdateRequest(cur, &input))
 	if err != nil {
 		return nil, mcpdto.IssueContent{}, mt.Fail(err)
 	}
@@ -190,41 +98,16 @@ func (mt McpOceanHarnessTool) WorkspaceList(ctx context.Context, _ *mcp.CallTool
 	return nil, mcpdto.WorkspaceListContent{Workspaces: list}, nil
 }
 
-// ProjectList 列出某工作空间下的全部项目（新建在前），透传既有 Project.GetList。
-func (mt McpOceanHarnessTool) ProjectList(ctx context.Context, _ *mcp.CallToolRequest,
-	input mcpdto.ProjectListArgs) (*mcp.CallToolResult, mcpdto.ProjectListContent, error) {
-
-	projSvc := service.Project{}
-	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&projSvc.Service).Errors; err != nil {
-		return nil, mcpdto.ProjectListContent{}, mt.Fail(err)
-	}
-	rows, err := projSvc.GetList(&types.ProjectGetListRequest{WorkspaceID: input.WorkspaceID})
-	if err != nil {
-		return nil, mcpdto.ProjectListContent{}, mt.Fail(err)
-	}
-	list := make([]*mcpdto.ProjectContent, 0, len(rows))
-	for _, p := range rows {
-		list = append(list, &mcpdto.ProjectContent{
-			ID:          p.ID,
-			WorkspaceID: p.WorkspaceID,
-			Name:        p.Name,
-			Emoji:       p.Emoji,
-			Description: p.Description,
-		})
-	}
-	return nil, mcpdto.ProjectListContent{Projects: list}, nil
-}
-
-// IssueList 列出某项目下的全部任务（按看板顺序，含子任务，parentId 区分层级），
-// 透传既有 ProjectIssue.GetList（stateCode 留空返回全部状态）。
+// IssueList 列出某工作空间下的全部任务（按看板顺序），
+// 透传既有 WorkspaceIssue.GetList（stateCode 留空返回全部状态）。
 func (mt McpOceanHarnessTool) IssueList(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.IssueListArgs) (*mcp.CallToolResult, mcpdto.IssueListContent, error) {
 
-	issueSvc := service.ProjectIssue{}
+	issueSvc := service.WorkspaceIssue{}
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&issueSvc.Service).Errors; err != nil {
 		return nil, mcpdto.IssueListContent{}, mt.Fail(err)
 	}
-	rows, err := issueSvc.GetList(&types.ProjectIssueGetListRequest{ProjectID: input.ProjectID, StateCode: input.StateCode})
+	rows, err := issueSvc.GetList(&types.WorkspaceIssueGetListRequest{WorkspaceID: input.WorkspaceID, StateCode: input.StateCode})
 	if err != nil {
 		return nil, mcpdto.IssueListContent{}, mt.Fail(err)
 	}
@@ -236,8 +119,8 @@ func (mt McpOceanHarnessTool) IssueList(ctx context.Context, _ *mcp.CallToolRequ
 }
 
 // partialUpdate 是 issue_update 的合并入口（GetInfo → buildIssueUpdateRequest → Update）。
-func (mt McpOceanHarnessTool) partialUpdate(issueSvc *service.ProjectIssue, args *mcpdto.IssueUpdateArgs) (*types.ProjectIssueResponseData, error) {
-	cur, err := issueSvc.GetInfo(&types.ProjectIssueGetInfoRequest{ID: args.IssueID})
+func (mt McpOceanHarnessTool) partialUpdate(issueSvc *service.WorkspaceIssue, args *mcpdto.IssueUpdateArgs) (*types.WorkspaceIssueResponseData, error) {
+	cur, err := issueSvc.GetInfo(&types.WorkspaceIssueGetInfoRequest{ID: args.IssueID})
 	if err != nil {
 		return nil, err
 	}
@@ -249,8 +132,8 @@ func (mt McpOceanHarnessTool) partialUpdate(issueSvc *service.ProjectIssue, args
  * 现有 Update 是全量覆盖语义（Name/Description/StartDate/TargetDate 无条件覆写；
  * typeId 与关联仓库分支传空会清空），故须从 GetInfo 结果完整回填，仅覆盖显式给出的非空字段。空串语义即「不改」（不支持经 MCP 置空字段，已写入工具描述）。
  */
-func buildIssueUpdateRequest(cur *types.ProjectIssueResponseData, args *mcpdto.IssueUpdateArgs) *types.ProjectIssueUpdateRequest {
-	req := &types.ProjectIssueUpdateRequest{
+func buildIssueUpdateRequest(cur *types.WorkspaceIssueResponseData, args *mcpdto.IssueUpdateArgs) *types.WorkspaceIssueUpdateRequest {
+	req := &types.WorkspaceIssueUpdateRequest{
 		ID:                   cur.ID,
 		Name:                 cur.Name,
 		Description:          cur.Description,
@@ -272,7 +155,7 @@ func buildIssueUpdateRequest(cur *types.ProjectIssueResponseData, args *mcpdto.I
 
 // —— Content 转换（service 出参 → mcp_dto 平铺镜像，时间转 RFC3339 字符串）——
 
-func newIssueContent(data *types.ProjectIssueResponseData) mcpdto.IssueContent {
+func newIssueContent(data *types.WorkspaceIssueResponseData) mcpdto.IssueContent {
 	var issueType *mcpdto.IssueTypeContent
 	if data.Type != nil {
 		issueType = &mcpdto.IssueTypeContent{ID: data.Type.ID, Name: data.Type.Name, Color: data.Type.Color}
@@ -284,13 +167,12 @@ func newIssueContent(data *types.ProjectIssueResponseData) mcpdto.IssueContent {
 			RepositoryBranch:  rb.RepositoryBranch,
 		})
 	}
-	issue := data.ProjectIssue // 嵌入 DO（GetInfo/Create/Update 返回值保证非 nil）
+	issue := data.WorkspaceIssue // 嵌入 DO（GetInfo/Create/Update 返回值保证非 nil）
 	return mcpdto.IssueContent{
 		ID:                   issue.ID,
 		Name:                 issue.Name,
 		Description:          issue.Description,
 		StateCode:            string(issue.StateCode),
-		ParentID:             issue.ParentID,
 		StartDate:            issue.StartDate,
 		TargetDate:           issue.TargetDate,
 		CompletedAt:          formatTime(issue.CompletedAt),
@@ -300,7 +182,7 @@ func newIssueContent(data *types.ProjectIssueResponseData) mcpdto.IssueContent {
 	}
 }
 
-func issueContentPtr(data *types.ProjectIssueResponseData) *mcpdto.IssueContent {
+func issueContentPtr(data *types.WorkspaceIssueResponseData) *mcpdto.IssueContent {
 	c := newIssueContent(data)
 	return &c
 }

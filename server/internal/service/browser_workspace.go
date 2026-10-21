@@ -18,7 +18,7 @@ import (
 // ResolveIssueWorkspaceID 解析 issue 归属工作空间 id（不存在/未挂 = 空串）。
 func ResolveIssueWorkspaceID(ctx context.Context, issueID string) (string, error) {
 	q := query.Use(global.SqliteDB)
-	issue, err := q.ProjectIssue.WithContext(ctx).Where(q.ProjectIssue.ID.Eq(issueID)).First()
+	issue, err := q.WorkspaceIssue.WithContext(ctx).Where(q.WorkspaceIssue.ID.Eq(issueID)).First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil

@@ -134,7 +134,7 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 	m.entries[issueID] = entry
 	m.mu.Unlock()
 
-	if _, err := m.bindings.GetOrCreate(ctx, issueID); err != nil {
+	if err := m.bindings.GetOrCreate(ctx, issueID); err != nil {
 		m.mu.Lock()
 		delete(m.entries, issueID)
 		m.mu.Unlock()

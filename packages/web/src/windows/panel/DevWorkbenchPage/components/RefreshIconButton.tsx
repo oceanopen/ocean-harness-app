@@ -14,7 +14,7 @@ interface RefreshIconButtonProps {
 /**
  * RefreshIconButton：工具面板头部「刷新」按钮统一载体（PanelToolbar 按钮规格约定的具体化：
  * IconButton size="small" + 图标 fontSize="small"、色调 text.secondary；fetching 期禁用 +
- * spin 旋转）。原 IssueSubTaskPanel / WorkspaceFilePanel / ImBotPanel 三份逐字拷贝收敛于此。
+ * spin 旋转）。WorkspaceFilePanel / ImBotPanel 等工具面板共用。
  */
 export default function RefreshIconButton({ onClick, fetching, ariaLabel }: RefreshIconButtonProps) {
   return (

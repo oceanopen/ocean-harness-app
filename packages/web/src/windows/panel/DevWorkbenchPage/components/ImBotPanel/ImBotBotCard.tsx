@@ -1,4 +1,4 @@
-import type { ImBotBindIssueRequest, ImBotConversationModel, ImBotModel, ProjectIssueResponseData } from '@src/services';
+import type { ImBotBindIssueRequest, ImBotConversationModel, ImBotModel, WorkspaceIssueResponseData } from '@src/services';
 import ExpandLessOutlinedIcon from '@mui/icons-material/ExpandLessOutlined';
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
 import {
@@ -19,7 +19,7 @@ import { chatTypeLabel, conversationActiveText, conversationShortCode } from './
 interface ImBotBotCardProps {
   bot: ImBotModel;
   // 当前工作台选中任务（绑定目标 + 聚合 chip 判定基准）。
-  issue: ProjectIssueResponseData;
+  issue: WorkspaceIssueResponseData;
   /**
    * 面板级绑定 mutation 在飞请求（isPending 时的 variables；null = 空闲）。写操作统一在
    * 面板层确认弹窗后执行（单飞行中操作），本卡按 botId 自筛后驱动行级按钮 loading/disabled。
@@ -32,7 +32,7 @@ interface ImBotBotCardProps {
 /** 会话明细行：身份行（类型 · 最近活跃 · key 短码）+ 绑定态行 + 操作按钮。 */
 function ConversationRow(props: {
   conversation: ImBotConversationModel;
-  issue: ProjectIssueResponseData;
+  issue: WorkspaceIssueResponseData;
   bindPending: ImBotBindIssueRequest | null;
   onAction: (conversation: ImBotConversationModel) => void;
 }) {

@@ -1,4 +1,4 @@
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
+import type { WorkspaceModel } from '@src/services';
 import type { MenuKey } from './commandPalette/types';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -64,7 +64,7 @@ const TOP_BAR_HEIGHT = 44;
 // 侧边栏折叠宽度（展开 200px）。
 const SIDEBAR_COLLAPSED_WIDTH = 56;
 
-// 子状态页：切回时经「记忆上次完整路径」恢复 URL 子状态（wid/pid/iid），页面组件随之重建。
+// 子状态页：切回时经「记忆上次完整路径」恢复 URL 子状态（wid/iid），页面组件随之重建。
 // settings 同理记忆上次分区（/settings/<section>），齿轮/托盘/命令面板再入时回到上次分区。
 const PATH_MEMORY_MENUS: ReadonlySet<MenuKey> = new Set<MenuKey>([
   'tracker',
@@ -83,11 +83,10 @@ function PanelApp() {
   // 本兜底让位——两者按 activeMenu 互斥，永不同时动作。
   useCloseWindowShortcut(activeMenu !== 'devWorkbench');
   const [repoRefreshTrigger, setRepoRefreshTrigger] = useState(0);
-  // tracker 三级选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
+  // tracker 选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
   const currentWorkspaceId = useTrackerStore(s => s.selectedWorkspace?.id ?? null);
   // 选中实体名供命令面板 jump 命令声明式渲染名称注释（id 用于逻辑判断，name 用于展示）。
   const currentWorkspaceName = useTrackerStore(s => s.selectedWorkspace?.name ?? null);
-  const currentWorkspaceProjectName = useTrackerStore(s => s.selectedWorkspaceProject?.name ?? null);
   const theme = useTheme();
   // 侧边栏折叠状态：订阅 config（跨重启持久化、多窗口同步）。setAppConfig 触发 app-config-changed 事件，hook 自动回写，无需手动 setState。
   const collapsed = useConfigValue(PANEL_SIDEBAR_COLLAPSED_KEY, decodeSidebarCollapsed, false);
@@ -118,16 +117,10 @@ function PanelApp() {
     navigate(lastPathRef.current[menu] ?? menuToPath(menu));
   }, [navigate]);
 
-  // 跳到工作空间：回写选中（清空项目避免跨空间残留）并导航 /tracker?wid=<id>（项目选中态保留 store，不入 URL）。
+  // 跳到工作空间：回写选中并导航 /tracker?wid=<id>。
   const selectWorkspace = useCallback((ws: WorkspaceModel) => {
-    useTrackerStore.getState().selectWorkspace(ws); // 联动清空 workspaceProject 在 store 内
+    useTrackerStore.getState().selectWorkspace(ws);
     navigate(`/tracker?${TRACKER_WID_PARAM}=${ws.id}`);
-  }, [navigate]);
-  // 跳到项目：回写选中项目并切到项目事项管理（项目仅在某工作空间已选中时可达，故 selectedWorkspace 必已存在）。
-  const selectWorkspaceProject = useCallback((workspaceProject: WorkspaceProjectModel) => {
-    useTrackerStore.getState().selectWorkspaceProject(workspaceProject);
-    const wid = useTrackerStore.getState().selectedWorkspace?.id;
-    navigate(wid ? `/tracker?${TRACKER_WID_PARAM}=${wid}` : '/tracker');
   }, [navigate]);
 
   // 监听后端 panel:navigate 事件，复用 goMenu 切到指定页面（含路径记忆恢复）。
@@ -201,9 +194,7 @@ function PanelApp() {
       toggleSidebar={toggleCollapsed}
       currentWorkspaceId={currentWorkspaceId}
       currentWorkspaceName={currentWorkspaceName}
-      currentWorkspaceProjectName={currentWorkspaceProjectName}
       selectWorkspace={selectWorkspace}
-      selectWorkspaceProject={selectWorkspaceProject}
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         {/* 顶部导航栏：全宽独立行（侧边栏在其下方），左侧统一预留红绿灯让位带

@@ -246,7 +246,7 @@ func (svc ImBot) BindConversationIssue(req *types.ImBotBindIssueRequest) error {
 		if botRow.WorkspaceID == "" {
 			return errors.New("请先为机器人选择工作空间")
 		}
-		issue, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(req.IssueId)).First()
+		issue, err := q.WorkspaceIssue.WithContext(svc.Context).Where(q.WorkspaceIssue.ID.Eq(req.IssueId)).First()
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("任务不存在")
@@ -290,7 +290,7 @@ func (svc ImBot) boundIssueNames(rows []*model.ImBotConversation) map[string]str
 		return map[string]string{}
 	}
 	q := query.Use(svc.Orm)
-	issues, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.In(ids...)).Find()
+	issues, err := q.WorkspaceIssue.WithContext(svc.Context).Where(q.WorkspaceIssue.ID.In(ids...)).Find()
 	if err != nil {
 		return map[string]string{}
 	}

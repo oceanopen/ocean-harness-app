@@ -25,37 +25,19 @@ func init() {
 	mcpServerOceanHarness = mcp.NewServer(&mcp.Implementation{
 		Name:    "ocean_harness",
 		Version: "v1.0.0",
-		Title:   "ocean-harness 项目管理工具（issue / 子任务 / 工作空间 / GitHub）",
+		Title:   "ocean-harness 任务管理工具（issue / 工作空间 / GitHub）",
 	}, nil)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name:        "issue_get_info",
-		Description: "获取 issue 详情（标题、描述、状态、优先级、类型、关联仓库与基准分支、父子关系）。",
+		Description: "获取 issue 详情（标题、描述、状态、类型、关联仓库与基准分支）。",
 	}, mcptool.McpOceanHarnessTool{}.IssueGetInfo)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "issue_update",
 		Description: "部分更新 issue：stateCode/name/description 仅更新传入的非空字段，其余字段（含类型、" +
-			"关联仓库分支、日期）保留原值。stateCode 变化触发完成时间流转（DONE 记录完成时间）；" +
-			"父子状态独立变更不级联，唯一联动是全部子任务完成后父任务自动完成。",
+			"关联仓库分支、日期）保留原值。stateCode 变化触发完成时间流转（DONE 记录完成时间）。",
 	}, mcptool.McpOceanHarnessTool{}.IssueUpdate)
-
-	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
-		Name:        "issue_child_list",
-		Description: "列出某 issue 的全部一级子任务（按看板顺序）。目标不能自身是子任务（仅支持一层）。",
-	}, mcptool.McpOceanHarnessTool{}.IssueChildList)
-
-	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
-		Name: "issue_child_create",
-		Description: "为指定 issue 创建一级子任务（项目/工作空间归属自动继承父任务）。" +
-			"name 必填；stateCode 留空默认 BACKLOG。",
-	}, mcptool.McpOceanHarnessTool{}.IssueChildCreate)
-
-	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
-		Name: "issue_child_update",
-		Description: "部分更新子任务：stateCode/name/description 仅更新传入的非空字段，其余字段保留原值。" +
-			"目标必须是子任务（parentId 非空），否则请改用 issue_update。",
-	}, mcptool.McpOceanHarnessTool{}.IssueChildUpdate)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "issue_workspace_status",
@@ -63,7 +45,7 @@ func init() {
 			"cloneRepos 各步骤与仓库级进度）。workspace 基目录取应用设置，无需传入。",
 	}, mcptool.McpOceanHarnessTool{}.WorkspaceStatus)
 
-	// —— 列举工具（workspace / project / issue 清单，供选择类工作流逐级定位）——
+	// —— 列举工具（workspace / issue 清单，供选择类工作流逐级定位）——
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name:        "workspace_list",
@@ -71,14 +53,9 @@ func init() {
 	}, mcptool.McpOceanHarnessTool{}.WorkspaceList)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
-		Name:        "project_list",
-		Description: "列出某工作空间下的全部项目（新建在前）：id/名称/emoji/描述。workspaceId 取 workspace_list 返回的 id。",
-	}, mcptool.McpOceanHarnessTool{}.ProjectList)
-
-	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "issue_list",
-		Description: "列出某项目下的全部任务（按看板顺序，含子任务，parentId 区分层级）；" +
-			"projectId 取 project_list 返回的 id，stateCode 留空返回全部状态。单任务详情请用 issue_get_info。",
+		Description: "列出某工作空间下的全部任务（按看板顺序）；" +
+			"workspaceId 取 workspace_list 返回的 id，stateCode 留空返回全部状态。单任务详情请用 issue_get_info。",
 	}, mcptool.McpOceanHarnessTool{}.IssueList)
 
 	// —— GitHub 外部服务工具（T4.1，github_ 前缀分组；PAT 经设置 → 个人中心录入）——

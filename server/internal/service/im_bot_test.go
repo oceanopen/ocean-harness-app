@@ -31,7 +31,7 @@ func newImBotTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("打开临时 sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.ProjectIssue{}, &model.ImBot{}, &model.ImBotConversation{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.WorkspaceIssue{}, &model.ImBot{}, &model.ImBotConversation{}); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
 	return db
@@ -53,11 +53,11 @@ func mkImBotFixture(t *testing.T, db *gorm.DB) {
 			t.Fatalf("建 workspace: %v", err)
 		}
 	}
-	for _, is := range []*model.ProjectIssue{
-		{ID: imBotIssueLocal, ProjectID: "proj-1", WorkspaceID: "ws-1", Name: "本域任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1},
-		{ID: imBotIssueForeign, ProjectID: "proj-2", WorkspaceID: "ws-2", Name: "外域任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1},
+	for _, is := range []*model.WorkspaceIssue{
+		{ID: imBotIssueLocal, WorkspaceID: "ws-1", Name: "本域任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1},
+		{ID: imBotIssueForeign, WorkspaceID: "ws-2", Name: "外域任务", StateCode: enums.STATE_CODE_BACKLOG, TypeID: 1},
 	} {
-		if err := q.ProjectIssue.WithContext(ctx).Create(is); err != nil {
+		if err := q.WorkspaceIssue.WithContext(ctx).Create(is); err != nil {
 			t.Fatalf("建 issue: %v", err)
 		}
 	}

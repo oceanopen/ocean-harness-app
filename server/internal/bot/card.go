@@ -89,24 +89,11 @@ func interactionFallbackText() string {
 	return "该卡片交互暂不能在此处理，请在桌面端操作，或直接发送文字消息。"
 }
 
-// cardNoSelectionText 提交型卡无勾选回传的统一引导文案（绑定/审批/表单域共用）。
+// cardNoSelectionText 提交型卡无勾选回传的统一引导文案（审批/表单域共用）。
 const cardNoSelectionText = "未选择任何选项：请在卡片中选择后点「提交」。"
 
 /*
- * cardAlreadyProcessedText 最近卡已消费的重复点击收口文案：置灰卡按钮仍可点（企微
- * submit_button 无 disable 属性，文案改「已处理」仅是视觉传达），由会话行 last_message_card 登记
- * 槽拦截（绑定族三卡，见 binding_card.go 的 gateBindingCardClick）。
- */
-const cardAlreadyProcessedText = "当前卡片消息已处理过，不能重复处理。"
-
-/*
- * cardExpiredText 历史卡点击收口文案：last_message_card 槽已被更新的卡覆盖（或指向未送达卡），
- * 绑定族一次性交互卡翻旧重点一律按失效收口，重新发指令即可再出卡。
- */
-const cardExpiredText = "卡片消息已失效，请重新发送消息。"
-
-/*
- * cardActionIndex 单题单选卡的应答下标解析（绑定/审批域共用）：真机定标（企微长连接）——带提交按钮的单选卡点选项不发事件、只有提交发（勾选集随 selected_items 回传），消费须以提交为主形态。
+ * cardActionIndex 单题单选卡的应答下标解析（审批域共用）：真机定标（企微长连接）——带提交按钮的单选卡点选项不发事件、只有提交发（勾选集随 selected_items 回传），消费须以提交为主形态。
  * 直接选项点击（ActionIndex ≥ 0，无提交按钮的渠道/历史形态）原样取用；提交事件（ActionIndex = -1）取定位键匹配的首题首项（单选恰一项）。
  * ok=false = 提交事件无勾选集，调用方回引导文案（elicitation 多题形态不经本 helper，见 elicitationContent）。
  */

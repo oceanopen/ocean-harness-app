@@ -23,7 +23,7 @@ interface LaunchSettingsFieldsProps {
 
 /**
  * LaunchSettingsFields：启动设置字段组——启动模式四档 + terminal-auto 档「终端 Agent」+
- * acp 档「ACP Agent / 执行模式」。WorkspaceDrawer（workspace 单源）与 ProjectIssueDrawer
+ * acp 档「ACP Agent / 执行模式」。WorkspaceDrawer（workspace 单源）与 WorkspaceIssueDrawer
  * （issue 级覆盖）共用，差异仅 showFollowOption；提交拼装由各抽屉自理。
  */
 export default function LaunchSettingsFields({

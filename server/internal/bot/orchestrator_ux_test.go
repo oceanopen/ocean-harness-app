@@ -155,7 +155,7 @@ func TestIdleExpiryNotTriggered(t *testing.T) {
  * 锚照常传递（freshSession=false）。
  */
 func TestIdleExpiryACPOnlyNotice(t *testing.T) {
-	driver := &stubProberDriver{acp: true, bound: "i-1"}
+	driver := &stubProberDriver{acp: true}
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
 	presetExpiredSession(t, store)
@@ -257,7 +257,7 @@ func TestSlashClear(t *testing.T) {
  * 此前 last_message_at 永久冻结 → 过期判定逐条重放。受理即触碰后，紧随消息不得再提醒。
  */
 func TestIdleTouchPreventsRepeatNotice(t *testing.T) {
-	driver := &stubProberDriver{acp: true, bound: "i-1"}
+	driver := &stubProberDriver{acp: true}
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
 	presetExpiredSession(t, store)

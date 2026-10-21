@@ -1,4 +1,4 @@
-import type { IssueWorkspaceArchiveAction, ProjectIssueResponseData } from '@src/services';
+import type { IssueWorkspaceArchiveAction, WorkspaceIssueResponseData } from '@src/services';
 import {
   CleaningServices as CleaningServicesIcon,
   CloseFullscreen as CloseFullscreenIcon,
@@ -24,7 +24,7 @@ import {
   Typography,
   useTheme,
 } from '@mui/material';
-import ProjectIssueDrawer from '@src/components/projectIssueDrawer/ProjectIssueDrawer';
+import WorkspaceIssueDrawer from '@src/components/workspaceIssueDrawer/WorkspaceIssueDrawer';
 import {
   DEFAULT_PANEL_DEV_TOOL_AREA_COLLAPSED,
   DEFAULT_PANEL_DEV_TOOL_AREA_WIDTH,
@@ -46,10 +46,10 @@ import { useAgentCatalog } from '@src/state/agentCatalog';
 import { useDevWorkbenchStore } from '@src/state/devWorkbench';
 import { useArchiveIssueWorkspace, useInitIssueWorkspace } from '@src/state/issueWorkspace';
 import { removeLayout } from '@src/state/terminalPanes';
-import { STATE_MAP, useProjectIssues, useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
+import { STATE_MAP, useWorkspaceIssues, useWorkspaces } from '@src/state/tracker';
 import { clearToolTabs } from '@src/state/workbenchTools';
 import { clearPreviewTabs, useWorkspaceFilesStore } from '@src/state/workspaceFiles';
-import { DEV_IID_PARAM, DEV_PID_PARAM, strParam } from '@src/windows/panel/routes';
+import { DEV_IID_PARAM, DEV_WID_PARAM, strParam } from '@src/windows/panel/routes';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -111,23 +111,22 @@ const PANEL_LAYOUT_CONFIG_KEYS: readonly string[] = [
 ];
 
 // DevWorkbenchPage：控制台「开发工作台」骨架页。
-// 左中右布局：左栏任务树（非终态顶级 issue——BACKLOG/TODO/IN_PROGRESS 全生命周期）｜
+// 左中右布局：左栏任务树（非终态任务——BACKLOG/TODO/IN_PROGRESS 全生命周期）｜
 // 中栏 = 终端列（标题栏 + 终端区）+ 工具面板区（tab 化，ToolPanelArea）｜最右常驻
 // 工具条（WorkbenchToolRail，顶部方格 = 面板区总开关，下方工具图标，注册表驱动扩展，
 // 见 toolRegistry）。工具 tabs 按 issue 隔离（workbenchTools 域 + localStorage），
 // 面板区折叠/宽度走 config 持久化。
 //
 // 路由接入（全 query 风格）：issue 选中由 URL 驱动——
-//   ?pid=<projectId>&iid=<issueId>   选中 issue（项目→issue，issue 靠 project 加载，故 pid 同在 URL）
+//   ?wid=<workspaceId>&iid=<issueId>   选中 issue（workspace→issue，issue 靠 workspace 加载，故 wid 同在 URL）
 // 本页单向同步 URL→store。store 全局，页面卸载/重挂载（声明式路由切走即卸载）不丢选中。
 export default function DevWorkbenchPage() {
   const theme = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlPid = strParam(searchParams.get(DEV_PID_PARAM)); // project id 为 uuid 字符串
+  const urlWid = strParam(searchParams.get(DEV_WID_PARAM)); // workspace id 为 uuid 字符串
   const urlIid = strParam(searchParams.get(DEV_IID_PARAM)); // issue id 为 uuid 字符串
 
   const selectedIssueId = useDevWorkbenchStore(s => s.selectedIssueId);
-  const selectedProjectId = useDevWorkbenchStore(s => s.selectedProjectId);
   const selectIssue = useDevWorkbenchStore(s => s.selectIssue);
   // 沉浸模式（全屏）：隐藏 App 外壳 + 左栏任务树（PanelApp 同步订阅隐藏菜单栏/顶栏）。
   // 会话态存 devWorkbench store（见 store.ts 头注释）；退出路径 = 切换钮 / Esc / 切页卸载复位。
@@ -165,23 +164,21 @@ export default function DevWorkbenchPage() {
   // 确认弹窗态：null = 关闭；warnings = null 首确认态，非空 = 安全检查警告态（二次确认）。
   const [archiveConfirm, setArchiveConfirm] = useState<{ kind: IssueWorkspaceArchiveAction; warnings: string[] | null } | null>(null);
 
-  // Issue 编辑抽屉（共享 ProjectIssueDrawer，挂载范式照搬 ProjectIssueList 本地 state 条件渲染——
-  // 每次打开新挂载，表单本地态无需 reset）。editIssue 非空 = 编辑态（标题栏名称/子任务卡片点击）；
-  // createChildParent 非空 = 新建子任务态（子任务面板 + 按钮），快照父对象防打开期间选中变化串扰。
-  const [editIssue, setEditIssue] = useState<ProjectIssueResponseData | null>(null);
-  const [createChildParent, setCreateChildParent] = useState<ProjectIssueResponseData | null>(null);
+  // Issue 编辑抽屉（共享 WorkspaceIssueDrawer，挂载范式照搬任务管理列表本地 state 条件渲染——
+  // 每次打开新挂载，表单本地态无需 reset）。editIssue 非空 = 编辑态（标题栏名称/树卡片点击）。
+  const [editIssue, setEditIssue] = useState<WorkspaceIssueResponseData | null>(null);
 
-  // 加载用 pid：URL 优先（reload/恢复），否则 store（URL 无 dev 参数的兜底）；null 时不发请求。
-  const loadPid = urlPid ?? selectedProjectId;
-  const { data: issues = [], isLoading: issuesLoading } = useProjectIssues(loadPid);
+  // 加载用 wid：URL 优先（reload/恢复）；null 时不发请求。
+  const loadWid = urlWid;
+  const { data: issues = [], isLoading: issuesLoading } = useWorkspaceIssues(loadWid);
 
   // 有效选中：URL 优先，否则 store。
   const effIssueId = urlIid ?? selectedIssueId;
-  const hasSelection = effIssueId != null && loadPid != null;
+  const hasSelection = effIssueId != null && loadWid != null;
   const issue = issues.find(i => i.id === effIssueId);
   const stateMeta = issue ? STATE_MAP.get(issue.stateCode) : undefined;
 
-  // 当前 issue 所属工作空间（终端 cwd / 启动值 / 打开目录 / 重新初始化共用；
+  // 当前 issue 所属工作空间（终端 cwd / 启动值 / 打开目录 / 重新初始化 / 抽屉共用；
   // issue 或工作空间列表加载中为 null，消费组件闸门等待）。
   const { data: workspaces = [], isPending: workspacesPending } = useWorkspaces();
   const workspace = issue != null ? workspaces.find(ws => ws.id === issue.workspaceId) ?? null : null;
@@ -200,12 +197,6 @@ export default function DevWorkbenchPage() {
     ? terminalStartupCli(effLaunch?.mode, effLaunch?.autoCommand)
     : null;
 
-  // 抽屉所需 workspaceProject：issue 自带 workspaceId/projectId，按 workspace 查项目列表
-  // （与左树 DevTaskTree 同 query key 共享缓存，命中即零请求）后按 id 反查实体——
-  // 刻意不读任何快照，关联仓库随项目刷新保持新鲜。
-  const { data: wsProjects = [] } = useWorkspaceProjects(issue?.workspaceId ?? null);
-  const workspaceProject = issue != null ? wsProjects.find(p => p.id === issue.projectId) ?? null : null;
-
   // 删除/归档成功的本地痕迹清理（工具 tabs + 预览 tabs + 终端分屏布局，按 issueId 隔离的
   // localStorage key，对任意 id 无副作用）。归档与抽屉删除两条路径共享本函数。
   const clearIssueLocalTraces = (issueId: string) => {
@@ -219,12 +210,12 @@ export default function DevWorkbenchPage() {
   // 痕迹（clearIssueLocalTraces）→ 清选中 + 清 URL（URL→store 同步 effect 会从 iid 恢复
   // 选中，双清才彻底）。
   const submitArchive = () => {
-    if (archiveConfirm == null || issue == null || loadPid == null) {
+    if (archiveConfirm == null || issue == null || loadWid == null) {
       return;
     }
     const { kind, warnings } = archiveConfirm;
     archiveWorkspace.mutate(
-      { projectId: loadPid, issueId: issue.id, action: kind, force: warnings != null },
+      { workspaceId: loadWid, issueId: issue.id, action: kind, force: warnings != null },
       {
         onSuccess: (result) => {
           if (result.status === 'warnings') {
@@ -244,16 +235,12 @@ export default function DevWorkbenchPage() {
     );
   };
 
-  // 抽屉回调（保存/创建成功由 mutation 内部失效 projectIssues 缓存，标题栏/子任务面板/左树
-  // 同 key 自动更新；此处只关抽屉 + toast）。onDeleted：本地痕迹无条件清理（含删非选中
-  // 任务）；删除的是当前选中任务时再清选中 + 清 URL（双清防 iid 恢复）。
+  // 抽屉回调（保存成功由 mutation 内部失效 workspaceIssues 缓存，标题栏/左树同 key 自动更新；
+  // 此处只关抽屉 + toast）。onDeleted：本地痕迹无条件清理（含删非选中任务）；删除的是当前
+  // 选中任务时再清选中 + 清 URL（双清防 iid 恢复）。
   const handleIssueUpdated = () => {
     setEditIssue(null);
     showToast('任务已保存', 'success');
-  };
-  const handleSubTaskCreated = () => {
-    setCreateChildParent(null);
-    showToast('子任务已创建', 'success');
   };
   const handleIssueDeleted = (issueId: string) => {
     setEditIssue(null);
@@ -263,13 +250,6 @@ export default function DevWorkbenchPage() {
       setSearchParams({}, { replace: true });
     }
     showToast('任务已删除', 'success');
-  };
-  // 工具面板回调（ToolPanelArea → render ctx → 子任务面板）：编辑目标 issue / 新建当前 issue 的子任务。
-  const openEditIssue = (target: ProjectIssueResponseData) => setEditIssue(target);
-  const openCreateSubIssue = () => {
-    if (issue != null) {
-      setCreateChildParent(issue);
-    }
   };
 
   // 工具面板区可见性：仅由用户展开（config）决定，与 issue 选中态解耦——面板内容虽围绕
@@ -284,14 +264,14 @@ export default function DevWorkbenchPage() {
   // 布局，首帧即终值。一次性等待（本地 IPC，~ms 级）。
   const panelConfigReady = useConfigReady(PANEL_LAYOUT_CONFIG_KEYS);
 
-  // URL → store 单向同步：有 iid 回写 issue（含其 projectId）；无 iid 清空。
+  // URL → store 单向同步：有 iid 回写任务；无 iid 清空。
   useEffect(() => {
     if (urlIid == null) {
       if (selectedIssueId != null) {
         selectIssue(null);
       }
     } else if (selectedIssueId !== urlIid) {
-      const target = issues.find((i: ProjectIssueResponseData) => i.id === urlIid);
+      const target = issues.find((i: WorkspaceIssueResponseData) => i.id === urlIid);
       if (target) {
         selectIssue(target);
       }
@@ -358,7 +338,7 @@ export default function DevWorkbenchPage() {
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* 左栏：任务树（workspace→project→dev issue 三级，跨所有工作空间）。
+      {/* 左栏：任务树（workspace→dev 任务两级，跨所有工作空间）。
           恒渲染 + width 过渡动画折叠，折叠到 0 后右栏占满整宽。
           沉浸模式（全屏）与用户折叠配置合成隐藏（treeHidden）——不改写 config，
           退出全屏按原配置恢复。 */}
@@ -441,8 +421,7 @@ export default function DevWorkbenchPage() {
                   当前默认工具（点击即打开），hover/▼ 展开浮层切默认（串行：打开成功后才切）。 */}
               {hasSelection && issue && <OpenWorkspaceDirButton issueId={issue.id} workspaceDir={workspaceDir} />}
               {/* 清理终端并重新初始化（T1.5）：清理该 issue 全部终端会话后走增量初始化（已成功步骤/仓库跳过），
-                与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。
-                图标用扫帚（CleaningServices）而非循环箭头，与子任务面板刷新按钮（Autorenew）区分。 */}
+                与 WorkspaceInitGate 面板按钮共用同一 mutation/query key，面板自动切换回进度态。 */}
               {hasSelection && issue && (
                 <Tooltip title="清理终端并重新初始化">
                   <span>
@@ -473,7 +452,7 @@ export default function DevWorkbenchPage() {
                 </Tooltip>
               )}
               {/* 任务操作菜单（T3.2）：⋯ 入口，归档/取消（删工作空间目录 + 流转 issue 状态，两段式确认） */}
-              {hasSelection && issue && loadPid != null && (
+              {hasSelection && issue && loadWid != null && (
                 <>
                   <Tooltip title="更多任务操作">
                     <IconButton
@@ -569,13 +548,10 @@ export default function DevWorkbenchPage() {
         </Box>
         <ToolPanelArea
           issue={issue ?? null}
-          projectId={loadPid}
           hasSelection={hasSelection}
           visible={toolAreaVisible}
           width={toolAreaWidth}
           onWidthCommit={commitToolAreaWidth}
-          onEditIssue={openEditIssue}
-          onCreateSubIssue={openCreateSubIssue}
         />
       </Box>
 
@@ -628,27 +604,16 @@ export default function DevWorkbenchPage() {
           </Button>
         </DialogActions>
       </Dialog>
-      {/* Issue 编辑抽屉（上提共享组件，与项目事项管理同源）：workspaceProject 未就绪
-          （项目列表加载瞬态）不渲染、就绪即出现——抽屉态本就随页面卸载，瞬态不留残影。
-          编辑态父对象由列表反查补全（编辑子 issue 时顶部显示所属父任务）。 */}
-      {editIssue != null && workspaceProject != null && (
-        <ProjectIssueDrawer
+      {/* Issue 编辑抽屉（上提共享组件，与任务管理同源）：workspace 未就绪
+          （工作空间列表加载瞬态）不渲染、就绪即出现——抽屉态本就随页面卸载，瞬态不留残影。 */}
+      {editIssue != null && workspace != null && (
+        <WorkspaceIssueDrawer
           mode="edit"
-          workspaceProject={workspaceProject}
-          projectIssue={editIssue}
-          parentIssue={editIssue.parentId ? issues.find(i => i.id === editIssue.parentId) : undefined}
+          workspace={workspace}
+          workspaceIssue={editIssue}
           onClose={() => setEditIssue(null)}
           onUpdated={handleIssueUpdated}
           onDeleted={handleIssueDeleted}
-        />
-      )}
-      {createChildParent != null && workspaceProject != null && (
-        <ProjectIssueDrawer
-          mode="create"
-          workspaceProject={workspaceProject}
-          parentIssue={createChildParent}
-          onClose={() => setCreateChildParent(null)}
-          onCreated={handleSubTaskCreated}
         />
       )}
       {toastSnack}
