@@ -1,9 +1,9 @@
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
+import type { WorkspaceModel } from '@src/services';
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { CommandConfig, CommandGroup } from './types';
 import { SearchOutlined as SearchOutlinedIcon } from '@mui/icons-material';
 import { Box, CircularProgress, Dialog, Typography } from '@mui/material';
-import { useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
+import { useWorkspaces } from '@src/state/tracker';
 import { Command } from 'cmdk';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -72,7 +72,7 @@ const commandSx = {
       color: 'primary.main',
     },
     /**
-     * 软禁用项（如未选工作空间时的"跳到项目"）：置灰但仍可聚焦，回车/点击由 onSelect 守卫无效。
+     * 软禁用项：置灰但仍可聚焦，回车/点击由 onSelect 守卫无效。
      * 不用 cmdk 原生 disabled——它会把项踢出键盘导航，反令工作空间变末项、down 键失序 bug 复发。
      */
     '&[data-soft-disabled="true"]': {
@@ -113,8 +113,6 @@ function CommandPaletteDialog() {
   const [search, setSearch] = useState('');
   // 二级页实体列表走 tracker query（与主页面共享缓存，命中缓存即零请求）。
   const { data: workspaces = [], isFetching: workspacesFetching } = useWorkspaces();
-  const workspaceProjectsQuery = useWorkspaceProjects(ctx.currentWorkspaceId);
-  const workspaceProjects = workspaceProjectsQuery.data ?? [];
 
   // 打开/切页时重置搜索词：渲染期据 (isOpen, subPage) 变化调整（React 推荐），避免 effect 内同步 setState。
   const resetKey = `${ctx.isOpen}:${ctx.subPage}`;
@@ -134,18 +132,14 @@ function CommandPaletteDialog() {
   }, [ctx.isOpen]);
 
   // 二级页加载态：仅当前页对应的查询在拉取时显示进度环（缓存命中时为 false，零请求）。
-  const loading = ctx.subPage === 'workspace' ? workspacesFetching : workspaceProjectsQuery.isFetching;
+  const loading = workspacesFetching;
   /**
    * 二级页"列表本身为空"（区别于"搜索无匹配"）：前者给"暂无X"明确文案，后者保留"无匹配结果"。
    * 主页面恒有命令，此标志恒 false（其空态只可能是搜索无匹配）。
    */
-  const subPageEmpty = ctx.subPage != null
-    && (ctx.subPage === 'workspace' ? workspaces.length === 0 : workspaceProjects.length === 0);
+  const subPageEmpty = ctx.subPage != null && workspaces.length === 0;
   // 空态文案 key：二级页列表为空给"暂无X"，否则（含主页面搜索无匹配）给"无匹配结果"。
-  const emptyStateKey
-    = subPageEmpty
-      ? (ctx.subPage === 'workspace' ? 'panel:commandPalette.noWorkspace' : 'panel:commandPalette.noProject')
-      : 'panel:commandPalette.empty';
+  const emptyStateKey = subPageEmpty ? 'panel:commandPalette.noWorkspace' : 'panel:commandPalette.empty';
 
   // 选中命令：执行 action，按 closeOnSelect 决定是否关闭。
   const runCommand = (cmd: CommandConfig) => {
@@ -160,10 +154,6 @@ function CommandPaletteDialog() {
     ctx.selectWorkspace(ws);
     ctx.close();
   };
-  const pickWorkspaceProject = (workspaceProject: WorkspaceProjectModel) => {
-    ctx.selectWorkspaceProject(workspaceProject);
-    ctx.close();
-  };
 
   // Backspace 在空输入下返回上一级（仅二级页生效）；Esc 由 MUI Dialog 兜底关闭。
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -173,12 +163,7 @@ function CommandPaletteDialog() {
     }
   };
 
-  const subPageHeading
-    = ctx.subPage === 'workspace'
-      ? t('panel:commandPalette.jump.workspace')
-      : ctx.subPage === 'project'
-        ? t('panel:commandPalette.jump.project')
-        : '';
+  const subPageHeading = ctx.subPage === 'workspace' ? t('panel:commandPalette.jump.workspace') : '';
 
   return (
     <Dialog
@@ -278,13 +263,7 @@ function CommandPaletteDialog() {
                   })
                 )
               : (
-                  <SubPageList
-                    loading={loading}
-                    workspaces={ctx.subPage === 'workspace' ? workspaces : []}
-                    workspaceProjects={ctx.subPage === 'project' ? workspaceProjects : []}
-                    onPickWorkspace={pickWorkspace}
-                    onPickWorkspaceProject={pickWorkspaceProject}
-                  />
+                  <SubPageList loading={loading} workspaces={workspaces} onPickWorkspace={pickWorkspace} />
                 )}
             {!loading && <Command.Empty>{t(emptyStateKey)}</Command.Empty>}
           </Command.List>
@@ -324,12 +303,10 @@ function CommandPaletteDialog() {
 interface SubPageListProps {
   loading: boolean;
   workspaces: WorkspaceModel[];
-  workspaceProjects: WorkspaceProjectModel[];
   onPickWorkspace: (ws: WorkspaceModel) => void;
-  onPickWorkspaceProject: (workspaceProject: WorkspaceProjectModel) => void;
 }
 
-function SubPageList({ loading, workspaces, workspaceProjects, onPickWorkspace, onPickWorkspaceProject }: SubPageListProps) {
+function SubPageList({ loading, workspaces, onPickWorkspace }: SubPageListProps) {
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: '24px' }}>
@@ -342,11 +319,6 @@ function SubPageList({ loading, workspaces, workspaceProjects, onPickWorkspace, 
       {workspaces.map(ws => (
         <Command.Item key={ws.id} value={ws.name} onSelect={() => onPickWorkspace(ws)}>
           <Typography sx={{ fontSize: '13px' }}>{ws.name}</Typography>
-        </Command.Item>
-      ))}
-      {workspaceProjects.map(p => (
-        <Command.Item key={p.id} value={p.name} onSelect={() => onPickWorkspaceProject(p)}>
-          <Typography sx={{ fontSize: '13px' }}>{p.name}</Typography>
         </Command.Item>
       ))}
     </>

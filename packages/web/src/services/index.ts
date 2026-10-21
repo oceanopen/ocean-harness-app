@@ -134,25 +134,16 @@ export type {
   PluginOperationRequest,
 } from './PluginMarketplaceService';
 
-export { ProjectIssueService } from './ProjectIssueService';
+export { WorkspaceIssueService } from './WorkspaceIssueService';
 export type {
   IssueRepositoryBranchModel,
-  ProjectIssueCreateRequest,
-  ProjectIssueDeleteRequest,
-  ProjectIssueGetListRequest,
-  ProjectIssueMoveRequest,
-  ProjectIssueResponseData,
-  ProjectIssueUpdateRequest,
-} from './ProjectIssueService';
-
-export { WorkspaceProjectService } from './WorkspaceProjectService';
-export type {
-  WorkspaceProjectCreateRequest,
-  WorkspaceProjectDeleteRequest,
-  WorkspaceProjectGetListRequest,
-  WorkspaceProjectModel,
-  WorkspaceProjectUpdateRequest,
-} from './WorkspaceProjectService';
+  WorkspaceIssueCreateRequest,
+  WorkspaceIssueDeleteRequest,
+  WorkspaceIssueGetListRequest,
+  WorkspaceIssueMoveRequest,
+  WorkspaceIssueResponseData,
+  WorkspaceIssueUpdateRequest,
+} from './WorkspaceIssueService';
 
 export { WorkspaceService } from './WorkspaceService';
 export type {

@@ -35,7 +35,7 @@ func (r *driverRoute) TryRespondPending(cfg BotRuntimeConfig, msg InboundMessage
 	if err != nil || !target.ACP {
 		return "", false
 	}
-	snap := r.sessions.Get(target.IssueID)
+	snap := r.sessions.Get(target.SessionKey)
 	if snap.Status != acpsession.StatusReady {
 		/*
 		 * 会话未就绪/已终结：视图残留挂起不可应答（agent 进程死亡后视图不清挂起），回落
@@ -55,7 +55,7 @@ func (r *driverRoute) TryRespondPending(cfg BotRuntimeConfig, msg InboundMessage
 		return "序号超出范围，可应答的审批：\n" + formatPermissionPendingStatus(choices), true
 	}
 	choice := choices[n-1]
-	if err := r.sessions.RespondPermission(target.IssueID, choice.pendingID, choice.optionID, acpsession.PendingSourceBot); err != nil {
+	if err := r.sessions.RespondPermission(target.SessionKey, choice.pendingID, choice.optionID, acpsession.PendingSourceBot); err != nil {
 		if errors.Is(err, acpsession.ErrPendingAlreadyHandled) {
 			return err.Error(), true // 后到方：文案自带「该审批已由桌面端/IM 应答（…）」判别
 		}

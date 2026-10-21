@@ -18,27 +18,14 @@ type IssueIDArgs struct {
 }
 
 /*
- * IssueUpdateArgs 部分更新入参（issue_update / issue_child_update 共用，契约一致）：三业务字段全可选，
+ * IssueUpdateArgs 部分更新入参（issue_update）：三业务字段全可选，
  * 空 = 保留原值（首期不支持经 MCP 置空字段）。
  */
 type IssueUpdateArgs struct {
 	IssueID     string          `json:"issueId" jsonschema:"目标 issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
-	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"目标状态，留空不改。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED；DONE 记录完成时间，全部子任务完成后父任务自动完成，父任务状态变化会级联同步子任务"`
+	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"目标状态，留空不改。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED；DONE 记录完成时间"`
 	Name        string          `json:"name,omitempty" jsonschema:"新标题，留空不改（不支持置空）"`
 	Description string          `json:"description,omitempty" jsonschema:"新描述（Markdown），留空不改（不支持置空）"`
-}
-
-// IssueChildListArgs 是 issue_child_list 的入参。
-type IssueChildListArgs struct {
-	IssueID string `json:"issueId" jsonschema:"父 issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
-}
-
-// IssueChildCreateArgs 是 issue_child_create 的入参（项目/工作空间归属自动继承父任务）。
-type IssueChildCreateArgs struct {
-	IssueID     string          `json:"issueId" jsonschema:"父 issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
-	Name        string          `json:"name" jsonschema:"子任务标题" vd:"@:$!=''; msg:'name 不能为空'"`
-	Description string          `json:"description,omitempty" jsonschema:"子任务描述（Markdown），可留空"`
-	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"初始状态，留空默认 BACKLOG"`
 }
 
 // WorkspaceStatusArgs 是 workspace_status 的入参（目录经 issueId 由服务端解析，不入参）。
@@ -52,15 +39,10 @@ type WorkspaceStatusArgs struct {
  */
 type WorkspaceListArgs struct{}
 
-// ProjectListArgs 是 project_list 的入参（项目挂在工作空间维度下）。
-type ProjectListArgs struct {
-	WorkspaceID string `json:"workspaceId" jsonschema:"工作空间主键（uuid 文本，workspace_list 返回的 id）" vd:"@:$!=''; msg:'workspaceId 不能为空'"`
-}
-
 // IssueListArgs 是 issue_list 的入参（stateCode 留空返回全部状态）。
 type IssueListArgs struct {
-	ProjectID string          `json:"projectId" jsonschema:"项目主键（uuid 文本，project_list 返回的 id）"`
-	StateCode enums.StateCode `json:"stateCode,omitempty" jsonschema:"按状态过滤，留空返回全部状态。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
+	WorkspaceID string          `json:"workspaceId" jsonschema:"工作空间主键（uuid 文本，workspace_list 返回的 id）"`
+	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"按状态过滤，留空返回全部状态。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
 }
 
 // —— 出参 Content（平铺镜像，见包注释） ——
@@ -71,7 +53,6 @@ type IssueContent struct {
 	Name                 string                   `json:"name" jsonschema:"标题"`
 	Description          string                   `json:"description,omitempty" jsonschema:"描述（Markdown）"`
 	StateCode            string                   `json:"stateCode" jsonschema:"状态：BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
-	ParentID             string                   `json:"parentId,omitempty" jsonschema:"父 issue 主键；留空表示顶级任务"`
 	StartDate            string                   `json:"startDate,omitempty" jsonschema:"开始日期（yyyy-mm-dd），留空表示未设置"`
 	TargetDate           string                   `json:"targetDate,omitempty" jsonschema:"目标日期（yyyy-mm-dd），留空表示未设置"`
 	CompletedAt          string                   `json:"completedAt,omitempty" jsonschema:"完成时间（RFC3339），留空表示未完成"`
@@ -91,11 +72,6 @@ type IssueTypeContent struct {
 type IssueRepoBranchContent struct {
 	LocalRepositoryID int    `json:"localRepositoryId" jsonschema:"本地仓库 id"`
 	RepositoryBranch  string `json:"repositoryBranch,omitempty" jsonschema:"基准分支名（工作空间初始化按此 clone），留空表示仓库默认分支"`
-}
-
-// IssueChildListContent 是 issue_child_list 的出参（顶层须为对象，列表包在字段内）。
-type IssueChildListContent struct {
-	Children []*IssueContent `json:"children" jsonschema:"子任务列表（按看板顺序）；无子任务为空数组"`
 }
 
 // WorkspaceStatusContent 是 workspace_status 的出参。
@@ -157,21 +133,7 @@ type WorkspaceListContent struct {
 	Workspaces []*WorkspaceContent `json:"workspaces" jsonschema:"工作空间列表（新建在前）；无工作空间为空数组"`
 }
 
-// ProjectContent 是单个项目的出参项（project_list）。
-type ProjectContent struct {
-	ID          string `json:"id" jsonschema:"项目主键（uuid 文本）"`
-	WorkspaceID string `json:"workspaceId" jsonschema:"所属工作空间主键（uuid）"`
-	Name        string `json:"name" jsonschema:"名称"`
-	Emoji       string `json:"emoji,omitempty" jsonschema:"图标 emoji，留空表示未设置"`
-	Description string `json:"description,omitempty" jsonschema:"描述"`
-}
-
-// ProjectListContent 是 project_list 的出参。
-type ProjectListContent struct {
-	Projects []*ProjectContent `json:"projects" jsonschema:"项目列表（新建在前）；无项目为空数组"`
-}
-
 // IssueListContent 是 issue_list 的出参（复用 IssueContent 平铺镜像）。
 type IssueListContent struct {
-	Issues []*IssueContent `json:"issues" jsonschema:"任务列表（按看板顺序，含子任务，parentId 区分层级）；无任务为空数组"`
+	Issues []*IssueContent `json:"issues" jsonschema:"任务列表（按看板顺序）；无任务为空数组"`
 }

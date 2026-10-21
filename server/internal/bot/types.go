@@ -149,7 +149,7 @@ type TurnRequest struct {
 	WorkspaceID     string // 工作空间行 id uuid（引擎路由解析合并后 launch_settings.mode 的键之一）
 	WorkspaceDir    string
 	ConversationKey string // FormatConversationKey 产物（路由层按 (BotID, ConversationKey) 解析绑定）
-	IssueID         string // 路由层回填的绑定产物：目标 issue（空 = 未绑定）；仅 ACP 引擎消费，headless 忽略
+	AcpSessionKey   string // 路由层回填的会话锚键（issue uuid = 与桌面共享的任务会话；conv-<会话行id> = 未关联任务的 IM 独立会话；空 = headless 语义）；仅 ACP 引擎消费，headless 忽略
 	SessionID       string
 	Prompt          string                   // prompt.go 组装后的最终 user prompt
 	SystemPrompt    string                   // ComposeSystemPrompt 产物（固定守则段）

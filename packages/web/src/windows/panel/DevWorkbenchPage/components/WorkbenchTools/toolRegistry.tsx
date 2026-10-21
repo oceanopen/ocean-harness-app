@@ -4,31 +4,23 @@
  * ⚠️ 架构红线（终端链路同款铁律）：render 只是「视口」——有状态的工具会话必须后端常驻，tab 卸载只断渲染流、重挂载 reattach；纯前端持有状态禁止。
  */
 import type { SvgIconComponent } from '@mui/icons-material';
-import type { ProjectIssueResponseData } from '@src/services';
+import type { WorkspaceIssueResponseData } from '@src/services';
 import type { ReactNode } from 'react';
-import { Checklist as ChecklistIcon, FolderOutlined as FolderOutlinedIcon, Language as LanguageIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
+import { FolderOutlined as FolderOutlinedIcon, Language as LanguageIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
 import ImBotPanel from '../ImBotPanel/ImBotPanel';
-import IssueSubTaskPanel from '../IssueSubTaskPanel/IssueSubTaskPanel';
 import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
 import BrowserPanel from './BrowserPanel/BrowserPanel';
 
 /**
  * 工具渲染上下文：当前选中 issue（面板内容均围绕选中任务；hasSelection 已由外层保证非空）。
- * 回调由页面层注入（ToolPanelArea 透传）：issue 编辑抽屉/新建子任务抽屉均挂页面层
- * （共享 ProjectIssueDrawer，与项目事项管理同组件），工具内容内只发意图不挂抽屉。
  */
 export interface WorkbenchToolRenderCtx {
-  issue: ProjectIssueResponseData;
-  projectId: string; // uuid 字符串
+  issue: WorkspaceIssueResponseData;
   /**
    * 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：帧流类视口的暂停闸门
    * （浏览器面板实时画面「收起即停」，D4 展示侧对偶）。
    */
   panelVisible: boolean;
-  // 打开指定 issue 的编辑抽屉（如子任务卡片点击）。
-  onEditIssue: (issue: ProjectIssueResponseData) => void;
-  // 新建当前 issue 的子任务（create+parentIssue 抽屉，父 = ctx.issue）。
-  onCreateSubIssue: () => void;
 }
 
 // 工具定义：id 唯一；title 为 tab 头文案；exclusive 见文件头注释；render 渲染 tab 内容。
@@ -41,20 +33,6 @@ export interface WorkbenchToolDef {
 }
 
 export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
-  {
-    id: 'subtask',
-    title: '子任务',
-    icon: ChecklistIcon,
-    exclusive: true,
-    render: ({ issue, projectId, onEditIssue, onCreateSubIssue }) => (
-      <IssueSubTaskPanel
-        projectId={projectId}
-        issueId={issue.id}
-        onEditIssue={onEditIssue}
-        onCreateSubIssue={onCreateSubIssue}
-      />
-    ),
-  },
   {
     id: 'files',
     title: '文件',

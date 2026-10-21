@@ -105,7 +105,7 @@ func (svc IssueWorkspace) Status(req *types.IssueWorkspaceStatusRequest) (*types
  */
 func (svc IssueWorkspace) resolveIssueBaseDir(issueID string) (string, error) {
 	q := query.Use(svc.Orm)
-	issue, err := q.ProjectIssue.WithContext(svc.Context).Where(q.ProjectIssue.ID.Eq(issueID)).First()
+	issue, err := q.WorkspaceIssue.WithContext(svc.Context).Where(q.WorkspaceIssue.ID.Eq(issueID)).First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", errors.New("issue 不存在")

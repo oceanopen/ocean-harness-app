@@ -1,6 +1,5 @@
 import type { CommandConfig } from './types';
 import {
-  DashboardOutlined as DashboardOutlinedIcon,
   DeveloperModeOutlined as DeveloperModeOutlinedIcon,
   ExtensionOutlined as ExtensionOutlinedIcon,
   FolderOutlined as FolderOutlinedIcon,
@@ -70,7 +69,7 @@ export const commands: CommandConfig[] = [
     group: 'navigation',
     titleI18nKey: 'panel:commandPalette.nav.tracker',
     icon: <SpaceDashboardOutlinedIcon />,
-    keywords: ['tracker', 'workspace', 'projectIssue', 'kanban', '项目事项管理', '看板'],
+    keywords: ['tracker', 'workspace', 'workspaceIssue', 'kanban', '任务管理', '看板'],
     action: ctx => ctx.navigate('tracker'),
     closeOnSelect: true,
   },
@@ -118,23 +117,6 @@ export const commands: CommandConfig[] = [
     getSubtitle: ctx => (ctx.currentWorkspaceName ? `当前空间：${ctx.currentWorkspaceName}` : null),
     // 切二级页面而非直接关闭：选中后保留面板展示工作空间列表供二次过滤。
     action: ctx => ctx.setSubPage('workspace'),
-    closeOnSelect: false,
-  },
-  {
-    id: 'jump.project',
-    group: 'jump',
-    titleI18nKey: 'panel:commandPalette.jump.project',
-    icon: <DashboardOutlinedIcon />,
-    keywords: ['project', 'switch', '项目', '切换'],
-    /**
-     * 未选工作空间时软禁用（置灰 + 提示 + 回车无效），而非隐藏：项目列表依赖 workspaceId，
-     * 但恒定渲染让命令列表长度稳定（避免 cmdk 选中态失序），并引导用户"先选工作空间"。
-     */
-    isEnabled: ctx => ctx.currentWorkspaceId != null,
-    disabledHintI18nKey: 'panel:commandPalette.jump.projectDisabledHint',
-    // 前缀「当前项目：」硬编码中文（同 workspace 注释惯例），渲染时括注为「（当前项目：名称）」。
-    getSubtitle: ctx => (ctx.currentWorkspaceProjectName ? `当前项目：${ctx.currentWorkspaceProjectName}` : null),
-    action: ctx => ctx.setSubPage('project'),
     closeOnSelect: false,
   },
 ];

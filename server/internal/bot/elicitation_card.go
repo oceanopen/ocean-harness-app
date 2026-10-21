@@ -17,12 +17,12 @@ import (
 	"ocean-harness/server/internal/acpsession"
 )
 
-// elicit 卡 TaskID marker（与 -perm- 同族：acp-<issueID>@<会话代锚>-elicit-<pendingID>）。
+// elicit 卡 TaskID marker（与 -perm- 同族：acp-<sessionKey>@<会话代锚>-elicit-<pendingID>）。
 const elicitCardMarker = "-elicit-"
 
 // elicitCardTaskID 编码 elicitation 卡投递锚（复用审批卡的前缀/代锚/切分语义）。
-func elicitCardTaskID(issueID, acpSessionID string, pendingID uint64) string {
-	return permissionCardPrefix + issueID + permissionCardSessionSep +
+func elicitCardTaskID(sessionKey, acpSessionID string, pendingID uint64) string {
+	return permissionCardPrefix + sessionKey + permissionCardSessionSep +
 		permissionCardSessionToken(acpSessionID) + elicitCardMarker + strconv.FormatUint(pendingID, 10)
 }
 
@@ -30,7 +30,7 @@ func elicitCardTaskID(issueID, acpSessionID string, pendingID uint64) string {
  * parseElicitCardTaskID 解码 elicitation 卡投递锚；非本域形态返回 ok=false（与
  * parsePermissionCardTaskID 并列，TryHandleInteraction 按 marker 分流）。
  */
-func parseElicitCardTaskID(taskID string) (issueID, sessionToken string, pendingID uint64, ok bool) {
+func parseElicitCardTaskID(taskID string) (sessionKey, sessionToken string, pendingID uint64, ok bool) {
 	if !strings.HasPrefix(taskID, permissionCardPrefix) {
 		return "", "", 0, false
 	}
@@ -270,7 +270,7 @@ func orderedProperties(raw json.RawMessage) ([]struct {
  * elicitationCardSpec elicitation 挂起 → 卡 spec（首发与置灰重建的 SSOT，同
  * permissionCardSpec）。不可表示（ok=false）由调用方回落桌面指引文案。
  */
-func elicitationCardSpec(issueID, acpSessionID string, pending acpsession.PendingView) (CardSpec, bool) {
+func elicitationCardSpec(sessionKey, acpSessionID string, pending acpsession.PendingView) (CardSpec, bool) {
 	if pending.Kind != "elicitation" || pending.Request == nil || len(pending.Request.RequestedSchema) == 0 {
 		return CardSpec{}, false
 	}
@@ -281,7 +281,7 @@ func elicitationCardSpec(issueID, acpSessionID string, pending acpsession.Pendin
 	spec := CardSpec{
 		Title:  "Agent 请求输入",
 		Submit: true, // 统一 submit 语义：应答取提交回传的勾选集（方案阶段拍板③）
-		TaskID: elicitCardTaskID(issueID, acpSessionID, pending.PendingID),
+		TaskID: elicitCardTaskID(sessionKey, acpSessionID, pending.PendingID),
 	}
 	if msg := strings.TrimSpace(pending.Request.Message); msg != "" {
 		spec.Description = msg
@@ -305,11 +305,11 @@ func elicitationCardSpec(issueID, acpSessionID string, pending acpsession.Pendin
  * submit key 才承载应答——勾选集归一 content 后 accept（成功与后到方判别均置灰；其他失败不置灰可重试）。快照未就绪/代锚不符出失效文案不置灰；
  * 挂起已关闭（桌面先答/回合结算）经 decline 探测取 closed-history 判别文案（decline 只对开放挂起生效，快照 miss 后挂起已摘除不会被调用——探测安全，同审批域空 optionID 探测形态）。
  */
-func (r *driverRoute) handleElicitationInteraction(issueID, sessionToken string, pendingID uint64, in *Interaction) (string, *CardSpec, bool) {
+func (r *driverRoute) handleElicitationInteraction(sessionKey, sessionToken string, pendingID uint64, in *Interaction) (string, *CardSpec, bool) {
 	if in.ActionIndex >= 0 {
 		return "该表单为提交型：请在卡片中选择后点「提交」。", nil, true
 	}
-	snap := r.sessions.Get(issueID)
+	snap := r.sessions.Get(sessionKey)
 	if snap.Status != acpsession.StatusReady {
 		return "该表单卡已失效（ACP 会话已重启或未就绪），请重新发起对话后再试。", nil, true
 	}
@@ -322,7 +322,7 @@ func (r *driverRoute) handleElicitationInteraction(issueID, sessionToken string,
 		 * 已关闭：decline 探测的错误即收敛判别文案（closed-history：「该表单已由桌面端/IM
 		 * 应答（…）」/「该表单已随回合结束自动结算」；未命中历史则「不存在或已关闭」）。
 		 */
-		err := r.sessions.RespondElicitation(issueID, pendingID, "decline", nil, acpsession.PendingSourceBot)
+		err := r.sessions.RespondElicitation(sessionKey, pendingID, "decline", nil, acpsession.PendingSourceBot)
 		if err == nil {
 			return "该表单已处理。", nil, true // 已关闭挂起的 decline 不应成功，防御收口
 		}
@@ -342,12 +342,12 @@ func (r *driverRoute) handleElicitationInteraction(issueID, sessionToken string,
 	if !ok {
 		return "勾选内容与卡片不符，请重新在卡片中选择后点「提交」。", nil, true
 	}
-	gray, ok := elicitationCardSpec(issueID, snap.AcpSessionID, pending)
+	gray, ok := elicitationCardSpec(sessionKey, snap.AcpSessionID, pending)
 	if !ok {
 		return "该表单形态已变化，请在桌面端处理。", nil, true // classify 已过，此处恒 ok——防御收口
 	}
 	gray.Disabled = true
-	err := r.sessions.RespondElicitation(issueID, pendingID, "accept", content, acpsession.PendingSourceBot)
+	err := r.sessions.RespondElicitation(sessionKey, pendingID, "accept", content, acpsession.PendingSourceBot)
 	switch {
 	case err == nil:
 		return "✅ 已应答表单：" + elicitAnswerSummary(questions, content), &gray, true

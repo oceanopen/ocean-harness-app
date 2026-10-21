@@ -22,7 +22,7 @@ func gateTestRoute(resolve func(botID, workspaceID string, conversationKey strin
 }
 
 func acpResolve(botID, workspaceID string, conversationKey string) (routeTarget, error) {
-	return routeTarget{IssueID: "i-1", ACP: true}, nil
+	return routeTarget{SessionKey: "i-1", ACP: true}, nil
 }
 
 func headlessResolve(botID, workspaceID string, conversationKey string) (routeTarget, error) {
@@ -145,7 +145,7 @@ func TestPendingGateMisses(t *testing.T) {
 	sessions := newFakeSessions(gateSnap(permPendingView(11)))
 	route := gateTestRoute(acpResolve, sessions)
 
-	for _, text := range []string{"允许一下", "1a", "#任务", ""} {
+	for _, text := range []string{"允许一下", "1a", "#帮助", ""} {
 		if _, handled := route.TryRespondPending(gateCfg(), gateMsg(text)); handled {
 			t.Fatalf("非纯数字 %q 不应命中", text)
 		}

@@ -1,25 +1,24 @@
-import { Apps as AppsIcon, AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
-import { Box, CircularProgress, IconButton, Link, Typography } from '@mui/material';
-import { useTrackerStore, useWorkspaceProjects, useWorkspaces } from '@src/state/tracker';
+import type { WorkspaceModel } from '@src/services';
+import { Box, CircularProgress, Typography } from '@mui/material';
+import { useTrackerStore, useWorkspaces } from '@src/state/tracker';
 import { strParam, TRACKER_WID_PARAM } from '@src/windows/panel/routes';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import ProjectIssueList from './components/ProjectIssueList/ProjectIssueList';
-import WorkspaceProjectList from './components/WorkspaceProjectList/WorkspaceProjectList';
+import WorkspaceIssueList from './components/WorkspaceIssueList/WorkspaceIssueList';
+import WorkspaceList from './components/WorkspaceList/WorkspaceList';
 import WorkspacesView from './components/WorkspacesView/WorkspacesView';
 
-// TrackerPage：控制台「项目事项管理」页面内容组件（工作空间 → 项目 → Issue 三级管理）。
-// 三级选择态读写 tracker store（与命令面板共享同一份），故本组件无 props。
-// 嵌在 PanelApp 内容区内（panel 顶栏已显示「项目事项管理」页面名），故自身不再重复标题。
+// TrackerPage：控制台「任务管理」页面内容组件（工作空间 → 任务 两级管理）。
+// 选中态读写 tracker store（与命令面板共享同一份），故本组件无 props。
+// 嵌在 PanelApp 内容区内（panel 顶栏已显示「任务管理」页面名），故自身不再重复标题。
 //
-// 标题栏恒驻（选中/未选两态）：左侧「当前工作空间：<名称>」（未选显示「请先选择工作空间」置灰），
-// 右侧仅列表开关 icon（展开态实心 + primary 色标识）。新建空间入口在工作空间列表工具栏（刷新右侧）。
-// 空间卡片网格（WorkspacesView 完整视图）以页面内绝对定位叠层盖在主体内容上方（铺满标题栏以下区域，
-// 非弹窗样式）；未选时默认展开，选中后可再开。
+// 两栏布局：左栏工作空间行式列表（只读 + 叠层/刷新工具栏），右栏选中空间的任务视图；
+// 空间卡片网格（WorkspacesView 完整视图，空间级 CRUD/类型管理入口）以页面内绝对定位叠层
+// 盖在主体内容上方（铺满整页、非弹窗样式）。
 //
 // 路由接入（全 query 风格）：工作空间选中态由 URL ?wid=<id> 驱动；本页单向同步 URL→store。
-// 项目选中态保留 store（不入 URL）。store 全局，页面卸载/重挂载（声明式路由切走即卸载）不丢选中。
+// store 全局，页面卸载/重挂载（声明式路由切走即卸载）不丢选中。
 export default function TrackerPage() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
@@ -28,21 +27,16 @@ export default function TrackerPage() {
 
   const selected = useTrackerStore(s => s.selectedWorkspace);
   const selectWorkspace = useTrackerStore(s => s.selectWorkspace);
-  // 仅记选中项目 id（快照）；项目数据（含关联仓库 localRepositoryIds）从下方 query 实时派生，
-  // 避免读 store 快照导致 issue 弹窗仓库列表在项目更新关联仓库后陈旧。
-  const selectedProjectId = useTrackerStore(s => s.selectedWorkspaceProject?.id ?? null);
-  // 项目列表 query：与左栏 WorkspaceProjectList 共享同一缓存（同 key），命中即零请求。
-  const { data: workspaceProjects = [] } = useWorkspaceProjects(selected?.id ?? null);
-  // 工作空间全量（用于按 URL wid 回查实体，reload/恢复时回写 store）；与命令面板/WorkspacesView 共享缓存。
+  // 工作空间全量（用于按 URL wid 回查实体，reload/恢复时回写 store）；与命令面板/列表共享缓存。
   const { data: workspaces = [], isPending: workspacesPending } = useWorkspaces();
 
-  // 空间选择浮层开合：未选空间时默认展开（首访引导）；选中后收起，点列表 icon 可再开。
-  // reload 落在 ?wid=<id> 但 store 未回写时也保持展开，避免网格→浮层闪烁。
+  // 空间选择叠层开合：未选空间时默认展开（首访引导）；选中后收起，可经左栏工具栏再开。
+  // reload 落在 ?wid=<id> 但 store 未回写时也保持展开，避免网格→列表闪烁。
   const [selectorOpen, setSelectorOpen] = useState(selected == null && urlWid == null);
 
   // URL → store 单向同步：
   //   有 wid 且 store 不一致 → 按实体回写（reload/前进后退恢复）；
-  //   无 wid（bare /tracker，仅浮层「切换」语义可达）→ 清空选中回网格。
+  //   无 wid（bare /tracker）→ 清空选中（右栏回落空态提示）。
   useEffect(() => {
     if (urlWid == null) {
       if (selected) {
@@ -57,26 +51,21 @@ export default function TrackerPage() {
   }, [urlWid, selected, workspaces, selectWorkspace]);
 
   // 不可解析的 wid 兜底：加载完成但列表中无此实体（wid 指向已删除的工作空间 / 加载失败 data=[]），
-  // replace 回落 bare /tracker（上方 effect 随之清空 store、浮层展开），避免永久 spinner 无出口。
+  // replace 回落 bare /tracker（上方 effect 随之清空 store），避免永久 spinner 无出口。
   useEffect(() => {
     if (urlWid != null && !workspacesPending && !workspaces.some(w => w.id === urlWid)) {
       navigate('/tracker', { replace: true });
     }
   }, [urlWid, workspaces, workspacesPending, navigate]);
 
-  // 选中空间（浮层卡片点击 / URL 回写同口径）：写 store + 写 URL + 收起浮层。
-  const handleSelectWorkspace = (ws: Parameters<typeof selectWorkspace>[0]) => {
-    if (ws) {
-      selectWorkspace(ws);
-      navigate(`/tracker?${TRACKER_WID_PARAM}=${ws.id}`);
-    } else {
-      selectWorkspace(null);
-      navigate('/tracker');
-    }
+  // 选中空间（列表行/叠层卡片点击 / URL 回写同口径）：写 store + 写 URL + 收起叠层。
+  const handleSelectWorkspace = (ws: WorkspaceModel) => {
+    selectWorkspace(ws);
+    navigate(`/tracker?${TRACKER_WID_PARAM}=${ws.id}`);
     setSelectorOpen(false);
   };
 
-  // reload 落在 ?wid=<id> 但 store 尚未回写时，显示加载态而非网格闪烁一下。
+  // reload 落在 ?wid=<id> 但 store 尚未回写时，显示加载态而非列表闪烁一下。
   // （wid 不可解析时由上方兜底 effect replace 回落，不会停在此分支。）
   if (urlWid != null && !selected) {
     return (
@@ -86,120 +75,47 @@ export default function TrackerPage() {
     );
   }
 
-  // 按 id 从最新 query 数据派生选中项目：关联仓库等随项目刷新自动更新（修复 issue 弹窗仓库列表陈旧）。
-  const selectedWorkspaceProject = selectedProjectId != null
-    ? workspaceProjects.find(p => p.id === selectedProjectId) ?? null
-    : null;
-
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* 工作空间标题栏（恒驻）：当前工作空间名（未选置灰提示）+ 列表开关 icon */}
+    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      {/* 空间选择叠层：铺满整页，选中空间或经左栏工具栏收起 */}
+      {selectorOpen && (
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: '0px',
+            zIndex: theme => theme.zIndex.appBar - 1,
+            bgcolor: 'background.default',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <WorkspacesView onSelect={ws => handleSelectWorkspace(ws)} />
+        </Box>
+      )}
+
+      {/* 左栏：工作空间行式列表（宽 260，选中态经 URL 同步 store） */}
       <Box
         sx={{
-          height: '48px',
+          width: '260px',
           flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          px: '16px',
-          gap: '8px',
-          borderBottom: '1px solid',
+          borderRight: '1px solid',
           borderColor: 'divider',
-          bgcolor: 'background.paper',
+          overflow: 'hidden',
         }}
       >
-        <Typography variant="subtitle1" sx={{ fontWeight: 600 }} noWrap>
-          {selected
-            ? (
-              // 前缀「当前工作空间：」用次级色 + 细字重，与名称做区分；
-              // 名称可点击（link 样式）：默认标题字色，hover 转 primary（无下划线），点击切换空间列表浮层（与右侧开关 icon 同口径）
-                <>
-                  <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>
-                    {t('tracker:workspace.current')}
-                  </Box>
-                  <Link
-                    component="button"
-                    underline="none"
-                    onClick={() => setSelectorOpen(o => !o)}
-                    aria-label={t('tracker:workspace.actions.switch')}
-                    sx={{ 'color': selectorOpen ? 'primary.main' : 'text.primary', 'fontWeight': 600, '&:hover': { color: 'primary.main' } }}
-                  >
-                    {selected.name}
-                  </Link>
-                </>
-              )
-            : (
-              // 未选：整句置灰（与「当前工作空间：」前缀同色）
-                <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>
-                  {t('tracker:workspace.selectHint')}
-                </Box>
-              )}
-        </Typography>
-        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '4px' }}>
-          {/* 展开空间列表浮层（标题栏下方，不遮盖标题栏）：展开态实心 + primary 色与收起态区分 */}
-          <IconButton
-            size="small"
-            onClick={() => setSelectorOpen(o => !o)}
-            aria-label={t('tracker:workspace.actions.switch')}
-            sx={{ color: selectorOpen ? 'primary.main' : 'text.secondary' }}
-          >
-            {selectorOpen ? <AppsIcon /> : <AppsOutlinedIcon />}
-          </IconButton>
-        </Box>
+        <WorkspaceList
+          selectedId={selected?.id ?? null}
+          onSelect={handleSelectWorkspace}
+          onOpenOverlay={() => setSelectorOpen(true)}
+        />
       </Box>
 
-      {/* 主体区域（标题栏以下整块）：已选 → 左项目列表 / 右 projectIssue 三栏；未选 → 空态引导。
-          空间选择叠层（WorkspacesView 完整视图）叠加在本区域内上方（非弹窗样式——铺满整个主体区、
-          无边框/圆角/阴影）。 */}
-      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
-        {/* 空间选择叠层：铺满主体区（标题栏以下），选中空间或再点列表 icon 收起 */}
-        {selectorOpen && (
-          <Box
-            sx={{
-              position: 'absolute',
-              inset: '0px',
-              zIndex: theme => theme.zIndex.appBar - 1,
-              bgcolor: 'background.default',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <WorkspacesView onSelect={ws => handleSelectWorkspace(ws)} />
-          </Box>
-        )}
+      {/* 右栏：任务视图（key 随空间切换重挂载，重置筛选/视图模式；未选空间时空态提示） */}
+      <Box sx={{ flex: 1, overflow: 'hidden' }}>
         {selected
-          ? (
-              <>
-                {/* 左栏：workspaceProject 列表（宽 260，选中态读写 store） */}
-                <Box
-                  sx={{
-                    width: '260px',
-                    flexShrink: 0,
-                    borderRight: '1px solid',
-                    borderColor: 'divider',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <WorkspaceProjectList workspace={selected} />
-                </Box>
-
-                {/* 右栏：projectIssue 列表（选中项目后渲染；key 随项目切换重挂载，重置筛选/折叠并重新加载） */}
-                <Box sx={{ flex: 1, overflow: 'hidden' }}>
-                  {selectedWorkspaceProject
-                    ? (
-                        <ProjectIssueList key={selectedWorkspaceProject.id} workspaceProject={selectedWorkspaceProject} />
-                      )
-                    : (
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: '16px' }}>
-                          <Typography variant="body2" color="text.secondary">
-                            {t('tracker:projectIssue.emptyHint')}
-                          </Typography>
-                        </Box>
-                      )}
-                </Box>
-              </>
-            )
+          ? <WorkspaceIssueList key={selected.id} workspace={selected} />
           : (
-              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', p: '16px' }}>
                 <Typography variant="body2" color="text.secondary">
                   {t('tracker:workspace.selectHint')}
                 </Typography>

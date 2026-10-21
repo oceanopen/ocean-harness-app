@@ -3,21 +3,19 @@ package bot
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
 )
 
-/*
- * stubChannelRuntime 渠道运行时替身：只记 Start 次数（ApplyBotAsync 的可观测面是
- * 「延迟后渠道被重新拉起」，连接语义本身不进本测试域）。
- */
+// stubChannelRuntime 渠道运行时替身：只记 Start 次数（连接语义本身不进本测试域）。
 type stubChannelRuntime struct {
 	mu     sync.Mutex
 	starts int
@@ -51,119 +49,121 @@ func (f *stubChannelFactory) Channel() enums.Channel { return enums.CHANNEL_WECO
 
 func (f *stubChannelFactory) Create() (ChannelRuntime, error) { return f.rt, nil }
 
-// shortenApplyDelay 缩短热重载延迟并注册还原（包级变量，生产 1s 太长进不了测试）。
-func shortenApplyDelay(t *testing.T) {
-	t.Helper()
-	old := applyBotAsyncDelay
-	applyBotAsyncDelay = 10 * time.Millisecond
-	t.Cleanup(func() { applyBotAsyncDelay = old })
-}
+// stubFailingFactory Create 恒失败的工厂替身（last_error 回写链路验证）。
+type stubFailingFactory struct{}
+
+func (f *stubFailingFactory) Channel() enums.Channel { return enums.CHANNEL_WECOM }
+
+func (f *stubFailingFactory) Create() (ChannelRuntime, error) { return nil, errors.New("渠道创建失败") }
 
 /*
- * newSupervisorHarness 装配被测 supervisor + 已注册渠道替身（bot 行恒 bot-1，
- * WorkspaceID 空 = 不触工作空间表，故夹具库只建 ImBot 表）。
+ * newSupervisorHarness 装配被测 supervisor + 已注册渠道替身 + 单条启用 bot 行
+ * （bot-1，open 策略，WorkspaceID 空 = 不触工作空间表）。
  */
 func newSupervisorHarness(t *testing.T) (*Supervisor, *stubChannelRuntime) {
 	t.Helper()
 	db := newBotTestDB(t, &model.ImBot{})
-	mkBot(t, db, "")
+	createBotRow(t, db, "bot-1", enums.YES_NO_YES)
 	rt := &stubChannelRuntime{}
 	s := NewSupervisor(db, 9100, nil, NewDeliveryRegistry(), zap.NewNop())
 	s.Register(&stubChannelFactory{rt: rt})
 	return s, rt
 }
 
-/*
- * TestApplyBotAsyncReload 启用行：延迟后重读行 → ApplyBot → 渠道被拉起；附带装配断言
- * （supervisor 以 botApplier 第四依赖注入路由驱动）。
- */
-func TestApplyBotAsyncReload(t *testing.T) {
-	shortenApplyDelay(t)
-	s, rt := newSupervisorHarness(t)
-
-	route, ok := s.orch.driver.(*driverRoute)
-	if !ok || route.applier == nil {
-		t.Fatal("NewSupervisor 应将自身以 botApplier 注入路由驱动")
-	}
-
-	s.ApplyBotAsync("bot-1")
-	waitFor(t, "延迟热重载拉起渠道", func() bool { return rt.startCount() == 1 })
-}
-
-/*
- * TestApplyBotAsyncBotDeleted 行已删：静默跳过（NotFound 不拉渠道不报错）。负向断言，
- * 有界等待（约 15× 延迟窗）后收口。
- */
-func TestApplyBotAsyncBotDeleted(t *testing.T) {
-	shortenApplyDelay(t)
-	s, rt := newSupervisorHarness(t)
-
-	q := query.Use(s.db)
-	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq("bot-1")).Delete(); err != nil {
-		t.Fatalf("删 bot 行: %v", err)
-	}
-	s.ApplyBotAsync("bot-1")
-	time.Sleep(150 * time.Millisecond)
-	if rt.startCount() != 0 {
-		t.Fatalf("行已删应跳过热重载: starts=%d", rt.startCount())
+// createBotRow 建单条 bot 行（enabled 控制启用位，open 策略免凭据校验）。
+func createBotRow(t *testing.T, db *gorm.DB, botID string, enabled enums.YesNo) {
+	t.Helper()
+	q := query.Use(db)
+	if err := q.ImBot.WithContext(context.Background()).Create(&model.ImBot{
+		ID: botID, Name: "bot", Channel: enums.CHANNEL_WECOM,
+		AccessPolicy: `{"mode":"open"}`, Enabled: enabled,
+	}); err != nil {
+		t.Fatalf("建 bot 行: %v", err)
 	}
 }
 
-/*
- * TestApplyBotAsyncDisabled 停用行：对齐 service 层 applyRuntime 语义走 StopBot
- * （未在跑为 no-op），不拉渠道。
- */
-func TestApplyBotAsyncDisabled(t *testing.T) {
-	shortenApplyDelay(t)
+// botRow 读回 bot 行（ApplyBot 入参）。
+func botRow(t *testing.T, db *gorm.DB, botID string) *model.ImBot {
+	t.Helper()
+	q := query.Use(db)
+	row, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(botID)).First()
+	if err != nil {
+		t.Fatalf("读 bot 行: %v", err)
+	}
+	return row
+}
+
+// lastErrorOf 读回 bot 行的 last_error 列。
+func lastErrorOf(t *testing.T, db *gorm.DB, botID string) string {
+	t.Helper()
+	return botRow(t, db, botID).LastError
+}
+
+// TestApplyBotStartsChannel 启用行 ApplyBot：渠道被拉起且 last_error 保持清空。
+func TestApplyBotStartsChannel(t *testing.T) {
 	s, rt := newSupervisorHarness(t)
 
-	q := query.Use(s.db)
-	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq("bot-1")).
-		UpdateSimple(q.ImBot.Enabled.Value(enums.YES_NO_NO)); err != nil {
-		t.Fatalf("停用 bot: %v", err)
+	if err := s.ApplyBot(botRow(t, s.db, "bot-1")); err != nil {
+		t.Fatalf("启用行应受理: %v", err)
 	}
-	s.ApplyBotAsync("bot-1")
-	time.Sleep(150 * time.Millisecond)
-	if rt.startCount() != 0 {
-		t.Fatalf("停用行应走 StopBot 而非拉渠道: starts=%d", rt.startCount())
+	if rt.startCount() != 1 {
+		t.Fatalf("渠道应恰拉起一次: starts=%d", rt.startCount())
+	}
+	if msg := lastErrorOf(t, s.db, "bot-1"); msg != "" {
+		t.Fatalf("成功受理应清空 last_error: %q", msg)
 	}
 }
 
-/*
- * TestApplyBotAsyncDisabledWithinWindow 核心语义回归防护：行变更落在延迟窗口内——
- * goroutine 醒来后须重读行（非调用时点快照）走停用分支不拉渠道（若实现退化为调用时
- * 快照，调用时行启用 → 拉渠道 → 本测试失败）。
- */
-func TestApplyBotAsyncDisabledWithinWindow(t *testing.T) {
-	old := applyBotAsyncDelay
-	applyBotAsyncDelay = 50 * time.Millisecond // 留足窗口内改行余量
-	t.Cleanup(func() { applyBotAsyncDelay = old })
+// TestApplyBotChannelFailureWritesLastError 渠道启动失败：受理报错且 last_error 落库可见。
+func TestApplyBotChannelFailureWritesLastError(t *testing.T) {
+	db := newBotTestDB(t, &model.ImBot{})
+	createBotRow(t, db, "bot-1", enums.YES_NO_YES)
+	s := NewSupervisor(db, 9100, nil, NewDeliveryRegistry(), zap.NewNop())
+	s.Register(&stubFailingFactory{})
+
+	err := s.ApplyBot(botRow(t, db, "bot-1"))
+	if err == nil || !strings.Contains(err.Error(), "渠道创建失败") {
+		t.Fatalf("渠道启动失败应同步报错: %v", err)
+	}
+	if msg := lastErrorOf(t, db, "bot-1"); !strings.Contains(msg, "渠道创建失败") {
+		t.Fatalf("失败应回写 last_error: %q", msg)
+	}
+}
+
+// TestStartEnabledRunsEnabledBots 启动清单：enabled 行被拉起。
+func TestStartEnabledRunsEnabledBots(t *testing.T) {
 	s, rt := newSupervisorHarness(t)
 
-	s.ApplyBotAsync("bot-1") // goroutine 已起未醒
-	q := query.Use(s.db)
-	if _, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq("bot-1")).
-		UpdateSimple(q.ImBot.Enabled.Value(enums.YES_NO_NO)); err != nil {
-		t.Fatalf("窗口内停用 bot: %v", err)
-	}
-	time.Sleep(200 * time.Millisecond)
-	if rt.startCount() != 0 {
-		t.Fatalf("窗口内停用后醒来重读应走 StopBot 不拉渠道: starts=%d", rt.startCount())
+	s.StartEnabled()
+	if rt.startCount() != 1 {
+		t.Fatalf("enabled 行应被启动: starts=%d", rt.startCount())
 	}
 }
 
 /*
- * TestApplyBotAsyncAfterStopAll StopAll 后 applier 不得复活渠道（stopped 生命周期守卫；
- * 渠道工厂注册表不清空，无守卫时渠道会被重新拉起——本测试即失败）。
+ * TestEnsureStartedAfterStopAll StopAll 后不得复活渠道（stopped 生命周期守卫；渠道工厂
+ * 注册表不清空，无守卫时渠道会被重新拉起——本测试即失败）。
  */
-func TestApplyBotAsyncAfterStopAll(t *testing.T) {
-	shortenApplyDelay(t)
+func TestEnsureStartedAfterStopAll(t *testing.T) {
 	s, rt := newSupervisorHarness(t)
 	s.StopAll()
 
-	s.ApplyBotAsync("bot-1")
-	time.Sleep(150 * time.Millisecond)
+	cfg := BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WECOM, AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	if err := s.EnsureStarted(cfg); err == nil || !strings.Contains(err.Error(), "拒绝启动") {
+		t.Fatalf("StopAll 后应拒绝启动: %v", err)
+	}
 	if rt.startCount() != 0 {
-		t.Fatalf("StopAll 后不应复活渠道: starts=%d", rt.startCount())
+		t.Fatalf("StopAll 后不应拉起渠道: starts=%d", rt.startCount())
+	}
+}
+
+// TestStopBotIdempotent 未在跑的 bot 停止为 no-op（幂等）。
+func TestStopBotIdempotent(t *testing.T) {
+	s, rt := newSupervisorHarness(t)
+
+	s.StopBot("bot-ghost")
+	s.StopBot("bot-ghost")
+	if rt.startCount() != 0 {
+		t.Fatalf("未知 bot 停止不应触碰渠道: starts=%d", rt.startCount())
 	}
 }

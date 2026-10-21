@@ -12,7 +12,7 @@ import (
 )
 
 /*
- * WorkspaceType 对应 /api/tracker/workspaceType 命名空间下的业务逻辑。type 只挂 workspace，所有项目共享一套通用类型（无 project 级归属）；issue 经 t_project_issues.type_id 单值引用（每 issue 至多一个类型）。
+ * WorkspaceType 对应 /api/tracker/workspaceType 命名空间下的业务逻辑。type 只挂 workspace；issue 经 t_workspace_issues.type_id 单值引用（每 issue 至多一个类型）。
  * 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger。
  */
 type WorkspaceType struct {
@@ -107,9 +107,9 @@ func (svc WorkspaceType) Delete(req *types.WorkspaceTypeDeleteRequest) error {
 			return e
 		}
 		// 3) 引用该类型的 issue 置为未分类（type_id=0）。
-		if _, e := q.ProjectIssue.WithContext(svc.Context).
-			Where(q.ProjectIssue.TypeID.Eq(req.ID)).
-			Update(q.ProjectIssue.TypeID, 0); e != nil {
+		if _, e := q.WorkspaceIssue.WithContext(svc.Context).
+			Where(q.WorkspaceIssue.TypeID.Eq(req.ID)).
+			Update(q.WorkspaceIssue.TypeID, 0); e != nil {
 			return e
 		}
 		return nil

@@ -124,7 +124,7 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {/* 头部：左计数；右模式切换（全部文件 / Git 变更）+ 刷新（isFetching 旋转，IssueSubTaskPanel 同款） */}
+      {/* 头部：左计数；右模式切换（全部文件 / Git 变更）+ 刷新（isFetching 旋转） */}
       <PanelToolbar
         left={(
           <Typography variant="caption" color="text.secondary" noWrap>

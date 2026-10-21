@@ -32,7 +32,6 @@ import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } f
 import TerminalView from './TerminalView';
 import { useClaudeRunning } from './useClaudeRunning';
 import { usePtySession } from './usePtySession';
-import { useRefineInjection } from './useRefineInjection';
 
 // 终端字号 decode：非法/不在选项集回落 12（terminal_03 §3.3）。模块级保证引用稳定。
 function decodeTerminalFontSize(raw: string | null): TerminalFontSize {
@@ -229,18 +228,6 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
   const startClaude = useCallback(() => {
     session.write('claude\r');
   }, [session]);
-  /**
-   * 润色命令注入编排（T3.3）：main pane 专属，消费「AI 润色」按钮写入的一次性意图
-   * 标志（工作空间闸门放行、会话 active 后自治编排，见 useRefineInjection 注释）。
-   */
-  useRefineInjection({
-    issueId,
-    enabled: isMain,
-    sessionStatus: session.status,
-    spawnKind: session.spawnKind,
-    write: session.write,
-    showToast,
-  });
   // 「新开终端」按配置直启：配置 none 裸 shell / 配置 claude 起新 claude 会话。
   const reopenPlain = useCallback(() => {
     session.reopen();

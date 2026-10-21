@@ -36,7 +36,7 @@ func SetupRouter() *gin.Engine {
 
 	/*
 	 * 路由按命名空间分组：/api/baseInfo（系统信息）；/api/localRepository、/api/issueWorkspace（独立顶层域）；
-	 * /api/tracker/<module>/<action>（工作区/项目/issue 等管理域）。
+	 * /api/tracker/<module>/<action>（工作区/issue 等管理域）。
 	 */
 	apiGroup := r.Group("/api")
 	{
@@ -191,17 +191,6 @@ func SetupRouter() *gin.Engine {
 				workspaceGroup.POST("/delete", controller.Workspace{}.Delete)
 			}
 
-			// project 模块：项目 CRUD（action 风格，POST）。
-			projectGroup := trackerGroup.Group("/project")
-			{
-				projectGroup.POST("/getList", controller.Project{}.GetList)
-				projectGroup.POST("/getInfo", controller.Project{}.GetInfo)
-				projectGroup.POST("/create", controller.Project{}.Create)
-				projectGroup.POST("/update", controller.Project{}.Update)
-				projectGroup.POST("/delete", controller.Project{}.Delete)
-				// 项目 ↔ 本地仓库 关联随 create/update 全量保存，ids 随项目响应返回（无独立读接口）。
-			}
-
 			// workspaceType 模块：类型 CRUD（action 风格，POST）。
 			workspaceTypeGroup := trackerGroup.Group("/workspaceType")
 			{
@@ -212,15 +201,15 @@ func SetupRouter() *gin.Engine {
 				workspaceTypeGroup.POST("/delete", controller.WorkspaceType{}.Delete)
 			}
 
-			// projectIssue 模块：issue CRUD + move（看板拖拽，action 风格，POST）。
-			projectIssueGroup := trackerGroup.Group("/projectIssue")
+			// workspaceIssue 模块：issue CRUD + move（看板拖拽，action 风格，POST）。
+			workspaceIssueGroup := trackerGroup.Group("/workspaceIssue")
 			{
-				projectIssueGroup.POST("/getList", controller.ProjectIssue{}.GetList)
-				projectIssueGroup.POST("/getInfo", controller.ProjectIssue{}.GetInfo)
-				projectIssueGroup.POST("/create", controller.ProjectIssue{}.Create)
-				projectIssueGroup.POST("/update", controller.ProjectIssue{}.Update)
-				projectIssueGroup.POST("/delete", controller.ProjectIssue{}.Delete)
-				projectIssueGroup.POST("/move", controller.ProjectIssue{}.Move)
+				workspaceIssueGroup.POST("/getList", controller.WorkspaceIssue{}.GetList)
+				workspaceIssueGroup.POST("/getInfo", controller.WorkspaceIssue{}.GetInfo)
+				workspaceIssueGroup.POST("/create", controller.WorkspaceIssue{}.Create)
+				workspaceIssueGroup.POST("/update", controller.WorkspaceIssue{}.Update)
+				workspaceIssueGroup.POST("/delete", controller.WorkspaceIssue{}.Delete)
+				workspaceIssueGroup.POST("/move", controller.WorkspaceIssue{}.Move)
 			}
 		}
 	}

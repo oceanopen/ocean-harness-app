@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/dal/model"
+	"ocean-harness/server/internal/dal/query"
 )
 
 /*
@@ -33,84 +35,44 @@ func newConversationTestDB(t *testing.T) *gorm.DB {
 }
 
 /*
- * TestConversationStoreBoundIssueRoundtrip 绑定锚读写验收：新会话默认空、写入读回、
- * 幂等覆盖、解绑（空串）回到未绑定态。
+ * newIssueTestDB 编排器链路夹具：会话映射 + 工作空间/任务表（stub 驱动用例仅消费会话表，
+ * 真路由用例按需读写工作空间/任务行）。
  */
-func TestConversationStoreBoundIssueRoundtrip(t *testing.T) {
-	store := &ConversationStore{DB: newConversationTestDB(t)}
-	const botID = "bot-1"
-	const convKey = "single:u1"
-
-	if got, err := store.BoundIssueID(botID, convKey); err != nil || got != "" {
-		t.Fatalf("新会话应未绑定且 GetOrCreate 不报错: got=%q err=%v", got, err)
-	}
-	if rows, err := store.SaveBoundIssueID(botID, convKey, "issue-1"); err != nil || rows != 1 {
-		t.Fatalf("写绑定应恰一行受影响: rows=%d err=%v", rows, err)
-	}
-	if got, err := store.BoundIssueID(botID, convKey); err != nil || got != "issue-1" {
-		t.Fatalf("绑定读回: got=%q err=%v", got, err)
-	}
-	// 幂等覆盖（换绑）。
-	if _, err := store.SaveBoundIssueID(botID, convKey, "issue-2"); err != nil {
-		t.Fatalf("换绑: %v", err)
-	}
-	if got, _ := store.BoundIssueID(botID, convKey); got != "issue-2" {
-		t.Fatalf("换绑后应指向新 issue: got=%q", got)
-	}
-	// 解绑 = 空串覆盖，回到未绑定态。
-	if rows, err := store.SaveBoundIssueID(botID, convKey, ""); err != nil || rows != 1 {
-		t.Fatalf("解绑应恰一行受影响: rows=%d err=%v", rows, err)
-	}
-	if got, _ := store.BoundIssueID(botID, convKey); got != "" {
-		t.Fatalf("解绑后应为空: got=%q", got)
-	}
-	// 会话键隔离：同 bot 其他会话不受影响（各自独立的绑定锚）。
-	if got, _ := store.BoundIssueID(botID, "single:u2"); got != "" {
-		t.Fatalf("其他会话不应受绑定影响: got=%q", got)
-	}
+func newIssueTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	return newBotTestDB(t, &model.ImBotConversation{}, &model.Workspace{}, &model.WorkspaceIssue{})
 }
 
 /*
- * TestConversationStoreBoundIssueOrthogonalToSession 两锚正交契约：绑定/解绑均不触碰
- * headless 续聊锚 claude_session_id（反之亦然）。
+ * TestConversationStoreSessionAnchorsOrthogonal 同表双锚正交契约：SaveSessionID 只写
+ * claude_session_id，acp_session_id（acpsession.BindingStore 维护）不受触碰。
  */
-func TestConversationStoreBoundIssueOrthogonalToSession(t *testing.T) {
+func TestConversationStoreSessionAnchorsOrthogonal(t *testing.T) {
 	store := &ConversationStore{DB: newConversationTestDB(t)}
 	const botID, convKey = "bot-1", "group:c1"
 
-	// SaveSessionID/SaveBoundIssueID 均为 UPDATE 语义（无行空转）：先显式建行。
 	if _, err := store.GetOrCreate(botID, convKey); err != nil {
 		t.Fatalf("预置会话行: %v", err)
 	}
 	if err := store.SaveSessionID(botID, convKey, "sess-abc"); err != nil {
 		t.Fatalf("写续聊锚: %v", err)
 	}
-	if _, err := store.SaveBoundIssueID(botID, convKey, "issue-1"); err != nil {
-		t.Fatalf("写绑定: %v", err)
-	}
-	if _, err := store.SaveBoundIssueID(botID, convKey, ""); err != nil {
-		t.Fatalf("解绑: %v", err)
-	}
-	if sess, err := store.SessionID(botID, convKey); err != nil || sess != "sess-abc" {
-		t.Fatalf("解绑不得清续聊锚: sess=%q err=%v", sess, err)
+	// 直写 ACP 锚模拟 BindingStore 行为，再回写续聊锚互验。
+	q := query.Use(store.DB)
+	if _, err := q.ImBotConversation.WithContext(context.Background()).
+		Where(q.ImBotConversation.BotID.Eq(botID), q.ImBotConversation.ConversationKey.Eq(convKey)).
+		UpdateSimple(q.ImBotConversation.AcpSessionID.Value("acp-1")); err != nil {
+		t.Fatalf("直写 ACP 锚: %v", err)
 	}
 	if err := store.SaveSessionID(botID, convKey, "sess-def"); err != nil {
 		t.Fatalf("回写续聊锚: %v", err)
 	}
-	if bound, _ := store.BoundIssueID(botID, convKey); bound != "" {
-		t.Fatalf("续聊锚回写不得触碰绑定: bound=%q", bound)
+	row, err := q.ImBotConversation.WithContext(context.Background()).Where(
+		q.ImBotConversation.BotID.Eq(botID), q.ImBotConversation.ConversationKey.Eq(convKey)).First()
+	if err != nil {
+		t.Fatalf("读回会话行: %v", err)
 	}
-}
-
-/*
- * TestConversationStoreSaveBoundIssueZeroRows 0 行语义契约（F4）：行不在场时 UPDATE 无错
- * 但受影响行数为 0——绑定路径调用方据此按失败收口（防「静默成功假象」），解绑路径幂等
- * 语义忽略行数。
- */
-func TestConversationStoreSaveBoundIssueZeroRows(t *testing.T) {
-	store := &ConversationStore{DB: newConversationTestDB(t)}
-	rows, err := store.SaveBoundIssueID("bot-1", "single:ghost", "issue-1") // 不预置行
-	if err != nil || rows != 0 {
-		t.Fatalf("行不在场应为 0 行且非 error: rows=%d err=%v", rows, err)
+	if row.ClaudeSessionID != "sess-def" || row.AcpSessionID != "acp-1" {
+		t.Fatalf("双锚应互不触碰: claude=%q acp=%q", row.ClaudeSessionID, row.AcpSessionID)
 	}
 }

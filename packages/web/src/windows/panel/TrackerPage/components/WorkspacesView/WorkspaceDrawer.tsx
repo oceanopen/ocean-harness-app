@@ -1,22 +1,33 @@
-import type { WorkspaceLaunchSettings, WorkspaceModel } from '@src/services';
+import type { LocalRepositoryModel, WorkspaceLaunchSettings, WorkspaceModel } from '@src/services';
 import type { AgentCode } from '@src/shared/agentCode';
-import { CloseOutlined as CloseOutlinedIcon, FolderOpen as FolderOpenIcon } from '@mui/icons-material';
-import { Alert, Box, Button, IconButton, InputAdornment, TextField, Typography } from '@mui/material';
+import { CloseOutlined as CloseOutlinedIcon, EmojiEmotionsOutlined as EmojiEmotionsOutlinedIcon, FolderOpen as FolderOpenIcon } from '@mui/icons-material';
+import {
+  Alert,
+  Autocomplete,
+  Box,
+  Button,
+  Chip,
+  IconButton,
+  InputAdornment,
+  Popover,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import LaunchSettingsFields from '@src/shared/LaunchSettingsFields';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useEffectiveAcpAgentCode } from '@src/state/agentCatalog';
+import { useLocalRepositories } from '@src/state/localRepositories';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 // 新建/编辑工作空间抽屉。
 // 传入 workspace 时为编辑模式：标题改为"编辑工作空间"、ID 只读展示、字段反显、提交调用 update；
 // 不传则为新建模式，行为不变。
-// 底部「启动设置」区块（launch_settings）：workspace 单源，无全局回落。启动模式四档——
-// none（默认，就绪后出启动方式选择面板）/ 自动打开终端（裸 shell，Agent 经工具条自选）/
-// 终端 - 自动启动（「终端 Agent」下拉 = autoCommand）/ ACP 会话（「ACP Agent」=
-// agentCode + 执行模式）。新增文案中文直出（仅本文件既有字段走 i18n）。
+// 字段：基础信息（名称/目录/emoji/描述）+ 关联仓库（多选，随空间一起全量保存）+ 启动设置
+// （launch_settings：workspace 单源，无全局回落，未配置等同手动）。
 //
 // 由父组件按需挂载（{open && <WorkspaceDrawer/>}）：每次打开都是全新 useState 初值，
 // 无需重置 effect；关闭即卸载。
@@ -27,17 +38,59 @@ interface WorkspaceDrawerProps {
   workspace?: WorkspaceModel;
 }
 
-// 描述最大字数（与后端 binding max=500 对齐）。
+// 描述/emoji 最大字数（与后端 binding max=500 / max=20 对齐）。
 const DESCRIPTION_MAX = 500;
+const EMOJI_MAX = 20;
+
+// 工作空间图标常用 emoji 预设（点选填入，仍可在上方文本框自定义粘贴/清空）。
+const EMOJI_PRESETS = [
+  '🚀',
+  '🎯',
+  '📦',
+  '💡',
+  '🔥',
+  '⚡',
+  '🛠️',
+  '📊',
+  '🎨',
+  '🧩',
+  '🔒',
+  '🔑',
+  '🌐',
+  '📱',
+  '💻',
+  '🐛',
+  '✨',
+  '🌱',
+  '📈',
+  '🏗️',
+  '🧪',
+  '📚',
+  '🎮',
+  '🎵',
+  '🗂️',
+  '💼',
+  '🏠',
+  '⭐',
+  '🔔',
+  '✅',
+  '🏆',
+  '💎',
+];
 
 function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: WorkspaceDrawerProps) {
   const { t } = useTranslation();
   const isEdit = !!workspace;
   const createWs = useCreateWorkspace();
   const updateWs = useUpdateWorkspace();
+  // 关联仓库：全量仓库（选项）；编辑模式选中态直接从空间 prop 回显（空间响应自带 localRepositoryIds）。
+  const allReposQuery = useLocalRepositories();
+  const allRepos: LocalRepositoryModel[] = allReposQuery.data ?? [];
   const [name, setName] = useState(workspace?.name ?? '');
   const [dir, setDir] = useState(workspace?.dir ?? '');
+  const [emoji, setEmoji] = useState(workspace?.emoji ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
+  const [selectedRepoIds, setSelectedRepoIds] = useState<number[]>(workspace?.localRepositoryIds ?? []);
   const [launchMode, setLaunchMode] = useState<NonNullable<WorkspaceLaunchSettings['mode']>>(
     workspace?.launchSettings?.mode ?? 'none',
   );
@@ -52,6 +105,10 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // emoji 选择浮层锚点（null=关闭；点按钮设为输入框根节点，点表情/外部关闭清空）。
+  const [emojiPickerAnchor, setEmojiPickerAnchor] = useState<HTMLElement | null>(null);
+  // emoji 输入框根节点 ref：作为选择浮层锚点，使浮层在输入框下方展开（而非按钮下方）。
+  const textFieldRef = useRef<HTMLDivElement | null>(null);
 
   const handleBrowse = async () => {
     // directory: true 多选关闭，返回 string | null。
@@ -68,9 +125,8 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     setSubmitting(true);
     setError(null);
     try {
-      // none / 手动档只带 mode（手动 = 自动打开终端，不自动拉起 Agent，经终端工具条
-      // 自行选择）；自动档带 autoCommand（直启目标）；ACP 会话带 agentCode（= 目录
-      // 条目 code，未显式选择时为派生默认）+ permissionMode。
+      // 关联仓库随空间信息一起保存（后端 create/update 事务内全量写入，无独立增删接口）。
+      // none / 手动档只带 mode；自动档带 autoCommand（直启目标）；ACP 会话带 agentCode + permissionMode。
       const launchSettings: WorkspaceLaunchSettings
         = launchMode === 'acp'
           ? { mode: launchMode, agentCode: effectiveAgentCode, permissionMode }
@@ -80,7 +136,9 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
       const payload = {
         name: name.trim(),
         dir: dir.trim(),
+        emoji: emoji.trim(),
         description: description.trim(),
+        localRepositoryIds: selectedRepoIds,
         launchSettings,
       };
       if (isEdit && workspace) {
@@ -165,6 +223,76 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             }}
           />
           <TextField
+            ref={textFieldRef}
+            label={t('tracker:workspace.add.emoji')}
+            placeholder={t('tracker:workspace.add.emojiPlaceholder')}
+            value={emoji}
+            onChange={(e) => {
+              setEmoji(e.target.value);
+              setError(null);
+            }}
+            fullWidth
+            disabled={submitting}
+            slotProps={{
+              htmlInput: { maxLength: EMOJI_MAX },
+              input: {
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Tooltip title={t('tracker:workspace.add.emojiPicker')}>
+                      <IconButton
+                        size="small"
+                        edge="end"
+                        onClick={() => setEmojiPickerAnchor(textFieldRef.current)}
+                        disabled={submitting}
+                        aria-label={t('tracker:workspace.add.emojiPicker')}
+                      >
+                        <EmojiEmotionsOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          {/* emoji 选择浮层：锚点为输入框本身，在输入框下方展开（非按钮下方）；点选填入并关闭 */}
+          <Popover
+            open={Boolean(emojiPickerAnchor)}
+            anchorEl={emojiPickerAnchor}
+            onClose={() => setEmojiPickerAnchor(null)}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          >
+            <Box sx={{ p: '12px', maxWidth: '320px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {EMOJI_PRESETS.map((e) => {
+                const selected = emoji === e;
+                return (
+                  <IconButton
+                    key={e}
+                    size="small"
+                    onClick={() => {
+                      setEmoji(e);
+                      setError(null);
+                      setEmojiPickerAnchor(null);
+                    }}
+                    disabled={submitting}
+                    sx={{
+                      'width': '32px',
+                      'height': '32px',
+                      'p': '0px',
+                      'fontSize': '18px',
+                      'lineHeight': 1,
+                      'border': '2px solid',
+                      'borderColor': selected ? 'primary.main' : 'transparent',
+                      'bgcolor': selected ? 'action.selected' : 'transparent',
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
+                    {e}
+                  </IconButton>
+                );
+              })}
+            </Box>
+          </Popover>
+          <TextField
             label={t('tracker:workspace.add.description')}
             placeholder={t('tracker:workspace.add.descriptionPlaceholder')}
             value={description}
@@ -179,6 +307,33 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             disabled={submitting}
             slotProps={{ htmlInput: { maxLength: DESCRIPTION_MAX } }}
             helperText={`${description.length} / ${DESCRIPTION_MAX}`}
+          />
+          <Autocomplete
+            multiple
+            size="small"
+            options={allRepos}
+            getOptionLabel={r => r.name}
+            isOptionEqualToValue={(o, v) => o.id === v.id}
+            value={allRepos.filter(r => selectedRepoIds.includes(r.id))}
+            onChange={(_, picked) => {
+              setSelectedRepoIds(picked.map(r => r.id));
+              setError(null);
+            }}
+            filterSelectedOptions
+            disabled={submitting}
+            noOptionsText={t('tracker:workspace.add.repositoriesNoRepo')}
+            renderValue={(value, getItemProps) =>
+              value.map((r, idx) => {
+                const { key, ...itemProps } = getItemProps({ index: idx });
+                return <Chip key={key} label={r.name} size="small" {...itemProps} />;
+              })}
+            renderInput={params => (
+              <TextField
+                {...params}
+                label={t('tracker:workspace.add.repositories')}
+                placeholder={t('tracker:workspace.add.repositoriesPlaceholder')}
+              />
+            )}
           />
 
           {/* 启动设置（launch_settings）：workspace 单源，无全局回落；未配置等同手动。 */}

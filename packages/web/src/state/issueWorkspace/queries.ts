@@ -45,9 +45,9 @@ export function useInitIssueWorkspace() {
   });
 }
 
-/** useArchiveIssueWorkspace 的入参（projectId 用于成功后失效 issue 列表缓存；force 仅用于警告二次确认后的执行段）。 */
+/** useArchiveIssueWorkspace 的入参（workspaceId 用于成功后失效 issue 列表缓存；force 仅用于警告二次确认后的执行段）。 */
 export interface ArchiveIssueWorkspaceArgs {
-  projectId: string; // uuid 字符串
+  workspaceId: string; // uuid 字符串
   issueId: string;
   action: IssueWorkspaceArchiveAction;
   force?: boolean;
@@ -59,15 +59,15 @@ export type ArchiveIssueWorkspaceResult
     | { status: 'done' };
 
 /**
- * 归档/取消工作空间（T3.2）。force 缺省走两段式：先调检查（force=false），干净则内部续发执行段、有警告返回 {status:'warnings'} 由 UI 弹警告态，二次确认后携带 force 重发（此时只走执行段）。
+ * 归档/取消任务工作空间（T3.2）。force 缺省走两段式：先调检查（force=false），干净则内部续发执行段、有警告返回 {status:'warnings'} 由 UI 弹警告态，二次确认后携带 force 重发（此时只走执行段）。
  * 执行段固定时序：ptyShutdownIssue（删目录前必杀该 issue 全部终端会话，失败仅告警不阻断——会话可能本就不存在）→ archive(force=true)（删目录 + 后端流转状态）。
- * 成功后失效双缓存：issue 列表（左树/顶栏/子任务面板）与工作空间状态（回 NOT_INITIALIZED）。
+ * 成功后失效双缓存：issue 列表（左树/任务管理页）与工作空间状态（回 NOT_INITIALIZED）。
  */
 export function useArchiveIssueWorkspace() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (args: ArchiveIssueWorkspaceArgs): Promise<ArchiveIssueWorkspaceResult> => {
-      const { projectId: _projectId, ...req } = args;
+      const { workspaceId: _workspaceId, ...req } = args;
       if (!args.force) {
         const check = await IssueWorkspaceService.archive({ ...req, force: false });
         if (check.warnings.length > 0) {
@@ -85,7 +85,7 @@ export function useArchiveIssueWorkspace() {
       if (result.status !== 'done') {
         return;
       }
-      qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(args.projectId) });
+      qc.invalidateQueries({ queryKey: trackerKeys.workspaceIssues(args.workspaceId) });
       qc.invalidateQueries({ queryKey: issueWorkspaceKeys.status(args.issueId) });
     },
   });

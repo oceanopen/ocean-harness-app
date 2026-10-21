@@ -11,25 +11,23 @@ import (
  * HasMany 在父表选项引用子表模板，故按「叶子优先」顺序创建。
  */
 func GenModelTracker() {
-	// 类型：workspace 级预定义（原「标签」，2026-09-24 更名），issue 经 t_project_issues.type_id 单值引用。
+	// 类型：workspace 级预定义，issue 经 t_workspace_issues.type_id 单值引用。
 	workspaceType := G.GenerateModelAs("t_workspace_types", "WorkspaceType",
 		gen.FieldType("workspace_id", "string"), // 所属工作空间 uuid
 	)
-	// 项目 ↔ 本地仓库 多对多中间表：无关联关系，service 层手动 JOIN 查询（与表间无 DB 外键约定一致）。
-	// workspace_project_id 为项目主键 uuid 文本。
-	projectLocalRepository := G.GenerateModelAs("t_project_local_repositories", "ProjectLocalRepository",
-		gen.FieldType("workspace_project_id", "string"),
+	// 工作空间 ↔ 本地仓库 多对多中间表：无关联关系，service 层手动 JOIN 查询（与表间无 DB 外键约定一致）。
+	// workspace_id 为工作空间主键 uuid 文本。
+	workspaceLocalRepository := G.GenerateModelAs("t_workspace_local_repositories", "WorkspaceLocalRepository",
+		gen.FieldType("workspace_id", "string"),
 	)
 	// issue ↔ 本地仓库+分支 关联表：issue_id 同为 TEXT uuid；service 层批量组装。
 	issueLocalRepository := G.GenerateModelAs("t_issue_local_repositories", "IssueLocalRepository",
 		gen.FieldType("issue_id", "string"),
 	)
 
-	issue := G.GenerateModelAs("t_project_issues", "ProjectIssue",
-		// issue 主键为 TEXT uuid 字符串（与 claude session_id 同格式）；parent_id/project_id 同为 uuid 文本。
+	issue := G.GenerateModelAs("t_workspace_issues", "WorkspaceIssue",
+		// issue 主键为 TEXT uuid 字符串（与 claude session_id 同格式）；workspace_id 同为 uuid 文本。
 		gen.FieldType("id", "string"),
-		gen.FieldType("parent_id", "string"),
-		gen.FieldType("project_id", "string"),
 		gen.FieldType("workspace_id", "string"), // 所属工作空间 uuid
 		gen.FieldType("state_code", "enums.StateCode"),
 		// completed_at 用 *time.Time 指针：未完成=nil（写 NULL）/ 完成=&time，便于 Save 统一处理可空语义。
@@ -38,44 +36,22 @@ func GenModelTracker() {
 			RelateSlicePointer: true,
 			GORMTag: field.GormTag{
 				"foreignKey": []string{"IssueID"}, // 子表 t_issue_local_repositories.issue_id
-				"references": []string{"ID"},      // 父表 t_project_issues.id
+				"references": []string{"ID"},      // 父表 t_workspace_issues.id
 			},
 			JSONTag: "issueLocalRepositoryList,omitempty",
-		}),
-	)
-
-	project := G.GenerateModelAs("t_workspace_projects", "WorkspaceProject",
-		// 主键为 TEXT uuid 字符串（Create 时生成 uuid v7，时间有序）。
-		gen.FieldType("id", "string"),
-		gen.FieldType("workspace_id", "string"), // 所属工作空间 uuid
-		gen.FieldRelate(field.HasMany, "ProjectIssueList", issue, &field.RelateConfig{
-			RelateSlicePointer: true,
-			GORMTag: field.GormTag{
-				"foreignKey": []string{"ProjectID"}, // 子表 t_project_issues.project_id
-				"references": []string{"ID"},        // 父表 t_workspace_projects.id
-			},
-			JSONTag: "projectIssueList,omitempty",
-		}),
-		gen.FieldRelate(field.HasMany, "ProjectLocalRepositoryList", projectLocalRepository, &field.RelateConfig{
-			RelateSlicePointer: true,
-			GORMTag: field.GormTag{
-				"foreignKey": []string{"WorkspaceProjectID"}, // 子表 t_project_local_repositories.workspace_project_id
-				"references": []string{"ID"},                 // 父表 t_workspace_projects.id
-			},
-			JSONTag: "projectLocalRepositoryList,omitempty",
 		}),
 	)
 
 	workspace := G.GenerateModelAs("t_workspaces", "Workspace",
 		// 主键为 TEXT uuid 字符串（Create 时生成 uuid v7，时间有序）。
 		gen.FieldType("id", "string"),
-		gen.FieldRelate(field.HasMany, "WorkspaceProjectList", project, &field.RelateConfig{
+		gen.FieldRelate(field.HasMany, "WorkspaceIssueList", issue, &field.RelateConfig{
 			RelateSlicePointer: true,
 			GORMTag: field.GormTag{
-				"foreignKey": []string{"WorkspaceID"}, // 子表 t_workspace_projects.workspace_id
+				"foreignKey": []string{"WorkspaceID"}, // 子表 t_workspace_issues.workspace_id
 				"references": []string{"ID"},          // 父表 t_workspaces.id
 			},
-			JSONTag: "workspaceProjectList,omitempty",
+			JSONTag: "workspaceIssueList,omitempty",
 		}),
 		gen.FieldRelate(field.HasMany, "WorkspaceTypeList", workspaceType, &field.RelateConfig{
 			RelateSlicePointer: true,
@@ -87,5 +63,5 @@ func GenModelTracker() {
 		}),
 	)
 
-	G.ApplyBasic(workspace, project, issue, workspaceType, projectLocalRepository, issueLocalRepository)
+	G.ApplyBasic(workspace, issue, workspaceType, workspaceLocalRepository, issueLocalRepository)
 }
