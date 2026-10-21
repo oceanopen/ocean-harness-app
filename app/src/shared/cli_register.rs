@@ -1,7 +1,7 @@
 /*
  * ocean-harness CLI 命令注册：把随包 sidecar 的 cli 二进制 symlink 到 ~/.local/bin，让任意终端可直接执行 `ocean-harness-cli xxx`（release）/ `ocean-harness-dev-cli xxx`（debug）。
  * 注册模型（参照 orca 四态状态机）：classify 用 symlink_metadata + canonicalize 判定四态——Installed（symlink 指向本 app 的 cli_bin）/ Stale（指向别处，含悬空）/ Conflict（同名普通文件，用户自有文件，拒碰）/ NotInstalled；只在 NotInstalled/Stale 上操作，Conflict 永不改写。
- * 免密设计：建链/删除全程纯 fs 操作无需提权（历史版本 symlink 到 root 属主的 /usr/local/bin 经 osascript 弹密码框已废弃；升级用户如存留 root 属主旧链接需手动 sudo rm 一次）；PATH 依赖经 ~/.zshrc marker 幂等注入/精确摘除（fish 等其他 shell 需手动加 PATH）；生命周期：init 在 setup 末尾后台线程幂等执行（仅 NotInstalled 自动装，Stale/Conflict 只留日志不动手），install/uninstall 以 IPC 命令暴露；非 macOS 平台整体 no-op（Windows 注册用户级 PATH 属后续工作，同样免密）。
+ * 免密设计：建链/删除全程纯 fs 操作无需提权（历史版本 symlink 到 root 属主的 /usr/local/bin 经 osascript 弹密码框已废弃；升级用户如存留 root 属主旧链接需手动 sudo rm 一次）；PATH 依赖经 ~/.zshrc marker 幂等注入/精确摘除（fish 等其他 shell 需手动加 PATH）；生命周期：init 在 setup 末尾后台线程幂等执行（NotInstalled 自动装；Stale 仅悬空自动重建，指向现存他处的与 Conflict 只留日志不动手），install/uninstall 以 IPC 命令暴露；非 macOS 平台整体 no-op（Windows 注册用户级 PATH 属后续工作，同样免密）。
  */
 use std::path::{Path, PathBuf};
 
@@ -279,10 +279,25 @@ mod imp {
                     log::info!("[cli-register] {} 已注册", link.display());
                 }
                 CliCommandLinkState::Stale => {
-                    log::info!(
-                        "[cli-register] {} 指向别处（Stale），不自动改动；可调用 cli_link_install 修复",
-                        link.display()
-                    );
+                    /*
+                     * 悬空（目标已删）不可能是用户自有命令，自动重建自愈；
+                     * 指向现存他处的可能是自有命令，保持只读。
+                     */
+                    if link.exists() {
+                        log::info!(
+                            "[cli-register] {} 指向别处（Stale），不自动改动；可调用 cli_link_install 修复",
+                            link.display()
+                        );
+                    } else {
+                        match install(&app) {
+                            Ok(_) => log::info!(
+                                "[cli-register] 悬空链接已重建 {} -> {}",
+                                link.display(),
+                                bin.display()
+                            ),
+                            Err(e) => log::warn!("[cli-register] 悬空链接自动重建失败: {e}"),
+                        }
+                    }
                 }
                 CliCommandLinkState::Conflict => {
                     log::warn!(
