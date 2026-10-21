@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -28,7 +27,7 @@ type Supervisor struct {
 	mu      sync.Mutex
 	facs    map[enums.Channel]Factory
 	lives   map[string]ChannelRuntime // botID → 运行时
-	stopped bool                      // StopAll 已置位：后续 EnsureStarted 一律拒绝（applier 延迟 goroutine 不得复活连接）
+	stopped bool                      // StopAll 已置位：后续 EnsureStarted 一律拒绝（防关机窗口复活连接）
 }
 
 // BotStatusView 状态投影行（getList/getInfo 合并到 ImBotResponseData 呈现）。
@@ -40,8 +39,7 @@ type BotStatusView struct {
 
 /*
  * NewSupervisor 构造 supervisor（port 为 sidecar 自身 HTTP 端口；sessions 为 ACP 会话域，引擎路由按 workspace 启动模式消费——两引擎共存，见 driver_route.go）。
- * 路由驱动以三角色装配进编排器：ClaudeDriver（引擎路由）、pendingGate（审批数字快路径，T2.4）、 interactionHandler（审批卡点击消费，T3.2）——三者同源于 driverRoute 单实例，共享 resolve 与会话域消费面；
- * supervisor 自身以 botApplier 第四依赖注入（wsbind 卡落库后的延迟热重载，T2.1）。
+ * 路由驱动以三角色装配进编排器：ClaudeDriver（引擎路由）、pendingGate（审批数字快路径，T2.4）、 interactionHandler（审批/表单卡点击消费，T3.2/T3.3）——三者同源于 driverRoute 单实例，共享 resolve 与会话域消费面。
  * deliveries 为回合内文件投递注册表（nil = 投递链路禁用）。
  */
 func NewSupervisor(db *gorm.DB, port int, sessions acpSessions, deliveries *DeliveryRegistry, log *zap.Logger) *Supervisor {
@@ -52,7 +50,7 @@ func NewSupervisor(db *gorm.DB, port int, sessions acpSessions, deliveries *Deli
 		facs:  make(map[enums.Channel]Factory),
 		lives: make(map[string]ChannelRuntime),
 	}
-	route := newDriverRoute(db, sessions, s)
+	route := newDriverRoute(db, sessions)
 	s.orch = NewOrchestrator(&ConversationStore{DB: db}, route, route, route, log)
 	s.orch.Deliveries = deliveries
 	return s
@@ -131,49 +129,6 @@ func (s *Supervisor) EnsureStarted(cfg BotRuntimeConfig) error {
 	s.lives[cfg.BotID] = rt
 	s.log.Info("bot 已启动", zap.String("botID", cfg.BotID), zap.String("channel", string(cfg.Channel)))
 	return nil
-}
-
-/*
- * applyBotAsyncDelay 绑定卡落库到热重载的缓冲（风险 §6.4）：终帧与置灰先走完渠道
- * 回复窗口，再 Stop→Start——EnsureStarted 持 s.mu 同步 Stop 会拆渠道 WS 连接，紧贴点击
- * 处理会吃掉 UpdateCard/Flush 的发送窗口。包级变量，测试可缩短。
- */
-var applyBotAsyncDelay = time.Second
-
-// 编译期断言：supervisor 满足绑定卡热重载消费面（newDriverRoute 第四依赖注入自身）。
-var _ botApplier = (*Supervisor)(nil)
-
-/*
- * ApplyBotAsync 延迟热重载 bot（goroutine + applyBotAsyncDelay）：绑定卡点击链路的收尾动作——落库已同步完成，本方法只让运行时追上 DB。
- * 重拉 bot 行按 service 层 applyRuntime 同款禁用语义：行已删跳过；停用 → StopBot（幂等）；
- * 启用 → ApplyBot（成败照常回写 last_error）。supervisor 已停止（StopAll）则醒后早退不复活连接（EnsureStarted 侧守卫兜住检查后的交错窗口）。
- */
-func (s *Supervisor) ApplyBotAsync(botID string) {
-	delay := applyBotAsyncDelay // 调用时点捕获：goroutine 不触包级变量（测试缩短/还原不构成数据竞争）
-	go func() {
-		time.Sleep(delay)
-		s.mu.Lock()
-		stopped := s.stopped
-		s.mu.Unlock()
-		if stopped {
-			return
-		}
-		q := query.Use(s.db)
-		b, err := q.ImBot.WithContext(context.Background()).Where(q.ImBot.ID.Eq(botID)).First()
-		if err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				s.log.Warn("bot 热重载读取失败", zap.String("botID", botID), zap.Error(err))
-			}
-			return
-		}
-		if b.Enabled.IsYes() {
-			if err := s.ApplyBot(b); err != nil {
-				s.log.Warn("bot 热重载失败（DB 已保存，可重启连接恢复）", zap.String("botID", botID), zap.Error(err))
-			}
-		} else {
-			s.StopBot(botID)
-		}
-	}()
 }
 
 // StopBot 停止单个 bot（未在跑为 no-op；幂等）。

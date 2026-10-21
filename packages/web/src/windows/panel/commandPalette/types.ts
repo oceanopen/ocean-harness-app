@@ -1,4 +1,4 @@
-import type { WorkspaceModel, WorkspaceProjectModel } from '@src/services';
+import type { WorkspaceModel } from '@src/services';
 import type { ReactNode } from 'react';
 
 /**
@@ -20,10 +20,10 @@ export type MenuKey
 export type CommandGroup = 'navigation' | 'action' | 'jump';
 
 /**
- * 命令面板二级选择页：跳到工作空间 / 跳到项目。选中"跳转"类命令时切入，展示实体列表供二次过滤选定。
- * 借鉴 plane power-k 的 change-page 子页面模式，但裁剪为静态两页（v1 不做工作项属性级多页）。
+ * 命令面板二级选择页：跳到工作空间。选中"跳转"类命令时切入，展示实体列表供二次过滤选定。
+ * 借鉴 plane power-k 的 change-page 子页面模式，裁剪为静态单页（不做工作项属性级多页）。
  */
-export type CommandSubPage = 'workspace' | 'project';
+export type CommandSubPage = 'workspace';
 
 // 命令运行期上下文：同时承载"面板自身状态"与"宿主导航/动作能力"。
 export interface CommandPaletteContextValue {
@@ -42,11 +42,9 @@ export interface CommandPaletteContextValue {
 
   // 宿主：tracker 跳转（二级页面选中实体后回写）
   currentWorkspaceId: string | null;
-  // 当前选中工作空间 / 项目的名称（派生自 tracker store），供 jump 命令声明式渲染名称注释。
+  // 当前选中工作空间的名称（派生自 tracker store），供 jump 命令声明式渲染名称注释。
   currentWorkspaceName: string | null;
-  currentWorkspaceProjectName: string | null;
   selectWorkspace: (ws: WorkspaceModel) => void;
-  selectWorkspaceProject: (workspaceProject: WorkspaceProjectModel) => void;
 }
 
 /**

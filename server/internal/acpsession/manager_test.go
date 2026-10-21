@@ -18,6 +18,7 @@ import (
 
 	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/dal/model"
+	"ocean-harness/server/internal/dal/query"
 )
 
 /*
@@ -888,13 +889,16 @@ func TestBindingStoreLifecycle(t *testing.T) {
 	store := &BindingStore{DB: db}
 	ctx := context.Background()
 
-	row, err := store.GetOrCreate(ctx, "i-1")
-	if err != nil || row.IssueID != "i-1" || row.AcpSessionID != "" {
-		t.Fatalf("GetOrCreate 建行: %v %+v", err, row)
+	if err := store.GetOrCreate(ctx, "i-1"); err != nil {
+		t.Fatalf("GetOrCreate 建行: %v", err)
 	}
-	row2, err := store.GetOrCreate(ctx, "i-1")
-	if err != nil || row2.ID != row.ID {
-		t.Fatalf("GetOrCreate 幂等: %v %+v", err, row2)
+	firstID := bindingRow(t, db, "i-1").ID
+	if err := store.GetOrCreate(ctx, "i-1"); err != nil {
+		t.Fatalf("GetOrCreate 幂等: %v", err)
+	}
+	row := bindingRow(t, db, "i-1")
+	if row.ID != firstID {
+		t.Fatalf("GetOrCreate 幂等（不重建行）: %d vs %d", row.ID, firstID)
 	}
 	if err := store.SaveReady(ctx, "i-1", "claude-acp", "sess-9"); err != nil {
 		t.Fatalf("SaveReady: %v", err)
@@ -945,6 +949,70 @@ func TestBindingStoreLifecycle(t *testing.T) {
 	}
 	if err := store.Delete(ctx, "i-1"); err != nil {
 		t.Fatalf("Delete 幂等: %v", err)
+	}
+}
+
+/*
+ * TestBindingStoreConversationAnchor conv- 锚的绑定分派：锚载体是 t_im_bot_conversations
+ * （bot 域所有行，只读消费）——GetOrCreate 校验行在场不建行、Peek/SaveReady 只动
+ * acp_session_id、SaveError 只清锚、Delete no-op、清扫两表锚同清。
+ */
+func TestBindingStoreConversationAnchor(t *testing.T) {
+	db := newTestDB(t)
+	store := &BindingStore{DB: db}
+	ctx := context.Background()
+	key := ConversationSessionKey(seedBotConversation(t, db, "ws-conv"))
+	convRow := func() *model.ImBotConversation {
+		t.Helper()
+		convID, _ := conversationRowID(key)
+		q := query.Use(db)
+		row, err := q.ImBotConversation.WithContext(ctx).Where(q.ImBotConversation.ID.Eq(convID)).First()
+		if err != nil {
+			t.Fatalf("读会话行: %v", err)
+		}
+		return row
+	}
+
+	// GetOrCreate 只校验行在场；行缺失报错不建行。
+	if err := store.GetOrCreate(ctx, key); err != nil {
+		t.Fatalf("行在场应通过: %v", err)
+	}
+	if err := store.GetOrCreate(ctx, ConversationSessionKey("no-such-row")); err == nil {
+		t.Fatal("行缺失应报错（不自动建锚行）")
+	}
+	if err := store.SaveReady(ctx, key, "claude-acp", "sess-conv"); err != nil {
+		t.Fatalf("SaveReady: %v", err)
+	}
+	if row := convRow(); row.AcpSessionID != "sess-conv" {
+		t.Fatalf("SaveReady 应落锚到会话行: %+v", row)
+	}
+	peeked, err := store.Peek(ctx, key)
+	if err != nil || peeked != "sess-conv" {
+		t.Fatalf("Peek 读回会话行锚: %v %q", err, peeked)
+	}
+	// SaveError 只清锚不落因（last_error 列不属会话行）。
+	if err := store.SaveError(ctx, key, "claude-acp", "boom"); err != nil {
+		t.Fatalf("SaveError: %v", err)
+	}
+	if row := convRow(); row.AcpSessionID != "" {
+		t.Fatalf("SaveError 应清会话行锚: %+v", row)
+	}
+	// Delete no-op：行归属 bot 域，锚清理只属会话域清扫。
+	if err := store.Delete(ctx, key); err != nil {
+		t.Fatalf("Delete 应 no-op: %v", err)
+	}
+	if convRow().ID == "" {
+		t.Fatal("Delete 不得删会话行")
+	}
+	// 启动清扫：会话行锚同清、行保留。
+	if err := store.SaveReady(ctx, key, "claude-acp", "sess-conv-2"); err != nil {
+		t.Fatalf("SaveReady 重落: %v", err)
+	}
+	if err := store.SweepSessionIDs(ctx); err != nil {
+		t.Fatalf("SweepSessionIDs: %v", err)
+	}
+	if row := convRow(); row.AcpSessionID != "" {
+		t.Fatalf("清扫应清会话行锚: %+v", row)
 	}
 }
 
@@ -1028,7 +1096,7 @@ func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 			if tc.seedID != "" {
 				// SaveReady 为 update-only：先 GetOrCreate 建行再落锚。
 				store := &BindingStore{DB: db}
-				if _, err := store.GetOrCreate(context.Background(), issueID); err != nil {
+				if err := store.GetOrCreate(context.Background(), issueID); err != nil {
 					t.Fatalf("建绑定行: %v", err)
 				}
 				if err := store.SaveReady(context.Background(), issueID, "claude-acp", tc.seedID); err != nil {

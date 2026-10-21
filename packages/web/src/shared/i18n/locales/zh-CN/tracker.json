@@ -1,7 +1,6 @@
 {
   "workspace": {
     "summary": "共 {{total}} 个工作空间",
-    "current": "当前工作空间：",
     "empty": {
       "title": "暂无工作空间",
       "desc": "点击「新建工作空间」开始管理",
@@ -21,8 +20,14 @@
       "dir": "工作区目录",
       "dirPlaceholder": "/absolute/path/to/workspace",
       "dirHint": "issue 运行目录与 IM 机器人会话目录的根（绝对路径）",
+      "emoji": "图标（emoji）",
+      "emojiPlaceholder": "如 🚀（选填）",
+      "emojiPicker": "选择常用表情",
       "description": "描述",
       "descriptionPlaceholder": "请输入描述（选填）",
+      "repositories": "关联仓库",
+      "repositoriesPlaceholder": "选择关联的本地仓库（选填）",
+      "repositoriesNoRepo": "暂无本地仓库，可在「仓库」页添加",
       "confirm": "确定",
       "cancel": "取消"
     },
@@ -50,65 +55,7 @@
       "retry": "重试"
     }
   },
-  "workspaceProject": {
-    "search": "按项目名称搜索",
-    "actions": {
-      "add": "新建项目",
-      "refresh": "刷新"
-    },
-    "add": {
-      "title": "新建项目",
-      "name": "名称",
-      "namePlaceholder": "请输入项目名称",
-      "emoji": "图标（emoji）",
-      "emojiPlaceholder": "如 🚀（选填）",
-      "emojiHint": "点右侧按钮选择，或粘贴自定义 emoji",
-      "emojiPicker": "选择常用表情",
-      "description": "描述",
-      "descriptionPlaceholder": "请输入描述（选填）",
-      "repositories": "关联仓库",
-      "repositoriesPlaceholder": "选择关联的本地仓库（选填）",
-      "repositoriesNoRepo": "暂无本地仓库，可在「仓库」页添加",
-      "confirm": "确定",
-      "cancel": "取消"
-    },
-    "edit": {
-      "title": "编辑项目",
-      "idLabel": "项目ID",
-      "belongingWorkspace": "所属工作空间",
-      "confirm": "保存"
-    },
-    "card": {
-      "edit": "编辑",
-      "delete": "删除"
-    },
-    "delete": {
-      "title": "删除项目",
-      "confirmMsg": "确认删除项目「{{name}}」？其下所有 Issue 将一并删除，且不可恢复。",
-      "confirm": "删除",
-      "cancel": "取消"
-    },
-    "empty": {
-      "title": "暂无项目",
-      "desc": "点击「新建项目」开始管理",
-      "noMatch": "没有匹配的项目"
-    },
-    "error": {
-      "title": "加载项目列表失败",
-      "desc": "请稍后重试",
-      "retry": "重试"
-    },
-    "toast": {
-      "created": "项目「{{name}}」创建成功",
-      "createFailed": "创建失败：{{message}}",
-      "updated": "项目「{{name}}」更新成功",
-      "updateFailed": "更新失败：{{message}}",
-      "deleted": "项目已删除",
-      "deleteFailed": "删除失败：{{message}}"
-    }
-  },
-  "projectIssue": {
-    "emptyHint": "选择项目后查看 Issue",
+  "workspaceIssue": {
     "search": "搜索 Issue",
     "actions": {
       "add": "新建 Issue",
@@ -116,19 +63,11 @@
     },
     "create": {
       "title": "新建 Issue",
-      "subTitle": "新建子 Issue",
       "confirm": "创建",
       "cancel": "取消"
     },
     "card": {
-      "edit": "编辑",
-      "addSub": "新增子 Issue",
-      "expand": "展开子 Issue",
-      "collapse": "折叠子 Issue"
-    },
-    "group": {
-      "expand": "展开",
-      "collapse": "折叠"
+      "edit": "编辑"
     },
     "filter": {
       "allStates": "全部状态",
@@ -163,9 +102,7 @@
     },
     "detail": {
       "close": "关闭",
-      "parentIssue": "父级 Issue",
-      "belongingProject": "所属项目",
-      "belongingParentTask": "所属父任务",
+      "belongingWorkspace": "所属工作空间",
       "name": "名称",
       "description": "描述",
       "state": "状态",
@@ -174,19 +111,14 @@
       "type": "类型",
       "branch": "关联分支",
       "branchPlaceholder": "选择或输入分支名",
-      "branchNoRepoHint": "请先在项目设置中关联仓库",
+      "branchNoRepoHint": "请先在工作空间设置中关联仓库",
       "createdAt": "创建于",
       "completedAt": "完成于",
       "save": "保存",
       "cancel": "取消",
       "delete": "删除",
       "deleteTitle": "删除 Issue",
-      "deleteConfirmMsg": "确认删除 Issue「{{name}}」？此操作不可恢复。",
-      "subtasks": {
-        "title": "子任务",
-        "addPlaceholder": "添加子任务，回车创建…",
-        "empty": "暂无子任务"
-      }
+      "deleteConfirmMsg": "确认删除 Issue「{{name}}」？此操作不可恢复。"
     },
     "markdownEditor": {
       "placeholder": "支持 Markdown：标题、列表、代码、链接等（选填）"

@@ -60,6 +60,8 @@ tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
 # 本地仓库管理：添加仓库弹窗的系统目录选择器（文件夹选择对话框）。
 tauri-plugin-dialog = "2"
+# 开机自启动：纯 Rust 驱动（shared/autostart.rs 经 ManagerExt 调用），前端不直调插件。
+tauri-plugin-autostart = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 sys-locale = "0.3"
 notify = "6"

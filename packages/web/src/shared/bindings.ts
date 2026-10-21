@@ -88,6 +88,8 @@ export const ITERM2_SPLIT_DIRECTION_KEY = "iterm2_split_direction" as const;
 
 export const LANGUAGE_KEY = "language" as const;
 
+export const LAUNCH_AT_LOGIN_KEY = "launch_at_login" as const;
+
 export const MAX_POLL_INTERVAL_SECS = 300 as const;
 
 export const MIN_POLL_INTERVAL_SECS = 10 as const;

@@ -1,25 +1,17 @@
 import type {
-  ProjectIssueCreateRequest,
-  ProjectIssueUpdateRequest,
   WorkspaceCreateRequest,
-  WorkspaceProjectCreateRequest,
-  WorkspaceProjectUpdateRequest,
+  WorkspaceIssueCreateRequest,
+  WorkspaceIssueUpdateRequest,
   WorkspaceTypeCreateRequest,
   WorkspaceTypeUpdateRequest,
   WorkspaceUpdateRequest,
 } from '@src/services';
-import {
-  ProjectIssueService,
-  WorkspaceProjectService,
-  WorkspaceService,
-  WorkspaceTypeService,
-} from '@src/services';
+import { WorkspaceIssueService, WorkspaceService, WorkspaceTypeService } from '@src/services';
 import { commands } from '@src/shared/bindings';
 import { logOnError } from '@src/shared/commands';
 import { imBotsKeys } from '@src/state/imBots/keys';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { trackerKeys } from './keys';
-import { useTrackerStore } from './store';
 
 // ─── 读取（query）───
 /**
@@ -35,15 +27,6 @@ export function useWorkspaces() {
   });
 }
 
-/** 指定工作空间下的项目。workspaceId 为 null 时不查询（如命令面板在某工作空间选中前不查项目）。 */
-export function useWorkspaceProjects(workspaceId: string | null) {
-  return useQuery({
-    queryKey: trackerKeys.workspaceProjects(workspaceId ?? ''),
-    queryFn: () => WorkspaceProjectService.getList({ workspaceId: workspaceId! }),
-    enabled: workspaceId != null,
-  });
-}
-
 /** 指定工作空间下的全部类型。workspaceId 为 null 时不查询。 */
 export function useWorkspaceTypes(workspaceId: string | null) {
   return useQuery({
@@ -53,19 +36,19 @@ export function useWorkspaceTypes(workspaceId: string | null) {
   });
 }
 
-/** 指定项目的 projectIssue（含类型）。projectId 为 null/空串时不查询（无选中/无效 id 的无效请求守卫）。 */
-export function useProjectIssues(projectId: string | null) {
+/** 指定工作空间下的 workspaceIssue（含类型）。workspaceId 为 null/空串时不查询（无效请求守卫）。 */
+export function useWorkspaceIssues(workspaceId: string | null) {
   return useQuery({
-    queryKey: trackerKeys.projectIssues(projectId ?? ''),
-    queryFn: () => ProjectIssueService.getList({ projectId: projectId! }),
-    enabled: projectId != null && projectId !== '',
+    queryKey: trackerKeys.workspaceIssues(workspaceId ?? ''),
+    queryFn: () => WorkspaceIssueService.getList({ workspaceId: workspaceId! }),
+    enabled: workspaceId != null && workspaceId !== '',
   });
 }
 
 // ─── 写操作（mutation）───
 /**
  * 每个 mutation 内部 invalidate 对应 key；消费方只调 mutateAsync/mutate，不关心失效。
- * workspaceId/projectId 入参仅用于失效对应列表缓存。
+ * workspaceId 入参仅用于失效对应列表缓存。
  */
 
 /** 创建工作空间。 */
@@ -97,39 +80,6 @@ export function useDeleteWorkspace() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: trackerKeys.workspaces() });
       void qc.invalidateQueries({ queryKey: imBotsKeys.list() });
-    },
-  });
-}
-
-/** 创建项目（workspaceId 用于失效该工作空间的项目缓存）。 */
-export function useCreateWorkspaceProject(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: WorkspaceProjectCreateRequest) => WorkspaceProjectService.create(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaceProjects(workspaceId) }),
-  });
-}
-
-/** 更新项目。 */
-export function useUpdateWorkspaceProject(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: WorkspaceProjectUpdateRequest) => WorkspaceProjectService.update(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaceProjects(workspaceId) }),
-  });
-}
-
-/** 删除项目；若删的正是当前选中项目，联动清空 store 选中态（替代原 WorkspaceProjectList onSelect(null) 副作用）。 */
-export function useDeleteWorkspaceProject(workspaceId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => WorkspaceProjectService.delete({ id }),
-    onSuccess: (_data, deletedId) => {
-      qc.invalidateQueries({ queryKey: trackerKeys.workspaceProjects(workspaceId) });
-      const cur = useTrackerStore.getState().selectedWorkspaceProject;
-      if (cur?.id === deletedId) {
-        useTrackerStore.getState().selectWorkspaceProject(null);
-      }
     },
   });
 }
@@ -169,38 +119,38 @@ export function useDeleteWorkspaceType(workspaceId: string) {
 // ─── Issue 写操作（mutation）───
 /**
  * 每个 mutation 内部 invalidate 对应 key；消费方只调 mutateAsync/mutate，不关心失效。
- * 注：看板拖拽的乐观更新另走 ProjectIssueList.updateProjectIssues（setQueryData），不经过这些 mutation。
+ * 注：看板拖拽的乐观更新另走 WorkspaceIssueList.updateWorkspaceIssues（setQueryData），不经过这些 mutation。
  */
 
-/** 创建 projectIssue。 */
-export function useCreateProjectIssue(projectId: string) {
+/** 创建 workspaceIssue。 */
+export function useCreateWorkspaceIssue(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: ProjectIssueCreateRequest) => ProjectIssueService.create(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),
+    mutationFn: (req: WorkspaceIssueCreateRequest) => WorkspaceIssueService.create(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaceIssues(workspaceId) }),
   });
 }
 
-/** 更新 projectIssue。 */
-export function useUpdateProjectIssue(projectId: string) {
+/** 更新 workspaceIssue。 */
+export function useUpdateWorkspaceIssue(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (req: ProjectIssueUpdateRequest) => ProjectIssueService.update(req),
-    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),
+    mutationFn: (req: WorkspaceIssueUpdateRequest) => WorkspaceIssueService.update(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaceIssues(workspaceId) }),
   });
 }
 
 /**
- * 删除 projectIssue。先关其全部终端 pane（issue 即 PTY 锚点，split 后一 issue 多 pane
+ * 删除 workspaceIssue。先关其全部终端 pane（issue 即 PTY 锚点，split 后一 issue 多 pane
  * 需前缀全关；不关则孤儿会话占 store 至 app 退出）。
  */
-export function useDeleteProjectIssue(projectId: string) {
+export function useDeleteWorkspaceIssue(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
       await logOnError(commands.ptyShutdownIssue(id), 'pty');
-      return ProjectIssueService.delete({ id });
+      return WorkspaceIssueService.delete({ id });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.projectIssues(projectId) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: trackerKeys.workspaceIssues(workspaceId) }),
   });
 }

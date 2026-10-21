@@ -5,7 +5,7 @@
     "pluginMarketplace": "Plugin Marketplace",
     "imBots": "IM Bots",
     "serverStatus": "Service Status",
-    "tracker": "Project & Issue Management",
+    "tracker": "Task Management",
     "devWorkbench": "Task Workbench"
   },
   "sidebar": {
@@ -19,7 +19,6 @@
     "empty": "No results found",
     "annotation": "({{text}})",
     "noWorkspace": "No workspaces",
-    "noProject": "No projects",
     "footer": {
       "close": "Close",
       "back": "Back"
@@ -35,7 +34,7 @@
       "pluginMarketplace": "Go to Plugin Marketplace",
       "imBots": "Go to IM Bots",
       "serverStatus": "Go to Service Status",
-      "tracker": "Go to Project & Issue Management",
+      "tracker": "Go to Task Management",
       "devWorkbench": "Go to Task Workbench"
     },
     "action": {
@@ -43,13 +42,10 @@
       "toggleSidebar": "Toggle Sidebar"
     },
     "jump": {
-      "workspace": "Jump to Workspace",
-      "project": "Jump to Project",
-      "projectDisabledHint": "Select a workspace first"
+      "workspace": "Jump to Workspace"
     }
   },
   "devWorkbench": {
-    "enterDev": "Enter dev",
-    "refineIssue": "AI refine"
+    "enterDev": "Enter dev"
   }
 }

@@ -33,12 +33,11 @@ func newImBotConversation(db *gorm.DB, opts ...gen.DOOption) imBotConversation {
 	_imBotConversation.ConversationKey = field.NewString(tableName, "conversation_key")
 	_imBotConversation.ClaudeSessionID = field.NewString(tableName, "claude_session_id")
 	_imBotConversation.BoundIssueID = field.NewString(tableName, "bound_issue_id")
+	_imBotConversation.AcpSessionID = field.NewString(tableName, "acp_session_id")
 	_imBotConversation.SeenMessageIds = field.NewString(tableName, "seen_message_ids")
-	_imBotConversation.LastMessageCard = field.NewString(tableName, "last_message_card")
 	_imBotConversation.LastMessageAt = field.NewTime(tableName, "last_message_at")
 	_imBotConversation.CreatedAt = field.NewTime(tableName, "created_at")
 	_imBotConversation.UpdatedAt = field.NewTime(tableName, "updated_at")
-	_imBotConversation.PrevSessionID = field.NewString(tableName, "prev_session_id")
 
 	_imBotConversation.fillFieldMap()
 
@@ -54,12 +53,11 @@ type imBotConversation struct {
 	ConversationKey field.String
 	ClaudeSessionID field.String
 	BoundIssueID    field.String
+	AcpSessionID    field.String
 	SeenMessageIds  field.String
-	LastMessageCard field.String
 	LastMessageAt   field.Time
 	CreatedAt       field.Time
 	UpdatedAt       field.Time
-	PrevSessionID   field.String
 
 	fieldMap map[string]field.Expr
 }
@@ -81,12 +79,11 @@ func (i *imBotConversation) updateTableName(table string) *imBotConversation {
 	i.ConversationKey = field.NewString(table, "conversation_key")
 	i.ClaudeSessionID = field.NewString(table, "claude_session_id")
 	i.BoundIssueID = field.NewString(table, "bound_issue_id")
+	i.AcpSessionID = field.NewString(table, "acp_session_id")
 	i.SeenMessageIds = field.NewString(table, "seen_message_ids")
-	i.LastMessageCard = field.NewString(table, "last_message_card")
 	i.LastMessageAt = field.NewTime(table, "last_message_at")
 	i.CreatedAt = field.NewTime(table, "created_at")
 	i.UpdatedAt = field.NewTime(table, "updated_at")
-	i.PrevSessionID = field.NewString(table, "prev_session_id")
 
 	i.fillFieldMap()
 
@@ -115,18 +112,17 @@ func (i *imBotConversation) GetFieldByName(fieldName string) (field.OrderExpr, b
 }
 
 func (i *imBotConversation) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 11)
+	i.fieldMap = make(map[string]field.Expr, 10)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["bot_id"] = i.BotID
 	i.fieldMap["conversation_key"] = i.ConversationKey
 	i.fieldMap["claude_session_id"] = i.ClaudeSessionID
 	i.fieldMap["bound_issue_id"] = i.BoundIssueID
+	i.fieldMap["acp_session_id"] = i.AcpSessionID
 	i.fieldMap["seen_message_ids"] = i.SeenMessageIds
-	i.fieldMap["last_message_card"] = i.LastMessageCard
 	i.fieldMap["last_message_at"] = i.LastMessageAt
 	i.fieldMap["created_at"] = i.CreatedAt
 	i.fieldMap["updated_at"] = i.UpdatedAt
-	i.fieldMap["prev_session_id"] = i.PrevSessionID
 }
 
 func (i imBotConversation) clone(db *gorm.DB) imBotConversation {

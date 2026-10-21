@@ -6,6 +6,7 @@ import {
   CheckOutlined as CheckOutlinedIcon,
   DeleteOutlined as DeleteOutlinedIcon,
   EditOutlined as EditOutlinedIcon,
+  FolderOutlined as FolderOutlinedIcon,
   WorkspacesOutlined as WorkspacesOutlinedIcon,
 } from '@mui/icons-material';
 import {
@@ -26,7 +27,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import WorkspaceTypeManagerDrawer from '@src/components/projectIssueDrawer/WorkspaceTypeManagerDrawer';
+import WorkspaceTypeManagerDrawer from '@src/components/workspaceIssueDrawer/WorkspaceTypeManagerDrawer';
 import { formatDate, formatRelativeTime } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
 import { useDeleteWorkspace, useTrackerStore, useWorkspaces } from '@src/state/tracker';
@@ -304,6 +305,10 @@ function WorkspaceCard({ ws, isActive, onSelect, onEdit, onManageTypes, onDelete
       <CardHeader
         title={(
           <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            {/* 图标：emoji 优先（空串 = Folder 兜底），固定字号防行高抖动 */}
+            {ws.emoji.trim()
+              ? <Box component="span" sx={{ fontSize: '16px', lineHeight: 1 }}>{ws.emoji}</Box>
+              : <FolderOutlinedIcon sx={{ fontSize: '18px', color: 'text.secondary' }} />}
             {ws.name}
             {isActive && (
               <CheckOutlinedIcon

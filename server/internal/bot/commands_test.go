@@ -14,7 +14,6 @@ func TestParseSlashCommand(t *testing.T) {
 		{"/help", "/help"},
 		{"/stop", "/stop"},
 		{"/clear", "/clear"},
-		{"/继续", "/继续"},
 		{" /stop ", "/stop"},
 		{"/stopx", ""},
 		{"#帮助", ""},
@@ -41,7 +40,7 @@ func TestParseUnknownSlashCommand(t *testing.T) {
 		{"/stop", false},  // 已知指令
 		{"/help", false},  // 已知指令
 		{"/clear", false}, // 已知指令
-		{"/继续", false},    // 已知指令（且中文不命中纯字母形态）
+		{"/继续", false},    // 中文不命中纯字母形态
 		{"/stop now", false},
 		{"x/stop", false},
 		{"/", false},
@@ -57,7 +56,7 @@ func TestParseUnknownSlashCommand(t *testing.T) {
 // helpText 覆盖 / 系指令条目。
 func TestHelpTextSlashEntries(t *testing.T) {
 	text := helpText()
-	for _, token := range []string{slashStopToken, slashClearToken, slashResumeToken, slashHelpToken} {
+	for _, token := range []string{slashStopToken, slashClearToken, slashHelpToken} {
 		if !strings.Contains(text, token) {
 			t.Fatalf("帮助文案缺 %s 条目:\n%s", token, text)
 		}

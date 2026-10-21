@@ -17,7 +17,7 @@ import (
 )
 
 /*
- * issueWorkspace archive：归档/取消工作空间（T3.2，docs/agent_dev_01_tasks.md §T3.2）。归档与取消同为工程化确定性操作（不依赖 AI）：删除 {baseDir}/{issueId}/ 目录 + 流转 issue 状态（archive→DONE / cancel→CANCELLED，父子解耦不级联子任务，见 project_issue.go 文件头注释）。
+ * issueWorkspace archive：归档/取消工作空间（T3.2，docs/agent_dev_01_tasks.md §T3.2）。归档与取消同为工程化确定性操作（不依赖 AI）：删除 {baseDir}/{issueId}/ 目录 + 流转 issue 状态（archive→DONE / cancel→CANCELLED，各 issue 状态独立变更）。
  * 两段式契约（类型注释见 types/issue_workspace.go）：force=false 仅安全检查返回警告不执行；force=true 跳过检查直接执行。
  * 同域文件分工：入口/校验在本文件；并发准入见 issue_workspace_registry.go；状态文件读写见 issue_workspace_state.go；git 检查函数见 gitutil/status.go。
  */
@@ -64,15 +64,12 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 		return nil, fmt.Errorf("删除工作空间目录失败: %w", err)
 	}
 
-	/*
-	 * 状态流转（Move 范式）：applyStateTransition + Save；同值 no-op（重复归档幂等）。
-	 * 父自动完成联动仅在「本次变为完成」时尝试（归档目标若是子任务且兄弟全完成）。
-	 */
-	issueSvc := ProjectIssue{Service: svc.Service}
-	var issue *model.ProjectIssue
+	// 状态流转（Move 范式）：applyStateTransition + Save；同值 no-op（重复归档幂等）。
+	issueSvc := WorkspaceIssue{Service: svc.Service}
+	var issue *model.WorkspaceIssue
 	if err := svc.Orm.Transaction(func(tx *gorm.DB) error {
 		qtx := query.Use(tx)
-		found, e := qtx.ProjectIssue.WithContext(svc.Context).Where(qtx.ProjectIssue.ID.Eq(req.IssueID)).First()
+		found, e := qtx.WorkspaceIssue.WithContext(svc.Context).Where(qtx.WorkspaceIssue.ID.Eq(req.IssueID)).First()
 		if e != nil {
 			if errors.Is(e, gorm.ErrRecordNotFound) {
 				return errors.New("issue 不存在")
@@ -80,19 +77,10 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 			return e
 		}
 		issue = found
-		wasCompleted := issue.CompletedAt != nil
 		if e := issueSvc.applyStateTransition(issue, targetState); e != nil {
 			return e
 		}
-		if e := qtx.ProjectIssue.WithContext(svc.Context).Save(issue); e != nil {
-			return e
-		}
-		if !wasCompleted && issue.CompletedAt != nil {
-			if e := issueSvc.maybeAutoCompleteParent(tx, issue); e != nil {
-				return e
-			}
-		}
-		return nil
+		return qtx.WorkspaceIssue.WithContext(svc.Context).Save(issue)
 	}); err != nil {
 		return nil, err
 	}

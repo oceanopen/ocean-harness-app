@@ -51,6 +51,13 @@ pub const DEFAULT_TERMINAL_POST_OPEN_COMMAND: &str = "";
 pub const GITHUB_PAT_KEY: &str = "github_pat";
 
 /*
+ * 开机自启动开关：系统登录项状态的本地镜像（系统优先——启动时 shared/autostart.rs 以系统
+ * 真实状态回写本 key，保存时经 app-config-changed 事件监听同步系统登录项）。
+ * 值用 YesNo（"Y"/"N"），缺失视为 "N"（默认不自启动）。
+ */
+pub const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login";
+
+/*
  * ACP 会话闲置回收阈值（分钟）。空闲（就绪态、无进行中回合、无订阅者、无排队回合）超过该时长的 ACP 会话由 Go sidecar 回收（node 进程退出），重开时经锚点 resume 恢复上下文。
  * Go sidecar 经 GO_SERVER_APP_DB 指向的本表只读此 key，到期判定时现读（改配置即时生效）。
  * 值域（5/15/30/60）与脏值回落默认由前端 appConfig.ts 与 Go 侧 parse 对齐约定。

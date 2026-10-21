@@ -1,4 +1,4 @@
-import type { ProjectIssueResponseData } from '@src/services';
+import type { WorkspaceIssueResponseData } from '@src/services';
 import type { ToolTab } from '@src/state/workbenchTools';
 import type { PointerEvent } from 'react';
 import type { WorkbenchToolDef } from './toolRegistry';
@@ -19,11 +19,10 @@ interface DragContext {
 
 interface ToolPanelAreaProps {
   // 选中 issue（null = 未选中/加载中，空态文案兜底）。工具渲染上下文 + tabs 归属 key。
-  issue: ProjectIssueResponseData | null;
-  projectId: string | null; // uuid 字符串
+  issue: WorkspaceIssueResponseData | null;
   // 是否存在选中意图（URL 优先 + store 兜底的合成值，非 issue 对象就绪）：空 tab 栏时
   // 按此区分文案——无选中「请先选择左侧任务」；有选中（含列表加载瞬态）「在右侧工具条
-  // 选择工具」。锚定意图而非对象，跨项目切换的加载瞬态不闪文案。
+  // 选择工具」。锚定意图而非对象，跨任务切换的加载瞬态不闪文案。
   hasSelection: boolean;
   // 面板区展开（页面按 config 折叠态传入，与选中态解耦；收起时外层 width 0）。
   visible: boolean;
@@ -31,9 +30,6 @@ interface ToolPanelAreaProps {
   width: number;
   // 拖拽结束落盘（up 时一次性回调，写 config——move 高频期只走组件内存态）。
   onWidthCommit: (width: number) => void;
-  // 工具回调上抛（页面层挂 issue 抽屉）：编辑指定 issue / 新建其子任务，经 render ctx 注入工具内容。
-  onEditIssue: (issue: ProjectIssueResponseData) => void;
-  onCreateSubIssue: () => void;
 }
 
 // ToolPanelArea：中栏右侧的工具面板区（内容行全高，自标题栏带起）——tab 头（40px，与
@@ -43,7 +39,7 @@ interface ToolPanelAreaProps {
 // （无防抖）。空 tab 栏保持面板区展开（空态提示）。非激活 tab 的内容组件不渲染——
 // 工具会话必须后端常驻（见 toolRegistry 架构红线注释），视口卸载不销毁会话。
 // tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
-export default function ToolPanelArea({ issue, projectId, hasSelection, visible, width, onWidthCommit, onEditIssue, onCreateSubIssue }: ToolPanelAreaProps) {
+export default function ToolPanelArea({ issue, hasSelection, visible, width, onWidthCommit }: ToolPanelAreaProps) {
   const theme = useTheme();
   const closeTab = useWorkbenchToolsStore(s => s.closeTab);
   const setActiveTab = useWorkbenchToolsStore(s => s.setActiveTab);
@@ -189,10 +185,10 @@ export default function ToolPanelArea({ issue, projectId, hasSelection, visible,
                 </Typography>
               </Box>
             )
-          : issue != null && projectId != null
+          : issue != null
             ? (
                 <Box sx={{ flex: 1, minHeight: '0px' }}>
-                  <Box sx={{ height: '100%' }}>{activeEntry.def.render({ issue, projectId, onEditIssue, onCreateSubIssue, panelVisible: visible })}</Box>
+                  <Box sx={{ height: '100%' }}>{activeEntry.def.render({ issue, panelVisible: visible })}</Box>
                 </Box>
               )
             : null}

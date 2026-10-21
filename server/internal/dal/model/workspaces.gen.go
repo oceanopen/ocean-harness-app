@@ -12,15 +12,16 @@ const TableNameWorkspace = "t_workspaces"
 
 // Workspace mapped from table <t_workspaces>
 type Workspace struct {
-	ID                   string              `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
-	Name                 string              `gorm:"column:name;type:TEXT;not null" json:"name"`
-	Dir                  string              `gorm:"column:dir;type:TEXT;not null" json:"dir"`
-	Description          string              `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
-	LaunchSettings       string              `gorm:"column:launch_settings;type:TEXT;not null;default:''" json:"launchSettings"`
-	CreatedAt            time.Time           `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
-	UpdatedAt            time.Time           `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
-	WorkspaceProjectList []*WorkspaceProject `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceProjectList,omitempty"`
-	WorkspaceTypeList    []*WorkspaceType    `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceTypeList,omitempty"`
+	ID                 string            `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
+	Name               string            `gorm:"column:name;type:TEXT;not null" json:"name"`
+	Dir                string            `gorm:"column:dir;type:TEXT;not null" json:"dir"`
+	Description        string            `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
+	Emoji              string            `gorm:"column:emoji;type:TEXT;not null;default:''" json:"emoji"`
+	LaunchSettings     string            `gorm:"column:launch_settings;type:TEXT;not null;default:''" json:"launchSettings"`
+	CreatedAt          time.Time         `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
+	UpdatedAt          time.Time         `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	WorkspaceIssueList []*WorkspaceIssue `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceIssueList,omitempty"`
+	WorkspaceTypeList  []*WorkspaceType  `gorm:"foreignKey:WorkspaceID;references:ID" json:"workspaceTypeList,omitempty"`
 }
 
 // TableName Workspace's table name

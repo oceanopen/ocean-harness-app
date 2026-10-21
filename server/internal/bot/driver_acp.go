@@ -12,28 +12,29 @@ import (
 
 /*
  * acpSessions bot 域消费 acpsession 域的最小面（消费侧缝，惯例同 ClaudeDriver 本身）：*acpsession.Manager 隐式满足（编译期断言紧随定义）；测试以 fake 帧脚本驱动，不依赖真实 Manager 与 agent 进程。
+ * 各方法的会话键为 acpsession 会话锚键（issue uuid / conv-<会话行id> 双锚形，语义见 BindingStore）。
  * Ensure 为受理式（同步返回现状快照，spawn 链后台进行），就绪等待与回合输出均由本驱动按帧驱动收集。回合受理走 PromptQueued 排队语义（T2.2 跨入口回合锁）——活动回合中 FIFO 等位、回合空隙自动开跑，与桌面 prompt 入口互斥且有序（桌面即时受理不经队列，用户优先）。
  * Get/RespondPermission 供审批数字快路径（T2.4，pending_gate.go）读写挂起审批，RespondElicitation 供表单卡点击应答（T3.3， permission_card.go）——与桌面 respond* HTTP 面同一 Manager 入口，first-writer-wins 由 acpsession 收敛语义层保证。
  */
 type acpSessions interface {
-	Ensure(ctx context.Context, issueID, pickedLaunchMode string) (acpsession.ViewSnapshot, error)
-	Subscribe(issueID string) (<-chan acpsession.Frame, func())
-	PromptQueued(ctx context.Context, issueID, text string, meta acpsession.PromptMeta) error
-	Cancel(issueID string) error
-	Get(issueID string) acpsession.ViewSnapshot
-	RespondPermission(issueID string, pendingID uint64, optionID, source string) error
-	RespondElicitation(issueID string, pendingID uint64, action string, content map[string]any, source string) error
+	Ensure(ctx context.Context, sessionKey, pickedLaunchMode string) (acpsession.ViewSnapshot, error)
+	Subscribe(sessionKey string) (<-chan acpsession.Frame, func())
+	PromptQueued(ctx context.Context, sessionKey, text string, meta acpsession.PromptMeta) error
+	Cancel(sessionKey string) error
+	Get(sessionKey string) acpsession.ViewSnapshot
+	RespondPermission(sessionKey string, pendingID uint64, optionID, source string) error
+	RespondElicitation(sessionKey string, pendingID uint64, action string, content map[string]any, source string) error
 	// Terminate 主动终结会话（回合失败收尾/活性判死；幂等，语义见 acpsession.Manager.Terminate）。
-	Terminate(issueID, reason string)
+	Terminate(sessionKey, reason string)
 }
 
 // 编译期断言：Manager 满足消费面。
 var _ acpSessions = (*acpsession.Manager)(nil)
 
 /*
- * acpDriver ClaudeDriver 的 ACP 实现（T2.1）：bot 回合经 sidecar acpsession 域驱动 claude，与桌面 issue 主窗口共享同一 ACP 会话（同一 agent 进程、同一会话视图、同一挂起审批状态， IM 与桌面看到的是同一段对话）。与 headless（driver_claude：每回合一个进程，--resume 锚点续聊）的差异：会话 per-issue 长驻、无 resume，因此不发 TurnInit、不写 claude_session_id 锚点（ACP session id 与--resume 不兼容）。
- * 目标 issue（T2.3）：路由层解析会话显式绑定后经 TurnRequest.IssueID 回填，本驱动是纯执行者——空值 = 未绑定，只负责回引导文案（绑定知识不进引擎）。权限面（P6）：不消费 bot 级 allowed_tools——会话权限统一由 workspace/issue 的 launch_settings.permissionMode 表达（Ensure 链下发）；
- * 「需要审批」档的挂起审批由桌面端呈现（T1.7），IM 侧交互随 T2.4/T3.2。守则注入（D3，T1.2）：TurnRequest.SystemPrompt（纯固定守则段，提示词定制内容亦经此通道）经回合级 <im_context> 块随受理 prompt 注入（ACP 无 per-turn system prompt 通道；共享会话下「仅 IM 来源回合生效」的唯一解），桌面回合零影响；会话模型跟随桌面端。
+ * acpDriver ClaudeDriver 的 ACP 实现（T2.1）：bot 回合经 sidecar acpsession 域驱动 claude。会话锚双形（路由层经 TurnRequest.AcpSessionKey 回填）：issue uuid = 与桌面工作台共享同一会话（同一 agent 进程、同一会话视图、同一挂起审批状态，IM 与桌面看到的是同一段对话）；conv- 键 = 未关联任务的 IM 独立会话（cwd 为工作空间根目录），对桌面不可见。与 headless（driver_claude：每回合一个进程，--resume 锚点续聊）的差异：会话 per-锚长驻、无 resume，因此不发 TurnInit、不写 claude_session_id 锚点（ACP session id 与--resume 不兼容）。
+ * 权限面（P6）：不消费 bot 级 allowed_tools——会话权限统一由 workspace/issue 的 launch_settings.permissionMode 表达（Ensure 链下发）；
+ * 「需要审批」档的挂起审批由桌面端呈现（T1.7），IM 侧交互随 T2.4/T3.2。守则注入（D3，T1.2）：TurnRequest.SystemPrompt（纯固定守则段，提示词定制内容亦经此通道）经回合级 <im_context> 块随受理 prompt 注入（ACP 无 per-turn system prompt 通道；IM 来源回合专属，桌面回合零影响）；会话模型跟随桌面端。
  */
 type acpDriver struct {
 	sessions acpSessions
@@ -55,19 +56,18 @@ func NewAcpDriver(sessions acpSessions) ClaudeDriver {
  */
 func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
 	/*
-	 * 目标 issue 由路由层解析会话绑定后回填（routeTarget.IssueID，T2.3）；
-	 * 空 = 未绑定（含挂空绑定降级），本驱动不持绑定知识，只负责引导文案把用户带回正轨。
-	 * T2.2 后正常链路由编排器探针步先行递卡收口，此处文案是无卡链路（探针未实现/读库失败落回主路径）的兜底。
+	 * 会话锚键由路由层解析后回填（routeTarget.SessionKey）；空 = 路由缺陷（正常链路由层
+	 * 对 ACP 目标恒给出 conv-/issue 锚键之一），受理拒绝。
 	 */
-	if req.IssueID == "" {
-		return nil, errors.New("该工作空间已切换为 ACP 模式，但本会话尚未绑定任务：发送「" + issueCommandToken + " <标题关键词>」搜索任务并点击卡片完成绑定，或把工作空间启动模式切回终端模式")
+	if req.AcpSessionKey == "" {
+		return nil, errors.New("ACP 回合缺少会话锚键（路由层未回填）")
 	}
-	issueID := req.IssueID
-	snap, err := d.sessions.Ensure(ctx, issueID, "")
+	sessionKey := req.AcpSessionKey
+	snap, err := d.sessions.Ensure(ctx, sessionKey, "")
 	if err != nil {
 		return nil, err
 	}
-	frames, stop := d.sessions.Subscribe(issueID)
+	frames, stop := d.sessions.Subscribe(sessionKey)
 	snap, err = waitSessionReady(ctx, frames, snap)
 	if err != nil {
 		stop()
@@ -78,12 +78,12 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 	 * 受理文本 = 围栏全文 + <im_context> 守则块（T1.2）；
 	 * meta 来源恒 bot，Display 随 TurnRequest 透传（panel 显示链路：user 条目携带来源标记与展示元数据）。
 	 */
-	if err := d.sessions.PromptQueued(ctx, issueID, acpTurnPrompt(req), acpsession.PromptMeta{Source: acpsession.EntrySourceBot, Display: req.Display}); err != nil {
+	if err := d.sessions.PromptQueued(ctx, sessionKey, acpTurnPrompt(req), acpsession.PromptMeta{Source: acpsession.EntrySourceBot, Display: req.Display}); err != nil {
 		stop()
 		return nil, err
 	}
 	stop() // 等位窗口帧全部作废（含受理帧自身——armed 由重开订阅的首帧快照装填）
-	turnFrames, stopTurn := d.sessions.Subscribe(issueID)
+	turnFrames, stopTurn := d.sessions.Subscribe(sessionKey)
 	events := make(chan TurnEvent, 128)
 	idle, budget := d.watchdogIdle, d.watchdogBudget
 	if idle == 0 {
@@ -92,7 +92,7 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 	if budget == 0 {
 		budget = watchdogBudgetDefault
 	}
-	go collectTurn(ctx, d.sessions, issueID, snap.AcpSessionID, turnFrames, stopTurn, events, idle, budget)
+	go collectTurn(ctx, d.sessions, sessionKey, snap.AcpSessionID, turnFrames, stopTurn, events, idle, budget)
 	return events, nil
 }
 
@@ -199,7 +199,7 @@ func resetTimer(t *time.Timer, d time.Duration) {
  * 终态唯一性：turnEnded/terminated/通道关闭先到先收。差分：回合闸门保证无他回合，agentMessage/agentThought 帧携带本回合累计全量，水位线差分转增量事件（基线经 user 锚从首帧快照装填）。
  * ctx 取消 = 软取消（Manager.Cancel → acp 层强制收口，终态帧必达），不自建超时；取消信号消费一次即摘出 select。
  */
-func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionID string, frames <-chan acpsession.Frame, stop func(), events chan<- TurnEvent, idle, budget time.Duration) {
+func collectTurn(ctx context.Context, sessions acpSessions, sessionKey, acpSessionID string, frames <-chan acpsession.Frame, stop func(), events chan<- TurnEvent, idle, budget time.Duration) {
 	defer close(events)
 	defer stop()
 
@@ -229,24 +229,24 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 	var failedReason string
 	defer func() {
 		if failedReason != "" {
-			sessions.Terminate(issueID, failedReason)
+			sessions.Terminate(sessionKey, failedReason)
 		}
 	}()
 
 	for {
 		select {
 		case <-notify:
-			sessions.Cancel(issueID) // 软取消恰一次；编排器 Stop 后 Manager 可能已收敛，失败则等终态帧/关帧收尾
+			sessions.Cancel(sessionKey) // 软取消恰一次；编排器 Stop 后 Manager 可能已收敛，失败则等终态帧/关帧收尾
 			notify = nil
 			stopTimer(watchdog) // ctx 取消路径由 acpsession giveup 预算保证收敛，看门狗退场
 		case <-watchdog.C:
 			if watchdogDeadline.IsZero() {
-				sessions.Cancel(issueID)
+				sessions.Cancel(sessionKey)
 				watchdogDeadline = time.Now().Add(budget)
 				resetTimer(watchdog, budget)
 			} else {
 				failedReason = "回合长时间无事件无响应，已强制终结会话"
-				sessions.Terminate(issueID, failedReason)
+				sessions.Terminate(sessionKey, failedReason)
 			}
 		case frame, ok := <-frames:
 			if !ok {
@@ -338,7 +338,7 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 				}
 				openPendings = append(openPendings, *frame.Pending)
 				/*
-				 * 出卡尝试（本回合未出过 + 会话代锚在场 + TaskID 过契约校验——issueID 含非法
+				 * 出卡尝试（本回合未出过 + 会话代锚在场 + TaskID 过契约校验——sessionKey 含非法
 				 * 字符等脏数据、代锚缺失回落纯状态行，审批数字/表单桌面应答兜底仍在）。
 				 */
 				var card *CardSpec
@@ -346,7 +346,7 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 					switch frame.Pending.Kind {
 					case "permission":
 						if len(frame.Pending.Options) > 0 {
-							spec := permissionCardSpec(issueID, acpSess, *frame.Pending)
+							spec := permissionCardSpec(sessionKey, acpSess, *frame.Pending)
 							if ValidateCardTaskID(spec.TaskID) == nil {
 								cardSent = true
 								card = &spec
@@ -354,7 +354,7 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 						}
 					case "elicitation":
 						// schema 分类失败（自由输入/越界形态/超上限）即不可表示，不出卡不判错。
-						if spec, ok := elicitationCardSpec(issueID, acpSess, *frame.Pending); ok && ValidateCardTaskID(spec.TaskID) == nil {
+						if spec, ok := elicitationCardSpec(sessionKey, acpSess, *frame.Pending); ok && ValidateCardTaskID(spec.TaskID) == nil {
 							cardSent, elicitCardPendingID = true, frame.Pending.PendingID
 							card = &spec
 						}
