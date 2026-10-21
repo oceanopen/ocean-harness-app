@@ -1,7 +1,7 @@
 /*
- * ocean-harness CLI 命令注册：把随包 sidecar 的 cli 二进制 symlink 到 ~/.local/bin，让任意终端可直接执行 `ocean-harness-cli xxx`（release）/ `ocean-harness-dev-cli xxx`（debug）。
- * 注册模型（参照 orca 四态状态机）：classify 用 symlink_metadata + canonicalize 判定四态——Installed（symlink 指向本 app 的 cli_bin）/ Stale（指向别处，含悬空）/ Conflict（同名普通文件，用户自有文件，拒碰）/ NotInstalled；只在 NotInstalled/Stale 上操作，Conflict 永不改写。
- * 免密设计：建链/删除全程纯 fs 操作无需提权（历史版本 symlink 到 root 属主的 /usr/local/bin 经 osascript 弹密码框已废弃；升级用户如存留 root 属主旧链接需手动 sudo rm 一次）；PATH 依赖经 ~/.zshrc marker 幂等注入/精确摘除（fish 等其他 shell 需手动加 PATH）；生命周期：init 在 setup 末尾后台线程幂等执行（NotInstalled 自动装；Stale 仅悬空自动重建，指向现存他处的与 Conflict 只留日志不动手），install/uninstall 以 IPC 命令暴露；非 macOS 平台整体 no-op（Windows 注册用户级 PATH 属后续工作，同样免密）。
+ * ocean-harness CLI 命令注册：把随包 sidecar 的 cli 二进制暴露为终端命令（release= ocean-harness-cli / debug= ocean-harness-dev-cli），install/uninstall 以 IPC 命令暴露，init 在 setup 末尾后台线程幂等执行。
+ * 注册模型（参照 orca 四态状态机）：Installed（入口指向本 app cli_bin）/ Stale（损坏或指向别处）/ Conflict（同名用户自有文件，永不改写）/ NotInstalled；init 对 NotInstalled 自动装、Stale 自动重建，指向现存他处与 Conflict 只留日志不动。
+ * 免密：macOS 建 symlink 到 ~/.local/bin + ~/.zshrc marker 幂等注入/精确摘除 PATH（fish 等其他 shell 需手动加 PATH）；Windows 写 .cmd shim 到 %LOCALAPPDATA%\OceanHarness\bin + 注册表用户 PATH 注入（NSIS 卸载钩子清理），均纯用户级操作无需提权。
  */
 use std::path::{Path, PathBuf};
 
@@ -50,7 +50,11 @@ fn cli_bin_path(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = exe
         .parent()
         .ok_or_else(|| "无法定位可执行文件所在目录".to_string())?;
-    Ok(dir.join(format!("{}-cli_bin", app.config().identifier)))
+    Ok(dir.join(format!(
+        "{}-cli_bin{}",
+        app.config().identifier,
+        std::env::consts::EXE_SUFFIX
+    )))
 }
 
 // ---- PATH 注入/摘除（幂等，marker 精确配对） ----
@@ -129,6 +133,48 @@ fn remove_path_line(rc: &Path) -> Result<(), String> {
         out.push('\n');
     }
     std::fs::write(rc, out).map_err(|e| format!("写入 {} 失败: {e}", rc.display()))
+}
+
+// ---- 用户 PATH 段合并/摘除与 shim 内容（纯函数，跨平台单测；仅 Windows imp 消费） ----
+
+// 分段比对键：统一小写并去掉尾部路径分隔符，兼容注册表里常见的大小写/尾斜杠漂移。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn path_entry_key(seg: &str) -> String {
+    seg.trim_end_matches(['\\', '/'])
+        .to_ascii_lowercase()
+}
+
+// 追加段：按分号精确匹配判重，缺失才尾部追加（幂等）。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn merge_path_entry(existing: &str, dir: &str) -> String {
+    let dir_key = path_entry_key(dir);
+    if existing
+        .split(';')
+        .any(|seg| path_entry_key(seg) == dir_key)
+    {
+        existing.to_string()
+    } else if existing.is_empty() {
+        dir.to_string()
+    } else {
+        format!("{existing};{dir}")
+    }
+}
+
+// 摘除段：仅删除精确匹配的分段，其余分段（含空段）原样保留。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn remove_path_entry(existing: &str, dir: &str) -> String {
+    let dir_key = path_entry_key(dir);
+    existing
+        .split(';')
+        .filter(|seg| path_entry_key(seg) != dir_key)
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+// shim 文件内容：npm 式文本转发，全部参数原样传给真身（CRLF 为 .cmd 惯例）。
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn shim_content(bin: &str) -> String {
+    format!("@\"{bin}\" %*\r\n")
 }
 
 // ---- macOS 实现（纯 fs，免提权） ----
@@ -321,36 +367,321 @@ mod imp {
 #[cfg(target_os = "macos")]
 pub use imp::{init, install, status, uninstall};
 
-// ---- 非 macOS：整体 no-op（命令仍需存在以保 specta/bindings 签名稳定） ----
+// ---- Windows 实现（npm 式 .cmd shim + 注册表用户 PATH，全程免提权） ----
 
-#[cfg(not(target_os = "macos"))]
-pub fn status(app: &AppHandle) -> CliCommandStatus {
-    CliCommandStatus {
-        state: CliCommandLinkState::NotInstalled,
-        link_name: link_name().to_string(),
-        link_path: link_path()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
-        bin_path: cli_bin_path(app)
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string(),
+#[cfg(target_os = "windows")]
+mod imp {
+    use std::ffi::OsStr;
+    use std::fs;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+    use std::thread;
+
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_EXPAND_SZ, REG_SZ, RegType};
+    use winreg::types::FromRegValue;
+    use winreg::{RegKey, RegValue};
+
+    use super::*;
+
+    // shim 落点：用户级 bin 目录（%LOCALAPPDATA% 下，免提权）。
+    fn shim_dir() -> Result<PathBuf, String> {
+        let local = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+            .ok_or_else(|| "未获取到 LOCALAPPDATA 环境变量，无法定位用户目录".to_string())?;
+        Ok(local.join("OceanHarness").join("bin"))
+    }
+
+    // shim 完整路径：{link_name}.cmd（cmd/PowerShell 均按 PATHEXT 解析到它）。
+    fn shim_path() -> Result<PathBuf, String> {
+        Ok(shim_dir()?.join(format!("{}.cmd", link_name())))
+    }
+
+    /*
+     * 四态判定：内容精确匹配=Installed；同名普通文件内容不同=Conflict；
+     * symlink/目录（含悬空）=Stale；缺失=NotInstalled。
+     */
+    fn classify(shim: &Path, bin: &Path) -> CliCommandLinkState {
+        let Ok(md) = fs::symlink_metadata(shim) else {
+            return CliCommandLinkState::NotInstalled;
+        };
+        if md.is_symlink() || md.is_dir() {
+            return CliCommandLinkState::Stale;
+        }
+        let expected = shim_content(&bin.to_string_lossy());
+        match fs::read_to_string(shim) {
+            Ok(content) if content == expected => CliCommandLinkState::Installed,
+            _ => CliCommandLinkState::Conflict,
+        }
+    }
+
+    fn build_status(app: &AppHandle) -> CliCommandStatus {
+        let bin = cli_bin_path(app).unwrap_or_default();
+        CliCommandStatus {
+            state: classify(&shim_path().unwrap_or_default(), &bin),
+            link_name: link_name().to_string(),
+            link_path: shim_path()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            bin_path: bin.to_string_lossy().to_string(),
+        }
+    }
+
+    pub fn status(app: &AppHandle) -> CliCommandStatus {
+        build_status(app)
+    }
+
+    /*
+     * 注册（幂等）：写 shim 后注入用户 PATH（失败不撤 shim，报手动指引）；
+     * PATH 注册表值实际变化时广播 Environment 变更，新进程立即可见。
+     */
+    pub fn install(app: &AppHandle) -> Result<CliCommandStatus, String> {
+        let bin = cli_bin_path(app)?;
+        if fs::symlink_metadata(&bin).is_err() {
+            return Err(format!(
+                "CLI 二进制不存在: {}（dev 模式请先执行 pnpm server:test 构建产物）",
+                bin.display()
+            ));
+        }
+        let dir = shim_dir()?;
+        let shim = shim_path()?;
+        match classify(&shim, &bin) {
+            CliCommandLinkState::Conflict => {
+                return Err(format!(
+                    "{} 已存在且内容不是本 app 生成的 shim（可能是用户自有脚本），拒绝覆盖；请手动处理后重试",
+                    shim.display()
+                ));
+            }
+            CliCommandLinkState::Installed => return Ok(build_status(app)),
+            CliCommandLinkState::Stale => {
+                if let Err(e) = fs::remove_file(&shim) {
+                    return Err(format!(
+                        "旧入口 {} 无法移除（{e}）；请手动删除后重试",
+                        shim.display()
+                    ));
+                }
+            }
+            CliCommandLinkState::NotInstalled => {}
+        }
+        fs::create_dir_all(&dir).map_err(|e| format!("创建 {} 失败: {e}", dir.display()))?;
+        fs::write(&shim, shim_content(&bin.to_string_lossy()))
+            .map_err(|e| format!("写入 shim 失败: {e}"))?;
+        if let Err(e) = write_user_path(&dir, false) {
+            return Err(format!(
+                "命令已注册（{}），但用户 PATH 注入失败: {e}；请手动将 {} 加入用户 PATH 后重开终端",
+                shim.display(),
+                dir.display()
+            ));
+        }
+        let status = build_status(app);
+        if status.state != CliCommandLinkState::Installed {
+            return Err(format!(
+                "注册后校验未通过，当前状态: {:?}",
+                status.state
+            ));
+        }
+        Ok(status)
+    }
+
+    /*
+     * 移除（幂等）：仅删本 app 生成的 shim + 摘除用户 PATH 段；Stale/Conflict 拒删。
+     * PATH 摘除失败不阻断卸载（shim 已删，残留一段无害，留日志）。
+     */
+    pub fn uninstall(app: &AppHandle) -> Result<CliCommandStatus, String> {
+        let bin = cli_bin_path(app)?;
+        let shim = shim_path()?;
+        let dir = shim_dir()?;
+        match classify(&shim, &bin) {
+            CliCommandLinkState::NotInstalled => return Ok(build_status(app)),
+            CliCommandLinkState::Stale | CliCommandLinkState::Conflict => {
+                return Err(format!(
+                    "{} 不是本 app 生成的 shim（内容不符或为特殊残留），拒绝删除",
+                    shim.display()
+                ));
+            }
+            CliCommandLinkState::Installed => {}
+        }
+        fs::remove_file(&shim).map_err(|e| format!("删除 shim 失败: {e}"))?;
+        if let Err(e) = write_user_path(&dir, true) {
+            log::warn!("[cli-register] 用户 PATH 段摘除失败（无害残留）: {e}");
+        }
+        Ok(build_status(app))
+    }
+
+    /*
+     * setup 钩子：后台线程自动注册（幂等免密故静默无打扰）。NotInstalled 与 Stale
+     * （损坏/悬空）自动装；Conflict（同名用户自有脚本）保持只读不动。
+     */
+    pub fn init(app: &AppHandle) {
+        let app = app.clone();
+        thread::spawn(move || {
+            let (bin, shim) = match (cli_bin_path(&app), shim_path()) {
+                (Ok(b), Ok(s)) => (b, s),
+                (Err(e), _) | (_, Err(e)) => {
+                    log::warn!("[cli-register] 自动注册跳过: {e}");
+                    return;
+                }
+            };
+            match classify(&shim, &bin) {
+                CliCommandLinkState::Installed => {
+                    log::info!("[cli-register] {} 已注册", shim.display());
+                }
+                CliCommandLinkState::Conflict => {
+                    log::warn!(
+                        "[cli-register] {} 被同名非本 app 文件占用（Conflict），不自动改动",
+                        shim.display()
+                    );
+                }
+                CliCommandLinkState::NotInstalled | CliCommandLinkState::Stale => {
+                    match install(&app) {
+                        Ok(_) => log::info!(
+                            "[cli-register] 已注册命令 {} -> {}",
+                            shim.display(),
+                            bin.display()
+                        ),
+                        Err(e) => log::warn!("[cli-register] 自动注册未完成: {e}"),
+                    }
+                }
+            }
+        });
+    }
+
+    /*
+     * 用户 PATH 读改写：读写均带原始类型，REG_EXPAND_SZ 不降级；值实际变化才写回并
+     * 广播；原值缺失时 remove 视为已摘除，merge 以 REG_SZ 新建。
+     */
+    fn write_user_path(dir: &Path, remove: bool) -> Result<(), String> {
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let env = hkcu
+            .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
+            .map_err(|e| format!("打开注册表 HKCU\\Environment 失败: {e}"))?;
+        let read = match env.get_raw_value("Path") {
+            Ok(v) => Some(v),
+            Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(format!("读取用户 PATH 失败: {e}")),
+        };
+        let (existing, vtype) = match read {
+            Some(v) => {
+                if v.vtype != REG_SZ && v.vtype != REG_EXPAND_SZ {
+                    return Err("用户 PATH 注册表值类型异常（非字符串），拒绝改写".to_string());
+                }
+                let s =
+                    String::from_reg_value(&v).map_err(|e| format!("解码用户 PATH 失败: {e}"))?;
+                (s, v.vtype)
+            }
+            None => {
+                if remove {
+                    return Ok(());
+                }
+                (String::new(), REG_SZ)
+            }
+        };
+        let updated = if remove {
+            remove_path_entry(&existing, &dir.to_string_lossy())
+        } else {
+            merge_path_entry(&existing, &dir.to_string_lossy())
+        };
+        if updated == existing {
+            return Ok(());
+        }
+        if updated.is_empty() {
+            env.delete_value("Path")
+                .map_err(|e| format!("删除空用户 PATH 失败: {e}"))?;
+            broadcast_env_change();
+            return Ok(());
+        }
+        env.set_raw_value("Path", &reg_string_value(&updated, vtype))
+            .map_err(|e| format!("写入用户 PATH 失败: {e}"))?;
+        broadcast_env_change();
+        Ok(())
+    }
+
+    // 字符串编码为注册表字符串值（UTF-16LE + NUL 终止），vtype 保持读取到的原类型。
+    fn reg_string_value(s: &str, vtype: RegType) -> RegValue {
+        let mut words: Vec<u16> = s.encode_utf16().collect();
+        words.push(0);
+        let mut bytes = Vec::with_capacity(words.len() * 2);
+        for word in words {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        RegValue { bytes, vtype }
+    }
+
+    // 广播环境变量变更：新进程立即可见（已开终端需重开，Windows 机制使然）。
+    fn broadcast_env_change() {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn SendMessageTimeoutW(
+                hwnd: isize,
+                msg: u32,
+                wparam: usize,
+                lparam: *const u16,
+                flags: u32,
+                timeout: u32,
+                result: *mut usize,
+            ) -> isize;
+        }
+        const HWND_BROADCAST: isize = 0xFFFF;
+        const WM_SETTINGCHANGE: u32 = 0x001A;
+        const SMTO_ABORTIFHUNG: u32 = 0x0002;
+        let param: Vec<u16> = OsStr::new("Environment")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe {
+            SendMessageTimeoutW(
+                HWND_BROADCAST,
+                WM_SETTINGCHANGE,
+                0,
+                param.as_ptr(),
+                SMTO_ABORTIFHUNG,
+                2000,
+                std::ptr::null_mut(),
+            );
+        }
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn init(_app: &AppHandle) {}
+#[cfg(target_os = "windows")]
+pub use imp::{init, install, status, uninstall};
 
-#[cfg(not(target_os = "macos"))]
-pub fn install(_app: &AppHandle) -> Result<CliCommandStatus, String> {
-    Err("CLI 命令注册仅支持 macOS".to_string())
+// ---- 其余平台：整体 no-op（命令仍需存在以保 specta/bindings 签名稳定） ----
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+mod imp {
+    use tauri::AppHandle;
+
+    use super::*;
+
+    pub fn status(app: &AppHandle) -> CliCommandStatus {
+        CliCommandStatus {
+            state: CliCommandLinkState::NotInstalled,
+            link_name: link_name().to_string(),
+            link_path: link_path()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            bin_path: cli_bin_path(app)
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+        }
+    }
+
+    pub fn init(_app: &AppHandle) {}
+
+    pub fn install(_app: &AppHandle) -> Result<CliCommandStatus, String> {
+        Err("CLI 命令注册仅支持 macOS/Windows".to_string())
+    }
+
+    pub fn uninstall(_app: &AppHandle) -> Result<CliCommandStatus, String> {
+        Err("CLI 命令注册仅支持 macOS/Windows".to_string())
+    }
 }
 
-#[cfg(not(target_os = "macos"))]
-pub fn uninstall(_app: &AppHandle) -> Result<CliCommandStatus, String> {
-    Err("CLI 命令注册仅支持 macOS".to_string())
-}
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub use imp::{init, install, status, uninstall};
 
 // ---- IPC 命令（纯 fs 操作毫秒级完成，同步命令即可） ----
 
@@ -459,5 +790,37 @@ mod tests {
         let rc = test_rc("remove-missing");
         let _ = std::fs::remove_file(&rc);
         remove_path_line(&rc).unwrap();
+    }
+
+    #[test]
+    fn merge_path_entry_appends_and_is_idempotent() {
+        assert_eq!(
+            merge_path_entry("C:\\a;C:\\b", "C:\\new"),
+            "C:\\a;C:\\b;C:\\new"
+        );
+        // 已存在（大小写/尾斜杠漂移）不重复追加，原串原样返回。
+        assert_eq!(
+            merge_path_entry("C:\\a;C:\\NEW\\", "C:\\new"),
+            "C:\\a;C:\\NEW\\"
+        );
+        assert_eq!(merge_path_entry("", "C:\\new"), "C:\\new");
+    }
+
+    #[test]
+    fn remove_path_entry_only_removes_matching_segment() {
+        assert_eq!(
+            remove_path_entry("C:\\a;C:\\new;C:\\b", "C:\\NEW"),
+            "C:\\a;C:\\b"
+        );
+        assert_eq!(remove_path_entry("C:\\new", "C:\\new"), "");
+        assert_eq!(remove_path_entry("C:\\a", "C:\\new"), "C:\\a");
+    }
+
+    #[test]
+    fn shim_content_forwards_all_args() {
+        assert_eq!(
+            shim_content("C:\\app\\cli_bin.exe"),
+            "@\"C:\\app\\cli_bin.exe\" %*\r\n"
+        );
     }
 }
