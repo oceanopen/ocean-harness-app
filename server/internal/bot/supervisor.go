@@ -42,8 +42,9 @@ type BotStatusView struct {
  * NewSupervisor 构造 supervisor（port 为 sidecar 自身 HTTP 端口；sessions 为 ACP 会话域，引擎路由按 workspace 启动模式消费——两引擎共存，见 driver_route.go）。
  * 路由驱动以三角色装配进编排器：ClaudeDriver（引擎路由）、pendingGate（审批数字快路径，T2.4）、 interactionHandler（审批卡点击消费，T3.2）——三者同源于 driverRoute 单实例，共享 resolve 与会话域消费面；
  * supervisor 自身以 botApplier 第四依赖注入（wsbind 卡落库后的延迟热重载，T2.1）。
+ * deliveries 为回合内文件投递注册表（nil = 投递链路禁用）。
  */
-func NewSupervisor(db *gorm.DB, port int, sessions acpSessions, log *zap.Logger) *Supervisor {
+func NewSupervisor(db *gorm.DB, port int, sessions acpSessions, deliveries *DeliveryRegistry, log *zap.Logger) *Supervisor {
 	s := &Supervisor{
 		db:    db,
 		port:  port,
@@ -53,6 +54,7 @@ func NewSupervisor(db *gorm.DB, port int, sessions acpSessions, log *zap.Logger)
 	}
 	route := newDriverRoute(db, sessions, s)
 	s.orch = NewOrchestrator(&ConversationStore{DB: db}, route, route, route, log)
+	s.orch.Deliveries = deliveries
 	return s
 }
 

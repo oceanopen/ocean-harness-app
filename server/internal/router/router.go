@@ -232,5 +232,12 @@ func SetupRouter() *gin.Engine {
 	mcpHandler := gin.WrapH(mcpservers.McpOceanHarnessStreamableHTTPHandler())
 	r.Match([]string{"GET", "POST", "DELETE"}, "/mcp/streamableHttp/oceanHarness", mcpHandler)
 
+	/*
+	 * im 投递端点（bot 回合内文件投递，任务 8）：token 为路径尾段（即回合投递注册键），
+	 * per-token server 见 mcpservers/mcp_im_delivery.go；驱动侧 --mcp-config 与本路径互为镜像。
+	 */
+	imDeliveryHandler := gin.WrapH(mcpservers.McpImDeliveryStreamableHTTPHandler())
+	r.Match([]string{"GET", "POST", "DELETE"}, mcpservers.ImDeliveryPathPrefix+":token", imDeliveryHandler)
+
 	return r
 }

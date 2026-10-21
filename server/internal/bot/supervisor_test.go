@@ -68,7 +68,7 @@ func newSupervisorHarness(t *testing.T) (*Supervisor, *stubChannelRuntime) {
 	db := newBotTestDB(t, &model.ImBot{})
 	mkBot(t, db, "")
 	rt := &stubChannelRuntime{}
-	s := NewSupervisor(db, 9100, nil, zap.NewNop())
+	s := NewSupervisor(db, 9100, nil, NewDeliveryRegistry(), zap.NewNop())
 	s.Register(&stubChannelFactory{rt: rt})
 	return s, rt
 }

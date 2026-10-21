@@ -2,6 +2,8 @@ package bot
 
 import (
 	"encoding/json"
+	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -58,13 +60,13 @@ func TestParseClaudeLine(t *testing.T) {
 			t.Fatalf("got %+v", evs)
 		}
 	})
-	t.Run("thinking 增量转思考尾部摘要", func(t *testing.T) {
+	t.Run("thinking 增量事件", func(t *testing.T) {
 		evs := eventsOf(t, fxThinkingDelta)
-		if len(evs) != 1 || evs[0].Type != TurnStatus || evs[0].Status != "思考中: The user" {
-			t.Fatalf("thinking_delta 应转尾部摘要状态行: %+v", evs)
+		if len(evs) != 1 || evs[0].Type != TurnThinking || evs[0].Delta != "The user" {
+			t.Fatalf("thinking_delta 应转 TurnThinking 增量事件: %+v", evs)
 		}
 	})
-	t.Run("thinking 多增量累计且尾部截断", func(t *testing.T) {
+	t.Run("thinking 多增量差分（截取在泵侧）", func(t *testing.T) {
 		long := strings.Repeat("思", 300)
 		first := `{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"起手"}},"session_id":"s"}`
 		second, err := json.Marshal(map[string]any{"type": "stream_event", "session_id": "s", "event": map[string]any{
@@ -76,9 +78,8 @@ func TestParseClaudeLine(t *testing.T) {
 			t.Fatalf("构造夹具: %v", err)
 		}
 		evs := eventsOfLines(t, first, string(second))
-		want := "思考中: …" + strings.Repeat("思", 220)
-		if len(evs) != 2 || evs[0].Status != "思考中: 起手" || evs[1].Type != TurnStatus || evs[1].Status != want {
-			t.Fatalf("思考累计应滚动覆写且尾部截 220 rune:\n%+v\nwant %s", evs, want)
+		if len(evs) != 2 || evs[0].Type != TurnThinking || evs[0].Delta != "起手" || evs[1].Type != TurnThinking || evs[1].Delta != long {
+			t.Fatalf("思考应按水位线差分发增量事件:\n%+v", evs)
 		}
 	})
 	t.Run("thinking_tokens 噪声过滤", func(t *testing.T) {
@@ -111,8 +112,9 @@ func TestParseClaudeLine(t *testing.T) {
 	})
 	t.Run("user 工具结果转完成状态行", func(t *testing.T) {
 		evs := eventsOfLines(t, fxAssistantToolUse, fxUserToolResult)
-		if len(evs) != 2 || evs[0].Type != TurnToolUse || evs[1].Type != TurnStatus || evs[1].Status != "🔧 Bash 已完成" {
-			t.Fatalf("tool_result 应经 id→名映射转完成状态行: %+v", evs)
+		if len(evs) != 2 || evs[0].Type != TurnToolUse || evs[1].Type != TurnStatus ||
+			evs[1].Status != "✅ Bash 已完成" || evs[1].ToolName != "Bash" {
+			t.Fatalf("tool_result 应经 id→名映射转带工具名的完成终态: %+v", evs)
 		}
 	})
 	t.Run("user 工具失败结果转失败状态行", func(t *testing.T) {
@@ -123,7 +125,7 @@ func TestParseClaudeLine(t *testing.T) {
 	})
 	t.Run("未注册 id 的工具结果回落中性名", func(t *testing.T) {
 		evs := eventsOf(t, fxUserToolResult)
-		if len(evs) != 1 || evs[0].Type != TurnStatus || evs[0].Status != "🔧 工具 已完成" {
+		if len(evs) != 1 || evs[0].Type != TurnStatus || evs[0].Status != "✅ 工具 已完成" {
 			t.Fatalf("未知 tool_use_id 应回落中性名: %+v", evs)
 		}
 	})
@@ -160,5 +162,49 @@ func TestTurnEnv(t *testing.T) {
 		if kv == "PATH=" {
 			t.Fatalf("不应注入空 PATH")
 		}
+	}
+}
+
+/*
+ * TestBuildClaudeArgsDelivery 投递令牌 → argv 注入矩阵：无令牌零注入；带令牌注入
+ * --mcp-config（内容指向 im 投递端点）+ send_file 白名单位，cleanup 删临时配置文件。
+ */
+func TestBuildClaudeArgsDelivery(t *testing.T) {
+	args, cleanup, err := buildClaudeArgs(TurnRequest{SystemPrompt: "sp"})
+	if err != nil {
+		t.Fatalf("无令牌构建: %v", err)
+	}
+	cleanup()
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "--mcp-config") || strings.Contains(joined, imSendFileToolName) {
+		t.Fatalf("无令牌不应注入 MCP 配置: %s", joined)
+	}
+
+	args, cleanup, err = buildClaudeArgs(TurnRequest{Port: 9100, DeliveryToken: "tk-1"})
+	if err != nil {
+		t.Fatalf("带令牌构建: %v", err)
+	}
+	joined = strings.Join(args, " ")
+	if !strings.Contains(joined, "--mcp-config") || !strings.Contains(joined, imSendFileToolName) {
+		t.Fatalf("带令牌应注入 MCP 配置与白名单: %s", joined)
+	}
+	idx := -1
+	for i, a := range args {
+		if a == "--mcp-config" {
+			idx = i
+		}
+	}
+	data, err := os.ReadFile(args[idx+1])
+	if err != nil {
+		t.Fatalf("临时配置可读: %v", err)
+	}
+	cfgText := string(data)
+	if !strings.Contains(cfgText, "http://127.0.0.1:9100/mcp/streamableHttp/im/tk-1") ||
+		!strings.Contains(cfgText, `"type":"http"`) {
+		t.Fatalf("配置应指向 im 投递端点: %s", cfgText)
+	}
+	cleanup()
+	if _, err := os.Stat(args[idx+1]); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("cleanup 应删除临时配置文件")
 	}
 }

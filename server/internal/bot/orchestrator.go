@@ -33,14 +33,15 @@ var errStopped = errors.New("编排器已停止")
 const msgAlreadySeenText = "该消息已处理过，重复推送已忽略。"
 
 /*
- * turnJob 一个待执行回合。reply 是受理时已开出并发过「收到，处理中…」占位帧的回复流——
- * 企微 5 秒被动回复窗口在受理瞬间被占住，排队多久都不超窗（写者三段交接恒单写者：适配器
- * 回调 goroutine 发占位帧 → worker 发执行期状态帧 → 回复泵接管至终帧）。
+ * turnJob 一个待执行回合。reply 是受理时已开出并发过占位帧的回复流——企微 5 秒被动回复
+ * 窗口在受理瞬间被占住，排队多久都不超窗（写者交接恒单写者：占位帧 → 状态帧 → 回复泵）。
+ * freshSession 闲置过期产物：本轮以新会话启动（上一会话锚已备份，/继续 可接回）。
  */
 type turnJob struct {
-	cfg   BotRuntimeConfig
-	msg   InboundMessage
-	reply ReplyStream
+	cfg          BotRuntimeConfig
+	msg          InboundMessage
+	reply        ReplyStream
+	freshSession bool
 }
 
 /*
@@ -55,13 +56,21 @@ type Orchestrator struct {
 	interactions interactionHandler
 	log          *zap.Logger
 
-	ctx    context.Context // 生命周期 ctx：Stop 级联取消全部在途回合（杀 claude 子进程）
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	queues map[string]chan turnJob // key: <botID>:<conversationKey>；首消息惰性建，进程期常驻
-	turns  chan struct{}           // 全局并发回合信号量（maxConcurrentTurns 个槽位）
-	wg     sync.WaitGroup
-	closed bool
+	/*
+	 * Deliveries 会话内文件投递注册表（装配根注入；nil = 投递链路禁用，既有测试零改动）。
+	 * 投递渠道每回合登记 token → ArtifactReplyStream，MCP im 投递端点经 token 取回推送。
+	 */
+	Deliveries *DeliveryRegistry
+
+	ctx         context.Context // 生命周期 ctx：Stop 级联取消全部在途回合（杀 claude 子进程）
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	queues      map[string]chan turnJob       // key: <botID>:<conversationKey>；首消息惰性建，进程期常驻
+	turnCancels map[string]context.CancelFunc // key 同上；在途回合取消句柄（/stop /clear 拦截步消费）
+	busy        map[string]bool               // key 同上；worker 执行中标记（排队占位文案分流）
+	turns       chan struct{}                 // 全局并发回合信号量（maxConcurrentTurns 个槽位）
+	wg          sync.WaitGroup
+	closed      bool
 }
 
 /*
@@ -79,6 +88,8 @@ func NewOrchestrator(store *ConversationStore, driver ClaudeDriver, gate pending
 		ctx:          ctx,
 		cancel:       cancel,
 		queues:       make(map[string]chan turnJob),
+		turnCancels:  make(map[string]context.CancelFunc),
+		busy:         make(map[string]bool),
 		turns:        make(chan struct{}, maxConcurrentTurns),
 	}
 }
@@ -114,12 +125,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 	 * 置灰更新须以点击事件帧 headers 开出的本流发起（企微 5 秒窗口内），故 update 在终帧之前应用；流无卡能力（纯文本渠道）静默跳过，置灰失败仅告警不阻断终帧。
 	 */
 	if msg.Interaction != nil {
-		seen, err := o.store.HasSeen(cfg.BotID, msg.ConversationKey, msg.MessageID)
-		if err != nil {
-			o.log.Error("bot 幂等查询失败（放行交互拦截）", zap.Error(err))
-		}
-		if seen {
-			_ = rs.Flush(msgAlreadySeenText, true)
+		if o.seenOrFlush(cfg, msg.ConversationKey, msg.MessageID, rs, "交互拦截") {
 			return
 		}
 		text, update, handled := interactionFallbackText(), (*CardSpec)(nil), false
@@ -129,9 +135,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 		if !handled {
 			text = interactionFallbackText()
 		}
-		if err := o.store.MarkSeen(cfg.BotID, msg.ConversationKey, msg.MessageID); err != nil {
-			o.log.Error("bot markSeen 失败", zap.Error(err))
-		}
+		o.markSeen(cfg, msg.ConversationKey, msg.MessageID)
 		if update != nil {
 			/*
 			 * 混合承载（卡面+推送）：置灰帧 desc 覆写为应答首行——结果在卡面原地可见
@@ -156,18 +160,11 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 	 * 渠道重投同 msgid 的数字消息不得二次应答（重放窗口内新开挂起会被误答）。未命中消息的幂等仍由 runTurn 复查收口（此处 HasSeen 结果弃用）。
 	 */
 	if o.gate != nil {
-		seen, err := o.store.HasSeen(cfg.BotID, msg.ConversationKey, msg.MessageID)
-		if err != nil {
-			o.log.Error("bot 幂等查询失败（放行快路径）", zap.Error(err))
-		}
-		if seen {
-			_ = rs.Flush(msgAlreadySeenText, true)
+		if o.seenOrFlush(cfg, msg.ConversationKey, msg.MessageID, rs, "快路径") {
 			return
 		}
 		if text, handled := o.gate.TryRespondPending(cfg, msg); handled {
-			if err := o.store.MarkSeen(cfg.BotID, msg.ConversationKey, msg.MessageID); err != nil {
-				o.log.Error("bot markSeen 失败", zap.Error(err))
-			}
+			o.markSeen(cfg, msg.ConversationKey, msg.MessageID)
 			_ = rs.Flush(text, true)
 			return
 		}
@@ -182,18 +179,11 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 			if _, isCard := rs.(CardReplyStream); !isCard {
 				if in, ok := o.synthNumberedInteraction(cfg, msg, n); ok {
 					msg.Interaction = in
-					seen, err := o.store.HasSeen(cfg.BotID, msg.ConversationKey, msg.MessageID)
-					if err != nil {
-						o.log.Error("bot 幂等查询失败（放行编号快路径）", zap.Error(err))
-					}
-					if seen {
-						_ = rs.Flush(msgAlreadySeenText, true)
+					if o.seenOrFlush(cfg, msg.ConversationKey, msg.MessageID, rs, "编号快路径") {
 						return
 					}
 					if text, _, handled := o.interactions.TryHandleInteraction(cfg, msg); handled {
-						if err := o.store.MarkSeen(cfg.BotID, msg.ConversationKey, msg.MessageID); err != nil {
-							o.log.Error("bot markSeen 失败", zap.Error(err))
-						}
+						o.markSeen(cfg, msg.ConversationKey, msg.MessageID)
 						_ = rs.Flush(text, true)
 						return
 					}
@@ -201,11 +191,53 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 			}
 		}
 	}
-	if err := rs.Flush("收到，处理中…", false); err != nil {
+	/*
+	 * 控制指令拦截步（/stop /clear /继续）：打断在途回合/变更会话锚点却不承载正文，恒在
+	 * 受理现场终帧收口（不入队——排队执行会让 /stop 失去即时性，且被打断的正是本队列）。
+	 * 幂等前置同快路径——本路径变更状态却不过 runTurn 的权威复查。
+	 */
+	if token := parseSlashCommand(msg.Text); token == slashStopToken || token == slashClearToken || token == slashResumeToken {
+		if o.seenOrFlush(cfg, msg.ConversationKey, msg.MessageID, rs, "控制指令") {
+			return
+		}
+		text := o.applyControlCommand(cfg, msg.ConversationKey, token)
+		o.markSeen(cfg, msg.ConversationKey, msg.MessageID)
+		_ = rs.Flush(text, true)
+		return
+	}
+	/*
+	 * 会话闲置边界（2h）：命中即先发独立提示气泡（会话结束提醒 + 新会话标题 + /继续 指引），
+	 * 再走正文流——「先提示、后正文」的消息序。headless 本轮回合以新会话启动（锚已备份，
+	 * /继续 可接回）；ACP 共享会话（桌面共用）不切断、仅提醒。
+	 */
+	freshSession := false
+	if _, expired, err := o.store.ExpireIdleSession(cfg.BotID, msg.ConversationKey, time.Now()); err != nil {
+		o.log.Error("bot 会话闲置判定失败（按未过期处理）", zap.Error(err))
+	} else if expired {
+		acp := o.isACPRoute(cfg, msg.ConversationKey)
+		if ns, ok := rs.(NoticeReplyStream); ok {
+			if acp {
+				_ = ns.SendNotice("⏰ 距上次对话已超过 2 小时，会话仍在延续。回复 /help 可查看支持的指令。")
+			} else {
+				_ = ns.SendNotice("⏰ 距上次对话已超过 2 小时，上一会话已结束。已开启新会话《" + sessionTitle(msg.Text) + "》；要继续上次话题，回复 /继续。")
+			}
+		}
+		freshSession = !acp
+	}
+	// 活动时间戳顺延（受理即触碰）：ACP 等无锚回写链路的唯一时基来源，防闲置误报逐条重放。
+	if err := o.store.TouchLastMessage(cfg.BotID, msg.ConversationKey, time.Now()); err != nil {
+		o.log.Warn("bot 会话活动时间戳写入失败", zap.Error(err))
+	}
+	// 占位帧走 quote 样式（思考面板同款），标识非正文。
+	placeholder := quoteAware(rs, "收到，处理中…")
+	if o.queueBusy(queueKey(cfg.BotID, msg.ConversationKey)) {
+		placeholder = quoteAware(rs, "收到。当前有任务处理中，排队中，稍后自动继续…")
+	}
+	if err := rs.Flush(placeholder, false); err != nil {
 		o.log.Warn("bot 占位帧发送失败（继续回合）", zap.Error(err))
 	}
 
-	if err := o.enqueue(cfg, msg, rs); err != nil {
+	if err := o.enqueue(cfg, msg, rs, freshSession); err != nil {
 		text := "当前消息较多，排队已满，请稍后再发。"
 		if errors.Is(err, errStopped) {
 			text = "机器人已停止服务。"
@@ -220,6 +252,26 @@ func accessDeniedText(reason string) string {
 		return "机器人访问策略配置异常，暂无法处理消息，请检查 bot 配置。"
 	}
 	return "您不在该机器人的使用白名单内，请联系机器人管理员。"
+}
+
+// seenOrFlush 幂等闸：已见即终帧回统一文案并返回 true；查询失败按放行处理（what 为放行场景标注）。
+func (o *Orchestrator) seenOrFlush(cfg BotRuntimeConfig, key, msgID string, rs ReplyStream, what string) bool {
+	seen, err := o.store.HasSeen(cfg.BotID, key, msgID)
+	if err != nil {
+		o.log.Error("bot 幂等查询失败（放行"+what+"）", zap.Error(err))
+	}
+	if seen {
+		_ = rs.Flush(msgAlreadySeenText, true)
+		return true
+	}
+	return false
+}
+
+// markSeen 幂等收口：登记已处理（拦截步/权威复查共用），失败仅告警不阻断。
+func (o *Orchestrator) markSeen(cfg BotRuntimeConfig, key, msgID string) {
+	if err := o.store.MarkSeen(cfg.BotID, key, msgID); err != nil {
+		o.log.Error("bot markSeen 失败", zap.Error(err))
+	}
 }
 
 /*
@@ -258,8 +310,28 @@ type routeProber interface {
 const workspaceGateLead = "机器人尚未选择工作空间，请选择归属工作空间后重新发送消息；也可在应用「IM 机器人」页编辑机器人。"
 
 /*
- * sendBindingCard 绑定卡统一收口（T2.2 统一「搜索 → 卡片 → 提交绑定」模型，指令步/门禁/ 探针步三入口的唯一出卡口）：查候选 → 组域内文本（出卡同帧完整名称列表 / 零候选教学文案/ 读库失败文案）→ lead 非空（门禁语境）时指引段前置于一切形态 → 有卡先登记 last_message_card 再出卡（终帧收口；
- * last_message_card 闸的 SSOT——写库失败不出卡，防「刚收到的卡一点就提示已失效」）、无卡或 SendCard 失败回落 Flush 纯文本（卡契约：渠道协议「卡同消息仅一次」，已附卡后的调用返回错误）。
+ * sendCardOrFlush 出卡统一收口：无卡能力直接纯文本终帧；先登记 last_message_card（写库失败
+ * 不出卡——点击消费闸 SSOT，防「刚收到的卡一点就提示已失效」），SendCard 终帧，任一失败
+ * 回落 Flush 纯文本（渠道协议「卡同消息仅一次」，回落语义由卡契约保证）。
+ */
+func (o *Orchestrator) sendCardOrFlush(cfg BotRuntimeConfig, key, kindName string, spec CardSpec, text string, rs ReplyStream) {
+	cs, ok := rs.(CardReplyStream)
+	if !ok {
+		_ = rs.Flush(text, true)
+		return
+	}
+	if err := o.store.SaveLastMessageCard(cfg.BotID, key, kindName, spec); err != nil {
+		o.log.Error("bot 卡登记失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.String("kind", kindName), zap.Error(err))
+	} else if err := cs.SendCard(spec, text, true); err != nil {
+		o.log.Warn("bot 卡发送失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.String("kind", kindName), zap.Error(err))
+	} else {
+		return
+	}
+	_ = rs.Flush(text, true)
+}
+
+/*
+ * sendBindingCard 绑定卡统一收口（T2.2 统一「搜索 → 卡片 → 提交绑定」模型，指令步/门禁/ 探针步三入口的唯一出卡口）：查候选 → 组域内文本（出卡同帧完整名称列表 / 零候选教学文案/ 读库失败文案）→ lead 非空（门禁语境）时指引段前置于一切形态 → 出卡收口走 sendCardOrFlush。
  * 恒终帧，调用方一律终结本条消息（不入队、不占全局信号量）。
  */
 func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage, kind bindingKind, keyword, lead string, rs ReplyStream) {
@@ -307,31 +379,20 @@ func (o *Orchestrator) sendBindingCard(cfg BotRuntimeConfig, msg InboundMessage,
 		text = lead + "\n\n" + text
 	}
 	if has {
-		if cs, ok := rs.(CardReplyStream); ok {
-			/*
-			 * 先登记后发卡：last_message_card 槽是点击消费闸的 SSOT。写库成功而发卡失败时槽指向未
-			 * 送达卡——旧卡点击按失效收口，用户重发指令即自愈。
-			 */
-			kindName := "wsbind"
-			if kind == bindingIssue {
-				kindName = "taskbind"
-			}
-			if err := o.store.SaveLastMessageCard(cfg.BotID, msg.ConversationKey, kindName, spec); err != nil {
-				o.log.Error("bot 绑定卡登记失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.Error(err))
-			} else if err := cs.SendCard(spec, text, true); err != nil {
-				o.log.Warn("bot 绑定卡发送失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.Error(err))
-			} else {
-				return
-			}
+		kindName := "wsbind"
+		if kind == bindingIssue {
+			kindName = "taskbind"
 		}
+		o.sendCardOrFlush(cfg, msg.ConversationKey, kindName, spec, text, rs)
+		return
 	}
 	_ = rs.Flush(text, true)
 }
 
 /*
- * sendUnbindCard 解绑确认卡出口（#任务解绑 指令步，与 sendBindingCard 同款收口形态）：读当前绑定 → 未绑定纯文本教学终帧 / 悬空锚按未绑定收口（issue 删除级联清列已交付，行缺失是防御分支）→ 先登记 last_message_card 再出卡（SendCard 终帧收口；
- * 无卡能力或发送失败回落 Flush 纯文本——回落链路解绑不可达，与绑定卡同款降级语义）。
- * 解绑动作唯一入口是 taskunbind 卡点击（binding_card.go 域内消费）。恒终帧，调用方一律终结本条消息（不入队、不占全局信号量）。
+ * sendUnbindCard 解绑确认卡出口（#任务解绑 指令步，出卡收口走 sendCardOrFlush）：读当前绑定 →
+ * 未绑定纯文本教学终帧 / 悬空锚按未绑定收口（issue 删除级联清列已交付，行缺失是防御分支）。
+ * 解绑动作唯一入口是 taskunbind 卡点击（binding_card.go 域内消费）。恒终帧收口。
  */
 func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) {
 	bound, err := o.store.BoundIssueID(cfg.BotID, msg.ConversationKey)
@@ -359,21 +420,11 @@ func (o *Orchestrator) sendUnbindCard(cfg BotRuntimeConfig, msg InboundMessage, 
 	if _, ok := rs.(CardReplyStream); !ok {
 		text = taskunbindNumberedText(issue)
 	}
-	if cs, ok := rs.(CardReplyStream); ok {
-		// 先登记后发卡（与 sendBindingCard 同款时序语义）。
-		if err := o.store.SaveLastMessageCard(cfg.BotID, msg.ConversationKey, "taskunbind", spec); err != nil {
-			o.log.Error("bot 解绑卡登记失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.Error(err))
-		} else if err := cs.SendCard(spec, text, true); err != nil {
-			o.log.Warn("bot 解绑卡发送失败（回落纯文本）", zap.String("botID", cfg.BotID), zap.Error(err))
-		} else {
-			return
-		}
-	}
-	_ = rs.Flush(text, true)
+	o.sendCardOrFlush(cfg, msg.ConversationKey, "taskunbind", spec, text, rs)
 }
 
 // enqueue 入队（不存在则惰性建会话队列 + worker）。已停止 / 队列满 fail closed。
-func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) error {
+func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream, freshSession bool) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.closed {
@@ -388,18 +439,25 @@ func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs Repl
 		go o.worker(ch)
 	}
 	select {
-	case ch <- turnJob{cfg: cfg, msg: msg, reply: rs}:
+	case ch <- turnJob{cfg: cfg, msg: msg, reply: rs, freshSession: freshSession}:
 		return nil
 	default:
 		return errQueueFull
 	}
 }
 
-// worker 会话串行消费者：逐 job 执行回合；Stop 关闭队列后自然退出。
+// worker 会话串行消费者：逐 job 执行回合（busy 标记供排队占位文案分流）；Stop 关闭队列后自然退出。
 func (o *Orchestrator) worker(ch chan turnJob) {
 	defer o.wg.Done()
 	for job := range ch {
+		key := queueKey(job.cfg.BotID, job.msg.ConversationKey)
+		o.mu.Lock()
+		o.busy[key] = true
+		o.mu.Unlock()
 		o.runTurn(job)
+		o.mu.Lock()
+		delete(o.busy, key)
+		o.mu.Unlock()
 	}
 }
 
@@ -409,9 +467,9 @@ func queueKey(botID string, conversationKey string) string {
 }
 
 /*
- * runTurn 执行单回合（会话内串行）。
- * 固定时序：幂等复查 → markSeen → #帮助 指令步 → #工作空间 指令步 → #任务解绑 指令步（确认卡）→ 工作空间门禁（指引 + workspace 卡同帧）→ #任务 指令步（统一出卡）→ ACP 未绑探针步 → load session → 组 prompt → 执行期状态帧 → RunTurn → PumpReply → 持久化（含 resume 失效自愈）。
- * 指令步/门禁/探针步均终帧收口：不出回合、不占全局信号量。Stop 后排空的残余 job 走「已停止」短路径，不触发失败自愈（取消 ≠ 会话失效）。
+ * runTurn 执行单回合（会话内串行），固定时序：Stop 短路径 → per-turn ctx → 幂等复查 →
+ * markSeen → 各指令步/门禁/探针步（均终帧收口，不出回合不占信号量）→ load session → 组
+ * prompt → RunTurn → PumpReply → 持久化（含 resume 失效自愈）。残余 job 走停止短路径。
  */
 func (o *Orchestrator) runTurn(job turnJob) {
 	// Stop 短路径：ctx 已取消（含 Stop 后队列残余 job）——只回停止文案，不碰会话锚点。
@@ -422,19 +480,28 @@ func (o *Orchestrator) runTurn(job turnJob) {
 
 	cfg, msg := job.cfg, job.msg
 	key := msg.ConversationKey
+	qKey := queueKey(cfg.BotID, key)
+
+	/*
+	 * per-turn 可取消 ctx：注册/注销随回合生命周期（/stop /clear 打断的落点）；
+	 * defer 注销兜底全部退出路径。
+	 */
+	turnCtx, cancel := context.WithCancel(o.ctx)
+	o.mu.Lock()
+	o.turnCancels[qKey] = cancel
+	o.mu.Unlock()
+	defer func() {
+		o.mu.Lock()
+		delete(o.turnCancels, qKey)
+		o.mu.Unlock()
+		cancel()
+	}()
 
 	// 权威幂等复查（受理与执行之间可能已有同 msgid 入队）。
-	seen, err := o.store.HasSeen(cfg.BotID, key, msg.MessageID)
-	if err != nil {
-		o.log.Error("bot 幂等查询失败（放行执行）", zap.Error(err))
-	}
-	if seen {
-		_ = job.reply.Flush(msgAlreadySeenText, true)
+	if o.seenOrFlush(cfg, key, msg.MessageID, job.reply, "执行") {
 		return
 	}
-	if err := o.store.MarkSeen(cfg.BotID, key, msg.MessageID); err != nil {
-		o.log.Error("bot markSeen 失败", zap.Error(err))
-	}
+	o.markSeen(cfg, key, msg.MessageID)
 
 	/*
 	 * #帮助 指令步（置于全部绑定指令与门禁之前）：帮助不依赖任何前置状态（未选工作空间
@@ -442,6 +509,15 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	 */
 	if parseHelpCommand(msg.Text) {
 		_ = job.reply.Flush(helpText(), true)
+		return
+	}
+
+	/*
+	 * 未识别 slash 指令步：/ 顶格纯字母 token 且非已知——指回 /help 终帧收口
+	 * （非指令意图的英文正文不命中形态，照常出回合）。
+	 */
+	if parseUnknownSlashCommand(msg.Text) {
+		_ = job.reply.Flush("未识别的指令。回复 /help 查看支持的指令。", true)
 		return
 	}
 
@@ -491,9 +567,14 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		}
 	}
 
-	prevSessionID, err := o.store.SessionID(cfg.BotID, key)
-	if err != nil {
-		o.log.Error("bot 会话读取失败（按新会话处理）", zap.Error(err))
+	// 闲置过期轮次以新会话启动（受理时锚已备份），跳过 resume 锚读取。
+	var prevSessionID string
+	if !job.freshSession {
+		var err error
+		prevSessionID, err = o.store.SessionID(cfg.BotID, key)
+		if err != nil {
+			o.log.Error("bot 会话读取失败（按新会话处理）", zap.Error(err))
+		}
 	}
 
 	// 超长全文落盘：.bot-outbox/<ts>-<msgid 前 8 位>.md，帧内附路径。
@@ -505,7 +586,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	 * 收尾整目录清理（defer 覆盖失败路径）；wecom 等未实现该接口的渠道零变化。
 	 */
 	var ars ArtifactReplyStream
-	var deliveryDir string
+	var deliveryDir, deliveryToken string
 	if a, ok := job.reply.(ArtifactReplyStream); ok {
 		ars = a
 		nonce := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), shortID(msg.MessageID))
@@ -515,6 +596,15 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		} else {
 			deliveryDir = dir
 			defer os.RemoveAll(deliveryDir) // 投递完成/回合失败/Stop 取消统一清理
+			if o.Deliveries != nil {
+				/*
+				 * 回合内投递接线（任务 8）：nonce 兼作 MCP im 投递端点的 token，回合收尾注销；
+				 * MCP 工具经它取回本投递面，把任意路径文件即时推给用户（不占流）。
+				 */
+				deliveryToken = nonce
+				o.Deliveries.Register(nonce, a)
+				defer o.Deliveries.Unregister(nonce)
+			}
 		}
 	}
 	systemPrompt := ComposeSystemPrompt()
@@ -526,7 +616,8 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	 * 执行期状态帧：填充占位帧到首个流式内容之间的静默期（排队 + 会话冷启动）。此刻
 	 * PumpReply 未启动，worker 是回复流唯一写者，交接纪律不破。
 	 */
-	if err := job.reply.Flush("已开始处理，正在连接会话…", false); err != nil {
+	// 状态词走 quote 样式（思考面板同款），标识非正文。
+	if err := job.reply.Flush(quoteAware(job.reply, "已开始处理，正在连接会话…"), false); err != nil {
 		o.log.Warn("bot 执行期状态帧发送失败（继续回合）", zap.Error(err))
 	}
 
@@ -536,12 +627,12 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	 */
 	select {
 	case o.turns <- struct{}{}:
-	case <-o.ctx.Done():
+	case <-turnCtx.Done():
 		_ = job.reply.Flush("机器人已停止服务。", true)
 		return
 	}
 	prompt := BuildTurnPrompt(msg)
-	events, err := o.driver.RunTurn(o.ctx, TurnRequest{
+	events, err := o.driver.RunTurn(turnCtx, TurnRequest{
 		BotID:           cfg.BotID,
 		WorkspaceID:     cfg.WorkspaceID,
 		WorkspaceDir:    cfg.WorkspaceDir,
@@ -551,11 +642,12 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		SystemPrompt:    systemPrompt,
 		Display:         buildTurnDisplay(msg, string(cfg.Channel)),
 		Port:            cfg.Port,
+		DeliveryToken:   deliveryToken,
 	})
 	if err != nil {
 		<-o.turns
 		// 取消竞态（select 命中槽位后 ctx 才取消）：等同 Stop 短路径，不清锚点。
-		if o.ctx.Err() != nil {
+		if turnCtx.Err() != nil {
 			_ = job.reply.Flush("机器人已停止服务。", true)
 			return
 		}
@@ -572,7 +664,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		return
 	}
 
-	outcome := PumpReply(o.ctx, job.reply, events, sink, o.log)
+	outcome := PumpReply(turnCtx, job.reply, events, sink, o.log)
 	<-o.turns
 	if outcome.Err != nil {
 		o.log.Warn("bot 回合失败", zap.String("botID", cfg.BotID),
@@ -585,13 +677,13 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	}
 	/*
 	 * 产物投递（仅交付目录就绪且回合成功）：终帧之后按文件名序逐个 SendArtifact——
-	 * 失败会话不投（可能是不完整产物），Stop 取消同样跳过。
+	 * 失败会话不投（可能是不完整产物），取消（/stop / Stop）同样跳过。
 	 */
-	if deliveryDir != "" && outcome.Err == nil && o.ctx.Err() == nil {
+	if deliveryDir != "" && outcome.Err == nil && turnCtx.Err() == nil {
 		o.deliverArtifacts(ars, deliveryDir)
 	}
-	// 取消（SIGTERM/Stop）导致的回合中断不是会话失效：claude 侧锚点仍可用，不做自愈清除。
-	if outcome.Err != nil && o.ctx.Err() == nil {
+	// 取消（/stop 或 SIGTERM/Stop）导致的回合中断不是会话失效：claude 侧锚点仍可用，不做自愈清除。
+	if outcome.Err != nil && turnCtx.Err() == nil {
 		o.healAfterFailure(cfg.BotID, key, prevSessionID)
 	}
 }
@@ -626,6 +718,102 @@ func (o *Orchestrator) deliverArtifacts(ars ArtifactReplyStream, dir string) {
 			_ = ars.SendNotice("文件「" + name + "」投递失败：" + firstLine(err.Error()))
 		}
 	}
+}
+
+/*
+ * applyControlCommand 控制指令的消费（拦截步专用，恒返回终帧文案）：/stop 打断在途回合 +
+ * 排空队列（上下文保留）；/clear 打断 + 清主锚与备份锚；/继续 把备份锚回填主锚。
+ */
+func (o *Orchestrator) applyControlCommand(cfg BotRuntimeConfig, conversationKey, token string) string {
+	switch token {
+	case slashStopToken:
+		if !o.stopConversation(queueKey(cfg.BotID, conversationKey)) {
+			return "当前没有正在处理的回复。"
+		}
+		return "⏹ 已停止当前回复，会话上下文保留，继续对话即可。"
+	case slashClearToken:
+		o.stopConversation(queueKey(cfg.BotID, conversationKey))
+		if err := o.store.ClearSessionID(cfg.BotID, conversationKey); err != nil {
+			o.log.Error("bot 会话锚点清理失败", zap.Error(err))
+		}
+		if err := o.store.ClearPrevSessionID(cfg.BotID, conversationKey); err != nil {
+			o.log.Error("bot 会话备份锚清理失败", zap.Error(err))
+		}
+		return "🧹 上下文已清空，下一条消息将开启新会话。"
+	case slashResumeToken:
+		ok, err := o.store.ResumePrevSession(cfg.BotID, conversationKey)
+		if err != nil {
+			o.log.Error("bot 会话接回失败", zap.Error(err))
+			return "❌ 会话接回失败，请稍后重试。"
+		}
+		if !ok {
+			return "没有可接回的上一会话。"
+		}
+		// 接回即活动：顺延时基，防紧随消息把刚接回的锚再次判过期备份（接回被架空）。
+		if err := o.store.TouchLastMessage(cfg.BotID, conversationKey, time.Now()); err != nil {
+			o.log.Warn("bot 会话活动时间戳写入失败", zap.Error(err))
+		}
+		return "🔗 已接回上一会话，继续对话即可。"
+	}
+	return ""
+}
+
+/*
+ * stopConversation 打断本会话在途回合（取消 per-turn ctx）并排空队列（被排空消息各自终帧
+ * 收口，不再执行）。返回是否确有在途回合被取消。
+ */
+func (o *Orchestrator) stopConversation(key string) bool {
+	o.mu.Lock()
+	cancelTurn := o.turnCancels[key]
+	var drained []turnJob
+	if ch := o.queues[key]; ch != nil {
+	draining:
+		for {
+			select {
+			case job := <-ch:
+				drained = append(drained, job)
+			default:
+				break draining
+			}
+		}
+	}
+	o.mu.Unlock()
+	if cancelTurn != nil {
+		cancelTurn()
+	}
+	for _, job := range drained {
+		_ = job.reply.Flush("⏹ 已停止，本条消息未执行。", true)
+	}
+	return cancelTurn != nil
+}
+
+// isACPRoute 探测本会话回合将落的引擎是否 ACP（共享会话域；探测失败按 headless 处理）。
+func (o *Orchestrator) isACPRoute(cfg BotRuntimeConfig, conversationKey string) bool {
+	prober, ok := o.driver.(routeProber)
+	if !ok {
+		return false
+	}
+	acp, _, err := prober.ProbeTarget(cfg, conversationKey)
+	return err == nil && acp
+}
+
+// queueBusy 会话队列忙碌（worker 执行中或有积压）——排队占位文案分流的依据。
+func (o *Orchestrator) queueBusy(key string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.busy[key] || (o.queues[key] != nil && len(o.queues[key]) > 0)
+}
+
+// sessionTitle 新会话标题：正文首行前 20 字（超长省略号收尾；空正文回落占位）。
+func sessionTitle(text string) string {
+	line := firstLine(strings.TrimSpace(text))
+	if line == "" {
+		return "新会话"
+	}
+	if rs := []rune(line); len(rs) > 20 {
+		return string(rs[:20]) + "…"
+	}
+	return line
 }
 
 /*

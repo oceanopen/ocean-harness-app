@@ -346,8 +346,8 @@ func TestAcpDriverTurnHappyPath(t *testing.T) {
 	if ev.Type != TurnToolUse || ev.ToolName != "Bash" {
 		t.Fatalf("工具进度事件不符: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "🔧 Bash 已完成" {
-		t.Fatalf("工具完成覆写帧应发一次完成状态行: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "✅ Bash 已完成" || ev.ToolName != "Bash" {
+		t.Fatalf("工具完成覆写帧应发一次带工具名的完成终态: %+v", ev)
 	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || done.IsError || done.Result != "Hello!" {
@@ -527,8 +527,8 @@ func TestAcpDriverToolSettledStatus(t *testing.T) {
 	if ev := recvEvent(t, events); ev.Type != TurnToolUse || ev.ToolName != "Bash" {
 		t.Fatalf("首见应发执行事件: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "🔧 Bash 已完成" {
-		t.Fatalf("完成覆写帧应发完成状态行: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "✅ Bash 已完成" || ev.ToolName != "Bash" {
+		t.Fatalf("完成覆写帧应发带工具名的完成终态: %+v", ev)
 	}
 	if ev := recvEvent(t, events); ev.Type != TurnToolUse || ev.ToolName != "Read" {
 		t.Fatalf("第二个工具首见应发执行事件: %+v", ev)
@@ -542,20 +542,19 @@ func TestAcpDriverToolSettledStatus(t *testing.T) {
 }
 
 /*
- * TestAcpDriverThoughtScrollingSummary 思考滚动摘要（T4.1，D4）：agentThought 帧携带本回合
- * 累计全量，水位线差分仅在增长时覆写状态行「思考中: + 尾部摘要」——短摘要原样直出、单行
- * 超限截尾部 220 rune、多行超限截尾部 3 行，超限均以省略号前缀标识（rune 安全），重复帧不
- * 重发；正文 TurnText 到来自然让位。
+ * TestAcpDriverThoughtIncrements 思考增量差分（T4.1，D4）：agentThought 帧携带本回合
+ * 累计全量，水位线差分仅在有增长时发 TurnThinking 增量事件（截取与组帧在泵侧）——短思考
+ * 原样差分、前缀错配（条目覆写换内容的理论态）重置全量重发；重复帧不重发。
  */
-func TestAcpDriverThoughtScrollingSummary(t *testing.T) {
+func TestAcpDriverThoughtIncrements(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
 	driver := boundDriver(sessions)
 	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp", Prompt: "hi"})
 	if err != nil {
 		t.Fatalf("受理失败: %v", err)
 	}
-	long := strings.Repeat("思", 300) // 300 rune 单行长思考：摘要应截尾部 220 rune 且带省略号前缀
-	multi := "一\n二\n三\n四\n五"         // 5 行长思考：摘要应截尾部 3 行且带省略号前缀
+	long := strings.Repeat("思", 300) // 与已发前缀错配：应重置后全量重发
+	multi := "一\n二\n三\n四\n五"         // 再次错配：同样全量重发
 	sessions.push(t, turnStartedFrame())
 	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题"))
 	sessions.push(t, thoughtFrame("t1-agentThought", "先分析问题")) // 重复帧：水位线无增长不重发
@@ -564,18 +563,17 @@ func TestAcpDriverThoughtScrollingSummary(t *testing.T) {
 	sessions.push(t, agentTextFrame("t1-agentMessage", "方案如下"))
 	sessions.push(t, turnEndedFrame("end_turn"))
 
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 先分析问题" {
-		t.Fatalf("短摘要应原样直出: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnThinking || ev.Delta != "先分析问题" {
+		t.Fatalf("短思考应差分发增量: %+v", ev)
 	}
-	wantTail := "思考中: …" + strings.Repeat("思", 220)
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != wantTail {
-		t.Fatalf("长摘要应截尾部 220 rune 且带省略号前缀:\ngot:  %s\nwant: %s", ev.Status, wantTail)
+	if ev := recvEvent(t, events); ev.Type != TurnThinking || ev.Delta != long {
+		t.Fatalf("前缀错配应重置全量重发: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: …三\n四\n五" {
-		t.Fatalf("多行摘要应截尾部 3 行且带省略号前缀: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnThinking || ev.Delta != multi {
+		t.Fatalf("再次错配应重置全量重发: %+v", ev)
 	}
 	if ev := recvEvent(t, events); ev.Type != TurnText || ev.Delta != "方案如下" {
-		t.Fatalf("思考后的正文增量事件不符（重复帧不得额外发状态行）: %+v", ev)
+		t.Fatalf("思考后的正文增量事件不符（重复帧不得额外发事件）: %+v", ev)
 	}
 	if done := recvEvent(t, events); done.Type != TurnDone || done.Result != "方案如下" {
 		t.Fatalf("终态事件不符: %+v", done)
@@ -585,7 +583,7 @@ func TestAcpDriverThoughtScrollingSummary(t *testing.T) {
 /*
  * TestAcpDriverThoughtWatermarkReset 思考水位线前缀校验（T4.1，范式同 agentMessage 的
  * TestAcpDriverWatermarkPrefixMismatchReset）：已发前缀串与帧文本错配（条目覆写换内容的
- * 理论态）即重置全量重发摘要；前缀恢复后续接差分。
+ * 理论态）即重置全量重发增量；前缀恢复后续接差分。
  */
 func TestAcpDriverThoughtWatermarkReset(t *testing.T) {
 	sessions := newFakeSessions(readySnap())
@@ -600,14 +598,14 @@ func TestAcpDriverThoughtWatermarkReset(t *testing.T) {
 	sessions.push(t, thoughtFrame("t1-agentThought", "崭新思考续")) // 前缀恢复：正常增长
 	sessions.push(t, turnEndedFrame("end_turn"))
 
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 旧思考" {
-		t.Fatalf("首条思考摘要不符: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnThinking || ev.Delta != "旧思考" {
+		t.Fatalf("首条思考增量不符: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 崭新思考" {
-		t.Fatalf("前缀错配应重置全量重发摘要: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnThinking || ev.Delta != "崭新思考" {
+		t.Fatalf("前缀错配应重置全量重发增量: %+v", ev)
 	}
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 崭新思考续" {
-		t.Fatalf("前缀恢复后应正常续接: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnThinking || ev.Delta != "续" {
+		t.Fatalf("前缀恢复后应正常续接差分: %+v", ev)
 	}
 	if done := recvEvent(t, events); done.Type != TurnDone {
 		t.Fatalf("终态事件不符: %+v", done)
@@ -703,8 +701,8 @@ func TestAcpDriverZeroTextTurnNotContaminated(t *testing.T) {
 	sessions.push(t, thoughtFrame("t1-agentThought", "思考中"))
 	sessions.push(t, turnEndedFrame("cancelled"))
 
-	if ev := recvEvent(t, events); ev.Type != TurnStatus || ev.Status != "思考中: 思考中" {
-		t.Fatalf("思考摘要状态行不符: %+v", ev)
+	if ev := recvEvent(t, events); ev.Type != TurnThinking || ev.Delta != "思考中" {
+		t.Fatalf("思考增量事件不符: %+v", ev)
 	}
 	done := recvEvent(t, events)
 	if done.Type != TurnDone || !done.IsError || done.Result != "" {

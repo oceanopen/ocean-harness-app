@@ -31,6 +31,12 @@ var (
 	BotSupervisor *bot.Supervisor
 
 	/*
+	 * BotDeliveries 为回合内文件投递注册表单例（main 装配：注入 supervisor 编排器与
+	 * mcpservers im 投递端点两侧——token 登记/取回的中枢）。
+	 */
+	BotDeliveries *bot.DeliveryRegistry
+
+	/*
 	 * AcpSessions 为 ACP 会话域运行时单例（main 装配：启动清扫锚点 + SIGTERM StopAll）。
 	 * service 层经此做会话受理/操作/订阅（T1.5）；issue 删除经此级联 Discard。
 	 */

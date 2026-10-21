@@ -27,6 +27,7 @@ import (
 	"ocean-harness/server/internal/config"
 	"ocean-harness/server/internal/global"
 	"ocean-harness/server/internal/initialize"
+	"ocean-harness/server/internal/mcpservers"
 	"ocean-harness/server/internal/router"
 	"ocean-harness/server/internal/service"
 )
@@ -89,7 +90,9 @@ func main() {
 	 * 5.6) bot 运行时装配：注册渠道适配器工厂（wecom 长连接 / weixin 长轮询）+ 拉起全部
 	 * 启用 bot（后台运行，不阻塞 HTTP 启动；连接状态经 /api/imBot/getList 投影呈现）。
 	 */
-	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, acpSessions, global.Logger)
+	global.BotDeliveries = bot.NewDeliveryRegistry()
+	mcpservers.SetIMDeliveryRegistry(global.BotDeliveries)
+	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, acpSessions, global.BotDeliveries, global.Logger)
 	global.BotSupervisor.Register(wecom.Factory{})
 	global.BotSupervisor.Register(weixin.Factory{})
 	global.BotSupervisor.StartEnabled()

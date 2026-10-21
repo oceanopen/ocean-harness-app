@@ -22,6 +22,7 @@ type ImBotConversation struct {
 	LastMessageAt   *time.Time `gorm:"column:last_message_at;type:DATETIME" json:"lastMessageAt"`
 	CreatedAt       time.Time  `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt       time.Time  `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	PrevSessionID   string     `gorm:"column:prev_session_id;type:TEXT;not null;default:''" json:"prevSessionId"`
 }
 
 // TableName ImBotConversation's table name

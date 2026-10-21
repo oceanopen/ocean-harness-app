@@ -117,3 +117,6 @@ func (s *replyStream) Flush(content string, final bool) error {
 
 // ByteLimit 实现 bot.ReplyStream。
 func (s *replyStream) ByteLimit() int { return byteLimit }
+
+// MarkdownFrames 实现 bot.MarkdownFrameStream：企微流式帧渲染 markdown（quote/粗体）。
+func (s *replyStream) MarkdownFrames() bool { return true }
