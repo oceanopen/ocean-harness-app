@@ -656,7 +656,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		 * 引擎受理拒绝（turnNotAcceptedError，如 ACP 模式的引导报错）除外：回合未发生， headless 锚点有效性不受影响，误清会丢既有会话上下文。
 		 */
 		o.log.Error("bot 回合启动失败", zap.String("botID", cfg.BotID), zap.Error(err))
-		_ = job.reply.Flush("❌ 无法启动 claude 会话："+firstLine(err.Error()), true)
+		_ = job.reply.Flush(turnFailureReply("❌ 无法启动 claude 会话：", err), true)
 		var rejected turnNotAcceptedError
 		if !errors.As(err, &rejected) {
 			o.healAfterFailure(cfg.BotID, key, prevSessionID)

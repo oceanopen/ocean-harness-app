@@ -188,7 +188,7 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 		final = "⏹ 已停止当前回复。" // /stop 或编排器停止：取消叙事，非失败
 	case out.Err != nil:
 		body := final
-		final = "❌ 处理失败：" + firstLine(out.Err.Error()) + "\n请重试或调整后重新发送。"
+		final = turnFailureReply("❌ 处理失败：", out.Err)
 		if strings.TrimSpace(body) != "" {
 			final += "\n\n（失败前已产出：\n" + body + "\n）"
 		}

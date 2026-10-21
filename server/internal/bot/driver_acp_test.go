@@ -45,6 +45,8 @@ type fakeSessions struct {
 	promptMetas []acpsession.PromptMeta // PromptQueued 元数据留痕（T1.1 来源/展示透传断言）
 	cancelCalls int
 	subscribes  int
+
+	terminateReasons []string // Terminate 调用留痕（失败终结/看门狗判死断言用）
 }
 
 // respondCall RespondPermission 调用留痕（审批快路径断言用）。
@@ -124,6 +126,20 @@ func (f *fakeSessions) Cancel(_ string) error {
 	defer f.mu.Unlock()
 	f.cancelCalls++
 	return nil
+}
+
+// Terminate 终结留痕 + 向最新订阅投终结帧（对齐真实链：Terminate → Close → pump 哨兵广播）。
+func (f *fakeSessions) Terminate(_, reason string) {
+	f.mu.Lock()
+	f.terminateReasons = append(f.terminateReasons, reason)
+	var sub *fakeSub
+	if len(f.subs) > 0 {
+		sub = f.subs[len(f.subs)-1]
+	}
+	f.mu.Unlock()
+	if sub != nil && !sub.closed {
+		sub.ch <- acpsession.Frame{Type: acpsession.FrameTerminated, Status: &acpsession.StatusPayload{Status: acpsession.StatusTerminated, Error: reason}}
+	}
 }
 
 // Get 快照直读（审批快路径消费；测试以 snap 字段装填挂起投影）。
@@ -1096,6 +1112,97 @@ func TestAcpDriverTurnFramesClosedMidTurn(t *testing.T) {
 	ev := recvEvent(t, events)
 	if ev.Type != TurnError || !strings.Contains(ev.Err.Error(), "事件流已断开") {
 		t.Fatalf("事件流断开应转 TurnError: %+v", ev)
+	}
+}
+
+// drainEvents 收干事件并等通道关闭（collectTurn defer 收尾执行完毕的同步点）。
+func drainEvents(t *testing.T, events <-chan TurnEvent) {
+	t.Helper()
+	for {
+		select {
+		case _, ok := <-events:
+			if !ok {
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("等待事件通道关闭超时")
+		}
+	}
+}
+
+func (f *fakeSessions) terminates() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.terminateReasons...)
+}
+
+/*
+ * 看门狗与失败终结用例：阈值 var 短值注入，用例串行不与并行测试共享 watchdogIdle；
+ * Terminate 断言前必须 drain 事件通道（defer 收尾在通道关闭前执行）。
+ */
+
+// TestAcpDriverTurnWatchdogForceTerminates 无终态帧时序：软取消 → 死线判死 → TurnError + 终结会话。
+func TestAcpDriverTurnWatchdogForceTerminates(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	driver.watchdogIdle, driver.watchdogBudget = 30*time.Millisecond, 20*time.Millisecond
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+
+	ev := recvEvent(t, events)
+	if ev.Type != TurnError || !strings.Contains(ev.Err.Error(), "强制终结") {
+		t.Fatalf("看门狗判死应转 TurnError: %+v", ev)
+	}
+	drainEvents(t, events)
+	if _, cancels, _, _ := sessions.stats(); cancels < 1 {
+		t.Fatalf("判死前应先软取消: cancels=%d", cancels)
+	}
+	if reasons := sessions.terminates(); len(reasons) < 1 || !strings.Contains(reasons[0], "强制终结") {
+		t.Fatalf("判死应终结会话: %v", reasons)
+	}
+}
+
+// TestAcpDriverTurnProtocolFailureTerminates 协议层回合失败 → 出口 Terminate（会话不可信，重建语义）。
+func TestAcpDriverTurnProtocolFailureTerminates(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, acpsession.Frame{Type: acpsession.FrameTurnEnded, Turn: &acpsession.TurnPayload{Error: "agent 进程崩溃"}})
+
+	if ev := recvEvent(t, events); ev.Type != TurnError {
+		t.Fatalf("协议失败应转 TurnError: %+v", ev)
+	}
+	drainEvents(t, events)
+	if reasons := sessions.terminates(); len(reasons) != 1 || !strings.Contains(reasons[0], "agent 进程崩溃") {
+		t.Fatalf("协议层失败应终结会话恰一次: %v", reasons)
+	}
+}
+
+// TestAcpDriverTurnCancelledNotTerminated /stop 取消终态不算失败，不终结会话。
+func TestAcpDriverTurnCancelledNotTerminated(t *testing.T) {
+	sessions := newFakeSessions(readySnap())
+	driver := boundDriver(sessions)
+	events, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", IssueID: "issue-acp"})
+	if err != nil {
+		t.Fatalf("受理失败: %v", err)
+	}
+	sessions.push(t, turnStartedFrame())
+	sessions.push(t, turnEndedFrame("cancelled"))
+
+	done := recvEvent(t, events)
+	if done.Type != TurnDone || !done.IsError {
+		t.Fatalf("取消终态应转中断语义: %+v", done)
+	}
+	drainEvents(t, events)
+	if reasons := sessions.terminates(); len(reasons) != 0 {
+		t.Fatalf("cancelled 不应终结会话: %v", reasons)
 	}
 }
 

@@ -303,6 +303,36 @@ func TestProcessDeathTerminates(t *testing.T) {
 	})
 }
 
+// TestTerminateKeepsBindingRow 主动终结：预设原因落因清锚 + terminated 帧广播；绑定行保留；幂等与 no-op 防御。
+func TestTerminateKeepsBindingRow(t *testing.T) {
+	mgr, db, issueID, frames, _ := newManagerWithIssue(t, "happy", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if row := bindingRow(t, db, issueID); row.AcpSessionID == "" {
+		t.Fatalf("ready 后应有锚点")
+	}
+
+	const reason = "回合长时间无事件无响应，已强制终结会话"
+	mgr.Terminate(issueID, reason)
+	terminated := waitFrame(t, frames, "terminated 帧", func(f Frame) bool { return f.Type == FrameTerminated })
+	if terminated.Status.Status != StatusTerminated || terminated.Status.Error != reason {
+		t.Fatalf("terminated 帧应携带预设原因，got %+v", terminated.Status)
+	}
+	waitForCondition(t, "预设原因落因清锚", func() bool {
+		row := bindingRow(t, db, issueID)
+		return row.AcpSessionID == "" && strings.Contains(row.LastError, "强制终结")
+	})
+	if !bindingExists(db, issueID) {
+		t.Fatalf("Terminate 应保留绑定行（与 Discard 的差异）")
+	}
+
+	// 幂等：已终态再 Terminate 与未知 issue 均为 no-op。
+	mgr.Terminate(issueID, "again")
+	mgr.Terminate("no-such-issue", "x")
+}
+
 func TestPromptTurnGateAndCancel(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {

@@ -95,6 +95,9 @@ type sessionEntry struct {
 	idleTimer *time.Timer // 闲置回收倒计时（完全空闲判据通过时起表；离开空闲停表）
 	idleSince time.Time   // 本次空闲起点（到期回调按当前配置重算剩余时长，改阈值即时生效）
 	released  bool        // 闲置回收已受理：pump 终结哨兵见此早退（不落态、不清锚、不广播）
+
+	// terminateReason Terminate 预设的终结原因（优先于 client.Err() 证据落因）。
+	terminateReason string
 }
 
 /*
@@ -304,10 +307,13 @@ func (m *Manager) finishTerminated(entry *sessionEntry) {
 		entry.mu.Unlock()
 		return
 	}
-	reason := "会话已终结"
-	if entry.client != nil {
-		if err := entry.client.Err(); err != nil {
-			reason = err.Error()
+	reason := entry.terminateReason
+	if reason == "" {
+		reason = "会话已终结"
+		if entry.client != nil {
+			if err := entry.client.Err(); err != nil {
+				reason = err.Error()
+			}
 		}
 	}
 	entry.state = StatusTerminated
@@ -321,6 +327,30 @@ func (m *Manager) finishTerminated(entry *sessionEntry) {
 	entry.turnQueue.close()
 	_ = m.bindings.SaveError(context.Background(), entry.issueID, agentCode, reason)
 	m.hub.broadcast(entry.issueID, frames)
+}
+
+/*
+ * Terminate 主动终结会话（回合失败收尾/活性判死的入口，幂等）：Close 进程组后收敛全部
+ * 复用既有链——连接停止使在途 prompt 失败（endTurn(error) 释放回合槽），pump 哨兵走
+ * finishTerminated（置态、清锚落因、广播终结帧）。与 Discard 的差异：保留绑定行（下条
+ * 消息 Ensure 全新会话重建，绑定关系不受影响）。
+ */
+func (m *Manager) Terminate(issueID, reason string) {
+	m.mu.Lock()
+	entry, ok := m.entries[issueID]
+	m.mu.Unlock()
+	if !ok {
+		return
+	}
+	entry.mu.Lock()
+	if entry.state != StatusReady || entry.released || entry.client == nil {
+		entry.mu.Unlock()
+		return
+	}
+	entry.terminateReason = reason
+	client := entry.client
+	entry.mu.Unlock()
+	client.Close()
 }
 
 /*

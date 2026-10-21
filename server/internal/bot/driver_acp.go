@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"ocean-harness/server/internal/acpsession"
 )
@@ -22,6 +23,8 @@ type acpSessions interface {
 	Get(issueID string) acpsession.ViewSnapshot
 	RespondPermission(issueID string, pendingID uint64, optionID, source string) error
 	RespondElicitation(issueID string, pendingID uint64, action string, content map[string]any, source string) error
+	// Terminate 主动终结会话（回合失败收尾/活性判死；幂等，语义见 acpsession.Manager.Terminate）。
+	Terminate(issueID, reason string)
 }
 
 // 编译期断言：Manager 满足消费面。
@@ -34,6 +37,10 @@ var _ acpSessions = (*acpsession.Manager)(nil)
  */
 type acpDriver struct {
 	sessions acpSessions
+	// watchdogIdle/watchdogBudget 看门狗伺服参数（0 = 生产默认；测试装配注入短值驱动判死
+	// 时序——阈值经值传递进 collectTurn，不走包级 var 免跨 goroutine 竞争）。
+	watchdogIdle   time.Duration
+	watchdogBudget time.Duration
 }
 
 // NewAcpDriver 构造 ACP 引擎（supervisor 装配）。
@@ -78,7 +85,14 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 	stop() // 等位窗口帧全部作废（含受理帧自身——armed 由重开订阅的首帧快照装填）
 	turnFrames, stopTurn := d.sessions.Subscribe(issueID)
 	events := make(chan TurnEvent, 128)
-	go collectTurn(ctx, d.sessions, issueID, snap.AcpSessionID, turnFrames, stopTurn, events)
+	idle, budget := d.watchdogIdle, d.watchdogBudget
+	if idle == 0 {
+		idle = watchdogIdleDefault
+	}
+	if budget == 0 {
+		budget = watchdogBudgetDefault
+	}
+	go collectTurn(ctx, d.sessions, issueID, snap.AcpSessionID, turnFrames, stopTurn, events, idle, budget)
 	return events, nil
 }
 
@@ -155,11 +169,37 @@ func sessionStateError(snap acpsession.ViewSnapshot) error {
 }
 
 /*
+ * ACP 回合活性看门狗生产默认值：连续无任何回合帧超 idle 即软取消（真实长工具执行/限流
+ * 退避期间可合法静默，阈值取保守值），死线 budget 内仍无终态帧即判死终结会话。budget 对齐
+ * acpsession turnCancelBudget——软取消后 prompt 必在预算内收敛；跨域字面量各自维护。
+ */
+const (
+	watchdogIdleDefault   = 15 * time.Minute
+	watchdogBudgetDefault = 10 * time.Second
+)
+
+// stopTimer 排空后停止（防已触发残留值再次命中 select 分支）。
+func stopTimer(t *time.Timer) {
+	if !t.Stop() {
+		select {
+		case <-t.C:
+		default:
+		}
+	}
+}
+
+// resetTimer 停表排空后重设。
+func resetTimer(t *time.Timer, d time.Duration) {
+	stopTimer(t)
+	t.Reset(d)
+}
+
+/*
  * collectTurn 回合输出收集（RunTurn 受理成功后开启；订阅为受理后重开的干净通道，缓冲里只含本回合生命周期帧）。armed 窗口装填：首帧快照 TurnActive（turnStarted 广播早于订阅建立收不到）或收到的 FrameTurnStarted。
  * 终态唯一性：turnEnded/terminated/通道关闭先到先收。差分：回合闸门保证无他回合，agentMessage/agentThought 帧携带本回合累计全量，水位线差分转增量事件（基线经 user 锚从首帧快照装填）。
  * ctx 取消 = 软取消（Manager.Cancel → acp 层强制收口，终态帧必达），不自建超时；取消信号消费一次即摘出 select。
  */
-func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionID string, frames <-chan acpsession.Frame, stop func(), events chan<- TurnEvent) {
+func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionID string, frames <-chan acpsession.Frame, stop func(), events chan<- TurnEvent, idle, budget time.Duration) {
 	defer close(events)
 	defer stop()
 
@@ -176,15 +216,46 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 	armed := false
 	notify := ctx.Done()
 
+	/*
+	 * 活性看门狗：帧到达即续期；连续无帧超 idle 先软取消（会话健康时经取消预算收敛出终态帧），
+	 * budget 死线内仍无终态帧即判死终结会话（终结帧/关帧随后收口）。死线期普通帧不续期——死线只认终态；
+	 * ctx 取消路径停表（acpsession 软取消 giveup 预算保证收敛）。
+	 */
+	watchdog := time.NewTimer(idle)
+	defer watchdog.Stop()
+	var watchdogDeadline time.Time // 软取消死线（零值 = 未排）
+	// failedReason 非空 = 引擎/协议层失败终态；出口统一终结会话（幂等）——失败后会话不可信，
+	// 下条消息 Ensure 重建；cancelled（/stop）不算失败不终结。
+	var failedReason string
+	defer func() {
+		if failedReason != "" {
+			sessions.Terminate(issueID, failedReason)
+		}
+	}()
+
 	for {
 		select {
 		case <-notify:
 			sessions.Cancel(issueID) // 软取消恰一次；编排器 Stop 后 Manager 可能已收敛，失败则等终态帧/关帧收尾
 			notify = nil
+			stopTimer(watchdog) // ctx 取消路径由 acpsession giveup 预算保证收敛，看门狗退场
+		case <-watchdog.C:
+			if watchdogDeadline.IsZero() {
+				sessions.Cancel(issueID)
+				watchdogDeadline = time.Now().Add(budget)
+				resetTimer(watchdog, budget)
+			} else {
+				failedReason = "回合长时间无事件无响应，已强制终结会话"
+				sessions.Terminate(issueID, failedReason)
+			}
 		case frame, ok := <-frames:
 			if !ok {
-				events <- TurnEvent{Type: TurnError, Err: errors.New("ACP 事件流已断开（会话被关停）")}
+				failedReason = "ACP 事件流已断开（会话被关停）"
+				events <- TurnEvent{Type: TurnError, Err: errors.New(failedReason)}
 				return
+			}
+			if watchdogDeadline.IsZero() {
+				resetTimer(watchdog, idle)
 			}
 			switch frame.Type {
 			case acpsession.FrameSnapshot:
@@ -201,6 +272,7 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 				}
 				armed = frame.Snapshot.TurnActive
 				if !armed {
+					failedReason = frame.Snapshot.Error // 非空 = 会话 failed 态（已终，Terminate 幂等 no-op）
 					emitTurnDone(events, &acpsession.TurnPayload{
 						StopReason: frame.Snapshot.StopReason,
 						Error:      frame.Snapshot.Error,
@@ -320,10 +392,15 @@ func collectTurn(ctx context.Context, sessions acpSessions, issueID, acpSessionI
 					events <- TurnEvent{Type: TurnStatus, Status: "✅ " + noun + "已处理，继续执行…"}
 				}
 			case acpsession.FrameTurnEnded:
+				if frame.Turn != nil && frame.Turn.Error != "" {
+					failedReason = frame.Turn.Error // 协议层回合失败：终结会话，下条消息重建
+				}
 				emitTurnDone(events, frame.Turn, text)
 				return
 			case acpsession.FrameTerminated:
-				events <- TurnEvent{Type: TurnError, Err: terminatedError(frame)}
+				err := terminatedError(frame)
+				failedReason = err.Error() // 会话已终：Terminate 幂等 no-op，统一收尾标记
+				events <- TurnEvent{Type: TurnError, Err: err}
 				return
 			}
 		}
