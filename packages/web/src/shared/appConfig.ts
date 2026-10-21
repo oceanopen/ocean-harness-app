@@ -15,6 +15,7 @@ export {
   GITHUB_PAT_KEY,
   ITERM2_SPLIT_DIRECTION_KEY,
   LANGUAGE_KEY,
+  LAUNCH_AT_LOGIN_KEY,
   MAX_POLL_INTERVAL_SECS,
   MIN_POLL_INTERVAL_SECS,
   POLL_INTERVAL_SECS_KEY,
@@ -47,6 +48,10 @@ export function toYesNo(value: boolean): YesNo {
 export function parseYesNo(value: string | null, fallback: YesNo): YesNo {
   return value === YES_NO.YES || value === YES_NO.NO ? value : fallback;
 }
+
+// 开机自启动开关：系统登录项状态的本地镜像（系统优先：启动时 Rust 以系统真实状态回写，
+// 保存经事件监听同步登录项）。YesNo，缺失视为 NO。
+export const DEFAULT_LAUNCH_AT_LOGIN = YES_NO.NO;
 
 export type Appearance = 'system' | 'light' | 'dark';
 
