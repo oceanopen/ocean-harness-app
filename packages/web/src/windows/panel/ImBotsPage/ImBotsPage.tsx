@@ -157,11 +157,12 @@ function ImBotCard(props: {
           <Button size="small" color="error" onClick={onDeleteAsk}>删除</Button>
         </Box>
       </Box>
+      {/* 信息行三项靠左并排等距，工作空间名超长省略号兜底 */}
       <Box sx={{ px: '16px', pb: '12px', display: 'flex', gap: '24px', alignItems: 'center' }}>
-        <Typography sx={{ fontSize: '12px', color: 'text.secondary', flex: 2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary', flexShrink: 1, minWidth: '0px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {bot.workspaceId !== '' ? `工作空间：${bot.workspaceName || bot.workspaceId}` : '工作空间：未选择'}
         </Typography>
-        <Typography sx={{ fontSize: '12px', color: 'text.secondary', flex: 1 }}>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary', flexShrink: 0 }}>
           {bot.accessPolicy.mode === 'open'
             ? '开放模式（所有人可用）'
             : `白名单 ${bot.accessPolicy.allowUsers.length} 人`}
@@ -186,8 +187,9 @@ function ImBotsPage() {
   const { data: doctorEntries } = useDoctorReports();
   const checkDoctor = useDoctorCheck();
   const { show: showToast, snack } = useToast();
-  // 手动检测回合三态：requested（已受理，待条目翻 checking）→ running（探测中）→ idle（收敛即弹中性完成提示）。
-  // 只认「见过 busy」的完整回合，受理瞬间旧快照仍全落定不会被误判为完成。
+  // 手动检测回合（可渲染态）：requested（已受理，待条目翻 checking）→ running（探测中）→ idle（收敛即弹中性完成提示）。
+  // 只认「见过 busy」的完整回合，受理瞬间旧快照仍全落定不会被误判为完成；loading 全程覆盖按钮。
+  const [checkActive, setCheckActive] = useState(false);
   const checkPhaseRef = useRef<'idle' | 'requested' | 'running'>('idle');
   useEffect(() => {
     const busy = isDoctorBusy(doctorEntries);
@@ -197,6 +199,7 @@ function ImBotsPage() {
     }
     if (checkPhaseRef.current === 'running' && !busy) {
       checkPhaseRef.current = 'idle';
+      setCheckActive(false);
       // 中性完成提示：结果经各机器人徽标呈现，toast 只报完成不带计数。
       showToast('检测完成', 'info');
     }
@@ -261,17 +264,20 @@ function ImBotsPage() {
                 size="small"
                 onClick={() => {
                   checkPhaseRef.current = 'requested';
+                  setCheckActive(true);
                   void checkDoctor.mutateAsync(undefined).then((res) => {
                     // 受理为空（无 ACP 模式工作空间的 bot）：不进等待回合，直接给出口提示。
                     if (res.accepted.length === 0) {
                       checkPhaseRef.current = 'idle';
+                      setCheckActive(false);
                       showToast('没有可检测的 Agent 环境（ACP 模式工作空间的机器人才参与检测）', 'info');
                     }
                   }).catch(() => {
                     checkPhaseRef.current = 'idle';
+                    setCheckActive(false);
                   });
                 }}
-                loading={checkDoctor.isPending}
+                loading={checkActive}
                 sx={{ '& svg': { fontSize: '20px' } }}
               >
                 <MonitorHeartOutlinedIcon />

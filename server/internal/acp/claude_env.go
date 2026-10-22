@@ -14,10 +14,12 @@ import (
  */
 const claudeExecutableEnv = "CLAUDE_CODE_EXECUTABLE"
 
+// DisableAutoupdateEnv vendored claude 版本构建期锁死（零 registry 依赖）：全链路注入禁 CLI 自更新，防更新器借 vendored node 跑 npm 写穿应用资源目录。
+const DisableAutoupdateEnv = "DISABLE_AUTOUPDATE"
+
 /*
- * ClaudeEnvOverrides 在 base 之上合并 claude 路径一致性注入（T1.3/P5 定稿终态），返回新 map 不改 base；由消费方拼装进 SpawnConfig.Env，client 本体不感知 claude（D5）。
- *   - CLAUDE_CODE_EXECUTABLE = claudeBin（消费方先经 agentcatalog.VendoredClaudeBin 解析的 vendored 自带二进制绝对路径）：终端直启 / ACP / bot / marketplace 消费同一份 claude，零版本漂移。
- *   - PATH = login shell PATH（探测成功时全量覆盖，best-effort）：GUI 拉起的 sidecar 常缺 nvm 等路径，claude 派生的工具子进程同享一致环境（对齐 bot driver_claude turnEnv 惯例）；探测失败保留原 PATH。
+ * ClaudeEnvOverrides 在 base 之上合并 claude 一致性注入并返回新 map（不改 base），消费方拼装进 SpawnConfig.Env、client 本体不感知 claude（D5）。
+ * CLAUDE_CODE_EXECUTABLE = vendored 自带二进制绝对路径（终端直启 / ACP / bot / marketplace 同源零漂移）；PATH = login shell PATH 全量覆盖（best-effort，探测失败保留原值）；DISABLE_AUTOUPDATE 禁 CLI 自更新。
  */
 func ClaudeEnvOverrides(base map[string]string, claudeBin string) (map[string]string, error) {
 	if claudeBin == "" {
@@ -28,6 +30,7 @@ func ClaudeEnvOverrides(base map[string]string, claudeBin string) (map[string]st
 		merged = make(map[string]string, 2)
 	}
 	merged[claudeExecutableEnv] = claudeBin
+	merged[DisableAutoupdateEnv] = "1"
 	if loginPath, err := clibin.LoginPath(); err == nil && loginPath != "" {
 		merged["PATH"] = loginPath
 	}

@@ -19,7 +19,6 @@ import {
   Collapse,
   IconButton,
   Paper,
-  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -50,7 +49,6 @@ function WorkspaceIssueList({ workspace }: IssueListProps) {
   const qc = useQueryClient();
   const { data: workspaceIssues = [], isLoading: issuesLoading, isError: issuesError, isFetching: issuesFetching } = useWorkspaceIssues(workspace.id);
   const { show: showToast, snack } = useToast();
-  const [keyword, setKeyword] = useState('');
   const [stateFilter, setStateFilter] = useState<StateCode | 'all'>('all');
   const [collapsed, setCollapsed] = useState<Set<StateCode>>(() => new Set());
   const [drawerCreateOpen, setDrawerCreateOpen] = useState(false);
@@ -79,16 +77,7 @@ function WorkspaceIssueList({ workspace }: IssueListProps) {
 
   // 客户端筛选 + 按 stateCode 分组 + 组内排序。
   const grouped = useMemo(() => {
-    const q = keyword.trim().toLowerCase();
-    const filtered = workspaceIssues.filter((i) => {
-      if (q && !i.name.toLowerCase().includes(q)) {
-        return false;
-      }
-      if (stateFilter !== 'all' && i.stateCode !== stateFilter) {
-        return false;
-      }
-      return true;
-    });
+    const filtered = workspaceIssues.filter(i => stateFilter === 'all' || i.stateCode === stateFilter);
     const buckets = new Map<StateCode, WorkspaceIssueResponseData[]>(
       STATE_ORDER.map(code => [code, [] as WorkspaceIssueResponseData[]]),
     );
@@ -97,7 +86,7 @@ function WorkspaceIssueList({ workspace }: IssueListProps) {
     });
     buckets.forEach(arr => arr.sort((a, b) => a.sortOrder - b.sortOrder));
     return buckets;
-  }, [workspaceIssues, keyword, stateFilter]);
+  }, [workspaceIssues, stateFilter]);
 
   const totalCount = useMemo(
     () => Array.from(grouped.values()).reduce((sum, arr) => sum + arr.length, 0),
@@ -149,10 +138,11 @@ function WorkspaceIssueList({ workspace }: IssueListProps) {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 工具栏：视图切换 + 搜索 + 状态筛选 + 新建 */}
+      {/* 工具栏：视图切换 + 状态筛选 + 新建（三栏工具栏等高基准 64px，中间弹性填充左右布局） */}
       <Box
         sx={{
           p: '12px',
+          minHeight: '64px',
           borderBottom: '1px solid',
           borderColor: 'divider',
           bgcolor: 'action.hover',
@@ -181,26 +171,17 @@ function WorkspaceIssueList({ workspace }: IssueListProps) {
         </ToggleButtonGroup>
         {/* 查询表单项：仅列表视图展示（看板按状态分列展示全量，筛选无意义，隐藏避免歧义） */}
         {viewMode === 'list' && (
-          <>
-            <TextField
-              size="small"
-              placeholder={t('tracker:workspaceIssue.search')}
-              value={keyword}
-              onChange={e => setKeyword(e.target.value)}
-              sx={{ flexGrow: 1, minWidth: '120px' }}
-            />
-            <StateSelect
-              value={stateFilter}
-              onChange={setStateFilter}
-              label={t('tracker:workspaceIssue.filter.state')}
-              allOption={t('tracker:workspaceIssue.filter.allStates')}
-              sx={{ minWidth: '120px' }}
-            />
-          </>
+          <StateSelect
+            value={stateFilter}
+            onChange={setStateFilter}
+            label={t('tracker:workspaceIssue.filter.state')}
+            allOption={t('tracker:workspaceIssue.filter.allStates')}
+            sx={{ minWidth: '120px' }}
+          />
         )}
-        {/* 看板模式下用弹性间隔把"新建"推到右侧（列表模式搜索框 flexGrow 已撑开） */}
-        {viewMode === 'kanban' && <Box sx={{ flex: 1 }} />}
-        <Button variant="contained" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()}>
+        {/* 弹性间隔：中间填充，把新建/刷新推到右侧 */}
+        <Box sx={{ flex: 1 }} />
+        <Button variant="contained" size="small" startIcon={<AddOutlinedIcon />} onClick={() => openCreate()}>
           {t('tracker:workspaceIssue.actions.add')}
         </Button>
         <IconButton

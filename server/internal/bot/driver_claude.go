@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/clibin"
 	"ocean-harness/server/internal/dal/enums"
@@ -209,6 +210,8 @@ func turnEnv(loginPath string, port int) []string {
 		filtered = append(filtered, kv)
 	}
 	filtered = append(filtered, fmt.Sprintf("OCEAN_HARNESS_PORT=%d", port))
+	// vendored 版本锁死：禁 claude CLI 自更新（SSOT 同 acp.ClaudeEnvOverrides）。
+	filtered = append(filtered, acp.DisableAutoupdateEnv+"=1")
 	if loginPath != "" {
 		filtered = append(filtered, "PATH="+loginPath)
 	}

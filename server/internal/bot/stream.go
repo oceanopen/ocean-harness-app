@@ -166,7 +166,7 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	<-tickerDone
 
 	mu.Lock()
-	panel := panelContent(thinkingBuf, true, tools, useMarkdown) // 终帧恒头部摘要
+	panel := finalPanelContent(thinkingBuf, useMarkdown) // 终帧只带思考过程摘要，工具列表不进终帧
 	final := currentText
 	mu.Unlock()
 
@@ -258,6 +258,18 @@ func panelContent(thinkingBuf string, headWindow bool, tools []toolEntry, md boo
 		sections = append(sections, b.String())
 	}
 	return strings.Join(sections, "\n\n")
+}
+
+// finalPanelContent 终帧面板：思考已完结只留过程摘要（头部窗口），工具列表不进终帧。
+func finalPanelContent(thinkingBuf string, md bool) string {
+	if thinkingBuf == "" {
+		return ""
+	}
+	label := "💭 思考过程："
+	if md {
+		label = "**💭 思考过程：**"
+	}
+	return label + "\n" + thoughtWindow(thinkingBuf, true)
 }
 
 // quoteBlock 把多行文本包成 markdown quote 块（空行渲染为 > 分隔行）。

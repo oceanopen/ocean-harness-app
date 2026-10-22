@@ -89,8 +89,9 @@ func TestPumpReplyTextCoexistsWithPanelAndFinal(t *testing.T) {
 	if len(frames) != 2 || frames[0].content != want || frames[0].final {
 		t.Fatalf("正文期应面板（头部窗口）与正文共存: %+v", frames)
 	}
-	if frames[1].content != want || !frames[1].final {
-		t.Fatalf("终帧应保留面板 + 正文: %+v", frames)
+	wantFinal := "> **💭 思考过程：**\n> 先分析问题\n\n答案"
+	if frames[1].content != wantFinal || !frames[1].final {
+		t.Fatalf("终帧应只带思考过程摘要 + 正文（无工具分区）: %+v", frames)
 	}
 }
 
@@ -105,8 +106,12 @@ func TestPumpReplyThinkingHeadWindowInTextPhase(t *testing.T) {
 
 	frames := pumpFrames(rs, events)
 	want := "> **🤔 思考中：**\n> " + head + " …\n\n答案"
-	if len(frames) != 2 || frames[0].content != want || frames[1].content != want {
-		t.Fatalf("正文期与终帧应取头部摘要: %+v", frames)
+	if len(frames) != 2 || frames[0].content != want {
+		t.Fatalf("正文期应取头部摘要: %+v", frames)
+	}
+	wantFinal := "> **💭 思考过程：**\n> " + head + " …\n\n答案"
+	if frames[1].content != wantFinal || !frames[1].final {
+		t.Fatalf("终帧应带思考过程头部摘要 + 正文: %+v", frames)
 	}
 }
 
@@ -145,7 +150,7 @@ func TestPumpReplyErrorFinalKeepsPanel(t *testing.T) {
 	events <- TurnEvent{Type: TurnError, Err: errors.New("boom")}
 
 	frames := pumpFrames(rs, events)
-	want := "> **🤔 思考中：**\n> 先分析\n\n❌ 处理失败：boom\n请重试或调整后重新发送。"
+	want := "> **💭 思考过程：**\n> 先分析\n\n❌ 处理失败：boom\n请重试或调整后重新发送。"
 	if len(frames) != 2 || frames[0].final || frames[1].content != want {
 		t.Fatalf("失败终帧应保留面板 + 失败文案: %+v want %q", frames, want)
 	}
@@ -172,7 +177,7 @@ func TestPumpReplyPlainChannelDegrades(t *testing.T) {
 	<-done
 
 	frames := rs.snapshot()
-	want := "🤔 思考中：\n先分析问题\n\n🔧 调用工具：\n⏳ Bash 执行中…\n\n答案"
+	want := "💭 思考过程：\n先分析问题\n\n答案"
 	if len(frames) != 2 || frames[1].content != want || !frames[1].final {
 		t.Fatalf("纯文本渠道应降级为无 quote/粗体帧: %+v want %q", frames, want)
 	}

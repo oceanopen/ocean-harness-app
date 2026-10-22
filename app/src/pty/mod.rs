@@ -26,22 +26,22 @@ fn provider() -> &'static LocalPtyProvider {
 }
 
 /*
- * PTY 子进程注入 env：终端基座 + OCEAN_HARNESS_PORT。无条件覆盖——终端能力以
- * 前端 xterm.js 为准，不随启动环境（终端拉起 / launchd）漂移。
+ * PTY 子进程注入 env：终端基座 + OCEAN_HARNESS_PORT + claude 治理项（禁自更新 /
+ * npm 兜底前缀）。无条件覆盖——终端能力以前端 xterm.js 为准，不随启动环境漂移。
  */
-fn child_envs(http_port: u16) -> Vec<(String, String)> {
-    vec![
-        (
-            "OCEAN_HARNESS_PORT".to_string(),
-            http_port.to_string(),
-        ),
+fn child_envs(http_port: u16, npm_prefix: Option<&str>) -> Vec<(String, String)> {
+    let mut envs = vec![
+        ("OCEAN_HARNESS_PORT".to_string(), http_port.to_string()),
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
-        (
-            "TERM_PROGRAM".to_string(),
-            "OceanHarness".to_string(),
-        ),
-    ]
+        ("TERM_PROGRAM".to_string(), "OceanHarness".to_string()),
+        // vendored claude 版本构建期锁死：禁 CLI 自更新，防更新器借 vendored node 跑 npm 写穿打包资源。
+        ("DISABLE_AUTOUPDATE".to_string(), "1".to_string()),
+    ];
+    if let Some(dir) = npm_prefix {
+        envs.push(("npm_config_prefix".to_string(), dir.to_string()));
+    }
+    envs
 }
 
 /*
@@ -65,7 +65,13 @@ pub fn pty_spawn(
         .state::<crate::shared::http_server::HttpServerState>()
         .port
         .load(std::sync::atomic::Ordering::SeqCst);
-    let envs = child_envs(http_port);
+    // npm 兜底前缀落应用数据目录（随 identifier dev/build 自动隔离）；解析失败仅省略该项。
+    let npm_prefix = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("npm-prefix").to_string_lossy().into_owned());
+    let envs = child_envs(http_port, npm_prefix.as_deref());
     let result = provider().spawn(opts, on_event, &envs);
     match &result {
         Ok(s) => log::info!(
@@ -210,7 +216,7 @@ mod tests {
     // 终端基座 env 齐全且值正确。
     #[test]
     fn child_envs_contains_terminal_base() {
-        let envs = child_envs(9000);
+        let envs = child_envs(9000, Some("/tmp/ocean-npm-prefix"));
         let get = |key: &str| {
             envs.iter()
                 .find(|(k, _)| k == key)
@@ -220,5 +226,7 @@ mod tests {
         assert_eq!(get("TERM"), Some("xterm-256color"));
         assert_eq!(get("COLORTERM"), Some("truecolor"));
         assert_eq!(get("TERM_PROGRAM"), Some("OceanHarness"));
+        assert_eq!(get("DISABLE_AUTOUPDATE"), Some("1"));
+        assert_eq!(get("npm_config_prefix"), Some("/tmp/ocean-npm-prefix"));
     }
 }

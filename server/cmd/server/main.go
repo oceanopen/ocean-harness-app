@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -70,6 +71,11 @@ func main() {
 		Adapters:  cfg.AcpAdaptersDir,
 	}, cfg.Port, cfg.AppDbPath, global.Logger)
 	if err != nil {
+		// schema 漂移（迁移文件就地演进，存量库不重放旧迁移）单独给指引，其余原因原样 Fatal。
+		if strings.Contains(err.Error(), "no such column") {
+			global.Logger.Fatal("acp-session manager init failed", zap.Error(err),
+				zap.String("hint", "库 schema 与程序不匹配：请在设置页执行「重置服务数据」重建库后重启"))
+		}
 		global.Logger.Fatal("acp-session manager init failed", zap.Error(err))
 	}
 	global.AcpSessions = acpSessions

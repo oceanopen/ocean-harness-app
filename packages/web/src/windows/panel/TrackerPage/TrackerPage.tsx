@@ -13,9 +13,9 @@ import WorkspacesView from './components/WorkspacesView/WorkspacesView';
 // 选中态读写 tracker store（与命令面板共享同一份），故本组件无 props。
 // 嵌在 PanelApp 内容区内（panel 顶栏已显示「任务管理」页面名），故自身不再重复标题。
 //
-// 两栏布局：左栏工作空间行式列表（只读 + 叠层/刷新工具栏），右栏选中空间的任务视图；
-// 空间卡片网格（WorkspacesView 完整视图，空间级 CRUD/类型管理入口）以页面内绝对定位叠层
-// 盖在主体内容上方（铺满整页、非弹窗样式）。
+// 两栏布局：左栏工作空间行式列表（只读 + 叠层开关/刷新工具栏），右栏选中空间的任务视图；
+// 空间卡片网格（WorkspacesView 完整视图，空间级 CRUD/类型管理入口）以绝对定位叠层盖在
+// 右栏内容上方（仅覆盖右栏、非弹窗样式，左栏列表保持可见）。
 //
 // 路由接入（全 query 风格）：工作空间选中态由 URL ?wid=<id> 驱动；本页单向同步 URL→store。
 // store 全局，页面卸载/重挂载（声明式路由切走即卸载）不丢选中。
@@ -30,9 +30,12 @@ export default function TrackerPage() {
   // 工作空间全量（用于按 URL wid 回查实体，reload/恢复时回写 store）；与命令面板/列表共享缓存。
   const { data: workspaces = [], isPending: workspacesPending } = useWorkspaces();
 
-  // 空间选择叠层开合：未选空间时默认展开（首访引导）；选中后收起，可经左栏工具栏再开。
+  // 空间选择叠层开合：用户未显式开关时取派生默认值（未选空间首访展开；列表为空强制展开引导创建）。
   // reload 落在 ?wid=<id> 但 store 未回写时也保持展开，避免网格→列表闪烁。
-  const [selectorOpen, setSelectorOpen] = useState(selected == null && urlWid == null);
+  const [userToggled, setUserToggled] = useState<boolean | null>(null);
+  const forceOpen = !workspacesPending && workspaces.length === 0;
+  const selectorOpen = userToggled ?? ((selected == null && urlWid == null) || forceOpen);
+  const toggleSelector = () => setUserToggled(!selectorOpen);
 
   // URL → store 单向同步：
   //   有 wid 且 store 不一致 → 按实体回写（reload/前进后退恢复）；
@@ -62,7 +65,7 @@ export default function TrackerPage() {
   const handleSelectWorkspace = (ws: WorkspaceModel) => {
     selectWorkspace(ws);
     navigate(`/tracker?${TRACKER_WID_PARAM}=${ws.id}`);
-    setSelectorOpen(false);
+    setUserToggled(false);
   };
 
   // reload 落在 ?wid=<id> 但 store 尚未回写时，显示加载态而非列表闪烁一下。
@@ -76,23 +79,7 @@ export default function TrackerPage() {
   }
 
   return (
-    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden', position: 'relative' }}>
-      {/* 空间选择叠层：铺满整页，选中空间或经左栏工具栏收起 */}
-      {selectorOpen && (
-        <Box
-          sx={{
-            position: 'absolute',
-            inset: '0px',
-            zIndex: theme => theme.zIndex.appBar - 1,
-            bgcolor: 'background.default',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <WorkspacesView onSelect={ws => handleSelectWorkspace(ws)} />
-        </Box>
-      )}
-
+    <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* 左栏：工作空间行式列表（宽 260，选中态经 URL 同步 store） */}
       <Box
         sx={{
@@ -106,12 +93,28 @@ export default function TrackerPage() {
         <WorkspaceList
           selectedId={selected?.id ?? null}
           onSelect={handleSelectWorkspace}
-          onOpenOverlay={() => setSelectorOpen(true)}
+          overlayOpen={selectorOpen}
+          onToggleOverlay={toggleSelector}
         />
       </Box>
 
-      {/* 右栏：任务视图（key 随空间切换重挂载，重置筛选/视图模式；未选空间时空态提示） */}
-      <Box sx={{ flex: 1, overflow: 'hidden' }}>
+      {/* 右栏：任务视图（key 随空间切换重挂载，重置筛选/视图模式；未选空间时空态提示）。
+          空间选择叠层仅覆盖本栏（左栏列表保持可见可点），选中空间或经左栏开关收起。 */}
+      <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden', position: 'relative' }}>
+        {selectorOpen && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: '0px',
+              zIndex: theme => theme.zIndex.appBar - 1,
+              bgcolor: 'background.default',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <WorkspacesView onSelect={ws => handleSelectWorkspace(ws)} />
+          </Box>
+        )}
         {selected
           ? <WorkspaceIssueList key={selected.id} workspace={selected} />
           : (

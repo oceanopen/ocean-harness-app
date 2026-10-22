@@ -146,6 +146,17 @@ function ImBotDrawer(props: ImBotDrawerProps) {
 
         {/* 表单区 */}
         <Box sx={{ flex: 1, overflow: 'auto', p: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <FormControlLabel
+            sx={{ flexShrink: 0 }}
+            control={(
+              <Switch
+                checked={draft.enabled}
+                onChange={e => setField('enabled', e.target.checked)}
+              />
+            )}
+            label="启用"
+          />
+
           <TextField
             size="small"
             fullWidth
@@ -248,17 +259,6 @@ function ImBotDrawer(props: ImBotDrawerProps) {
               <MenuItem key={ws.id} value={ws.id}>{ws.name}</MenuItem>
             ))}
           </TextField>
-
-          <FormControlLabel
-            sx={{ flexShrink: 0 }}
-            control={(
-              <Switch
-                checked={draft.enabled}
-                onChange={e => setField('enabled', e.target.checked)}
-              />
-            )}
-            label="启用"
-          />
 
           <Divider />
 

@@ -46,6 +46,6 @@
     }
   },
   "devWorkbench": {
-    "enterDev": "Enter dev"
+    "enterDev": "Start processing"
   }
 }

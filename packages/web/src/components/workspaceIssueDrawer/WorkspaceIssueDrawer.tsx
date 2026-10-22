@@ -114,16 +114,17 @@ function WorkspaceIssueDrawer({ mode, workspace, workspaceIssue, initialStateCod
   const [dialogDeleteOpen, setDialogDeleteOpen] = useState(false);
   const [drawerManagerOpen, setDrawerManagerOpen] = useState(false);
   /**
-   * 「进入开发」可用条件（按钮始终展示，不满足时 disabled + title 提示原因）：
-   * issue 当前状态为 IN_PROGRESS（进行中）才可进入开发工作台。
+   * 「开始处理」可用条件（按钮始终展示，不满足时 disabled + title 提示原因）：
+   * 待办池 / 待办 / 进行中三态可直接进入工作台，已完成/已取消不可。
    */
-  const canEnterDev = mode === 'edit' && !!workspaceIssue && workspaceIssue.stateCode === 'IN_PROGRESS';
+  const canEnterDev = mode === 'edit' && !!workspaceIssue
+    && ['BACKLOG', 'TODO', 'IN_PROGRESS'].includes(workspaceIssue.stateCode);
   // 禁用原因（首个不满足条件，按钮 title hover 提示；空串=可启用）。
   const enterDevDisabledReason = !workspaceIssue
-    ? '请先保存 issue'
-    : workspaceIssue.stateCode !== 'IN_PROGRESS'
-      ? '仅进行中状态可进入开发'
-      : '';
+    ? '请先保存任务'
+    : canEnterDev
+      ? ''
+      : '已完成/已取消的任务不可开始处理';
   const handleEnterDev = () => {
     if (!workspaceIssue) {
       return;
@@ -385,7 +386,7 @@ function WorkspaceIssueDrawer({ mode, workspace, workspaceIssue, initialStateCod
           )}
         </Box>
 
-        {/* 底部操作栏：一律左对齐（edit 进入开发+删除+取消+保存；create 取消+创建） */}
+        {/* 底部操作栏：一律左对齐（edit 开始处理+删除+取消+保存；create 取消+创建） */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', p: '16px', borderTop: '1px solid', borderColor: 'divider' }}>
           {mode === 'edit' && (
             <Button

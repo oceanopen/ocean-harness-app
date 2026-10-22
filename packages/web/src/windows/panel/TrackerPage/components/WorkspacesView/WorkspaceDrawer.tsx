@@ -115,6 +115,13 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     const selected = await openDialog({ directory: true, multiple: false });
     if (typeof selected === 'string') {
       setDir(selected);
+      // 名称未手填时以路径末段为默认值（兼容 / 与 \ 分隔），已填不覆盖。
+      if (name.trim() === '') {
+        const segment = selected.split(/[\\/]/).filter(Boolean).pop();
+        if (segment) {
+          setName(segment);
+        }
+      }
       setError(null);
     }
   };

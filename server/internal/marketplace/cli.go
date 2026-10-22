@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/clibin"
 	"ocean-harness/server/internal/dal/enums"
@@ -46,10 +47,11 @@ func run(timeout time.Duration, args ...string) (string, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	/*
-	 * login PATH 注入（best-effort，对齐 bot driver_claude turnEnv / ACP ClaudeEnvOverrides 惯例，本函数是 claude 调用方三链路中最后补齐的一个）：GUI 拉起的 sidecar PATH 常缺 nvm/homebrew 等目录，派生 git 子进程同享完整环境；探测失败保留原环境不阻断主流程，替换既有 PATH= 项而非 append（env 重复项语义依赖 libc 实现，替换为确定性覆盖）。
+	 * env 基座 = sidecar env + 禁自更新（vendored 版本锁死，SSOT 同 acp.ClaudeEnvOverrides）；login PATH 注入 best-effort（GUI 拉起的 sidecar PATH 常缺 nvm/homebrew 等目录，派生 git 子进程同享完整环境，失败保留原 PATH 不阻断）。
+	 * PATH 项替换而非 append（env 重复项语义依赖 libc 实现，替换为确定性覆盖）。
 	 */
+	env := append(os.Environ(), acp.DisableAutoupdateEnv+"=1")
 	if loginPath, err := clibin.LoginPath(); err == nil && loginPath != "" {
-		env := os.Environ()
 		replaced := false
 		for i, kv := range env {
 			if strings.HasPrefix(kv, "PATH=") {
@@ -61,8 +63,8 @@ func run(timeout time.Duration, args ...string) (string, error) {
 		if !replaced {
 			env = append(env, "PATH="+loginPath)
 		}
-		cmd.Env = env
 	}
+	cmd.Env = env
 	/*
 	 * WaitDelay 收口孙进程管道：ctx 超时只 kill claude 主进程，其内部 git fetch/clone 孙进程仍持有 stdout/stderr 管道写端，不关则 Run() 永久阻塞；设置后 os/exec 在 WaitDelay 到期强制关闭管道让 Run() 返回，最坏在超时后 ~5s 内报错收场。
 	 */

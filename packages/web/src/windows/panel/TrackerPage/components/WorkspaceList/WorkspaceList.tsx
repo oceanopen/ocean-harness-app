@@ -14,13 +14,14 @@ const truncateSx = {
 interface WorkspaceListProps {
   selectedId: string | null;
   onSelect: (ws: WorkspaceModel) => void;
-  // 打开工作空间网格叠层（WorkspacesView，增删改/类型管理入口）。
-  onOpenOverlay: () => void;
+  // 网格叠层开合：open 供按钮高亮，toggle 供按钮与空态新建开合（WorkspacesView，增删改/类型管理入口）。
+  overlayOpen: boolean;
+  onToggleOverlay: () => void;
 }
 
 // 工作空间行式列表（嵌于 tracker 左栏，宽 260）：平铺工作空间，点击选中（右栏出任务视图）。
 // 空间级 CRUD 不在此处（网格叠层承载），本列表只读 + 刷新/叠层开关工具栏。
-function WorkspaceList({ selectedId, onSelect, onOpenOverlay }: WorkspaceListProps) {
+function WorkspaceList({ selectedId, onSelect, overlayOpen, onToggleOverlay }: WorkspaceListProps) {
   const { t } = useTranslation();
   const { data: workspaces = [], isLoading, isError, isFetching, refetch } = useWorkspaces();
 
@@ -34,10 +35,11 @@ function WorkspaceList({ selectedId, onSelect, onOpenOverlay }: WorkspaceListPro
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 紧凑工具栏：网格叠层开关 + 刷新 */}
+      {/* 紧凑工具栏：网格叠层开关 + 刷新（三栏工具栏等高基准 64px） */}
       <Box
         sx={{
           p: '12px',
+          minHeight: '64px',
           borderBottom: '1px solid',
           borderColor: 'divider',
           display: 'flex',
@@ -47,7 +49,12 @@ function WorkspaceList({ selectedId, onSelect, onOpenOverlay }: WorkspaceListPro
         }}
       >
         <Tooltip title={t('tracker:workspace.actions.switch')}>
-          <IconButton size="small" onClick={onOpenOverlay} aria-label={t('tracker:workspace.actions.switch')}>
+          <IconButton
+            size="small"
+            color={overlayOpen ? 'primary' : 'default'}
+            onClick={onToggleOverlay}
+            aria-label={t('tracker:workspace.actions.switch')}
+          >
             <AppsOutlinedIcon />
           </IconButton>
         </Tooltip>
@@ -111,7 +118,7 @@ function WorkspaceList({ selectedId, onSelect, onOpenOverlay }: WorkspaceListPro
             <Button
               variant="contained"
               size="small"
-              onClick={onOpenOverlay}
+              onClick={onToggleOverlay}
               sx={{ mt: '4px' }}
             >
               {t('tracker:workspace.actions.add')}
@@ -158,7 +165,7 @@ function WorkspaceRow({ workspace, selected, onSelect }: WorkspaceRowProps) {
           mx: '4px',
           my: '2px',
           px: '8px',
-          py: '6px',
+          py: '10px',
           cursor: 'pointer',
           borderRadius: '4px',
           borderLeft: '3px solid',

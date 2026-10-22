@@ -7,7 +7,6 @@
       "noMatch": "没有匹配的工作空间"
     },
     "selectHint": "请先选择工作空间",
-    "search": "按名称搜索",
     "actions": {
       "add": "新建工作空间",
       "switch": "切换工作空间",
@@ -19,7 +18,7 @@
       "namePlaceholder": "请输入工作空间名称",
       "dir": "工作区目录",
       "dirPlaceholder": "/absolute/path/to/workspace",
-      "dirHint": "issue 运行目录与 IM 机器人会话目录的根（绝对路径）",
+      "dirHint": "任务运行目录与 IM 机器人会话目录的根（绝对路径）",
       "emoji": "图标（emoji）",
       "emojiPlaceholder": "如 🚀（选填）",
       "emojiPicker": "选择常用表情",
@@ -56,13 +55,12 @@
     }
   },
   "workspaceIssue": {
-    "search": "搜索 Issue",
     "actions": {
-      "add": "新建 Issue",
+      "add": "新建 任务",
       "refresh": "刷新"
     },
     "create": {
-      "title": "新建 Issue",
+      "title": "新建 任务",
       "confirm": "创建",
       "cancel": "取消"
     },
@@ -78,21 +76,21 @@
       "board": "看板"
     },
     "empty": {
-      "title": "暂无 Issue",
-      "desc": "点击「新建 Issue」开始管理",
-      "noMatch": "没有匹配的 Issue"
+      "title": "暂无 任务",
+      "desc": "点击「新建 任务」开始管理",
+      "noMatch": "没有匹配的 任务"
     },
     "error": {
-      "title": "加载 Issue 列表失败",
+      "title": "加载 任务 列表失败",
       "desc": "请稍后重试",
       "retry": "重试"
     },
     "toast": {
-      "created": "Issue「{{name}}」创建成功",
+      "created": "任务「{{name}}」创建成功",
       "createFailed": "创建失败：{{message}}",
-      "updated": "Issue 已更新",
+      "updated": "任务 已更新",
       "updateFailed": "更新失败：{{message}}",
-      "deleted": "Issue 已删除",
+      "deleted": "任务 已删除",
       "deleteFailed": "删除失败：{{message}}",
       "typeCreated": "类型「{{name}}」已创建",
       "typeUpdated": "类型已更新",
@@ -117,8 +115,8 @@
       "save": "保存",
       "cancel": "取消",
       "delete": "删除",
-      "deleteTitle": "删除 Issue",
-      "deleteConfirmMsg": "确认删除 Issue「{{name}}」？此操作不可恢复。"
+      "deleteTitle": "删除 任务",
+      "deleteConfirmMsg": "确认删除 任务「{{name}}」？此操作不可恢复。"
     },
     "markdownEditor": {
       "placeholder": "支持 Markdown：标题、列表、代码、链接等（选填）"
@@ -137,7 +135,7 @@
     "close": "关闭",
     "edit": "编辑",
     "delete": "删除",
-    "deleteConfirmMsg": "确认删除类型「{{name}}」？引用该类型的 Issue 将置为未分类。",
+    "deleteConfirmMsg": "确认删除类型「{{name}}」？引用该类型的 任务 将置为未分类。",
     "empty": "暂无类型",
     "uncategorized": "未分类",
     "defaultRequirement": "需求",

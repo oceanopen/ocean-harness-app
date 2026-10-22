@@ -24,7 +24,6 @@ import {
   DialogTitle,
   Divider,
   IconButton,
-  TextField,
   Typography,
 } from '@mui/material';
 import WorkspaceTypeManagerDrawer from '@src/components/workspaceIssueDrawer/WorkspaceTypeManagerDrawer';
@@ -55,19 +54,17 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
   const activeWorkspaceId = useTrackerStore(s => s.activeWorkspaceId);
   const deleteWs = useDeleteWorkspace();
   const { show: showToast, snack } = useToast();
-  const [searchName, setSearchName] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<WorkspaceModel | null>(null);
   const [typeManagerTarget, setTypeManagerTarget] = useState<WorkspaceModel | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkspaceModel | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // 客户端模糊过滤 + 兜底排序（uuid v7 字典序 DESC，新建在前）。
-  const displayed = useMemo(() => {
-    const q = searchName.trim().toLowerCase();
-    const filtered = workspaces.filter(w => !q || w.name.toLowerCase().includes(q));
-    return [...filtered].sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
-  }, [workspaces, searchName]);
+  // 兜底排序（uuid v7 字典序 DESC，新建在前）。
+  const displayed = useMemo(
+    () => [...workspaces].sort((a, b) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)),
+    [workspaces],
+  );
 
   // 创建/更新成功：mutation 内部已 invalidate（列表自动刷新），回调仅弹 toast。
   const handleCreated = useCallback((ws: WorkspaceModel) => {
@@ -99,28 +96,22 @@ function WorkspacesView({ onSelect }: WorkspacesViewProps) {
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 顶栏：计数 + 搜索 + 刷新 + 新建（新建入口收回本工具栏，外层标题栏只留列表开关） */}
+      {/* 顶栏：计数 + 刷新 + 新建（中间弹性填充；新建入口收回本工具栏，外层标题栏只留列表开关） */}
       <Box
         sx={{
-          p: '16px',
+          p: '12px',
+          minHeight: '64px',
           borderBottom: '1px solid',
           borderColor: 'divider',
           display: 'flex',
           alignItems: 'center',
-          gap: '12px',
-          flexWrap: 'wrap',
+          gap: '8px',
         }}
       >
         <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0 }}>
           {t('tracker:workspace.summary', { total: workspaces.length })}
         </Typography>
-        <TextField
-          size="small"
-          placeholder={t('tracker:workspace.search')}
-          value={searchName}
-          onChange={e => setSearchName(e.target.value)}
-          sx={{ flexGrow: 1, minWidth: '120px' }}
-        />
+        <Box sx={{ flex: 1 }} />
         <Box sx={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
           <IconButton
             size="small"
