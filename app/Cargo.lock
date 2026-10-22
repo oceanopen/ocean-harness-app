@@ -2840,7 +2840,7 @@ dependencies = [
 
 [[package]]
 name = "ocean-harness"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
