@@ -1,12 +1,10 @@
-import type { LocalRepositoryModel, WorkspaceLaunchSettings, WorkspaceModel } from '@src/services';
+import type { WorkspaceLaunchSettings, WorkspaceModel } from '@src/services';
 import type { AgentCode } from '@src/shared/agentCode';
 import { CloseOutlined as CloseOutlinedIcon, EmojiEmotionsOutlined as EmojiEmotionsOutlinedIcon, FolderOpen as FolderOpenIcon } from '@mui/icons-material';
 import {
   Alert,
-  Autocomplete,
   Box,
   Button,
-  Chip,
   IconButton,
   InputAdornment,
   Popover,
@@ -17,7 +15,6 @@ import {
 import LaunchSettingsFields from '@src/shared/LaunchSettingsFields';
 import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { useEffectiveAcpAgentCode } from '@src/state/agentCatalog';
-import { useLocalRepositories } from '@src/state/localRepositories';
 import { useCreateWorkspace, useUpdateWorkspace } from '@src/state/tracker';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { useRef, useState } from 'react';
@@ -26,7 +23,7 @@ import { useTranslation } from 'react-i18next';
 // 新建/编辑工作空间抽屉。
 // 传入 workspace 时为编辑模式：标题改为"编辑工作空间"、ID 只读展示、字段反显、提交调用 update；
 // 不传则为新建模式，行为不变。
-// 字段：基础信息（名称/目录/emoji/描述）+ 关联仓库（多选，随空间一起全量保存）+ 启动设置
+// 字段：基础信息（名称/目录/emoji/描述）+ 启动设置
 // （launch_settings：workspace 单源，无全局回落，未配置等同手动）。
 //
 // 由父组件按需挂载（{open && <WorkspaceDrawer/>}）：每次打开都是全新 useState 初值，
@@ -83,14 +80,10 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
   const isEdit = !!workspace;
   const createWs = useCreateWorkspace();
   const updateWs = useUpdateWorkspace();
-  // 关联仓库：全量仓库（选项）；编辑模式选中态直接从空间 prop 回显（空间响应自带 localRepositoryIds）。
-  const allReposQuery = useLocalRepositories();
-  const allRepos: LocalRepositoryModel[] = allReposQuery.data ?? [];
   const [name, setName] = useState(workspace?.name ?? '');
   const [dir, setDir] = useState(workspace?.dir ?? '');
   const [emoji, setEmoji] = useState(workspace?.emoji ?? '');
   const [description, setDescription] = useState(workspace?.description ?? '');
-  const [selectedRepoIds, setSelectedRepoIds] = useState<number[]>(workspace?.localRepositoryIds ?? []);
   const [launchMode, setLaunchMode] = useState<NonNullable<WorkspaceLaunchSettings['mode']>>(
     workspace?.launchSettings?.mode ?? 'none',
   );
@@ -132,7 +125,6 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     setSubmitting(true);
     setError(null);
     try {
-      // 关联仓库随空间信息一起保存（后端 create/update 事务内全量写入，无独立增删接口）。
       // none / 手动档只带 mode；自动档带 autoCommand（直启目标）；ACP 会话带 agentCode + permissionMode。
       const launchSettings: WorkspaceLaunchSettings
         = launchMode === 'acp'
@@ -145,7 +137,6 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
         dir: dir.trim(),
         emoji: emoji.trim(),
         description: description.trim(),
-        localRepositoryIds: selectedRepoIds,
         launchSettings,
       };
       if (isEdit && workspace) {
@@ -315,34 +306,6 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             slotProps={{ htmlInput: { maxLength: DESCRIPTION_MAX } }}
             helperText={`${description.length} / ${DESCRIPTION_MAX}`}
           />
-          <Autocomplete
-            multiple
-            size="small"
-            options={allRepos}
-            getOptionLabel={r => r.name}
-            isOptionEqualToValue={(o, v) => o.id === v.id}
-            value={allRepos.filter(r => selectedRepoIds.includes(r.id))}
-            onChange={(_, picked) => {
-              setSelectedRepoIds(picked.map(r => r.id));
-              setError(null);
-            }}
-            filterSelectedOptions
-            disabled={submitting}
-            noOptionsText={t('tracker:workspace.add.repositoriesNoRepo')}
-            renderValue={(value, getItemProps) =>
-              value.map((r, idx) => {
-                const { key, ...itemProps } = getItemProps({ index: idx });
-                return <Chip key={key} label={r.name} size="small" {...itemProps} />;
-              })}
-            renderInput={params => (
-              <TextField
-                {...params}
-                label={t('tracker:workspace.add.repositories')}
-                placeholder={t('tracker:workspace.add.repositoriesPlaceholder')}
-              />
-            )}
-          />
-
           {/* 启动设置（launch_settings）：workspace 单源，无全局回落；未配置等同手动。 */}
           <LaunchSettingsFields
             mode={launchMode}

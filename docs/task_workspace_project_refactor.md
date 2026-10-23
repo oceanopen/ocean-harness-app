@@ -156,11 +156,12 @@ t_conversations（第一性实体，应用只存元数据）：
 **实施定稿**：全部 4 个迁移文件合并为单文件基线 `20260728001_init.sql`（10 张终态表，用户拍板「SQL 整理为一个初始化 SQL、直接重置不考虑历史数据」）。编译适配口径（用户拍板）：最小编译适配——被删锚载体（`t_issue_acp_sessions` 与 `acp_session_id` 列）的读写点窄桩化（Peek 恒空/写删 no-op），`SweepSessionIDs` 启动清扫按 D4 移除；Move/bindIssue 端点与五状态枚举直接移除；bot 新三列仅透传持久化（`conversationType` 缺省空值哨兵，D8 校验归 T4.1）；任务仓库归属校验暂松为仓库存在性校验（T3.2 恢复项目关联集合校验）。连带吸收 T0.3 部分 scope：`workspace.go` 的 issue/仓库级联删码与 D13 死分支 bug（重写中自然修复，目录变更热更新已正确）在本次完成，T0.3 余量 = 前端 `WorkspaceDrawer` 去仓库选择。gen 管线注意：gormgen 编译图经 `global` 传导至全部 internal 包，重生成前须先清空 `internal/dal` 生成物且模块不可有半改状态（实操：摘 `global.go` 的 acpsession/bot 单例边跑完再还原）。验收：gorm:gen 幂等、`go vet`/`go test`（19 包）全绿、dev 二进制空库启动 goose 单版本 `20260728001` 一次应用且 10 表建成、接口探活正常。
 
 #### T0.3 工作空间域瘦身
-**状态**：⬜
+**状态**：✅
 **功能**：工作空间去任务归属、去仓库关联，抽屉字段收敛为工作目录+默认会话执行模式+基础信息。
 **技术方案**：`server/internal/service/workspace.go` 删 issue/仓库级联逻辑与 `t_workspace_local_repositories` 引用；修 D13 死分支 bug；前端 `WorkspaceDrawer` 去仓库选择。
 **依赖**：T0.2
 **验收**：工作空间 CRUD 正常；编辑/删除不再触碰任务与仓库；目录变更后关联 bot 正确热更新。
+**实施定稿**：后端部分（workspace.go 级联删码、`t_workspace_local_repositories` 引用清零、D13 死分支修复）已随 T0.2 编译适配完成，本任务余量纯前端：`WorkspaceService` 三处 `localRepositoryIds` 字段删除、`WorkspaceDrawer` 去仓库多选块（收敛为基础信息+启动设置）、任务抽屉仓库下拉选项源改全部本地仓库（create 默认不预派生仓库行，归属过滤随 T3.2 项目关联接入收窄）、空态文案改「暂无本地仓库」语义（zh/en）。`workspace.add.repositories*` 三个死 i18n 键留待 T9.1 残留清零。验收：web:lint + web:build 全绿。
 
 ### 阶段 1：后端会话域
 

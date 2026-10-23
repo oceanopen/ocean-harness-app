@@ -109,7 +109,7 @@
       "type": "Type",
       "branch": "Branch",
       "branchPlaceholder": "Select or enter branch name",
-      "branchNoRepoHint": "Associate a repository in workspace settings first",
+      "branchNoRepoHint": "No local repositories yet. Add one on the Repositories page.",
       "createdAt": "Created",
       "completedAt": "Completed",
       "save": "Save",

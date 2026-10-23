@@ -20,10 +20,9 @@ import ResizableDrawer from '@src/shared/ResizableDrawer';
 import { formatDate } from '@src/shared/time';
 import { useToast } from '@src/shared/useToast';
 import { useEffectiveAcpAgentCode } from '@src/state/agentCatalog';
-import { useLocalRepositories } from '@src/state/localRepositories';
 import { STATE_CODE_DEFAULT, useCreateWorkspaceIssue, useDeleteWorkspaceIssue, useUpdateWorkspaceIssue, useWorkspaceTypes } from '@src/state/tracker';
 import dayjs from 'dayjs';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate as useRouterNavigate } from 'react-router-dom';
 import IssueRepoBranchTable from './IssueRepoBranchTable';
@@ -68,17 +67,10 @@ function WorkspaceIssueDrawer({ mode, workspace, workspaceIssue, initialStateCod
   const wsTypes = wsTypesQuery.data;
   const [type, setType] = useState<WorkspaceTypeModel | null>(workspaceIssue?.type ?? null);
   /**
-   * 关联仓库+分支列表（多选）：create 的默认行由全局仓库缓存派生（工作空间关联仓库各一行、分支预填默认分支，
-   * 数据异步就绪后自动出现，无需 effect 初始化）；用户在 table 里增删改后存 override（此后不再用派生值）。
+   * 关联仓库+分支列表（多选）：create 默认不预派生仓库行（工作空间关联已下线，归属过滤随 T3.2
+   * 项目关联接入）；用户在 table 里增删改后存 override（此后不再用派生值）。
    * edit 按回显数据初始化 override。
    */
-  const allReposQuery = useLocalRepositories();
-  const defaultRepoBranchRows = useMemo<IssueRepositoryBranchModel[]>(() => {
-    const repoMap = new Map((allReposQuery.data ?? []).map(r => [r.id, r]));
-    return (workspace.localRepositoryIds ?? [])
-      .filter(id => repoMap.has(id))
-      .map(id => ({ localRepositoryId: id, repositoryBranch: repoMap.get(id)!.defaultBranch ?? '' }));
-  }, [allReposQuery.data, workspace.localRepositoryIds]);
   const [repoBranchRowsOverride, setRepoBranchRowsOverride] = useState<IssueRepositoryBranchModel[] | null>(
     mode === 'edit' ? (workspaceIssue?.repositoryBranchList ?? []) : null,
   );
@@ -106,7 +98,8 @@ function WorkspaceIssueDrawer({ mode, workspace, workspaceIssue, initialStateCod
         : launchModeOverride === 'terminal-auto'
           ? { mode: launchModeOverride, autoCommand: launchAutoCommand }
           : { mode: launchModeOverride };
-  const repoBranchRows = repoBranchRowsOverride ?? defaultRepoBranchRows;
+  // create 默认行恒空（不预派生仓库行）；override 在用户增删改后接管。
+  const repoBranchRows = repoBranchRowsOverride ?? [];
   // 用户是否已手动操作过类型（create 默认选中「需求」仅作用于未触碰时，避免覆盖用户显式选的「未分类」）。
   const [typeTouched, setTypeTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -350,7 +343,6 @@ function WorkspaceIssueDrawer({ mode, workspace, workspaceIssue, initialStateCod
             </Box>
           </LocalizationProvider>
           <IssueRepoBranchTable
-            localRepositoryIds={workspace.localRepositoryIds ?? []}
             rows={repoBranchRows}
             onChange={handleRepoBranchRowsChange}
             disabled={submitting || deleting}

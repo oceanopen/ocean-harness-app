@@ -19,7 +19,6 @@ export interface WorkspaceModel {
   description: string;
   emoji: string; // 展示图标（空串 = 前端图标兜底）
   launchSettings?: WorkspaceLaunchSettings; // undefined = 未配置（回落全局）
-  localRepositoryIds: number[]; // 关联本地仓库 id 列表（空数组 = 无关联）
   createdAt: string;
   updatedAt: string;
 }
@@ -34,7 +33,6 @@ export interface WorkspaceCreateRequest {
   description?: string;
   emoji?: string; // 省略 = 前端图标兜底
   launchSettings?: WorkspaceLaunchSettings; // 省略 = 不配置（回落全局）
-  localRepositoryIds?: number[]; // 关联仓库最终列表（全量，随工作空间一起保存）
 }
 
 // POST /api/tracker/workspace/update 的入参。
@@ -45,7 +43,6 @@ export interface WorkspaceUpdateRequest {
   description?: string;
   emoji?: string;
   launchSettings?: WorkspaceLaunchSettings; // 省略 = 清空配置（回落全局）
-  localRepositoryIds?: number[]; // 关联仓库最终列表（全量覆盖）
 }
 
 // POST /api/tracker/workspace/delete 的入参。

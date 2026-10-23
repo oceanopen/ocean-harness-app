@@ -9,11 +9,9 @@ import { useTranslation } from 'react-i18next';
 /**
  * Issue 关联仓库+分支 table（多选）：每行 = 仓库下拉 + 分支 Combobox（freeSolo）+ 删除按钮，
  * 末行「新增」追加空行；受控组件（rows/onChange 父级持有，不发请求）。
- * 仓库选项 = 未被其他行选中的项目关联仓库，选仓库自动预填默认分支；全部选中新增置灰、无关联仓库整体禁用；文案硬编码中文（表单区不走路由级 i18n）。
+ * 仓库选项 = 未被其他行选中的全部本地仓库（归属过滤随 T3.2 项目关联接入再收窄），选仓库自动预填默认分支；全部选中新增置灰、无本地仓库整体禁用；文案硬编码中文（表单区不走路由级 i18n）。
  */
 interface IssueRepoBranchTableProps {
-  // 当前工作空间已关联的仓库 id 列表（来自工作空间响应 WorkspaceModel.localRepositoryIds，作仓库下拉选项源）。
-  localRepositoryIds: number[];
   rows: IssueRepositoryBranchModel[];
   onChange: (rows: IssueRepositoryBranchModel[]) => void;
   disabled?: boolean;
@@ -21,18 +19,17 @@ interface IssueRepoBranchTableProps {
 }
 
 function IssueRepoBranchTable({
-  localRepositoryIds,
   rows,
   onChange,
   disabled,
   sx,
 }: IssueRepoBranchTableProps) {
   const { t } = useTranslation();
-  // 仓库下拉选项 = 全局仓库列表按项目关联 id 过滤（useLocalRepositories 全局缓存，无需按项目单独取数）。
+  // 仓库下拉选项 = 全部本地仓库（useLocalRepositories 全局缓存，无需按归属单独取数）。
   const allReposQuery = useLocalRepositories();
-  const projectRepos = (allReposQuery.data ?? []).filter(r => localRepositoryIds.includes(r.id));
+  const projectRepos = allReposQuery.data ?? [];
   const repoMap = new Map(projectRepos.map(r => [r.id, r]));
-  const noRepos = localRepositoryIds.length === 0;
+  const noRepos = projectRepos.length === 0;
 
   // 未被任何行选中的仓库（新增按钮可选项；全被选中 → 新增置灰）。
   const selectedRepoIds = new Set(rows.map(r => r.localRepositoryId).filter(id => id > 0));
