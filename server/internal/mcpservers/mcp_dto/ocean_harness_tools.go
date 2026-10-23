@@ -5,8 +5,6 @@
  */
 package mcpdto
 
-import "ocean-harness/server/internal/dal/enums"
-
 // —— 入参 Args ——
 
 /*
@@ -22,10 +20,9 @@ type IssueIDArgs struct {
  * 空 = 保留原值（首期不支持经 MCP 置空字段）。
  */
 type IssueUpdateArgs struct {
-	IssueID     string          `json:"issueId" jsonschema:"目标 issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
-	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"目标状态，留空不改。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED；DONE 记录完成时间"`
-	Name        string          `json:"name,omitempty" jsonschema:"新标题，留空不改（不支持置空）"`
-	Description string          `json:"description,omitempty" jsonschema:"新描述（Markdown），留空不改（不支持置空）"`
+	IssueID     string `json:"issueId" jsonschema:"目标 issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
+	Name        string `json:"name,omitempty" jsonschema:"新标题，留空不改（不支持置空）"`
+	Description string `json:"description,omitempty" jsonschema:"新描述（Markdown），留空不改（不支持置空）"`
 }
 
 // WorkspaceStatusArgs 是 workspace_status 的入参（目录经 issueId 由服务端解析，不入参）。
@@ -39,10 +36,9 @@ type WorkspaceStatusArgs struct {
  */
 type WorkspaceListArgs struct{}
 
-// IssueListArgs 是 issue_list 的入参（stateCode 留空返回全部状态）。
+// IssueListArgs 是 issue_list 的入参。
 type IssueListArgs struct {
-	WorkspaceID string          `json:"workspaceId" jsonschema:"工作空间主键（uuid 文本，workspace_list 返回的 id）"`
-	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"按状态过滤，留空返回全部状态。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
+	ProjectID string `json:"projectId" jsonschema:"项目主键（uuid 文本）"`
 }
 
 // —— 出参 Content（平铺镜像，见包注释） ——
@@ -52,11 +48,6 @@ type IssueContent struct {
 	ID                   string                   `json:"id" jsonschema:"issue 主键（uuid）"`
 	Name                 string                   `json:"name" jsonschema:"标题"`
 	Description          string                   `json:"description,omitempty" jsonschema:"描述（Markdown）"`
-	StateCode            string                   `json:"stateCode" jsonschema:"状态：BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
-	StartDate            string                   `json:"startDate,omitempty" jsonschema:"开始日期（yyyy-mm-dd），留空表示未设置"`
-	TargetDate           string                   `json:"targetDate,omitempty" jsonschema:"目标日期（yyyy-mm-dd），留空表示未设置"`
-	CompletedAt          string                   `json:"completedAt,omitempty" jsonschema:"完成时间（RFC3339），留空表示未完成"`
-	SortOrder            float64                  `json:"sortOrder" jsonschema:"看板排序权重（升序）"`
 	Type                 *IssueTypeContent        `json:"type,omitempty" jsonschema:"issue 类型（单值），留空表示未分类"`
 	RepositoryBranchList []IssueRepoBranchContent `json:"repositoryBranchList" jsonschema:"关联仓库与基准分支列表"`
 }

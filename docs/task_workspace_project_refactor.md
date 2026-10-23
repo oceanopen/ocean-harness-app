@@ -148,11 +148,12 @@ t_conversations（第一性实体，应用只存元数据）：
 **实施定稿**：vendored claude（adapter 0.93.0 / CLI 2.1.300）经 pty 脚本交互链路实证：新会话投递暗号后 `--resume <id>` 重启追问答出暗号原文（上下文真实恢复，非仅启动不报错）；`--session-id <uuid>` 建会话即以该 id 落盘 jsonl 且可再 resume。D6 主路径「spawn 后捕获」维持不变，终端新建显式指定 id 为可选增强路径。环境发现：宿主进程泄漏的 `CLAUDE_CODE_*` 环境变量会令 CLI 关闭 transcript 落盘（子会话标记语义），app 自有 spawn 链无此变量、不受影响；手工复验时需清洗该族变量。
 
 #### T0.2 就地迁移改写：项目/任务/会话/bot 表
-**状态**：⬜
+**状态**：✅
 **功能**：一次迁移完成 §2.1 全部表结构重构。
 **技术方案**：改写 `20261019001_init_tracker.sql`——新增 `t_projects`、`t_conversations`；`t_workspace_issues`→`t_project_tasks`（`workspace_id`→`project_id`，删五列见 D3）；`t_workspace_types`→`t_project_types`；仓库关联三表调整见 §2.1；删 `t_issue_acp_sessions`；`t_im_bots` 加三列；`t_im_bot_conversations` 加 `conversation_id` 删双锚列；`pnpm server:gorm:gen` 重生成 DO 层。
 **依赖**：无
 **验收**：`pnpm server:gorm:gen` 通过；`pnpm server:test` 构建启动正常；DO 层无旧表残留引用。
+**实施定稿**：全部 4 个迁移文件合并为单文件基线 `20260728001_init.sql`（10 张终态表，用户拍板「SQL 整理为一个初始化 SQL、直接重置不考虑历史数据」）。编译适配口径（用户拍板）：最小编译适配——被删锚载体（`t_issue_acp_sessions` 与 `acp_session_id` 列）的读写点窄桩化（Peek 恒空/写删 no-op），`SweepSessionIDs` 启动清扫按 D4 移除；Move/bindIssue 端点与五状态枚举直接移除；bot 新三列仅透传持久化（`conversationType` 缺省空值哨兵，D8 校验归 T4.1）；任务仓库归属校验暂松为仓库存在性校验（T3.2 恢复项目关联集合校验）。连带吸收 T0.3 部分 scope：`workspace.go` 的 issue/仓库级联删码与 D13 死分支 bug（重写中自然修复，目录变更热更新已正确）在本次完成，T0.3 余量 = 前端 `WorkspaceDrawer` 去仓库选择。gen 管线注意：gormgen 编译图经 `global` 传导至全部 internal 包，重生成前须先清空 `internal/dal` 生成物且模块不可有半改状态（实操：摘 `global.go` 的 acpsession/bot 单例边跑完再还原）。验收：gorm:gen 幂等、`go vet`/`go test`（19 包）全绿、dev 二进制空库启动 goose 单版本 `20260728001` 一次应用且 10 表建成、接口探活正常。
 
 #### T0.3 工作空间域瘦身
 **状态**：⬜

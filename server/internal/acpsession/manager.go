@@ -72,9 +72,6 @@ func NewManager(db *gorm.DB, dirs Dirs, port int, appDbPath string, log *zap.Log
 		hub:       newHub(),
 		entries:   map[string]*sessionEntry{},
 	}
-	if err := m.bindings.SweepSessionIDs(context.Background()); err != nil {
-		return nil, fmt.Errorf("清扫 ACP 会话锚点失败: %w", err)
-	}
 	return m, nil
 }
 

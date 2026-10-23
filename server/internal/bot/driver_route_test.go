@@ -10,7 +10,6 @@ import (
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/acpsession"
-	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
 )
@@ -151,35 +150,18 @@ func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
 }
 
 /*
- * mkRouteFixture 建路由目标解析的三表夹具，返回 (wsID, issueID, db)。
+ * mkRouteFixture 建路由目标解析夹具（workspace + 会话映射表），返回 (wsID, db)。
  * launchSettings 可为空串（未配置语义）。
  */
-func mkRouteFixture(t *testing.T, wsSettings, issueSettings string) (string, string, *gorm.DB) {
+func mkRouteFixture(t *testing.T, wsSettings string) (string, *gorm.DB) {
 	t.Helper()
-	db := newBotTestDB(t, &model.Workspace{}, &model.WorkspaceIssue{}, &model.ImBotConversation{})
+	db := newBotTestDB(t, &model.Workspace{}, &model.ImBotConversation{})
 	q := query.Use(db)
 	ws := &model.Workspace{ID: "ws-route", Name: "ws", Dir: "/tmp/ocean-test", LaunchSettings: wsSettings}
 	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
 		t.Fatalf("建 workspace: %v", err)
 	}
-	issue := &model.WorkspaceIssue{
-		ID: "0198dddd-0000-7111-8111-3b6ac9e1f201", WorkspaceID: ws.ID, Name: "关联目标",
-		StateCode: enums.STATE_CODE_BACKLOG, LaunchSettings: issueSettings,
-	}
-	if err := q.WorkspaceIssue.WithContext(context.Background()).Create(issue); err != nil {
-		t.Fatalf("建 issue: %v", err)
-	}
-	return ws.ID, issue.ID, db
-}
-
-// setConvBinding 写会话绑定行（issueID 空串 = 绑定锚为空）。
-func setConvBinding(t *testing.T, db *gorm.DB, botID string, convKey, issueID string) {
-	t.Helper()
-	q := query.Use(db)
-	conv := &model.ImBotConversation{BotID: botID, ConversationKey: convKey, BoundIssueID: issueID}
-	if err := q.ImBotConversation.WithContext(context.Background()).Create(conv); err != nil {
-		t.Fatalf("建会话行: %v", err)
-	}
+	return ws.ID, db
 }
 
 // convRowID 读会话行 id（conv- 会话锚的载体，GetOrCreate 建行后取用）。
@@ -197,10 +179,9 @@ func convRowID(t *testing.T, db *gorm.DB, botID, convKey string) string {
 }
 
 /*
- * TestDriverRouteTargetResolution 目标解析验收（双锚语义矩阵）：有效关联回填 issue 锚（与
- * 桌面共享会话）；未关联/空锚/挂空关联/跨 workspace 关联全部回填 conv- 会话锚（会话行载体，
- * 工作空间根目录）；issue 级 mode 显式覆盖 workspace 级（双向："none" 否决、"acp" 启用）；
- * 读库失败 fail closed。
+ * TestDriverRouteTargetResolution 目标解析验收（窄桩期全 conv 锚）：未关联回填 conv- 会话锚
+ * （会话行载体，工作空间根目录）；workspace 非 acp 档 headless；读库失败 fail closed。
+ * 关联路由矩阵（issue 锚/挂空降级/issue 级 mode 覆盖）随 bound_issue_id 列下线移除，T4.2 重建。
  */
 func TestDriverRouteTargetResolution(t *testing.T) {
 	const acpSettings = `{"mode":"acp"}`
@@ -214,68 +195,25 @@ func TestDriverRouteTargetResolution(t *testing.T) {
 		return routeTarget{SessionKey: acpsession.ConversationSessionKey(convRowID(t, db, botID, convKey)), ACP: true}
 	}
 
-	t.Run("有效关联回填 issue 会话锚", func(t *testing.T) {
-		wsID, issueID, db := mkRouteFixture(t, acpSettings, "")
-		setConvBinding(t, db, botID, convKey, issueID)
-		got, err := resolve(db, wsID)
-		if err != nil || got != (routeTarget{SessionKey: issueID, ACP: true}) {
-			t.Fatalf("got=%+v err=%v", got, err)
-		}
-	})
-
-	t.Run("未关联与空锚回填 conv 会话锚", func(t *testing.T) {
+	t.Run("未关联回填 conv 会话锚", func(t *testing.T) {
 		// 无绑定行：resolve 兜底建行后以行 id 为锚。
-		wsID, _, db := mkRouteFixture(t, acpSettings, "")
+		wsID, db := mkRouteFixture(t, acpSettings)
 		got, err := resolve(db, wsID)
 		if err != nil || got != convWant(db) {
 			t.Fatalf("未关联: got=%+v want=%+v err=%v", got, convWant(db), err)
 		}
-		// 空锚绑定行：同 conv 锚形。
-		wsID2, _, db2 := mkRouteFixture(t, acpSettings, "")
-		setConvBinding(t, db2, botID, convKey, "")
-		if got, err = resolve(db2, wsID2); err != nil || got != convWant(db2) {
-			t.Fatalf("空锚: got=%+v want=%+v err=%v", got, convWant(db2), err)
-		}
 	})
 
-	t.Run("挂空关联与跨域关联降级 conv 锚", func(t *testing.T) {
-		// 挂空关联（issue 已删）。
-		wsID, _, db := mkRouteFixture(t, acpSettings, "")
-		setConvBinding(t, db, botID, convKey, "0198dead-0000-7111-8111-3b6ac9e1fdead")
-		got, err := resolve(db, wsID)
-		if err != nil || got != convWant(db) {
-			t.Fatalf("挂空关联: got=%+v want=%+v err=%v", got, convWant(db), err)
-		}
-		// 跨 workspace 关联（issue 归属其他域，双键校验不命中）。
-		wsID2, _, db2 := mkRouteFixture(t, acpSettings, "")
-		setConvBinding(t, db2, botID, convKey, "0198dddd-0000-7111-8111-3b6ac9e1f201")
-		if err := db2.Model(&model.WorkspaceIssue{}).Where("1=1").Update("workspace_id", "ws-other").Error; err != nil {
-			t.Fatalf("挪 issue 出域: %v", err)
-		}
-		if got, err = resolve(db2, wsID2); err != nil || got != convWant(db2) {
-			t.Fatalf("跨域关联: got=%+v want=%+v err=%v", got, convWant(db2), err)
-		}
-	})
-
-	t.Run("issue 级 mode 显式覆盖 workspace 级", func(t *testing.T) {
-		// 显式 "none" 否决：ACP workspace + issue 明说不要 → headless。
-		wsID, _, db := mkRouteFixture(t, acpSettings, `{"mode":"none"}`)
-		setConvBinding(t, db, botID, convKey, "0198dddd-0000-7111-8111-3b6ac9e1f201")
+	t.Run("workspace 非 acp 档 headless", func(t *testing.T) {
+		wsID, db := mkRouteFixture(t, `{"mode":"terminal-manual"}`)
 		got, err := resolve(db, wsID)
 		if err != nil || got != (routeTarget{}) {
-			t.Fatalf("issue 显式 none 应否决 ACP: got=%+v err=%v", got, err)
-		}
-		// 显式 "acp" 启用：终端档 workspace + issue 明说要 ACP → ACP。
-		wsID2, issueID2, db2 := mkRouteFixture(t, `{"mode":"terminal-manual"}`, acpSettings)
-		setConvBinding(t, db2, botID, convKey, issueID2)
-		if got, err = resolve(db2, wsID2); err != nil || got != (routeTarget{SessionKey: issueID2, ACP: true}) {
-			t.Fatalf("issue 显式 acp 应启用: got=%+v err=%v", got, err)
+			t.Fatalf("终端档应 headless: got=%+v err=%v", got, err)
 		}
 	})
 
 	t.Run("读库失败 fail closed", func(t *testing.T) {
-		wsID, issueID, db := mkRouteFixture(t, acpSettings, "")
-		setConvBinding(t, db, botID, convKey, issueID)
+		wsID, db := mkRouteFixture(t, acpSettings)
 		if err := db.Migrator().DropTable("t_im_bot_conversations"); err != nil {
 			t.Fatalf("掉会话表: %v", err)
 		}
@@ -286,8 +224,8 @@ func TestDriverRouteTargetResolution(t *testing.T) {
 }
 
 /*
- * TestDriverRouteProbeTarget 探针契约：ProbeTarget 与 resolve 同源——ACP 档（无论关联与否）
- * 探得 acp=true、终端档 acp=false，对齐路由实际判定；读库失败原样透传 err（调用方不拦截，
+ * TestDriverRouteProbeTarget 探针契约：ProbeTarget 与 resolve 同源——ACP 档探得 acp=true、
+ * 终端档 acp=false，对齐路由实际判定；读库失败原样透传 err（调用方不拦截，
  * 按探测失败回落保守语义）。
  */
 func TestDriverRouteProbeTarget(t *testing.T) {
@@ -298,25 +236,16 @@ func TestDriverRouteProbeTarget(t *testing.T) {
 		return newDriverRoute(db, nil).ProbeTarget(BotRuntimeConfig{BotID: botID, WorkspaceID: wsID}, convKey)
 	}
 
-	t.Run("ACP 未关联", func(t *testing.T) {
-		wsID, _, db := mkRouteFixture(t, acpSettings, "")
+	t.Run("ACP 档", func(t *testing.T) {
+		wsID, db := mkRouteFixture(t, acpSettings)
 		acp, err := probe(db, wsID)
 		if err != nil || !acp {
-			t.Fatalf("未关联探针应 ACP: acp=%v err=%v", acp, err)
-		}
-	})
-
-	t.Run("ACP 已关联", func(t *testing.T) {
-		wsID, issueID, db := mkRouteFixture(t, acpSettings, "")
-		setConvBinding(t, db, botID, convKey, issueID)
-		acp, err := probe(db, wsID)
-		if err != nil || !acp {
-			t.Fatalf("已关联探针应 ACP: acp=%v err=%v", acp, err)
+			t.Fatalf("ACP 档探针应 acp=true: acp=%v err=%v", acp, err)
 		}
 	})
 
 	t.Run("终端档非 ACP", func(t *testing.T) {
-		wsID, _, db := mkRouteFixture(t, `{"mode":"terminal-manual"}`, "")
+		wsID, db := mkRouteFixture(t, `{"mode":"terminal-manual"}`)
 		acp, err := probe(db, wsID)
 		if err != nil || acp {
 			t.Fatalf("终端档探针应非 ACP: acp=%v err=%v", acp, err)
@@ -324,7 +253,7 @@ func TestDriverRouteProbeTarget(t *testing.T) {
 	})
 
 	t.Run("读库失败透传", func(t *testing.T) {
-		wsID, _, db := mkRouteFixture(t, acpSettings, "")
+		wsID, db := mkRouteFixture(t, acpSettings)
 		if err := db.Migrator().DropTable("t_im_bot_conversations"); err != nil {
 			t.Fatalf("掉会话表: %v", err)
 		}

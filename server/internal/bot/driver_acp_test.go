@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acpsession"
-	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
 )
@@ -1235,24 +1234,20 @@ func TestAcpDriverTurnContextCancel(t *testing.T) {
 }
 
 /*
- * TestAcpDriverRealManagerSpawnFailure 真实 Manager 链路验收：temp sqlite 种 workspace/issue
- * （mode=acp）、空 vendored 目录 → Ensure 受理成功，spawn 链失败落 failed 帧 → 同步报错
+ * TestAcpDriverRealManagerSpawnFailure 真实 Manager 链路验收：temp sqlite 种 project/task
+ * （project mode=acp）、空 vendored 目录 → Ensure 受理成功，spawn 链失败落 failed 帧 → 同步报错
  * 「启动失败 + 落因」（受理模型、帧流、failed 落因三者的跨域联动各验一遍）。
  */
 func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
-	// 启动清扫触达会话映射表，夹具须一并迁移。
-	db := newBotTestDB(t, &model.Workspace{}, &model.WorkspaceIssue{}, &model.IssueAcpSession{}, &model.ImBotConversation{})
+	db := newBotTestDB(t, &model.Project{}, &model.ProjectTask{}, &model.ImBotConversation{})
 	q := query.Use(db)
-	ws := &model.Workspace{ID: "ws-acp", Name: "ws", Dir: t.TempDir(), LaunchSettings: `{"mode":"acp"}`}
-	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
-		t.Fatalf("建 workspace: %v", err)
+	proj := &model.Project{ID: "proj-acp", Name: "proj", Dir: t.TempDir(), LaunchSettings: `{"mode":"acp"}`}
+	if err := q.Project.WithContext(context.Background()).Create(proj); err != nil {
+		t.Fatalf("建 project: %v", err)
 	}
-	issue := &model.WorkspaceIssue{
-		ID: "issue-bot-acp", WorkspaceID: ws.ID, Name: "测试任务",
-		StateCode: enums.STATE_CODE_BACKLOG, LaunchSettings: "",
-	}
-	if err := q.WorkspaceIssue.WithContext(context.Background()).Create(issue); err != nil {
-		t.Fatalf("建 issue: %v", err)
+	task := &model.ProjectTask{ID: "issue-bot-acp", ProjectID: proj.ID, Name: "测试任务", LaunchSettings: ""}
+	if err := q.ProjectTask.WithContext(context.Background()).Create(task); err != nil {
+		t.Fatalf("建 task: %v", err)
 	}
 	mgr, err := acpsession.NewManager(db, acpsession.Dirs{}, 0, "", zap.NewNop())
 	if err != nil {

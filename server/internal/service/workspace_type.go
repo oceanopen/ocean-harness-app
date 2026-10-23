@@ -12,26 +12,26 @@ import (
 )
 
 /*
- * WorkspaceType 对应 /api/tracker/workspaceType 命名空间下的业务逻辑。type 只挂 workspace；issue 经 t_workspace_issues.type_id 单值引用（每 issue 至多一个类型）。
+ * WorkspaceType 对应 /api/tracker/workspaceType 命名空间下的业务逻辑。type 挂 project；任务经 t_project_tasks.type_id 单值引用（每任务至多一个类型）。
  * 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger。
  */
 type WorkspaceType struct {
 	apis.Service
 }
 
-// GetList 返回某 workspace 下全部 type，按 sort_order、id 升序。
-func (svc WorkspaceType) GetList(req *types.WorkspaceTypeGetListRequest) ([]*model.WorkspaceType, error) {
+// GetList 返回某 project 下全部 type，按 sort_order、id 升序。
+func (svc WorkspaceType) GetList(req *types.WorkspaceTypeGetListRequest) ([]*model.ProjectType, error) {
 	q := query.Use(svc.Orm)
-	return q.WorkspaceType.WithContext(svc.Context).
-		Where(q.WorkspaceType.WorkspaceID.Eq(req.WorkspaceID)).
-		Order(q.WorkspaceType.SortOrder.Asc(), q.WorkspaceType.ID.Asc()).
+	return q.ProjectType.WithContext(svc.Context).
+		Where(q.ProjectType.ProjectID.Eq(req.ProjectID)).
+		Order(q.ProjectType.SortOrder.Asc(), q.ProjectType.ID.Asc()).
 		Find()
 }
 
 // GetInfo 按 id 返回单个 type。
-func (svc WorkspaceType) GetInfo(req *types.WorkspaceTypeGetInfoRequest) (*model.WorkspaceType, error) {
+func (svc WorkspaceType) GetInfo(req *types.WorkspaceTypeGetInfoRequest) (*model.ProjectType, error) {
 	q := query.Use(svc.Orm)
-	t, err := q.WorkspaceType.WithContext(svc.Context).Where(q.WorkspaceType.ID.Eq(req.ID)).First()
+	t, err := q.ProjectType.WithContext(svc.Context).Where(q.ProjectType.ID.Eq(req.ID)).First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("类型不存在")
@@ -41,22 +41,22 @@ func (svc WorkspaceType) GetInfo(req *types.WorkspaceTypeGetInfoRequest) (*model
 	return t, nil
 }
 
-// Create 新建 type（无业务唯一键，普通插入）。sort_order 自算：同 workspace MAX(sort_order)+10000，首个 10000。
-func (svc WorkspaceType) Create(req *types.WorkspaceTypeCreateRequest) (*model.WorkspaceType, error) {
+// Create 新建 type（无业务唯一键，普通插入）。sort_order 自算：同项目 MAX(sort_order)+10000，首个 10000。
+func (svc WorkspaceType) Create(req *types.WorkspaceTypeCreateRequest) (*model.ProjectType, error) {
 	q := query.Use(svc.Orm)
-	tq := q.WorkspaceType.WithContext(svc.Context)
+	tq := q.ProjectType.WithContext(svc.Context)
 
-	// 取同 workspace 当前最大 sort_order（无记录则从 10000 起，按 10000 步进便于后续插值）。
+	// 取同项目当前最大 sort_order（无记录则从 10000 起，按 10000 步进便于后续插值）。
 	sortOrder := float64(10000)
-	if last, err := tq.Where(q.WorkspaceType.WorkspaceID.Eq(req.WorkspaceID)).
-		Order(q.WorkspaceType.SortOrder.Desc()).First(); err == nil {
+	if last, err := tq.Where(q.ProjectType.ProjectID.Eq(req.ProjectID)).
+		Order(q.ProjectType.SortOrder.Desc()).First(); err == nil {
 		sortOrder = last.SortOrder + 10000
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
 
-	created := &model.WorkspaceType{
-		WorkspaceID: req.WorkspaceID,
+	created := &model.ProjectType{
+		ProjectID:   req.ProjectID,
 		Name:        req.Name,
 		Color:       req.Color,
 		Description: req.Description,
@@ -68,12 +68,12 @@ func (svc WorkspaceType) Create(req *types.WorkspaceTypeCreateRequest) (*model.W
 	return created, nil
 }
 
-// Update 更新 type 的 name/color/description（不动 workspaceId/sortOrder）。
-func (svc WorkspaceType) Update(req *types.WorkspaceTypeUpdateRequest) (*model.WorkspaceType, error) {
+// Update 更新 type 的 name/color/description（不动 projectId/sortOrder）。
+func (svc WorkspaceType) Update(req *types.WorkspaceTypeUpdateRequest) (*model.ProjectType, error) {
 	q := query.Use(svc.Orm)
-	tq := q.WorkspaceType.WithContext(svc.Context)
+	tq := q.ProjectType.WithContext(svc.Context)
 
-	t, err := tq.Where(q.WorkspaceType.ID.Eq(req.ID)).First()
+	t, err := tq.Where(q.ProjectType.ID.Eq(req.ID)).First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("类型不存在")
@@ -89,27 +89,27 @@ func (svc WorkspaceType) Update(req *types.WorkspaceTypeUpdateRequest) (*model.W
 	return t, nil
 }
 
-// Delete 物理删除 type（无 DB 外键），事务内将引用该类型的 issue.type_id 置 0（未分类），避免悬挂。
+// Delete 物理删除 type（无 DB 外键），事务内将引用该类型的任务 type_id 置 0（未分类），避免悬挂。
 func (svc WorkspaceType) Delete(req *types.WorkspaceTypeDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
 		q := query.Use(tx)
 		// 1) 确认 type 存在。
-		if _, e := q.WorkspaceType.WithContext(svc.Context).
-			Where(q.WorkspaceType.ID.Eq(req.ID)).First(); e != nil {
+		if _, e := q.ProjectType.WithContext(svc.Context).
+			Where(q.ProjectType.ID.Eq(req.ID)).First(); e != nil {
 			if errors.Is(e, gorm.ErrRecordNotFound) {
 				return errors.New("类型不存在")
 			}
 			return e
 		}
 		// 2) 物理删除 type。
-		if _, e := q.WorkspaceType.WithContext(svc.Context).
-			Where(q.WorkspaceType.ID.Eq(req.ID)).Delete(); e != nil {
+		if _, e := q.ProjectType.WithContext(svc.Context).
+			Where(q.ProjectType.ID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 3) 引用该类型的 issue 置为未分类（type_id=0）。
-		if _, e := q.WorkspaceIssue.WithContext(svc.Context).
-			Where(q.WorkspaceIssue.TypeID.Eq(req.ID)).
-			Update(q.WorkspaceIssue.TypeID, 0); e != nil {
+		// 3) 引用该类型的任务置为未分类（type_id=0）。
+		if _, e := q.ProjectTask.WithContext(svc.Context).
+			Where(q.ProjectTask.TypeID.Eq(req.ID)).
+			Update(q.ProjectTask.TypeID, 0); e != nil {
 			return e
 		}
 		return nil

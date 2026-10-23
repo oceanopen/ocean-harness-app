@@ -172,7 +172,6 @@ func SetupRouter() *gin.Engine {
 			imBotGroup.POST("/delete", controller.ImBot{}.Delete)
 			imBotGroup.POST("/restart", controller.ImBot{}.Restart)
 			imBotGroup.POST("/getConversations", controller.ImBot{}.GetConversations)
-			imBotGroup.POST("/bindIssue", controller.ImBot{}.BindIssue)
 			imBotGroup.POST("/provisionBegin", controller.ImBot{}.ProvisionBegin)
 			imBotGroup.POST("/provisionPoll", controller.ImBot{}.ProvisionPoll)
 			imBotGroup.POST("/provisionCancel", controller.ImBot{}.ProvisionCancel)
@@ -201,7 +200,7 @@ func SetupRouter() *gin.Engine {
 				workspaceTypeGroup.POST("/delete", controller.WorkspaceType{}.Delete)
 			}
 
-			// workspaceIssue 模块：issue CRUD + move（看板拖拽，action 风格，POST）。
+			// workspaceIssue 模块：任务 CRUD（action 风格，POST）。
 			workspaceIssueGroup := trackerGroup.Group("/workspaceIssue")
 			{
 				workspaceIssueGroup.POST("/getList", controller.WorkspaceIssue{}.GetList)
@@ -209,7 +208,6 @@ func SetupRouter() *gin.Engine {
 				workspaceIssueGroup.POST("/create", controller.WorkspaceIssue{}.Create)
 				workspaceIssueGroup.POST("/update", controller.WorkspaceIssue{}.Update)
 				workspaceIssueGroup.POST("/delete", controller.WorkspaceIssue{}.Delete)
-				workspaceIssueGroup.POST("/move", controller.WorkspaceIssue{}.Move)
 			}
 		}
 	}

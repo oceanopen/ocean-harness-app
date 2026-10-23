@@ -26,7 +26,7 @@ const launchModeAcp = "acp"
 type SessionConfig struct {
 	SessionKey     string
 	WorkspaceDir   string // 工作空间根目录（绝对路径，校验见 resolveSessionConfig）
-	Cwd            string // 会话工作目录：issue 锚 = <WorkspaceDir>/<issueId>；conv- 锚 = 工作空间根目录
+	Cwd            string // 会话工作目录：任务锚 = <WorkspaceDir>/<taskId>；conv- 锚 = 工作空间根目录
 	AgentCode      string // 已回落（空配置回落首个 enabled catalog 条目）
 	PermissionMode acp.PermissionMode
 }
@@ -60,9 +60,9 @@ func mergeLaunchSettings(base, override *types.WorkspaceLaunchSettings) *types.W
 }
 
 /*
- * resolveSessionConfig 由会话锚键解析会话配置（issue uuid / conv-<会话行id> 双锚形分派，
+ * resolveSessionConfig 由会话锚键解析会话配置（任务 uuid / conv-<会话行id> 双锚形分派，
  * 前缀判别见 binding.go）：路径安全校验 → 锚载体存在性 → launch_settings 字段级合并
- * （issue 锚 = workspace + issue 覆盖；conv- 锚 = workspace 单级）→ mode 门禁（持久化配置
+ * （任务锚 = project 基线 + task 覆盖；conv- 锚 = workspace 单级）→ mode 门禁（持久化配置
  * 显式 acp，或请求显式声明临场 acp——LaunchModePicker 三选一仅本次有效不落库，否则拒绝）
  * → agentCode / permissionMode 回落与校验 → cwd 兜底建目录；DB 只读 + 目录兜底创建，
  * 同步调用（Ensure 受理期），校验失败立即反馈 HTTP 调用方。
@@ -75,35 +75,41 @@ func resolveSessionConfig(ctx context.Context, db *gorm.DB, sessionKey, pickedLa
 		return SessionConfig{}, errors.New("issueId 非法")
 	}
 	q := query.Use(db)
-	issue, err := q.WorkspaceIssue.WithContext(ctx).Where(q.WorkspaceIssue.ID.Eq(sessionKey)).First()
+	task, err := q.ProjectTask.WithContext(ctx).Where(q.ProjectTask.ID.Eq(sessionKey)).First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return SessionConfig{}, errors.New("issue 不存在")
+			return SessionConfig{}, errors.New("任务不存在")
 		}
 		return SessionConfig{}, err
 	}
-	cfg, err := workspaceSessionBase(ctx, q, issue.WorkspaceID, pickedLaunchMode, "issue 所属工作空间不存在", "issue 启动模式未配置为 ACP，无法创建 ACP 会话")
+	project, err := q.Project.WithContext(ctx).Where(q.Project.ID.Eq(task.ProjectID)).First()
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return SessionConfig{}, errors.New("任务所属项目不存在")
+		}
 		return SessionConfig{}, err
 	}
+	if !filepath.IsAbs(project.Dir) {
+		return SessionConfig{}, errors.New("项目目录须为绝对路径")
+	}
 	merged := mergeLaunchSettings(
-		types.ParseLaunchSettings(cfg.workspaceSettings),
-		types.ParseLaunchSettings(issue.LaunchSettings),
+		types.ParseLaunchSettings(project.LaunchSettings),
+		types.ParseLaunchSettings(task.LaunchSettings),
 	)
 	if pickedLaunchMode != launchModeAcp && (merged == nil || merged.Mode != launchModeAcp) {
-		return SessionConfig{}, errors.New("issue 启动模式未配置为 ACP，无法创建 ACP 会话")
+		return SessionConfig{}, errors.New("任务启动模式未配置为 ACP，无法创建 ACP 会话")
 	}
 	agentCode, mode, err := resolveAgentSettings(merged)
 	if err != nil {
 		return SessionConfig{}, err
 	}
-	cwd := filepath.Join(cfg.dir, sessionKey)
+	cwd := filepath.Join(project.Dir, sessionKey)
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
 		return SessionConfig{}, fmt.Errorf("创建会话工作目录失败: %w", err)
 	}
 	return SessionConfig{
 		SessionKey:     sessionKey,
-		WorkspaceDir:   cfg.dir,
+		WorkspaceDir:   project.Dir,
 		Cwd:            cwd,
 		AgentCode:      agentCode,
 		PermissionMode: mode,

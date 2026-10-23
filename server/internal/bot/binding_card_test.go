@@ -84,7 +84,7 @@ func TestBindingCardTexts(t *testing.T) {
 	if got := workspaceCardText("前端", wss[:1]); got != "匹配到 1 个工作空间，请点击卡片选择：\n- 前端仓" {
 		t.Fatalf("关键词引导文本不符: %q", got)
 	}
-	issues := []*model.WorkspaceIssue{{ID: "i-1", Name: "登录重构"}}
+	issues := []*model.ProjectTask{{ID: "i-1", Name: "登录重构"}}
 	if got := issueCardText("", issues); got != "请点击卡片选择要绑定的任务：\n- 登录重构" {
 		t.Fatalf("任务卡引导文本不符: %q", got)
 	}
@@ -171,7 +171,7 @@ func TestBindingCardSpecConstruction(t *testing.T) {
 		t.Fatal("空候选列表不应出卡")
 	}
 	// 任务卡同构。
-	issues := []*model.WorkspaceIssue{{ID: "i-1", Name: "登录重构"}, {ID: "i-2", Name: "接口联调"}}
+	issues := []*model.ProjectTask{{ID: "i-1", Name: "登录重构"}, {ID: "i-2", Name: "接口联调"}}
 	ispec, ok := issueCardSpec(issues, "")
 	if !ok || len(ispec.Options) != 2 || ispec.Options[1].Text != "接口联调" ||
 		!bindingTaskIDMatches(ispec.TaskID, taskbindCardPrefix, "", issueIDKeys(issues)) {

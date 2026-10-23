@@ -16,58 +16,62 @@ import (
 )
 
 var (
-	Q                        = new(Query)
-	ImBot                    *imBot
-	ImBotConversation        *imBotConversation
-	IssueAcpSession          *issueAcpSession
-	IssueLocalRepository     *issueLocalRepository
-	LocalRepository          *localRepository
-	Workspace                *workspace
-	WorkspaceIssue           *workspaceIssue
-	WorkspaceLocalRepository *workspaceLocalRepository
-	WorkspaceType            *workspaceType
+	Q                      = new(Query)
+	Conversation           *conversation
+	ImBot                  *imBot
+	ImBotConversation      *imBotConversation
+	LocalRepository        *localRepository
+	Project                *project
+	ProjectLocalRepository *projectLocalRepository
+	ProjectTask            *projectTask
+	ProjectType            *projectType
+	TaskLocalRepository    *taskLocalRepository
+	Workspace              *workspace
 )
 
 func SetDefault(db *gorm.DB, opts ...gen.DOOption) {
 	*Q = *Use(db, opts...)
+	Conversation = &Q.Conversation
 	ImBot = &Q.ImBot
 	ImBotConversation = &Q.ImBotConversation
-	IssueAcpSession = &Q.IssueAcpSession
-	IssueLocalRepository = &Q.IssueLocalRepository
 	LocalRepository = &Q.LocalRepository
+	Project = &Q.Project
+	ProjectLocalRepository = &Q.ProjectLocalRepository
+	ProjectTask = &Q.ProjectTask
+	ProjectType = &Q.ProjectType
+	TaskLocalRepository = &Q.TaskLocalRepository
 	Workspace = &Q.Workspace
-	WorkspaceIssue = &Q.WorkspaceIssue
-	WorkspaceLocalRepository = &Q.WorkspaceLocalRepository
-	WorkspaceType = &Q.WorkspaceType
 }
 
 func Use(db *gorm.DB, opts ...gen.DOOption) *Query {
 	return &Query{
-		db:                       db,
-		ImBot:                    newImBot(db, opts...),
-		ImBotConversation:        newImBotConversation(db, opts...),
-		IssueAcpSession:          newIssueAcpSession(db, opts...),
-		IssueLocalRepository:     newIssueLocalRepository(db, opts...),
-		LocalRepository:          newLocalRepository(db, opts...),
-		Workspace:                newWorkspace(db, opts...),
-		WorkspaceIssue:           newWorkspaceIssue(db, opts...),
-		WorkspaceLocalRepository: newWorkspaceLocalRepository(db, opts...),
-		WorkspaceType:            newWorkspaceType(db, opts...),
+		db:                     db,
+		Conversation:           newConversation(db, opts...),
+		ImBot:                  newImBot(db, opts...),
+		ImBotConversation:      newImBotConversation(db, opts...),
+		LocalRepository:        newLocalRepository(db, opts...),
+		Project:                newProject(db, opts...),
+		ProjectLocalRepository: newProjectLocalRepository(db, opts...),
+		ProjectTask:            newProjectTask(db, opts...),
+		ProjectType:            newProjectType(db, opts...),
+		TaskLocalRepository:    newTaskLocalRepository(db, opts...),
+		Workspace:              newWorkspace(db, opts...),
 	}
 }
 
 type Query struct {
 	db *gorm.DB
 
-	ImBot                    imBot
-	ImBotConversation        imBotConversation
-	IssueAcpSession          issueAcpSession
-	IssueLocalRepository     issueLocalRepository
-	LocalRepository          localRepository
-	Workspace                workspace
-	WorkspaceIssue           workspaceIssue
-	WorkspaceLocalRepository workspaceLocalRepository
-	WorkspaceType            workspaceType
+	Conversation           conversation
+	ImBot                  imBot
+	ImBotConversation      imBotConversation
+	LocalRepository        localRepository
+	Project                project
+	ProjectLocalRepository projectLocalRepository
+	ProjectTask            projectTask
+	ProjectType            projectType
+	TaskLocalRepository    taskLocalRepository
+	Workspace              workspace
 }
 
 func (q *Query) Available() bool { return q.db != nil }
@@ -76,16 +80,17 @@ func (q *Query) UnderlyingDB() *gorm.DB { return q.db }
 
 func (q *Query) clone(db *gorm.DB) *Query {
 	return &Query{
-		db:                       db,
-		ImBot:                    q.ImBot.clone(db),
-		ImBotConversation:        q.ImBotConversation.clone(db),
-		IssueAcpSession:          q.IssueAcpSession.clone(db),
-		IssueLocalRepository:     q.IssueLocalRepository.clone(db),
-		LocalRepository:          q.LocalRepository.clone(db),
-		Workspace:                q.Workspace.clone(db),
-		WorkspaceIssue:           q.WorkspaceIssue.clone(db),
-		WorkspaceLocalRepository: q.WorkspaceLocalRepository.clone(db),
-		WorkspaceType:            q.WorkspaceType.clone(db),
+		db:                     db,
+		Conversation:           q.Conversation.clone(db),
+		ImBot:                  q.ImBot.clone(db),
+		ImBotConversation:      q.ImBotConversation.clone(db),
+		LocalRepository:        q.LocalRepository.clone(db),
+		Project:                q.Project.clone(db),
+		ProjectLocalRepository: q.ProjectLocalRepository.clone(db),
+		ProjectTask:            q.ProjectTask.clone(db),
+		ProjectType:            q.ProjectType.clone(db),
+		TaskLocalRepository:    q.TaskLocalRepository.clone(db),
+		Workspace:              q.Workspace.clone(db),
 	}
 }
 
@@ -99,42 +104,45 @@ func (q *Query) WriteDB() *Query {
 
 func (q *Query) ReplaceDB(db *gorm.DB) *Query {
 	return &Query{
-		db:                       db,
-		ImBot:                    q.ImBot.replaceDB(db),
-		ImBotConversation:        q.ImBotConversation.replaceDB(db),
-		IssueAcpSession:          q.IssueAcpSession.replaceDB(db),
-		IssueLocalRepository:     q.IssueLocalRepository.replaceDB(db),
-		LocalRepository:          q.LocalRepository.replaceDB(db),
-		Workspace:                q.Workspace.replaceDB(db),
-		WorkspaceIssue:           q.WorkspaceIssue.replaceDB(db),
-		WorkspaceLocalRepository: q.WorkspaceLocalRepository.replaceDB(db),
-		WorkspaceType:            q.WorkspaceType.replaceDB(db),
+		db:                     db,
+		Conversation:           q.Conversation.replaceDB(db),
+		ImBot:                  q.ImBot.replaceDB(db),
+		ImBotConversation:      q.ImBotConversation.replaceDB(db),
+		LocalRepository:        q.LocalRepository.replaceDB(db),
+		Project:                q.Project.replaceDB(db),
+		ProjectLocalRepository: q.ProjectLocalRepository.replaceDB(db),
+		ProjectTask:            q.ProjectTask.replaceDB(db),
+		ProjectType:            q.ProjectType.replaceDB(db),
+		TaskLocalRepository:    q.TaskLocalRepository.replaceDB(db),
+		Workspace:              q.Workspace.replaceDB(db),
 	}
 }
 
 type queryCtx struct {
-	ImBot                    IImBotDo
-	ImBotConversation        IImBotConversationDo
-	IssueAcpSession          IIssueAcpSessionDo
-	IssueLocalRepository     IIssueLocalRepositoryDo
-	LocalRepository          ILocalRepositoryDo
-	Workspace                IWorkspaceDo
-	WorkspaceIssue           IWorkspaceIssueDo
-	WorkspaceLocalRepository IWorkspaceLocalRepositoryDo
-	WorkspaceType            IWorkspaceTypeDo
+	Conversation           IConversationDo
+	ImBot                  IImBotDo
+	ImBotConversation      IImBotConversationDo
+	LocalRepository        ILocalRepositoryDo
+	Project                IProjectDo
+	ProjectLocalRepository IProjectLocalRepositoryDo
+	ProjectTask            IProjectTaskDo
+	ProjectType            IProjectTypeDo
+	TaskLocalRepository    ITaskLocalRepositoryDo
+	Workspace              IWorkspaceDo
 }
 
 func (q *Query) WithContext(ctx context.Context) *queryCtx {
 	return &queryCtx{
-		ImBot:                    q.ImBot.WithContext(ctx),
-		ImBotConversation:        q.ImBotConversation.WithContext(ctx),
-		IssueAcpSession:          q.IssueAcpSession.WithContext(ctx),
-		IssueLocalRepository:     q.IssueLocalRepository.WithContext(ctx),
-		LocalRepository:          q.LocalRepository.WithContext(ctx),
-		Workspace:                q.Workspace.WithContext(ctx),
-		WorkspaceIssue:           q.WorkspaceIssue.WithContext(ctx),
-		WorkspaceLocalRepository: q.WorkspaceLocalRepository.WithContext(ctx),
-		WorkspaceType:            q.WorkspaceType.WithContext(ctx),
+		Conversation:           q.Conversation.WithContext(ctx),
+		ImBot:                  q.ImBot.WithContext(ctx),
+		ImBotConversation:      q.ImBotConversation.WithContext(ctx),
+		LocalRepository:        q.LocalRepository.WithContext(ctx),
+		Project:                q.Project.WithContext(ctx),
+		ProjectLocalRepository: q.ProjectLocalRepository.WithContext(ctx),
+		ProjectTask:            q.ProjectTask.WithContext(ctx),
+		ProjectType:            q.ProjectType.WithContext(ctx),
+		TaskLocalRepository:    q.TaskLocalRepository.WithContext(ctx),
+		Workspace:              q.Workspace.WithContext(ctx),
 	}
 }
 

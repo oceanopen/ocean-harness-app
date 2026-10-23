@@ -36,16 +36,16 @@ func newConversationTestDB(t *testing.T) *gorm.DB {
 
 /*
  * newIssueTestDB 编排器链路夹具：会话映射 + 工作空间/任务表（stub 驱动用例仅消费会话表，
- * 真路由用例按需读写工作空间/任务行）。
+ * 真路由用例按需读写工作空间行）。
  */
 func newIssueTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return newBotTestDB(t, &model.ImBotConversation{}, &model.Workspace{}, &model.WorkspaceIssue{})
+	return newBotTestDB(t, &model.ImBotConversation{}, &model.Workspace{})
 }
 
 /*
  * TestConversationStoreSessionAnchorsOrthogonal 同表双锚正交契约：SaveSessionID 只写
- * claude_session_id，acp_session_id（acpsession.BindingStore 维护）不受触碰。
+ * claude_session_id（headless 续聊锚），conversation_id（归属会话锚，service 层维护）不受触碰。
  */
 func TestConversationStoreSessionAnchorsOrthogonal(t *testing.T) {
 	store := &ConversationStore{DB: newConversationTestDB(t)}
@@ -57,12 +57,12 @@ func TestConversationStoreSessionAnchorsOrthogonal(t *testing.T) {
 	if err := store.SaveSessionID(botID, convKey, "sess-abc"); err != nil {
 		t.Fatalf("写续聊锚: %v", err)
 	}
-	// 直写 ACP 锚模拟 BindingStore 行为，再回写续聊锚互验。
+	// 直写归属会话锚模拟 service 层行为，再回写续聊锚互验。
 	q := query.Use(store.DB)
 	if _, err := q.ImBotConversation.WithContext(context.Background()).
 		Where(q.ImBotConversation.BotID.Eq(botID), q.ImBotConversation.ConversationKey.Eq(convKey)).
-		UpdateSimple(q.ImBotConversation.AcpSessionID.Value("acp-1")); err != nil {
-		t.Fatalf("直写 ACP 锚: %v", err)
+		UpdateSimple(q.ImBotConversation.ConversationID.Value("conv-entity-1")); err != nil {
+		t.Fatalf("直写归属会话锚: %v", err)
 	}
 	if err := store.SaveSessionID(botID, convKey, "sess-def"); err != nil {
 		t.Fatalf("回写续聊锚: %v", err)
@@ -72,7 +72,7 @@ func TestConversationStoreSessionAnchorsOrthogonal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("读回会话行: %v", err)
 	}
-	if row.ClaudeSessionID != "sess-def" || row.AcpSessionID != "acp-1" {
-		t.Fatalf("双锚应互不触碰: claude=%q acp=%q", row.ClaudeSessionID, row.AcpSessionID)
+	if row.ClaudeSessionID != "sess-def" || row.ConversationID != "conv-entity-1" {
+		t.Fatalf("双锚应互不触碰: claude=%q conversationId=%q", row.ClaudeSessionID, row.ConversationID)
 	}
 }

@@ -35,30 +35,26 @@ type WorkspaceLaunchSettings struct {
 /*
  * WorkspaceCreateRequest 是 POST /api/tracker/workspace/create 的入参：dir 为工作区目录（须为绝对路径，service 层校验可创建可写）；
  * launchSettings 指针可空 = 不配置（消费端等同 none）；emoji 为展示图标（空 = 前端图标兜底）；
- * LocalRepositoryIDs 为关联仓库最终列表（全量，随工作空间一起保存，事务内全量写入）。
  */
 type WorkspaceCreateRequest struct {
-	Name               string                   `json:"name" binding:"required,max=100"`
-	Dir                string                   `json:"dir" binding:"required"`
-	Description        string                   `json:"description" binding:"omitempty,max=500"`
-	Emoji              string                   `json:"emoji" binding:"omitempty,max=20"`
-	LaunchSettings     *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"`
-	LocalRepositoryIDs []int                    `json:"localRepositoryIds"`
+	Name           string                   `json:"name" binding:"required,max=100"`
+	Dir            string                   `json:"dir" binding:"required"`
+	Description    string                   `json:"description" binding:"omitempty,max=500"`
+	Emoji          string                   `json:"emoji" binding:"omitempty,max=20"`
+	LaunchSettings *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"`
 }
 
 /*
  * WorkspaceUpdateRequest 是 POST /api/tracker/workspace/update 的入参；
  * launchSettings 为 nil = 清空配置（等同 none），空对象同视为未配置；
- * LocalRepositoryIDs 为关联仓库最终列表（全量覆盖：先删后插，无 diff）。
  */
 type WorkspaceUpdateRequest struct {
-	ID                 string                   `json:"id" binding:"required"`
-	Name               string                   `json:"name" binding:"required,max=100"`
-	Dir                string                   `json:"dir" binding:"required"`
-	Description        string                   `json:"description" binding:"omitempty,max=500"`
-	Emoji              string                   `json:"emoji" binding:"omitempty,max=20"`
-	LaunchSettings     *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"`
-	LocalRepositoryIDs []int                    `json:"localRepositoryIds"`
+	ID             string                   `json:"id" binding:"required"`
+	Name           string                   `json:"name" binding:"required,max=100"`
+	Dir            string                   `json:"dir" binding:"required"`
+	Description    string                   `json:"description" binding:"omitempty,max=500"`
+	Emoji          string                   `json:"emoji" binding:"omitempty,max=20"`
+	LaunchSettings *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"`
 }
 
 // WorkspaceDeleteRequest 是 POST /api/tracker/workspace/delete 的入参。
@@ -67,8 +63,7 @@ type WorkspaceDeleteRequest struct {
 }
 
 /*
- * WorkspaceResponseData workspace 响应：launch_settings JSON 列反序列化为结构（空串/损坏 → nil，未配置语义），扁平呈现形态由 FromModel 装配（不嵌入 DO model，对齐 im_bot 域）；
- * LocalRepositoryIDs 由 service 层查中间表装配（列表一次批查，编辑回显/issue 仓库下拉直接用）。
+ * WorkspaceResponseData workspace 响应：launch_settings JSON 列反序列化为结构（空串/损坏 → nil，未配置语义），扁平呈现形态由 FromModel 装配（不嵌入 DO model，对齐 im_bot 域）。
  */
 type WorkspaceResponseData struct {
 	ID             string                   `json:"id"`
@@ -77,10 +72,8 @@ type WorkspaceResponseData struct {
 	Description    string                   `json:"description"`
 	Emoji          string                   `json:"emoji"`
 	LaunchSettings *WorkspaceLaunchSettings `json:"launchSettings"`
-	// 关联本地仓库 ids（空数组 = 无关联；由 service 装配，FromModel 不填）。
-	LocalRepositoryIDs []int      `json:"localRepositoryIds"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
+	CreatedAt      time.Time                `json:"createdAt"`
+	UpdatedAt      time.Time                `json:"updatedAt"`
 }
 
 // FromModel DO → 响应：launch_settings 解析失败兜底 nil（不阻塞列表加载）。

@@ -98,8 +98,8 @@ func (mt McpOceanHarnessTool) WorkspaceList(ctx context.Context, _ *mcp.CallTool
 	return nil, mcpdto.WorkspaceListContent{Workspaces: list}, nil
 }
 
-// IssueList 列出某工作空间下的全部任务（按看板顺序），
-// 透传既有 WorkspaceIssue.GetList（stateCode 留空返回全部状态）。
+// IssueList 列出某项目下的全部任务（created_at 升序），
+// 透传既有 WorkspaceIssue.GetList。
 func (mt McpOceanHarnessTool) IssueList(ctx context.Context, _ *mcp.CallToolRequest,
 	input mcpdto.IssueListArgs) (*mcp.CallToolResult, mcpdto.IssueListContent, error) {
 
@@ -107,7 +107,7 @@ func (mt McpOceanHarnessTool) IssueList(ctx context.Context, _ *mcp.CallToolRequ
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&issueSvc.Service).Errors; err != nil {
 		return nil, mcpdto.IssueListContent{}, mt.Fail(err)
 	}
-	rows, err := issueSvc.GetList(&types.WorkspaceIssueGetListRequest{WorkspaceID: input.WorkspaceID, StateCode: input.StateCode})
+	rows, err := issueSvc.GetList(&types.WorkspaceIssueGetListRequest{ProjectID: input.ProjectID})
 	if err != nil {
 		return nil, mcpdto.IssueListContent{}, mt.Fail(err)
 	}
@@ -137,9 +137,6 @@ func buildIssueUpdateRequest(cur *types.WorkspaceIssueResponseData, args *mcpdto
 		ID:                   cur.ID,
 		Name:                 cur.Name,
 		Description:          cur.Description,
-		StateCode:            args.StateCode, // 空 = 不变（service.applyStateTransition 对空 no-op）
-		StartDate:            cur.StartDate,
-		TargetDate:           cur.TargetDate,
 		TypeID:               &cur.TypeID, // MCP 不支持改类型，原样回填现值（nil 语义不适用）
 		RepositoryBranchList: cur.RepositoryBranchList,
 		LaunchSettings:       cur.LaunchSettings, // MCP 不支持改启动设置，原样回填（nil=未覆盖）避免被全量更新清掉
@@ -167,16 +164,11 @@ func newIssueContent(data *types.WorkspaceIssueResponseData) mcpdto.IssueContent
 			RepositoryBranch:  rb.RepositoryBranch,
 		})
 	}
-	issue := data.WorkspaceIssue // 嵌入 DO（GetInfo/Create/Update 返回值保证非 nil）
+	issue := data.ProjectTask // 嵌入 DO（GetInfo/Create/Update 返回值保证非 nil）
 	return mcpdto.IssueContent{
 		ID:                   issue.ID,
 		Name:                 issue.Name,
 		Description:          issue.Description,
-		StateCode:            string(issue.StateCode),
-		StartDate:            issue.StartDate,
-		TargetDate:           issue.TargetDate,
-		CompletedAt:          formatTime(issue.CompletedAt),
-		SortOrder:            issue.SortOrder,
 		Type:                 issueType,
 		RepositoryBranchList: repos,
 	}

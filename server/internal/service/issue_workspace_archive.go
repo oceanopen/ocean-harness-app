@@ -7,17 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gorm.io/gorm"
-
-	"ocean-harness/server/internal/dal/enums"
-	"ocean-harness/server/internal/dal/model"
-	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
 	"ocean-harness/server/internal/gitutil"
 )
 
 /*
- * issueWorkspace archive：归档/取消工作空间（T3.2，docs/agent_dev_01_tasks.md §T3.2）。归档与取消同为工程化确定性操作（不依赖 AI）：删除 {baseDir}/{issueId}/ 目录 + 流转 issue 状态（archive→DONE / cancel→CANCELLED，各 issue 状态独立变更）。
+ * issueWorkspace archive：归档/取消任务运行目录。归档与取消同为工程化确定性操作（不依赖 AI）：
+ * 删除 {baseDir}/{taskId}/ 目录（与状态流转解耦，无状态列）。
  * 两段式契约（类型注释见 types/issue_workspace.go）：force=false 仅安全检查返回警告不执行；force=true 跳过检查直接执行。
  * 同域文件分工：入口/校验在本文件；并发准入见 issue_workspace_registry.go；状态文件读写见 issue_workspace_state.go；git 检查函数见 gitutil/status.go。
  */
@@ -30,13 +26,7 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 	if !issueWorkspaceValidIssueID(req.IssueID) {
 		return nil, errors.New("issueId 非法")
 	}
-	var targetState enums.StateCode
-	switch req.Action {
-	case types.IW_ARCHIVE_ACTION_ARCHIVE:
-		targetState = enums.STATE_CODE_DONE
-	case types.IW_ARCHIVE_ACTION_CANCEL:
-		targetState = enums.STATE_CODE_CANCELLED
-	default:
+	if req.Action != types.IW_ARCHIVE_ACTION_ARCHIVE && req.Action != types.IW_ARCHIVE_ACTION_CANCEL {
 		return nil, errors.New("action 须为 archive 或 cancel")
 	}
 	baseDir, err := svc.resolveIssueBaseDir(req.IssueID)
@@ -57,32 +47,11 @@ func (svc IssueWorkspace) Archive(req *types.IssueWorkspaceArchiveRequest) (*typ
 	}
 
 	/*
-	 * 删目录（外部副作用不可回滚，置于事务前：失败即中止不流转状态；目录不存在返回 nil，
-	 * 天然幂等——未初始化/重复归档均安全）。终端会话已由前端在调本段前 ptyShutdownIssue。
+	 * 删目录（外部副作用不可回滚；目录不存在返回 nil，天然幂等——未初始化/重复归档均安全）。
+	 * 终端会话已由前端在调本段前 ptyShutdownIssue。
 	 */
 	if err := os.RemoveAll(filepath.Join(baseDir, req.IssueID)); err != nil {
-		return nil, fmt.Errorf("删除工作空间目录失败: %w", err)
-	}
-
-	// 状态流转（Move 范式）：applyStateTransition + Save；同值 no-op（重复归档幂等）。
-	issueSvc := WorkspaceIssue{Service: svc.Service}
-	var issue *model.WorkspaceIssue
-	if err := svc.Orm.Transaction(func(tx *gorm.DB) error {
-		qtx := query.Use(tx)
-		found, e := qtx.WorkspaceIssue.WithContext(svc.Context).Where(qtx.WorkspaceIssue.ID.Eq(req.IssueID)).First()
-		if e != nil {
-			if errors.Is(e, gorm.ErrRecordNotFound) {
-				return errors.New("issue 不存在")
-			}
-			return e
-		}
-		issue = found
-		if e := issueSvc.applyStateTransition(issue, targetState); e != nil {
-			return e
-		}
-		return qtx.WorkspaceIssue.WithContext(svc.Context).Save(issue)
-	}); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("删除任务运行目录失败: %w", err)
 	}
 	return &types.IssueWorkspaceArchiveResponseData{Executed: true, Warnings: []string{}}, nil
 }

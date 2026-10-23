@@ -40,19 +40,6 @@ type routeTarget struct {
 }
 
 /*
- * effectiveACPMode 启动模式判定（mode-only 字段合并）：绑定 issue 的 launch_settings.mode
- * 非空则覆盖 workspace 级（显式 "none" 亦为有效覆盖值——「明说不要」≠「未配置」，语义对齐
- * acpsession.mergeLaunchSettings 的字段级合并；bot 路由只消费 mode 一项）。
- * issueMode 空 = 未覆盖，回落 workspace 级。
- */
-func effectiveACPMode(workspaceMode, issueMode string) bool {
-	if issueMode != "" {
-		return issueMode == launchModeACP
-	}
-	return workspaceMode == launchModeACP
-}
-
-/*
  * driverRoute ClaudeDriver 的引擎路由实现：按 workspace 级 launch_settings.mode 与任务关联
  * 逐回合在 headless（driver_claude）与 ACP（driver_acp）两引擎间切换。
  * 路由知识收在引擎层（实现 ClaudeDriver），编排器保持零引擎感知；
@@ -92,9 +79,8 @@ func newDriverRoute(db *gorm.DB, sessions acpSessions) *driverRoute {
 /*
  * resolveTarget 路由判定实现（RunTurn 与 ProbeTarget 共用）。会话行经 ConversationStore
  * 读取（受理链已 GetOrCreate 保证在场，此处兜底建行——各可达路径在建行后执行，实际不触发创建）。
- * 关联与 issue 解析全部前置完成后统一走 effectiveACPMode 合并判定——issue 级 mode 显式覆盖
- * 双向生效（"none" 否决 / "acp" 启用），不得在关联解析前按 wsMode 短路（会吞掉 issue 显式
- * 覆盖；acpsession 域同为合并后判，语义须一致）。
+ * 任务关联路由（bound-issue 分支）随 bound_issue_id 列下线移除，全部会话走 conv 锚形；
+ * 关联会话的 ACP 路由（workspace/project 两档三分支）随 T4.2 收敛重建。
  */
 func (r *driverRoute) resolveTarget(botID, workspaceID string, conversationKey string) (routeTarget, error) {
 	if workspaceID == "" {
@@ -116,27 +102,7 @@ func (r *driverRoute) resolveTarget(botID, workspaceID string, conversationKey s
 	if err != nil {
 		return routeTarget{}, err
 	}
-	if conv.BoundIssueID == "" {
-		return unboundTarget(wsMode, conv.ID), nil
-	}
-	issue, err := q.WorkspaceIssue.WithContext(context.Background()).Where(
-		q.WorkspaceIssue.ID.Eq(conv.BoundIssueID),
-		q.WorkspaceIssue.WorkspaceID.Eq(workspaceID),
-	).First()
-	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		return unboundTarget(wsMode, conv.ID), nil // 挂空关联降级未关联：同 conv 锚形
-	case err != nil:
-		return routeTarget{}, err
-	}
-	issueMode := ""
-	if ls := types.ParseLaunchSettings(issue.LaunchSettings); ls != nil {
-		issueMode = ls.Mode
-	}
-	if !effectiveACPMode(wsMode, issueMode) {
-		return routeTarget{}, nil // issue 显式否决 ACP（如 mode="none"）：回合落回 headless
-	}
-	return routeTarget{SessionKey: issue.ID, ACP: true}, nil
+	return unboundTarget(wsMode, conv.ID), nil
 }
 
 // unboundTarget 未关联任务的目标（ACP 档以会话行为锚走工作空间根目录独立会话；否则 headless）。

@@ -48,7 +48,7 @@ func (api WorkspaceIssue) GetInfo(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Create POST /api/tracker/workspaceIssue/create：创建 issue（默认状态 BACKLOG、sort_order 自算）。
+// Create POST /api/tracker/workspaceIssue/create：创建任务（uuid v7 主键）。
 func (api WorkspaceIssue) Create(ctx *gin.Context) {
 	req := &types.WorkspaceIssueCreateRequest{}
 	svc := service.WorkspaceIssue{}
@@ -64,7 +64,7 @@ func (api WorkspaceIssue) Create(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Update POST /api/tracker/workspaceIssue/update：更新 issue（stateCode 变化触发 completed_at 流转）。
+// Update POST /api/tracker/workspaceIssue/update：更新任务业务字段。
 func (api WorkspaceIssue) Update(ctx *gin.Context) {
 	req := &types.WorkspaceIssueUpdateRequest{}
 	svc := service.WorkspaceIssue{}
@@ -80,23 +80,7 @@ func (api WorkspaceIssue) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Move POST /api/tracker/workspaceIssue/move：看板拖拽单卡移动（写 sortOrder + stateCode 流转 completed_at）。
-func (api WorkspaceIssue) Move(ctx *gin.Context) {
-	req := &types.WorkspaceIssueMoveRequest{}
-	svc := service.WorkspaceIssue{}
-	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
-		api.JsonFail(err)
-		return
-	}
-	data, err := svc.Move(req)
-	if err != nil {
-		api.JsonFail(err)
-		return
-	}
-	api.JsonOK(data)
-}
-
-// Delete POST /api/tracker/workspaceIssue/delete：删除 issue（级联清其仓库关联与 IM 绑定锚）。
+// Delete POST /api/tracker/workspaceIssue/delete：删除任务（级联清其仓库关联）。
 func (api WorkspaceIssue) Delete(ctx *gin.Context) {
 	req := &types.WorkspaceIssueDeleteRequest{}
 	svc := service.WorkspaceIssue{}

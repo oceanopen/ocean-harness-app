@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -75,20 +74,23 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 	if req.Channel != enums.CHANNEL_WECOM {
 		return nil, errors.New("微信机器人请通过「扫码授权」接入，不支持手工创建")
 	}
-	if err := svc.ensureWorkspaceExists(req.WorkspaceId); err != nil {
+	if err := svc.ensureOwnershipExists(req.ConversationType, req.WorkspaceId, req.ProjectId, req.TaskId); err != nil {
 		return nil, err
 	}
 	if err := svc.ensureBotIdAvailable(req.BotId, ""); err != nil {
 		return nil, err
 	}
 	row := &model.ImBot{
-		ID:           uuid.Must(uuid.NewV7()).String(),
-		Name:         req.Name,
-		Channel:      req.Channel,
-		Credential:   credentialJSON(req.BotId, req.Secret),
-		WorkspaceID:  req.WorkspaceId,
-		AccessPolicy: accessPolicyJSON(req.AccessPolicy),
-		Enabled:      enabledYesNo(req.Enabled),
+		ID:               uuid.Must(uuid.NewV7()).String(),
+		Name:             req.Name,
+		Channel:          req.Channel,
+		Credential:       credentialJSON(req.BotId, req.Secret),
+		ConversationType: req.ConversationType,
+		WorkspaceID:      req.WorkspaceId,
+		ProjectID:        req.ProjectId,
+		TaskID:           req.TaskId,
+		AccessPolicy:     accessPolicyJSON(req.AccessPolicy),
+		Enabled:          enabledYesNo(req.Enabled),
 	}
 	q := query.Use(svc.Orm)
 	if err := q.ImBot.WithContext(svc.Context).Create(row); err != nil {
@@ -110,7 +112,7 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	if err != nil {
 		return nil, err
 	}
-	if err := svc.ensureWorkspaceExists(req.WorkspaceId); err != nil {
+	if err := svc.ensureOwnershipExists(req.ConversationType, req.WorkspaceId, req.ProjectId, req.TaskId); err != nil {
 		return nil, err
 	}
 	credential := row.Credential
@@ -129,7 +131,10 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 
 	row.Name = req.Name
 	row.Credential = credential
+	row.ConversationType = req.ConversationType
 	row.WorkspaceID = req.WorkspaceId
+	row.ProjectID = req.ProjectId
+	row.TaskID = req.TaskId
 	row.AccessPolicy = accessPolicyJSON(req.AccessPolicy)
 	row.Enabled = enabledYesNo(req.Enabled)
 
@@ -141,7 +146,9 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	 */
 	if _, err := q.ImBot.WithContext(svc.Context).Where(q.ImBot.ID.Eq(row.ID)).
 		Updates(map[string]any{
-			"name": row.Name, "credential": row.Credential, "workspace_id": row.WorkspaceID,
+			"name": row.Name, "credential": row.Credential,
+			"conversation_type": row.ConversationType, "workspace_id": row.WorkspaceID,
+			"project_id": row.ProjectID, "task_id": row.TaskID,
 			"access_policy": row.AccessPolicy, "enabled": row.Enabled,
 		}); err != nil {
 		return nil, err
@@ -217,88 +224,16 @@ func (svc ImBot) GetConversations(req *types.ImBotGetConversationsRequest) ([]ty
 	if err != nil {
 		return nil, err
 	}
-	names := svc.boundIssueNames(rows)
 	out := make([]types.ImBotConversationData, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, types.ImBotConversationData{
 			ConversationKey: row.ConversationKey,
 			ChatType:        chatTypeOfKey(row.ConversationKey),
-			BoundIssueId:    row.BoundIssueID,
-			BoundIssueName:  names[row.BoundIssueID],
+			ConversationId:  row.ConversationID,
 			LastMessageAt:   row.LastMessageAt,
 		})
 	}
 	return out, nil
-}
-
-/*
- * BindConversationIssue 会话级绑定/解绑（issueId 空 = 解绑）。绑定校验链：bot 已选工作空间 →
- * issue 存在且归属 bot 工作空间 → 会话行在场（绑定以会话已开启为前提，行不存在即拒）。
- * 只写绑定列不动 claude_session_id；不触发 applyRuntime——绑定每回合现读，无需热重载。
- */
-func (svc ImBot) BindConversationIssue(req *types.ImBotBindIssueRequest) error {
-	botRow, err := svc.mustGet(req.BotId)
-	if err != nil {
-		return err
-	}
-	q := query.Use(svc.Orm)
-	if req.IssueId != "" {
-		if botRow.WorkspaceID == "" {
-			return errors.New("请先为机器人选择工作空间")
-		}
-		issue, err := q.WorkspaceIssue.WithContext(svc.Context).Where(q.WorkspaceIssue.ID.Eq(req.IssueId)).First()
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errors.New("任务不存在")
-			}
-			return err
-		}
-		if issue.WorkspaceID != botRow.WorkspaceID {
-			return errors.New("任务不属于机器人当前工作空间")
-		}
-	}
-	res, err := q.ImBotConversation.WithContext(svc.Context).
-		Where(q.ImBotConversation.BotID.Eq(req.BotId),
-			q.ImBotConversation.ConversationKey.Eq(req.ConversationKey)).
-		UpdateSimple(
-			q.ImBotConversation.BoundIssueID.Value(req.IssueId),
-			q.ImBotConversation.UpdatedAt.Value(time.Now()),
-		)
-	if err != nil {
-		return err
-	}
-	if res.RowsAffected == 0 {
-		return errors.New("会话不存在（需先在 IM 中向机器人发消息开启会话）")
-	}
-	return nil
-}
-
-/*
- * boundIssueNames 会话行绑定 issue id → name 一次性映射（对齐 workspaceNames 惯例；
- * 悬空锚/查失败按空名兜底，不阻塞列表加载）。
- */
-func (svc ImBot) boundIssueNames(rows []*model.ImBotConversation) map[string]string {
-	ids := make([]string, 0, len(rows))
-	seen := map[string]bool{}
-	for _, row := range rows {
-		if row.BoundIssueID != "" && !seen[row.BoundIssueID] {
-			seen[row.BoundIssueID] = true
-			ids = append(ids, row.BoundIssueID)
-		}
-	}
-	if len(ids) == 0 {
-		return map[string]string{}
-	}
-	q := query.Use(svc.Orm)
-	issues, err := q.WorkspaceIssue.WithContext(svc.Context).Where(q.WorkspaceIssue.ID.In(ids...)).Find()
-	if err != nil {
-		return map[string]string{}
-	}
-	names := make(map[string]string, len(issues))
-	for _, is := range issues {
-		names[is.ID] = is.Name
-	}
-	return names
 }
 
 /*
@@ -600,15 +535,37 @@ func mergeRuntimeStatus(item *types.ImBotResponseData, row *model.ImBot, st bot.
 	item.ConnState = "stopped"
 }
 
-// ensureWorkspaceExists 工作空间存在性校验（bot 必选工作空间）。
-func (svc ImBot) ensureWorkspaceExists(id string) error {
+/*
+ * ensureOwnershipExists 归属配置存在性校验：各哨兵空串跳过（未配置合法，两档必填校验随 T4.1）；
+ * 非空逐一校验存在性（工作空间 / 项目 / 任务）。
+ */
+func (svc ImBot) ensureOwnershipExists(conversationType enums.ConversationType, workspaceID, projectID, taskID string) error {
 	q := query.Use(svc.Orm)
-	if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(id)).First(); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return errors.New("工作空间不存在")
+	if workspaceID != "" {
+		if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(workspaceID)).First(); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("工作空间不存在")
+			}
+			return err
 		}
-		return err
 	}
+	if projectID != "" {
+		if _, err := q.Project.WithContext(svc.Context).Where(q.Project.ID.Eq(projectID)).First(); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("项目不存在")
+			}
+			return err
+		}
+	}
+	if taskID != "" {
+		if _, err := q.ProjectTask.WithContext(svc.Context).Where(q.ProjectTask.ID.Eq(taskID)).First(); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("任务不存在")
+			}
+			return err
+		}
+	}
+	_ = conversationType
 	return nil
 }
 

@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-const TableNameWorkspaceType = "t_workspace_types"
+const TableNameProjectType = "t_project_types"
 
-// WorkspaceType mapped from table <t_workspace_types>
-type WorkspaceType struct {
+// ProjectType mapped from table <t_project_types>
+type ProjectType struct {
 	ID          int       `gorm:"column:id;type:INTEGER;primaryKey" json:"id"`
-	WorkspaceID string    `gorm:"column:workspace_id;type:TEXT;not null" json:"workspaceId"`
+	ProjectID   string    `gorm:"column:project_id;type:TEXT;not null" json:"projectId"`
 	Name        string    `gorm:"column:name;type:TEXT;not null" json:"name"`
 	Color       string    `gorm:"column:color;type:TEXT;not null;default:''" json:"color"`
 	Description string    `gorm:"column:description;type:TEXT;not null;default:''" json:"description"`
@@ -22,7 +22,7 @@ type WorkspaceType struct {
 	UpdatedAt   time.Time `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 }
 
-// TableName WorkspaceType's table name
-func (*WorkspaceType) TableName() string {
-	return TableNameWorkspaceType
+// TableName ProjectType's table name
+func (*ProjectType) TableName() string {
+	return TableNameProjectType
 }

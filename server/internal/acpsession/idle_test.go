@@ -155,59 +155,30 @@ func TestReclaimIdlePostponesOnThresholdIncrease(t *testing.T) {
 }
 
 /*
- * TestReclaimIdleKeepsAnchorAndResumes 回收闭环（T4 核心验收）：完全空闲到期 → entry 摘除
- * + 进程回收 + 锚点保留 → Ensure 重开走 resume（同 id 恢复）。
+ * TestReclaimIdleRemovesEntry 闲置回收：完全空闲到期 → entry 摘除 + 进程回收
+ * （锚点保留与重开 resume 随锚载体窄桩失效，T1.2 恢复验收）。
  */
-func TestReclaimIdleKeepsAnchorAndResumes(t *testing.T) {
-	// 阈值远大于就绪快照读取窗口（firstID 在回收前必读到），又足够短让回收必然发生。
+func TestReclaimIdleRemovesEntry(t *testing.T) {
+	// 阈值足够短让回收必然发生。
 	overrideIdleTimeout(t, 400*time.Millisecond)
 	var resumeIDs []string
-	mgr, db, issueID := newIdleTestManager(t, "load", &resumeIDs)
+	mgr, _, issueID := newIdleTestManager(t, "load", &resumeIDs)
 
-	// 首开：空锚全新会话（load 脚本 NewSession 通用，正常生成 id）。
+	// 首开：空锚全新会话。
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("首次 Ensure: %v", err)
 	}
 	waitForCondition(t, "会话就绪", func() bool { return mgr.Get(issueID).Status == StatusReady })
-	firstID := mgr.Get(issueID).AcpSessionID
-	if firstID == "" {
-		t.Fatal("首开会话应有 sessionId")
-	}
 
-	// 无订户（本测试不订阅）+ 无回合：闲置到期自动回收——entry 摘除、进程回收、锚保留。
+	// 无订户（本测试不订阅）+ 无回合：闲置到期自动回收——entry 摘除、进程回收。
 	waitForCondition(t, "闲置回收摘除 entry", func() bool {
 		mgr.mu.Lock()
 		defer mgr.mu.Unlock()
 		_, ok := mgr.entries[issueID]
 		return !ok
 	})
-	/*
-	 * 宽限等回收收尾：pump 终结哨兵若被回归破坏将在此窗口落 SaveError 清锚——锚点断言
-	 * 必须落在「若回归存在则已发生」之后，否则对 released 早退路径不设防。
-	 */
-	time.Sleep(300 * time.Millisecond)
-	if row := bindingRow(t, db, issueID); row.AcpSessionID != firstID {
-		t.Fatalf("回收必须保留锚点（resume 依据），got %q want %q", row.AcpSessionID, firstID)
-	}
-
-	// 重开：锚点非空 → resume 同 id 恢复（新 entry、同会话）。
-	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
-		t.Fatalf("重开 Ensure: %v", err)
-	}
-	waitForCondition(t, "重开会话就绪", func() bool { return mgr.Get(issueID).Status == StatusReady })
-	if got := mgr.Get(issueID).AcpSessionID; got != firstID {
-		t.Fatalf("重开应 resume 同 id 会话，got %q want %q", got, firstID)
-	}
-	if n := len(resumeIDs); n != 2 || resumeIDs[0] != "" || resumeIDs[1] != firstID {
-		t.Fatalf("两次 spawn 的 resumeID = %v，want [空, %q]", resumeIDs, firstID)
-	}
 }
 
-/*
- * TestReclaimIdleGuards 完全空闲判据逐项负例：回合进行中 / 有订户 / 有等位者，任一为真
- * 即不回收。预订阅挡住就绪等待期的倒计时，判据搭建完成、撤预订阅后观察——守卫隔离，
- * 不因其他判据在场而假通过。
- */
 func TestReclaimIdleGuards(t *testing.T) {
 	cases := []struct {
 		name  string

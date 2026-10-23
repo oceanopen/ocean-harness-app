@@ -100,29 +100,29 @@ func (svc IssueWorkspace) Status(req *types.IssueWorkspaceStatusRequest) (*types
 }
 
 /*
- * resolveIssueBaseDir 由 issueId 解析其所属工作空间的目录（issue → workspace_id → t_workspaces.dir）。
- * 目录是后端 SSOT（工作空间表），HTTP 入参不携带路径；顺带完成 issue 存在性校验。
+ * resolveIssueBaseDir 由任务 id 解析其所属项目的目录（task → project_id → t_projects.dir）。
+ * 目录是后端 SSOT（项目表），HTTP 入参不携带路径；顺带完成任务存在性校验。
  */
 func (svc IssueWorkspace) resolveIssueBaseDir(issueID string) (string, error) {
 	q := query.Use(svc.Orm)
-	issue, err := q.WorkspaceIssue.WithContext(svc.Context).Where(q.WorkspaceIssue.ID.Eq(issueID)).First()
+	task, err := q.ProjectTask.WithContext(svc.Context).Where(q.ProjectTask.ID.Eq(issueID)).First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", errors.New("issue 不存在")
+			return "", errors.New("任务不存在")
 		}
 		return "", err
 	}
-	ws, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(issue.WorkspaceID)).First()
+	project, err := q.Project.WithContext(svc.Context).Where(q.Project.ID.Eq(task.ProjectID)).First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", errors.New("issue 所属工作空间不存在")
+			return "", errors.New("任务所属项目不存在")
 		}
 		return "", err
 	}
-	if !filepath.IsAbs(ws.Dir) {
-		return "", errors.New("工作空间目录须为绝对路径")
+	if !filepath.IsAbs(project.Dir) {
+		return "", errors.New("项目目录须为绝对路径")
 	}
-	return ws.Dir, nil
+	return project.Dir, nil
 }
 
 /*
@@ -146,13 +146,13 @@ type issueWorkspaceRepoInput struct {
 }
 
 /*
- * findIssueRepos 查 issue 关联的仓库+基准分支（t_issue_local_repositories → t_local_repositories
+ * findIssueRepos 查任务关联的仓库+基准分支（t_task_local_repositories → t_local_repositories
  * 两步批查）。baseBranch 取关联时选定的 repository_branch（freeSolo 可为空，T1.4 clone 时再回退
  * 仓库默认分支）；仓库已被删除（级联清理的正常时序差）的关联跳过。
  */
 func (svc IssueWorkspace) findIssueRepos(issueID string) ([]issueWorkspaceRepoInput, error) {
 	q := query.Use(svc.Orm)
-	links, err := q.IssueLocalRepository.WithContext(svc.Context).Where(q.IssueLocalRepository.IssueID.Eq(issueID)).Find()
+	links, err := q.TaskLocalRepository.WithContext(svc.Context).Where(q.TaskLocalRepository.TaskID.Eq(issueID)).Find()
 	if err != nil {
 		return nil, err
 	}

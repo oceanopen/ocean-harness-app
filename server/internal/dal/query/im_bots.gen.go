@@ -32,7 +32,10 @@ func newImBot(db *gorm.DB, opts ...gen.DOOption) imBot {
 	_imBot.Name = field.NewString(tableName, "name")
 	_imBot.Channel = field.NewField(tableName, "channel")
 	_imBot.Credential = field.NewString(tableName, "credential")
+	_imBot.ConversationType = field.NewField(tableName, "conversation_type")
 	_imBot.WorkspaceID = field.NewString(tableName, "workspace_id")
+	_imBot.ProjectID = field.NewString(tableName, "project_id")
+	_imBot.TaskID = field.NewString(tableName, "task_id")
 	_imBot.AccessPolicy = field.NewString(tableName, "access_policy")
 	_imBot.Enabled = field.NewField(tableName, "enabled")
 	_imBot.ChannelState = field.NewString(tableName, "channel_state")
@@ -48,18 +51,21 @@ func newImBot(db *gorm.DB, opts ...gen.DOOption) imBot {
 type imBot struct {
 	imBotDo imBotDo
 
-	ALL          field.Asterisk
-	ID           field.String
-	Name         field.String
-	Channel      field.Field
-	Credential   field.String
-	WorkspaceID  field.String
-	AccessPolicy field.String
-	Enabled      field.Field
-	ChannelState field.String
-	LastError    field.String
-	CreatedAt    field.Time
-	UpdatedAt    field.Time
+	ALL              field.Asterisk
+	ID               field.String
+	Name             field.String
+	Channel          field.Field
+	Credential       field.String
+	ConversationType field.Field
+	WorkspaceID      field.String
+	ProjectID        field.String
+	TaskID           field.String
+	AccessPolicy     field.String
+	Enabled          field.Field
+	ChannelState     field.String
+	LastError        field.String
+	CreatedAt        field.Time
+	UpdatedAt        field.Time
 
 	fieldMap map[string]field.Expr
 }
@@ -80,7 +86,10 @@ func (i *imBot) updateTableName(table string) *imBot {
 	i.Name = field.NewString(table, "name")
 	i.Channel = field.NewField(table, "channel")
 	i.Credential = field.NewString(table, "credential")
+	i.ConversationType = field.NewField(table, "conversation_type")
 	i.WorkspaceID = field.NewString(table, "workspace_id")
+	i.ProjectID = field.NewString(table, "project_id")
+	i.TaskID = field.NewString(table, "task_id")
 	i.AccessPolicy = field.NewString(table, "access_policy")
 	i.Enabled = field.NewField(table, "enabled")
 	i.ChannelState = field.NewString(table, "channel_state")
@@ -111,12 +120,15 @@ func (i *imBot) GetFieldByName(fieldName string) (field.OrderExpr, bool) {
 }
 
 func (i *imBot) fillFieldMap() {
-	i.fieldMap = make(map[string]field.Expr, 11)
+	i.fieldMap = make(map[string]field.Expr, 14)
 	i.fieldMap["id"] = i.ID
 	i.fieldMap["name"] = i.Name
 	i.fieldMap["channel"] = i.Channel
 	i.fieldMap["credential"] = i.Credential
+	i.fieldMap["conversation_type"] = i.ConversationType
 	i.fieldMap["workspace_id"] = i.WorkspaceID
+	i.fieldMap["project_id"] = i.ProjectID
+	i.fieldMap["task_id"] = i.TaskID
 	i.fieldMap["access_policy"] = i.AccessPolicy
 	i.fieldMap["enabled"] = i.Enabled
 	i.fieldMap["channel_state"] = i.ChannelState

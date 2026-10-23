@@ -84,7 +84,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if sqlDB, err := db.DB(); err == nil {
 		t.Cleanup(func() { _ = sqlDB.Close() })
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.WorkspaceIssue{}, &model.IssueAcpSession{}, &model.ImBot{}, &model.ImBotConversation{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Project{}, &model.ProjectTask{}, &model.ImBot{}, &model.ImBotConversation{}); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
 	return db
@@ -97,27 +97,26 @@ func queryOf(db *gorm.DB) *query.Query {
 // seedIssueSeq 同测试内多次种行的主键去重序号。
 var seedIssueSeq atomic.Int64
 
-// seedIssue 建 workspace + issue 种子（launch_settings 为 JSON 列原文；返回 issueId）。
+// seedIssue 建 project + task 种子（launch_settings 为 JSON 列原文；返回任务 id）。
 func seedIssue(t *testing.T, db *gorm.DB, wsDir, wsLaunchSettings, issueLaunchSettings string) string {
 	t.Helper()
 	q := queryOf(db)
-	// workspace 为 uuid 文本主键（无自增），显式赋唯一 id。
-	ws := &model.Workspace{ID: fmt.Sprintf("ws-%d", seedIssueSeq.Add(1)), Name: "ws", Dir: wsDir, LaunchSettings: wsLaunchSettings}
-	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
-		t.Fatalf("建 workspace: %v", err)
+	// project 为 uuid 文本主键（无自增），显式赋唯一 id。
+	proj := &model.Project{ID: fmt.Sprintf("proj-%d", seedIssueSeq.Add(1)), Name: "proj", Dir: wsDir, LaunchSettings: wsLaunchSettings}
+	if err := q.Project.WithContext(context.Background()).Create(proj); err != nil {
+		t.Fatalf("建 project: %v", err)
 	}
-	issueID := fmt.Sprintf("issue-%s-%d", strings.ReplaceAll(t.Name(), "/", "-"), seedIssueSeq.Add(1))
-	issue := &model.WorkspaceIssue{
-		ID:             issueID,
-		WorkspaceID:    ws.ID,
+	taskID := fmt.Sprintf("issue-%s-%d", strings.ReplaceAll(t.Name(), "/", "-"), seedIssueSeq.Add(1))
+	task := &model.ProjectTask{
+		ID:             taskID,
+		ProjectID:      proj.ID,
 		Name:           "测试任务",
-		StateCode:      enums.STATE_CODE_BACKLOG,
 		LaunchSettings: issueLaunchSettings,
 	}
-	if err := q.WorkspaceIssue.WithContext(context.Background()).Create(issue); err != nil {
-		t.Fatalf("建 issue: %v", err)
+	if err := q.ProjectTask.WithContext(context.Background()).Create(task); err != nil {
+		t.Fatalf("建 task: %v", err)
 	}
-	return issueID
+	return taskID
 }
 
 // seedBotConversation 建 bot 行（绑 workspace）+ 会话行（conv- 锚载体），返回会话行 id。
@@ -228,15 +227,15 @@ func TestResolveSessionConfig(t *testing.T) {
 func TestResolveSessionConfigRelDir(t *testing.T) {
 	db := newTestDB(t)
 	q := queryOf(db)
-	ws := &model.Workspace{ID: "ws-rel", Name: "ws", Dir: "relative/dir", LaunchSettings: `{"mode":"acp"}`}
-	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
-		t.Fatalf("建 workspace: %v", err)
+	proj := &model.Project{ID: "proj-rel", Name: "proj", Dir: "relative/dir", LaunchSettings: `{"mode":"acp"}`}
+	if err := q.Project.WithContext(context.Background()).Create(proj); err != nil {
+		t.Fatalf("建 project: %v", err)
 	}
-	issue := &model.WorkspaceIssue{ID: "issue-rel", WorkspaceID: ws.ID, Name: "x", StateCode: enums.STATE_CODE_BACKLOG}
-	if err := q.WorkspaceIssue.WithContext(context.Background()).Create(issue); err != nil {
-		t.Fatalf("建 issue: %v", err)
+	task := &model.ProjectTask{ID: "issue-rel", ProjectID: proj.ID, Name: "x"}
+	if err := q.ProjectTask.WithContext(context.Background()).Create(task); err != nil {
+		t.Fatalf("建 task: %v", err)
 	}
-	if _, err := resolveSessionConfig(context.Background(), db, issue.ID, ""); err == nil || !strings.Contains(err.Error(), "绝对路径") {
+	if _, err := resolveSessionConfig(context.Background(), db, task.ID, ""); err == nil || !strings.Contains(err.Error(), "绝对路径") {
 		t.Fatalf("相对目录应拒绝，got %v", err)
 	}
 }

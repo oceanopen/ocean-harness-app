@@ -20,7 +20,7 @@ type LocalRepository struct {
 	RemoteURL         string    `gorm:"column:remote_url;type:TEXT;not null;default:''" json:"remoteUrl"`
 	CurrentBranch     string    `gorm:"column:current_branch;type:TEXT;not null;default:''" json:"currentBranch"`
 	DefaultBranch     string    `gorm:"column:default_branch;type:TEXT;not null;default:''" json:"defaultBranch"`
-	LastCommitAt      int       `gorm:"column:last_commit_at;type:INTEGER" json:"lastCommitAt"`
+	LastCommitAt      int       `gorm:"column:last_commit_at;type:INTEGER;not null" json:"lastCommitAt"`
 	LastCommitMessage string    `gorm:"column:last_commit_message;type:TEXT;not null;default:''" json:"lastCommitMessage"`
 	CreatedAt         time.Time `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
 	UpdatedAt         time.Time `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
