@@ -60,6 +60,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_list_sessions,
             pty::pty_exists,
             pty::pty_claude_running,
+            pty::pty_claude_session_id,
             pty::pty_reattach,
             pty::create_directory,
             sessions::jsonl::get_claude_session_messages,

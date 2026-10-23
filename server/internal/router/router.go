@@ -126,7 +126,7 @@ func SetupRouter() *gin.Engine {
 			acpSessionGroup.POST("/respondElicitation", controller.AcpSession{}.RespondElicitation)
 			acpSessionGroup.GET("/events", controller.AcpSession{}.Events)
 		}
-		// conversation 模块：会话实体 CRUD（action 风格，POST）。
+		// conversation 模块：会话实体 CRUD + 终端锚回写（action 风格，POST）。
 		conversationGroup := apiGroup.Group("/conversation")
 		{
 			conversationGroup.POST("/getList", controller.Conversation{}.GetList)
@@ -134,6 +134,7 @@ func SetupRouter() *gin.Engine {
 			conversationGroup.POST("/create", controller.Conversation{}.Create)
 			conversationGroup.POST("/update", controller.Conversation{}.Update)
 			conversationGroup.POST("/delete", controller.Conversation{}.Delete)
+			conversationGroup.POST("/setClaudeSessionId", controller.Conversation{}.SetClaudeSessionID)
 		}
 
 		/*

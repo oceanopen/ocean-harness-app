@@ -43,6 +43,12 @@ export interface ConversationUpdateRequest {
   title: string;
 }
 
+// POST /api/conversation/setClaudeSessionId 的入参（终端捕获回写统一锚）。
+export interface ConversationSetClaudeSessionIdRequest {
+  id: string;
+  claudeSessionId: string;
+}
+
 // POST /api/conversation/delete 的入参。
 export interface ConversationDeleteRequest {
   id: string;
@@ -67,6 +73,11 @@ export class ConversationService {
   // update：改标题。
   static update(req: ConversationUpdateRequest): Promise<ConversationModel> {
     return request<ConversationModel>('POST', '/api/conversation/update', req);
+  }
+
+  // setClaudeSessionId：终端捕获回写统一锚（锚非空不覆盖，返回现行行）。
+  static setClaudeSessionId(req: ConversationSetClaudeSessionIdRequest): Promise<ConversationModel> {
+    return request<ConversationModel>('POST', '/api/conversation/setClaudeSessionId', req);
   }
 
   // delete：删除会话行（不动 claude 本地文件）。

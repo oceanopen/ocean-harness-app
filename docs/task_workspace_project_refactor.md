@@ -192,11 +192,12 @@ t_conversations（第一性实体，应用只存元数据）：
 ### 阶段 2：终端模式锚定
 
 #### T2.1 终端 sessionId 捕获
-**状态**：⬜
+**状态**：✅
 **功能**：终端模式 fresh spawn 的 claude 会话自动回写锚。
 **技术方案**：`claude_state.rs` 父链匹配升级为返回 sessionId；新增/扩展 command 供 pane 查询；按 §2.3 时序一次性回写（pid 匹配、不覆盖非空锚）。
 **依赖**：T0.1、T1.1
 **验收**：terminal-auto 新建会话后 conversation 行持有 claude_session_id。
+**实施定稿**：跨三栈捕获链——Rust `claude_state.rs` 新增 `claude_session_id(store, session_id) -> Option<String>`（`find_map` 返回扫描序首个父链命中进程的 sessionId，`claude_running` 收敛为其 bool 包装）+ command `pty_claude_session_id`（裸 Option，无 claude/pane 关闭返回 null）；Go `/api/conversation/setClaudeSessionId` 条件更新 `WHERE claude_session_id=''`（首捕获胜出，并发败方/幂等复设读回现行走同一返回契约；service 头注释与 Update 注释口径同步修订）；前端 `useClaudeSessionCapture` hook（active 初探 + claude-sessions:changed 事件重探 + 5s 轮询兜底，回写成功或发现已有非空锚即永久停）+ `EmbeddedTerminal` 挂可选 `conversationId` prop（默认 null 整体 inert，T5.3 传值即自动生效）。用户拍板四项：端点落 conversation 域、事件驱动+轮询兜底、pane 全生命周期捕获、机制全链路+占位接线。测试：Rust 69 通过（父链命中断言 `Some(_)`——Darwin 25 实测 spawn 隔一层中介进程，深度非契约）、Go 锚三态用例、web:build 绿、bindings 幂等；GUI 端到端验收随 T5.3（同 T1.2/T1.3 先例）。T5.3 接线注意：不重挂组件切换 conversationId 时需以 conversationId 作组件 key 或纳入 capturedRef 重置条件（现占位阶段恒 null 无影响）。
 
 #### T2.2 终端 resume 注入
 **状态**：⬜

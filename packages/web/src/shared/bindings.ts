@@ -49,6 +49,7 @@ export const commands = {
 	ptyListSessions: () => __TAURI_INVOKE<PtySessionInfo[]>("pty_list_sessions"),
 	ptyExists: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_exists", { sessionId }),
 	ptyClaudeRunning: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_claude_running", { sessionId }),
+	ptyClaudeSessionId: (sessionId: string) => __TAURI_INVOKE<string | null>("pty_claude_session_id", { sessionId }),
 	ptyReattach: (sessionId: string, onEvent: Channel<PtyEvent>) => typedError<{
 	sessionId: string,
 	exited: boolean,

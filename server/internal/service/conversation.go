@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -14,9 +15,9 @@ import (
 )
 
 /*
- * Conversation 对应 /api/conversation 命名空间下的业务逻辑。会话第一性实体：仅存元数据，
- * 消息内容直读 claude 本地 jsonl；claude_session_id 为终端/ACP 统一锚，由会话域链路读写
- * （T1.2/T2.1），不经本 CRUD。mode 为必填入参（前端编排按归属实体 mergeLaunchSettings 算好）。
+ * Conversation 对应 /api/conversation 命名空间下的业务逻辑。会话第一性实体：仅存元数据，消息内容直读 claude 本地 jsonl。
+ * claude_session_id 为终端/ACP 统一锚：ACP 链路经 acpsession 域覆盖写，终端捕获经 SetClaudeSessionID 首捕获胜出。
+ * mode 为必填入参（前端编排按归属实体 mergeLaunchSettings 算好）。
  */
 type Conversation struct {
 	apis.Service
@@ -83,6 +84,22 @@ func (svc Conversation) Update(req *types.ConversationUpdateRequest) (*model.Con
 		return nil, err
 	}
 	return conv, nil
+}
+
+// SetClaudeSessionID 终端捕获回写统一锚：条件更新仅在锚为空时落值（首捕获胜出，并发败方
+// 与幂等复设同走读回现行的返回契约），updated_at 随更新刷新。
+func (svc Conversation) SetClaudeSessionID(req *types.ConversationSetClaudeSessionIdRequest) (*model.Conversation, error) {
+	q := query.Use(svc.Orm)
+	_, err := q.Conversation.WithContext(svc.Context).
+		Where(q.Conversation.ID.Eq(req.ID), q.Conversation.ClaudeSessionID.Eq("")).
+		UpdateSimple(
+			q.Conversation.ClaudeSessionID.Value(req.ClaudeSessionID),
+			q.Conversation.UpdatedAt.Value(time.Now()),
+		)
+	if err != nil {
+		return nil, err
+	}
+	return svc.GetInfo(&types.ConversationGetInfoRequest{ID: req.ID})
 }
 
 /*

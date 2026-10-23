@@ -60,6 +60,7 @@ export type {
   ConversationGetInfoRequest,
   ConversationGetListRequest,
   ConversationModel,
+  ConversationSetClaudeSessionIdRequest,
   ConversationUpdateRequest,
 } from './ConversationService';
 

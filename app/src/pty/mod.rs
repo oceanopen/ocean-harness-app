@@ -31,10 +31,16 @@ fn provider() -> &'static LocalPtyProvider {
  */
 fn child_envs(http_port: u16, npm_prefix: Option<&str>) -> Vec<(String, String)> {
     let mut envs = vec![
-        ("OCEAN_HARNESS_PORT".to_string(), http_port.to_string()),
+        (
+            "OCEAN_HARNESS_PORT".to_string(),
+            http_port.to_string(),
+        ),
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
-        ("TERM_PROGRAM".to_string(), "OceanHarness".to_string()),
+        (
+            "TERM_PROGRAM".to_string(),
+            "OceanHarness".to_string(),
+        ),
         // vendored claude 版本构建期锁死：禁 CLI 自更新，防更新器借 vendored node 跑 npm 写穿打包资源。
         ("DISABLE_AUTOUPDATE".to_string(), "1".to_string()),
     ];
@@ -66,11 +72,11 @@ pub fn pty_spawn(
         .port
         .load(std::sync::atomic::Ordering::SeqCst);
     // npm 兜底前缀落应用数据目录（随 identifier dev/build 自动隔离）；解析失败仅省略该项。
-    let npm_prefix = app
-        .path()
-        .app_data_dir()
-        .ok()
-        .map(|dir| dir.join("npm-prefix").to_string_lossy().into_owned());
+    let npm_prefix = app.path().app_data_dir().ok().map(|dir| {
+        dir.join("npm-prefix")
+            .to_string_lossy()
+            .into_owned()
+    });
     let envs = child_envs(http_port, npm_prefix.as_deref());
     let result = provider().spawn(opts, on_event, &envs);
     match &result {
@@ -139,6 +145,16 @@ pub fn pty_exists(session_id: String) -> bool {
 #[specta::specta]
 pub fn pty_claude_running(session_id: String) -> bool {
     claude_state::claude_running(provider().store(), &session_id)
+}
+
+/*
+ * 本会话 shell 子进程树内 claude 进程的 sessionId（终端捕获回写 conversation 锚用）。
+ * 无 claude / 会话不在 store 返回 None；查询必须走 provider() 自持的 store。
+ */
+#[tauri::command]
+#[specta::specta]
+pub fn pty_claude_session_id(session_id: String) -> Option<String> {
+    claude_state::claude_session_id(provider().store(), &session_id)
 }
 
 /*
@@ -227,6 +243,9 @@ mod tests {
         assert_eq!(get("COLORTERM"), Some("truecolor"));
         assert_eq!(get("TERM_PROGRAM"), Some("OceanHarness"));
         assert_eq!(get("DISABLE_AUTOUPDATE"), Some("1"));
-        assert_eq!(get("npm_config_prefix"), Some("/tmp/ocean-npm-prefix"));
+        assert_eq!(
+            get("npm_config_prefix"),
+            Some("/tmp/ocean-npm-prefix")
+        );
     }
 }

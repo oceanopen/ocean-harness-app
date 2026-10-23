@@ -80,6 +80,22 @@ func (api Conversation) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
+// SetClaudeSessionID POST /api/conversation/setClaudeSessionId：终端捕获回写统一锚（首捕获胜出）。
+func (api Conversation) SetClaudeSessionID(ctx *gin.Context) {
+	req := &types.ConversationSetClaudeSessionIdRequest{}
+	svc := service.Conversation{}
+	if err := api.MakeContext(ctx).Bind(req).Validate(req).MakeService(&svc.Service).Errors; err != nil {
+		api.JsonFail(err)
+		return
+	}
+	data, err := svc.SetClaudeSessionID(req)
+	if err != nil {
+		api.JsonFail(err)
+		return
+	}
+	api.JsonOK(data)
+}
+
 // Delete POST /api/conversation/delete：删除会话行（不动 claude 本地文件）。
 func (api Conversation) Delete(ctx *gin.Context) {
 	req := &types.ConversationDeleteRequest{}
