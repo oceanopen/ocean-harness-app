@@ -182,11 +182,12 @@ t_conversations（第一性实体，应用只存元数据）：
 **实施定稿**：锚键统一 `conv-<id>` 形，按行存在性消歧（用户拍板）——`t_conversations` 行为真实锚载体（Peek 读/SaveReady 写 `claude_session_id`+`agent_code`/SaveError·Delete 清锚保行），`t_im_bot_conversations` 行回落窄桩（T4.3 收敛后归一）；`resolveSessionConfig` 对应双段消歧（实体上下文：workspace 会话=根目录+单级配置、task 会话=`{project.dir}/{ownerId}/`+双级合并；回落 bot 三跳旧链），键不再参与路径拼接（task 目录段取 `ownerId`，`ValidIssueID` 随之移除）。R2：`spawnFunc`/`newOrResumedSession` 扩返回 `resumed bool`，恢复未发生时视图落 system 条目「历史会话不可恢复，已新建会话」（新 `sys-<n>` 条目命名空间，前端 MessageList 补渲染分支）。`/api/acpSession` 七端点与 browser Analyze 键随本次改 `conversationId` 穿透（用户拍板；工作台无 conversation 选中态处显式未接通空态，随 T5.3/T7 恢复）；任务删除级联改为该任务全部 conversation 逐个 Discard。跨重启 resume 的 GUI 端到端验证随 T5.3（本任务以单测覆盖：锚生命周期/resume 透传/降级条目/闲置回收重开 resume 用例全绿）。
 
 #### T1.3 会话消息 jsonl 直读命令
-**状态**：⬜
+**状态**：✅
 **功能**：从 claude 本地会话文件直读消息内容与最新消息时间。
 **技术方案**：Rust 新 command：cwd→slug 单点映射 + `~/.projects/<slug>/<sessionId>.jsonl` 宽松解析 + 增量读；失败降级空态（R4）；`pnpm gen:bindings`。
 **依赖**：T1.1
 **验收**：给定 conversation 可取历史消息与最新消息时间；进程死后的历史会话仍可读。
+**实施定稿**：交付 `app/src/sessions/jsonl.rs`：`project_slug`（实证规则：保字母数字/`-`/`_`，余替换 `-`）+ sessionId 一层兜底扫描定位（探索实证活动会话文件会被 CLI 原子轮换瞬时不可见，兼防 slug 规则漂移）；宽松解析产出语义化扁平条目 `user/agentMessage/agentThought/toolCall/toolResult`（用户拍板，与 ACP 视图 kind 语义同构；tool_use 取 name+input 单行摘要、tool_result 2KB 字节截断、sidechain/isMeta 行过滤）；字节偏移增量读（末段无 `\n` 不消费不前移，防活动会话撕行丢条目）+ 尾部 64KB 截读双命令 `get_claude_session_messages`/`get_claude_session_latest`（列表行时间走尾读避免全量解析）；降级走 `degraded` 标志（区分真空会话与读不到），Err 仅空参数；单次 2000 条上限 + `hasMore` 续读。wire 参数 `offset` 为 `Option<u32>`（specta 禁 BigInt 型 command 参数且参数位不支持 type 覆盖，内部拓宽 u64）。单测 9 项（cargo test 全量 68 通过），web:build 绿；GUI 端到端验收随 T5.2/T5.3 消费面接入（同 T1.2 先例）。
 
 ### 阶段 2：终端模式锚定
 

@@ -62,6 +62,8 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_claude_running,
             pty::pty_reattach,
             pty::create_directory,
+            sessions::jsonl::get_claude_session_messages,
+            sessions::jsonl::get_claude_session_latest,
         ])
         /*
          * 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），

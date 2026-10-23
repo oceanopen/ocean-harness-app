@@ -55,6 +55,8 @@ export const commands = {
 	scrollback: string,
 } | null, string>(__TAURI_INVOKE("pty_reattach", { sessionId, onEvent })),
 	createDirectory: (path: string) => typedError<null, string>(__TAURI_INVOKE("create_directory", { path })),
+	getClaudeSessionMessages: (cwd: string, sessionId: string, offset: number | null) => typedError<ClaudeSessionMessages, string>(__TAURI_INVOKE("get_claude_session_messages", { cwd, sessionId, offset })),
+	getClaudeSessionLatest: (cwd: string, sessionId: string) => typedError<ClaudeSessionLatest, string>(__TAURI_INVOKE("get_claude_session_latest", { cwd, sessionId })),
 };
 
 /* Constants */
@@ -104,6 +106,17 @@ export type AppConfigChangedPayload = {
 	value: string,
 };
 
+export type ClaudeEntryKind = "user" | "agentMessage" | "agentThought" | "toolCall" | "toolResult";
+
+export type ClaudeSessionEntry = {
+	entryId: string,
+	kind: ClaudeEntryKind,
+	timestamp: string,
+	text: string,
+	toolName: string,
+	toolSummary: string,
+};
+
 export type ClaudeSessionInfo = {
 	pid: number,
 	sessionId: string,
@@ -115,6 +128,19 @@ export type ClaudeSessionInfo = {
 	hostApp: TerminalApp,
 	hostPid: number,
 	tty: string,
+};
+
+export type ClaudeSessionLatest = {
+	timestamp: string,
+	degraded: boolean,
+};
+
+export type ClaudeSessionMessages = {
+	entries: ClaudeSessionEntry[],
+	nextOffset: number,
+	hasMore: boolean,
+	latestTimestamp: string,
+	degraded: boolean,
 };
 
 export type ClaudeSessionStatus = "Busy" | "Waiting" | "Idle" | "GitPending" | "Dead";
