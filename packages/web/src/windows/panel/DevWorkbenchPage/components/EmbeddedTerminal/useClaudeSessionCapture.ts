@@ -1,10 +1,10 @@
 import type { PtySessionStatus } from './usePtySession';
 import { ConversationService } from '@src/services';
-import { conversationKeys } from '@src/state/conversation';
 import { commands } from '@src/shared/bindings';
 import { EVENT_CLAUDE_SESSIONS_CHANGED } from '@src/shared/events';
-import { listen } from '@tauri-apps/api/event';
+import { conversationKeys } from '@src/state/conversation';
 import { useQueryClient } from '@tanstack/react-query';
+import { listen } from '@tauri-apps/api/event';
 import { useEffect, useRef } from 'react';
 
 /**

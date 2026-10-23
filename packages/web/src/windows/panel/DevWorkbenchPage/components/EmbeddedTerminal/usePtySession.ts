@@ -21,6 +21,11 @@ export type PtySessionStatus
  */
 export type PtySpawnKind = 'direct' | 'plain' | 'reattach';
 
+// 生效直启命令：终端锚恢复优先（T2.2 锚在即恢复，忽略调用方直启命令），否则原直启命令；空 = 裸 shell。
+function effectiveDirectCommand(directCommand: string | null, resumeClaudeId: string | null | undefined): string | null {
+  return resumeClaudeId ? `claude --resume ${resumeClaudeId}` : directCommand;
+}
+
 export interface UsePtySessionResult {
   status: PtySessionStatus;
   // 本编排轮 attach 落定的进程形态（active/exited 时有值；重编排随 attachKey 重置为 null）
@@ -71,6 +76,11 @@ interface UsePtySessionArgs {
    */
   directCommand: string | null;
   /**
+   * 终端锚恢复（T2.2）：非 null 且 fresh spawn 时 PTY 直接 spawn `claude --resume <id>`（忽略 directCommand——锚在即恢复意图；reattach 不注入=不 spawn 即无命令；锚空走直启/裸启 + T2.1 捕获）。
+   * cwd 须由锚归属实体派生（T5.3 调用方责任，异源会 resume 落错目录）；锚值变化经 attachKey 触发重编排。
+   */
+  resumeClaudeId?: string | null;
+  /**
    * 输出回调（TerminalView 的 write 桥）；reattach/spawn 复用的 scrollback 也经此一次
    * 送达（replay=true 标记历史回放——TerminalView 在回放窗口抑制查询应答，防乱码）。
    * 要求稳定引用（父层 useCallback([])），本 hook 不做 ref 转发层。
@@ -109,7 +119,7 @@ async function attach(
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
   const spawned = await unwrap(
-    commands.ptySpawn({ sessionId, cwd, cols: spawnSize.cols, rows: spawnSize.rows, directCommand: args.directCommand ?? undefined }, channel),
+    commands.ptySpawn({ sessionId, cwd, cols: spawnSize.cols, rows: spawnSize.rows, directCommand: effectiveDirectCommand(args.directCommand, args.resumeClaudeId) ?? undefined }, channel),
   );
   if (!spawned.fresh && spawned.scrollback) {
     args.onData(spawned.scrollback, true);
@@ -117,7 +127,7 @@ async function attach(
   return { next: 'active', spawned: true };
 }
 
-export function usePtySession({ sessionId, cwd, enabled, cols, rows, directCommand, onData }: UsePtySessionArgs): UsePtySessionResult {
+export function usePtySession({ sessionId, cwd, enabled, cols, rows, directCommand, resumeClaudeId, onData }: UsePtySessionArgs): UsePtySessionResult {
   const [status, setStatus] = useState<PtySessionStatus>('connecting');
   const [spawnKind, setSpawnKind] = useState<PtySpawnKind | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -145,7 +155,7 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
    * 用「上轮 key 不一致则渲染期重置」替代 effect 内同步 setState（react/set-state-in-effect，
    * 同 PanelApp mounted 标志的渲染期调整模式）——仅重置一次，不触发额外提交。
    */
-  const attachKey = `${sessionId}\n${cwd ?? ''}\n${directCommand ?? ''}\n${attempt}`;
+  const attachKey = `${sessionId}\n${cwd ?? ''}\n${effectiveDirectCommand(directCommand, resumeClaudeId) ?? ''}\n${attempt}`;
   const lastAttachKeyRef = useRef<string | null>(null);
   if (lastAttachKeyRef.current !== attachKey) {
     lastAttachKeyRef.current = attachKey;
@@ -184,13 +194,15 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
      * 见（宽高 0 跳过 fit）的边缘场景。先测量后生胎，无「spawn 后纠正」步骤。
      */
     const spawnSize = pendingSizeRef.current ?? { cols, rows };
-    attach({ sessionId, cwd, enabled, cols, rows, directCommand, onData }, onEvent, spawnSize)
+    // spawnKind 按最终生效命令判定（锚恢复注入后 CLI 也是第一进程，报 direct 与 T3.3 消费语义一致）。
+    const direct = effectiveDirectCommand(directCommand, resumeClaudeId);
+    attach({ sessionId, cwd, enabled, cols, rows, directCommand, resumeClaudeId, onData }, onEvent, spawnSize)
       .then((result) => {
         if (cancelled) {
           return;
         }
         setStatus(result.next);
-        setSpawnKind(result.spawned ? (directCommand ? 'direct' : 'plain') : 'reattach');
+        setSpawnKind(result.spawned ? (direct ? 'direct' : 'plain') : 'reattach');
         if (result.spawned) {
           lastRequestedRef.current = spawnSize;
         }
@@ -219,7 +231,7 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
     return () => {
       cancelled = true;
     };
-  }, [enabled, sessionId, cwd, cols, rows, directCommand, attempt, onData]);
+  }, [enabled, sessionId, cwd, cols, rows, directCommand, resumeClaudeId, attempt, onData]);
 
   // 以下操作函数均为稳定引用（deps 仅 sessionId），直接交给 TerminalView 接线。
   const write = useCallback((data: string) => {

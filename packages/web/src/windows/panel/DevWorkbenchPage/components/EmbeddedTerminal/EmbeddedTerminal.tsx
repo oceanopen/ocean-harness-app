@@ -97,6 +97,11 @@ interface EmbeddedTerminalProps {
    * 工作台当前以 issue 为键，实体上下文随 T5.3 接线传入。
    */
   conversationId?: string | null;
+  /**
+   * 终端锚恢复 id（T2.2；T5.3 从 conversation 行读 claudeSessionId 传入，cwd 须与锚同源派生）。
+   * null = 无锚（直启/裸启 + T2.1 捕获），现工作台占位阶段恒 null。
+   */
+  resumeClaudeId?: string | null;
 }
 
 /**
@@ -104,7 +109,7 @@ interface EmbeddedTerminalProps {
  * 父层以 issueId 为 key 挂载，切 issue 即重挂载（unmount 仅断订阅，后端会话/ring 常驻，回切 reattach 重载）。数据通路（函数式两条单向线，无响应式层）：输出 Channel → usePtySession(onData) → writeDataRef → terminal.write；输入 xterm onData → session.write → ptyWrite → shell。
  * writeDataRef 是全链唯一 ref 桥：Channel 数据可在任何时刻到达（含 StrictMode 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下实测「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
  */
-export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, paneId = 'main', conversationId = null }: EmbeddedTerminalProps) {
+export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, paneId = 'main', conversationId = null, resumeClaudeId = null }: EmbeddedTerminalProps) {
   const isMain = paneId === 'main';
   const { show: showToast, snack: toastSnack } = useToast();
   // 字号（terminal_03 §3.3）：每 pane 各自订阅，设置保存事件驱动全量 pane 生效。
@@ -193,6 +198,7 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
      * 直启失败（CLI 未安装等）由 Rust 侧回落普通 shell（warn log），用户可手动启动。
      */
     directCommand: isMain ? startupCli : null,
+    resumeClaudeId,
     onData: handleTerminalData,
   });
 

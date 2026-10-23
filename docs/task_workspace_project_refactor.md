@@ -200,11 +200,12 @@ t_conversations（第一性实体，应用只存元数据）：
 **实施定稿**：跨三栈捕获链——Rust `claude_state.rs` 新增 `claude_session_id(store, session_id) -> Option<String>`（`find_map` 返回扫描序首个父链命中进程的 sessionId，`claude_running` 收敛为其 bool 包装）+ command `pty_claude_session_id`（裸 Option，无 claude/pane 关闭返回 null）；Go `/api/conversation/setClaudeSessionId` 条件更新 `WHERE claude_session_id=''`（首捕获胜出，并发败方/幂等复设读回现行走同一返回契约；service 头注释与 Update 注释口径同步修订）；前端 `useClaudeSessionCapture` hook（active 初探 + claude-sessions:changed 事件重探 + 5s 轮询兜底，回写成功或发现已有非空锚即永久停）+ `EmbeddedTerminal` 挂可选 `conversationId` prop（默认 null 整体 inert，T5.3 传值即自动生效）。用户拍板四项：端点落 conversation 域、事件驱动+轮询兜底、pane 全生命周期捕获、机制全链路+占位接线。测试：Rust 69 通过（父链命中断言 `Some(_)`——Darwin 25 实测 spawn 隔一层中介进程，深度非契约）、Go 锚三态用例、web:build 绿、bindings 幂等；GUI 端到端验收随 T5.3（同 T1.2/T1.3 先例）。T5.3 接线注意：不重挂组件切换 conversationId 时需以 conversationId 作组件 key 或纳入 capturedRef 重置条件（现占位阶段恒 null 无影响）。
 
 #### T2.2 终端 resume 注入
-**状态**：⬜
+**状态**：✅
 **功能**：点开历史终端会话自动 `--resume`。
 **技术方案**：会话打开编排（`usePtySession` 扩展）——锚非空且 fresh spawn 时 directCommand 拼 `--resume <id>`；reattach/活会话不注入；cwd 与锚归属一致断言。
 **依赖**：T2.1
 **验收**：点开历史会话恢复同一 claude 会话（上下文延续）；运行中会话重进仅 reattach 不重启。
+**实施定稿**：`usePtySession` 新增可选参数 `resumeClaudeId`——非空且 fresh spawn 时以 `claude --resume <id>` 作为直启命令（用户拍板「锚在即恢复」，忽略 startupCli/autoCommand；reattach 不注入 = attach 分支结构性保证）；生效命令收敛为模块级纯函数 `effectiveDirectCommand`，attachKey 组件与 spawnKind 判定同步替换（resume 注入报 direct，与 T3.3 消费语义一致；无锚场景键值逐字符不变、行为严格等价）；`EmbeddedTerminal` 挂可选 prop 占位（默认 null，现工作台无消费方，T5.3 从 conversation 行读锚传入且 cwd 同源派生）。Rust 零改动（directCommand 透传 + 首 token 白名单现成，vendored CLI `--resume` 已 T0.1 实证）。顺带修复 useClaudeSessionCapture.ts 两行导入排序（T2.1 校验链漏跑 lint 的补课）。校验：web:lint 清零 + web:build 绿；GUI 端到端验收随 T5.3（R3：resume 后 scrollback 空为物理事实，历史回看走 T1.3 jsonl 直读）。
 
 #### T2.3 启动档位收敛与工具栏改造
 **状态**：⬜
