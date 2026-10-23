@@ -1,6 +1,6 @@
 # 工作空间/项目任务重构——方案与任务清单
 
-> 状态：方案定稿
+> 状态：实施中
 > 范围：工作空间与项目两条独立实体线（工作空间→会话；项目→任务→主/子会话）、会话实体化与 claude session 锚定（终端+ACP 双受控模式）、bot 与归属实体解耦、浏览器实例归属与登录态全局化、「工作空间」「项目任务」双页面交互重构、Claude 会话查看工具
 > 前序基线：ACP 统一会话方案（已全部落地：issue 级锚点 / acpsession 域 / bot ACP 驱动 / launch_settings 合并链），本次在其上重构归属模型
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
@@ -92,7 +92,7 @@ t_conversations（第一性实体，应用只存元数据）：
 | D3 | 任务表瘦身边界：删 `state_code/completed_at/start_date/target_date/sort_order` 五列，仅留 `id/project_id/name/description/type_id/launch_settings/timestamps` | 用户拍板：无看板皆不需要，后续有需要再加列 |
 | D4 | acpsession 锚键 issue uuid → conversation id（复用既有 `conv-<rowId>` 锚形）；删除 `t_issue_acp_sessions`；移除启动清扫，跨重启 resume 打开 | O12「点开历史自动 resume」；claude 会话文件本支持跨重启 resume |
 | D5 | 启动档位收敛：`none / terminal-auto / acp` 三配置档（none = 打开时临场两选一面板）；`terminal-manual` 移除；主终端工具栏去 claude 启动按钮与关闭按钮；附加 pane 保留裸 shell 无 claude 按钮 | 用户拍板保留 none 过渡；堵住无锚会话旁路（O14） |
-| D6 | 终端模式锚定三段：`claude_state.rs` 父链匹配升级返回 sessionId → fresh spawn 后捕获回写锚 → 仅 fresh spawn 注入 `--resume <id>`（参数透传现成，零 Rust 解析改动）；cwd 由归属实体派生保证 resume 目录一致 | headless 同 CLI 已实证 `--resume`；交互式验证见 T0.1/R1 |
+| D6 | 终端模式锚定三段：`claude_state.rs` 父链匹配升级返回 sessionId → fresh spawn 后捕获回写锚 → 仅 fresh spawn 注入 `--resume <id>`（参数透传现成，零 Rust 解析改动）；cwd 由归属实体派生保证 resume 目录一致 | vendored CLI（2.1.300）交互式 `--resume` 与 `--session-id` 已实证（见 T0.1） |
 | D7 | 消息内容/最新消息时间：Rust 新增 jsonl 只读命令（cwd→slug 单点映射、宽松解析、增量读）；应用不存消息 | 用户拍板「元数据入库+内容直读」 |
 | D8 | bot 配置：`conversation_type` 必填两档；type=workspace → `workspace_id` 必填，type=project → `project_id` 必填、`task_id` 可选；type=project 未关联任务收到消息 → 回复提示后拦截 | 用户拍板（去 0 档、提示后拦截） |
 | D9 | bot 驱动收敛 ACP 单驱动（headless 路由下线）；路由三分支：workspace → 取/建该 bot 在该工作空间的 ACP 会话；task 主会话 ACP → 复用；主会话非 ACP → 新建 ACP 子会话；无主会话 → 新建 ACP 主会话 | O18.2；消息同步仅 ACP 可达 |
@@ -124,7 +124,7 @@ t_conversations（第一性实体，应用只存元数据）：
 
 ## 3. 风险与开放问题
 
-- R1 交互式终端 `--resume` 未在 vendored claude 上验证（headless 同 CLI 已实证）——T0.1 前置验证消解；并顺带探测 `--session-id` 是否可用（可用则终端新建可显式指定 id，捕获段降级为兜底）。
+- R1 已消解：交互式 `--resume <id>` 与 `--session-id <uuid>` 在 vendored claude（CLI 2.1.300）pty 交互链路实证可用，暗号问答判据确认上下文真实恢复；`--session-id` 建会话以指定 id 落盘且可再 resume——终端新建可显式指定 id，捕获段降级为兜底。
 - R2 `LoadSession` 失败现静默降级 `NewSession`——本次改为显式提示「历史不可恢复」，避免无感丢历史。
 - R3 终端模式 resume 后 scrollback 为空是物理事实（ring buffer 不跨进程，CLI 仅打 resume 横幅）——历史回看一律走 D7 jsonl 直读，终端区只呈现 resume 后新内容。
 - R4 jsonl 为 claude CLI 内部格式，版本升级可能漂移——只读 + 宽松解析 + 失败降级空态，不做强依赖。
@@ -140,11 +140,12 @@ t_conversations（第一性实体，应用只存元数据）：
 ### 阶段 0：地基与前置验证
 
 #### T0.1 vendored claude 交互式 resume 能力验证
-**状态**：⬜
+**状态**：✅
 **功能**：实证交互式终端模式 `--resume <id>` 在 vendored claude 可用，顺带探测 `--session-id` 可用性。
 **技术方案**：经 pty 直启链路以 vendored 二进制手工/脚本验证；结论回写 §3 R1 与 D6。
 **依赖**：无
 **验收**：结论落文档；若不可用则 D6 修订为「spawn 后捕获」单路径再开工。
+**实施定稿**：vendored claude（adapter 0.93.0 / CLI 2.1.300）经 pty 脚本交互链路实证：新会话投递暗号后 `--resume <id>` 重启追问答出暗号原文（上下文真实恢复，非仅启动不报错）；`--session-id <uuid>` 建会话即以该 id 落盘 jsonl 且可再 resume。D6 主路径「spawn 后捕获」维持不变，终端新建显式指定 id 为可选增强路径。环境发现：宿主进程泄漏的 `CLAUDE_CODE_*` 环境变量会令 CLI 关闭 transcript 落盘（子会话标记语义），app 自有 spawn 链无此变量、不受影响；手工复验时需清洗该族变量。
 
 #### T0.2 就地迁移改写：项目/任务/会话/bot 表
 **状态**：⬜
