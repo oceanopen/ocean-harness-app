@@ -184,7 +184,7 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
   /**
    * hooks 顶层无条件调用（React 规则）；cwd=null（目录解析中）时 usePtySession 返回哑会话（不发 spawn，
    * status 恒 'connecting'），引导分支先于 spinner 渲染，不闪错态。startupCli 不参与 enabled：
-   * null = 明确不直启（none 档临场选择后/手动/ACP 档），正常 spawn 裸 shell；「列表解析中」的等待语义在父层消化（TerminalLaunchFlow 不挂载），挂载即终值，directCommand（attachKey 成分）无中途变化路径。
+   * null = 明确不直启（none 档临场选择后/ACP 档），正常 spawn 裸 shell；「列表解析中」的等待语义在父层消化（TerminalLaunchFlow 不挂载），挂载即终值，directCommand（attachKey 成分）无中途变化路径。
    */
   const session = usePtySession({
     sessionId,
@@ -267,6 +267,7 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
    * 重新打开 main 终端：清占位态 + reopen（attempt 自增 → 重新编排 → exists=false
    * 走全新 spawn，配置直启时重新 direct spawn）。
    */
+  // 重开经 T2.2 编排按锚恢复（resumeClaudeId 非空时 spawn `claude --resume <id>`，重进同一主会话）；占位阶段锚空为裸启/直启。
   const reopenMain = useCallback(() => {
     setMainClosed(false);
     session.reopen();
@@ -274,7 +275,7 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
 
   /**
    * 工作空间目录解析中：哑会话（不发 spawn）+ 空占位，就绪后一次性以终值编排。
-   * startupCli 的 null 是「明确不直启」（none 临场选择后/手动/ACP 档）而非解析中——
+   * startupCli 的 null 是「明确不直启」（none 临场选择后/ACP 档）而非解析中——
    * 正常渲染终端（裸 shell）；解析中的等待语义在父层（TerminalLaunchFlow 不挂载）。
    */
   if (cwd == null) {

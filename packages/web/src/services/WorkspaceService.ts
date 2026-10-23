@@ -6,9 +6,9 @@ import { request } from './http';
  * undefined/空对象 = 未配置 → 消费端回落全局 key。
  */
 export interface WorkspaceLaunchSettings {
-  mode?: 'none' | 'terminal-manual' | 'terminal-auto' | 'acp'; // 未配置等同 none（就绪后出启动方式选择面板）
+  mode?: 'none' | 'terminal-auto' | 'acp'; // 未配置等同 none（就绪后出启动方式选择面板）
   agentCode?: AgentCode; // ACP 会话 agent
-  autoCommand?: string; // 终端启动 Agent（仅 terminal-auto 消费：主终端直接启动；manual 档经终端工具条自行选择；一期 claude）
+  autoCommand?: string; // 终端启动 Agent（仅 terminal-auto 消费：主终端直接启动；一期 claude）
   permissionMode?: 'acceptEdits' | 'bypassPermissions'; // ACP 执行模式
 }
 

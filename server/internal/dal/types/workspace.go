@@ -26,9 +26,9 @@ type WorkspaceGetInfoRequest struct {
  * 空对象/空串 = 未配置，消费端等同 none。
  */
 type WorkspaceLaunchSettings struct {
-	Mode           string          `json:"mode,omitempty"`           // none | terminal-manual | terminal-auto | acp（未配置等同 none：出启动方式选择面板；manual=自动打开终端）
+	Mode           string          `json:"mode,omitempty"`           // none | terminal-auto | acp（未配置等同 none：出启动方式选择面板）
 	AgentCode      enums.AgentCode `json:"agentCode,omitempty"`      // ACP 会话 agent
-	AutoCommand    string          `json:"autoCommand,omitempty"`    // 终端启动 Agent（仅 terminal-auto：主终端直接启动；manual 档经终端工具条自选；一期 claude）
+	AutoCommand    string          `json:"autoCommand,omitempty"`    // 终端启动 Agent（仅 terminal-auto：主终端直接启动；一期 claude）
 	PermissionMode string          `json:"permissionMode,omitempty"` // ACP 执行模式：acceptEdits | bypassPermissions
 }
 

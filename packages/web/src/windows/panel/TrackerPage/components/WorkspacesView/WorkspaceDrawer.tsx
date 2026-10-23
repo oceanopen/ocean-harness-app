@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next';
 // 传入 workspace 时为编辑模式：标题改为"编辑工作空间"、ID 只读展示、字段反显、提交调用 update；
 // 不传则为新建模式，行为不变。
 // 字段：基础信息（名称/目录/emoji/描述）+ 启动设置
-// （launch_settings：workspace 单源，无全局回落，未配置等同手动）。
+// （launch_settings：workspace 单源，无全局回落，mode 未配置等同 none（出启动方式选择面板））。
 //
 // 由父组件按需挂载（{open && <WorkspaceDrawer/>}）：每次打开都是全新 useState 初值，
 // 无需重置 effect；关闭即卸载。
@@ -125,7 +125,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
     setSubmitting(true);
     setError(null);
     try {
-      // none / 手动档只带 mode；自动档带 autoCommand（直启目标）；ACP 会话带 agentCode + permissionMode。
+      // none 档只带 mode；自动档带 autoCommand（直启目标）；ACP 会话带 agentCode + permissionMode。
       const launchSettings: WorkspaceLaunchSettings
         = launchMode === 'acp'
           ? { mode: launchMode, agentCode: effectiveAgentCode, permissionMode }
@@ -306,7 +306,7 @@ function WorkspaceDrawer({ onClose, onCreated, onUpdated, workspace }: Workspace
             slotProps={{ htmlInput: { maxLength: DESCRIPTION_MAX } }}
             helperText={`${description.length} / ${DESCRIPTION_MAX}`}
           />
-          {/* 启动设置（launch_settings）：workspace 单源，无全局回落；未配置等同手动。 */}
+          {/* 启动设置（launch_settings）：workspace 单源，无全局回落；mode 未配置等同 none（出启动方式选择面板）。 */}
           <LaunchSettingsFields
             mode={launchMode}
             onModeChange={(m) => {

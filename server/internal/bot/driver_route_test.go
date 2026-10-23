@@ -101,7 +101,7 @@ func TestDriverRouteAcpErrorsMarkedNotAccepted(t *testing.T) {
 
 /*
  * TestDriverRouteWorkspaceModeResolution 真 DB 解析验收：逐行断言 launch_settings 各形态的
- * mode 判定（acp / 终端档 / 空配置 / 损坏 JSON = 未配置语义 / 行缺失）。ACP 档未关联任务时
+ * mode 判定（acp / 非 acp 档 / 空配置 / 损坏 JSON = 未配置语义 / 行缺失）。ACP 档未关联任务时
  * 以会话行为锚（conv-<会话行id>，工作空间根目录独立会话），路由层不阻断。
  */
 func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
@@ -123,7 +123,7 @@ func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
 		acp      bool
 	}{
 		{"acp 档（未关联）", acpSettings, true},
-		{"终端档", `{"mode":"terminal-manual"}`, false},
+		{"none 档（非 acp）", `{"mode":"none"}`, false},
 		{"空配置", "", false},
 		{"损坏 JSON（未配置语义）", "{bad json", false},
 	}
@@ -205,10 +205,10 @@ func TestDriverRouteTargetResolution(t *testing.T) {
 	})
 
 	t.Run("workspace 非 acp 档 headless", func(t *testing.T) {
-		wsID, db := mkRouteFixture(t, `{"mode":"terminal-manual"}`)
+		wsID, db := mkRouteFixture(t, `{"mode":"none"}`)
 		got, err := resolve(db, wsID)
 		if err != nil || got != (routeTarget{}) {
-			t.Fatalf("终端档应 headless: got=%+v err=%v", got, err)
+			t.Fatalf("非 acp 档应 headless: got=%+v err=%v", got, err)
 		}
 	})
 
@@ -225,7 +225,7 @@ func TestDriverRouteTargetResolution(t *testing.T) {
 
 /*
  * TestDriverRouteProbeTarget 探针契约：ProbeTarget 与 resolve 同源——ACP 档探得 acp=true、
- * 终端档 acp=false，对齐路由实际判定；读库失败原样透传 err（调用方不拦截，
+ * 非 acp 档 acp=false，对齐路由实际判定；读库失败原样透传 err（调用方不拦截，
  * 按探测失败回落保守语义）。
  */
 func TestDriverRouteProbeTarget(t *testing.T) {
@@ -244,11 +244,11 @@ func TestDriverRouteProbeTarget(t *testing.T) {
 		}
 	})
 
-	t.Run("终端档非 ACP", func(t *testing.T) {
-		wsID, db := mkRouteFixture(t, `{"mode":"terminal-manual"}`)
+	t.Run("none 档非 ACP", func(t *testing.T) {
+		wsID, db := mkRouteFixture(t, `{"mode":"none"}`)
 		acp, err := probe(db, wsID)
 		if err != nil || acp {
-			t.Fatalf("终端档探针应非 ACP: acp=%v err=%v", acp, err)
+			t.Fatalf("非 acp 档探针应非 ACP: acp=%v err=%v", acp, err)
 		}
 	})
 

@@ -87,10 +87,9 @@ function decodeToolAreaWidth(raw: string | null): number {
 
 /**
  * 生效启动设置 → 终端直启值（T0.3/T0.4，issue 覆盖 + workspace 字段级合并后的单源）：
- * 仅 terminal-auto 直启（值为所选终端启动 Agent）；none / 自动打开终端 / acp（终端侧
- * 消费端 T1.6 前不自动启动）/ 未配置 = null（裸 shell）。
+ * 仅 terminal-auto 直启（值为所选终端启动 Agent）；none / acp / 未配置 = null（裸 shell）。
  */
-function terminalStartupCli(mode: 'none' | 'terminal-manual' | 'terminal-auto' | 'acp' | undefined, autoCommand: string | undefined): string | null {
+function terminalStartupCli(mode: 'none' | 'terminal-auto' | 'acp' | undefined, autoCommand: string | undefined): string | null {
   return mode === 'terminal-auto' ? autoCommand ?? 'claude' : null;
 }
 
@@ -191,8 +190,7 @@ export default function DevWorkbenchPage() {
   const launchResolved = !workspacesPending && !agentCatalogPending && issue != null && workspace != null;
   // 过渡浮层开关：仅配置模式为终端档时播放——none 档（含解析中）children 是启动方式
   // 选择面板、acp 档 children 是 ACP 会话视图，均无「启动终端」语义，浮层叠上成重影。
-  const terminalTransitionEnabled = !workspacesPending
-    && (effLaunch?.mode === 'terminal-manual' || effLaunch?.mode === 'terminal-auto');
+  const terminalTransitionEnabled = !workspacesPending && effLaunch?.mode === 'terminal-auto';
   const startupCli: string | null = launchResolved
     ? terminalStartupCli(effLaunch?.mode, effLaunch?.autoCommand)
     : null;

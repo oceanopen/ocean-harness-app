@@ -91,7 +91,7 @@ t_conversations（第一性实体，应用只存元数据）：
 | D2 | 归属模型：`t_projects` 新表；任务就地改写挂 `project_id`；types 挂项目；工作空间去任务/去仓库，与项目彻底独立 | O1–O4；issueWorkspace 机制整体平移给项目 |
 | D3 | 任务表瘦身边界：删 `state_code/completed_at/start_date/target_date/sort_order` 五列，仅留 `id/project_id/name/description/type_id/launch_settings/timestamps` | 用户拍板：无看板皆不需要，后续有需要再加列 |
 | D4 | acpsession 锚键 issue uuid → conversation id（复用既有 `conv-<rowId>` 锚形）；删除 `t_issue_acp_sessions`；移除启动清扫，跨重启 resume 打开 | O12「点开历史自动 resume」；claude 会话文件本支持跨重启 resume |
-| D5 | 启动档位收敛：`none / terminal-auto / acp` 三配置档（none = 打开时临场两选一面板）；`terminal-manual` 移除；主终端工具栏去 claude 启动按钮与关闭按钮；附加 pane 保留裸 shell 无 claude 按钮 | 用户拍板保留 none 过渡；堵住无锚会话旁路（O14） |
+| D5 | 启动档位收敛：`none / terminal-auto / acp` 三配置档（none = 打开时临场两选一面板）；`terminal-manual` 移除；主终端工具栏去 claude 启动按钮（关闭按钮经实施拍板保留——自测/排查用）；附加 pane 保留裸 shell 与 claude 按钮 | 用户拍板保留 none 过渡；堵住无锚会话旁路（O14，关闭按钮项经实施偏离） |
 | D6 | 终端模式锚定三段：`claude_state.rs` 父链匹配升级返回 sessionId → fresh spawn 后捕获回写锚 → 仅 fresh spawn 注入 `--resume <id>`（参数透传现成，零 Rust 解析改动）；cwd 由归属实体派生保证 resume 目录一致 | vendored CLI（2.1.300）交互式 `--resume` 与 `--session-id` 已实证（见 T0.1） |
 | D7 | 消息内容/最新消息时间：Rust 新增 jsonl 只读命令（cwd→slug 单点映射、宽松解析、增量读）；应用不存消息 | 用户拍板「元数据入库+内容直读」 |
 | D8 | bot 配置：`conversation_type` 必填两档；type=workspace → `workspace_id` 必填，type=project → `project_id` 必填、`task_id` 可选；type=project 未关联任务收到消息 → 回复提示后拦截 | 用户拍板（去 0 档、提示后拦截） |
@@ -208,11 +208,12 @@ t_conversations（第一性实体，应用只存元数据）：
 **实施定稿**：`usePtySession` 新增可选参数 `resumeClaudeId`——非空且 fresh spawn 时以 `claude --resume <id>` 作为直启命令（用户拍板「锚在即恢复」，忽略 startupCli/autoCommand；reattach 不注入 = attach 分支结构性保证）；生效命令收敛为模块级纯函数 `effectiveDirectCommand`，attachKey 组件与 spawnKind 判定同步替换（resume 注入报 direct，与 T3.3 消费语义一致；无锚场景键值逐字符不变、行为严格等价）；`EmbeddedTerminal` 挂可选 prop 占位（默认 null，现工作台无消费方，T5.3 从 conversation 行读锚传入且 cwd 同源派生）。Rust 零改动（directCommand 透传 + 首 token 白名单现成，vendored CLI `--resume` 已 T0.1 实证）。顺带修复 useClaudeSessionCapture.ts 两行导入排序（T2.1 校验链漏跑 lint 的补课）。校验：web:lint 清零 + web:build 绿；GUI 端到端验收随 T5.3（R3：resume 后 scrollback 空为物理事实，历史回看走 T1.3 jsonl 直读）。
 
 #### T2.3 启动档位收敛与工具栏改造
-**状态**：⬜
-**功能**：受控两档 + none 临场面板；主终端无 claude icon、无关闭按钮。
-**技术方案**：launch settings mode 档位调整（D5）；`LaunchModePicker` 两选一；主 pane 工具栏移除「启动 claude」按钮与关闭按钮；附加 pane 保留裸 shell。
+**状态**：✅
+**功能**：受控两档 + none 临场面板；主终端无 claude icon（关闭按钮经实施拍板保留）。
+**技术方案**：launch settings mode 档位调整（D5）；`LaunchModePicker` 两选一；主 pane 工具栏移除「启动 claude」按钮（关闭按钮保留）；附加 pane 保留裸 shell 与 claude 按钮。
 **依赖**：T2.2
-**验收**：工作台内不存在无锚 claude 启动路径；主终端工具栏符合 O14。
+**验收**：工作台内不存在无锚 claude 启动路径；主终端工具栏无 claude icon（O14 关闭按钮项按实施拍板偏离）。
+**实施定稿**：mode 收敛三档（`none/terminal-auto/acp`，terminal-manual 移除）——类型/下拉/临场面板/运行时判断点/Go 测试与注释全消费面同步；`TerminalLaunchFlow` 入口归一（非 acp 非 auto 一律按 none 走临场面板，杜绝存量值直进裸 shell 的旁路降级）；none 面板「终端」= 临场升格 terminal-auto（直启）。工具栏按实施拍板偏离 D5/O14 字面（文档已同步修订）：主 pane 删「启动 claude」按钮，**关闭按钮与 mainClosed 确认链保留**（自测/排查用）；**附加 pane 保留按钮与整条 claudeRunning 链**（Rust command 不动）。reopen 经 T2.2 编排按锚恢复（重进同一主会话）。校验：web:lint 清零 + web:build 绿 + Go bot/acpsession 实跑通过。工作台受控启动路径 = 配置 auto 直启 / none 临场直启 / 历史会话 resume，均进捕获或恢复链；附加 pane 手动入口为用户接受的探索路径（R5）。
 
 ### 阶段 3：项目域后端
 

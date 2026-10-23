@@ -204,8 +204,8 @@ func TestResolveSessionConfig(t *testing.T) {
 		t.Fatalf("task cwd 应已兜底建目录: %v", err)
 	}
 
-	// 用例 3：task 会话 mode 非 acp 拒绝（terminal-manual / 显式 none 同拒）。
-	for _, mode := range []string{"terminal-manual", "none"} {
+	// 用例 3：task 会话 mode 非 acp 拒绝（显式 none 同拒）。
+	for _, mode := range []string{"none"} {
 		taskID = seedIssue(t, db, rootDir, `{"mode":"acp"}`, `{"mode":"`+mode+`"}`)
 		convID = seedTaskConversation(t, db, taskID)
 		if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil {
@@ -312,8 +312,8 @@ func TestResolveSessionConfigConversationAnchor(t *testing.T) {
 	}
 
 	// workspace 非 acp 拒绝。
-	keyTerminal := ConversationSessionKey(seedBotConversation(t, db, mkWS(`{"mode":"terminal-manual"}`)))
-	if _, err := resolveSessionConfig(ctx, db, keyTerminal, ""); err == nil || !strings.Contains(err.Error(), "未配置为 ACP") {
+	keyNone := ConversationSessionKey(seedBotConversation(t, db, mkWS(`{"mode":"none"}`)))
+	if _, err := resolveSessionConfig(ctx, db, keyNone, ""); err == nil || !strings.Contains(err.Error(), "未配置为 ACP") {
 		t.Fatalf("workspace 非 acp 应拒绝: %v", err)
 	}
 

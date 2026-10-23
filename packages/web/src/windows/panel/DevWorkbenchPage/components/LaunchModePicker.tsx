@@ -8,8 +8,8 @@ import AcpSessionView from './AcpSessionView';
 import TerminalErrorBoundary from './EmbeddedTerminal/TerminalErrorBoundary';
 import TerminalPaneRoot from './TerminalPanes/TerminalPaneRoot';
 
-/** 临场启动方式（none 档 issue 就绪后的三选一；仅本次有效，不回写 workspace 配置）。 */
-type PickedLaunch = 'terminal-auto' | 'terminal-manual' | 'acp';
+/** 临场启动方式（none 档 issue 就绪后的两选一；仅本次有效，不回写 workspace 配置）。 */
+type PickedLaunch = 'terminal-auto' | 'acp';
 
 interface LaunchModePickerProps {
   /** 终端启动 Agent 展示名（来自 workspace autoCommand 解析，一期 Claude Code）。 */
@@ -36,7 +36,7 @@ function acpDoctorHint(entry: DoctorEntryState | undefined): string {
 
 /**
  * LaunchModePicker：启动方式临场选择面板（workspace 启动模式 = none 时，issue 初始化就绪后替代终端树渲染）。
- * 三选一：终端自动（直启所选 Agent）/ 终端手动（裸 shell + 工具栏按钮拉起）/ ACP 会话（T1.6 前置灰，置灰提示随 doctor 四态派生并附重新检测）。
+ * 两选一：终端（直启所选 Agent，主终端）/ ACP 会话（T1.6 前置灰，置灰提示随 doctor 四态派生并附重新检测）。
  * 选择仅本次有效——不回写配置、不记忆，每次打开重新决定；想固定方式应修改 workspace 启动设置。
  */
 export default function LaunchModePicker({ terminalAgentLabel, acpAgentLabel, onPick }: LaunchModePickerProps) {
@@ -52,11 +52,6 @@ export default function LaunchModePicker({ terminalAgentLabel, acpAgentLabel, on
         title={`终端 - 自动启动 ${terminalAgentLabel}`}
         description="打开主终端并直接启动，无 shell 中转"
         onClick={() => onPick('terminal-auto')}
-      />
-      <LaunchOption
-        title="终端 - 手动启动"
-        description="打开裸 shell 终端，经终端工具条自行选择并启动 Agent"
-        onClick={() => onPick('terminal-manual')}
       />
       <LaunchOption
         title={`ACP 方式启动 ${acpAgentLabel}`}
@@ -135,7 +130,7 @@ interface TerminalLaunchFlowProps {
   issueId: string;
   workspaceDir: string | null;
   /** workspace 启动模式（DevWorkbenchPage 解析下传；null = 列表解析中，等同 none 等待）。 */
-  launchMode: 'none' | 'terminal-manual' | 'terminal-auto' | 'acp' | null;
+  launchMode: 'none' | 'terminal-auto' | 'acp' | null;
   /** 终端启动 Agent 命令（workspace autoCommand，一期 claude）。 */
   autoCommand: string | undefined;
   /** 终端 Agent 展示名（面板文案）。 */
@@ -146,8 +141,8 @@ interface TerminalLaunchFlowProps {
 
 /**
  * TerminalLaunchFlow：issue 就绪后的启动分流容器（key 随 issue 挂载——临场选择态随 key 重置，无需 effect）。
- * none 先出选择面板，选择后渲染对应视图（自动档带直启值的终端树、手动档裸 shell、acp 档 ACP 会话视图 T1.6）；
- * terminal-manual 直接裸 shell、terminal-auto 直接直启；startupCli 按「配置/临场选择」最终值派生（仅终端自动档非 null）。
+ * none 先出选择面板，选择后渲染对应视图（终端带直启值的终端树、acp 档 ACP 会话视图 T1.6）；
+ * terminal-auto 直接直启；startupCli 按「配置/临场选择」最终值派生（仅终端档非 null）。
  */
 export function TerminalLaunchFlow({
   issueId,
@@ -159,7 +154,8 @@ export function TerminalLaunchFlow({
 }: TerminalLaunchFlowProps) {
   const [picked, setPicked] = useState<PickedLaunch | null>(null);
 
-  const mode = launchMode ?? 'none';
+  // 归一（T2.3）：存量/未知 mode 值（如历史 terminal-manual）一律按 none 走临场面板，杜绝直进裸 shell 的旁路降级。
+  const mode = launchMode === 'acp' || launchMode === 'terminal-auto' ? launchMode : 'none';
   const startupCli: string | null = mode === 'terminal-auto' || picked === 'terminal-auto'
     ? autoCommand ?? 'claude'
     : null;

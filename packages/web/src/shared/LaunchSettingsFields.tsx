@@ -22,7 +22,7 @@ interface LaunchSettingsFieldsProps {
 }
 
 /**
- * LaunchSettingsFields：启动设置字段组——启动模式四档 + terminal-auto 档「终端 Agent」+
+ * LaunchSettingsFields：启动设置字段组——启动模式三档 + terminal-auto 档「终端 Agent」+
  * acp 档「ACP Agent / 执行模式」。WorkspaceDrawer（workspace 单源）与 WorkspaceIssueDrawer
  * （issue 级覆盖）共用，差异仅 showFollowOption；提交拼装由各抽屉自理。
  */
@@ -59,11 +59,10 @@ export default function LaunchSettingsFields({
           : undefined}
         helperText={showFollowOption
           ? '跟随工作空间 = 未覆盖，沿用工作空间启动设置；覆盖仅对本 issue 生效'
-          : '不执行任何操作 = issue 就绪后不进入任何会话，出启动方式选择面板；自动打开终端 = 直接进入裸 shell 终端（Agent 经终端工具条自行选择）；终端 - 自动启动 = 直接进入终端并拉起所选 Agent；ACP 会话在 issue 主窗口以对话视图运行'}
+          : '不执行任何操作 = issue 就绪后不进入任何会话，出启动方式选择面板；终端 - 自动启动 = 直接进入终端并拉起所选 Agent；ACP 会话在 issue 主窗口以对话视图运行'}
       >
         {showFollowOption && <MenuItem value="">跟随工作空间</MenuItem>}
         <MenuItem value="none">不执行任何操作</MenuItem>
-        <MenuItem value="terminal-manual">自动打开终端</MenuItem>
         <MenuItem value="terminal-auto">终端 - 自动启动 Agent</MenuItem>
         <MenuItem value="acp">ACP 方式启动 Agent</MenuItem>
       </TextField>
