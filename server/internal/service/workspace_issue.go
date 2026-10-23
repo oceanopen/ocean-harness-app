@@ -9,6 +9,8 @@ import (
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
+	"ocean-harness/server/internal/acpsession"
+	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/types"
 	"ocean-harness/server/internal/global"
 )
@@ -171,8 +173,16 @@ func (svc WorkspaceIssue) Delete(req *types.WorkspaceIssueDeleteRequest) error {
 	if err != nil {
 		return err
 	}
+	// 进程内级联：该任务名下全部会话逐个 Discard（会话键 = conv-<conversationId>，锚随 Discard 失效）。
 	if global.AcpSessions != nil {
-		global.AcpSessions.Discard(req.ID)
+		q := query.Use(svc.Orm)
+		convs, ce := q.Conversation.WithContext(svc.Context).
+			Where(q.Conversation.OwnerType.Eq(enums.OWNER_TYPE_TASK), q.Conversation.OwnerID.Eq(req.ID)).Find()
+		if ce == nil {
+			for _, conv := range convs {
+				global.AcpSessions.Discard(acpsession.ConversationSessionKey(conv.ID))
+			}
+		}
 	}
 	return nil
 }

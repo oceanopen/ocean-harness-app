@@ -72,7 +72,7 @@ const MINI_PREVIEW_HEIGHT = 150;
 interface BrowserSessionCardProps {
   session: BrowserSessionView;
   /** 当前选中 issue id（「AI 分析此页」归因）。 */
-  issueId: string;
+  conversationId: string;
   /** 面板区展开态：帧流闸门之一（收起即停，D4 展示侧对偶）。 */
   panelVisible: boolean;
   /** 多会话在场时标题带槽位标号（单会话不标）。 */
@@ -84,7 +84,7 @@ interface BrowserSessionCardProps {
  * 纯展示）、地址栏/页面列表/释放/无头切换与重开（close + ensure 链恢复现场）/「AI 分析此页」受理/
  * 最近操作流水。会话状态全由 SSE sessions 帧驱动，激活与观看页 targetId 走 useBrowserStageStore。
  */
-export default function BrowserSessionCard({ session, issueId, panelVisible, showSlot }: BrowserSessionCardProps) {
+export default function BrowserSessionCard({ session, conversationId, panelVisible, showSlot }: BrowserSessionCardProps) {
   const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
   const activate = useBrowserStageStore(s => s.activate);
   const selectedTargetId = useBrowserStageStore(s => s.watchPage[session.profile] ?? null);
@@ -199,7 +199,7 @@ export default function BrowserSessionCard({ session, issueId, panelVisible, sho
   const analyzePage = (targetId: string) => {
     analyzeMutation.mutate({
       profile: session.profile,
-      issueId,
+      conversationId,
       targetId,
     });
   };

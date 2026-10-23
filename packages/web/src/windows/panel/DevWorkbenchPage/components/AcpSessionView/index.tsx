@@ -12,30 +12,40 @@ import PromptComposer from './PromptComposer';
  * 编排时序（编码规则 1）：挂载即幂等受理 ensure（starting/ready join 返现状，failed/terminated 重建，受理显式携带 pickedLaunchMode='acp'，后端门禁以此放行且不落库）→ SSE 订阅建连首帧全量快照 → 视图按快照 status 分支渲染。
  * 受理同步失败先于快照分支渲染失败态 + 重新启动，绝不落死输入框；订阅经 isAcpSessionSubscribable 闸门（D3），订阅失败置 failed 终态横幅手动重试；挂起审批/表单在 MessageList 与输入区之间平铺 PendingCard 应答。
  */
-export default function AcpSessionView({ issueId }: { issueId: string }) {
+export default function AcpSessionView({ conversationId }: { conversationId: string }) {
   const ensure = useEnsureAcpSession();
   const ensuredRef = useRef(false);
 
   /**
    * 挂载即受理（幂等）：ref 防重入（effect 依赖的 mutation 对象随渲染更新，ref 在前
    * 挡住重复受理；StrictMode 双跑下 ensure 后端幂等，ref 仅省一次无效请求）。
+   * conversationId 空串 = 上层尚未接通会话实体上下文（T5.3 会话编排接入），不受理。
    */
   useEffect(() => {
-    if (ensuredRef.current) {
+    if (ensuredRef.current || conversationId === '') {
       return;
     }
     ensuredRef.current = true;
-    ensure.mutate({ issueId, pickedLaunchMode: 'acp' });
-  }, [ensure, issueId]);
+    ensure.mutate({ conversationId, pickedLaunchMode: 'acp' });
+  }, [ensure, conversationId]);
 
-  const { data: snapshot, isPending, error, refetch } = useAcpSessionView(issueId);
+  const { data: snapshot, isPending, error, refetch } = useAcpSessionView(conversationId);
 
   /**
    * SSE 订阅（D3 闸门）：快照可订阅状态（starting/ready/failed）才建连——idle（从未受理）/
    * terminated（已终结）不订阅，治首开订阅先于 ensure 的 404 竞态；terminated 随「重新启动」
    * 受理回包迁回 starting，闸门重开自动重订。首帧快照入缓存，增量帧归约更新；闸门关闭即断，重开重建连。
    */
-  const events = useAcpSessionEvents(issueId, isAcpSessionSubscribable(snapshot?.status));
+  const events = useAcpSessionEvents(conversationId, isAcpSessionSubscribable(snapshot?.status));
+
+  // 未接通空态：工作台尚无 conversation 选中态（T5.3 接入前的显式降级面）。
+  if (conversationId === '') {
+    return (
+      <FullCenter>
+        <Typography variant="body2" color="text.secondary">会话未接通（工作目录会话编排接入后可用）</Typography>
+      </FullCenter>
+    );
+  }
 
   // 受理同步失败优先呈现（配置校验拒绝等）：先于快照分支，杜绝 idle 死输入框。
   if (ensure.isError) {
@@ -45,7 +55,7 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
         <Button
           variant="outlined"
           size="small"
-          onClick={() => ensure.mutate({ issueId, pickedLaunchMode: 'acp' })}
+          onClick={() => ensure.mutate({ conversationId, pickedLaunchMode: 'acp' })}
           loading={ensure.isPending}
           sx={{ mt: '12px' }}
         >
@@ -67,11 +77,11 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
       </FullCenter>
     );
   }
-  return <StatusBranch issueId={issueId} snapshot={snapshot} events={events} onRestart={() => ensure.mutate({ issueId, pickedLaunchMode: 'acp' })} ensurePending={ensure.isPending} />;
+  return <StatusBranch conversationId={conversationId} snapshot={snapshot} events={events} onRestart={() => ensure.mutate({ conversationId, pickedLaunchMode: 'acp' })} ensurePending={ensure.isPending} />;
 }
 
-/** 按快照 status 分支：starting 启动中 / failed+terminated 原因与重启 / idle+ready 会话视图。 */function StatusBranch({ issueId, snapshot, events, onRestart, ensurePending }: {
-  issueId: string;
+/** 按快照 status 分支：starting 启动中 / failed+terminated 原因与重启 / idle+ready 会话视图。 */function StatusBranch({ conversationId, snapshot, events, onRestart, ensurePending }: {
+  conversationId: string;
   snapshot: AcpViewSnapshot;
   events: AcpEventsStream;
   onRestart: () => void;
@@ -126,11 +136,11 @@ export default function AcpSessionView({ issueId }: { issueId: string }) {
              */
             <Box sx={{ flexShrink: 0, p: '8px', display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid', borderColor: 'divider' }}>
               {snapshot.pendings.map(pending => (
-                <PendingCard key={pending.pendingId} issueId={issueId} pending={pending} />
+                <PendingCard key={pending.pendingId} conversationId={conversationId} pending={pending} />
               ))}
             </Box>
           )}
-          <PromptComposer issueId={issueId} turnActive={snapshot.turnActive} />
+          <PromptComposer conversationId={conversationId} turnActive={snapshot.turnActive} />
         </Box>
       );
   }

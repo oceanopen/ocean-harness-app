@@ -10,7 +10,7 @@ import { request } from './http';
 export type AcpSessionStatus = 'idle' | 'starting' | 'ready' | 'failed' | 'terminated';
 
 // 会话记录条目 kind（view.go entryKind* 常量取值域）。
-export type AcpConversationEntryKind = 'user' | 'agentMessage' | 'agentThought' | 'toolCall';
+export type AcpConversationEntryKind = 'user' | 'agentMessage' | 'agentThought' | 'toolCall' | 'system';
 
 // 工具调用状态（ACP wire schema.ToolCallStatus 透传取值域）。
 export type AcpToolCallStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
@@ -206,24 +206,24 @@ export interface AcpSessionFrameStatus {
  * AcpSessionView 即 acp 意图载体，视图内受理一律显式声明）。
  */
 export interface AcpSessionEnsureRequest {
-  issueId: string;
+  conversationId: string;
   pickedLaunchMode?: 'acp';
 }
 
 // POST /api/acpSession/prompt：受理一轮回合（立即返回，终态经 SSE turnEnded）。
 export interface AcpSessionPromptRequest {
-  issueId: string;
+  conversationId: string;
   text: string;
 }
 
 // POST /api/acpSession/cancel：软取消当前回合（幂等）。
 export interface AcpSessionCancelRequest {
-  issueId: string;
+  conversationId: string;
 }
 
 // POST /api/acpSession/respondPermission：应答挂起权限审批。
 export interface AcpSessionRespondPermissionRequest {
-  issueId: string;
+  conversationId: string;
   pendingId: number;
   optionId: string;
 }
@@ -233,7 +233,7 @@ export interface AcpSessionRespondPermissionRequest {
  * accept 时有意义，键值对透传 ACP wire）。
  */
 export interface AcpSessionRespondElicitationRequest {
-  issueId: string;
+  conversationId: string;
   pendingId: number;
   action: 'accept' | 'decline' | 'cancel';
   content?: Record<string, unknown>;

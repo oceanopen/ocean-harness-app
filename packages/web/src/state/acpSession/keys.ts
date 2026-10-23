@@ -4,5 +4,5 @@
  */
 export const acpSessionKeys = {
   root: ['acpSession'] as const,
-  view: (issueId: string) => [...acpSessionKeys.root, 'view', { issueId }] as const,
+  view: (conversationId: string) => [...acpSessionKeys.root, 'view', { conversationId }] as const,
 } as const;

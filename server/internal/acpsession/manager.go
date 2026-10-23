@@ -56,7 +56,7 @@ type Manager struct {
 }
 
 /*
- * NewManager 装配会话域（main 步骤 5.5）：启动清扫运行时锚——重启后运行时进程已不存在，锚归零即重开走全新会话（会话文件在 claude 侧仍可 resume，重启恢复留待后续评审，本域现阶段只在进程内 idle 回收场景 resume）；port 为 sidecar 自身 HTTP 端口，appDbPath 为 Rust 共享 app.db 路径（可空：闲置回收阈值读失败回落默认）。
+ * NewManager 装配会话域（main 步骤 5.5）：锚持久于 t_conversations.claude_session_id，Ensure 经 Peek→LoadSession 恢复既有会话（闲置重建与跨重启同一路径）；port 为 sidecar 自身 HTTP 端口，appDbPath 为 Rust 共享 app.db 路径（可空：闲置回收阈值读失败回落默认）。
  */
 func NewManager(db *gorm.DB, dirs Dirs, port int, appDbPath string, log *zap.Logger) (*Manager, error) {
 	if log == nil {
@@ -152,10 +152,10 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 }
 
 /*
- * runSpawn 后台 spawn 链（Ensure 受理的后续）：拉起就绪 → 落锚 + 注册 pump；失败 → 落态落因（last_error 跨重启可见）；不捕获请求 ctx（Ensure 已返回），发现 discarded（受理后 issue 被删）直接自清；resumeID 非空时拉起链以 LoadSession 恢复既有会话（失败内部降级全新会话，不阻塞受理）。
+ * runSpawn 后台 spawn 链（Ensure 受理的后续）：拉起就绪 → 落锚 + 注册 pump；失败 → 落态落因（清锚）；不捕获请求 ctx（Ensure 已返回），发现 discarded（受理后会话被删）直接自清；resumeID 非空时拉起链以 LoadSession 恢复既有会话，恢复未发生（失败降级）落 system 条目显式告知（R2）。
  */
 func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID string) {
-	client, session, err := spawnFunc(cfg, m.dirs, m.port, m.log, resumeID)
+	client, session, resumed, err := spawnFunc(cfg, m.dirs, m.port, m.log, resumeID)
 	entry.mu.Lock()
 	if entry.discarded {
 		entry.mu.Unlock()
@@ -177,6 +177,10 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID stri
 	entry.session = session
 	entry.state = StatusReady
 	frames := entry.view.setReady(string(session.ID()), cfg, session.Modes())
+	// R2 显式提示：带锚受理但恢复未发生（会话文件丢失/能力降级），落 system 条目告知用户。
+	if resumeID != "" && !resumed {
+		frames = append(frames, entry.view.appendSystemNotice("历史会话不可恢复，已新建会话")...)
+	}
 	entry.mu.Unlock()
 	if err := m.bindings.SaveReady(context.Background(), entry.issueID, cfg.AgentCode, string(session.ID())); err != nil {
 		m.log.Warn("ACP 会话锚点落库失败", zap.String("issueId", entry.issueID), zap.Error(err))
@@ -189,26 +193,26 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID stri
 /*
  * spawnAgentSession 生产拉起链（与 acpdoctor.CheckEntry 逐段同源：vendored 安装 → vendored claude 定位 → spawn env 注入 → Launch → 握手 → 建/恢复会话 → 下发权限模式；「探测通过」与「生产拉起」同一条链，差别仅在探测后清理、本链长期持有）；node 预检不复制——那是 doctor 的 stage 级定位面职责，本链 node 缺失在 EnsureVendored/VendoredSpawnConfig 显式报错；任一后置步失败回收已拉起进程。
  */
-func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, resumeSessionID string) (*acp.AgentClient, *acp.Session, error) {
+func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, resumeSessionID string) (*acp.AgentClient, *acp.Session, bool, error) {
 	entry, ok := agentcatalog.GetAgentCatalogInfoByCode(cfg.AgentCode)
 	if !ok {
-		return nil, nil, fmt.Errorf("agent catalog 无 %q 条目", cfg.AgentCode)
+		return nil, nil, false, fmt.Errorf("agent catalog 无 %q 条目", cfg.AgentCode)
 	}
 	installDir, err := agentcatalog.EnsureVendored(entry, dirs.Resources, dirs.Adapters)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	claudeBin, err := agentcatalog.VendoredClaudeBin(installDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	env, err := acp.ClaudeEnvOverrides(entry.Env, claudeBin)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	spawn, err := entry.VendoredSpawnConfig(dirs.Resources, installDir, cfg.Cwd, env)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	/*
 	 * OCEAN_HARNESS_PORT 显式注入（语义对齐 bot 驱动 driver_claude 的 turnEnv）：sidecar
@@ -222,44 +226,46 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, 
 	 */
 	client, err := acp.Launch(context.Background(), spawn, log.With(zap.String("purpose", "issue-session")))
 	if err != nil {
-		return nil, nil, fmt.Errorf("拉起 agent 进程失败: %w", err)
+		return nil, nil, false, fmt.Errorf("拉起 agent 进程失败: %w", err)
 	}
 	if _, err := client.Initialize(context.Background()); err != nil {
 		client.Close()
 		if hint, authed := authRequired(err); authed {
-			return nil, nil, errors.New(hint)
+			return nil, nil, false, errors.New(hint)
 		}
-		return nil, nil, fmt.Errorf("ACP 握手失败: %w", err)
+		return nil, nil, false, fmt.Errorf("ACP 握手失败: %w", err)
 	}
-	session, err := newOrResumedSession(context.Background(), client, cfg, resumeSessionID, log)
+	session, resumed, err := newOrResumedSession(context.Background(), client, cfg, resumeSessionID, log)
 	if err != nil {
 		client.Close()
 		if hint, authed := authRequired(err); authed {
-			return nil, nil, errors.New(hint)
+			return nil, nil, false, errors.New(hint)
 		}
-		return nil, nil, fmt.Errorf("ACP 建会话失败: %w", err)
+		return nil, nil, false, fmt.Errorf("ACP 建会话失败: %w", err)
 	}
 	if err := client.SetPermissionMode(context.Background(), session, cfg.PermissionMode); err != nil {
 		client.Close()
-		return nil, nil, fmt.Errorf("下发权限模式失败: %w", err)
+		return nil, nil, false, fmt.Errorf("下发权限模式失败: %w", err)
 	}
-	return client, session, nil
+	return client, session, resumed, nil
 }
 
 /*
  * newOrResumedSession 建/恢复会话收口：锚点非空走 LoadSession（适配器读回 claude 会话
- * 文件并重放历史）；恢复失败（能力未声明/会话文件丢失等）降级全新会话——恢复尽力而为，
- * 不因锚点失效阻塞受理，降级后 SaveReady 以新 id 覆盖锚点。
+ * 文件并重放历史）；恢复失败（能力未声明/会话文件丢失等）降级全新会话（resumed=false，
+ * 降级事实由调用方落 system 条目显式告知，R2）——恢复尽力而为，不因锚点失效阻塞受理，
+ * 降级后 SaveReady 以新 id 覆盖锚点。
  */
-func newOrResumedSession(ctx context.Context, client *acp.AgentClient, cfg SessionConfig, resumeSessionID string, log *zap.Logger) (*acp.Session, error) {
+func newOrResumedSession(ctx context.Context, client *acp.AgentClient, cfg SessionConfig, resumeSessionID string, log *zap.Logger) (*acp.Session, bool, error) {
 	if resumeSessionID != "" {
 		session, err := client.LoadSession(ctx, acp.LoadSessionParams{Cwd: cfg.Cwd, SessionID: resumeSessionID})
 		if err == nil {
-			return session, nil
+			return session, true, nil
 		}
 		log.Warn("ACP 会话恢复失败，降级全新会话", zap.String("resumeSessionId", resumeSessionID), zap.Error(err))
 	}
-	return client.NewSession(ctx, acp.NewSessionParams{Cwd: cfg.Cwd})
+	session, err := client.NewSession(ctx, acp.NewSessionParams{Cwd: cfg.Cwd})
+	return session, false, err
 }
 
 /*

@@ -28,6 +28,7 @@ const (
 	entryKindAgentMessage = "agentMessage"
 	entryKindAgentThought = "agentThought"
 	entryKindToolCall     = "toolCall"
+	entryKindSystem       = "system" // 会话域系统提示（R2：历史锚恢复失败降级新建等域内事实）
 )
 
 /*
@@ -40,7 +41,7 @@ const (
 )
 
 /*
- * ConversationEntry 会话记录条目（四类：用户消息 / agent 消息 / agent 思考 / 工具调用）。
+ * ConversationEntry 会话记录条目（五类：用户消息 / agent 消息 / agent 思考 / 工具调用 / 系统提示）。
  * 同类同回合的流式 chunk 聚合进同一 entry，工具调用按 toolCallId 覆写式 upsert。
  */
 type ConversationEntry struct {
@@ -303,6 +304,7 @@ type sessionView struct {
 	closedOrder []uint64
 
 	turn       int // 回合序号（entryId 命名空间：t<turn>-user / t<turn>-agent / ...）
+	sysSeq     int // system 条目序号（entryId 命名空间：sys-<n>，与回合/工具命名空间互斥）
 	turnActive bool
 	stopReason string
 }
@@ -456,6 +458,20 @@ func (v *sessionView) appendChunkLocked(kind, text string) []Frame {
 	}
 	v.entries[idx].Text += text
 	entry := v.entries[idx]
+	return []Frame{{Type: FrameEntry, Entry: &entry}}
+}
+
+/*
+ * appendSystemNotice 会话域系统提示条目（一次性落条目并广播；R2 历史锚恢复失败降级新建等
+ * 需要用户可见的域内事实走此通道）。独立 entryId 命名空间 sys-<n>。
+ */
+func (v *sessionView) appendSystemNotice(text string) []Frame {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.sysSeq++
+	entryID := fmt.Sprintf("sys-%d", v.sysSeq)
+	v.entries = append(v.entries, ConversationEntry{EntryID: entryID, Kind: entryKindSystem, Text: text})
+	entry := v.entries[len(v.entries)-1]
 	return []Frame{{Type: FrameEntry, Entry: &entry}}
 }
 

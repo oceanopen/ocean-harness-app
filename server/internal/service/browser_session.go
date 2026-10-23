@@ -168,15 +168,15 @@ func (svc BrowserSession) Analyze(req *types.BrowserAnalyzeRequest) error {
 			return err
 		}
 		if _, err := forwardOK(svc.Context, req.Profile, browser.EngineToolTabs,
-			map[string]any{"action": "select", "index": index}, req.IssueID, "选中页面"); err != nil {
+			map[string]any{"action": "select", "index": index}, req.ConversationID, "选中页面"); err != nil {
 			return err
 		}
 	}
-	res, err := forwardOK(svc.Context, req.Profile, browser.EngineToolSnapshot, nil, req.IssueID, "拉取页面快照")
+	res, err := forwardOK(svc.Context, req.Profile, browser.EngineToolSnapshot, nil, req.ConversationID, "拉取页面快照")
 	if err != nil {
 		return err
 	}
-	if err := global.AcpSessions.Prompt(req.IssueID, analyzePrompt(req.Profile, browser.ResultText(res))); err != nil {
+	if err := global.AcpSessions.Prompt(req.ConversationID, analyzePrompt(req.Profile, browser.ResultText(res))); err != nil {
 		return fmt.Errorf("页面分析受理: %w", err)
 	}
 	return nil

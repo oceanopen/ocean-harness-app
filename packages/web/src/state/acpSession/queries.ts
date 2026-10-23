@@ -4,11 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { acpSessionKeys } from './keys';
 import { isAcpSessionSubscribable } from './reducer';
 
-/** 会话视图快照读端：与 SSE 首帧/增量共用同一缓存，推送驱动更新，本查询不依赖 refetch。 */
-export function useAcpSessionView(issueId: string) {
+/** 会话视图快照读端：与 SSE 首帧/增量共用同一缓存，推送驱动更新，本查询不依赖 refetch。conversationId 空串不查询（未接通守卫）。 */
+export function useAcpSessionView(conversationId: string) {
   return useQuery({
-    queryKey: acpSessionKeys.view(issueId),
-    queryFn: () => AcpSessionService.getInfo({ issueId }),
+    queryKey: acpSessionKeys.view(conversationId),
+    queryFn: () => AcpSessionService.getInfo({ conversationId }),
+    enabled: conversationId !== '',
   });
 }
 
@@ -22,7 +23,7 @@ export function useEnsureAcpSession() {
   return useMutation({
     mutationFn: (req: AcpSessionEnsureRequest) => AcpSessionService.ensure(req),
     onSuccess: (snapshot, req) => {
-      queryClient.setQueryData<AcpViewSnapshot>(acpSessionKeys.view(req.issueId), prev =>
+      queryClient.setQueryData<AcpViewSnapshot>(acpSessionKeys.view(req.conversationId), prev =>
         !isAcpSessionSubscribable(prev?.status) ? snapshot : prev);
     },
   });

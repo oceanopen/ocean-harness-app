@@ -174,11 +174,12 @@ t_conversations（第一性实体，应用只存元数据）：
 **实施定稿**：CRUD 口径——create 的 `mode` 为必填入参（前端编排按归属实体 mergeLaunchSettings 算好传入，后端不感知 launch_settings），title 空默认「新会话」，ownerType/ownerId 校验归属实体存在；getList 按 owner 全量返回（created_at 升序）；update 仅改 title；delete 仅删行（bot conversation_id 清列级联随 T4.3 接入，claude 本地文件不动）。前端 `state/conversation/` 无 store（暂无 client 选中态，随 T5.x 页面需要再补），mutation 失效定位：create/update 从返回实体取归属，delete 按域根兜底。
 
 #### T1.2 acpsession 锚改造：conversation 键 + 跨重启 resume
-**状态**：⬜
+**状态**：✅
 **功能**：ACP 会话锚从 issue 迁移到 conversation，跨重启可恢复。
 **技术方案**：`acpsession/binding.go` 锚键改 conversation id（复用 conv- 形）；`manager.go` `Ensure` 入参改 conversation 上下文（cwd：workspace 会话=`ws.dir`，task 会话=`{project.dir}/{taskId}/`）；删 `SweepSessionIDs` 清扫；删 `t_issue_acp_sessions` 读写点。
 **依赖**：T0.2、T1.1
 **验收**：ACP 会话经锚 resume；sidecar 重启后点开历史会话恢复同一 claude 会话；闲置回收/重建链路回归通过。
+**实施定稿**：锚键统一 `conv-<id>` 形，按行存在性消歧（用户拍板）——`t_conversations` 行为真实锚载体（Peek 读/SaveReady 写 `claude_session_id`+`agent_code`/SaveError·Delete 清锚保行），`t_im_bot_conversations` 行回落窄桩（T4.3 收敛后归一）；`resolveSessionConfig` 对应双段消歧（实体上下文：workspace 会话=根目录+单级配置、task 会话=`{project.dir}/{ownerId}/`+双级合并；回落 bot 三跳旧链），键不再参与路径拼接（task 目录段取 `ownerId`，`ValidIssueID` 随之移除）。R2：`spawnFunc`/`newOrResumedSession` 扩返回 `resumed bool`，恢复未发生时视图落 system 条目「历史会话不可恢复，已新建会话」（新 `sys-<n>` 条目命名空间，前端 MessageList 补渲染分支）。`/api/acpSession` 七端点与 browser Analyze 键随本次改 `conversationId` 穿透（用户拍板；工作台无 conversation 选中态处显式未接通空态，随 T5.3/T7 恢复）；任务删除级联改为该任务全部 conversation 逐个 Discard。跨重启 resume 的 GUI 端到端验证随 T5.3（本任务以单测覆盖：锚生命周期/resume 透传/降级条目/闲置回收重开 resume 用例全绿）。
 
 #### T1.3 会话消息 jsonl 直读命令
 **状态**：⬜

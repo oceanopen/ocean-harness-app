@@ -88,7 +88,8 @@ func TestIdleTimeoutFromConfig(t *testing.T) {
 func newIdleTestManager(t *testing.T, script string, resumeIDs *[]string) (*Manager, *gorm.DB, string) {
 	t.Helper()
 	db := newTestDB(t)
-	issueID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
+	taskID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
+	issueID := ConversationSessionKey(seedTaskConversation(t, db, taskID))
 	mgr, err := NewManager(db, Dirs{}, 0, "", zap.NewNop())
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
@@ -155,28 +156,41 @@ func TestReclaimIdlePostponesOnThresholdIncrease(t *testing.T) {
 }
 
 /*
- * TestReclaimIdleRemovesEntry 闲置回收：完全空闲到期 → entry 摘除 + 进程回收
- * （锚点保留与重开 resume 随锚载体窄桩失效，T1.2 恢复验收）。
+ * TestReclaimIdleKeepsAnchorAndResumes 回收闭环：完全空闲到期 → entry 摘除 + 进程回收 +
+ * 锚保留 → Ensure 重开走 resume（同 id 恢复）。
  */
-func TestReclaimIdleRemovesEntry(t *testing.T) {
-	// 阈值足够短让回收必然发生。
+func TestReclaimIdleKeepsAnchorAndResumes(t *testing.T) {
+	// 阈值远大于就绪快照读取窗口（firstID 在回收前必读到），又足够短让回收必然发生。
 	overrideIdleTimeout(t, 400*time.Millisecond)
 	var resumeIDs []string
-	mgr, _, issueID := newIdleTestManager(t, "load", &resumeIDs)
+	mgr, _, sessKey := newIdleTestManager(t, "load", &resumeIDs)
 
-	// 首开：空锚全新会话。
-	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+	// 首开：空锚全新会话（load 脚本 NewSession 通用，正常生成 id）。
+	if _, err := mgr.Ensure(context.Background(), sessKey, ""); err != nil {
 		t.Fatalf("首次 Ensure: %v", err)
 	}
-	waitForCondition(t, "会话就绪", func() bool { return mgr.Get(issueID).Status == StatusReady })
+	waitForCondition(t, "会话就绪", func() bool { return mgr.Get(sessKey).Status == StatusReady })
+	firstID := mgr.Get(sessKey).AcpSessionID
+	if firstID == "" {
+		t.Fatal("首开会话应有 sessionId")
+	}
 
-	// 无订户（本测试不订阅）+ 无回合：闲置到期自动回收——entry 摘除、进程回收。
+	// 无订户（本测试不订阅）+ 无回合：闲置到期自动回收——entry 摘除、进程回收、锚保留。
 	waitForCondition(t, "闲置回收摘除 entry", func() bool {
 		mgr.mu.Lock()
 		defer mgr.mu.Unlock()
-		_, ok := mgr.entries[issueID]
+		_, ok := mgr.entries[sessKey]
 		return !ok
 	})
+
+	// 重开：锚点非空 → resume 同 id 恢复（新 entry、同会话）。
+	if _, err := mgr.Ensure(context.Background(), sessKey, ""); err != nil {
+		t.Fatalf("重开 Ensure: %v", err)
+	}
+	waitForCondition(t, "重开会话就绪", func() bool { return mgr.Get(sessKey).Status == StatusReady })
+	if got := mgr.Get(sessKey).AcpSessionID; got != firstID {
+		t.Fatalf("重开应 resume 同 id 会话，got %q want %q", got, firstID)
+	}
 }
 
 func TestReclaimIdleGuards(t *testing.T) {

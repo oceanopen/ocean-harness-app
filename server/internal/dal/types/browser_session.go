@@ -34,12 +34,12 @@ type BrowserNavigateRequest struct {
 }
 
 /*
- * BrowserAnalyzeRequest 是 POST /api/browserSession/analyze 的入参（即时受理「AI 分析此页」入 issue 绑定的 ACP 会话：会话缺失/回合进行中即中文报错，不排队）；
+ * BrowserAnalyzeRequest 是 POST /api/browserSession/analyze 的入参（即时受理「AI 分析此页」入会话实体的 ACP 会话：会话缺失/回合进行中即中文报错，不排队）；
  * TargetID 为页面投影行 CDP targetId（PageView.TargetID），非空先选中该 tab 再快照（支持分析非激活页）。
  */
 type BrowserAnalyzeRequest struct {
 	Profile  string `json:"profile" binding:"required"`
-	IssueID  string `json:"issueId" binding:"required"`
+	ConversationID string `json:"conversationId" binding:"required"`
 	TargetID string `json:"targetId,omitempty"`
 }
 

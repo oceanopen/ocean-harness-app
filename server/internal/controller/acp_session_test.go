@@ -80,7 +80,7 @@ func TestAcpEventsHandlerReject(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/acpSession/events?issueId=t3-no-such-issue", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/acpSession/events?conversationId=t3-no-such-issue", nil)
 	AcpSession{}.Events(c)
 
 	if w.Code != http.StatusNotFound {

@@ -10,11 +10,11 @@ import ToolCallItem from './ToolCallItem';
  * 移除由 SSE pendingClosed 帧驱动（应答成功才发帧，失败挂起原样保留），本地无乐观删除；应答中整卡禁用 + 所点按钮 loading（等待态可见优先）。
  * url/未知形态兜底：只呈现 message + 跳过。
  */
-export default function PendingCard({ issueId, pending }: { issueId: string; pending: AcpPendingView }) {
+export default function PendingCard({ conversationId, pending }: { conversationId: string; pending: AcpPendingView }) {
   if (pending.kind === 'permission') {
-    return <PermissionCard issueId={issueId} pending={pending} />;
+    return <PermissionCard conversationId={conversationId} pending={pending} />;
   }
-  return <ElicitationCard issueId={issueId} pending={pending} />;
+  return <ElicitationCard conversationId={conversationId} pending={pending} />;
 }
 
 /** 卡片外壳：左侧警示条 + 标题行。 */
@@ -41,7 +41,7 @@ function RespondError({ message }: { message: string }) {
   );
 }
 
-function PermissionCard({ issueId, pending }: { issueId: string; pending: AcpPendingView }) {
+function PermissionCard({ conversationId, pending }: { conversationId: string; pending: AcpPendingView }) {
   const respond = useRespondAcpPermission();
   const [choosing, setChoosing] = useState<string | null>(null);
   // 挂起卡片固定展示不受虚拟化影响，展开态本地持有。
@@ -51,7 +51,7 @@ function PermissionCard({ issueId, pending }: { issueId: string; pending: AcpPen
   const choose = (optionId: string) => {
     setChoosing(optionId);
     respond.mutate(
-      { issueId, pendingId: pending.pendingId, optionId },
+      { conversationId, pendingId: pending.pendingId, optionId },
       { onSettled: () => setChoosing(null) },
     );
   };
@@ -89,7 +89,7 @@ function PermissionCard({ issueId, pending }: { issueId: string; pending: AcpPen
   );
 }
 
-function ElicitationCard({ issueId, pending }: { issueId: string; pending: AcpPendingView }) {
+function ElicitationCard({ conversationId, pending }: { conversationId: string; pending: AcpPendingView }) {
   const respond = useRespondAcpElicitation();
   const request = pending.request;
   const plan = renderElicitationPlan(request?.requestedSchema);
@@ -100,7 +100,7 @@ function ElicitationCard({ issueId, pending }: { issueId: string; pending: AcpPe
 
   const submit = (action: 'accept' | 'decline') => {
     respond.mutate({
-      issueId,
+      conversationId,
       pendingId: pending.pendingId,
       action,
       ...(action === 'accept' ? { content: collectElicitationContent(plan, values) } : {}),

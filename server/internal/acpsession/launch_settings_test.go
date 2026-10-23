@@ -57,18 +57,6 @@ func TestMergeLaunchSettings(t *testing.T) {
 	}
 }
 
-func TestValidIssueID(t *testing.T) {
-	for _, id := range []string{"01JABCDEF", "issue-1", "a_b.c"} {
-		if !ValidIssueID(id) {
-			t.Fatalf("%q 应合法", id)
-		}
-	}
-	for _, id := range []string{"", ".", "..", "a/b", `a\b`, "../x", "a/..", "./x"} {
-		if ValidIssueID(id) {
-			t.Fatalf("%q 应拒绝", id)
-		}
-	}
-}
 
 /*
  * newTestDB 临时 sqlite（glebarez 纯 Go 驱动）+ 测试涉及的三张表（AutoMigrate 按 model
@@ -84,7 +72,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if sqlDB, err := db.DB(); err == nil {
 		t.Cleanup(func() { _ = sqlDB.Close() })
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Project{}, &model.ProjectTask{}, &model.ImBot{}, &model.ImBotConversation{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Project{}, &model.ProjectTask{}, &model.Conversation{}, &model.ImBot{}, &model.ImBotConversation{}); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
 	return db
@@ -119,6 +107,32 @@ func seedIssue(t *testing.T, db *gorm.DB, wsDir, wsLaunchSettings, issueLaunchSe
 	return taskID
 }
 
+// seedTaskConversation 为任务建会话实体行（mode 固定 acp），返回 convID。
+func seedTaskConversation(t *testing.T, db *gorm.DB, taskID string) string {
+	t.Helper()
+	q := queryOf(db)
+	convID := fmt.Sprintf("conv-%d", seedIssueSeq.Add(1))
+	if err := q.Conversation.WithContext(context.Background()).Create(&model.Conversation{
+		ID: convID, OwnerType: enums.OWNER_TYPE_TASK, OwnerID: taskID, Title: "t", Mode: enums.CONVERSATION_MODE_ACP,
+	}); err != nil {
+		t.Fatalf("建 task conversation: %v", err)
+	}
+	return convID
+}
+
+// seedWorkspaceConversation 为工作空间建会话实体行（mode 固定 acp），返回 convID。
+func seedWorkspaceConversation(t *testing.T, db *gorm.DB, wsID string) string {
+	t.Helper()
+	q := queryOf(db)
+	convID := fmt.Sprintf("conv-%d", seedIssueSeq.Add(1))
+	if err := q.Conversation.WithContext(context.Background()).Create(&model.Conversation{
+		ID: convID, OwnerType: enums.OWNER_TYPE_WORKSPACE, OwnerID: wsID, Title: "w", Mode: enums.CONVERSATION_MODE_ACP,
+	}); err != nil {
+		t.Fatalf("建 workspace conversation: %v", err)
+	}
+	return convID
+}
+
 // seedBotConversation 建 bot 行（绑 workspace）+ 会话行（conv- 锚载体），返回会话行 id。
 func seedBotConversation(t *testing.T, db *gorm.DB, wsID string) string {
 	t.Helper()
@@ -142,14 +156,19 @@ func seedBotConversation(t *testing.T, db *gorm.DB, wsID string) string {
 func TestResolveSessionConfig(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
-	wsDir := t.TempDir()
+	rootDir := t.TempDir()
+	q := queryOf(db)
 
 	/*
-	 * 用例 1：workspace 配 acp、issue 未配置 → 全回落（agentCode 回落首个 enabled 条目，
-	 * permissionMode 回落 bypassPermissions），cwd = <wsDir>/<issueId> 且已兜底建目录。
+	 * 用例 1：workspace 会话——workspace 配 acp；cwd = 工作空间根目录（无任务子目录），
+	 * agentCode 回落首个 enabled 条目，permissionMode 回落 bypassPermissions，目录已兜底建。
 	 */
-	issueID := seedIssue(t, db, wsDir, `{"mode":"acp"}`, "")
-	cfg, err := resolveSessionConfig(ctx, db, issueID, "")
+	wsID := fmt.Sprintf("ws-%d", seedIssueSeq.Add(1))
+	if err := q.Workspace.WithContext(ctx).Create(&model.Workspace{ID: wsID, Name: "ws", Dir: rootDir, LaunchSettings: `{"mode":"acp"}`}); err != nil {
+		t.Fatalf("建 workspace: %v", err)
+	}
+	convID := seedWorkspaceConversation(t, db, wsID)
+	cfg, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), "")
 	if err != nil {
 		t.Fatalf("resolveSessionConfig: %v", err)
 	}
@@ -160,35 +179,44 @@ func TestResolveSessionConfig(t *testing.T) {
 	if cfg.PermissionMode != acp.PermissionModeBypassPermissions {
 		t.Fatalf("permissionMode 应回落 bypassPermissions，got %q", cfg.PermissionMode)
 	}
-	if want := filepath.Join(wsDir, issueID); cfg.Cwd != want || cfg.WorkspaceDir != wsDir {
-		t.Fatalf("cwd = %q, want %q", cfg.Cwd, want)
+	if cfg.Cwd != rootDir || cfg.WorkspaceDir != rootDir {
+		t.Fatalf("workspace 会话 cwd 应为根目录: cwd=%q dir=%q", cfg.Cwd, cfg.WorkspaceDir)
 	}
 	if info, err := os.Stat(cfg.Cwd); err != nil || !info.IsDir() {
 		t.Fatalf("cwd 应已兜底建目录: %v", err)
 	}
 
-	// 用例 2：issue 显式覆盖 permissionMode + agentCode。
-	issueID = seedIssue(t, db, wsDir, `{"mode":"acp"}`,
+	// 用例 2：task 会话双级合并——project 基线 + task 显式覆盖 permissionMode + agentCode；cwd = {project.dir}/{taskId}。
+	taskID := seedIssue(t, db, rootDir, `{"mode":"acp"}`,
 		`{"mode":"acp","agentCode":"claude-acp","permissionMode":"bypassPermissions"}`)
-	cfg, err = resolveSessionConfig(ctx, db, issueID, "")
+	convID = seedTaskConversation(t, db, taskID)
+	cfg, err = resolveSessionConfig(ctx, db, ConversationSessionKey(convID), "")
 	if err != nil {
 		t.Fatalf("resolveSessionConfig(override): %v", err)
 	}
 	if cfg.PermissionMode != acp.PermissionModeBypassPermissions || cfg.AgentCode != "claude-acp" {
-		t.Fatalf("issue 显式键应覆盖，got agent=%q mode=%q", cfg.AgentCode, cfg.PermissionMode)
+		t.Fatalf("task 显式键应覆盖，got agent=%q mode=%q", cfg.AgentCode, cfg.PermissionMode)
+	}
+	if want := filepath.Join(rootDir, taskID); cfg.Cwd != want {
+		t.Fatalf("task 会话 cwd = %q, want %q", cfg.Cwd, want)
+	}
+	if info, err := os.Stat(cfg.Cwd); err != nil || !info.IsDir() {
+		t.Fatalf("task cwd 应已兜底建目录: %v", err)
 	}
 
-	// 用例 3：mode 非 acp 拒绝（terminal-manual / 显式 none 同拒）。
+	// 用例 3：task 会话 mode 非 acp 拒绝（terminal-manual / 显式 none 同拒）。
 	for _, mode := range []string{"terminal-manual", "none"} {
-		issueID = seedIssue(t, db, wsDir, `{"mode":"acp"}`, `{"mode":"`+mode+`"}`)
-		if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil {
+		taskID = seedIssue(t, db, rootDir, `{"mode":"acp"}`, `{"mode":"`+mode+`"}`)
+		convID = seedTaskConversation(t, db, taskID)
+		if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil {
 			t.Fatalf("mode=%q 应拒绝", mode)
 		}
 	}
 
 	// 用例 4：双侧均未配置（merged nil）拒绝。
-	issueID = seedIssue(t, db, wsDir, "", "")
-	if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil {
+	taskID = seedIssue(t, db, rootDir, "", "")
+	convID = seedTaskConversation(t, db, taskID)
+	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil {
 		t.Fatal("无 launch_settings 应拒绝")
 	}
 
@@ -196,46 +224,54 @@ func TestResolveSessionConfig(t *testing.T) {
 	 * 用例 4b：持久化配置显式 none（LaunchModePicker 场景实况）+ 临场声明 acp 放行；
 	 * 无声明仍拒绝（临场声明仅本次会话有效，不落库不记忆）。
 	 */
-	issueID = seedIssue(t, db, wsDir, `{"mode":"none"}`, "")
-	if _, err := resolveSessionConfig(ctx, db, issueID, "acp"); err != nil {
+	taskID = seedIssue(t, db, rootDir, `{"mode":"none"}`, "")
+	convID = seedTaskConversation(t, db, taskID)
+	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), "acp"); err != nil {
 		t.Fatalf("临场声明 acp 应放行: %v", err)
 	}
-	if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil {
+	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil {
 		t.Fatal("mode=none 无临场声明仍应拒绝")
 	}
 
 	// 用例 5：非法 permissionMode / agentCode 拒绝。
-	issueID = seedIssue(t, db, wsDir, `{"mode":"acp"}`, `{"mode":"acp","permissionMode":"yolo"}`)
-	if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil || !strings.Contains(err.Error(), "权限模式") {
+	taskID = seedIssue(t, db, rootDir, `{"mode":"acp"}`, `{"mode":"acp","permissionMode":"yolo"}`)
+	convID = seedTaskConversation(t, db, taskID)
+	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil || !strings.Contains(err.Error(), "权限模式") {
 		t.Fatalf("非法 permissionMode 应拒绝，got %v", err)
 	}
-	issueID = seedIssue(t, db, wsDir, `{"mode":"acp"}`, `{"mode":"acp","agentCode":"no-such-agent"}`)
-	if _, err := resolveSessionConfig(ctx, db, issueID, ""); err == nil || !strings.Contains(err.Error(), "no-such-agent") {
+	taskID = seedIssue(t, db, rootDir, `{"mode":"acp"}`, `{"mode":"acp","agentCode":"no-such-agent"}`)
+	convID = seedTaskConversation(t, db, taskID)
+	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil || !strings.Contains(err.Error(), "no-such-agent") {
 		t.Fatalf("非法 agentCode 应拒绝，got %v", err)
 	}
 
-	// 用例 6：issue 不存在 / issueId 非法。
-	if _, err := resolveSessionConfig(ctx, db, "no-such-issue", ""); err == nil {
-		t.Fatal("issue 不存在应拒绝")
+	// 用例 6：会话行不存在（回落 bot 链仍拒绝）/ 键形非法（无 conv- 前缀 / 非法 id 段）。
+	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey("no-such-conv"), ""); err == nil {
+		t.Fatal("会话行不存在应拒绝")
 	}
-	if _, err := resolveSessionConfig(ctx, db, "../x", ""); err == nil {
-		t.Fatal("路径穿越 issueId 应拒绝")
+	if _, err := resolveSessionConfig(ctx, db, "no-such-issue", ""); err == nil {
+		t.Fatal("非 conv- 键形应拒绝")
+	}
+	if _, err := resolveSessionConfig(ctx, db, "conv-../x", ""); err == nil {
+		t.Fatal("非法会话 id 应拒绝")
 	}
 }
 
-// TestResolveSessionConfigRelDir 工作空间相对目录拒绝（绝对路径校验）。
+// TestResolveSessionConfigRelDir 项目相对目录拒绝（绝对路径校验）。
 func TestResolveSessionConfigRelDir(t *testing.T) {
 	db := newTestDB(t)
+	ctx := context.Background()
 	q := queryOf(db)
 	proj := &model.Project{ID: "proj-rel", Name: "proj", Dir: "relative/dir", LaunchSettings: `{"mode":"acp"}`}
-	if err := q.Project.WithContext(context.Background()).Create(proj); err != nil {
+	if err := q.Project.WithContext(ctx).Create(proj); err != nil {
 		t.Fatalf("建 project: %v", err)
 	}
-	task := &model.ProjectTask{ID: "issue-rel", ProjectID: proj.ID, Name: "x"}
-	if err := q.ProjectTask.WithContext(context.Background()).Create(task); err != nil {
+	task := &model.ProjectTask{ID: "task-rel", ProjectID: proj.ID, Name: "x"}
+	if err := q.ProjectTask.WithContext(ctx).Create(task); err != nil {
 		t.Fatalf("建 task: %v", err)
 	}
-	if _, err := resolveSessionConfig(context.Background(), db, task.ID, ""); err == nil || !strings.Contains(err.Error(), "绝对路径") {
+	convID := seedTaskConversation(t, db, task.ID)
+	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil || !strings.Contains(err.Error(), "绝对路径") {
 		t.Fatalf("相对目录应拒绝，got %v", err)
 	}
 }

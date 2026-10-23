@@ -123,7 +123,7 @@ export default function BrowserPanel({ issueId, workspaceId, panelVisible }: Bro
           <BrowserSessionCard
             key={session.profile}
             session={session}
-            issueId={issueId}
+            conversationId="" /* 分析键随 T7 接 conversation 上下文，当前显式降级 */
             panelVisible={panelVisible}
             showSlot={sessions.length > 1}
           />

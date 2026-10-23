@@ -142,11 +142,11 @@ func (api AcpSession) Events(ctx *gin.Context) {
 		api.JsonFail(err)
 		return
 	}
-	if httpStatus, err := acpEventsReject(global.AcpSessions.Get(req.IssueID).Status); err != nil {
+	if httpStatus, err := acpEventsReject(global.AcpSessions.Get(req.ConversationID).Status); err != nil {
 		api.JsonFailWithStatus(httpStatus, err)
 		return
 	}
-	frames, cancel := global.AcpSessions.Subscribe(req.IssueID)
+	frames, cancel := global.AcpSessions.Subscribe(req.ConversationID)
 	defer cancel()
 
 	writer := api.Context.Writer

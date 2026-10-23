@@ -160,7 +160,7 @@ export interface BrowserSessionInputRequest {
  */
 export interface BrowserSessionAnalyzeRequest {
   profile: string;
-  issueId: string;
+  conversationId: string;
   targetId?: string;
 }
 
@@ -196,7 +196,7 @@ export class BrowserSessionService {
     return request<null>('POST', '/api/browserSession/input', req);
   }
 
-  // analyze：「AI 分析此页」即时受理（回答走 issue 绑定 agent 会话既有链路）。
+  // analyze：「AI 分析此页」即时受理（回答走会话实体绑定的 agent 会话既有链路）。
   static analyze(req: BrowserSessionAnalyzeRequest): Promise<null> {
     return request<null>('POST', '/api/browserSession/analyze', req);
   }

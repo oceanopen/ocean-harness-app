@@ -180,7 +180,8 @@ export function TerminalLaunchFlow({
      */
     return (
       <TerminalErrorBoundary title="会话视图异常退出">
-        <AcpSessionView issueId={issueId} />
+        {/* 会话实体上下文随 T5.3 会话编排接入；当前工作台无 conversation 选中态，呈未接通空态。 */}
+        <AcpSessionView conversationId="" />
       </TerminalErrorBoundary>
     );
   }

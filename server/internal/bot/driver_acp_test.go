@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acpsession"
+	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
 )
@@ -1239,15 +1240,19 @@ func TestAcpDriverTurnContextCancel(t *testing.T) {
  * 「启动失败 + 落因」（受理模型、帧流、failed 落因三者的跨域联动各验一遍）。
  */
 func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
-	db := newBotTestDB(t, &model.Project{}, &model.ProjectTask{}, &model.ImBotConversation{})
+	db := newBotTestDB(t, &model.Project{}, &model.ProjectTask{}, &model.Conversation{}, &model.ImBotConversation{})
 	q := query.Use(db)
 	proj := &model.Project{ID: "proj-acp", Name: "proj", Dir: t.TempDir(), LaunchSettings: `{"mode":"acp"}`}
 	if err := q.Project.WithContext(context.Background()).Create(proj); err != nil {
 		t.Fatalf("建 project: %v", err)
 	}
-	task := &model.ProjectTask{ID: "issue-bot-acp", ProjectID: proj.ID, Name: "测试任务", LaunchSettings: ""}
+	task := &model.ProjectTask{ID: "task-bot-acp", ProjectID: proj.ID, Name: "测试任务", LaunchSettings: ""}
 	if err := q.ProjectTask.WithContext(context.Background()).Create(task); err != nil {
 		t.Fatalf("建 task: %v", err)
+	}
+	conv := &model.Conversation{ID: "conv-bot-acp", OwnerType: enums.OWNER_TYPE_TASK, OwnerID: task.ID, Title: "t", Mode: enums.CONVERSATION_MODE_ACP}
+	if err := q.Conversation.WithContext(context.Background()).Create(conv); err != nil {
+		t.Fatalf("建 conversation: %v", err)
 	}
 	mgr, err := acpsession.NewManager(db, acpsession.Dirs{}, 0, "", zap.NewNop())
 	if err != nil {
@@ -1256,7 +1261,7 @@ func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
 	t.Cleanup(mgr.StopAll)
 
 	driver := acpDriver{sessions: mgr}
-	_, err = driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", AcpSessionKey: "issue-bot-acp", Prompt: "hi"})
+	_, err = driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", AcpSessionKey: acpsession.ConversationSessionKey("conv-bot-acp"), Prompt: "hi"})
 	if err == nil || !strings.Contains(err.Error(), "启动失败") {
 		t.Fatalf("空 vendored 目录下 spawn 链失败应同步报「启动失败」: %v", err)
 	}
