@@ -53,6 +53,16 @@ export type {
   McpContent,
 } from './BrowserSessionService';
 
+export { ConversationService } from './ConversationService';
+export type {
+  ConversationCreateRequest,
+  ConversationDeleteRequest,
+  ConversationGetInfoRequest,
+  ConversationGetListRequest,
+  ConversationModel,
+  ConversationUpdateRequest,
+} from './ConversationService';
+
 export { DoctorService } from './DoctorService';
 export type {
   DoctorCheckRequest,

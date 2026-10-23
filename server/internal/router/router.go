@@ -126,6 +126,15 @@ func SetupRouter() *gin.Engine {
 			acpSessionGroup.POST("/respondElicitation", controller.AcpSession{}.RespondElicitation)
 			acpSessionGroup.GET("/events", controller.AcpSession{}.Events)
 		}
+		// conversation 模块：会话实体 CRUD（action 风格，POST）。
+		conversationGroup := apiGroup.Group("/conversation")
+		{
+			conversationGroup.POST("/getList", controller.Conversation{}.GetList)
+			conversationGroup.POST("/getInfo", controller.Conversation{}.GetInfo)
+			conversationGroup.POST("/create", controller.Conversation{}.Create)
+			conversationGroup.POST("/update", controller.Conversation{}.Update)
+			conversationGroup.POST("/delete", controller.Conversation{}.Delete)
+		}
 
 		/*
 		 * browserSession 模块：浏览器会话域（action 风格，POST；events/stream 为 GET SSE）。per-profile 引擎会话生命周期与投影事件流的 SSOT 为 global.Browser（T2.1）：

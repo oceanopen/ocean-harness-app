@@ -166,11 +166,12 @@ t_conversations（第一性实体，应用只存元数据）：
 ### 阶段 1：后端会话域
 
 #### T1.1 conversation CRUD 与前端状态域
-**状态**：⬜
+**状态**：✅
 **功能**：会话实体增删改查全链路。
 **技术方案**：`/api/conversation/{getList,getInfo,create,update,delete}`（tracker 范式，按 owner 过滤、update 支持改标题）；`packages/web/src/services/ConversationService.ts` + `state/conversation/`（store/keys/queries）。
 **依赖**：T0.2
 **验收**：按工作空间/任务过滤列表、创建、改名、删除（仅删行不动 claude 文件）可用。
+**实施定稿**：CRUD 口径——create 的 `mode` 为必填入参（前端编排按归属实体 mergeLaunchSettings 算好传入，后端不感知 launch_settings），title 空默认「新会话」，ownerType/ownerId 校验归属实体存在；getList 按 owner 全量返回（created_at 升序）；update 仅改 title；delete 仅删行（bot conversation_id 清列级联随 T4.3 接入，claude 本地文件不动）。前端 `state/conversation/` 无 store（暂无 client 选中态，随 T5.x 页面需要再补），mutation 失效定位：create/update 从返回实体取归属，delete 按域根兜底。
 
 #### T1.2 acpsession 锚改造：conversation 键 + 跨重启 resume
 **状态**：⬜
