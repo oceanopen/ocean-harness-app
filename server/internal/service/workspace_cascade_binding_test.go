@@ -85,9 +85,9 @@ func mkCascadeFixture(t *testing.T, db *gorm.DB) (string, string) {
 func TestTaskDeleteCascade(t *testing.T) {
 	db := newCascadeBindingTestDB(t)
 	_, taskAID := mkCascadeFixture(t, db)
-	svc := WorkspaceIssue{Service: apis.Service{Context: context.Background(), Orm: db, Logger: zap.NewNop()}}
+	svc := ProjectTask{Service: apis.Service{Context: context.Background(), Orm: db, Logger: zap.NewNop()}}
 
-	if err := svc.Delete(&types.WorkspaceIssueDeleteRequest{ID: taskAID}); err != nil {
+	if err := svc.Delete(&types.ProjectTaskDeleteRequest{ID: taskAID}); err != nil {
 		t.Fatalf("删除任务: %v", err)
 	}
 	q := query.Use(db)

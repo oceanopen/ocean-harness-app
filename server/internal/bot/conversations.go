@@ -16,7 +16,7 @@ import (
 const seenWindowLimit = 100
 
 /*
- * ConversationStore t_im_bot_conversations 行的唯一读写点（bot 核心层；路由层纯读、HTTP service 层（getConversations/bindIssue）与删除/tracker 级联清绑另按需裸查直写各自列，不经过本 store——均为单语句读写，写列与本 store 正交）。
+ * ConversationStore t_im_bot_conversations 行的唯一读写点（bot 核心层；路由层纯读、HTTP service 层（getConversations）与删除/工作空间级联清绑另按需裸查直写各自列，不经过本 store——均为单语句读写，写列与本 store 正交）。
  * 调用有两类上下文：会话串行 worker goroutine（回合链）与编排器拦截步所在的适配器回调 goroutine（幂等查询/卡片交互，见 orchestrator.HandleInbound）——两类上下文写列正交、单语句 UPDATE 原子，无并发丢更新路径，不需要行级锁。
  * DB 是 SSOT：sidecar 重启后下一条消息自然续上，运行时不做内存副本。
  */
@@ -108,35 +108,6 @@ func (s *ConversationStore) TouchLastMessage(botID string, conversationKey strin
 // ClearSessionID resume 失效自愈：清空会话 id（下条消息开新会话）。
 func (s *ConversationStore) ClearSessionID(botID string, conversationKey string) error {
 	return s.SaveSessionID(botID, conversationKey, "")
-}
-
-// sessionIdleExpiry 会话闲置边界：超过即视为上一会话结束（下条消息开新会话，锚点备份供 /继续 接回）。
-const sessionIdleExpiry = 2 * time.Hour
-
-/*
- * ExpireIdleSession 闲置过期判定 + 乐观占位写（主锚仍为读到的值才写——并发回合已换锚
- * 则放弃，宁可漏判不错杀）。expired=true 的轮次以新会话启动（headless 消费，ACP 不写
- * 主锚天然不命中）。
- */
-func (s *ConversationStore) ExpireIdleSession(botID string, conversationKey string, now time.Time) (expired bool, err error) {
-	conv, err := s.GetOrCreate(botID, conversationKey)
-	if err != nil {
-		return false, err
-	}
-	if conv.ClaudeSessionID == "" || conv.LastMessageAt == nil || now.Sub(*conv.LastMessageAt) <= sessionIdleExpiry {
-		return false, nil
-	}
-	q := query.Use(s.DB)
-	res, err := q.ImBotConversation.WithContext(context.Background()).Where(
-		q.ImBotConversation.ID.Eq(conv.ID),
-		q.ImBotConversation.ClaudeSessionID.Eq(conv.ClaudeSessionID),
-	).UpdateSimple(
-		q.ImBotConversation.UpdatedAt.Value(now),
-	)
-	if err != nil {
-		return false, err
-	}
-	return res.RowsAffected == 1, nil
 }
 
 // HasSeen 幂等查询：msgid 是否在滚窗内。

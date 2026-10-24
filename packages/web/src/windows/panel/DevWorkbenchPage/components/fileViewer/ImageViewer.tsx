@@ -7,7 +7,7 @@ import {
   ZoomOut as ZoomOutIcon,
 } from '@mui/icons-material';
 import { Box, CircularProgress, IconButton, Tooltip, Typography, useTheme } from '@mui/material';
-import { IssueWorkspaceService } from '@src/services';
+import { TaskWorkspaceService } from '@src/services';
 import { basename } from '@src/shared/repoPath';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -137,7 +137,7 @@ export default function ImageViewer({ issueId, path, version }: ImageViewerProps
   // URL 解析（base 来自 httpServerStatus 缓存，异步一次）；version 变化（重验）换 URL。
   useEffect(() => {
     let alive = true;
-    IssueWorkspaceService.fileRawUrl({ issueId, path, v: version })
+    TaskWorkspaceService.fileRawUrl({ taskId: issueId, path, v: version })
       .then(u => alive && setUrl(u))
       .catch((e) => {
         console.warn('[ImageViewer] resolve fileRaw url failed:', e);

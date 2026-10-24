@@ -1,18 +1,20 @@
+import type { ConversationProfile } from '@src/state/browserSession';
 import type { ReactNode } from 'react';
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
 import { Alert, Box, Button, CircularProgress, Tooltip, Typography } from '@mui/material';
 import {
-  deriveIssueProfileSlot,
+  CONVERSATION_SESSION_SLOT_COUNT,
+  deriveConversationProfile,
   isSessionLive,
   isTaskSessionProfile,
-  parseTaskSessionProfile,
-  TASK_SESSION_SLOT_COUNT,
+  parseConversationProfile,
   useBrowserSessionEvents,
   useBrowserSessionView,
   useBrowserStageStore,
   useEnsureBrowserSession,
 } from '@src/state/browserSession';
+import { useConversations } from '@src/state/conversation';
 import BrowserSessionCard from './BrowserSessionCard';
 
 function errorMessage(error: unknown): string {
@@ -22,51 +24,67 @@ function errorMessage(error: unknown): string {
 interface BrowserPanelProps {
   /** 当前选中 issue id（会话过滤派生 + 「AI 分析此页」归因）。 */
   issueId: string;
-  /** 当前任务归属工作空间（会话共享登录态键，ensure 直传后端持久化）。 */
-  workspaceId: string;
   /** 面板区展开态（ToolPanelArea 透传）：迷你预览帧流「收起即停」闸门之一。 */
   panelVisible: boolean;
 }
 
 /**
  * BrowserPanel：当前任务的浏览器会话面板（工作台互斥工具 tab）——快照按任务命名空间过滤
- * （issue-<id> 基名 + -2..-5 多开槽位，槽位升序），多会话共享任务工作空间登录态；头部
- * 「新建会话」开最低空闲槽位（达 5 槽置灰），已释放槽位在卡片上原样重开。激活经
- * useBrowserStageStore 上抛接管工作台浮层，全局 SSE 驱动投影缓存。
+ * （issue-<id>_session-<convId>-NN），卡片徽标按归属会话展示，多实例共享全局登录态；
+ * 头部「新建会话」按任务主会话开最低空闲槽位（达 10 槽置灰），已释放槽位在卡片上原样
+ * 重开。激活经 useBrowserStageStore 上抛接管工作台浮层，全局 SSE 驱动投影缓存。
  */
-export default function BrowserPanel({ issueId, workspaceId, panelVisible }: BrowserPanelProps) {
+export default function BrowserPanel({ issueId, panelVisible }: BrowserPanelProps) {
   const { data: snapshot, isLoading, error, refetch } = useBrowserSessionView();
   const ensureMutation = useEnsureBrowserSession();
+  const { data: conversations } = useConversations('task', issueId);
+  // 任务主会话（parentId 空）：「新建会话」的派生锚与「AI 分析此页」的归因键。
+  const mainConversation = (conversations ?? []).find(c => c.parentId === '');
 
   // 全局 SSE 订阅：建连首帧快照 + 增量 sessions 帧驱动投影缓存（含 idle/failed 行回写）。
   useBrowserSessionEvents();
 
-  // 当前任务命名空间的全部会话（任意槽位），按槽位升序。
+  // 当前任务命名空间的全部会话实例（任意会话/槽位），按会话与槽位升序。
   const sessions = (snapshot?.sessions ?? [])
     .filter(s => isTaskSessionProfile(issueId, s.profile))
-    .sort((a, b) => (parseTaskSessionProfile(a.profile)?.slot ?? 1) - (parseTaskSessionProfile(b.profile)?.slot ?? 1));
+    .sort((a, b) => {
+      const pa = parseConversationProfile(a.profile);
+      const pb = parseConversationProfile(b.profile);
+      return (pa?.conversationId ?? '').localeCompare(pb?.conversationId ?? '') || (pa?.slot ?? 0) - (pb?.slot ?? 0);
+    });
 
-  // 最低无行槽位（行含 idle/failed：新建 = 真正新实例，重开走卡片「打开会话」）。
-  const usedSlots = new Set(sessions.map(s => parseTaskSessionProfile(s.profile)?.slot ?? 1));
-  const nextSlot = Array.from({ length: TASK_SESSION_SLOT_COUNT }, (_, i) => i + 1).find(slot => !usedSlots.has(slot));
+  // 主会话命名空间的最低无行槽位（行含 idle/failed：新建 = 真正新实例，重开走卡片「打开会话」）。
+  const usedSlots = new Set(
+    sessions
+      .map(s => parseConversationProfile(s.profile))
+      .filter((p): p is ConversationProfile => p != null && p.conversationId === mainConversation?.id)
+      .map(p => p.slot),
+  );
+  const nextSlot = Array.from({ length: CONVERSATION_SESSION_SLOT_COUNT }, (_, i) => i + 1).find(slot => !usedSlots.has(slot));
 
   const createOrOpen = (profile: string) => {
-    // workspaceId 随 ensure 直传：新建会话即刻共享任务工作空间登录态（后端落盘续传）。
-    ensureMutation.mutate({ profile, workspaceId }, {
+    ensureMutation.mutate({ profile }, {
       onSuccess: () => useBrowserStageStore.getState().clearWatchPage(profile),
     });
   };
 
-  // 新建会话按钮（primary = 空态主按钮实心态；nextSlot 为空即达上限置灰）。
+  // 新建会话按钮（primary = 空态主按钮实心态；无主会话或达上限置灰）。
   const createButton = (primary: boolean) => (
-    <Tooltip title={nextSlot == null ? `已达单任务会话上限（${TASK_SESSION_SLOT_COUNT}）` : '再开一个独立会话（共享本任务工作空间登录态）'}>
+    <Tooltip title={
+      mainConversation == null
+        ? '任务暂无主会话，无法派生新实例'
+        : nextSlot == null
+          ? `已达单会话实例上限（${CONVERSATION_SESSION_SLOT_COUNT}）`
+          : '再开一个独立会话实例（共享全局登录态）'
+    }
+    >
       <span>
         <Button
           size="small"
           variant={primary ? 'contained' : 'outlined'}
           startIcon={<AddOutlinedIcon sx={{ fontSize: '16px' }} />}
-          onClick={() => nextSlot != null && createOrOpen(deriveIssueProfileSlot(issueId, nextSlot))}
-          disabled={nextSlot == null || ensureMutation.isPending}
+          onClick={() => mainConversation != null && nextSlot != null && createOrOpen(deriveConversationProfile('issue', issueId, mainConversation.id, nextSlot))}
+          disabled={mainConversation == null || nextSlot == null || ensureMutation.isPending}
           sx={{ flexShrink: 0, fontSize: '12px' }}
         >
           {ensureMutation.isPending ? <CircularProgress size={12} color="inherit" /> : '新建会话'}
@@ -107,7 +125,7 @@ export default function BrowserPanel({ issueId, workspaceId, panelVisible }: Bro
         )}
         {createButton(true)}
         <Typography variant="caption" color="text.secondary">
-          会话按任务独立，登录态跨重启保留
+          实例按会话独立，登录态全局共享、跨重启保留
         </Typography>
       </Box>
     );
@@ -123,7 +141,7 @@ export default function BrowserPanel({ issueId, workspaceId, panelVisible }: Bro
           <BrowserSessionCard
             key={session.profile}
             session={session}
-            conversationId="" /* 分析键随 T7 接 conversation 上下文，当前显式降级 */
+            conversationId={mainConversation?.id ?? ''}
             panelVisible={panelVisible}
             showSlot={sessions.length > 1}
           />
@@ -140,7 +158,7 @@ export default function BrowserPanel({ issueId, workspaceId, panelVisible }: Bro
         <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', px: '8px', pt: '8px' }}>
           {createButton(nextSlot != null)}
           <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>
-            {`${liveCount}/${TASK_SESSION_SLOT_COUNT} 个会话进行中`}
+            {`${liveCount} 个会话进行中`}
           </Typography>
         </Box>
       )}

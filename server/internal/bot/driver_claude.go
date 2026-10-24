@@ -20,14 +20,14 @@ import (
 )
 
 /*
- * claudeDriver ClaudeDriver 的 headless 实现：每回合 spawn `claude -p`（stream-json 事件流），
+ * claudeDriver TurnDriver 的 headless 实现：每回合 spawn `claude -p`（stream-json 事件流），
  * 回合边界即进程生命周期——退出码/result 事件就是完成信号，无挂死进程需要监护；会话历史
  * SSOT 在 claude 自身会话存储，--resume 重建，sidecar 重启零状态迁移。
  */
 type claudeDriver struct{}
 
-// NewClaudeDriver 构造 claude 引擎。
-func NewClaudeDriver() ClaudeDriver { return claudeDriver{} }
+// NewClaudeDriver 构造 claude headless 引擎。
+func NewClaudeDriver() TurnDriver { return claudeDriver{} }
 
 /*
  * claudeRuntimeBin 解析 vendored 自带 claude（全链路 SSOT）：vendoring 两目录由 main
@@ -114,13 +114,9 @@ func (claudeDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEv
 	return events, nil
 }
 
-// imSendFileToolName claude 侧投递工具全名（server 名 im × 工具名 send_file，与 mcpservers 投递端点定义互为镜像）。
-const imSendFileToolName = "mcp__im__send_file"
-
 /*
  * buildClaudeArgs 组装 claude argv。带投递令牌时注入 per-turn MCP 配置（im 投递端点的
- * send_file 工具）并把它加进工具白名单；返回的 cleanup 删除临时配置文件，调用方保证在
- * claude 进程收尾后执行。
+ * send_file 工具）；返回的 cleanup 删除临时配置文件，调用方保证在 claude 进程收尾后执行。
  */
 func buildClaudeArgs(req TurnRequest) (args []string, cleanup func(), err error) {
 	args = []string{
@@ -128,7 +124,11 @@ func buildClaudeArgs(req TurnRequest) (args []string, cleanup func(), err error)
 		"--output-format", "stream-json",
 		// stream-json 必须配 --verbose（CLI 强制校验）；逐 token 增量供流式回复泵消费。
 		"--verbose", "--include-partial-messages",
-		"--permission-mode", "acceptEdits",
+		/*
+		 * headless 为全自动执行形态（无审批交互）：恒跳过权限询问，入口安全闸是
+		 * IM 访问白名单（access_policy），工具白名单不做裁剪。
+		 */
+		"--dangerously-skip-permissions",
 	}
 	if req.SessionID != "" {
 		args = append(args, "--resume", req.SessionID)
@@ -136,7 +136,6 @@ func buildClaudeArgs(req TurnRequest) (args []string, cleanup func(), err error)
 	if strings.TrimSpace(req.SystemPrompt) != "" {
 		args = append(args, "--append-system-prompt", req.SystemPrompt)
 	}
-	allowed := DefaultAllowedTools()
 	cleanup = func() {}
 	if req.DeliveryToken != "" {
 		/*
@@ -149,13 +148,7 @@ func buildClaudeArgs(req TurnRequest) (args []string, cleanup func(), err error)
 		}
 		cleanup = func() { _ = os.Remove(path) }
 		args = append(args, "--mcp-config", path)
-		allowed = append(allowed, imSendFileToolName)
 	}
-	/*
-	 * 工具白名单恒用默认集：权限表达上移 workspace 级 launch_settings.permissionMode，
-	 * ACP 模式接管审批语义；headless 路径安全周界不变。
-	 */
-	args = append(args, "--allowedTools", strings.Join(allowed, ","))
 	return args, cleanup, nil
 }
 

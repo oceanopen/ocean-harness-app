@@ -127,7 +127,6 @@ export interface AcpViewSnapshot {
   status: AcpSessionStatus;
   agentCode?: string;
   acpSessionId?: string;
-  permissionMode?: string;
   currentModeId?: string;
   availableModes?: AcpSessionMode[];
   entries: AcpConversationEntry[];

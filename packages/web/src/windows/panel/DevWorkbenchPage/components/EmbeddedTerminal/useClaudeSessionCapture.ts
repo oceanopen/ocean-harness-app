@@ -27,6 +27,13 @@ export function useClaudeSessionCapture(sessionId: string, status: PtySessionSta
     capturedRef.current = false;
   }
   lastActiveRef.current = active;
+  // pane 锚含会话段（每会话独立 pane 集合）：锚更换 = 切容器/切会话（新 pane 全新进程）
+  // → 重置重捕；同会话内锚稳定，不误重置。
+  const lastSessionRef = useRef<string | null>(null);
+  if (sessionId !== lastSessionRef.current) {
+    lastSessionRef.current = sessionId;
+    capturedRef.current = false;
+  }
 
   useEffect(() => {
     if (!active || conversationId == null || conversationId === '') {

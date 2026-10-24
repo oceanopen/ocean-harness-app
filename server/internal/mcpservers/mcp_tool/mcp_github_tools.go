@@ -64,13 +64,13 @@ func (mt McpGithubTool) CreatePullRequest(ctx context.Context, _ *mcp.CallToolRe
 	if err := mt.MakeContext(ctx).Validate(&input).MakeService(&repoSvc.Service).Errors; err != nil {
 		return nil, mcpdto.GitHubPullRequestContent{}, mt.Fail(err)
 	}
-	ref, client, branches, err := mt.githubTarget(&repoSvc, input.IssueID, input.LocalRepositoryID)
+	ref, client, branches, err := mt.githubTarget(&repoSvc, input.TaskID, input.LocalRepositoryID)
 	if err != nil {
 		return nil, mcpdto.GitHubPullRequestContent{}, mt.Fail(err)
 	}
 	head := input.Head
 	if head == "" {
-		head = "agent_" + input.IssueID
+		head = "agent_" + input.TaskID
 	}
 	// base 两级回退（与 clone 步骤同款语义：关联基准分支为空 = 仓库默认分支）。
 	base := input.Base

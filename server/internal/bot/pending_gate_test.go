@@ -17,16 +17,16 @@ import (
  * gateTestRoute 快路径单测构造：resolve 与 sessions 均为注入替身（headless/acp 引擎
  * 不参与快路径，置 nil 安全）。
  */
-func gateTestRoute(resolve func(botID, workspaceID string, conversationKey string) (routeTarget, error), sessions acpSessions) *driverRoute {
+func gateTestRoute(resolve func(cfg BotRuntimeConfig, conversationKey string) (routeTarget, error), sessions acpSessions) *driverRoute {
 	return &driverRoute{resolve: resolve, sessions: sessions}
 }
 
-func acpResolve(botID, workspaceID string, conversationKey string) (routeTarget, error) {
-	return routeTarget{SessionKey: "i-1", ACP: true}, nil
+func acpResolve(_ BotRuntimeConfig, _ string) (routeTarget, error) {
+	return routeTarget{SessionKey: "conv-entity-1"}, nil
 }
 
-func headlessResolve(botID, workspaceID string, conversationKey string) (routeTarget, error) {
-	return routeTarget{}, nil
+func unboundResolve(_ BotRuntimeConfig, _ string) (routeTarget, error) {
+	return routeTarget{}, errors.New("会话类型未配置")
 }
 
 // permOptions 与 fakeagent permissionOptions 同款（allow/reject，kind 完整覆盖两档）。
@@ -151,12 +151,12 @@ func TestPendingGateMisses(t *testing.T) {
 		}
 	}
 
-	headlessRoute := gateTestRoute(headlessResolve, sessions)
+	headlessRoute := gateTestRoute(unboundResolve, sessions)
 	if _, handled := headlessRoute.TryRespondPending(gateCfg(), gateMsg("1")); handled {
 		t.Fatal("非 ACP 会话不应命中")
 	}
 
-	errRoute := gateTestRoute(func(botID, workspaceID string, conversationKey string) (routeTarget, error) {
+	errRoute := gateTestRoute(func(_ BotRuntimeConfig, _ string) (routeTarget, error) {
 		return routeTarget{}, errors.New("读库失败")
 	}, sessions)
 	if _, handled := errRoute.TryRespondPending(gateCfg(), gateMsg("1")); handled {

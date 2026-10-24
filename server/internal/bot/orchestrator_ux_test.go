@@ -2,11 +2,12 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"ocean-harness/server/internal/dal/enums"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -33,6 +34,24 @@ func (f *fakeNoticeReplyStream) noticeSnapshot() []string {
 	return append([]string(nil), f.notices...)
 }
 
+// syncFailDriver 同步失败替身：RunTurn 即返回 error（spawn 失败 / 受理拒绝两分支的宿主）。
+type syncFailDriver struct{ err error }
+
+func (d *syncFailDriver) RunTurn(_ context.Context, _ TurnRequest) (<-chan TurnEvent, error) {
+	return nil, d.err
+}
+
+// presetSessionAnchor 预置会话行 + 续聊锚（SaveSessionID 不建行，须先 GetOrCreate）。
+func presetSessionAnchor(t *testing.T, store *ConversationStore, sessionID string) {
+	t.Helper()
+	if _, err := store.GetOrCreate("bot-1", "single:u1"); err != nil {
+		t.Fatalf("预置会话行: %v", err)
+	}
+	if err := store.SaveSessionID("bot-1", "single:u1", sessionID); err != nil {
+		t.Fatalf("预置会话锚: %v", err)
+	}
+}
+
 /*
  * blockingDriver 阻塞至 ctx 取消的回合替身：/stop 打断链路的宿主（ctx 取消后发 TurnError，
  * 与 claude 进程被杀同构）。
@@ -53,10 +72,12 @@ func (b *blockingDriver) RunTurn(ctx context.Context, _ TurnRequest) (<-chan Tur
 	return events, nil
 }
 
-// recordingDriver 捕获 TurnRequest 的即返回合替身（freshSession/会话锚传递断言用）。
+// recordingDriver 捕获 TurnRequest 的即返回合替身（门禁/锚链断言用）；resultSessionID 为
+// 终态帧回放的会话 id（空 = 不回写锚）。
 type recordingDriver struct {
-	mu  sync.Mutex
-	req TurnRequest
+	mu              sync.Mutex
+	req             TurnRequest
+	resultSessionID string
 }
 
 func (d *recordingDriver) RunTurn(_ context.Context, req TurnRequest) (<-chan TurnEvent, error) {
@@ -64,7 +85,7 @@ func (d *recordingDriver) RunTurn(_ context.Context, req TurnRequest) (<-chan Tu
 	d.req = req
 	d.mu.Unlock()
 	events := make(chan TurnEvent, 1)
-	events <- TurnEvent{Type: TurnDone, Result: "ok"}
+	events <- TurnEvent{Type: TurnDone, Result: "ok", SessionID: d.resultSessionID}
 	close(events)
 	return events, nil
 }
@@ -76,15 +97,6 @@ func (d *recordingDriver) captured() TurnRequest {
 }
 
 // presetExpiredSession 预置闲置过期的会话行：主锚 s-prev + 3h 前的最近消息。
-func presetExpiredSession(t *testing.T, store *ConversationStore) {
-	t.Helper()
-	if _, err := store.GetOrCreate("bot-1", "single:u1"); err != nil {
-		t.Fatalf("预置会话行: %v", err)
-	}
-	if err := store.FinishTurn("bot-1", "single:u1", "s-prev", time.Now().Add(-3*time.Hour)); err != nil {
-		t.Fatalf("预置会话锚: %v", err)
-	}
-}
 
 // finalFrameOf 等待首个终帧并返回帧序（控制指令/被打断回合的终态断言入口）。
 func finalFrameOf(t *testing.T, name string, rs ReplyStream) []fakeFrame {
@@ -102,73 +114,29 @@ func finalFrameOf(t *testing.T, name string, rs ReplyStream) []fakeFrame {
 }
 
 /*
- * TestIdleExpiryStartsFreshSession 2h 闲置边界（headless）：过期后静默换新会话（不发提醒气泡），
- * 回合以新会话启动（resume 锚不传）。
+ * TestIdleExpirySendsNotice 2h 闲置边界：过期后发提醒气泡（共享会话不切断）且回合照常执行。
  */
-func TestIdleExpiryStartsFreshSession(t *testing.T) {
-	driver := &recordingDriver{}
-	store := &ConversationStore{DB: newIssueTestDB(t)}
-	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
-	presetExpiredSession(t, store)
-
-	rs := &fakeNoticeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "继续优化登录页"}, func() (ReplyStream, error) {
-		return rs, nil
-	})
-	waitFor(t, "过期后回合执行", func() bool { return driver.captured().Prompt != "" })
-
-	if notices := rs.noticeSnapshot(); len(notices) != 0 {
-		t.Fatalf("过期后不应发提醒气泡: %v", notices)
-	}
-	if got := driver.captured().SessionID; got != "" {
-		t.Fatalf("过期后回合应以新会话启动，got 锚 %q", got)
-	}
-}
 
 // TestIdleExpiryNotTriggered 未过期（2h 内）不提醒、正常 resume。
-func TestIdleExpiryNotTriggered(t *testing.T) {
-	driver := &recordingDriver{}
-	store := &ConversationStore{DB: newIssueTestDB(t)}
-	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
-	if _, err := store.GetOrCreate("bot-1", "single:u1"); err != nil {
-		t.Fatalf("预置会话行: %v", err)
-	}
-	if err := store.FinishTurn("bot-1", "single:u1", "s-prev", time.Now()); err != nil {
-		t.Fatalf("预置会话锚: %v", err)
-	}
-
-	rs := &fakeNoticeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "接着说"}, func() (ReplyStream, error) {
-		return rs, nil
-	})
-	waitFor(t, "回合执行", func() bool { return driver.captured().Prompt != "" })
-	if notices := rs.noticeSnapshot(); len(notices) != 0 {
-		t.Fatalf("未过期不得提醒: %v", notices)
-	}
-	if got := driver.captured().SessionID; got != "s-prev" {
-		t.Fatalf("未过期应 resume 既有锚: %q", got)
-	}
-}
 
 /*
- * TestIdleExpiryACPOnlyNotice ACP 共享会话（桌面共用）不切断：仅提醒「仍在延续」，
- * 锚照常传递（freshSession=false）。
+ * TestIdleExpiryACPOnlyNotice 已由 TestIdleExpirySendsNotice 覆盖（ACP 单驱动后恒此语义）；
+ * 保留独立用例占位删除。本用例改为验证未过期＋无提醒的组合下不重复提醒。
  */
-func TestIdleExpiryACPOnlyNotice(t *testing.T) {
-	driver := &stubProberDriver{acp: true}
-	store := &ConversationStore{DB: newIssueTestDB(t)}
-	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
-	presetExpiredSession(t, store)
 
-	rs := &fakeNoticeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "继续优化登录页"}, func() (ReplyStream, error) {
+/*
+ * TestRunTurnProjectTaskUnboundGate 项目档未关联任务门禁（D8 提示后拦截）：已 markSeen，
+ * 纯指引文本终帧收口，不出回合（nil driver 不 panic 即证明主路径未触达）。
+ */
+func TestRunTurnProjectTaskUnboundGate(t *testing.T) {
+	o, _ := newOrchestratorWithDB(t)
+	rs := &fakeReplyStream{}
+	o.HandleInbound(BotRuntimeConfig{BotID: "bot-1", ConversationType: enums.CONVERSATION_TYPE_PROJECT, ProjectID: "proj-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: openAccess()}, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "跑一下测试"}, func() (ReplyStream, error) {
 		return rs, nil
 	})
-	waitFor(t, "ACP 回合执行", func() bool { return driver.callCount() > 0 })
-
-	notices := rs.noticeSnapshot()
-	if len(notices) != 1 || !strings.Contains(notices[0], "仍在延续") {
-		t.Fatalf("ACP 过期应仅提醒不切断: %v", notices)
+	frames := finalFrameOf(t, "项目档未关联任务门禁", rs)
+	if len(frames) != 2 || frames[0].content != "> 收到，处理中…" || frames[1].content != taskUnboundGateLead || !frames[1].final {
+		t.Fatalf("项目档未关联任务应单指引终帧: %+v", frames)
 	}
 }
 
@@ -234,11 +202,7 @@ func TestSlashStopKillsTurn(t *testing.T) {
 // TestSlashClear 清空上下文：主锚清除，下条消息开新会话。
 func TestSlashClear(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
-	presetExpiredSession(t, store)
-	if expired, err := store.ExpireIdleSession("bot-1", "single:u1", time.Now()); err != nil || !expired {
-		t.Fatalf("预置过期态: expired=%v err=%v", expired, err)
-	}
-
+	presetSessionAnchor(t, store, "s-prev")
 	rs := &fakeReplyStream{}
 	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "/clear"}, func() (ReplyStream, error) {
 		return rs, nil
@@ -248,7 +212,86 @@ func TestSlashClear(t *testing.T) {
 		t.Fatalf("/clear 应单终帧确认: %+v", frames)
 	}
 	if id, _ := store.SessionID("bot-1", "single:u1"); id != "" {
-		t.Fatalf("主锚应清空: %q", id)
+		t.Fatalf("/clear 应清空 headless 会话锚: %q", id)
+	}
+}
+
+/*
+ * TestRunTurnResumesSessionAnchor headless 锚链·读：bot 会话行既有 claude_session_id 随
+ * TurnRequest.SessionID 传入引擎（--resume 续聊）。
+ */
+func TestRunTurnResumesSessionAnchor(t *testing.T) {
+	driver := &recordingDriver{}
+	o, store := newOrchestratorWithDriver(t, driver)
+	presetSessionAnchor(t, store, "s-prev")
+	rs := &fakeReplyStream{}
+	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "接着说"}, func() (ReplyStream, error) {
+		return rs, nil
+	})
+	waitFor(t, "回合执行", func() bool { return driver.captured().Prompt != "" })
+	if got := driver.captured().SessionID; got != "s-prev" {
+		t.Fatalf("应 resume 既有锚: %q", got)
+	}
+}
+
+/*
+ * TestRunTurnPersistsSessionAnchor headless 锚链·写：终态帧携带的会话 id 回写 bot 会话行
+ * （--resume 后 id 可能刷新，每回合以捕获值为准）。
+ */
+func TestRunTurnPersistsSessionAnchor(t *testing.T) {
+	driver := &recordingDriver{resultSessionID: "s-new"}
+	o, store := newOrchestratorWithDriver(t, driver)
+	rs := &fakeReplyStream{}
+	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "开场"}, func() (ReplyStream, error) {
+		return rs, nil
+	})
+	waitFor(t, "锚回写", func() bool {
+		id, _ := store.SessionID("bot-1", "single:u1")
+		return id == "s-new"
+	})
+}
+
+/*
+ * TestRunTurnSpawnFailureHealsAnchor headless 失败自愈：spawn 失败且本轮带 resume 尝试 →
+ * 清空锚点（下条消息开新会话）；受理拒绝（turnNotAcceptedError，回合未发生）不清锚。
+ */
+func TestRunTurnSpawnFailureHealsAnchor(t *testing.T) {
+	store := &ConversationStore{DB: newIssueTestDB(t)}
+	presetSessionAnchor(t, store, "s-prev")
+	o := NewOrchestrator(store, &syncFailDriver{err: errors.New("claude 启动失败")}, nil, nil, zap.NewNop())
+	rs := &fakeReplyStream{}
+	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "跑一下"}, func() (ReplyStream, error) {
+		return rs, nil
+	})
+	waitFor(t, "失败终帧", func() bool {
+		for _, f := range rs.snapshot() {
+			if f.final {
+				return true
+			}
+		}
+		return false
+	})
+	if id, _ := store.SessionID("bot-1", "single:u1"); id != "" {
+		t.Fatalf("spawn 失败应清空锚点自愈: %q", id)
+	}
+
+	// 受理拒绝：回合未发生，锚保持原值。
+	presetSessionAnchor(t, store, "s-prev")
+	o2 := NewOrchestrator(store, &syncFailDriver{err: turnNotAcceptedError{errors.New("ACP 引导失败")}}, nil, nil, zap.NewNop())
+	rs2 := &fakeReplyStream{}
+	o2.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "再跑"}, func() (ReplyStream, error) {
+		return rs2, nil
+	})
+	waitFor(t, "受理拒绝终帧", func() bool {
+		for _, f := range rs2.snapshot() {
+			if f.final {
+				return true
+			}
+		}
+		return false
+	})
+	if id, _ := store.SessionID("bot-1", "single:u1"); id != "s-prev" {
+		t.Fatalf("受理拒绝不得清锚: %q", id)
 	}
 }
 
@@ -256,30 +299,6 @@ func TestSlashClear(t *testing.T) {
  * TestIdleTouchPreventsRepeatNotice 活动时基回归：ACP 无锚回写链路（FinishTurn 不触发）
  * 此前 last_message_at 永久冻结 → 过期判定逐条重放。受理即触碰后，紧随消息不得再提醒。
  */
-func TestIdleTouchPreventsRepeatNotice(t *testing.T) {
-	driver := &stubProberDriver{acp: true}
-	store := &ConversationStore{DB: newIssueTestDB(t)}
-	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
-	presetExpiredSession(t, store)
-
-	rs := &fakeNoticeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "第一条"}, func() (ReplyStream, error) {
-		return rs, nil
-	})
-	waitFor(t, "第一条回合执行", func() bool { return driver.callCount() > 0 })
-	if notices := rs.noticeSnapshot(); len(notices) != 1 {
-		t.Fatalf("过期首条应提醒一次: %v", notices)
-	}
-
-	rs2 := &fakeNoticeReplyStream{}
-	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "第二条"}, func() (ReplyStream, error) {
-		return rs2, nil
-	})
-	waitFor(t, "第二条回合执行", func() bool { return driver.callCount() > 1 })
-	if notices := rs2.noticeSnapshot(); len(notices) != 0 {
-		t.Fatalf("受理触碰后紧随消息不得再提醒: %v", notices)
-	}
-}
 
 // TestUnknownSlashCommandReply 未识别 slash 指令：占位帧后指回 /help 终帧（不出回合）。
 func TestUnknownSlashCommandReply(t *testing.T) {

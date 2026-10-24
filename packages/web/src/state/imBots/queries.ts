@@ -1,5 +1,4 @@
 import type {
-  ImBotBindIssueRequest,
   ImBotCreateRequest,
   ImBotModel,
   ImBotProvisionBeginRequest,
@@ -91,17 +90,6 @@ export function useRestartImBot() {
   return useMutation({
     mutationFn: (req: { id: string }) => ImBotService.restart(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: imBotsKeys.list() }),
-  });
-}
-
-/** 会话级绑定/解绑（issueId 空 = 解绑；绑定每回合现读无需热重载）。成功后失效该 bot 的会话缓存。 */
-export function useBindImBotIssue() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (req: ImBotBindIssueRequest) => ImBotService.bindIssue(req),
-    onSuccess: (_, req) => {
-      void qc.invalidateQueries({ queryKey: imBotsKeys.conversations(req.botId) });
-    },
   });
 }
 

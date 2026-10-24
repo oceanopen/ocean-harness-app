@@ -26,6 +26,7 @@ import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useToast } from '@src/shared/useToast';
 import { useTerminalPanesStore } from '@src/state/terminalPanes';
+import { paneAnchorId, paneScopeId } from '@src/windows/panel/DevWorkbenchPage/components/TerminalPanes/types';
 import { issueWorkspacePath } from '@src/windows/panel/DevWorkbenchPage/issueWorkspacePath';
 import { useCallback, useRef, useState } from 'react';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId } from './terminalTheme';
@@ -82,7 +83,8 @@ const TERMINAL_MOUNT_CONFIG_KEYS: readonly string[] = [
 ];
 
 interface EmbeddedTerminalProps {
-  issueId: string;
+  // 容器 id（锚首段）：任务页 task.id（cwd 派生基）、工作空间页 workspace.id。
+  containerId: string;
   // 当前工作空间的工作区目录（页面经 issue.workspaceId 解析下传；null = 解析中）。
   workspaceDir: string | null;
   /**
@@ -90,26 +92,31 @@ interface EmbeddedTerminalProps {
    * 直接启动该命令；null = 解析中或不自动启动）。解析中经 enabled 闸门哑会话等待。
    */
   startupCli: string | null;
-  // pane id：'main'（主 pane）| 8 位 uuid（附加 pane）。锚点统一 `issueId::<paneId>`。
+  // pane id：'main'（主 pane）| 8 位 uuid（附加 pane）。锚点统一 `${容器id}::${会话id}::${paneId}`。
   paneId?: string;
   /**
-   * 会话实体 id（终端捕获回写锚的归属；null = 无会话上下文，捕获整体 inert）。
-   * 工作台当前以 issue 为键，实体上下文随 T5.3 接线传入。
+   * 会话 id（锚中段，全体 pane 共享——同会话分屏同锚前缀）；仅主 pane 消费捕获/恢复
+   * （附加 pane 不参与锚竞争与 resume 注入）。null = legacy 占位段。
    */
   conversationId?: string | null;
   /**
    * 终端锚恢复 id（T2.2；T5.3 从 conversation 行读 claudeSessionId 传入，cwd 须与锚同源派生）。
-   * null = 无锚（直启/裸启 + T2.1 捕获），现工作台占位阶段恒 null。
+   * null = 无锚（直启/裸启 + T2.1 捕获）。
    */
   resumeClaudeId?: string | null;
+  /**
+   * cwd 直用覆盖（T5.3；非 null = 工作空间页会话，cwd = 工作空间根目录，会话锚维度
+   * 即 conversationId）。null/缺省 = 按 `${dir}/${containerId}` 任务工作区派生。
+   */
+  cwdOverride?: string | null;
 }
 
 /**
- * EmbeddedTerminal：开发工作台右侧嵌入式终端容器。由工作空间目录派生 cwd（`${dir}/${issueId}`）、错误态（任务目录不存在——目录创建属 skills 集成，仅提示）、组装 TerminalView + usePtySession。
- * 父层以 issueId 为 key 挂载，切 issue 即重挂载（unmount 仅断订阅，后端会话/ring 常驻，回切 reattach 重载）。数据通路（函数式两条单向线，无响应式层）：输出 Channel → usePtySession(onData) → writeDataRef → terminal.write；输入 xterm onData → session.write → ptyWrite → shell。
+ * EmbeddedTerminal：开发工作台右侧嵌入式终端容器。由工作空间目录派生 cwd（任务页 `${dir}/${task.id}`）、错误态（任务目录不存在——目录创建属 skills 集成，仅提示）、组装 TerminalView + usePtySession。
+ * 父层按 scope（容器+会话）重挂载：切任务/切会话即重挂新 pane 集合（unmount 仅断订阅，后端会话/ring 常驻，回切 reattach 回到原进程现场）。数据通路（函数式两条单向线，无响应式层）：输出 Channel → usePtySession(onData) → writeDataRef → terminal.write；输入 xterm onData → session.write → ptyWrite → shell。
  * writeDataRef 是全链唯一 ref 桥：Channel 数据可在任何时刻到达（含 StrictMode 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下实测「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
  */
-export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, paneId = 'main', conversationId = null, resumeClaudeId = null }: EmbeddedTerminalProps) {
+export default function EmbeddedTerminal({ containerId, workspaceDir, startupCli, paneId = 'main', conversationId = null, resumeClaudeId = null, cwdOverride = null }: EmbeddedTerminalProps) {
   const isMain = paneId === 'main';
   const { show: showToast, snack: toastSnack } = useToast();
   // 字号（terminal_03 §3.3）：每 pane 各自订阅，设置保存事件驱动全量 pane 生效。
@@ -174,12 +181,13 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
     writeDataRef.current = write;
   }, []);
 
-  const cwd = workspaceDir != null ? issueWorkspacePath(workspaceDir, issueId) : null;
+  const cwd = cwdOverride ?? (workspaceDir != null ? issueWorkspacePath(workspaceDir, containerId) : null);
   /**
-   * 会话锚点派生：统一 `issueId::<paneId>`（main → `issueId::main`，split → `issueId::<uuid>`）。
-   * 后端 store 对 key 透明，仅 pty_shutdown_issue 前缀扫描感知 `::`。
+   * 会话锚点派生：统一 `${容器id}::${会话id}::${paneId}`（main → `…::main`，split → `…::<uuid>`）。
+   * 后端 store 对 key 透明，仅 pty_shutdown_issue 前缀扫描感知首段 `::`。
    */
-  const sessionId = `${issueId}::${paneId}`;
+  const scopeId = paneScopeId(containerId, conversationId);
+  const sessionId = paneAnchorId(containerId, conversationId, paneId);
 
   /**
    * hooks 顶层无条件调用（React 规则）；cwd=null（目录解析中）时 usePtySession 返回哑会话（不发 spawn，
@@ -202,8 +210,8 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
     onData: handleTerminalData,
   });
 
-  // 终端捕获（T2.1）：pane 子树内 claude 的 sessionId 一次性回写 conversation 锚。
-  useClaudeSessionCapture(sessionId, session.status, conversationId);
+  // 终端捕获（T2.1）：pane 子树内 claude 的 sessionId 一次性回写 conversation 锚；仅主 pane（附加 pane 不参与锚竞争）。
+  useClaudeSessionCapture(sessionId, session.status, isMain ? conversationId : null);
 
   // 一键创建工作目录（mkdir -p 语义），成功后自动重试终端初始化。
   const handleCreateDirectory = useCallback(() => {
@@ -231,8 +239,8 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
    */
   const splitPane = useTerminalPanesStore(s => s.splitPane);
   const handleSplit = useCallback((direction: SplitDirection) => {
-    splitPane(issueId, paneId, direction);
-  }, [splitPane, issueId, paneId]);
+    splitPane(scopeId, paneId, direction);
+  }, [splitPane, scopeId, paneId]);
 
   /**
    * 「启动 claude」（terminal_03 §3.2）：对本 pane 活跃 shell 写入 claude\r。
@@ -253,8 +261,8 @@ export default function EmbeddedTerminal({ issueId, workspaceDir, startupCli, pa
       return;
     }
     session.close();
-    closePaneTree(issueId, paneId);
-  }, [session, closePaneTree, issueId, paneId, isMain]);
+    closePaneTree(scopeId, paneId);
+  }, [session, closePaneTree, scopeId, paneId, isMain]);
 
   // 确认关闭 main：杀会话 + 关弹窗 + 进占位态。
   const confirmCloseMain = useCallback(() => {

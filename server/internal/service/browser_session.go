@@ -7,9 +7,13 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gorm.io/gorm"
 
+	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/apis"
 	"ocean-harness/server/internal/browser"
+	"ocean-harness/server/internal/dal/enums"
+	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
 	"ocean-harness/server/internal/global"
 )
@@ -49,7 +53,26 @@ func (svc BrowserSession) GetInfo() *browser.BrowserViewSnapshot {
  * D10 覆盖：nil 读 profile 偏好文件，显式传入覆写并回存。
  */
 func (svc BrowserSession) Ensure(req *types.BrowserEnsureRequest) (browser.SessionView, error) {
-	return global.Browser.Ensure(svc.Context, req.Profile, req.Headless, req.WorkspaceID)
+	return global.Browser.Ensure(svc.Context, req.Profile, req.Headless)
+}
+
+/*
+ * ConversationTaskID 会话行反查归属任务 id（浏览器 profile 派生用）：task 归属会话返回
+ * owner_id；会话不存在或非任务归属报「conversationId 无法解析归属任务」。
+ */
+func (svc BrowserSession) ConversationTaskID(conversationID string) (string, error) {
+	q := query.Use(svc.Orm)
+	conv, err := q.Conversation.WithContext(svc.Context).Where(q.Conversation.ID.Eq(conversationID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("conversationId 无法解析归属任务")
+		}
+		return "", err
+	}
+	if conv.OwnerType != enums.OWNER_TYPE_TASK {
+		return "", errors.New("conversationId 无法解析归属任务")
+	}
+	return conv.OwnerID, nil
 }
 
 /*
@@ -176,7 +199,7 @@ func (svc BrowserSession) Analyze(req *types.BrowserAnalyzeRequest) error {
 	if err != nil {
 		return err
 	}
-	if err := global.AcpSessions.Prompt(req.ConversationID, analyzePrompt(req.Profile, browser.ResultText(res))); err != nil {
+	if err := global.AcpSessions.Prompt(acpsession.ConversationSessionKey(req.ConversationID), analyzePrompt(req.Profile, browser.ResultText(res))); err != nil {
 		return fmt.Errorf("页面分析受理: %w", err)
 	}
 	return nil

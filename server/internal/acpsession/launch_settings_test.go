@@ -36,14 +36,10 @@ func TestMergeLaunchSettings(t *testing.T) {
 	}
 	// 显式键覆盖；未配置键回落。
 	merged = mergeLaunchSettings(base, &types.WorkspaceLaunchSettings{
-		Mode:           "acp",
-		PermissionMode: "bypassPermissions",
+		Mode: "acp",
 	})
 	if merged.AutoCommand != "claude" {
 		t.Fatalf("未配置键应回落 base，got %+v", merged)
-	}
-	if merged.PermissionMode != "bypassPermissions" {
-		t.Fatalf("显式键应覆盖，got %+v", merged)
 	}
 	// mode 显式 "none" 是有效覆盖值（明说不要 ≠ 未配置）。
 	merged = mergeLaunchSettings(base, &types.WorkspaceLaunchSettings{Mode: "none"})
@@ -56,7 +52,6 @@ func TestMergeLaunchSettings(t *testing.T) {
 		t.Fatalf("nil base 应透传 override，got %+v", merged)
 	}
 }
-
 
 /*
  * newTestDB 临时 sqlite（glebarez 纯 Go 驱动）+ 测试涉及的三张表（AutoMigrate 按 model
@@ -233,12 +228,7 @@ func TestResolveSessionConfig(t *testing.T) {
 		t.Fatal("mode=none 无临场声明仍应拒绝")
 	}
 
-	// 用例 5：非法 permissionMode / agentCode 拒绝。
-	taskID = seedIssue(t, db, rootDir, `{"mode":"acp"}`, `{"mode":"acp","permissionMode":"yolo"}`)
-	convID = seedTaskConversation(t, db, taskID)
-	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil || !strings.Contains(err.Error(), "权限模式") {
-		t.Fatalf("非法 permissionMode 应拒绝，got %v", err)
-	}
+	// 用例 5：非法 agentCode 拒绝（permissionMode 已固化为 bypass，存量非法值被忽略）。
 	taskID = seedIssue(t, db, rootDir, `{"mode":"acp"}`, `{"mode":"acp","agentCode":"no-such-agent"}`)
 	convID = seedTaskConversation(t, db, taskID)
 	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil || !strings.Contains(err.Error(), "no-such-agent") {
@@ -307,8 +297,9 @@ func TestResolveSessionConfigConversationAnchor(t *testing.T) {
 	if cfg.SessionKey != key || cfg.WorkspaceDir != wsDir || cfg.Cwd != wsDir {
 		t.Fatalf("conv 锚 cwd 应为工作空间根目录: %+v", cfg)
 	}
-	if cfg.AgentCode != "claude-acp" || cfg.PermissionMode != acp.PermissionModeAcceptEdits {
-		t.Fatalf("应继承 workspace 级 agent/permission 配置: %+v", cfg)
+	// permissionMode 已固化为 bypass：存量 JSON 里的 acceptEdits 键被忽略。
+	if cfg.AgentCode != "claude-acp" || cfg.PermissionMode != acp.PermissionModeBypassPermissions {
+		t.Fatalf("permissionMode 应恒 bypass: agent=%q mode=%q", cfg.AgentCode, cfg.PermissionMode)
 	}
 
 	// workspace 非 acp 拒绝。

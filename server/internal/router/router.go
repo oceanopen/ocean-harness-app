@@ -14,7 +14,7 @@ import (
 
 /*
  * SetupRouter 构造 gin engine：注册中间件与路由。
- * 暴露 /api/baseInfo、/api/localRepository、/api/issueWorkspace、/api/pluginMarketplace、/api/plugin、/api/agentCatalog、/api/doctor、/api/acpSession、/api/browserSession、/api/tracker/*（tracker 业务域：workspace 等）与 /mcp/streamableHttp/*（MCP 端点，供工作空间内 AI agent 调用），均无需登录/鉴权。
+ * 暴露 /api/baseInfo、/api/localRepository、/api/workspace、/api/taskWorkspace、/api/pluginMarketplace、/api/plugin、/api/agentCatalog、/api/doctor、/api/acpSession、/api/browserSession 与 /mcp/streamableHttp/*（MCP 端点，供工作空间内 AI agent 调用），均无需登录/鉴权。
  * gin.SetMode 已在 config.MustLoad 中按环境变量完成。
  */
 func SetupRouter() *gin.Engine {
@@ -35,8 +35,8 @@ func SetupRouter() *gin.Engine {
 	}))
 
 	/*
-	 * 路由按命名空间分组：/api/baseInfo（系统信息）；/api/localRepository、/api/issueWorkspace（独立顶层域）；
-	 * /api/tracker/<module>/<action>（工作区/issue 等管理域）。
+	 * 路由按命名空间分组：/api/baseInfo（系统信息）；顶层资源独立分组（/api/localRepository、/api/workspace 等），
+	 * 随属域资源嵌套（/api/project/task、/api/project/type、/api/project/taskWorkspace 等）。
 	 */
 	apiGroup := r.Group("/api")
 	{
@@ -47,7 +47,7 @@ func SetupRouter() *gin.Engine {
 
 		/*
 		 * localRepository 模块：本地仓库 CRUD + git 刷新（action 风格，POST）。
-		 * 本地仓库为顶层资源（无 workspace 归属），独立分组，不挂 tracker 下。
+		 * 本地仓库为顶层资源（无 workspace 归属），独立分组。
 		 */
 		localRepositoryGroup := apiGroup.Group("/localRepository")
 		{
@@ -63,25 +63,9 @@ func SetupRouter() *gin.Engine {
 		}
 
 		/*
-		 * issueWorkspace 模块：issue 运行工作空间初始化（init 异步受理 + status 轮询读状态文件）与归档/取消（archive 删目录 + 流转 issue 状态，T3.2）、文件浏览（getFileTree/getFileContent + fileRaw 图片字节直连，T5.1）、Git 变更（getGitChanges/getFileDiff 未提交变更列表与内容对，T5.1「Git 变更」模式）。
-		 * 与 /api/tracker/workspace（任务管理容器）是两个概念，故独立顶层分组。
-		 */
-		issueWorkspaceGroup := apiGroup.Group("/issueWorkspace")
-		{
-			issueWorkspaceGroup.POST("/init", controller.IssueWorkspace{}.Init)
-			issueWorkspaceGroup.POST("/status", controller.IssueWorkspace{}.Status)
-			issueWorkspaceGroup.POST("/archive", controller.IssueWorkspace{}.Archive)
-			issueWorkspaceGroup.POST("/getFileTree", controller.IssueWorkspace{}.FileTree)
-			issueWorkspaceGroup.POST("/getFileContent", controller.IssueWorkspace{}.FileContent)
-			issueWorkspaceGroup.GET("/fileRaw", controller.IssueWorkspace{}.FileRaw)
-			issueWorkspaceGroup.POST("/getGitChanges", controller.IssueWorkspace{}.GitChanges)
-			issueWorkspaceGroup.POST("/getFileDiff", controller.IssueWorkspace{}.FileDiff)
-		}
-
-		/*
 		 * pluginMarketplace 模块：插件市场投影与注册表操作（action 风格，POST）。
 		 * 无本地表：市场注册表与安装状态的 SSOT 恒为 claude 侧，实时投影（调 claude plugin CLI + 扫描市场清单）。
-		 * 与 localRepository 同为顶层资源，独立分组，不挂 tracker 下。
+		 * 与 localRepository 同为顶层资源，独立分组。
 		 */
 		pluginMarketplaceGroup := apiGroup.Group("/pluginMarketplace")
 		{
@@ -188,37 +172,64 @@ func SetupRouter() *gin.Engine {
 			imBotGroup.POST("/provisionVerifyCode", controller.ImBot{}.ProvisionVerifyCode)
 		}
 
-		trackerGroup := apiGroup.Group("/tracker")
+		// project 模块：项目实体 CRUD（action 风格，POST）。项目为顶层资源（独立实体线），独立分组。
+		projectGroup := apiGroup.Group("/project")
 		{
-			// workspace 模块：一律 POST（action 风格 getList/getInfo/create/update/delete）。
-			workspaceGroup := trackerGroup.Group("/workspace")
-			{
-				workspaceGroup.POST("/getList", controller.Workspace{}.GetList)
-				workspaceGroup.POST("/getInfo", controller.Workspace{}.GetInfo)
-				workspaceGroup.POST("/create", controller.Workspace{}.Create)
-				workspaceGroup.POST("/update", controller.Workspace{}.Update)
-				workspaceGroup.POST("/delete", controller.Workspace{}.Delete)
-			}
+			projectGroup.POST("/getList", controller.Project{}.GetList)
+			projectGroup.POST("/getInfo", controller.Project{}.GetInfo)
+			projectGroup.POST("/create", controller.Project{}.Create)
+			projectGroup.POST("/update", controller.Project{}.Update)
+			projectGroup.POST("/delete", controller.Project{}.Delete)
+		}
 
-			// workspaceType 模块：类型 CRUD（action 风格，POST）。
-			workspaceTypeGroup := trackerGroup.Group("/workspaceType")
-			{
-				workspaceTypeGroup.POST("/getList", controller.WorkspaceType{}.GetList)
-				workspaceTypeGroup.POST("/getInfo", controller.WorkspaceType{}.GetInfo)
-				workspaceTypeGroup.POST("/create", controller.WorkspaceType{}.Create)
-				workspaceTypeGroup.POST("/update", controller.WorkspaceType{}.Update)
-				workspaceTypeGroup.POST("/delete", controller.WorkspaceType{}.Delete)
-			}
+		/*
+		 * taskWorkspace 模块：任务运行工作空间编排（init 异步受理 + status 轮询读状态文件）、
+		 * 归档（archive 删目录）、文件浏览（getFileTree/getFileContent + fileRaw 图片字节直连）、
+		 * Git 变更（getGitChanges/getFileDiff 未提交变更列表与内容对）。挂 project 下（任务域随项目）。
+		 */
+		taskWorkspaceGroup := projectGroup.Group("/taskWorkspace")
+		{
+			taskWorkspaceGroup.POST("/init", controller.TaskWorkspace{}.Init)
+			taskWorkspaceGroup.POST("/status", controller.TaskWorkspace{}.Status)
+			taskWorkspaceGroup.POST("/archive", controller.TaskWorkspace{}.Archive)
+			taskWorkspaceGroup.POST("/getFileTree", controller.TaskWorkspace{}.FileTree)
+			taskWorkspaceGroup.POST("/getFileContent", controller.TaskWorkspace{}.FileContent)
+			taskWorkspaceGroup.GET("/fileRaw", controller.TaskWorkspace{}.FileRaw)
+			taskWorkspaceGroup.POST("/getGitChanges", controller.TaskWorkspace{}.GitChanges)
+			taskWorkspaceGroup.POST("/getFileDiff", controller.TaskWorkspace{}.FileDiff)
+		}
 
-			// workspaceIssue 模块：任务 CRUD（action 风格，POST）。
-			workspaceIssueGroup := trackerGroup.Group("/workspaceIssue")
-			{
-				workspaceIssueGroup.POST("/getList", controller.WorkspaceIssue{}.GetList)
-				workspaceIssueGroup.POST("/getInfo", controller.WorkspaceIssue{}.GetInfo)
-				workspaceIssueGroup.POST("/create", controller.WorkspaceIssue{}.Create)
-				workspaceIssueGroup.POST("/update", controller.WorkspaceIssue{}.Update)
-				workspaceIssueGroup.POST("/delete", controller.WorkspaceIssue{}.Delete)
-			}
+		/*
+		 * workspace 模块：工作空间 CRUD（action 风格，POST）。
+		 * 顶层资源（无 project 归属），独立分组，不挂 project 下。
+		 */
+		workspaceGroup := apiGroup.Group("/workspace")
+		{
+			workspaceGroup.POST("/getList", controller.Workspace{}.GetList)
+			workspaceGroup.POST("/getInfo", controller.Workspace{}.GetInfo)
+			workspaceGroup.POST("/create", controller.Workspace{}.Create)
+			workspaceGroup.POST("/update", controller.Workspace{}.Update)
+			workspaceGroup.POST("/delete", controller.Workspace{}.Delete)
+		}
+
+		// projectTask 模块：任务 CRUD（action 风格，POST），挂 project 下。
+		projectTaskGroup := projectGroup.Group("/task")
+		{
+			projectTaskGroup.POST("/getList", controller.ProjectTask{}.GetList)
+			projectTaskGroup.POST("/getInfo", controller.ProjectTask{}.GetInfo)
+			projectTaskGroup.POST("/create", controller.ProjectTask{}.Create)
+			projectTaskGroup.POST("/update", controller.ProjectTask{}.Update)
+			projectTaskGroup.POST("/delete", controller.ProjectTask{}.Delete)
+		}
+
+		// type 模块：项目类型 CRUD（action 风格，POST），挂 project 下（类型随项目）。
+		projectTypeGroup := projectGroup.Group("/type")
+		{
+			projectTypeGroup.POST("/getList", controller.ProjectType{}.GetList)
+			projectTypeGroup.POST("/getInfo", controller.ProjectType{}.GetInfo)
+			projectTypeGroup.POST("/create", controller.ProjectType{}.Create)
+			projectTypeGroup.POST("/update", controller.ProjectType{}.Update)
+			projectTypeGroup.POST("/delete", controller.ProjectType{}.Delete)
 		}
 	}
 

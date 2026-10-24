@@ -14,8 +14,6 @@ interface LaunchSettingsFieldsProps {
   /** 未加工选中态：undefined = 未显式选择（组件内派生首个 enabled 条目）。 */
   agentCode?: AgentCode;
   onAgentCodeChange: (code: AgentCode | undefined) => void;
-  permissionMode: NonNullable<WorkspaceLaunchSettings['permissionMode']>;
-  onPermissionModeChange: (v: NonNullable<WorkspaceLaunchSettings['permissionMode']>) => void;
   disabled?: boolean;
   /** issue 级覆盖的「跟随工作空间」（'' 档）：模式下拉首项，未覆盖键字段级回落。 */
   showFollowOption?: boolean;
@@ -23,8 +21,8 @@ interface LaunchSettingsFieldsProps {
 
 /**
  * LaunchSettingsFields：启动设置字段组——启动模式三档 + terminal-auto 档「终端 Agent」+
- * acp 档「ACP Agent / 执行模式」。WorkspaceDrawer（workspace 单源）与 WorkspaceIssueDrawer
- * （issue 级覆盖）共用，差异仅 showFollowOption；提交拼装由各抽屉自理。
+ * acp 档「ACP Agent」。WorkspaceDrawer（workspace 单源）与 ProjectTaskDrawer
+ * （task 级覆盖）共用，差异仅 showFollowOption；提交拼装由各抽屉自理。
  */
 export default function LaunchSettingsFields({
   mode,
@@ -33,8 +31,6 @@ export default function LaunchSettingsFields({
   onAutoCommandChange,
   agentCode,
   onAgentCodeChange,
-  permissionMode,
-  onPermissionModeChange,
   disabled = false,
   showFollowOption = false,
 }: LaunchSettingsFieldsProps) {
@@ -101,18 +97,6 @@ export default function LaunchSettingsFields({
                 {`${effectiveAgentCode}（目录未启用）`}
               </MenuItem>
             )}
-          </TextField>
-          <TextField
-            select
-            label="执行模式"
-            value={permissionMode}
-            onChange={e => onPermissionModeChange(e.target.value as NonNullable<WorkspaceLaunchSettings['permissionMode']>)}
-            fullWidth
-            disabled={disabled}
-            helperText="需要审批 = 敏感操作推送审批卡人工确认；自动放行 = 免审批直接执行"
-          >
-            <MenuItem value="acceptEdits">需要审批</MenuItem>
-            <MenuItem value="bypassPermissions">自动放行</MenuItem>
           </TextField>
         </>
       )}

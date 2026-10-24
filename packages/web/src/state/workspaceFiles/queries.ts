@@ -3,7 +3,7 @@
  * 手动刷新口径（与 T3.1 子任务面板同决策）：无 watcher 无轮询，树刷新靠面板刷新按钮显式 invalidate；内容靠 staleTime 0 的激活重验。
  */
 
-import { IssueWorkspaceService } from '@src/services';
+import { TaskWorkspaceService } from '@src/services';
 import { useQuery } from '@tanstack/react-query';
 import { workspaceFilesKeys } from './keys';
 
@@ -13,7 +13,7 @@ import { workspaceFilesKeys } from './keys';
 export function useWorkspaceFileTree(issueId: string | null) {
   return useQuery({
     queryKey: workspaceFilesKeys.tree(issueId ?? ''),
-    queryFn: () => IssueWorkspaceService.fileTree({ issueId: issueId! }),
+    queryFn: () => TaskWorkspaceService.fileTree({ taskId: issueId! }),
     enabled: issueId != null,
   });
 }
@@ -28,7 +28,7 @@ export function useWorkspaceFileContent(issueId: string | null, path: string | n
     queryKey: workspaceFilesKeys.content(issueId ?? '', path ?? ''),
     queryFn: async () => {
       const t0 = performance.now();
-      const data = await IssueWorkspaceService.fileContent({ issueId: issueId!, path: path! });
+      const data = await TaskWorkspaceService.fileContent({ taskId: issueId!, path: path! });
       if (import.meta.env.DEV) {
         console.info(`[workspaceFiles] content fetch ${path} ${Math.round(performance.now() - t0)}ms`);
       }
@@ -46,7 +46,7 @@ export function useWorkspaceFileContent(issueId: string | null, path: string | n
 export function useWorkspaceGitChanges(issueId: string | null) {
   return useQuery({
     queryKey: workspaceFilesKeys.gitChanges(issueId ?? ''),
-    queryFn: () => IssueWorkspaceService.gitChanges({ issueId: issueId! }),
+    queryFn: () => TaskWorkspaceService.gitChanges({ taskId: issueId! }),
     enabled: issueId != null,
     staleTime: 0,
   });
@@ -58,7 +58,7 @@ export function useWorkspaceGitChanges(issueId: string | null) {
 export function useWorkspaceFileDiff(issueId: string | null, path: string | null) {
   return useQuery({
     queryKey: workspaceFilesKeys.fileDiff(issueId ?? '', path ?? ''),
-    queryFn: () => IssueWorkspaceService.fileDiff({ issueId: issueId!, path: path! }),
+    queryFn: () => TaskWorkspaceService.fileDiff({ taskId: issueId!, path: path! }),
     enabled: issueId != null && path != null && path !== '',
     staleTime: 0,
   });

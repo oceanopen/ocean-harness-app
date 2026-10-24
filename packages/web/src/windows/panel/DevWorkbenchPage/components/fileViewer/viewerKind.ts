@@ -1,7 +1,7 @@
 /**
  * 文件预览呈现分派（纯函数）：仅对传输 kind=text 的文件按扩展名细分——markdown 走渲染器，
  * 其余（含未知扩展）走 CM6 只读视图（无语言扩展时即纯文本等宽展示，不设第三档）。
- * 传输层 kind（text/image/binary/tooLarge）由后端定夺，前端不猜——见 services/IssueWorkspaceService.ts。
+ * 传输层 kind（text/image/binary/tooLarge）由后端定夺，前端不猜——见 services/TaskWorkspaceService.ts。
  */
 import type { Extension } from '@codemirror/state';
 import { cpp } from '@codemirror/lang-cpp';

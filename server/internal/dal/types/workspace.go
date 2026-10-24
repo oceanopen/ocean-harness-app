@@ -13,10 +13,10 @@ import (
  * 跨字段/复杂场景可追加 vd tag（go-tagexpr），由 apis.Api.Validate 自动生效。
  */
 
-// WorkspaceGetListRequest 是 POST /api/tracker/workspace/getList 的入参（当前无参，预留筛选位）。
+// WorkspaceGetListRequest 是 POST /api/workspace/getList 的入参（当前无参，预留筛选位）。
 type WorkspaceGetListRequest struct{}
 
-// WorkspaceGetInfoRequest 是 POST /api/tracker/workspace/getInfo 的入参。
+// WorkspaceGetInfoRequest 是 POST /api/workspace/getInfo 的入参。
 type WorkspaceGetInfoRequest struct {
 	ID string `json:"id" binding:"required"`
 }
@@ -26,14 +26,13 @@ type WorkspaceGetInfoRequest struct {
  * 空对象/空串 = 未配置，消费端等同 none。
  */
 type WorkspaceLaunchSettings struct {
-	Mode           string          `json:"mode,omitempty"`           // none | terminal-auto | acp（未配置等同 none：出启动方式选择面板）
-	AgentCode      enums.AgentCode `json:"agentCode,omitempty"`      // ACP 会话 agent
-	AutoCommand    string          `json:"autoCommand,omitempty"`    // 终端启动 Agent（仅 terminal-auto：主终端直接启动；一期 claude）
-	PermissionMode string          `json:"permissionMode,omitempty"` // ACP 执行模式：acceptEdits | bypassPermissions
+	Mode        string          `json:"mode,omitempty"`        // none | terminal-auto | acp（未配置等同 none：出启动方式选择面板）
+	AgentCode   enums.AgentCode `json:"agentCode,omitempty"`   // ACP 会话 agent
+	AutoCommand string          `json:"autoCommand,omitempty"` // 终端启动 Agent（仅 terminal-auto：主终端直接启动；一期 claude）
 }
 
 /*
- * WorkspaceCreateRequest 是 POST /api/tracker/workspace/create 的入参：dir 为工作区目录（须为绝对路径，service 层校验可创建可写）；
+ * WorkspaceCreateRequest 是 POST /api/workspace/create 的入参：dir 为工作区目录（须为绝对路径，service 层校验可创建可写）；
  * launchSettings 指针可空 = 不配置（消费端等同 none）；emoji 为展示图标（空 = 前端图标兜底）；
  */
 type WorkspaceCreateRequest struct {
@@ -45,7 +44,7 @@ type WorkspaceCreateRequest struct {
 }
 
 /*
- * WorkspaceUpdateRequest 是 POST /api/tracker/workspace/update 的入参；
+ * WorkspaceUpdateRequest 是 POST /api/workspace/update 的入参；
  * launchSettings 为 nil = 清空配置（等同 none），空对象同视为未配置；
  */
 type WorkspaceUpdateRequest struct {
@@ -57,7 +56,7 @@ type WorkspaceUpdateRequest struct {
 	LaunchSettings *WorkspaceLaunchSettings `json:"launchSettings" binding:"omitempty"`
 }
 
-// WorkspaceDeleteRequest 是 POST /api/tracker/workspace/delete 的入参。
+// WorkspaceDeleteRequest 是 POST /api/workspace/delete 的入参。
 type WorkspaceDeleteRequest struct {
 	ID string `json:"id" binding:"required"`
 }

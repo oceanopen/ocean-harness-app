@@ -5,8 +5,8 @@
     "pluginMarketplace": "插件市场",
     "imBots": "IM 机器人",
     "serverStatus": "服务状态",
-    "tracker": "任务管理",
-    "devWorkbench": "任务工作台"
+    "workspaces": "工作空间",
+    "projects": "项目任务"
   },
   "sidebar": {
     "collapse": "收起侧边栏",
@@ -34,8 +34,8 @@
       "pluginMarketplace": "前往插件市场",
       "imBots": "前往 IM 机器人",
       "serverStatus": "前往服务状态",
-      "tracker": "前往任务管理",
-      "devWorkbench": "前往任务工作台"
+      "workspaces": "前往工作空间",
+      "projects": "前往项目任务"
     },
     "action": {
       "settings": "打开设置",

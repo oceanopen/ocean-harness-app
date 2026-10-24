@@ -15,11 +15,11 @@ import (
 )
 
 /*
- * 工作空间共享登录态同步编排（D3 修订：凭据仅 auth-states/ 一份落盘）：spawn 置 ready
- * 前锁外注入（首导航前结构保证）；运行期周期导出 + 收尾（Close/无头切换）导出，合并
- * 并集语义回写。全部 best-effort——失败仅告警降级，登录态退回 profile 目录自管。
- * 引擎文件沙箱只放行 downloads/<profile>/ 与 cwd，共享文件路径不可直传，staging 一律
- * 中转（见 tools.go EngineToolStorageState 注释）。
+ * 全局共享登录态同步编排（T7.2，D3 修订：凭据仅 auth-states/default.json 一份落盘）：
+ * spawn 置 ready 前锁外注入（首导航前结构保证）；运行期周期导出 + 收尾（Close/无头切换）
+ * 导出，合并并集语义回写——任一会话登录后全部实例共享。全部 best-effort——失败仅告警
+ * 降级，登录态退回 profile 目录自管。引擎文件沙箱只放行 downloads/<profile>/ 与 cwd，
+ * 共享文件路径不可直传，staging 一律中转（见 tools.go EngineToolStorageState 注释）。
  */
 
 // 时序与预算常量（var 化供测试覆写；编码规则 1——时序缺陷不引入防抖掩盖）。
@@ -31,27 +31,6 @@ var (
 	// authSyncInterval 运行期周期导出间隔。
 	authSyncInterval = 60 * time.Second
 )
-
-/*
- * resolveWorkspaceID 解析 profile 归属工作空间（共享登录态键）：workspace-<id> 名字
- * 直通；其余读 profile 偏好（ensure 显式 workspaceId 落盘持久化，idle 冷启动/无头切换
- * 重建自动读回）；均无 = 空（无共享登录态）。名字直通优先于偏好值。
- */
-func (m *Manager) resolveWorkspaceID(profile string) string {
-	if prefix, id := ParseProfileNamespace(profile); prefix == WorkspaceProfilePrefix {
-		return id
-	}
-	profileDir, err := ProfileDir(profile)
-	if err != nil {
-		return ""
-	}
-	prefs, err := ReadProfilePrefs(profileDir)
-	if err != nil {
-		m.log.Warn("profile 偏好读取失败（本会话无共享登录态）", zap.String("profile", profile), zap.Error(err))
-		return ""
-	}
-	return prefs.WorkspaceID
-}
 
 // stateEmpty 空态判定（cookies 与 origins 双空，空态不注入——免无谓清空会话）。
 func stateEmpty(s StorageState) bool {
@@ -87,16 +66,12 @@ func callEngineDirect(ctx context.Context, handle *EngineHandle, tool string, ar
 const stagingInjectFile = ".auth-state-inject.json"
 
 /*
- * injectAuthState spawn 置 ready 前注入共享登录态：共享文件缺失/空态/与上次注入同内容
- * （hash 相同）均跳过；注入 = staging 中转 set_storage_state（引擎先清空再恢复）。失败
+ * injectAuthState spawn 置 ready 前注入全局共享登录态：共享文件缺失/空态/与上次注入同
+ * 内容（hash 相同）均跳过；注入 = staging 中转 set_storage_state（引擎先清空再恢复）。失败
  * 仅告警——会话照常就绪，登录态退回 profile 自管（用户重登后导出链路自愈回写）。
  */
-func (m *Manager) injectAuthState(entry *sessionEntry, profile, wsID string, handle *EngineHandle) {
-	path, err := AuthStatePath(wsID)
-	if err != nil {
-		m.log.Warn("共享登录态路径非法（跳过注入）", zap.String("profile", profile), zap.Error(err))
-		return
-	}
+func (m *Manager) injectAuthState(entry *sessionEntry, profile string, handle *EngineHandle) {
+	path := AuthStatePath()
 	shared, exists, err := readSharedState(path)
 	if err != nil {
 		m.log.Warn("共享登录态读取失败（跳过注入）", zap.String("profile", profile), zap.Error(err))
@@ -137,19 +112,14 @@ func (m *Manager) injectAuthState(entry *sessionEntry, profile, wsID string, han
 		return
 	}
 	m.authInjectedHashStore(profile, sum)
-	m.log.Info("已注入工作空间共享登录态", zap.String("profile", profile), zap.String("workspace", wsID))
+	m.log.Info("已注入全局共享登录态", zap.String("profile", profile))
 }
 
 /*
- * exportAuthState 引擎当前登录态导出回写共享文件（staging 中转 → 与共享文件并集合并 →
- * per-workspace 锁内原子写；读侧损坏按空态自愈重建）。best-effort，失败仅告警。
+ * exportAuthState 引擎当前登录态导出回写全局共享文件（staging 中转 → 与共享文件并集
+ * 合并 → 共享文件锁内原子写；读侧损坏按空态自愈重建）。best-effort，失败仅告警。
  */
-func (m *Manager) exportAuthState(profile, wsID string, handle *EngineHandle) {
-	path, err := AuthStatePath(wsID)
-	if err != nil {
-		m.log.Warn("共享登录态路径非法（跳过导出）", zap.String("profile", profile), zap.Error(err))
-		return
-	}
+func (m *Manager) exportAuthState(profile string, handle *EngineHandle) {
 	dlDir, err := DownloadsDir(profile)
 	if err != nil {
 		m.log.Warn("下载目录不可用（跳过导出）", zap.String("profile", profile), zap.Error(err))
@@ -181,7 +151,8 @@ func (m *Manager) exportAuthState(profile, wsID string, handle *EngineHandle) {
 		return
 	}
 
-	withWorkspaceFile(wsID, func() {
+	path := AuthStatePath()
+	withSharedFile(func() {
 		shared, _, rerr := readSharedState(path)
 		if rerr != nil {
 			m.log.Warn("共享登录态读取失败（按空态重建）", zap.String("profile", profile), zap.Error(rerr))
@@ -198,7 +169,7 @@ func (m *Manager) exportAuthState(profile, wsID string, handle *EngineHandle) {
  * 死亡三路径自然收敛，无独立注册表）；每轮先复查 entry 仍持有该 handle（防释放后误调
  * 新引擎），callMu 空闲才导出（忙即跳过本轮，不与在途导航竞争）。
  */
-func (m *Manager) runAuthSync(entry *sessionEntry, profile, wsID string, handle *EngineHandle) {
+func (m *Manager) runAuthSync(entry *sessionEntry, profile string, handle *EngineHandle) {
 	ticker := time.NewTicker(authSyncInterval)
 	defer ticker.Stop()
 	for {
@@ -217,7 +188,7 @@ func (m *Manager) runAuthSync(entry *sessionEntry, profile, wsID string, handle 
 			m.log.Debug("登录态周期导出跳过（会话忙）", zap.String("profile", profile))
 			continue
 		}
-		m.exportAuthState(profile, wsID, handle)
+		m.exportAuthState(profile, handle)
 		entry.callMu.Unlock()
 	}
 }

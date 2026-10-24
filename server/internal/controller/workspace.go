@@ -9,14 +9,14 @@ import (
 )
 
 /*
- * Workspace 对应 /api/tracker/workspace 命名空间下的接口。
+ * Workspace 对应 /api/workspace 命名空间下的接口。
  * 嵌入 apis.Api 获得链式装配（MakeContext/Bind/Validate/MakeService）与 JsonOK/JsonFail。
  */
 type Workspace struct {
 	apis.Api
 }
 
-// GetList POST /api/tracker/workspace/getList：返回全部工作空间。
+// GetList POST /api/workspace/getList：返回全部工作空间。
 func (api Workspace) GetList(ctx *gin.Context) {
 	req := &types.WorkspaceGetListRequest{}
 	svc := service.Workspace{}
@@ -32,7 +32,7 @@ func (api Workspace) GetList(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// GetInfo POST /api/tracker/workspace/getInfo：返回单个工作空间。
+// GetInfo POST /api/workspace/getInfo：返回单个工作空间。
 func (api Workspace) GetInfo(ctx *gin.Context) {
 	req := &types.WorkspaceGetInfoRequest{}
 	svc := service.Workspace{}
@@ -48,7 +48,7 @@ func (api Workspace) GetInfo(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Create POST /api/tracker/workspace/create：创建工作空间（目录校验后插入）。
+// Create POST /api/workspace/create：创建工作空间（目录校验后插入）。
 func (api Workspace) Create(ctx *gin.Context) {
 	req := &types.WorkspaceCreateRequest{}
 	svc := service.Workspace{}
@@ -64,7 +64,7 @@ func (api Workspace) Create(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Update POST /api/tracker/workspace/update：更新工作空间。
+// Update POST /api/workspace/update：更新工作空间。
 func (api Workspace) Update(ctx *gin.Context) {
 	req := &types.WorkspaceUpdateRequest{}
 	svc := service.Workspace{}
@@ -80,7 +80,7 @@ func (api Workspace) Update(ctx *gin.Context) {
 	api.JsonOK(data)
 }
 
-// Delete POST /api/tracker/workspace/delete：删除工作空间（级联删其下 project 及关联）。
+// Delete POST /api/workspace/delete：删除工作空间（关联 bot 清列并热更新；任务/类型/仓库归项目域）。
 func (api Workspace) Delete(ctx *gin.Context) {
 	req := &types.WorkspaceDeleteRequest{}
 	svc := service.Workspace{}

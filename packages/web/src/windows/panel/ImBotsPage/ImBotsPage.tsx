@@ -1,4 +1,4 @@
-import type { DoctorEntryState, ImBotModel, WorkspaceModel } from '@src/services';
+import type { DoctorEntryState, ImBotModel, ProjectModel, ProjectTaskResponseData, WorkspaceModel } from '@src/services';
 import type { AcpAgentOption } from '@src/state/agentCatalog';
 import type { ImBotChannelMeta } from './imBotChannels';
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
@@ -24,7 +24,8 @@ import { useToast } from '@src/shared/useToast';
 import { effectiveAcpAgentCode, useAcpAgentOptions } from '@src/state/agentCatalog';
 import { isDoctorBusy, useDoctorCheck, useDoctorReports } from '@src/state/doctor';
 import { useDeleteImBot, useImBots, useRestartImBot } from '@src/state/imBots';
-import { useWorkspaces } from '@src/state/tracker';
+import { useProjects } from '@src/state/projects';
+import { useProjectTasks, useWorkspaces } from '@src/state/tracker';
 import { useEffect, useRef, useState } from 'react';
 import { IM_BOT_CHANNELS } from './imBotChannels';
 import ImBotDrawer from './ImBotDrawer';
@@ -112,7 +113,29 @@ function ChannelCard(props: { channel: ImBotChannelMeta; total: number; online: 
   );
 }
 
-/** 右栏机器人满行卡片：名称 + 状态徽标（连接 + ACP bot 的 agent 健康）+ 操作（重启/编辑/删除），下两行工作空间/访问策略。 */
+/**
+ * 关联信息链文本（O17/T8.2）：workspace 档=工作空间；project 档=项目+任务（未关联任务显式
+ * 提示收消息拦截）；遗留哨兵 ''（conversationType 未配置）显式兜底文案。名称缺失回落原始 id。
+ */
+function botAssociationText(bot: ImBotModel, projects: ProjectModel[], projectTasks: ProjectTaskResponseData[]): string {
+  switch (bot.conversationType) {
+    case 'workspace':
+      return `工作空间 · ${bot.workspaceName || bot.workspaceId || '未选择'}`;
+    case 'project': {
+      const projectName = projects.find(p => p.id === bot.projectId)?.name ?? bot.projectId;
+      const base = `项目 · ${projectName !== '' ? projectName : '未选择'}`;
+      if (bot.taskId === '') {
+        return `${base} · 任务：未关联（收消息将提示）`;
+      }
+      const taskName = projectTasks.find(task => task.id === bot.taskId)?.name ?? bot.taskId;
+      return `${base} · 任务 ${taskName}`;
+    }
+    default:
+      return '未配置';
+  }
+}
+
+/** 右栏机器人满行卡片：名称 + 状态徽标（连接 + ACP bot 的 agent 健康）+ 操作（重启/编辑/删除），下两行关联信息链/访问策略。 */
 function ImBotCard(props: {
   bot: ImBotModel;
   health: HealthChip | null;
@@ -122,6 +145,9 @@ function ImBotCard(props: {
   const { bot, health, onEdit, onDeleteAsk } = props;
   const restartMutation = useRestartImBot();
   const chip = imBotStateChip(bot.connState);
+  // 关联名称解析（O17）：项目列表共享缓存；任务列表按项目档的 projectId 拉取（空串 hooks 守卫不查询）。
+  const { data: projects = [] } = useProjects();
+  const { data: projectTasks = [] } = useProjectTasks(bot.conversationType === 'project' && bot.projectId !== '' ? bot.projectId : null);
 
   return (
     <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
@@ -157,10 +183,10 @@ function ImBotCard(props: {
           <Button size="small" color="error" onClick={onDeleteAsk}>删除</Button>
         </Box>
       </Box>
-      {/* 信息行三项靠左并排等距，工作空间名超长省略号兜底 */}
+      {/* 信息行三项靠左并排等距，首项关联信息链超长省略号兜底 */}
       <Box sx={{ px: '16px', pb: '12px', display: 'flex', gap: '24px', alignItems: 'center' }}>
         <Typography sx={{ fontSize: '12px', color: 'text.secondary', flexShrink: 1, minWidth: '0px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {bot.workspaceId !== '' ? `工作空间：${bot.workspaceName || bot.workspaceId}` : '工作空间：未选择'}
+          {botAssociationText(bot, projects, projectTasks)}
         </Typography>
         <Typography sx={{ fontSize: '12px', color: 'text.secondary', flexShrink: 0 }}>
           {bot.accessPolicy.mode === 'open'

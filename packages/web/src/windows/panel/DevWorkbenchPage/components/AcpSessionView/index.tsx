@@ -19,7 +19,7 @@ export default function AcpSessionView({ conversationId }: { conversationId: str
   /**
    * 挂载即受理（幂等）：ref 防重入（effect 依赖的 mutation 对象随渲染更新，ref 在前
    * 挡住重复受理；StrictMode 双跑下 ensure 后端幂等，ref 仅省一次无效请求）。
-   * conversationId 空串 = 上层尚未接通会话实体上下文（T5.3 会话编排接入），不受理。
+   * conversationId 空串 = 上游闸门未就绪的防御传参（正常由 T5.3 编排下传非空 id），不受理。
    */
   useEffect(() => {
     if (ensuredRef.current || conversationId === '') {
@@ -38,7 +38,7 @@ export default function AcpSessionView({ conversationId }: { conversationId: str
    */
   const events = useAcpSessionEvents(conversationId, isAcpSessionSubscribable(snapshot?.status));
 
-  // 未接通空态：工作台尚无 conversation 选中态（T5.3 接入前的显式降级面）。
+  // 未接通空态：上游会话 id 未就绪的防御降级面（正常链路已由 T5.3 编排接通）。
   if (conversationId === '') {
     return (
       <FullCenter>

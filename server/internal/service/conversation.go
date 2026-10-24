@@ -104,7 +104,7 @@ func (svc Conversation) SetClaudeSessionID(req *types.ConversationSetClaudeSessi
 
 /*
  * Delete 物理删除会话行（无 DB 外键）。消息内容在 claude 本地 jsonl，不随行删除；
- * bot 会话行的 conversation_id 引用清列级联随 T4.3 接入。
+ * bot 会话行的 conversation_id 悬挂引用由路由回落自愈收敛（下条消息重新定位/创建）。
  */
 func (svc Conversation) Delete(req *types.ConversationDeleteRequest) error {
 	q := query.Use(svc.Orm)

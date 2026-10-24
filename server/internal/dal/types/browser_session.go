@@ -10,12 +10,10 @@ type BrowserGetInfoRequest struct{}
 /*
  * BrowserEnsureRequest 是 POST /api/browserSession/ensure 的入参（同步等就绪，失败中文报错）；
  * Headless 为 D10 无头覆盖：nil 读 profile 偏好文件，显式传入覆写并回存（面板无头/有头切换 = close + ensure 传新值，登录态在 profile 目录续存）。
- * WorkspaceID 为共享登录态键：非空写入 profile 偏好持久化（spawn 注入/导出均按它落 auth-states/<workspaceId>.json），缺省读偏好，均无则无共享。
  */
 type BrowserEnsureRequest struct {
-	Profile     string `json:"profile" binding:"required"`
-	Headless    *bool  `json:"headless,omitempty"`
-	WorkspaceID string `json:"workspaceId,omitempty"`
+	Profile  string `json:"profile" binding:"required"`
+	Headless *bool  `json:"headless,omitempty"`
 }
 
 /*
@@ -38,9 +36,9 @@ type BrowserNavigateRequest struct {
  * TargetID 为页面投影行 CDP targetId（PageView.TargetID），非空先选中该 tab 再快照（支持分析非激活页）。
  */
 type BrowserAnalyzeRequest struct {
-	Profile  string `json:"profile" binding:"required"`
+	Profile        string `json:"profile" binding:"required"`
 	ConversationID string `json:"conversationId" binding:"required"`
-	TargetID string `json:"targetId,omitempty"`
+	TargetID       string `json:"targetId,omitempty"`
 }
 
 /*

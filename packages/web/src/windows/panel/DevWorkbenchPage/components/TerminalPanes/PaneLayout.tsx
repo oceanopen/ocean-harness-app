@@ -7,12 +7,21 @@ import { layoutGeometry } from './layoutGeometry';
 import PaneDivider from './PaneDivider';
 
 interface PaneLayoutProps {
-  issueId: string;
+  // 容器 id（锚首段：任务页 task.id / 工作空间页 workspace.id），透传至各 pane 终端。
+  containerId: string;
+  // scope key（paneScopeId 派生，TerminalPaneRoot 下传）：布局树/分屏 store 的定位键。
+  scopeId: string;
   node: PaneLayoutNode;
   // 当前工作空间的工作区目录（null = 解析中），透传至终端 cwd 派生。
   workspaceDir: string | null;
   // 终端直启值（'claude' 等命令串 | null；null = 解析中或不自动启动），透传至各 pane 的 directCommand。
   startupCli: string | null;
+  // cwd 直用覆盖（T5.3 会话维度直连：工作空间页会话 cwd = 工作空间根目录），透传至各 pane。
+  cwdOverride?: string | null;
+  // 会话 id（锚中段，全体 pane 共享）；null = legacy 占位段。
+  conversationId?: string | null;
+  // 终端锚恢复 id（T2.2，仅主 pane 消费，防附加 pane 被注入 resume）。
+  resumeClaudeId?: string | null;
 }
 
 /**
@@ -20,7 +29,7 @@ interface PaneLayoutProps {
  * 几何由 layoutGeometry 纯函数从（树, 容器尺寸）计算；容器尺寸经根容器 ResizeObserver 测量——窗口缩放/面板开合挤压/比例调整同路径重算；pane 内终端的 fit/resize 走 TerminalView 自带 ResizeObserver（现有链路零改动）。
  * 残余伪影定论（勿再追查）：左右分屏/拖分割条后 pane 顶部偶现单行空行，属 shell 侧固有反应——宽度变化引起折行时 zsh 重绘账目错位多吐换行，iTerm2/Terminal.app 外部终端拖窄到折行同样出现（实测对照）；拖拽中连续 cols 变化逐次累积、反向拖拽重排合并回退；上下分屏（纯高度变化）不触发；新 spawn 的 pane（零 resize）恒干净。应用侧已收敛到每次真实几何变化恰一次 SIGWINCH（usePtySession 尺寸台账去重），无进一步优化空间。
  */
-export default function PaneLayout({ issueId, node, workspaceDir, startupCli }: PaneLayoutProps) {
+export default function PaneLayout({ containerId, scopeId, node, workspaceDir, startupCli, cwdOverride = null, conversationId = null, resumeClaudeId = null }: PaneLayoutProps) {
   const setRatio = useTerminalPanesStore(s => s.setRatio);
 
   /**
@@ -28,7 +37,7 @@ export default function PaneLayout({ issueId, node, workspaceDir, startupCli }: 
    * 读回值落 store 后本组件随 store 更新重渲染（zustand v5 selector 引用稳定
    * 契约成立，loadLayout 损坏/缺失返回共享 INITIAL_LAYOUT 常量）。
    */
-  ensureLayout(issueId);
+  ensureLayout(scopeId);
 
   const containerRef = useRef<HTMLDivElement>(null);
   // 根容器尺寸（px）：null = 未测得（首帧前），渲染空容器。
@@ -74,14 +83,26 @@ export default function PaneLayout({ issueId, node, workspaceDir, startupCli }: 
                 overflow: 'hidden',
               }}
             >
-              <EmbeddedTerminal issueId={issueId} paneId={pane.paneId} workspaceDir={workspaceDir} startupCli={startupCli} />
+              {/* key 含 scope（容器+会话）：切任务/切会话 = scope 变 = pane 子树重挂新
+                  pane 集合（mainClosed 等内部态随重挂复位；旧 pane 后端常驻，回切
+                  reattach 回到原进程现场）。 */}
+              <EmbeddedTerminal
+                key={`${pane.paneId}:${scopeId}`}
+                containerId={containerId}
+                paneId={pane.paneId}
+                workspaceDir={workspaceDir}
+                startupCli={startupCli}
+                cwdOverride={cwdOverride}
+                conversationId={conversationId}
+                resumeClaudeId={pane.paneId === 'main' ? resumeClaudeId : null}
+              />
             </Box>
           ))}
           {geometry.dividers.map(divider => (
             <PaneDivider
               key={divider.splitId}
               rect={divider}
-              onRatioChange={ratio => setRatio(issueId, divider.splitId, ratio)}
+              onRatioChange={ratio => setRatio(scopeId, divider.splitId, ratio)}
             />
           ))}
         </>

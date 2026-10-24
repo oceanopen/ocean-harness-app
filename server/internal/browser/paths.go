@@ -11,7 +11,7 @@ import (
 )
 
 /*
- * 目录布局 SSOT（D2/D3/D10）：profiles/<name>/（per-profile Chrome user-data-dir，登录态活 SSOT，Chromium 自管；内含 prefs.json 非凭据偏好 D10、.engine.pid pid 锚点）、downloads/<name>/（引擎 --output-dir，下载与产物落点）、auth-states/<workspaceId>.json（工作空间共享登录态，D3 修订：凭据仅此一份落盘，不进数据库）。
+ * 目录布局 SSOT（D2/D3/D10/T7）：profiles/<name>/（per-profile Chrome user-data-dir，登录态活 SSOT，Chromium 自管；内含 prefs.json 非凭据偏好 D10、.engine.pid pid 锚点）、downloads/<name>/（引擎 --output-dir，下载与产物落点）、auth-states/default.json（全局共享登录态，T7.2：登录一次全局共用，凭据仅此一份落盘，不进数据库）。
  * prefs.json / .engine.pid 落在 user-data-dir 根部：Chrome 忽略未知文件，无冲突。
  */
 
@@ -43,10 +43,11 @@ func Root() string {
 }
 
 /*
- * profileNameRe profile 名合法性：字母数字开头，仅限字母数字与 - _，长度 1-64。
- * 防路径穿越（"/"、".."、前导点均被拒；名字不含点，Windows 保留设备名另行整名拒绝）。
+ * profileNameRe profile 名合法性：字母数字开头，仅限字母数字与 - _，长度 1-128。
+ * 防路径穿越（"/"、".."、前导点均被拒；名字不含点，Windows 保留设备名另行整名拒绝）；
+ * 上限容纳会话维度双 uuid 名（issue-<uuid>_session-<uuid>-NN ≈ 90）。
  */
-var profileNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
+var profileNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$`)
 
 /*
  * windowsReservedNames Windows 保留设备名（con/nul/com1-9/lpt1-9；正则已禁点，扩展名
@@ -66,7 +67,7 @@ func init() {
 // ValidateProfileName 校验 profile 名（所有目录推导的前置门槛）。
 func ValidateProfileName(name string) error {
 	if !profileNameRe.MatchString(name) {
-		return fmt.Errorf("profile 名 %q 非法：需以字母数字开头，仅含字母数字与 - _，长度 1-64", name)
+		return fmt.Errorf("profile 名 %q 非法：需以字母数字开头，仅含字母数字与 - _，长度 1-128", name)
 	}
 	if windowsReservedNames[strings.ToLower(name)] {
 		return fmt.Errorf("profile 名 %q 非法：与 Windows 保留设备名冲突，请换名", name)
@@ -75,44 +76,52 @@ func ValidateProfileName(name string) error {
 }
 
 /*
- * profile 命名空间前缀（前后端各单点 SSOT，前端 derive.ts 同规则）：issue-<issueId>
- * 任务派生；workspace-<id> 工作空间维度（预留入口，共享登录态直通）。
+ * profile 命名空间前缀与会话段分隔（前后端各单点 SSOT，前端 derive.ts 同规则，D11）：
+ * <前缀><ownerId>_session-<conversationId>-NN 会话维度派生；issue- 任务 / workspace-
+ * 工作空间两族，后缀两位数字显式存在（无裸基名形态）。
  */
 const (
-	IssueProfilePrefix     = "issue-"
+	TaskProfilePrefix      = "issue-"
 	WorkspaceProfilePrefix = "workspace-"
+	SessionSegment         = "_session-"
 )
 
 /*
- * ParseProfileNamespace 解析 profile 命名空间：返回命中前缀与前缀后的 id；
- * default/自定义名无命名空间（前缀为空，即无共享登录态）。
+ * 会话归属型别取值域（FormatConversationProfile 的 ownerType 入参；与前端 derive.ts
+ * ownerKind 同域）。
  */
-func ParseProfileNamespace(profile string) (prefix, id string) {
-	if id, ok := strings.CutPrefix(profile, IssueProfilePrefix); ok && id != "" {
-		return IssueProfilePrefix, id
+const (
+	ConversationOwnerTask      = "issue"
+	ConversationOwnerWorkspace = "workspace"
+)
+
+// conversationPrefix 归属型别 → profile 前缀映射（未知型别 false）。
+func conversationPrefix(ownerType string) (string, bool) {
+	switch ownerType {
+	case ConversationOwnerTask:
+		return TaskProfilePrefix, true
+	case ConversationOwnerWorkspace:
+		return WorkspaceProfilePrefix, true
 	}
-	if id, ok := strings.CutPrefix(profile, WorkspaceProfilePrefix); ok && id != "" {
-		return WorkspaceProfilePrefix, id
-	}
-	return "", ""
+	return "", false
 }
 
-// MaxSessionsPerTask 单任务浏览器会话槽位数（第 1 会话为基名，2 起加 -N 后缀）。
-const MaxSessionsPerTask = 5
+// MaxSessionsPerConversation 单会话浏览器实例槽位数（-01..-10 两位后缀）。
+const MaxSessionsPerConversation = 10
 
 /*
- * FormatIssueProfile 任务第 slot 个会话的 profile 名（slot 1 = issue-<issueId> 基名，
- * 2-MaxSessionsPerTask 加 -N 后缀）。slot 越界显式报错。
+ * FormatConversationProfile 会话第 slot 个实例的 profile 名（-01 起两位后缀显式存在）。
+ * slot 越界或型别未知显式报错；拼接后的最终名过 ValidateProfileName 校验（超长 id 在此拦下）。
  */
-func FormatIssueProfile(issueID string, slot int) (string, error) {
-	if slot < 1 || slot > MaxSessionsPerTask {
-		return "", fmt.Errorf("会话槽位 %d 非法（1-%d）", slot, MaxSessionsPerTask)
+func FormatConversationProfile(ownerType, ownerID, conversationID string, slot int) (string, error) {
+	if slot < 1 || slot > MaxSessionsPerConversation {
+		return "", fmt.Errorf("会话槽位 %d 非法（1-%d）", slot, MaxSessionsPerConversation)
 	}
-	name := IssueProfilePrefix + issueID
-	if slot > 1 {
-		name = fmt.Sprintf("%s-%d", name, slot)
+	prefix, ok := conversationPrefix(ownerType)
+	if !ok {
+		return "", fmt.Errorf("归属型别 %q 非法（issue/workspace）", ownerType)
 	}
-	// 校验拼接后的最终名：超长 issueId 下基名合法而 -N 名超限的不对称在此拦下。
+	name := fmt.Sprintf("%s%s%s%s-%02d", prefix, ownerID, SessionSegment, conversationID, slot)
 	if err := ValidateProfileName(name); err != nil {
 		return "", err
 	}
@@ -120,39 +129,71 @@ func FormatIssueProfile(issueID string, slot int) (string, error) {
 }
 
 /*
- * ParseIssueProfile 解析任务命名空间 profile 为基座 issueId 与槽位：尾「连字符+单数字」
- * （-2..-MaxSessionsPerTask）识别为槽位后缀，越界数字后缀（-0/-1/-6…）整体判非任务会话；
- * 其余（含 uuid 自带连字符尾）为槽位 1 基名——uuid 段内无连字符，尾「-数字」必为后缀。
+ * ParseConversationProfile 解析会话命名空间 profile（前后端同规则的解析端）：`_session-`
+ * 右侧为「conversationId-NN」，尾两位数字（01-MaxSessionsPerConversation）识别为槽位后缀，
+ * 越界两位尾数（-00/-11…）整体判非会话实例；前段须命中命名空间前缀且 ownerID 非空。
  */
-func ParseIssueProfile(profile string) (issueID string, slot int, ok bool) {
-	id, isIssue := strings.CutPrefix(profile, IssueProfilePrefix)
-	if !isIssue || id == "" {
-		return "", 0, false
+func ParseConversationProfile(profile string) (ownerPrefix, ownerID, conversationID string, slot int, ok bool) {
+	seg := strings.LastIndex(profile, SessionSegment)
+	if seg < 0 {
+		return "", "", "", 0, false
 	}
-	if len(id) >= 2 && id[len(id)-2] == '-' && id[len(id)-1] >= '0' && id[len(id)-1] <= '9' {
-		n := int(id[len(id)-1] - '0')
-		if n < 2 || n > MaxSessionsPerTask {
-			return "", 0, false
-		}
-		return id[:len(id)-2], n, true
+	head, tail := profile[:seg], profile[seg+len(SessionSegment):]
+	if len(tail) < 3 || tail[len(tail)-3] != '-' {
+		return "", "", "", 0, false
 	}
-	return id, 1, true
+	digits := tail[len(tail)-2:]
+	if !isASCIIDigit(digits[0]) || !isASCIIDigit(digits[1]) {
+		return "", "", "", 0, false
+	}
+	slot = int(digits[0]-'0')*10 + int(digits[1]-'0')
+	if slot < 1 || slot > MaxSessionsPerConversation {
+		return "", "", "", 0, false
+	}
+	if ownerPrefix, ownerID, ok = splitProfileNamespace(head); !ok {
+		return "", "", "", 0, false
+	}
+	return ownerPrefix, ownerID, tail[:len(tail)-3], slot, true
+}
+
+// splitProfileNamespace 前缀识别：命中 issue-/workspace- 且余量非空。
+func splitProfileNamespace(head string) (prefix, id string, ok bool) {
+	if id, hit := strings.CutPrefix(head, TaskProfilePrefix); hit && id != "" {
+		return TaskProfilePrefix, id, true
+	}
+	if id, hit := strings.CutPrefix(head, WorkspaceProfilePrefix); hit && id != "" {
+		return WorkspaceProfilePrefix, id, true
+	}
+	return "", "", false
+}
+
+// isASCIIDigit ASCII 数字判定（解析热路径免 regex）。
+func isASCIIDigit(c byte) bool {
+	return c >= '0' && c <= '9'
 }
 
 /*
- * issueQuotaBase 任务配额归组键（每任务并发上限用，宽于 ParseIssueProfile）：issue-
- * 前缀且尾随「连字符+单个数字」一律剥掉后缀归基座——越界槽位名（-0/-1/-6…）与其目标
- * 任务同配额，杜绝借名绕过；其余整体为基座，非 issue- 前缀 ok=false。
+ * conversationQuotaBase 会话配额归组键（单会话并发上限用，宽于 ParseConversationProfile）：
+ * `_session-` 右侧尾随「连字符+两位数字」一律剥掉后缀归基座——越界槽位名（-00/-11/-99…）
+ * 与目标会话同配额，杜绝借名绕过；缺段或空 id 非会话实例 ok=false。
  */
-func issueQuotaBase(profile string) (string, bool) {
-	id, ok := strings.CutPrefix(profile, IssueProfilePrefix)
-	if !ok || id == "" {
+func conversationQuotaBase(profile string) (string, bool) {
+	seg := strings.LastIndex(profile, SessionSegment)
+	if seg < 0 {
 		return "", false
 	}
-	if n := len(id); n >= 2 && id[n-2] == '-' && id[n-1] >= '0' && id[n-1] <= '9' {
-		id = id[:n-2]
+	head, tail := profile[:seg], profile[seg+len(SessionSegment):]
+	prefix, id, ok := splitProfileNamespace(head)
+	if !ok || tail == "" {
+		return "", false
 	}
-	return id, true
+	if n := len(tail); n >= 3 && tail[n-3] == '-' && isASCIIDigit(tail[n-2]) && isASCIIDigit(tail[n-1]) {
+		tail = tail[:n-3]
+	}
+	if tail == "" {
+		return "", false
+	}
+	return prefix + id + SessionSegment + tail, true
 }
 
 /*
@@ -182,14 +223,11 @@ func DownloadsDir(name string) (string, error) {
 }
 
 /*
- * AuthStatePath 工作空间共享登录态文件（auth-states/<workspaceId>.json，Playwright
- * storageState 格式）。只推导不创建——目录与文件归写入方（原子写）负责。
+ * AuthStatePath 全局共享登录态文件（auth-states/default.json，Playwright storageState
+ * 格式；T7.2 登录一次全局共用）。只推导不创建——目录与文件归写入方（原子写）负责。
  */
-func AuthStatePath(workspaceID string) (string, error) {
-	if err := ValidateProfileName(workspaceID); err != nil {
-		return "", fmt.Errorf("工作空间 id 非法: %w", err)
-	}
-	return filepath.Join(Root(), "auth-states", workspaceID+".json"), nil
+func AuthStatePath() string {
+	return filepath.Join(Root(), "auth-states", "default.json")
 }
 
 /*
@@ -199,9 +237,6 @@ func AuthStatePath(workspaceID string) (string, error) {
  */
 type ProfilePrefs struct {
 	Headless bool `json:"headless"`
-	// WorkspaceID 共享登录态归属工作空间（ensure 显式传入时落盘持久化，idle 冷启动/
-	// 无头切换重建读回注入——共享键不依赖调用方每次携带；空 = 无共享）。
-	WorkspaceID string `json:"workspaceId,omitempty"`
 }
 
 // prefsFile 偏好文件名（user-data-dir 根部，Chrome 忽略未知文件）。

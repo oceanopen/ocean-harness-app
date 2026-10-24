@@ -91,7 +91,7 @@ func newOrchestratorWithDB(t *testing.T) (*Orchestrator, *ConversationStore) {
 }
 
 // newOrchestratorWithDriver 指定引擎装配（闲置边界全链路用例：driver 兼任 routeProber）。
-func newOrchestratorWithDriver(t *testing.T, driver ClaudeDriver) (*Orchestrator, *ConversationStore) {
+func newOrchestratorWithDriver(t *testing.T, driver TurnDriver) (*Orchestrator, *ConversationStore) {
 	t.Helper()
 	store := &ConversationStore{DB: newIssueTestDB(t)}
 	return NewOrchestrator(store, driver, nil, nil, zap.NewNop()), store

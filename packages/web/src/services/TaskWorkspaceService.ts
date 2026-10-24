@@ -1,0 +1,251 @@
+import { request, serverUrl } from './http';
+
+// ─── 类型（对齐后端 server/internal/dal/types/issue_workspace.go）───
+
+/** 工作空间初始化状态（服务态与步骤/仓库级共用一套取值）。 */
+export type IssueWorkspaceStatus
+  = | 'NOT_INITIALIZED' // 状态文件不存在（从未初始化）
+    | 'PENDING' // 待执行（步骤初始态）
+    | 'RUNNING' // 后台任务执行中
+    | 'SUCCESS' // 全部步骤成功（= 工作空间就绪）
+    | 'FAILED' // 任一步骤失败（可重试）
+    | 'CORRUPTED' // 状态文件损坏（重新 init 覆盖修复）
+    | 'INTERRUPTED' // 进程中断遗留（可重试）
+    | 'SKIPPED'; // 步骤/仓库级：本期占位未实现
+
+/**
+ * 初始化步骤 key（固定顺序执行：createDirs → sshConfig → cloneRepos）。
+ *  注：mcpConfig 步骤已取消——MCP 配置由 ocean-harness 插件捆绑提供（T1.3 方案变更）。
+ */
+export const ISSUE_WORKSPACE_STEP_KEY = {
+  CREATE_DIRS: 'createDirs',
+  SSH_CONFIG: 'sshConfig',
+  CLONE_REPOS: 'cloneRepos',
+} as const;
+
+/** cloneRepos 步骤内的仓库级子状态。 */
+export interface IssueWorkspaceRepoState {
+  localRepositoryId: number;
+  name: string;
+  remoteUrl: string;
+  baseBranch: string;
+  targetBranch: string;
+  status: IssueWorkspaceStatus;
+  message: string;
+}
+
+/** 单个全局步骤的进度（message 为步骤级说明，如 SKIPPED 的降级原因）。 */
+export interface IssueWorkspaceStep {
+  key: string;
+  title: string;
+  status: IssueWorkspaceStatus;
+  repos?: IssueWorkspaceRepoState[];
+  message?: string;
+}
+
+/** 幂等 manifest 的一项（已初始化的仓库+基准分支）。 */
+export interface IssueWorkspaceRepoRef {
+  localRepositoryId: number;
+  remoteUrl: string;
+  baseBranch: string;
+}
+
+/** 状态文件（.workspace-init-state.json）全文。 */
+export interface IssueWorkspaceState {
+  version: number;
+  taskId: string;
+  baseDir: string;
+  status: IssueWorkspaceStatus;
+  steps: IssueWorkspaceStep[];
+  manifest: IssueWorkspaceRepoRef[];
+  error: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** init/status 共用响应：serverStatus 为顶层结论，state 为状态文件全文（未初始化时 null）。 */
+export interface TaskWorkspaceStatusResponseData {
+  serverStatus: IssueWorkspaceStatus;
+  state: IssueWorkspaceState | null;
+}
+
+// POST /api/project/taskWorkspace/init 的入参（目录由 service 经 taskId 解析所属工作空间）。
+export interface TaskWorkspaceInitRequest {
+  taskId: string;
+}
+
+// POST /api/project/taskWorkspace/status 的入参。
+export interface TaskWorkspaceStatusRequest {
+  taskId: string;
+}
+
+/** 归档/取消动作（T3.2）：archive → issue 置 DONE；cancel → issue 置 CANCELLED。 */
+export type IssueWorkspaceArchiveAction = 'archive' | 'cancel';
+
+/**
+ * POST /api/project/taskWorkspace/archive 的入参。两段式：force=false 仅安全检查（未提交变更 +
+ * 未推送提交）返回警告不执行；force=true 跳过检查直接执行（删目录 + 后端流转状态，
+ * 前端二次确认后携带——执行段前须 ptyShutdownIssue 关闭该 issue 全部终端会话）。
+ */
+export interface TaskWorkspaceArchiveRequest {
+  taskId: string;
+  action: IssueWorkspaceArchiveAction;
+  force: boolean;
+}
+
+/** archive 响应：force=false 时 executed 恒 false，warnings 为空 = 检查干净。 */
+export interface IssueWorkspaceArchiveResponseData {
+  executed: boolean;
+  warnings: string[];
+}
+
+// ─── 文件浏览（T5.1 本期：列表 + 预览，对齐后端 types/issue_workspace_files.go）───
+
+/**
+ * 文件内容传输类型（后端定夺，前后端单一真相）：text（UTF-8 全文，呈现分派在前端按
+ * 扩展名）/ image（元信息，字节经 fileRaw URL 直连）/ binary（检出非文本，提示态）/
+ * tooLarge（超文本预览上限，合法响应态）。
+ */
+export type IssueWorkspaceFileContentKind
+  = | 'text'
+    | 'image'
+    | 'binary'
+    | 'tooLarge';
+
+/** POST /api/project/taskWorkspace/getFileTree 的入参。 */
+export interface IssueWorkspaceFileTreeRequest {
+  taskId: string;
+}
+
+/**
+ * 文件树节点（扁平表成员）。path 为相对任务工作目录的正斜杠路径，前端直接
+ * 用作树 key 与 getFileContent 的 path 入参；目录 size 恒 0。
+ */
+export interface IssueWorkspaceFileNode {
+  path: string;
+  name: string;
+  isDir: boolean;
+  size: number;
+}
+
+/** getFileTree 响应：一次性全树扁平节点表 + 截断标志（节点数超后端上限）。 */
+export interface IssueWorkspaceFileTreeResponseData {
+  nodes: IssueWorkspaceFileNode[];
+  truncated: boolean;
+}
+
+/** POST /api/project/taskWorkspace/getFileContent 的入参（path 即树节点 path）。 */
+export interface IssueWorkspaceFileContentRequest {
+  taskId: string;
+  path: string;
+}
+
+/** getFileContent 响应：各 kind 字段占用——text→content / image→mimeType（字节走 fileRaw）/ 其余仅 size。 */
+export interface IssueWorkspaceFileContentResponseData {
+  kind: IssueWorkspaceFileContentKind;
+  size: number;
+  mimeType?: string;
+  content?: string;
+}
+
+/**
+ * 单个文件的未提交变更（多仓库扁平，path 带 repo/{name}/ 前缀，与树节点 path 同构）。
+ * status：A=新增 / M=修改 / D=删除 / U=untracked；ins/del 为变更行数（binary 为 -1）。
+ */
+export interface IssueWorkspaceGitChangeFile {
+  path: string;
+  status: 'A' | 'M' | 'D' | 'U';
+  ins: number;
+  del: number;
+}
+
+/** POST /api/project/taskWorkspace/getGitChanges 的入参。 */
+export interface IssueWorkspaceGitChangesRequest {
+  taskId: string;
+}
+
+/**
+ * getGitChanges 响应：全部仓库未提交变更的扁平表（无变更为空数组）。
+ */
+export interface IssueWorkspaceGitChangesResponseData {
+  files: IssueWorkspaceGitChangeFile[];
+}
+
+/** POST /api/project/taskWorkspace/getFileDiff 的入参（path 为 getGitChanges 的 file.path）。 */
+export interface IssueWorkspaceFileDiffRequest {
+  taskId: string;
+  path: string;
+}
+
+/**
+ * getFileDiff 响应：前后内容对（diff 视图消费）。oldContent=HEAD 版本（新增/untracked 为空），
+ * newContent=工作区当前（删除为空）；kind 仅 text/binary/tooLarge。
+ */
+export interface IssueWorkspaceFileDiffResponseData {
+  kind: IssueWorkspaceFileContentKind;
+  status: 'A' | 'M' | 'D' | 'U';
+  ins: number;
+  del: number;
+  oldContent?: string;
+  newContent?: string;
+}
+
+export class TaskWorkspaceService {
+  /**
+   * init：受理工作空间初始化（异步执行；幂等可重入——执行中重复触发返回当前进度，
+   * 已成功且关联未变直接 SUCCESS，失败重试只补失败仓库）。返回受理后的状态快照。
+   */
+  static init(req: TaskWorkspaceInitRequest): Promise<TaskWorkspaceStatusResponseData> {
+    return request<TaskWorkspaceStatusResponseData>('POST', '/api/project/taskWorkspace/init', req);
+  }
+
+  // status：查询初始化进度（读状态文件派生，不查库），供前端轮询。
+  static status(req: TaskWorkspaceStatusRequest): Promise<TaskWorkspaceStatusResponseData> {
+    return request<TaskWorkspaceStatusResponseData>('POST', '/api/project/taskWorkspace/status', req);
+  }
+
+  // archive：归档/取消工作空间（T3.2，两段式契约见请求类型注释）。
+  static archive(req: TaskWorkspaceArchiveRequest): Promise<IssueWorkspaceArchiveResponseData> {
+    return request<IssueWorkspaceArchiveResponseData>('POST', '/api/project/taskWorkspace/archive', req);
+  }
+
+  // getFileTree：一次性返回工作空间全部文件/目录扁平节点表（前端纯函数组树）。
+  static fileTree(req: IssueWorkspaceFileTreeRequest): Promise<IssueWorkspaceFileTreeResponseData> {
+    return request<IssueWorkspaceFileTreeResponseData>('POST', '/api/project/taskWorkspace/getFileTree', req);
+  }
+
+  // getFileContent：读取单个文件内容并定夺传输 kind（text/image/binary/tooLarge）。
+  static fileContent(req: IssueWorkspaceFileContentRequest): Promise<IssueWorkspaceFileContentResponseData> {
+    return request<IssueWorkspaceFileContentResponseData>('POST', '/api/project/taskWorkspace/getFileContent', req);
+  }
+
+  // getGitChanges：列出全部仓库的未提交变更（暂存+工作区 vs HEAD + untracked）。
+  static gitChanges(req: IssueWorkspaceGitChangesRequest): Promise<IssueWorkspaceGitChangesResponseData> {
+    return request<IssueWorkspaceGitChangesResponseData>('POST', '/api/project/taskWorkspace/getGitChanges', req);
+  }
+
+  // getFileDiff：返回单文件未提交变更的前后内容对（diff 视图消费）。
+  static fileDiff(req: IssueWorkspaceFileDiffRequest): Promise<IssueWorkspaceFileDiffResponseData> {
+    return request<IssueWorkspaceFileDiffResponseData>('POST', '/api/project/taskWorkspace/getFileDiff', req);
+  }
+
+  /**
+   * fileRawUrl：图片原始字节直连 URL（<img src>，类静态资源；base 解析同 request）。
+   * v 为缓存刷新参数（重验/重开时变化强制重新加载）。
+   */
+  static fileRawUrl(req: { taskId: string; path: string; v?: string | number }): Promise<string> {
+    const query: Record<string, string> = { taskId: req.taskId, path: req.path };
+    if (req.v != null) {
+      query.v = String(req.v);
+    }
+    return serverUrl('/api/project/taskWorkspace/fileRaw', query);
+  }
+
+  /**
+   * fileRawBase：fileRaw 端点基址（不带 query）。MarkdownViewer 一次解析基址、渲染期同步
+   * 拼逐图 src（避免逐图异步解析闪烁）——端点路径 SSOT 收归本类，参数约定与 fileRawUrl 同源。
+   */
+  static fileRawBase(): Promise<string> {
+    return serverUrl('/api/project/taskWorkspace/fileRaw', {});
+  }
+}

@@ -1,5 +1,5 @@
 /*
- * Package acpsession ACP 会话域（T1.5）：sidecar 亲自持有 issue 级 ACP 会话生命周期——launch_settings 解析消费、绑定锚点落库（D7 受控反转：随 chat 视图删除 claude_session_ref 后，本域以 t_issue_acp_sessions 重新落绑定，sidecar 亲自持有 ACP 会话后绑定语义才成立）、事件流积累与会话视图、SSE hub 扇出；跨入口回合锁（T2.2）：桌面 prompt（即时受理）与 bot 回合（排队受理 PromptQueued）共用同一视图闸门，抢跑由 per-entry 等位队列串行；依赖方向：本包 → acp + agentcatalog + dal，由 main 装配为 global.AcpSessions，service/controller 层仅做受理转发与投影，不反向被本包依赖。
+ * Package acpsession ACP 会话域（T1.5）：sidecar 亲自持有 issue 级 ACP 会话生命周期——launch_settings 解析消费、绑定锚点落库（锚持久于 t_conversations.claude_session_id，sidecar 亲自持有 ACP 会话）、事件流积累与会话视图、SSE hub 扇出；跨入口回合锁（T2.2）：桌面 prompt（即时受理）与 bot 回合（排队受理 PromptQueued）共用同一视图闸门，抢跑由 per-entry 等位队列串行；依赖方向：本包 → acp + agentcatalog + dal，由 main 装配为 global.AcpSessions，service/controller 层仅做受理转发与投影，不反向被本包依赖。
  */
 package acpsession
 

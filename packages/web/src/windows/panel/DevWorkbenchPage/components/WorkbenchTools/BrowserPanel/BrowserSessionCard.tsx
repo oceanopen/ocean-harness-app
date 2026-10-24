@@ -31,7 +31,7 @@ import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
-  parseTaskSessionProfile,
+  parseConversationProfile,
   useAnalyzeBrowserSession,
   useBrowserFrameStream,
   useBrowserStageStore,
@@ -71,7 +71,7 @@ const MINI_PREVIEW_HEIGHT = 150;
 
 interface BrowserSessionCardProps {
   session: BrowserSessionView;
-  /** 当前选中 issue id（「AI 分析此页」归因）。 */
+  /** 任务主会话 id（「AI 分析此页」归因键）。 */
   conversationId: string;
   /** 面板区展开态：帧流闸门之一（收起即停，D4 展示侧对偶）。 */
   panelVisible: boolean;
@@ -91,6 +91,8 @@ export default function BrowserSessionCard({ session, conversationId, panelVisib
   const toggleWatchPage = useBrowserStageStore(s => s.toggleWatchPage);
   const clearWatchPage = useBrowserStageStore(s => s.clearWatchPage);
   const activated = activatedProfile === session.profile;
+  // 归属徽标按会话展示（T7.2）：profile 解析出的会话短码（tooltip 全 id）与槽位号。
+  const parsedProfile = parseConversationProfile(session.profile);
   const [expanded, setExpanded] = useState(true);
   const [address, setAddress] = useState('');
   // 无头切换确认弹窗（null = 关闭）：headless 引擎启动时固化，切换 = close + ensure 传新值；
@@ -211,8 +213,13 @@ export default function BrowserSessionCard({ session, conversationId, panelVisib
         sx={{ 'display': 'flex', 'alignItems': 'center', 'gap': '8px', 'px': '12px', 'py': '8px', 'cursor': 'pointer', 'bgcolor': 'action.hover', '&:hover': { bgcolor: 'action.selected' } }}
       >
         <Typography noWrap sx={{ fontSize: '13px', fontWeight: 600, flex: 1, minWidth: '0px' }}>
-          {`浏览器会话${showSlot ? ` · ${parseTaskSessionProfile(session.profile)?.slot ?? 1}` : ''}`}
+          {`浏览器会话${showSlot && parsedProfile ? ` · 槽位 ${parsedProfile.slot}` : ''}`}
         </Typography>
+        {parsedProfile && (
+          <Tooltip title={`归属会话 ${parsedProfile.conversationId}`}>
+            <Chip size="small" variant="outlined" label={parsedProfile.conversationId.slice(0, 8)} sx={{ fontSize: '12px', color: 'text.secondary' }} />
+          </Tooltip>
+        )}
         <Chip size="small" variant="outlined" label={chip.label} color={chip.color} sx={{ fontSize: '12px' }} />
         <Tooltip title={session.headless ? '无头模式：无窗口，面板实时画面即页面' : '有头模式：桌面真实 Chrome 窗口（人工介入通道）'}>
           <Chip size="small" variant="outlined" label={session.headless ? '无头' : '有头'} sx={{ fontSize: '12px', color: 'text.secondary' }} />

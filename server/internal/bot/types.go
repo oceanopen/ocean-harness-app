@@ -1,7 +1,7 @@
 /*
  * Package bot 是 IM 渠道数字人 bot 的渠道无关核心层：入站消息规范化 → 幂等/白名单 → 每会话串行队列 → prompt 组装 → claude 回合 → 覆写式流式回复泵。
- * 回合引擎有两实现（headless spawn：driver_claude.go；ACP 共享 issue 会话：driver_acp.go），按 workspace 级启动模式逐回合路由（driver_route.go）。
- * 渠道差异（企微/飞书…）全部收窄在 adapter 包（实现本包 channel.go 的 ChannelRuntime 接口），依赖方向单向：adapter → core，core 不 import 任何渠道 SDK。 claude 引擎属核心层：所有渠道共用同一组引擎。
+ * 回合引擎双驱动并存，按容器 launch_settings.mode 逐回合路由（driver_route.go）：mode='acp' 走 driver_acp.go（经 acpsession 域共享会话），其余档走 driver_claude.go（headless spawn，--resume 锚续聊）。
+ * 渠道差异（企微/飞书…）全部收窄在 adapter 包（实现本包 channel.go 的 ChannelRuntime 接口），依赖方向单向：adapter → core，core 不 import 任何渠道 SDK。
  */
 package bot
 
@@ -11,15 +11,6 @@ import (
 	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/dal/enums"
 )
-
-/*
- * DefaultAllowedTools headless 驱动恒用的工具白名单（--allowedTools）：开发类任务需要 Bash
- * 执行力，安全周界是访问白名单 + 专属工作目录 + acceptEdits（headless 下 Bash 危险命令仍走
- * claude 自身 permission 判定而非自动放行）。
- */
-func DefaultAllowedTools() []string {
-	return []string{"Read", "Glob", "Grep", "Edit", "Write", "Bash", "WebFetch", "WebSearch", "TodoWrite"}
-}
 
 // ParseAccessPolicy 解析 access_policy JSON 列；损坏返回错误（调用方 fail closed 拒绝启动）。
 func ParseAccessPolicy(raw string) (AccessPolicy, error) {
@@ -127,13 +118,16 @@ const (
 
 // BotRuntimeConfig supervisor → Factory 的装配参数（t_im_bots 行 + 进程环境的合并视图）。
 type BotRuntimeConfig struct {
-	BotID        string
-	Channel      enums.Channel
-	Credential   string // 渠道凭据 JSON，适配器自行解析（核心不解引用）
-	WorkspaceID  string // 工作空间行 id uuid（引擎路由按 workspace 级 launch_settings 解析；'' = 未选择）
-	WorkspaceDir string
-	AccessPolicy AccessPolicy
-	Port         int // sidecar HTTP 端口，driver 注入 claude 子进程 OCEAN_HARNESS_PORT
+	BotID            string
+	Channel          enums.Channel
+	Credential       string                 // 渠道凭据 JSON，适配器自行解析（核心不解引用）
+	WorkspaceID      string                 // workspace 档关联工作空间行 id（'' = 未选择）
+	ConversationType enums.ConversationType // 会话类型两档（D8）：workspace / project
+	ProjectID        string                 // project 档关联项目行 id
+	TaskID           string                 // project 档可选关联任务行 id（'' = 未关联，编排器门禁拦截）
+	WorkspaceDir     string
+	AccessPolicy     AccessPolicy
+	Port             int // sidecar HTTP 端口，driver 注入 claude 子进程 OCEAN_HARNESS_PORT
 	// ChannelState 渠道自管运行态 JSON（t_im_bots.channel_state 启动快照，如微信长轮询游标；
 	// 核心不解释内容）。SaveChannelState 回写通道（nil = 忽略；失败由适配器自行兜底）。
 	ChannelState     string
@@ -142,27 +136,30 @@ type BotRuntimeConfig struct {
 
 /*
  * TurnRequest 一次 claude 回合的请求。SessionID 为 headless 语义（空 = 新会话，非空 =
- * --resume 续聊）；ACP 驱动不消费它（共享会话无 resume，bot 侧不写会话锚点）。
+ * --resume 续聊锚，编排器自 bot 会话行回填）；ACP 驱动不消费它（共享会话无 resume，bot 侧不写会话锚点）。
  */
 type TurnRequest struct {
-	BotID           string // bot 行 id uuid（与 ConversationKey 组成绑定查询键 (bot_id, conversation_key)；headless 不消费）
-	WorkspaceID     string // 工作空间行 id uuid（引擎路由解析合并后 launch_settings.mode 的键之一）
-	WorkspaceDir    string
-	ConversationKey string // FormatConversationKey 产物（路由层按 (BotID, ConversationKey) 解析绑定）
-	AcpSessionKey   string // 路由层回填的会话锚键（issue uuid = 与桌面共享的任务会话；conv-<会话行id> = 未关联任务的 IM 独立会话；空 = headless 语义）；仅 ACP 引擎消费，headless 忽略
-	SessionID       string
-	Prompt          string                   // prompt.go 组装后的最终 user prompt
-	SystemPrompt    string                   // ComposeSystemPrompt 产物（固定守则段）
-	Display         *acpsession.EntryDisplay // prompt.go buildTurnDisplay 产物：展示元数据（正文原文 + 引用/附件投影）；仅 ACP 引擎随 PromptMeta 落条目，headless 忽略
-	Port            int
-	DeliveryToken   string // 回合内 MCP im 投递端点令牌（空 = 投递链路禁用）；headless 驱动据此注入 send_file 工具
+	BotID            string // bot 行 id uuid（与 ConversationKey 组成绑定查询键 (bot_id, conversation_key)；headless 不消费）
+	WorkspaceID      string // 工作空间行 id uuid（引擎路由解析容器 launch_settings.mode 的键之一）
+	WorkspaceDir     string
+	ConversationKey  string                   // FormatConversationKey 产物（路由层按 (BotID, ConversationKey) 解析绑定）
+	ConversationType enums.ConversationType   // 会话类型两档（D8，路由 resolve 输入）
+	ProjectID        string                   // project 档关联项目行 id（路由 resolve 输入）
+	TaskID           string                   // project 档可选关联任务行 id（路由 resolve 输入）
+	SessionID        string                   // headless --resume 锚（编排器回填）；ACP 不消费
+	AcpSessionKey    string                   // 路由层回填的会话锚键（conv-<会话实体行id>，与桌面共享同一会话载体）；headless 不消费
+	Prompt           string                   // prompt.go 组装后的最终 user prompt
+	SystemPrompt     string                   // ComposeSystemPrompt 产物（固定守则段）
+	Display          *acpsession.EntryDisplay // prompt.go buildTurnDisplay 产物：展示元数据（正文原文 + 引用/附件投影），随 PromptMeta 落条目
+	Port             int
+	DeliveryToken    string // 回合内 MCP im 投递端点令牌（空 = 投递链路禁用），send_file 类工具经它鉴权取投递面
 }
 
-// TurnEventType claude 回合事件类型（driver_claude 解析 stream-json 产出）。
+// TurnEventType 回合事件类型（引擎解析产出，经 TurnEvent 通道送达编排器）。
 type TurnEventType string
 
 const (
-	TurnInit     TurnEventType = "init"     // system/init：携带 session_id（持久化回会话映射）
+	TurnInit     TurnEventType = "init"     // system/init（headless 引擎产出，携带会话 id；ACP 引擎不产出）
 	TurnText     TurnEventType = "text"     // 正文文本增量
 	TurnThinking TurnEventType = "thinking" // 思考文本增量（累计进面板思考分区）
 	TurnToolUse  TurnEventType = "tool_use" // 工具调用开始（面板工具分区追加一行）

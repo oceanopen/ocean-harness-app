@@ -45,7 +45,7 @@ type acpDriver struct {
 }
 
 // NewAcpDriver 构造 ACP 引擎（supervisor 装配）。
-func NewAcpDriver(sessions acpSessions) ClaudeDriver {
+func NewAcpDriver(sessions acpSessions) TurnDriver {
 	return acpDriver{sessions: sessions}
 }
 
@@ -63,7 +63,9 @@ func (d acpDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEve
 		return nil, errors.New("ACP 回合缺少会话锚键（路由层未回填）")
 	}
 	sessionKey := req.AcpSessionKey
-	snap, err := d.sessions.Ensure(ctx, sessionKey, "")
+	// bot 恒 ACP（T4.2 单驱动）：显式临场 acp 过门禁——容器 launch_settings.mode 是桌面启动
+	// 档位，与 bot 会话通道无关，不得拦截 bot 回合。
+	snap, err := d.sessions.Ensure(ctx, sessionKey, "acp")
 	if err != nil {
 		return nil, err
 	}

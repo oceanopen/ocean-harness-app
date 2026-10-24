@@ -4,18 +4,28 @@
  * ⚠️ 架构红线（终端链路同款铁律）：render 只是「视口」——有状态的工具会话必须后端常驻，tab 卸载只断渲染流、重挂载 reattach；纯前端持有状态禁止。
  */
 import type { SvgIconComponent } from '@mui/icons-material';
-import type { WorkspaceIssueResponseData } from '@src/services';
 import type { ReactNode } from 'react';
-import { FolderOutlined as FolderOutlinedIcon, Language as LanguageIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
+import { FolderOutlined as FolderOutlinedIcon, ForumOutlined as ForumOutlinedIcon, Language as LanguageIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
+import ClaudeSessionsViewer from '../ClaudeSessionsViewer/ClaudeSessionsViewer';
 import ImBotPanel from '../ImBotPanel/ImBotPanel';
 import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
 import BrowserPanel from './BrowserPanel/BrowserPanel';
 
 /**
- * 工具渲染上下文：当前选中 issue（面板内容均围绕选中任务；hasSelection 已由外层保证非空）。
+ * 工具渲染锚定（结构子集）：任务页 = 选中任务；工作空间页 = 选中会话（projectId 回落
+ * 容器 id）。各工具的数据面仍按自身维度消费这些字段，锚定不改变查询语义。
+ */
+export interface WorkbenchToolIssue {
+  id: string;
+  projectId: string;
+  name: string;
+}
+
+/**
+ * 工具渲染上下文：当前选中锚定（任务或会话；可用性已由外层门禁保证非空）。
  */
 export interface WorkbenchToolRenderCtx {
-  issue: WorkspaceIssueResponseData;
+  issue: WorkbenchToolIssue;
   /**
    * 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：帧流类视口的暂停闸门
    * （浏览器面板实时画面「收起即停」，D4 展示侧对偶）。
@@ -29,6 +39,8 @@ export interface WorkbenchToolDef {
   title: string;
   icon: SvgIconComponent;
   exclusive: boolean;
+  // 锚定维度超出工具适用域（如任务会话维度工具落在工作空间会话上）→ 工具条禁用、面板区不渲染。
+  scopedOut?: (ctx: WorkbenchToolRenderCtx) => boolean;
   render: (ctx: WorkbenchToolRenderCtx) => ReactNode;
 }
 
@@ -48,12 +60,21 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     render: ({ issue }) => <ImBotPanel issue={issue} />,
   },
   {
+    id: 'claudeSessions',
+    title: 'Claude 会话',
+    icon: ForumOutlinedIcon,
+    exclusive: true,
+    // 任务会话维度工具（子会话/关联 bot 查看）：工作空间会话无子会话概念，恒不可用。
+    scopedOut: () => true,
+    render: ({ issue }) => <ClaudeSessionsViewer issueId={issue.id} projectId={issue.projectId} />,
+  },
+  {
     id: 'browser',
     title: '浏览器',
     icon: LanguageIcon,
     exclusive: true,
     render: ({ issue, panelVisible }) => (
-      <BrowserPanel issueId={issue.id} workspaceId={issue.workspaceId} panelVisible={panelVisible} />
+      <BrowserPanel issueId={issue.id} panelVisible={panelVisible} />
     ),
   },
 ];

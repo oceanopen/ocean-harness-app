@@ -142,7 +142,7 @@ func readSharedState(path string) (state StorageState, exists bool, err error) {
 
 /*
  * writeSharedStateAtomic 原子写共享登录态（同目录 tmp 0600 + rename；调用方须持
- * per-workspace 文件锁，见 withWorkspaceFile）。
+ * 共享文件锁，见 withSharedFile）。
  */
 func writeSharedStateAtomic(path string, state StorageState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -175,16 +175,14 @@ func writeSharedStateAtomic(path string, state StorageState) error {
 }
 
 /*
- * workspaceFileLocks per-workspace 文件锁：同进程多会话回写同一共享文件时串行化
+ * sharedFileLock 共享登录态文件写锁：同进程多会话回写同一全局文件时串行化
  * 读-合并-写（跨进程无第二写者，Rust 不触该目录）。
  */
-var workspaceFileLocks sync.Map
+var sharedFileLock sync.Mutex
 
-// withWorkspaceFile 持工作空间文件锁执行 fn（合并写纪律单点）。
-func withWorkspaceFile(workspaceID string, fn func()) {
-	muAny, _ := workspaceFileLocks.LoadOrStore(workspaceID, &sync.Mutex{})
-	mu := muAny.(*sync.Mutex)
-	mu.Lock()
-	defer mu.Unlock()
+// withSharedFile 持共享文件锁执行 fn（合并写纪律单点）。
+func withSharedFile(fn func()) {
+	sharedFileLock.Lock()
+	defer sharedFileLock.Unlock()
 	fn()
 }

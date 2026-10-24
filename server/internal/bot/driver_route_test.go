@@ -1,264 +1,382 @@
 package bot
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"strings"
 	"testing"
 
 	"gorm.io/gorm"
 
+	"github.com/google/uuid"
+
 	"ocean-harness/server/internal/acpsession"
+	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
-	"ocean-harness/server/internal/dal/query"
 )
 
-// stubDriver 引擎替身：记录被调次数，可注入受理失败。
-type stubDriver struct {
-	calls int
-	err   error
-}
-
-func (s *stubDriver) RunTurn(_ context.Context, _ TurnRequest) (<-chan TurnEvent, error) {
-	s.calls++
-	if s.err != nil {
-		return nil, s.err
-	}
-	events := make(chan TurnEvent, 1)
-	events <- TurnEvent{Type: TurnDone, Result: "ok"}
-	close(events)
-	return events, nil
-}
-
-func TestDriverRouteBranching(t *testing.T) {
-	headless, acpDrv := &stubDriver{}, &stubDriver{}
-	r := driverRoute{
-		headless: headless,
-		acp:      acpDrv,
-		resolve: func(botID, workspaceID string, conversationKey string) (routeTarget, error) {
-			return routeTarget{SessionKey: "sk-1", ACP: workspaceID == "ws-acp"}, nil
-		},
-	}
-	ctx := context.Background()
-	if _, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: "ws-acp"}); err != nil {
-		t.Fatalf("acp 路由受理失败: %v", err)
-	}
-	if _, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: ""}); err != nil { // 空 = 未选择工作空间 → headless
-		t.Fatalf("headless 路由受理失败: %v", err)
-	}
-	if acpDrv.calls != 1 || headless.calls != 1 {
-		t.Fatalf("路由分发不符: acp=%d headless=%d", acpDrv.calls, headless.calls)
-	}
-}
-
-func TestDriverRouteResolverErrorFailClosed(t *testing.T) {
-	r := driverRoute{resolve: func(string, string, string) (routeTarget, error) { return routeTarget{}, errors.New("db boom") }}
-	_, err := r.RunTurn(context.Background(), TurnRequest{WorkspaceID: "ws-1"})
-	if err == nil || !strings.Contains(err.Error(), "读取工作空间启动配置失败") || !strings.Contains(err.Error(), "db boom") {
-		t.Fatalf("解析失败应 fail closed 同步报错: %v", err)
-	}
-}
-
 /*
- * TestDriverRouteAcpErrorsMarkedNotAccepted 锚点保护契约：ACP 引擎同步失败与路由解析失败包
- * turnNotAcceptedError（编排器据此跳过清锚）；headless 引擎失败不包（自愈语义保持不变）。
+ * TestDriverRouteWorkspaceEntitySession workspace 档路由（mode=acp）：取/建工作空间 ACP 会话实体行
+ * （进工作空间会话列表），锚指向实体行；bot 会话行回绑 conversation_id（归属可倒推）。
  */
-func TestDriverRouteAcpErrorsMarkedNotAccepted(t *testing.T) {
-	ctx := context.Background()
-	isNotAccepted := func(err error) bool {
-		var rejected turnNotAcceptedError
-		return errors.As(err, &rejected)
-	}
+func TestDriverRouteWorkspaceEntitySession(t *testing.T) {
+	db := routeTestDB(t)
+	seedWorkspaceRow(t, db, "ws-1", `{"mode":"acp"}`)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
 
-	acpErrStub, headlessErrStub := &stubDriver{err: errors.New("acp boom")}, &stubDriver{err: errors.New("headless boom")}
-	r := driverRoute{
-		headless: headlessErrStub,
-		acp:      acpErrStub,
-		resolve:  func(string, string, string) (routeTarget, error) { return routeTarget{SessionKey: "sk-1", ACP: true}, nil },
-	}
-	_, err := r.RunTurn(ctx, TurnRequest{WorkspaceID: "ws-acp"})
-	if err == nil || !isNotAccepted(err) || acpErrStub.calls != 1 {
-		t.Fatalf("ACP 引擎失败应包受理拒绝标记: %v", err)
-	}
-
-	r2 := driverRoute{
-		headless: headlessErrStub,
-		acp:      acpErrStub,
-		resolve:  func(string, string, string) (routeTarget, error) { return routeTarget{}, nil },
-	}
-	_, err = r2.RunTurn(ctx, TurnRequest{WorkspaceID: "ws-1"})
-	if err == nil || isNotAccepted(err) || headlessErrStub.calls != 1 {
-		t.Fatalf("headless 引擎失败不得包受理拒绝标记（自愈语义不变）: %v", err)
-	}
-
-	r3 := driverRoute{resolve: func(string, string, string) (routeTarget, error) { return routeTarget{}, errors.New("db boom") }}
-	_, err = r3.RunTurn(ctx, TurnRequest{WorkspaceID: "ws-1"})
-	if err == nil || !isNotAccepted(err) || !strings.Contains(err.Error(), "读取工作空间启动配置失败") {
-		t.Fatalf("路由解析失败应包受理拒绝标记且保留原文案: %v", err)
-	}
-}
-
-/*
- * TestDriverRouteWorkspaceModeResolution 真 DB 解析验收：逐行断言 launch_settings 各形态的
- * mode 判定（acp / 非 acp 档 / 空配置 / 损坏 JSON = 未配置语义 / 行缺失）。ACP 档未关联任务时
- * 以会话行为锚（conv-<会话行id>，工作空间根目录独立会话），路由层不阻断。
- */
-func TestDriverRouteWorkspaceModeResolution(t *testing.T) {
-	db := newBotTestDB(t, &model.Workspace{}, &model.ImBotConversation{})
-	q := query.Use(db)
-	seq := 0
-	mk := func(settings string) string {
-		seq++
-		ws := &model.Workspace{ID: fmt.Sprintf("ws-%d", seq), Name: "ws", Dir: "/tmp/ocean-test", LaunchSettings: settings}
-		if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
-			t.Fatalf("建 workspace: %v", err)
-		}
-		return ws.ID
-	}
-	const acpSettings = `{"mode":"acp"}`
-	cases := []struct {
-		name     string
-		settings string
-		acp      bool
-	}{
-		{"acp 档（未关联）", acpSettings, true},
-		{"none 档（非 acp）", `{"mode":"none"}`, false},
-		{"空配置", "", false},
-		{"损坏 JSON（未配置语义）", "{bad json", false},
-	}
-	ids := make([]string, 0, len(cases))
-	for _, tc := range cases {
-		ids = append(ids, mk(tc.settings))
-	}
-
-	route := newDriverRoute(db, nil) // 解析仅触达会话行建行，nil sessions 安全
-	const botID, convKey = "", "single:u1"
-	for i, tc := range cases {
-		got, err := route.resolve(botID, ids[i], convKey)
-		want := routeTarget{}
-		if tc.acp {
-			want = routeTarget{SessionKey: acpsession.ConversationSessionKey(convRowID(t, db, botID, convKey)), ACP: true}
-		}
-		if err != nil || got != want {
-			t.Fatalf("%s: got=%v want=%v err=%v", tc.name, got, want, err)
-		}
-	}
-	if got, err := route.resolve(botID, "ws-missing", convKey); err != nil || got != (routeTarget{}) {
-		t.Fatalf("行缺失应按未启用处理: got=%v err=%v", got, err)
-	}
-}
-
-/*
- * mkRouteFixture 建路由目标解析夹具（workspace + 会话映射表），返回 (wsID, db)。
- * launchSettings 可为空串（未配置语义）。
- */
-func mkRouteFixture(t *testing.T, wsSettings string) (string, *gorm.DB) {
-	t.Helper()
-	db := newBotTestDB(t, &model.Workspace{}, &model.ImBotConversation{})
-	q := query.Use(db)
-	ws := &model.Workspace{ID: "ws-route", Name: "ws", Dir: "/tmp/ocean-test", LaunchSettings: wsSettings}
-	if err := q.Workspace.WithContext(context.Background()).Create(ws); err != nil {
-		t.Fatalf("建 workspace: %v", err)
-	}
-	return ws.ID, db
-}
-
-// convRowID 读会话行 id（conv- 会话锚的载体，GetOrCreate 建行后取用）。
-func convRowID(t *testing.T, db *gorm.DB, botID, convKey string) string {
-	t.Helper()
-	q := query.Use(db)
-	row, err := q.ImBotConversation.WithContext(context.Background()).Where(
-		q.ImBotConversation.BotID.Eq(botID),
-		q.ImBotConversation.ConversationKey.Eq(convKey),
-	).First()
+	target, err := r.resolve(BotRuntimeConfig{BotID: "bot-1", ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1"}, "single:u1")
 	if err != nil {
-		t.Fatalf("读会话行: %v", err)
+		t.Fatalf("workspace 档路由: %v", err)
+	}
+	if !target.ACP {
+		t.Fatalf("acp 档应路由 ACP 引擎: %+v", target)
+	}
+	var convs []model.Conversation
+	if err := db.Where(&model.Conversation{OwnerType: enums.OWNER_TYPE_WORKSPACE, OwnerID: "ws-1"}).Find(&convs).Error; err != nil {
+		t.Fatalf("查工作空间会话实体: %v", err)
+	}
+	if len(convs) != 1 || convs[0].Mode != enums.CONVERSATION_MODE_ACP {
+		t.Fatalf("应取/建工作空间 ACP 会话实体: %+v", convs)
+	}
+	if target.SessionKey != acpsession.ConversationSessionKey(convs[0].ID) {
+		t.Fatalf("锚应指向会话实体行: %q", target.SessionKey)
+	}
+	var botConv model.ImBotConversation
+	if err := db.Where(&model.ImBotConversation{BotID: "bot-1", ConversationKey: "single:u1"}).First(&botConv).Error; err != nil {
+		t.Fatalf("查 bot 会话行: %v", err)
+	}
+	if botConv.ConversationID != convs[0].ID {
+		t.Fatalf("bot 会话行应回绑 conversation_id: %q", botConv.ConversationID)
+	}
+}
+
+/*
+ * TestDriverRouteWorkspaceHeadless workspace 档非 acp 档（terminal-auto）：headless 目标
+ * （ACP=false、无会话锚），不建会话实体、不回绑 conversation_id。
+ */
+func TestDriverRouteWorkspaceHeadless(t *testing.T) {
+	db := routeTestDB(t)
+	seedWorkspaceRow(t, db, "ws-1", `{"mode":"terminal-auto"}`)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	target, err := r.resolve(BotRuntimeConfig{BotID: "bot-1", ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1"}, "single:u1")
+	if err != nil {
+		t.Fatalf("workspace 档路由: %v", err)
+	}
+	if target.ACP || target.SessionKey != "" {
+		t.Fatalf("非 acp 档应路由 headless: %+v", target)
+	}
+	var convs []model.Conversation
+	if err := db.Where(&model.Conversation{OwnerType: enums.OWNER_TYPE_WORKSPACE, OwnerID: "ws-1"}).Find(&convs).Error; err != nil {
+		t.Fatalf("查工作空间会话实体: %v", err)
+	}
+	if len(convs) != 0 {
+		t.Fatalf("headless 档不得建 ACP 会话实体: %+v", convs)
+	}
+	var botConv model.ImBotConversation
+	if err := db.Where(&model.ImBotConversation{BotID: "bot-1", ConversationKey: "single:u1"}).First(&botConv).Error; err != nil {
+		t.Fatalf("查 bot 会话行: %v", err)
+	}
+	if botConv.ConversationID != "" {
+		t.Fatalf("headless 档不得回绑 conversation_id: %q", botConv.ConversationID)
+	}
+}
+
+/*
+ * TestDriverRouteWorkspaceUnconfiguredHeadless 未配置（launch_settings 空）与容器行已删：
+ * 均按未配置回落 headless（fail safe，不误入 ACP）。
+ */
+func TestDriverRouteWorkspaceUnconfiguredHeadless(t *testing.T) {
+	db := routeTestDB(t)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	cfg := BotRuntimeConfig{BotID: "bot-1", ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1"}
+	if target, err := r.resolve(cfg, "single:u1"); err != nil || target.ACP || target.SessionKey != "" {
+		t.Fatalf("容器行已删应回落 headless: %+v err=%v", target, err)
+	}
+	seedWorkspaceRow(t, db, "ws-2", "")
+	cfg.WorkspaceID = "ws-2"
+	if target, err := r.resolve(cfg, "single:u1"); err != nil || target.ACP || target.SessionKey != "" {
+		t.Fatalf("未配置应回落 headless: %+v err=%v", target, err)
+	}
+}
+
+/*
+ * TestDriverRouteHeadlessAnchorUntouched headless 会话锚（bot 会话行 claude_session_id）不被
+ * 路由层触碰：预置续聊锚后 resolve，锚保持原值（读写链在编排器 runTurn）。
+ */
+func TestDriverRouteHeadlessAnchorUntouched(t *testing.T) {
+	db := routeTestDB(t)
+	seedWorkspaceRow(t, db, "ws-1", "")
+	seedBotConv(t, db, "bot-1", "single:u1")
+	store := &ConversationStore{DB: db}
+	if err := store.SaveSessionID("bot-1", "single:u1", "s-prev"); err != nil {
+		t.Fatalf("预置续聊锚: %v", err)
+	}
+	r := newDriverRoute(db, nil)
+
+	if _, err := r.resolve(BotRuntimeConfig{BotID: "bot-1", ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1"}, "single:u1"); err != nil {
+		t.Fatalf("headless 路由: %v", err)
+	}
+	if id, err := store.SessionID("bot-1", "single:u1"); err != nil || id != "s-prev" {
+		t.Fatalf("路由层不得触碰 headless 锚: id=%q err=%v", id, err)
+	}
+}
+
+// TestDriverRouteWorkspaceMissing workspace 档未选工作空间：fail closed 报错。
+func TestDriverRouteWorkspaceMissing(t *testing.T) {
+	db := routeTestDB(t)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	if _, err := r.resolve(BotRuntimeConfig{BotID: "bot-1", ConversationType: enums.CONVERSATION_TYPE_WORKSPACE}, "single:u1"); err == nil {
+		t.Fatalf("未选工作空间应报错")
+	}
+}
+
+/*
+ * TestDriverRouteProjectCreatesMain project 档·任务无主会话（容器合并档 = acp）：新建 ACP
+ * 主会话（owner=task、parent 空）并以 conv-<主会话行id> 为锚。
+ */
+func TestDriverRouteProjectCreatesMain(t *testing.T) {
+	db := routeTestDB(t)
+	taskID := seedRouteTask(t, db)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	target, err := r.resolve(taskCfg(taskID), "single:u1")
+	if err != nil {
+		t.Fatalf("project 档路由: %v", err)
+	}
+	if !target.ACP {
+		t.Fatalf("acp 档应路由 ACP 引擎: %+v", target)
+	}
+	var convs []model.Conversation
+	if err := db.Where(&model.Conversation{OwnerType: enums.OWNER_TYPE_TASK, OwnerID: taskID}).Find(&convs).Error; err != nil {
+		t.Fatalf("查会话实体: %v", err)
+	}
+	if len(convs) != 1 || convs[0].Mode != enums.CONVERSATION_MODE_ACP || convs[0].ParentID != "" {
+		t.Fatalf("应新建 ACP 主会话: %+v", convs)
+	}
+	if target.SessionKey != acpsession.ConversationSessionKey(convs[0].ID) {
+		t.Fatalf("锚应指向新建主会话: %q", target.SessionKey)
+	}
+}
+
+/*
+ * TestDriverRouteProjectReusesAcpMain project 档·主会话已为 ACP 档：直接复用（不新建会话行）
+ * 并回绑 bot 会话行 conversation_id。
+ */
+func TestDriverRouteProjectReusesAcpMain(t *testing.T) {
+	db := routeTestDB(t)
+	taskID := seedRouteTask(t, db)
+	mainID := seedConversation(t, db, taskID, "", enums.CONVERSATION_MODE_ACP)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	target, err := r.resolve(taskCfg(taskID), "single:u1")
+	if err != nil {
+		t.Fatalf("project 档路由: %v", err)
+	}
+	if target.SessionKey != acpsession.ConversationSessionKey(mainID) {
+		t.Fatalf("应复用既有 ACP 主会话: %q", target.SessionKey)
+	}
+	var convs []model.Conversation
+	if err := db.Where(&model.Conversation{OwnerType: enums.OWNER_TYPE_TASK, OwnerID: taskID}).Find(&convs).Error; err != nil {
+		t.Fatalf("查会话实体: %v", err)
+	}
+	if len(convs) != 1 {
+		t.Fatalf("复用不得新建会话行: %d", len(convs))
+	}
+	var botConv model.ImBotConversation
+	if err := db.Where(&model.ImBotConversation{BotID: "bot-1", ConversationKey: "single:u1"}).First(&botConv).Error; err != nil {
+		t.Fatalf("查 bot 会话行: %v", err)
+	}
+	if botConv.ConversationID != mainID {
+		t.Fatalf("bot 会话行应回绑 conversation_id: %q", botConv.ConversationID)
+	}
+}
+
+/*
+ * TestDriverRouteProjectTerminalMainCreatesSub project 档·主会话为终端档：并建 ACP 子会话
+ * （parent=主会话行id），桌面主会话不受影响。
+ */
+func TestDriverRouteProjectTerminalMainCreatesSub(t *testing.T) {
+	db := routeTestDB(t)
+	taskID := seedRouteTask(t, db)
+	mainID := seedConversation(t, db, taskID, "", enums.CONVERSATION_MODE_TERMINAL)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	target, err := r.resolve(taskCfg(taskID), "single:u1")
+	if err != nil {
+		t.Fatalf("project 档路由: %v", err)
+	}
+	var subs []model.Conversation
+	if err := db.Where(&model.Conversation{OwnerType: enums.OWNER_TYPE_TASK, OwnerID: taskID, ParentID: mainID}).Find(&subs).Error; err != nil {
+		t.Fatalf("查子会话: %v", err)
+	}
+	if len(subs) != 1 || subs[0].Mode != enums.CONVERSATION_MODE_ACP {
+		t.Fatalf("应并建 ACP 子会话: %+v", subs)
+	}
+	if target.SessionKey != acpsession.ConversationSessionKey(subs[0].ID) {
+		t.Fatalf("锚应指向新建子会话: %q", target.SessionKey)
+	}
+}
+
+/*
+ * TestDriverRouteProjectHeadless project 档非 acp 档（terminal-auto）：headless 目标，
+ * 终端主会话不被并建 ACP 子会话。
+ */
+func TestDriverRouteProjectHeadless(t *testing.T) {
+	db := routeTestDB(t)
+	seedProjectRow(t, db, "proj-1", `{"mode":"terminal-auto"}`)
+	taskID := seedTaskRow(t, db, "proj-1", "")
+	mainID := seedConversation(t, db, taskID, "", enums.CONVERSATION_MODE_TERMINAL)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	target, err := r.resolve(taskCfg(taskID), "single:u1")
+	if err != nil {
+		t.Fatalf("project 档路由: %v", err)
+	}
+	if target.ACP || target.SessionKey != "" {
+		t.Fatalf("非 acp 档应路由 headless: %+v", target)
+	}
+	var subs []model.Conversation
+	if err := db.Where(&model.Conversation{OwnerType: enums.OWNER_TYPE_TASK, OwnerID: taskID, ParentID: mainID}).Find(&subs).Error; err != nil {
+		t.Fatalf("查子会话: %v", err)
+	}
+	if len(subs) != 0 {
+		t.Fatalf("headless 档不得并建 ACP 子会话: %+v", subs)
+	}
+}
+
+/*
+ * TestDriverRouteProjectModeMerge 双级合并（task 显式键覆盖 project）：acp 档被 task 显式
+ * none 覆盖 → headless；未配置 project 被 task 显式 acp 覆盖 → ACP。
+ */
+func TestDriverRouteProjectModeMerge(t *testing.T) {
+	db := routeTestDB(t)
+	seedProjectRow(t, db, "proj-1", `{"mode":"acp"}`)
+	overridden := seedTaskRow(t, db, "proj-1", `{"mode":"none"}`)
+	seedProjectRow(t, db, "proj-2", "")
+	coverage := seedTaskRow(t, db, "proj-2", `{"mode":"acp"}`)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	if target, err := r.resolve(taskCfg(overridden), "single:u1"); err != nil || target.ACP || target.SessionKey != "" {
+		t.Fatalf("task 显式 none 应覆盖为 headless: %+v err=%v", target, err)
+	}
+	target, err := r.resolve(taskCfg(coverage), "single:u1")
+	if err != nil {
+		t.Fatalf("task 显式 acp 路由: %v", err)
+	}
+	if !target.ACP {
+		t.Fatalf("task 显式 acp 应覆盖未配置 project 为 ACP: %+v", target)
+	}
+	var mains []model.Conversation
+	if err := db.Where(&model.Conversation{OwnerType: enums.OWNER_TYPE_TASK, OwnerID: coverage, ParentID: ""}).Find(&mains).Error; err != nil {
+		t.Fatalf("查主会话: %v", err)
+	}
+	if len(mains) != 1 || mains[0].Mode != enums.CONVERSATION_MODE_ACP {
+		t.Fatalf("应新建 ACP 主会话: %+v", mains)
+	}
+}
+
+// TestDriverRouteProjectUnboundTaskRejected project 档未关联任务：路由层兜底拒绝（编排器门禁已先行拦截）。
+func TestDriverRouteProjectUnboundTaskRejected(t *testing.T) {
+	db := routeTestDB(t)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	cfg := BotRuntimeConfig{BotID: "bot-1", ConversationType: enums.CONVERSATION_TYPE_PROJECT, ProjectID: "proj-1", AccessPolicy: openAccess()}
+	if _, err := r.resolve(cfg, "single:u1"); err == nil {
+		t.Fatalf("未关联任务应拒绝")
+	}
+}
+
+// TestDriverRouteTypeUnconfigured 会话类型未配置（遗留哨兵行）：fail closed 报错。
+func TestDriverRouteTypeUnconfigured(t *testing.T) {
+	db := routeTestDB(t)
+	seedBotConv(t, db, "bot-1", "single:u1")
+	r := newDriverRoute(db, nil)
+
+	cfg := BotRuntimeConfig{BotID: "bot-1", AccessPolicy: openAccess()}
+	if _, err := r.resolve(cfg, "single:u1"); err == nil {
+		t.Fatalf("会话类型未配置应报错")
+	}
+}
+
+// routeTestDB 任务路由测试库：bot 会话行 + 会话实体 + 任务/项目/工作空间容器表。
+func routeTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	return newBotTestDB(t, &model.ImBotConversation{}, &model.Conversation{}, &model.ProjectTask{}, &model.Project{}, &model.Workspace{})
+}
+
+// seedBotConv 预置 bot 会话行并返回行 id（conv- 锚载体）。
+func seedBotConv(t *testing.T, db *gorm.DB, botID, convKey string) string {
+	t.Helper()
+	row, err := (&ConversationStore{DB: db}).GetOrCreate(botID, convKey)
+	if err != nil {
+		t.Fatalf("预置 bot 会话行: %v", err)
 	}
 	return row.ID
 }
 
-/*
- * TestDriverRouteTargetResolution 目标解析验收（窄桩期全 conv 锚）：未关联回填 conv- 会话锚
- * （会话行载体，工作空间根目录）；workspace 非 acp 档 headless；读库失败 fail closed。
- * 关联路由矩阵（issue 锚/挂空降级/issue 级 mode 覆盖）随 bound_issue_id 列下线移除，T4.2 重建。
- */
-func TestDriverRouteTargetResolution(t *testing.T) {
-	const acpSettings = `{"mode":"acp"}`
-	const botID = "bot-1"
-	const convKey = "single:u1"
-	// resolve 收敛装配样板：各子测试共享 botID/convKey，仅 db 与 wsID 变化。
-	resolve := func(db *gorm.DB, wsID string) (routeTarget, error) {
-		return newDriverRoute(db, nil).resolve(botID, wsID, convKey)
+// seedWorkspaceRow 预置工作空间行（launchSettingsRaw 为 JSON 列原文，空串 = 未配置）。
+func seedWorkspaceRow(t *testing.T, db *gorm.DB, id, launchSettingsRaw string) {
+	t.Helper()
+	row := &model.Workspace{ID: id, Name: "工作空间", Dir: "/tmp/ocean-ws-" + id, LaunchSettings: launchSettingsRaw}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("预置工作空间: %v", err)
 	}
-	convWant := func(db *gorm.DB) routeTarget {
-		return routeTarget{SessionKey: acpsession.ConversationSessionKey(convRowID(t, db, botID, convKey)), ACP: true}
-	}
-
-	t.Run("未关联回填 conv 会话锚", func(t *testing.T) {
-		// 无绑定行：resolve 兜底建行后以行 id 为锚。
-		wsID, db := mkRouteFixture(t, acpSettings)
-		got, err := resolve(db, wsID)
-		if err != nil || got != convWant(db) {
-			t.Fatalf("未关联: got=%+v want=%+v err=%v", got, convWant(db), err)
-		}
-	})
-
-	t.Run("workspace 非 acp 档 headless", func(t *testing.T) {
-		wsID, db := mkRouteFixture(t, `{"mode":"none"}`)
-		got, err := resolve(db, wsID)
-		if err != nil || got != (routeTarget{}) {
-			t.Fatalf("非 acp 档应 headless: got=%+v err=%v", got, err)
-		}
-	})
-
-	t.Run("读库失败 fail closed", func(t *testing.T) {
-		wsID, db := mkRouteFixture(t, acpSettings)
-		if err := db.Migrator().DropTable("t_im_bot_conversations"); err != nil {
-			t.Fatalf("掉会话表: %v", err)
-		}
-		if _, err := resolve(db, wsID); err == nil {
-			t.Fatal("读库失败应 fail closed 报错（不静默降级）")
-		}
-	})
 }
 
-/*
- * TestDriverRouteProbeTarget 探针契约：ProbeTarget 与 resolve 同源——ACP 档探得 acp=true、
- * 非 acp 档 acp=false，对齐路由实际判定；读库失败原样透传 err（调用方不拦截，
- * 按探测失败回落保守语义）。
- */
-func TestDriverRouteProbeTarget(t *testing.T) {
-	const acpSettings = `{"mode":"acp"}`
-	const botID = "bot-1"
-	const convKey = "single:u1"
-	probe := func(db *gorm.DB, wsID string) (bool, error) {
-		return newDriverRoute(db, nil).ProbeTarget(BotRuntimeConfig{BotID: botID, WorkspaceID: wsID}, convKey)
+// seedProjectRow 预置项目行（launchSettingsRaw 为 JSON 列原文，空串 = 未配置）。
+func seedProjectRow(t *testing.T, db *gorm.DB, id, launchSettingsRaw string) {
+	t.Helper()
+	row := &model.Project{ID: id, Name: "项目", Dir: "/tmp/ocean-proj-" + id, LaunchSettings: launchSettingsRaw}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("预置项目: %v", err)
 	}
+}
 
-	t.Run("ACP 档", func(t *testing.T) {
-		wsID, db := mkRouteFixture(t, acpSettings)
-		acp, err := probe(db, wsID)
-		if err != nil || !acp {
-			t.Fatalf("ACP 档探针应 acp=true: acp=%v err=%v", acp, err)
-		}
-	})
+// seedTaskRow 在指定项目下预置任务行（launchSettingsRaw 为 JSON 列原文），返回任务 id。
+func seedTaskRow(t *testing.T, db *gorm.DB, projectID, launchSettingsRaw string) string {
+	t.Helper()
+	row := &model.ProjectTask{ID: uuid.Must(uuid.NewV7()).String(), ProjectID: projectID, Name: "任务", LaunchSettings: launchSettingsRaw}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("预置任务: %v", err)
+	}
+	return row.ID
+}
 
-	t.Run("none 档非 ACP", func(t *testing.T) {
-		wsID, db := mkRouteFixture(t, `{"mode":"none"}`)
-		acp, err := probe(db, wsID)
-		if err != nil || acp {
-			t.Fatalf("非 acp 档探针应非 ACP: acp=%v err=%v", acp, err)
-		}
-	})
+// seedRouteTask ACP 档路由测试的默认夹具：proj-1 配置 mode=acp，任务行不覆盖，返回任务 id。
+func seedRouteTask(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+	seedProjectRow(t, db, "proj-1", `{"mode":"acp"}`)
+	return seedTaskRow(t, db, "proj-1", "")
+}
 
-	t.Run("读库失败透传", func(t *testing.T) {
-		wsID, db := mkRouteFixture(t, acpSettings)
-		if err := db.Migrator().DropTable("t_im_bot_conversations"); err != nil {
-			t.Fatalf("掉会话表: %v", err)
-		}
-		if _, err := probe(db, wsID); err == nil {
-			t.Fatal("读库失败应透传 err")
-		}
-	})
+// seedConversation 直插一行会话实体，返回行 id。
+func seedConversation(t *testing.T, db *gorm.DB, ownerID, parentID string, mode enums.ConversationMode) string {
+	t.Helper()
+	row := &model.Conversation{
+		ID:        uuid.Must(uuid.NewV7()).String(),
+		OwnerType: enums.OWNER_TYPE_TASK,
+		OwnerID:   ownerID,
+		Title:     "会话",
+		Mode:      mode,
+		ParentID:  parentID,
+	}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatalf("预置会话实体: %v", err)
+	}
+	return row.ID
+}
+
+// taskCfg project 档运行配置。
+func taskCfg(taskID string) BotRuntimeConfig {
+	return BotRuntimeConfig{BotID: "bot-1", ConversationType: enums.CONVERSATION_TYPE_PROJECT, ProjectID: "proj-1", TaskID: taskID, AccessPolicy: openAccess()}
 }

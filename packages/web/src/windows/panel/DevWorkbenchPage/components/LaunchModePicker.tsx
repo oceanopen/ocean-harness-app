@@ -127,7 +127,8 @@ function PanelShell({ children }: { children: ReactNode }) {
 }
 
 interface TerminalLaunchFlowProps {
-  issueId: string;
+  /** 容器 id（pane 锚首段：任务页 task.id / 工作空间页 workspace.id），透传至终端树。 */
+  containerId: string;
   workspaceDir: string | null;
   /** workspace 启动模式（DevWorkbenchPage 解析下传；null = 列表解析中，等同 none 等待）。 */
   launchMode: 'none' | 'terminal-auto' | 'acp' | null;
@@ -137,20 +138,31 @@ interface TerminalLaunchFlowProps {
   terminalAgentLabel: string;
   /** ACP Agent 展示名（面板文案）。 */
   acpAgentLabel: string;
+  /** 会话实体 id（T5.3 编排下传：ACP 视图挂载 + 终端捕获锚归属；null = 上游闸门未就绪，防御空态）。 */
+  conversationId?: string | null;
+  /** 终端锚恢复 id（T2.2：非空且 fresh spawn 注入 resume；null = 无锚直启/裸启）。 */
+  resumeClaudeId?: string | null;
+  /** cwd 直用覆盖（T5.3 会话维度直连：工作空间页会话 cwd = 工作空间根目录）。 */
+  cwdOverride?: string | null;
 }
 
 /**
- * TerminalLaunchFlow：issue 就绪后的启动分流容器（key 随 issue 挂载——临场选择态随 key 重置，无需 effect）。
+ * TerminalLaunchFlow：issue 就绪后的启动分流容器（key 随会话挂载——临场选择态随 key 重置，无需 effect）。
  * none 先出选择面板，选择后渲染对应视图（终端带直启值的终端树、acp 档 ACP 会话视图 T1.6）；
  * terminal-auto 直接直启；startupCli 按「配置/临场选择」最终值派生（仅终端档非 null）。
+ * 会话上下文（T5.3）：containerId/conversationId/resumeClaudeId 透传至 ACP 视图与终端树（临场选 ACP 亦由
+ * 主会话承载——conversationId 恒传主会话 id，mode 门禁在服务端，前端不做二次拦截）。
  */
 export function TerminalLaunchFlow({
-  issueId,
+  containerId,
   workspaceDir,
   launchMode,
   autoCommand,
   terminalAgentLabel,
   acpAgentLabel,
+  conversationId = null,
+  resumeClaudeId = null,
+  cwdOverride = null,
 }: TerminalLaunchFlowProps) {
   const [picked, setPicked] = useState<PickedLaunch | null>(null);
 
@@ -176,10 +188,18 @@ export function TerminalLaunchFlow({
      */
     return (
       <TerminalErrorBoundary title="会话视图异常退出">
-        {/* 会话实体上下文随 T5.3 会话编排接入；当前工作台无 conversation 选中态，呈未接通空态。 */}
-        <AcpSessionView conversationId="" />
+        <AcpSessionView conversationId={conversationId ?? ''} />
       </TerminalErrorBoundary>
     );
   }
-  return <TerminalPaneRoot issueId={issueId} workspaceDir={workspaceDir} startupCli={startupCli} />;
+  return (
+    <TerminalPaneRoot
+      containerId={containerId}
+      workspaceDir={workspaceDir}
+      startupCli={startupCli}
+      cwdOverride={cwdOverride}
+      conversationId={conversationId}
+      resumeClaudeId={resumeClaudeId}
+    />
+  );
 }

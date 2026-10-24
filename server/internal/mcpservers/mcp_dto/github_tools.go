@@ -6,14 +6,14 @@ package mcpdto
 
 /*
  * GitHubCreatePRArgs 是 github_create_pr 的入参。
- * head/base 缺省按 agent 开发工作流推导：head = agent_{issueId}（工作空间统一目标分支），base = 该 issue 关联的此仓库基准分支。
+ * head/base 缺省按 agent 开发工作流推导：head = agent_{taskId}（工作空间统一目标分支），base = 该任务关联的此仓库基准分支。
  */
 type GitHubCreatePRArgs struct {
 	LocalRepositoryID int    `json:"localRepositoryId" jsonschema:"本地仓库 id（PR 目标仓库，按其 remote_url 定位）" vd:"@:$>0; msg:'localRepositoryId 必须为正整数'"`
-	IssueID           string `json:"issueId" jsonschema:"issue 主键（uuid 文本，用于 head/base 缺省推导：head=agent_{issueId}，base=该 issue 关联的此仓库基准分支）" vd:"@:$!=''; msg:'issueId 不能为空'"`
+	TaskID            string `json:"taskId" jsonschema:"任务主键（uuid 文本，用于 head/base 缺省推导：head=agent_{taskId}，base=该任务关联的此仓库基准分支）" vd:"@:$!=''; msg:'taskId 不能为空'"`
 	Title             string `json:"title" jsonschema:"PR 标题（建议基于变更内容生成，动词开头简述意图）" vd:"@:$!=''; msg:'title 不能为空'"`
 	Body              string `json:"body,omitempty" jsonschema:"PR 描述（Markdown：变更点列表 + 测试计划），可留空"`
-	Head              string `json:"head,omitempty" jsonschema:"源分支（head），留空默认 agent_{issueId}"`
+	Head              string `json:"head,omitempty" jsonschema:"源分支（head），留空默认 agent_{taskId}"`
 	Base              string `json:"base,omitempty" jsonschema:"目标分支（base），留空默认该 issue 关联的此仓库基准分支"`
 }
 

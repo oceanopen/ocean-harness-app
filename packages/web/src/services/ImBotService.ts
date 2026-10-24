@@ -9,11 +9,16 @@ export interface ImBotAccessPolicy {
   allowUsers: string[]; // 企微 userid
 }
 
+export type ImBotConversationType = 'workspace' | 'project';
+
 export interface ImBotModel {
   id: string; // uuid
   name: string;
   channel: string; // 渠道枚举（wecom | weixin）
-  workspaceId: string; // '' = 未选择（扫码接入待补选）
+  conversationType: ImBotConversationType; // 会话类型两档（D8）：workspace / project
+  workspaceId: string; // workspace 档的关联工作空间（project 档为空）
+  projectId: string; // project 档的关联项目
+  taskId: string; // project 档可选关联任务（空 = 未关联，收消息拦截提示）
   workspaceName: string; // 关联工作空间名（展示用）
   accessPolicy: ImBotAccessPolicy;
   enabled: boolean;
@@ -32,7 +37,10 @@ export interface ImBotCreateRequest {
   name: string;
   botId: string;
   secret: string;
-  workspaceId: string; // 必选工作空间（会话目录取其 dir）
+  conversationType: ImBotConversationType;
+  workspaceId?: string; // workspace 档必填
+  projectId?: string; // project 档必填
+  taskId?: string; // project 档可选
   accessPolicy: ImBotAccessPolicy;
   enabled?: boolean;
 }
@@ -43,7 +51,10 @@ export interface ImBotUpdateRequest {
   name: string;
   botId: string;
   secret?: string;
-  workspaceId: string;
+  conversationType: ImBotConversationType;
+  workspaceId?: string;
+  projectId?: string;
+  taskId?: string;
   accessPolicy: ImBotAccessPolicy;
   enabled?: boolean;
 }
@@ -65,24 +76,13 @@ export interface ImBotRestartRequest {
 export interface ImBotConversationModel {
   conversationKey: string; // single:<userid> / group:<chatid>
   chatType: 'single' | 'group'; // single 私聊 / group 群聊（前端映射文案）
-  boundIssueId: string; // 空 = 未绑定
-  boundIssueName: string; // 绑定任务名（悬空锚 = 空串）
+  conversationId: string; // 关联会话实体 id（T4.3 消息路由回写；空 = 尚未有消息）
   lastMessageAt: string | null; // null = 从未活跃
 }
 
 // POST /api/imBot/getConversations 的入参。
 export interface ImBotGetConversationsRequest {
   botId: string;
-}
-
-/**
- * POST /api/imBot/bindIssue 的入参（issueId 空 = 解绑；作用于 (bot, conversationKey) 会话行，
- * 绑定每回合现读、无需热重载连接）。
- */
-export interface ImBotBindIssueRequest {
-  botId: string;
-  conversationKey: string;
-  issueId: string;
 }
 
 /**
@@ -172,11 +172,6 @@ export class ImBotService {
   // getConversations：返回 bot 会话列表（绑定锚 + 活跃时间，最近活跃在前）。
   static getConversations(req: ImBotGetConversationsRequest): Promise<ImBotConversationModel[]> {
     return request<ImBotConversationModel[]>('POST', '/api/imBot/getConversations', req);
-  }
-
-  // bindIssue：会话级绑定/解绑（issueId 空 = 解绑；行不在场/归属不符由后端拒）。
-  static bindIssue(req: ImBotBindIssueRequest): Promise<void> {
-    return request<void>('POST', '/api/imBot/bindIssue', req);
   }
 
   // provisionBegin：开新扫码授权会话（渠道分发；已有会话自动取消；weixin 非空 botId = 换绑）。

@@ -1,6 +1,6 @@
 # 工作空间/项目任务重构——方案与任务清单
 
-> 状态：实施中
+> 状态：已完结
 > 范围：工作空间与项目两条独立实体线（工作空间→会话；项目→任务→主/子会话）、会话实体化与 claude session 锚定（终端+ACP 双受控模式）、bot 与归属实体解耦、浏览器实例归属与登录态全局化、「工作空间」「项目任务」双页面交互重构、Claude 会话查看工具
 > 前序基线：ACP 统一会话方案（已全部落地：issue 级锚点 / acpsession 域 / bot ACP 驱动 / launch_settings 合并链），本次在其上重构归属模型
 > **状态标记**：⬜ 待开始 | 🔲 进行中 | ✅ 已完成
@@ -95,7 +95,7 @@ t_conversations（第一性实体，应用只存元数据）：
 | D6 | 终端模式锚定三段：`claude_state.rs` 父链匹配升级返回 sessionId → fresh spawn 后捕获回写锚 → 仅 fresh spawn 注入 `--resume <id>`（参数透传现成，零 Rust 解析改动）；cwd 由归属实体派生保证 resume 目录一致 | vendored CLI（2.1.300）交互式 `--resume` 与 `--session-id` 已实证（见 T0.1） |
 | D7 | 消息内容/最新消息时间：Rust 新增 jsonl 只读命令（cwd→slug 单点映射、宽松解析、增量读）；应用不存消息 | 用户拍板「元数据入库+内容直读」 |
 | D8 | bot 配置：`conversation_type` 必填两档；type=workspace → `workspace_id` 必填，type=project → `project_id` 必填、`task_id` 可选；type=project 未关联任务收到消息 → 回复提示后拦截 | 用户拍板（去 0 档、提示后拦截） |
-| D9 | bot 驱动收敛 ACP 单驱动（headless 路由下线）；路由三分支：workspace → 取/建该 bot 在该工作空间的 ACP 会话；task 主会话 ACP → 复用；主会话非 ACP → 新建 ACP 子会话；无主会话 → 新建 ACP 主会话 | O18.2；消息同步仅 ACP 可达 |
+| D9 | bot 双驱动并存（用户复盘拍板：headless 保留，原「下线」决策作废）：容器 mode='acp' → ACP 三分支（workspace → 取/建该 bot 在该工作空间的 ACP 会话；task 主会话 ACP → 复用；主会话非 ACP → 新建 ACP 子会话；无主会话 → 新建 ACP 主会话），会话实体化回绑 conversation_id；其余档位 → headless（`claude -p --dangerously-skip-permissions` 全自动无审批，锚写 bot 行 claude_session_id） | ACP=可见性/审批/同步；headless=轻量后台通道（历史经 jsonl 直读可得，实时视图/审批不出——R5 同族取舍） |
 | D10 | `t_im_bot_conversations` 加 `conversation_id`（取代 bound_issue_id/acp_session_id 双锚）；bot↔会话不设唯一性互斥，展示全部关联 bot | 现状零校验 + O16「展示当前管理的 bot」 |
 | D11 | 浏览器：登录态全局一份 `auth-states/default.json`；profile = `workspace-<wsId>_session-<convId>-NN` / `issue-<taskId>_session-<convId>-NN`，槽 01–10（单会话上限 10），全局上限 50 | O6、O15 |
 | D12 | 子会话仅「Claude 会话查看」工具可见可实时查看；查看工具内「新增子会话」按钮拦截提示；任务页不加子会话切换器 | 用户拍板 |
@@ -129,7 +129,7 @@ t_conversations（第一性实体，应用只存元数据）：
 - R3 终端模式 resume 后 scrollback 为空是物理事实（ring buffer 不跨进程，CLI 仅打 resume 横幅）——历史回看一律走 D7 jsonl 直读，终端区只呈现 resume 后新内容。
 - R4 jsonl 为 claude CLI 内部格式，版本升级可能漂移——只读 + 宽松解析 + 失败降级空态，不做强依赖。
 - R5 裸 shell 手敲 claude / 外部终端旁路会话仍会存在：无锚不进会话列表（可按 cwd 事后认领展示，本期不做，开放）。
-- R6 headless 驱动下线为删码动作，回退路径 = git 历史；如需双驱动仅恢复 route 分支。
+- R6 已作废：用户复盘拍板 headless 保留，双驱动恢复落地（见 D9 修订与 T4.2 实施定稿）。
 - R7 MCP `issue_*` 工具的消费方（工作空间内 Skill）随域改名需同步——是否保留旧名兼容一版，实施时定。
 
 ## 4. 任务清单（进度 SSOT）
@@ -218,125 +218,141 @@ t_conversations（第一性实体，应用只存元数据）：
 ### 阶段 3：项目域后端
 
 #### T3.1 项目 CRUD 与仓库关联
-**状态**：⬜
+**状态**：✅
 **功能**：项目实体全链路（对齐 workspace 服务范式）。
 **技术方案**：`/api/project/*` + `service/project.go`（目录校验、仓库关联全量替换、删除级联）；types 挂项目；前端 `ProjectService.ts` + state 域。
 **依赖**：T0.2
 **验收**：项目 CRUD/仓库多选关联/类型管理可用。
+**实施定稿**：`/api/project` 顶层组五端点；`service/project.go` 目录校验复用 validateWorkspaceDir（字段族同构），仓库关联 create/update 事务内全量替换（dedupe 过滤非法 id），删除级联 = 任务行 + 任务↔仓库 + 会话行（owner=task）+ 类型 + 项目↔仓库 + bot 清列热更新，事务后逐会话 Discard；launch settings 复用 WorkspaceLaunchSettings shape SSOT。前端 ProjectService + state/projects 域（无 store）；WorkspaceTypeService→ProjectTypeService（projectId 化，后端路由暂留 workspaceType 组随 T9.1 更名），tracker 域类型 hooks 更名 useProjectTypes，旧 tracker 页类型消费桥接传空串（守卫不查询，项目归属随 T3.2 接入）；LocalRepository.Delete 补项目关联级联；顺带修正 controller/workspace.go 过时级联注释与 localRepositories 过时注释。
 
 #### T3.2 任务域平移与 issueWorkspace 项目化
-**状态**：⬜
+**状态**：✅
 **功能**：任务 CRUD 与运行目录机制整体迁移到项目维度。
 **技术方案**：`workspace_issue.go`→`project_task.go`（校验仓库属项目关联集合）；`issue_workspace*` 平移：目录 = `{project.dir}/{taskId}/`，init/archive/runner 解析链改两跳 project；archive 与状态流转解耦（状态列已删）。
 **依赖**：T3.1
 **验收**：任务初始化/归档/取消全流程在新目录布局下可用；仓库分支关联校验正确。
+**实施定稿**：两跳解析与状态解耦已在 T0.2 编译适配期落地，本任务完成命名/路由/校验平移——`workspace_issue.go`→`project_task.go`、`issue_workspace*`→`task_workspace*`（service/controller/types 全量标识符平移），路由迁 `/api/project/task` 与 `/api/project/taskWorkspace`（挂 project 组）；`validateTaskRepoList` 恢复归属校验（仓库须 ∈ 所属项目关联集合，Update 以 task.ProjectID 为准）；MCP dto 引用字段机械对齐（TaskIDArgs/TaskID，语义改造归 T3.3）。前端 WorkspaceIssueService→ProjectTaskService、IssueWorkspaceService→TaskWorkspaceService（路由 /api/project/task*）、state/issueWorkspace→taskWorkspace、tracker 域 issue hooks→useProjectTasks/useCreateProjectTask 等（键按 projectId）；旧 Tracker 链路（抽屉创建/看板/DevTaskTree）设计性降级——消费点桥接读 projectId（工作台容器解析项目优先回落工作空间），创建流传空串由后端 required 拒绝，T6.1 任务抽屉与 T5.1 双页接管。
 
 #### T3.3 MCP 工具改造
-**状态**：⬜
+**状态**：✅
 **功能**：工作空间内 Skill 可读写项目/任务。
 **技术方案**：`mcp_ocean_harness_tools.go` 的 `issue_*`/`workspace_*` 改造为 project/task 语义（旧名兼容与否按 R7 实施时定）。
 **依赖**：T3.2
 **验收**：MCP 调用 project/task 工具返回正确数据。
+**实施定稿**：R7 拍板不保留旧名直接切换——`issue_get_info/issue_update/issue_list`→`task_get_info/task_update/task_list`，新增 `project_list`（镜像 workspace_list）；dto 全量 Issue*→Task*（协议字段 issueId→taskId），github 工具入参同步（head=agent_{taskId} 推导）；清理过期描述（issue_update 的 stateCode 流转描述随状态列删除失效）；`workspace_list`/`task_workspace_status` 保留原名（域语义未变）；browser 工具 issueId 归因参数不动（T7.1 改 conversationId）。
 
 ### 阶段 4：bot 解耦与会话打通
 
 #### T4.1 bot 配置改造
-**状态**：⬜
+**状态**：✅
 **功能**：会话类型两档必填 + 条件必填字段 + 抽屉级联。
 **技术方案**：`ImBotCreateRequest` 等加 `conversation_type/project_id/task_id` 及保存校验（D8）；`ImBotDrawer` 类型下拉联动工作空间/项目（项目时展示任务列表可关联，任务非必填可保存）。
 **依赖**：T0.2、T3.1
 **验收**：两档配置/切换/保存校验符合 D8；项目档不选任务可保存。
+**实施定稿**：请求 `conversationType` 加 `binding:required,oneof=workspace project`；`ensureOwnershipExists` 重写为 D8 校验+归一（workspace 档 workspaceId 必填清 project/task；project 档 projectId 必填、taskId 可选且须归属该项目、清 workspaceId；返回归一值落库）。前端 ImBotModel/请求补 conversationType/projectId/taskId；ImBotDrawer 类型下拉级联（工作空间档选工作空间；项目档选项目 + 可选任务下拉即 useProjectTasks，未关联收消息由 T4.2 拦截提示）；ImBotPanel 补绑载荷桥接沿 bot 现值（按容器补绑语义随 T4.3 重构）。
 
 #### T4.2 bot 驱动收敛 ACP 与路由三分支
-**状态**：⬜
-**功能**：bot 消息一律 ACP；按 D9 三分支路由。
-**技术方案**：`driver_route.go` 判定收敛（launch mode 不再分流 headless）；headless 驱动下线（R6）；未关联任务拦截提示文案（D8）；回合排队沿用 `PromptQueued`。
+**状态**：✅
+**功能**：bot 双驱动并存（用户复盘拍板 headless 保留，原「下线」决策作废）；按 D9 修订版路由。
+**技术方案**：容器 mode='acp' → ACP 三分支；其余档位 → headless（还原 driver_claude.go 融合双驱动）；未关联任务拦截提示文案（D8）；回合排队沿用 `PromptQueued`。
 **依赖**：T1.2、T4.1
-**验收**：三分支行为与 §2.3 时序一致；headless 路径无残留调用。
+**验收**：ACP 三分支与 headless 分支行为与 §2.3 时序一致；双驱动按容器 mode 逐回合切换。
+**实施定稿**：T4.2 首轮曾按方案「下线」headless（删码+单驱动），用户复盘拍板保留后**双驱动恢复落地**——driver_claude.go/test 自 git 还原并改造（argv 恒 `--dangerously-skip-permissions` 全自动无审批，DefaultAllowedTools 白名单取消，TurnDriver 接口名保留）；driver_route.go 融合双驱动：resolve 读容器 launch mode（workspace 档单级/project 档双级合并，行已删回落 headless），mode='acp' → ACP 三分支 + conversation_id 回绑（原样保留），否则 headless 透传（SessionID 锚经 store.SessionID/FinishTurn/healAfterFailure 链，turnNotAcceptedError 跳过语义保留）；ProbeTarget/isACPRoute 恢复。orchestrator 恢复 headless 锚链（prevSessionID 读取/FinishTurn 回写/healAfterFailure）。闲置 2h 提醒按用户后续拍板**整体移除**（ExpireIdleSession/sessionIdleExpiry 删除，相关测试删除）。测试：driver_route_test 双驱动矩阵（ACP 三分支 + headless 回落 + 双级合并覆盖）+ headless 锚链用例（resume 透传/回写/自愈）恢复。permissionMode 配置项随后全局删除（恒 bypassPermissions，见 T9.1 后增强记录）。
 
 #### T4.3 bot 会话↔conversation 打通
-**状态**：⬜
+**状态**：✅
 **功能**：bot 产生的会话全部进会话列表，归属可倒推。
 **技术方案**：bot conversation 行读写 `conversation_id`（首条消息按 D9 定位/创建）；删 `bound_issue_id/acp_session_id` 读写点；`ImBotPanel` 改为「当前会话关联 bot」展示。
 **依赖**：T4.2
 **验收**：bot 发消息后，工作空间/项目任务页对应会话可见可查消息；多 bot 关联同一会话互不干扰。
+**实施定稿**：路由 resolve 全量实体化并回写——workspace 档取/建工作空间 ACP 会话实体行（进工作空间会话列表，O11）；project 档定位/建主（子）会话后回绑 bot 会话行 conversation_id（幂等覆写；已绑且仍 ACP 直接复用，行被删/降级回落定位）；NotFound 分支结构修正（gorm First 的 nil 行+非 nil err 组合）。bound_issue_id/acp_session_id 已随 T0.2 列重建消失、读写点清零；GetConversations 投影 conversationId。前端 ImBotConversationModel 同步（boundIssue*→conversationId）；ImBotPanel 改「当前会话关联 bot」只读展示（project 档 projectId+taskId 匹配过滤），三态绑定/补绑交互删除（归属变更走 IM 机器人页抽屉两档级联），空态指引文案落位。
 
 ### 阶段 5：页面骨架与工作空间页
 
 #### T5.1 双页路由与内容区组件抽取
-**状态**：⬜
+**状态**：✅
 **功能**：「工作空间」「项目任务」两个独立页面；内容区+右侧工具条抽为共用组件。
 **技术方案**：`routes.ts` 加 `/workspaces`、`/projects`；`DevWorkbenchPage` 中栏+工具条抽为 `WorkbenchContent` 共用组件（含 `WorkspaceInitGate`/`TerminalLaunchFlow` 编排）；菜单项替换。
 **依赖**：T1.1、T2.3
 **验收**：两页可导航；共用内容区在两页行为一致。
+**实施定稿**：WorkbenchContent props = {container: {id,name,dir,launchSettings} 最小形态, containerPending, task, selectedTaskId, tasksLoading, leftTree 插槽, onClearSelection}；三栏折叠 config 闸门/⌘W/Esc 沉浸/归档确认/任务编辑抽屉/toast 编排随迁；归档 mutation 的 workspaceId 传 container.id（与列表缓存 key 同值，失效语义不回归）。新页 WorkspacesPage/ProjectsPage 骨架：/workspaces //projects 进菜单+路径记忆+命令面板（i18n key 补齐），/tracker 保留注册不进菜单（T9.1 删）；DevWorkbenchPage 瘦身为薄壳（URL wid/iid↔store 同步 + 容器桥接解析项目优先回落工作空间 + DevTaskTree 左树注入）；WorkspaceIssueDrawer workspace prop 收窄 Pick<id|name>。
 
 #### T5.2 工作空间页左树
-**状态**：⬜
+**状态**：✅
 **功能**：O8 全部交互（8.1–8.5）。
 **技术方案**：左树组件（顶部新增/列表 icon+浮层复用 `WorkspacesView` 交互、平铺树、折叠、标题 hover「...」菜单=编辑工作空间/新建会话、会话行=标题+时间/运行态+「...」菜单=改标题/删除）；会话时间取 T1.3 最新消息时间，运行态取 claude 活跃状态。
 **依赖**：T5.1、T1.1、T1.3
 **验收**：交互逐项对照 O8 通过；px 字符串/注释规范达标。
+**实施定稿**：WorkspacesPage/components 三件（WorkspaceTree/WorkspaceDrawer 搬运版/会话行）；会话行=标题+updatedAt 相对时间+运行态圆点（锚 ∈ getClaudeSessions 快照即运行中，useClaudeActiveSessionIds 树级单订阅）+「...」重命名/删除；节点 hover 菜单=编辑/新建会话（mode 由 mergeLaunchSettings 派生）；新建/列表浮层与折叠齐备；URL ?wid= 驱动选中。缺口：getClaudeSessionLatest 未接（updatedAt 简化口径，锚会话增强随 T9.1 复核）。
 
 #### T5.3 会话内容区编排接入（两页共用）
-**状态**：⬜
+**状态**：✅
 **功能**：新建/点开会话按 §2.3 时序进入终端或 ACP 视图。
 **技术方案**：`WorkbenchContent` 按 conversation.mode 分流：terminal → spawn/resume 编排（T2.2）；acp → `Ensure`+`AcpSessionView`；历史消息经 T1.3 直读呈现。
 **依赖**：T5.2、T2.1、T2.2、T1.2、T1.3
 **验收**：新建→锚回写、重开→resume、消息历史可见三条链路全通。
+**实施定稿**：WorkbenchContent 增 props（conversationScope/selectedConversationId）+ 内部 owner 解析与会话列表订阅，按 mode 分流（acp→AcpSessionView 含临场选 ACP 主会话 id 直传；terminal→终端链 + conversationId/resumeClaudeId 接通 T2.1/T2.2 激活）；URL cid 参数两页驱动选中、失效自动清参；EmbeddedTerminal 增 cwdOverride（工作空间页会话 cwd=根目录）；useClaudeSessionCapture 按 pane 锚更换重置 capturedRef。后端增强：pane 锚升级会话维度 `${容器id}::${conversationId}::${paneId}`（每会话独立 pane，切换互不干扰、切回 reattach 接续；任务/工作空间删除按首段前缀关全部 pane，工作空间删除补 ptyShutdownIssue 调用）。剩余缺口：T1.3 最新消息时间增强与 jsonl 历史内嵌（记录在案的后续增强）。
 
 ### 阶段 6：项目任务页
 
 #### T6.1 项目任务页左树与抽屉
-**状态**：⬜
+**状态**：✅
 **功能**：O9 全部交互（9.1–9.6）。
 **技术方案**：左树与 T5.2 同构（场景参数定制，参照共享组件场景参数约定）；项目抽屉（id/名称/dir/emoji/描述/关联仓库多选/默认执行模式，字段族与工作空间抽屉复用）；任务抽屉（所属项目/任务id/名称/Markdown 内容/任务类型/默认执行模式/关联仓库+分支，无状态无日期）。
 **依赖**：T5.2、T3.1、T3.2
 **验收**：交互逐项对照 O9 通过；任务抽屉字段与 D3 一致。
+**实施定稿**：ProjectTree 三级树（项目→任务→会话行复用 ConversationRow）+ ProjectDrawer（关联仓库多选全量覆盖）/ProjectTaskDrawer（D3 字段族：类型单选+类型管理入口复用 WorkspaceTypeManagerDrawer、LaunchSettingsFields 跟随项目、TaskRepoBranchTable 仓库池=项目关联集合+分支 freeSolo）/TaskRepoBranchTable 搬运件；URL ?pid=&tid= 双参驱动 + onClearSelection 清 tid 留项目。
 
 #### T6.2 任务主会话编排
-**状态**：⬜
+**状态**：✅
 **功能**：点击任务自动进入主会话（无则按合并 launchSettings 默认档创建）。
 **技术方案**：进入任务 → 查主会话（owner=task 且主会话）→ 无则 `conversation.create` → 走 T5.3 编排。
 **依赖**：T6.1、T5.3
 **验收**：点任务稳定进入同一主会话；首次进入自动建会话并锚定。
+**实施定稿**：useTaskMainConversation 单飞编排 hook（列表定态门槛 + 实例内 creatingRef 去重 + 失败 failedRef 停自动重试暴露 retry；mode 创建时由 mergeLaunchSettings 现算）；主会话就绪才挂载消费组件（无先默认渲染后纠正）；跨窗口并发双建由服务端首捕/锚不覆盖语义兜底。
 
 ### 阶段 7：浏览器实例
 
 #### T7.1 实例命名与上限改造
-**状态**：⬜
+**状态**：✅
 **功能**：profile 命名改会话维度，槽位 10、全局 50。
 **技术方案**：`browser/paths.go` + `browserSession/derive.ts` 双端 SSOT 同步改（D11 格式与解析）；`MaxSessionsPerTask`=10（按 conversation 配额归组）、`maxConcurrentProfiles`=50；MCP `resolveProfile` 归属参数改 conversationId。
 **依赖**：T1.1
 **验收**：新旧命名解析按新规则；超限报错文案准确；面板过滤/开新实例走最低空闲槽。
+**实施定稿**：命名 `issue-<taskId>_session-<conversationId>-NN` / `workspace-<workspaceId>_session-<conversationId>-NN`（NN 两位 01–10 显式后缀，无裸基名）；profileNameRe 上限 64→128（双 uuid 名）；配额改会话归组（conversationQuotaBase 剥 -NN，越界名同组防绕过）10 槽 + 全局 50；`Ensure` 去 workspaceID 参；AuthStatePath() 无参（default.json）；MCP BrowserProfileArgs 双参数收单一 conversationId（resolveProfile 由会话行反查 taskId 定容器，查不到报错）；前端 derive.ts 镜像重写（deriveConversationProfile/parseConversationProfile，新增 derive.test.ts 5 用例）+ BrowserPanel 主会话最低空闲槽开新 + 卡片徽标会话化；paths/manager/authstate_sync/browser_tools 等测试全量改写。
 
 #### T7.2 登录态全局化
-**状态**：⬜
+**状态**：✅
 **功能**：登录一次全局共用。
 **技术方案**：`auth-states/default.json` 单份；`resolveWorkspaceID` 归属链删除，注入/导出/合并机制不变；面板归属徽标按会话展示。
 **依赖**：T7.1
 **验收**：任一会话登录后全部实例共享；注入/导出回归通过。
+**实施定稿**：resolveWorkspaceID 归属链删除；per-workspace 文件锁收敛为单把 sharedFileLock；注入/hash 跳重/失败降级/Close 合并回写机制不变，读写均走 default.json；ProfilePrefs.WorkspaceID 字段删除（headless 单字段）；服务层 BrowserEnsureRequest/前端 BrowserSessionEnsureRequest 的 workspaceId 字段删除；authstate_sync_test 语义重写并新增 TestAuthGlobalSharedAcrossProfiles（三族 profile 共享同一文件）。
 
 ### 阶段 8：可视化与展示
 
 #### T8.1 Claude 会话查看工具
-**状态**：⬜
+**状态**：✅
 **功能**：O16 全部（卡片列表/实时查看/新增子会话拦截/关联 bot 展示）。
 **技术方案**：`toolRegistry` 新增 claudeSessions 工具；卡片=conversation 行 join claude 活跃状态 + 关联 bot（查 `t_im_bot_conversations`）；点开实时查看：acp → `AcpSessionView` 只读订阅，terminal → 终端只读 attach + jsonl 历史；「新增子会话」按钮拦截提示（D12）。
 **依赖**：T4.3、T5.3
 **验收**：卡片/实时查看/拦截/ bot 展示逐项对照 O16 通过。
+**实施定稿**：ClaudeSessionsViewer 三件（根/卡片/历史展开）注册 toolRegistry `claudeSessions` 工具项；卡片=标题+mode/锚/子会话徽标+updatedAt 倒序+运行中 chip（claude-sessions 快照比对）+关联 bot 行（BotLinkChip 按 conversationId 投影命中）；「新增子会话」点击拦截提示（D12）；acp 实时查看内嵌完整 AcpSessionView，terminal 提示走工作台终端（终端锚任务维度，无面板内只读 attach）；历史消息卡片展开首页直读简版（hasMore 翻页未消费，缺口记录）。
 
 #### T8.2 bot 列表关联信息行
-**状态**：⬜
+**状态**：✅
 **功能**：O17 关联类型+对象链展示。
 **技术方案**：`ImBotsPage` 卡片加一行：工作空间档=类型+工作空间+会话；项目档=类型+项目+任务（如有）+会话。
 **依赖**：T4.3
 **验收**：两档展示正确，未关联任务时明确留空。
+**实施定稿**：ImBotCard 信息行 botAssociationText 纯函数 + useProjects/useProjectTasks 就地装配——workspace 档「工作空间 · 名」；project 档「项目 · 名（· 任务 名 | 任务：未关联（收消息将提示））」；遗留哨兵 conversationType='' 显示「未配置」。
 
 ### 阶段 9：收尾
 
 #### T9.1 清理与全链路回归
-**状态**：⬜
+**状态**：✅
 **功能**：旧世界残留清零 + 端到端验证。
 **技术方案**：删旧 TrackerPage/DevWorkbenchPage 页面壳与死代码、五状态枚举（`stateMeta.ts`/Go `enums`）残留、`t_issue_acp_sessions` 读写点复查；全链路验证矩阵：工作空间会话新建→跨重启 resume、项目任务主/子会话、bot 两类型三分支路由、浏览器命名/上限/登录态、`pnpm web:lint/web:test/web:build` 全绿。
 **依赖**：T8.1、T8.2
 **验收**：验证矩阵逐项通过；无旧表/旧页/死枚举残留。
+**实施定稿**：TrackerPage 全目录（15 文件）/DevTaskTree/issueCard/DevWorkbenchPage 壳+/devWorkbench 路由删除；workspaceIssueDrawer→projectDrawer 目录搬迁（WorkspaceIssueDrawer 经复核为 WorkbenchContent 在用件保留、死链改指 /projects；STATE_MAP/STATE_CATALOG/stateMeta 同理保留，仅删零消费的 STATE_ORDER；宁留勿错删原则）；五状态 Go 枚举无残留；useBindImBotIssue/ImBotBindIssueRequest 死链删除；gofmt 全量清账（15 文件）；/api/tracker/workspaceIssue 重复组确认已不存在（4 处过期注释修正）；t_issue_acp_sessions 字样全仓清零。验证矩阵：gofmt -l 空 / build+vet 绿 / Go 19 包测试 ok / web lint+build 绿 / vitest 63 用例通过。

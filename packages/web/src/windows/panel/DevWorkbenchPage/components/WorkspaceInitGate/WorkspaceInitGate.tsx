@@ -14,7 +14,7 @@ import {
   Typography,
 } from '@mui/material';
 import { ISSUE_WORKSPACE_STEP_KEY } from '@src/services';
-import { useInitIssueWorkspace, useIssueWorkspaceStatus } from '@src/state/issueWorkspace';
+import { useInitTaskWorkspace, useTaskWorkspaceStatus } from '@src/state/taskWorkspace';
 import { useEffect, useRef, useState } from 'react';
 
 // 可重试终态的提示文案（FAILED 的原因在 state.error，另行展示）。
@@ -79,12 +79,12 @@ interface WorkspaceInitGateProps {
  *  ① 初始化工作空间目录（后端 createDirs，无则创建有则秒过）
  *  ② 工作空间初始化（sshConfig / cloneRepos 工程化步骤，cloneRepos 展开仓库级进度）
  *  ③ 启动 Claude 终端 / 启动终端（文案按 startupCodeCli 配置区分）
- * 右上角「清理终端并重新初始化」按钮（DevWorkbenchPage）与面板按钮共用 useInitIssueWorkspace——
+ * 右上角「清理终端并重新初始化」按钮（DevWorkbenchPage）与面板按钮共用 useInitTaskWorkspace——
  * 同一 query key 订阅，任一触发面板自动切换状态。
  */
 export default function WorkspaceInitGate({ issueId, startupCli, terminalTransitionEnabled, children }: WorkspaceInitGateProps) {
-  const { data: statusResp, isLoading, error, refetch } = useIssueWorkspaceStatus(issueId);
-  const initWorkspace = useInitIssueWorkspace();
+  const { data: statusResp, isLoading, error, refetch } = useTaskWorkspaceStatus(issueId);
+  const initWorkspace = useInitTaskWorkspace();
   const serverStatus = statusResp?.serverStatus;
   const state = statusResp?.state;
 
@@ -194,10 +194,10 @@ export default function WorkspaceInitGate({ issueId, startupCli, terminalTransit
         <Button
           variant="contained"
           disabled={initWorkspace.isPending}
-          onClick={() => initWorkspace.mutate({ issueId })}
+          onClick={() => initWorkspace.mutate({ taskId: issueId })}
           sx={{ alignSelf: 'flex-start' }}
         >
-          {initWorkspace.isPending ? '初始化中…' : failedFamily ? '重新初始化' : '初始化工作空间'}
+          {initWorkspace.isPending ? '初始化中…' : failedFamily ? '重新初始化' : '初始化任务工作区'}
         </Button>
       )}
     </PanelShell>
@@ -209,7 +209,7 @@ function PanelShell({ children }: { children: ReactNode }) {
   return (
     <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
       <Box sx={{ width: '100%', maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <Typography variant="h6">工作空间初始化</Typography>
+        <Typography variant="h6">初始化任务工作区</Typography>
         {children}
       </Box>
     </Box>

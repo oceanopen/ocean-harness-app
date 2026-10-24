@@ -22,7 +22,7 @@ import (
 )
 
 /*
- * Workspace 对应 /api/tracker/workspace 命名空间下的业务逻辑。
+ * Workspace 对应 /api/workspace 命名空间下的业务逻辑。
  * 嵌入 apis.Service 获得由 controller 灌入的 Context/Orm/Logger；方法只收 req、用 svc.Orm、
  * 返回 WorkspaceResponseData（launch_settings JSON 列装配为结构，对齐 im_bot 域响应范式）。
  * 工作空间仅承载工作目录 + 默认会话执行模式 + 基础信息（去任务归属与仓库关联，任务/仓库归项目域）。

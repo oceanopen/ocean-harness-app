@@ -10,8 +10,8 @@ import (
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/acp"
-	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/agentcatalog"
+	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
 )
@@ -51,9 +51,6 @@ func mergeLaunchSettings(base, override *types.WorkspaceLaunchSettings) *types.W
 		}
 		if override.AutoCommand != "" {
 			merged.AutoCommand = override.AutoCommand
-		}
-		if override.PermissionMode != "" {
-			merged.PermissionMode = override.PermissionMode
 		}
 	}
 	return merged
@@ -241,10 +238,11 @@ type sessionBase struct {
 }
 
 /*
- * resolveAgentSettings agentCode / permissionMode 回落与校验（两锚形共用尾段）：
- * agentCode 空回落首个 enabled catalog 条目；permissionMode 空回落 bypassPermissions，
- * 仅 acceptEdits / bypassPermissions 合法。
- */
+/*
+  - resolveAgentSettings agentCode 回落（两锚形共用尾段）：agentCode 空回落首个 enabled catalog
+  - 条目。permissionMode 已固化为 bypassPermissions（T4.2 复盘拍板：配置项删除，headless/ACP
+  - 双驱动均全自动，无审批交互）。
+*/
 func resolveAgentSettings(merged *types.WorkspaceLaunchSettings) (string, acp.PermissionMode, error) {
 	agentCode := ""
 	if merged != nil {
@@ -260,16 +258,5 @@ func resolveAgentSettings(merged *types.WorkspaceLaunchSettings) (string, acp.Pe
 	if _, ok := agentcatalog.GetAgentCatalogInfoByCode(agentCode); !ok {
 		return "", "", fmt.Errorf("agent catalog 无 %q 条目", agentCode)
 	}
-	mode := acp.PermissionMode("")
-	if merged != nil {
-		mode = acp.PermissionMode(merged.PermissionMode)
-	}
-	if mode == "" {
-		mode = acp.PermissionModeBypassPermissions
-	}
-	if mode != acp.PermissionModeAcceptEdits && mode != acp.PermissionModeBypassPermissions {
-		return "", "", fmt.Errorf("权限模式 %q 非法（可选 acceptEdits / bypassPermissions）", mode)
-	}
-	return agentCode, mode, nil
+	return agentCode, acp.PermissionModeBypassPermissions, nil
 }
-

@@ -10,6 +10,7 @@ import (
 /*
  * AcpSession 对应 /api/acpSession 命名空间下的业务逻辑。无本地状态：SSOT 为会话域门面
  * global.AcpSessions（main 装配），本 service 只做受理转发与投影。
+ * HTTP 面收裸 conversationId，会话锚键（conv-<id> 形）包装统一在本层完成。
  */
 type AcpSession struct {
 	apis.Service
@@ -20,22 +21,22 @@ type AcpSession struct {
  * 就绪/失败经 SSE sessionStatus 帧或 getInfo 轮询跟进。pickedLaunchMode 临场启动声明透传。
  */
 func (svc AcpSession) Ensure(req *types.AcpSessionEnsureRequest) (acpsession.ViewSnapshot, error) {
-	return global.AcpSessions.Ensure(svc.Context, req.ConversationID, req.PickedLaunchMode)
+	return global.AcpSessions.Ensure(svc.Context, acpsession.ConversationSessionKey(req.ConversationID), req.PickedLaunchMode)
 }
 
 // GetInfo 当前会话视图快照（轮询读端，无副作用；无会话为 idle 空快照）。
 func (svc AcpSession) GetInfo(req *types.AcpSessionGetInfoRequest) (acpsession.ViewSnapshot, error) {
-	return global.AcpSessions.Get(req.ConversationID), nil
+	return global.AcpSessions.Get(acpsession.ConversationSessionKey(req.ConversationID)), nil
 }
 
 // Prompt 受理一轮回合（立即返回；回合终态经 SSE turnEnded 帧）。
 func (svc AcpSession) Prompt(req *types.AcpSessionPromptRequest) error {
-	return global.AcpSessions.Prompt(req.ConversationID, req.Text)
+	return global.AcpSessions.Prompt(acpsession.ConversationSessionKey(req.ConversationID), req.Text)
 }
 
 // Cancel 软取消当前回合（幂等 no-op 安全）。
 func (svc AcpSession) Cancel(req *types.AcpSessionCancelRequest) error {
-	return global.AcpSessions.Cancel(req.ConversationID)
+	return global.AcpSessions.Cancel(acpsession.ConversationSessionKey(req.ConversationID))
 }
 
 /*
@@ -43,7 +44,7 @@ func (svc AcpSession) Cancel(req *types.AcpSessionCancelRequest) error {
  * 恒 panel（T2.4 收敛语义的入口标记；bot 快路径不经本层）。
  */
 func (svc AcpSession) RespondPermission(req *types.AcpSessionRespondPermissionRequest) error {
-	return global.AcpSessions.RespondPermission(req.ConversationID, req.PendingID, req.OptionID, acpsession.PendingSourcePanel)
+	return global.AcpSessions.RespondPermission(acpsession.ConversationSessionKey(req.ConversationID), req.PendingID, req.OptionID, acpsession.PendingSourcePanel)
 }
 
 /*
@@ -51,5 +52,5 @@ func (svc AcpSession) RespondPermission(req *types.AcpSessionRespondPermissionRe
  * source 同 RespondPermission 恒 panel。
  */
 func (svc AcpSession) RespondElicitation(req *types.AcpSessionRespondElicitationRequest) error {
-	return global.AcpSessions.RespondElicitation(req.ConversationID, req.PendingID, req.Action, req.Content, acpsession.PendingSourcePanel)
+	return global.AcpSessions.RespondElicitation(acpsession.ConversationSessionKey(req.ConversationID), req.PendingID, req.Action, req.Content, acpsession.PendingSourcePanel)
 }

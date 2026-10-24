@@ -57,7 +57,7 @@ tracker 业务域（workspace / project / issue / state / type）的所有接口
 
 **数据流**：`router → controller（嵌 apis.Api）→ service（嵌 apis.Service）→ dal(query/model)`。运行期依赖（ctx / Orm / Logger）由 controller 链式灌入 service，service 方法只收 request DTO，不用全局态。
 
-**路由**：`/api/tracker/<module>/<action>`，**一律 POST**（避免同一对象 json/form 并存；getList/getInfo/create/update/delete 均走 POST，便于后续加参）。action 命名固定：`getList / getInfo / create / update / delete`。
+**路由**：`/api/<module>/<action>`，**一律 POST**（避免同一对象 json/form 并存；getList/getInfo/create/update/delete 均走 POST，便于后续加参）。action 命名固定：`getList / getInfo / create / update / delete`。
 
 **请求类型**：每个 action 一个独立 Request（`<Module><Action>Request`，如 `WorkspaceGetInfoRequest`、`WorkspaceDeleteRequest`，不复用）。常规校验用 gin `binding` tag（`required`/`max` 等，`ShouldBindJSON` 自动触发）；跨字段/复杂场景追加 `vd` tag（go-tagexpr，`@:expr; msg:'中文'`，由 `apis.Api.Validate` 生效）。
 
@@ -106,7 +106,7 @@ tracker 基线之后的第二个业务域，与 tracker 的差异在「**运行�
 - **DB 是配置 SSOT，运行时是投影**：service 写库成功后才调 `global.BotSupervisor`（`ApplyBot`=Stop→Start 无脑重启 / `StopBot`），失败仅日志、可经「重启连接」收敛。
 - **启动装配**：`cmd/server/main.go` 步骤 5.6 注册渠道工厂 + `StartEnabled()`（5.5 为 ACP 会话域装配，先于 bot——引擎路由消费其实例；5.55 为浏览器会话域装配，懒启动构造即返回）；SIGTERM 先 `BotSupervisor.StopAll()`（断连接 + 取消在途回合），再 `Browser.StopAll()`（收敛浏览器引擎/浏览器进程树），再 `AcpSessions.StopAll()`（收敛 ACP 会话 + 关停 SSE 订阅），最后关 HTTP。
 - **channel 差异收窄在 credential JSON**（各适配器自行解释 shape，如 wecom `{"botId","secret"}`），新渠道 = 新增适配器包 + main 注册一行，表结构/API 不动。
-- **claude 引擎在核心层，双实现并存**（按 workspace `launch_settings.mode` 逐回合路由）：headless `driver_claude.go` spawn `claude -p --output-format stream-json`（stdin 传 prompt），会话多轮经 `--resume <sessionId>`（id 从 init 事件捕获后回写 `t_im_bot_conversations`），与 PTY 面板链路互不干扰；ACP `driver_acp.go` 经 acpsession 域复用 issue 级共享会话（与桌面主窗口同会话、同审批状态，无 resume、不写 claude_session_id 锚点）。
+- **claude 引擎在核心层，ACP 单驱动**（T4.2 收敛）：`driver_route.go` 按 bot 会话类型两档解析会话锚（workspace 档=工作空间独立会话；project 档=任务主会话复用或 ACP 子会话并建，与桌面主窗口同会话、同审批状态），`driver_acp.go` 经 acpsession 域执行回合（PromptQueued 跨入口排队互斥）。
 - **扫码授权接入**：`/api/imBot/provisionBegin|provisionPoll|provisionCancel`——直连腾讯官方端点
   （`work.weixin.qq.com/ai/qc/generate|query_result`，无中转服务），auth_url 强校验官方域防钓鱼；
   attempt 状态机在 `internal/bot/wecom/provision.go`（pending→connecting→connected，5 分钟本地 TTL，

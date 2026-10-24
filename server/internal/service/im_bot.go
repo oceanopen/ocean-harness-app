@@ -74,7 +74,8 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 	if req.Channel != enums.CHANNEL_WECOM {
 		return nil, errors.New("微信机器人请通过「扫码授权」接入，不支持手工创建")
 	}
-	if err := svc.ensureOwnershipExists(req.ConversationType, req.WorkspaceId, req.ProjectId, req.TaskId); err != nil {
+	wsID, pid, tid, err := svc.ensureOwnershipExists(req.ConversationType, req.WorkspaceId, req.ProjectId, req.TaskId)
+	if err != nil {
 		return nil, err
 	}
 	if err := svc.ensureBotIdAvailable(req.BotId, ""); err != nil {
@@ -86,9 +87,9 @@ func (svc ImBot) Create(req *types.ImBotCreateRequest) (*types.ImBotResponseData
 		Channel:          req.Channel,
 		Credential:       credentialJSON(req.BotId, req.Secret),
 		ConversationType: req.ConversationType,
-		WorkspaceID:      req.WorkspaceId,
-		ProjectID:        req.ProjectId,
-		TaskID:           req.TaskId,
+		WorkspaceID:      wsID,
+		ProjectID:        pid,
+		TaskID:           tid,
 		AccessPolicy:     accessPolicyJSON(req.AccessPolicy),
 		Enabled:          enabledYesNo(req.Enabled),
 	}
@@ -112,7 +113,8 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	if err != nil {
 		return nil, err
 	}
-	if err := svc.ensureOwnershipExists(req.ConversationType, req.WorkspaceId, req.ProjectId, req.TaskId); err != nil {
+	wsID, pid, tid, err := svc.ensureOwnershipExists(req.ConversationType, req.WorkspaceId, req.ProjectId, req.TaskId)
+	if err != nil {
 		return nil, err
 	}
 	credential := row.Credential
@@ -132,9 +134,9 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 	row.Name = req.Name
 	row.Credential = credential
 	row.ConversationType = req.ConversationType
-	row.WorkspaceID = req.WorkspaceId
-	row.ProjectID = req.ProjectId
-	row.TaskID = req.TaskId
+	row.WorkspaceID = wsID
+	row.ProjectID = pid
+	row.TaskID = tid
 	row.AccessPolicy = accessPolicyJSON(req.AccessPolicy)
 	row.Enabled = enabledYesNo(req.Enabled)
 
@@ -539,34 +541,51 @@ func mergeRuntimeStatus(item *types.ImBotResponseData, row *model.ImBot, st bot.
  * ensureOwnershipExists 归属配置存在性校验：各哨兵空串跳过（未配置合法，两档必填校验随 T4.1）；
  * 非空逐一校验存在性（工作空间 / 项目 / 任务）。
  */
-func (svc ImBot) ensureOwnershipExists(conversationType enums.ConversationType, workspaceID, projectID, taskID string) error {
+/*
+ * ensureOwnershipExists D8 归属校验与归一：conversationType 两档必填（workspace|project）。
+ * workspace 档 → workspaceId 必填（project/task 清空）；project 档 → projectId 必填、taskId 可选
+ * （须归属该项目；workspaceId 清空）。返回归一后的三 id，调用方以返回值落库。
+ */
+func (svc ImBot) ensureOwnershipExists(conversationType enums.ConversationType, workspaceID, projectID, taskID string) (string, string, string, error) {
 	q := query.Use(svc.Orm)
-	if workspaceID != "" {
+	switch conversationType {
+	case enums.CONVERSATION_TYPE_WORKSPACE:
+		if workspaceID == "" {
+			return "", "", "", errors.New("工作空间档必须选择工作空间")
+		}
 		if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(workspaceID)).First(); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errors.New("工作空间不存在")
+				return "", "", "", errors.New("工作空间不存在")
 			}
-			return err
+			return "", "", "", err
 		}
-	}
-	if projectID != "" {
+		return workspaceID, "", "", nil
+	case enums.CONVERSATION_TYPE_PROJECT:
+		if projectID == "" {
+			return "", "", "", errors.New("项目档必须选择项目")
+		}
 		if _, err := q.Project.WithContext(svc.Context).Where(q.Project.ID.Eq(projectID)).First(); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errors.New("项目不存在")
+				return "", "", "", errors.New("项目不存在")
 			}
-			return err
+			return "", "", "", err
 		}
-	}
-	if taskID != "" {
-		if _, err := q.ProjectTask.WithContext(svc.Context).Where(q.ProjectTask.ID.Eq(taskID)).First(); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return errors.New("任务不存在")
+		if taskID != "" {
+			task, err := q.ProjectTask.WithContext(svc.Context).Where(q.ProjectTask.ID.Eq(taskID)).First()
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return "", "", "", errors.New("任务不存在")
+				}
+				return "", "", "", err
 			}
-			return err
+			if task.ProjectID != projectID {
+				return "", "", "", errors.New("任务不属于所选项目")
+			}
 		}
+		return "", projectID, taskID, nil
+	default:
+		return "", "", "", errors.New("会话类型必填（工作空间或项目）")
 	}
-	_ = conversationType
-	return nil
 }
 
 // workspaceNames id → name 一次性映射（响应装配展示用）。

@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"ocean-harness/server/internal/dal/enums"
+
 	"go.uber.org/zap"
 )
 
@@ -35,13 +37,12 @@ const msgAlreadySeenText = "该消息已处理过，重复推送已忽略。"
 /*
  * turnJob 一个待执行回合。reply 是受理时已开出并发过占位帧的回复流——企微 5 秒被动回复
  * 窗口在受理瞬间被占住，排队多久都不超窗（写者交接恒单写者：占位帧 → 状态帧 → 回复泵）。
- * freshSession 闲置过期产物：本轮以新会话启动（上一会话锚已备份，/继续 可接回）。
+ * （闲置 freshSession 字段随闲置提醒移除删除；headless 会话锚经 TurnRequest.SessionID 传递。）
  */
 type turnJob struct {
-	cfg          BotRuntimeConfig
-	msg          InboundMessage
-	reply        ReplyStream
-	freshSession bool
+	cfg   BotRuntimeConfig
+	msg   InboundMessage
+	reply ReplyStream
 }
 
 /*
@@ -51,7 +52,7 @@ type turnJob struct {
  */
 type Orchestrator struct {
 	store        *ConversationStore
-	driver       ClaudeDriver
+	driver       TurnDriver
 	gate         pendingGate
 	interactions interactionHandler
 	log          *zap.Logger
@@ -77,7 +78,7 @@ type Orchestrator struct {
  * NewOrchestrator 构造编排器。gate / interactions 可为 nil（无 ACP 会话域的装配与既有
  * 测试；interactions nil = 卡片点击仅回兜底文案，T3.2 换 driverRoute 第三角色注入）。
  */
-func NewOrchestrator(store *ConversationStore, driver ClaudeDriver, gate pendingGate, interactions interactionHandler, log *zap.Logger) *Orchestrator {
+func NewOrchestrator(store *ConversationStore, driver TurnDriver, gate pendingGate, interactions interactionHandler, log *zap.Logger) *Orchestrator {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Orchestrator{
 		store:        store,
@@ -183,22 +184,6 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 		_ = rs.Flush(text, true)
 		return
 	}
-	/*
-	 * 会话闲置边界（2h）：headless 命中即静默换新会话；
-	 * ACP 共享会话（桌面共用）不切断、仅提醒。
-	 */
-	freshSession := false
-	if expired, err := o.store.ExpireIdleSession(cfg.BotID, msg.ConversationKey, time.Now()); err != nil {
-		o.log.Error("bot 会话闲置判定失败（按未过期处理）", zap.Error(err))
-	} else if expired {
-		acp := o.isACPRoute(cfg, msg.ConversationKey)
-		if acp {
-			if ns, ok := rs.(NoticeReplyStream); ok {
-				_ = ns.SendNotice("⏰ 距上次对话已超过 2 小时，会话仍在延续。回复 /help 可查看支持的指令。")
-			}
-		}
-		freshSession = !acp
-	}
 	// 活动时间戳顺延（受理即触碰）：ACP 等无锚回写链路的唯一时基来源，防闲置误报逐条重放。
 	if err := o.store.TouchLastMessage(cfg.BotID, msg.ConversationKey, time.Now()); err != nil {
 		o.log.Warn("bot 会话活动时间戳写入失败", zap.Error(err))
@@ -212,7 +197,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 		o.log.Warn("bot 占位帧发送失败（继续回合）", zap.Error(err))
 	}
 
-	if err := o.enqueue(cfg, msg, rs, freshSession); err != nil {
+	if err := o.enqueue(cfg, msg, rs); err != nil {
 		text := "当前消息较多，排队已满，请稍后再发。"
 		if errors.Is(err, errStopped) {
 			text = "机器人已停止服务。"
@@ -261,8 +246,11 @@ type routeProber interface {
 // workspaceGateLead 门禁指引：说明回合为何未启动（工作空间未选择）。
 const workspaceGateLead = "机器人尚未选择工作空间，请选择归属工作空间后重新发送消息；也可在应用「IM 机器人」页编辑机器人。"
 
+// taskUnboundGateLead 门禁指引：项目档未关联任务（D8 提示后拦截）。
+const taskUnboundGateLead = "本项目机器人尚未关联任务：请在应用「IM 机器人」页编辑机器人并选择要协作的任务后，重新发送消息。"
+
 // enqueue 入队（不存在则惰性建会话队列 + worker）。已停止 / 队列满 fail closed。
-func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream, freshSession bool) error {
+func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.closed {
@@ -277,7 +265,7 @@ func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs Repl
 		go o.worker(ch)
 	}
 	select {
-	case ch <- turnJob{cfg: cfg, msg: msg, reply: rs, freshSession: freshSession}:
+	case ch <- turnJob{cfg: cfg, msg: msg, reply: rs}:
 		return nil
 	default:
 		return errQueueFull
@@ -368,14 +356,17 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		return
 	}
 
-	// 闲置过期轮次以新会话启动（受理时锚已备份），跳过 resume 锚读取。
-	var prevSessionID string
-	if !job.freshSession {
-		var err error
-		prevSessionID, err = o.store.SessionID(cfg.BotID, key)
-		if err != nil {
-			o.log.Error("bot 会话读取失败（按新会话处理）", zap.Error(err))
-		}
+	// 项目档未关联任务（D8）：提示后拦截——已 markSeen（消息已被处理），纯指引终帧收口，
+	// 不算失败、不触发会话自愈。
+	if cfg.ConversationType == enums.CONVERSATION_TYPE_PROJECT && strings.TrimSpace(cfg.TaskID) == "" {
+		_ = job.reply.Flush(taskUnboundGateLead, true)
+		return
+	}
+
+	// headless resume 锚（空 = 下条消息开新会话；读失败按新会话处理）。ACP 路由不消费该字段。
+	prevSessionID, anchorErr := o.store.SessionID(cfg.BotID, key)
+	if anchorErr != nil {
+		o.log.Error("bot 会话读取失败（按新会话处理）", zap.Error(anchorErr))
 	}
 
 	// 超长全文落盘：.bot-outbox/<ts>-<msgid 前 8 位>.md，帧内附路径。
@@ -434,16 +425,19 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	}
 	prompt := BuildTurnPrompt(msg)
 	events, err := o.driver.RunTurn(turnCtx, TurnRequest{
-		BotID:           cfg.BotID,
-		WorkspaceID:     cfg.WorkspaceID,
-		WorkspaceDir:    cfg.WorkspaceDir,
-		ConversationKey: key,
-		SessionID:       prevSessionID,
-		Prompt:          prompt,
-		SystemPrompt:    systemPrompt,
-		Display:         buildTurnDisplay(msg, string(cfg.Channel)),
-		Port:            cfg.Port,
-		DeliveryToken:   deliveryToken,
+		BotID:            cfg.BotID,
+		WorkspaceID:      cfg.WorkspaceID,
+		ConversationType: cfg.ConversationType,
+		ProjectID:        cfg.ProjectID,
+		TaskID:           cfg.TaskID,
+		WorkspaceDir:     cfg.WorkspaceDir,
+		ConversationKey:  key,
+		SessionID:        prevSessionID,
+		Prompt:           prompt,
+		SystemPrompt:     systemPrompt,
+		Display:          buildTurnDisplay(msg, string(cfg.Channel)),
+		Port:             cfg.Port,
+		DeliveryToken:    deliveryToken,
 	})
 	if err != nil {
 		<-o.turns
@@ -452,12 +446,10 @@ func (o *Orchestrator) runTurn(job turnJob) {
 			_ = job.reply.Flush("机器人已停止服务。", true)
 			return
 		}
-		/*
-		 * spawn 即失败（如 claude 不在场）：终态帧 + 自愈（若带 resume 尝试则清锚点，下条消息开新会话——失败后不复用旧锚点是确定性单步恢复，不做脆弱的文案匹配）。
-		 * 引擎受理拒绝（turnNotAcceptedError，如 ACP 模式的引导报错）除外：回合未发生， headless 锚点有效性不受影响，误清会丢既有会话上下文。
-		 */
+		// 引擎同步失败：终态帧收口。受理拒绝（turnNotAcceptedError：ACP 引导失败等，回合未发生）
+		// 跳过自愈——误清会丢 headless 既有会话锚点；其余（headless spawn 失败）若带 resume 尝试则清锚自愈。
 		o.log.Error("bot 回合启动失败", zap.String("botID", cfg.BotID), zap.Error(err))
-		_ = job.reply.Flush(turnFailureReply("❌ 无法启动 claude 会话：", err), true)
+		_ = job.reply.Flush(turnFailureReply("❌ 无法启动机器人会话：", err), true)
 		var rejected turnNotAcceptedError
 		if !errors.As(err, &rejected) {
 			o.healAfterFailure(cfg.BotID, key, prevSessionID)
@@ -471,6 +463,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		o.log.Warn("bot 回合失败", zap.String("botID", cfg.BotID),
 			zap.String("conversation", key), zap.Error(outcome.Err))
 	}
+	// 会话锚回写（outcome.SessionID 仅 headless 引擎捕获；ACP 不产出则不触碰）。
 	if outcome.SessionID != "" {
 		if err := o.store.FinishTurn(cfg.BotID, key, outcome.SessionID, time.Now()); err != nil {
 			o.log.Error("bot 会话回写失败", zap.Error(err))
@@ -571,16 +564,6 @@ func (o *Orchestrator) stopConversation(key string) bool {
 	return cancelTurn != nil
 }
 
-// isACPRoute 探测本会话回合将落的引擎是否 ACP（共享会话域；探测失败按 headless 处理）。
-func (o *Orchestrator) isACPRoute(cfg BotRuntimeConfig, conversationKey string) bool {
-	prober, ok := o.driver.(routeProber)
-	if !ok {
-		return false
-	}
-	acp, err := prober.ProbeTarget(cfg, conversationKey)
-	return err == nil && acp
-}
-
 // queueBusy 会话队列忙碌（worker 执行中或有积压）——排队占位文案分流的依据。
 func (o *Orchestrator) queueBusy(key string) bool {
 	o.mu.Lock()
@@ -589,7 +572,7 @@ func (o *Orchestrator) queueBusy(key string) bool {
 }
 
 /*
- * healAfterFailure 回合失败后的会话自愈：本轮尝试过 resume（prev 非空）→ 清空锚点，
+ * healAfterFailure 回合失败后的 headless 会话自愈：本轮尝试过 resume（prev 非空）→ 清空锚点，
  * 用户重发即开新会话（失败文案已提示重试）。本轮本是新会话则无事可做。
  */
 func (o *Orchestrator) healAfterFailure(botID string, conversationKey, prevSessionID string) {

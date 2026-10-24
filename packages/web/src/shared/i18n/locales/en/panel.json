@@ -5,8 +5,8 @@
     "pluginMarketplace": "Plugin Marketplace",
     "imBots": "IM Bots",
     "serverStatus": "Service Status",
-    "tracker": "Task Management",
-    "devWorkbench": "Task Workbench"
+    "workspaces": "Workspaces",
+    "projects": "Projects"
   },
   "sidebar": {
     "collapse": "Collapse sidebar",
@@ -34,8 +34,8 @@
       "pluginMarketplace": "Go to Plugin Marketplace",
       "imBots": "Go to IM Bots",
       "serverStatus": "Go to Service Status",
-      "tracker": "Go to Task Management",
-      "devWorkbench": "Go to Task Workbench"
+      "workspaces": "Go to Workspaces",
+      "projects": "Go to Projects"
     },
     "action": {
       "settings": "Open Settings",

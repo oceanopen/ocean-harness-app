@@ -7,7 +7,7 @@ import {
   VisibilityOutlined as VisibilityOutlinedIcon,
 } from '@mui/icons-material';
 import { Box, Dialog, IconButton, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme } from '@mui/material';
-import { IssueWorkspaceService } from '@src/services';
+import { TaskWorkspaceService } from '@src/services';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
@@ -228,12 +228,12 @@ export default function MarkdownViewer({ content, issueId, path }: MarkdownViewe
   const mermaidOptions = useMemo(() => ({ config: { theme: dark ? 'dark' : 'default' } }), [dark]);
   /**
    * fileRaw 端点 base（一次解析，渲染期同步拼 img src；path 逐张 encodeURIComponent）。
-   * 端点 SSOT 在 IssueWorkspaceService.fileRawBase（与 fileRawUrl 同源）。
+   * 端点 SSOT 在 TaskWorkspaceService.fileRawBase（与 fileRawUrl 同源）。
    */
   const [rawBase, setRawBase] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    IssueWorkspaceService.fileRawBase()
+    TaskWorkspaceService.fileRawBase()
       .then(url => alive && setRawBase(url))
       .catch(e => console.warn('[MarkdownViewer] resolve fileRaw base failed:', e));
     return () => {
@@ -247,7 +247,7 @@ export default function MarkdownViewer({ content, issueId, path }: MarkdownViewe
     if (rawBase == null) {
       return null;
     }
-    return `${rawBase}?issueId=${encodeURIComponent(issueId)}&path=${encodeURIComponent(relPath)}`;
+    return `${rawBase}?taskId=${encodeURIComponent(issueId)}&path=${encodeURIComponent(relPath)}`;
   };
 
   return (

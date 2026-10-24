@@ -47,8 +47,8 @@ export interface UsePtySessionResult {
 
 interface UsePtySessionArgs {
   /**
-   * PTY 会话锚点（store key），由调用方派生：统一 `${issueId}::${paneId}`
-   * （main → `issueId::main`，附加 pane → `issueId::<uuid>`）。
+   * PTY 会话锚点（store key），由调用方经 paneAnchorId 派生：统一
+   * `${容器id}::${会话id}::${paneId}`（main → `…::main`，附加 pane → `…::<uuid>`）。
    */
   sessionId: string;
   /**
@@ -90,7 +90,7 @@ interface UsePtySessionArgs {
 
 /**
  * 挂载编排（顺序显式）：exists → 存在则 reattach（scrollback 随返回值一次回放）；reattach 报 exited 或返回 null（并发关闭）→ fallthrough 到 spawn——Rust 端「已退出移除重起」承接（修复此前 exited 短路导致「重开」走不到 spawn 的缺口），回放 scrollback 后重起，fresh=false 复用分支亦回放（StrictMode 双挂载下早期输出丢失须靠 scrollback 补齐）。
- * 后端 pty_spawn 幂等，React 19 StrictMode 双挂载安全；unmount 不调 ptyShutdown——会话与 ring 常驻（切 issue/切菜单仅断订阅，回切 reattach 重载）。
+ * 后端 pty_spawn 幂等，React 19 StrictMode 双挂载安全；unmount 不调 ptyShutdown——会话与 ring 常驻（切任务/切会话/切菜单仅断订阅，回切 reattach 重载）。
  */
 async function attach(
   args: UsePtySessionArgs,
@@ -155,7 +155,10 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
    * 用「上轮 key 不一致则渲染期重置」替代 effect 内同步 setState（react/set-state-in-effect，
    * 同 PanelApp mounted 标志的渲染期调整模式）——仅重置一次，不触发额外提交。
    */
-  const attachKey = `${sessionId}\n${cwd ?? ''}\n${effectiveDirectCommand(directCommand, resumeClaudeId) ?? ''}\n${attempt}`;
+  // attachKey 不含生效命令项：锚回写（空→非空）等中途漂移不得触发活会话重编排（reattach 会把
+  // scrollback 重复回放进同一 xterm）；resume/directCommand 仅 fresh spawn 消费，重开有 attempt、
+  // 重挂载有 effect 重跑兜底。
+  const attachKey = `${sessionId}\n${cwd ?? ''}\n${attempt}`;
   const lastAttachKeyRef = useRef<string | null>(null);
   if (lastAttachKeyRef.current !== attachKey) {
     lastAttachKeyRef.current = attachKey;

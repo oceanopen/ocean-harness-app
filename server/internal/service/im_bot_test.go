@@ -115,5 +115,3 @@ func TestImBotGetConversations(t *testing.T) {
 		t.Fatal("bot 不存在应拒绝")
 	}
 }
-
-

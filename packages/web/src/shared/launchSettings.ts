@@ -40,6 +40,5 @@ export function mergeLaunchSettings(
     mode: override.mode ?? base.mode,
     agentCode: override.agentCode ?? base.agentCode,
     autoCommand: override.autoCommand ?? base.autoCommand,
-    permissionMode: override.permissionMode ?? base.permissionMode,
   };
 }

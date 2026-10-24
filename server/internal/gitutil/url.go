@@ -18,7 +18,7 @@ type RemoteRef struct {
 
 /*
  * ParseRemoteURL 从 origin remote URL 原文（t_local_repositories.remote_url 快照）解析 host/owner/repo，覆盖 scp 风格（git@host:owner/repo.git）、https 与 ssh 三种形态；
- * 与 issueWorkspaceSSHHost（仅出 host）定位不同，本函数面向平台适配故三者皆解析。不识别的格式返回中文错误（MCP 工具直接透传给 AI 自我纠正）；
+ * 与 taskWorkspaceSSHHost（仅出 host）定位不同，本函数面向平台适配故三者皆解析。不识别的格式返回中文错误（MCP 工具直接透传给 AI 自我纠正）；
  * owner/repo 之外的嵌套 group 不支持，待后续平台适配扩展。
  */
 func ParseRemoteURL(remoteURL string) (RemoteRef, error) {
@@ -42,7 +42,7 @@ func ParseRemoteURL(remoteURL string) (RemoteRef, error) {
 		host, path = u.Hostname(), strings.Trim(u.Path, "/")
 	} else {
 		/*
-		 * scp 风格 user@host:owner/repo.git（与 issueWorkspaceSSHHost 同款切片手法，但额外产出 owner/repo）：首段 @ 前是 user，@ 后到首个 : 是 host。
+		 * scp 风格 user@host:owner/repo.git（与 taskWorkspaceSSHHost 同款切片手法，但额外产出 owner/repo）：首段 @ 前是 user，@ 后到首个 : 是 host。
 		 */
 		at := strings.IndexByte(raw, '@')
 		if at < 0 {
