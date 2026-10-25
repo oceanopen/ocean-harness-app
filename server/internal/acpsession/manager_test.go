@@ -88,7 +88,7 @@ func newManagerWithIssue(t *testing.T, script string, wantErr error) (*Manager, 
 	wsDir := t.TempDir()
 	taskID := seedIssue(t, db, wsDir, `{"mode":"acp"}`, "")
 	issueID := ConversationSessionKey(seedTaskConversation(t, db, taskID))
-	mgr, err := NewManager(db, Dirs{}, 0, "", zap.NewNop())
+	mgr, err := NewManager(db, Dirs{}, 0, "", "", zap.NewNop())
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -1021,7 +1021,7 @@ func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 			db := newTestDB(t)
 			taskID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
 			key := ConversationSessionKey(seedTaskConversation(t, db, taskID))
-			mgr, err := NewManager(db, Dirs{}, 0, "", zap.NewNop())
+			mgr, err := NewManager(db, Dirs{}, 0, "", "", zap.NewNop())
 			if err != nil {
 				t.Fatalf("NewManager: %v", err)
 			}
@@ -1071,7 +1071,7 @@ func TestEnsureResumeFallbackNotice(t *testing.T) {
 	db := newTestDB(t)
 	taskID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
 	key := ConversationSessionKey(seedTaskConversation(t, db, taskID))
-	mgr, err := NewManager(db, Dirs{}, 0, "", zap.NewNop())
+	mgr, err := NewManager(db, Dirs{}, 0, "", "", zap.NewNop())
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}

@@ -11,12 +11,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/acpdoctor"
 	"ocean-harness/server/internal/acpsession"
@@ -26,6 +28,7 @@ import (
 	"ocean-harness/server/internal/bot/weixin"
 	"ocean-harness/server/internal/browser"
 	"ocean-harness/server/internal/config"
+	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/global"
 	"ocean-harness/server/internal/initialize"
 	"ocean-harness/server/internal/mcpservers"
@@ -64,12 +67,13 @@ func main() {
 	/*
 	 * 5.5) ACP 会话域装配（T1.5）：启动清扫运行时锚（重启后旧锚全部失效归零），随后经
 	 * global.AcpSessions 承接 issue 级会话生命周期（ensure/prompt/respond/discard）与 SSE 事件流，vendored 目录语义与 doctor 探测同源；app.db 路径注入（T4 闲置回收阈值读取）。
-	 * 先于 bot 装配——supervisor 装配引擎路由时消费本实例。
+	 * 历史落盘目录与 sqlite 同源派生（<SqliteDir>/acp-history）；先于 bot 装配——supervisor 装配引擎路由时消费本实例。
 	 */
+	historyDir := filepath.Join(cfg.SqliteDir, acpsession.HistoryDirName)
 	acpSessions, err := acpsession.NewManager(global.SqliteDB, acpsession.Dirs{
 		Resources: cfg.AcpResourcesDir,
 		Adapters:  cfg.AcpAdaptersDir,
-	}, cfg.Port, cfg.AppDbPath, global.Logger)
+	}, cfg.Port, cfg.AppDbPath, historyDir, global.Logger)
 	if err != nil {
 		// schema 漂移（迁移文件就地演进，存量库不重放旧迁移）单独给指引，其余原因原样 Fatal。
 		if strings.Contains(err.Error(), "no such column") {
@@ -79,6 +83,7 @@ func main() {
 		global.Logger.Fatal("acp-session manager init failed", zap.Error(err))
 	}
 	global.AcpSessions = acpSessions
+	cleanupOrphanAcpHistory(global.SqliteDB, historyDir)
 
 	/*
 	 * 5.55) 浏览器会话域装配（T2.1）：懒启动——构造即返回（不拉引擎），构造内含残留
@@ -154,4 +159,55 @@ func printRuntimeConfig(cfg *config.Config) {
 		zap.String("logDir", cfg.LogDir),
 		zap.String("sqliteDir", cfg.SqliteDir),
 	)
+}
+
+/*
+ * cleanupOrphanAcpHistory 启动孤儿清理：历史目录中无对应会话行的文件静默删除（活集 =
+ * 会话实体行 + bot 窄桩行双表并集）；活集查询失败整批保留（宁多留不误删）。
+ */
+func cleanupOrphanAcpHistory(db *gorm.DB, dir string) {
+	ids, err := acpsession.HistoryConversationIDs(dir)
+	if err != nil {
+		global.Logger.Warn("acp-history 目录扫描失败", zap.Error(err))
+		return
+	}
+	if len(ids) == 0 {
+		return
+	}
+	live, err := liveConversationIDs(db)
+	if err != nil {
+		global.Logger.Warn("会话活集查询失败，跳过历史孤儿清理", zap.Error(err))
+		return
+	}
+	for _, id := range ids {
+		if live[id] {
+			continue
+		}
+		if err := acpsession.RemoveHistoryFile(dir, id); err != nil {
+			global.Logger.Warn("孤儿历史文件删除失败", zap.String("conversationId", id), zap.Error(err))
+			continue
+		}
+		global.Logger.Info("孤儿历史文件已清理", zap.String("conversationId", id))
+	}
+}
+
+// liveConversationIDs 会话活集批查：会话实体行与 bot 窄桩行两类锚载体的 id 并集。
+func liveConversationIDs(db *gorm.DB) (map[string]bool, error) {
+	q := query.Use(db)
+	convRows, err := q.Conversation.WithContext(context.Background()).Select(q.Conversation.ID).Find()
+	if err != nil {
+		return nil, err
+	}
+	botRows, err := q.ImBotConversation.WithContext(context.Background()).Select(q.ImBotConversation.ID).Find()
+	if err != nil {
+		return nil, err
+	}
+	live := make(map[string]bool, len(convRows)+len(botRows))
+	for _, row := range convRows {
+		live[row.ID] = true
+	}
+	for _, row := range botRows {
+		live[row.ID] = true
+	}
+	return live, nil
 }

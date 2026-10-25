@@ -43,34 +43,36 @@ type Dirs struct {
  * 进程（会话失败互不牵连；idle 回收后重开经锚点 resume 恢复，见 Ensure）。
  */
 type Manager struct {
-	db        *gorm.DB
-	dirs      Dirs
-	port      int    // sidecar 自身 HTTP 端口（spawn env 注入 OCEAN_HARNESS_PORT，会话内插件工具链用）
-	appDbPath string // Rust 共享 app.db 路径（闲置回收阈值读取；空 = 未注入，配置读失败回落默认）
-	log       *zap.Logger
-	bindings  *BindingStore
-	hub       *hub
+	db         *gorm.DB
+	dirs       Dirs
+	port       int    // sidecar 自身 HTTP 端口（spawn env 注入 OCEAN_HARNESS_PORT，会话内插件工具链用）
+	appDbPath  string // Rust 共享 app.db 路径（闲置回收阈值读取；空 = 未注入，配置读失败回落默认）
+	historyDir string // 会话历史 JSONL 落盘目录（空 = 持久化关闭，测试兼容）
+	log        *zap.Logger
+	bindings   *BindingStore
+	hub        *hub
 
 	mu      sync.Mutex
 	entries map[string]*sessionEntry
 }
 
 /*
- * NewManager 装配会话域（main 步骤 5.5）：锚持久于 t_conversations.claude_session_id，Ensure 经 Peek→LoadSession 恢复既有会话（闲置重建与跨重启同一路径）；port 为 sidecar 自身 HTTP 端口，appDbPath 为 Rust 共享 app.db 路径（可空：闲置回收阈值读失败回落默认）。
+ * NewManager 装配会话域（main 步骤 5.5）：锚持久于 t_conversations.claude_session_id，Ensure 经 Peek→LoadSession 恢复既有会话（闲置重建与跨重启同一路径）；port 为 sidecar 自身 HTTP 端口，appDbPath 为 Rust 共享 app.db 路径（可空：闲置回收阈值读失败回落默认），historyDir 为会话历史落盘目录（可空：空 = 历史持久化关闭）。
  */
-func NewManager(db *gorm.DB, dirs Dirs, port int, appDbPath string, log *zap.Logger) (*Manager, error) {
+func NewManager(db *gorm.DB, dirs Dirs, port int, appDbPath, historyDir string, log *zap.Logger) (*Manager, error) {
 	if log == nil {
 		log = zap.NewNop()
 	}
 	m := &Manager{
-		db:        db,
-		dirs:      dirs,
-		port:      port,
-		appDbPath: appDbPath,
-		log:       log,
-		bindings:  &BindingStore{DB: db},
-		hub:       newHub(),
-		entries:   map[string]*sessionEntry{},
+		db:         db,
+		dirs:       dirs,
+		port:       port,
+		appDbPath:  appDbPath,
+		historyDir: historyDir,
+		log:        log,
+		bindings:   &BindingStore{DB: db},
+		hub:        newHub(),
+		entries:    map[string]*sessionEntry{},
 	}
 	return m, nil
 }
@@ -128,6 +130,7 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 		old.turnQueue.close()
 	}
 	entry := &sessionEntry{issueID: issueID, state: StatusStarting, view: newSessionView(), turnQueue: newTurnQueue()}
+	m.attachHistory(entry)
 	m.entries[issueID] = entry
 	m.mu.Unlock()
 
@@ -177,9 +180,9 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID stri
 	entry.session = session
 	entry.state = StatusReady
 	frames := entry.view.setReady(string(session.ID()), cfg, session.Modes())
-	// R2 显式提示：带锚受理但恢复未发生（会话文件丢失/能力降级），落 system 条目告知用户。
-	if resumeID != "" && !resumed {
-		frames = append(frames, entry.view.appendSystemNotice("历史会话不可恢复，已新建会话")...)
+	// 恢复未发生（锚失效/能力降级/闲置重开全新会话）：离线历史回放 + 显式提示（R2）。
+	if !resumed {
+		frames = append(frames, m.restoreOfflineHistory(entry, resumeID)...)
 	}
 	entry.mu.Unlock()
 	if err := m.bindings.SaveReady(context.Background(), entry.issueID, cfg.AgentCode, string(session.ID())); err != nil {
@@ -188,6 +191,54 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID stri
 	m.hub.broadcast(entry.issueID, frames)
 	m.resetIdleCheck(entry) // 就绪即重估：无人订阅且无回合则开始闲置倒计时
 	go m.pump(entry)
+}
+
+/*
+ * attachHistory 注入条目持久化钩子（建 entry 时一次）：per-entry 代次前缀隔离跨进程折叠，
+ * 观察回调在视图锁内同步落盘（顺序即视图序）；失败只落日志不阻断会话。
+ */
+func (m *Manager) attachHistory(entry *sessionEntry) {
+	if m.historyDir == "" {
+		return
+	}
+	convID, ok := conversationRowID(entry.issueID)
+	if !ok {
+		return
+	}
+	gen := strconv.FormatInt(time.Now().UnixNano(), 36)
+	entry.view.onEntry = func(e ConversationEntry) {
+		e.EntryID = gen + "-" + e.EntryID
+		if err := appendHistoryEntry(m.historyDir, convID, e); err != nil {
+			m.log.Warn("ACP 会话历史落盘失败", zap.String("issueId", entry.issueID), zap.Error(err))
+		}
+	}
+}
+
+/*
+ * restoreOfflineHistory 恢复未发生路径的离线历史回放（spawn 成功分支，entry.mu 持有中
+ * 调用）：历史文件在盘 → 按序回放进视图 + 双系统提示（历史离线恢复 / agent 上下文重置，
+ * 历史可见、失忆显式告知）；无历史可放且带锚降级保留既有「不可恢复」告知。
+ */
+func (m *Manager) restoreOfflineHistory(entry *sessionEntry, resumeID string) []Frame {
+	var records []historyRecord
+	if m.historyDir != "" {
+		if convID, ok := conversationRowID(entry.issueID); ok {
+			var err error
+			if records, err = loadHistoryEntries(m.historyDir, convID); err != nil {
+				m.log.Warn("ACP 会话历史读取失败，跳过离线回放", zap.String("issueId", entry.issueID), zap.Error(err))
+			}
+		}
+	}
+	if len(records) == 0 {
+		if resumeID != "" {
+			return entry.view.appendSystemNotice("历史会话不可恢复，已新建会话")
+		}
+		return nil
+	}
+	frames := entry.view.replayHistory(records)
+	frames = append(frames, entry.view.appendSystemNotice("历史消息已离线恢复")...)
+	frames = append(frames, entry.view.appendSystemNotice("Agent 上下文已重置")...)
+	return frames
 }
 
 /*
@@ -559,6 +610,7 @@ func (m *Manager) Discard(issueID string) {
 	delete(m.entries, issueID)
 	m.mu.Unlock()
 	_ = m.bindings.Delete(context.Background(), issueID)
+	m.removeHistory(issueID)
 	if !ok {
 		return
 	}
@@ -573,6 +625,20 @@ func (m *Manager) Discard(issueID string) {
 	}
 	if state != StatusTerminated {
 		m.hub.broadcast(issueID, entry.view.setTerminated("会话已删除"))
+	}
+}
+
+// removeHistory 级联删除会话历史文件（Discard 专用；尽力而为，失败仅落日志）。
+func (m *Manager) removeHistory(issueID string) {
+	if m.historyDir == "" {
+		return
+	}
+	convID, ok := conversationRowID(issueID)
+	if !ok {
+		return
+	}
+	if err := RemoveHistoryFile(m.historyDir, convID); err != nil {
+		m.log.Warn("ACP 会话历史文件删除失败", zap.String("issueId", issueID), zap.Error(err))
 	}
 }
 

@@ -293,6 +293,9 @@ type sessionView struct {
 	entries    []ConversationEntry
 	entryIndex map[string]int // entryId → entries 下标（覆写式 upsert）
 
+	// onEntry 实时条目观察回调（manager 注入的历史持久化钩子；须持 mu 调用）。nil = 未接。
+	onEntry func(ConversationEntry)
+
 	// pendings 挂起交互注册表（acp 层无枚举 API，视图侧自登记；应答/结算后摘除）。
 	pendings []pendingSlot
 
@@ -458,12 +461,14 @@ func (v *sessionView) appendChunkLocked(kind, text string) []Frame {
 	}
 	v.entries[idx].Text += text
 	entry := v.entries[idx]
+	v.notifyEntryLocked(entry)
 	return []Frame{{Type: FrameEntry, Entry: &entry}}
 }
 
 /*
  * appendSystemNotice 会话域系统提示条目（一次性落条目并广播；R2 历史锚恢复失败降级新建等
- * 需要用户可见的域内事实走此通道）。独立 entryId 命名空间 sys-<n>。
+ * 需要用户可见的域内事实走此通道）。独立 entryId 命名空间 sys-<n>；不经观察者——域内
+ * 运行期事实不落历史文件。
  */
 func (v *sessionView) appendSystemNotice(text string) []Frame {
 	v.mu.Lock()
@@ -473,6 +478,48 @@ func (v *sessionView) appendSystemNotice(text string) []Frame {
 	v.entries = append(v.entries, ConversationEntry{EntryID: entryID, Kind: entryKindSystem, Text: text})
 	entry := v.entries[len(v.entries)-1]
 	return []Frame{{Type: FrameEntry, Entry: &entry}}
+}
+
+/*
+ * notifyEntryLocked 实时条目观察（须持 mu）：仅开回合后（turn > 0）的条目回调——首回合
+ * 前的 wire 重放（resume 恢复的历史）不落盘，避免整段历史随每次 resume 重写文件。
+ */
+func (v *sessionView) notifyEntryLocked(entry ConversationEntry) {
+	if v.turn > 0 && v.onEntry != nil {
+		v.onEntry(entry)
+	}
+}
+
+/*
+ * replayHistory 离线恢复注入：历史记录按序做同 id 覆写折算（与视图 upsert 同构，chunk
+ * 增量收敛为终值），重编进 hist- 命名空间后批量入视图——fresh 视图恒空，注入条目天然
+ * 位于实时条目之前；不经观察者（历史已在盘）。
+ */
+func (v *sessionView) replayHistory(records []historyRecord) []Frame {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	type slot struct {
+		entry ConversationEntry
+	}
+	order := make([]slot, 0, len(records))
+	index := make(map[string]int, len(records))
+	for _, rec := range records {
+		id := rec.Entry.EntryID
+		if idx, ok := index[id]; ok {
+			order[idx].entry = rec.Entry
+			continue
+		}
+		index[id] = len(order)
+		order = append(order, slot{entry: rec.Entry})
+	}
+	frames := make([]Frame, 0, len(order))
+	for i := range order {
+		order[i].entry.EntryID = fmt.Sprintf("hist-%d", i+1)
+		v.entryIndex[order[i].entry.EntryID] = len(v.entries)
+		v.entries = append(v.entries, order[i].entry)
+		frames = append(frames, Frame{Type: FrameEntry, Entry: &order[i].entry})
+	}
+	return frames
 }
 
 /*
@@ -488,6 +535,7 @@ func (v *sessionView) upsertToolCallLocked(view *ToolCallView) []Frame {
 	}
 	v.entries[idx].ToolCall = view
 	entry := v.entries[idx]
+	v.notifyEntryLocked(entry)
 	return []Frame{{Type: FrameEntry, Entry: &entry}}
 }
 
@@ -695,6 +743,7 @@ func (v *sessionView) beginTurn(text string, meta PromptMeta) ([]Frame, error) {
 		Display: meta.Display,
 	}
 	v.entries = append(v.entries, entry)
+	v.notifyEntryLocked(entry)
 	return []Frame{
 		{Type: FrameEntry, Entry: &entry},
 		turnFrame(FrameTurnStarted, true, "", ""),

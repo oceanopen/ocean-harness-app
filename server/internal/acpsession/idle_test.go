@@ -90,7 +90,7 @@ func newIdleTestManager(t *testing.T, script string, resumeIDs *[]string) (*Mana
 	db := newTestDB(t)
 	taskID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
 	issueID := ConversationSessionKey(seedTaskConversation(t, db, taskID))
-	mgr, err := NewManager(db, Dirs{}, 0, "", zap.NewNop())
+	mgr, err := NewManager(db, Dirs{}, 0, "", "", zap.NewNop())
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
