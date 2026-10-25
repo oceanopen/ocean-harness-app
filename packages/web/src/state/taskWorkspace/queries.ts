@@ -9,15 +9,19 @@ import { taskWorkspaceKeys } from './keys';
 // ─── 读取（query）───
 
 /**
- * 工作空间初始化状态（taskId 维度缓存）。RUNNING 时 1s 轮询（全库首个 refetchInterval
- * 用例），终态/未初始化自动停（返回 false），切 issue 换 key 天然重建。
+ * 工作空间初始化状态（taskId 维度缓存）。执行中态（受理 PENDING / 后台 RUNNING）1s 轮询
+ * 至终态自动停（返回 false）——受理快照先于后台 RUNNING 落盘，仅认 RUNNING 会在 PENDING
+ * 窗口停摆冻结；切 issue 换 key 天然重建。
  */
 export function useTaskWorkspaceStatus(taskId: string | null) {
   return useQuery({
     queryKey: taskWorkspaceKeys.status(taskId ?? ''),
     queryFn: () => TaskWorkspaceService.status({ taskId: taskId! }),
     enabled: taskId != null,
-    refetchInterval: query => (query.state.data?.serverStatus === 'RUNNING' ? 1000 : false),
+    refetchInterval: query => {
+      const serverStatus = query.state.data?.serverStatus;
+      return serverStatus === 'PENDING' || serverStatus === 'RUNNING' ? 1000 : false;
+    },
   });
 }
 

@@ -114,7 +114,9 @@ func taskWorkspaceManifestEqual(a, b []types.TaskWorkspaceRepoRef) bool {
 
 /*
  * taskWorkspaceMergeState 把 issue 当前关联仓库合并进旧状态，产出本轮待执行状态（PENDING）。
- * 规则：全局步骤——旧状态中 SUCCESS 的步骤保留成功结论（幂等跳过重跑）；SKIPPED 不保留——占位结果每次重跑时重新推导，T1.2/T1.3/T1.4 实现注册后可自动接续执行。cloneRepos 仓库级——关联与基准分支未变且旧结果 SUCCESS 的仓库保留（增量跳过），新增/分支变更/旧结果非 SUCCESS 的仓库重置 PENDING，已移除的仓库剔除；全部仓库有既有成功结果且步骤曾成功才保留成功。
+ * 规则：全局步骤——旧状态 SUCCESS/SKIPPED 均保留（SUCCESS 幂等跳过重跑；SKIPPED 为条件跳过结论，
+ * 保留展示避免「前步待执行、后步已完成」矛盾态，执行器每轮仍会重推导）；cloneRepos 仓库级——
+ * 关联与基准分支未变且旧结果 SUCCESS 的仓库保留（增量跳过），新增/分支变更/旧结果非 SUCCESS 的仓库重置 PENDING，已移除的仓库剔除；全部仓库有既有成功结果且步骤曾成功才保留成功。
  * manifest 全量重建为当前关联集合；顶层 error 清空（旧失败原因已吸收进重试）。
  */
 func taskWorkspaceMergeState(old *types.TaskWorkspaceState, baseDir, taskID string, repos []taskWorkspaceRepoInput) *types.TaskWorkspaceState {
@@ -146,8 +148,8 @@ func taskWorkspaceMergeState(old *types.TaskWorkspaceState, baseDir, taskID stri
 			if !taskWorkspaceReposPending(step.Repos) && prev != nil && prev.Status == types.IW_STATUS_SUCCESS {
 				step.Status = types.IW_STATUS_SUCCESS
 			}
-		} else if prev != nil && prev.Status == types.IW_STATUS_SUCCESS {
-			step.Status = types.IW_STATUS_SUCCESS
+		} else if prev != nil && (prev.Status == types.IW_STATUS_SUCCESS || prev.Status == types.IW_STATUS_SKIPPED) {
+			step.Status = prev.Status
 		}
 		state.Steps = append(state.Steps, step)
 	}

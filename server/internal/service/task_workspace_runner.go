@@ -67,7 +67,8 @@ func taskWorkspaceRunSteps(state *types.TaskWorkspaceState, logger *zap.Logger) 
 		}
 	}
 	for _, step := range state.Steps {
-		if step.Status != types.IW_STATUS_PENDING {
+		// SUCCESS 幂等跳过；SKIPPED 为条件跳过结论，保留展示但每轮重推导（仓库/配置可能已变化）。
+		if step.Status != types.IW_STATUS_PENDING && step.Status != types.IW_STATUS_SKIPPED {
 			continue
 		}
 		runner, ok := taskWorkspaceStepRunners[step.Key]
