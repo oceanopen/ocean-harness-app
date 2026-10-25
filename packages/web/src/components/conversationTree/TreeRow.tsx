@@ -68,10 +68,10 @@ function TreeRow({
           : {
               'pl': inset,
               'pr': '4px',
-              // 右侧槽位：时间与「...」同槽互斥（绝对定位交换，恒右对齐无占位位移；hidden 防隐藏态误点）。
-              '& .tree-row-slot': { position: 'relative', width: '64px', height: '26px', flexShrink: 0 },
-              '& .tree-row-time': { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-              '& .tree-row-more': { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', opacity: 0, visibility: 'hidden' },
+              // 右侧时间与「...」grid 同格叠放互斥：槽宽取两者最大自然宽度（不设固定宽），
+              // hover 时间隐去、菜单原位浮出（恒右对齐零跳动；hidden 防隐藏态误点）。
+              '& .tree-row-time': { opacity: 0.7 },
+              '& .tree-row-more': { opacity: 0, visibility: 'hidden' },
               '&:hover .tree-row-more': { opacity: 1, visibility: 'visible' },
               '&:hover .tree-row-time': { opacity: 0 },
             }),
@@ -121,15 +121,15 @@ function TreeRow({
                 e.stopPropagation();
                 onMore(e.currentTarget);
               }}
-              sx={{ 'flexShrink': 0, '& svg': { fontSize: '16px' } }}
+              sx={{ 'flexShrink': 0, 'color': 'text.disabled', '& svg': { fontSize: '16px' } }}
             >
               <MoreHorizIcon />
             </IconButton>
           )
         : (
-            <Box className="tree-row-slot">
+            <Box sx={{ display: 'grid', flexShrink: 0, justifyItems: 'end', alignItems: 'center' }}>
               {timeLabel != null && (
-                <Typography variant="caption" color="text.disabled" noWrap className="tree-row-time">
+                <Typography variant="caption" color="text.disabled" noWrap className="tree-row-time" sx={{ gridArea: '1 / 1' }}>
                   {timeLabel}
                 </Typography>
               )}
@@ -141,7 +141,7 @@ function TreeRow({
                   e.stopPropagation();
                   onMore(e.currentTarget);
                 }}
-                sx={{ 'position': 'absolute', '& svg': { fontSize: '16px' } }}
+                sx={{ 'gridArea': '1 / 1', 'color': 'text.disabled', '& svg': { fontSize: '16px' } }}
               >
                 <MoreHorizIcon />
               </IconButton>
