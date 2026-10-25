@@ -1,6 +1,5 @@
 import type { WorkbenchContainer } from '@src/windows/panel/DevWorkbenchPage/components/WorkbenchContent';
-import { AppsOutlined as AppsOutlinedIcon } from '@mui/icons-material';
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 import { useConversations } from '@src/state/conversation';
 import { useWorkspaces } from '@src/state/tracker';
 import WorkbenchContent from '@src/windows/panel/DevWorkbenchPage/components/WorkbenchContent';
@@ -13,7 +12,8 @@ import WorkspaceTree from './components/WorkspaceTree';
 /**
  * WorkspacesPage：「工作空间」页（/workspaces）——左树 + 共用工作台内容区。
  * 选中工作空间/会话由 URL ?wid=&cid= 驱动：wid 上抛为容器（{id,name,dir,launchSettings}），
- * cid 上抛为会话选中意图；未选中态由左树「列表」开关驱动内容区（开=卡片网格，关=引导空态）。
+ * cid 上抛为会话选中意图。「列表」开关开 = 内容区切工作空间卡片网格（挑工作空间用），
+ * 关/未选中 = 三栏工作台框架（内容区空态引导选会话）。
  */
 export default function WorkspacesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -64,8 +64,8 @@ export default function WorkspacesPage() {
     setSearchParams(next);
   };
 
-  // 「列表」开关在选中态同样生效：开 = 内容区切工作空间列表浮层（回到列表的入口）。
-  const showList = container == null || listOpen;
+  // 「列表」开关是内容区切卡片列表的唯一门控；关/未选中一律回三栏工作台框架。
+  const showList = listOpen;
 
   const workspaceTree = (
     <WorkspaceTree
@@ -98,42 +98,18 @@ export default function WorkspacesPage() {
               </Box>
             )
           : (
-              container == null
-                ? <ListGuide text="点击左侧「列表」图标查看工作空间列表" />
-                : (
-                    <WorkbenchContent
-                      container={container}
-                      containerPending={isPending}
-                      task={null}
-                      selectedTaskId={null}
-                      tasksLoading={false}
-                      conversationScope="workspace"
-                      selectedConversationId={urlCid}
-                      leftTree={workspaceTree}
-                    />
-                  )
+              <WorkbenchContent
+                container={container}
+                containerPending={isPending}
+                task={null}
+                selectedTaskId={null}
+                tasksLoading={false}
+                conversationScope="workspace"
+                selectedConversationId={urlCid}
+                leftTree={workspaceTree}
+              />
             )}
       </Box>
-    </Box>
-  );
-}
-
-// 未选中且未开列表的内容区空态：引导点左树「列表」图标。
-function ListGuide({ text }: { text: string }) {
-  return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100%',
-        gap: '12px',
-        px: '24px',
-      }}
-    >
-      <AppsOutlinedIcon sx={{ fontSize: '48px', color: 'text.disabled' }} />
-      <Typography variant="body2" color="text.secondary">{text}</Typography>
     </Box>
   );
 }
