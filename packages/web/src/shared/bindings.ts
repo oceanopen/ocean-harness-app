@@ -33,6 +33,7 @@ export const commands = {
 	resetAppConfig: () => typedError<null, string>(__TAURI_INVOKE("reset_app_config")),
 	getAppName: () => __TAURI_INVOKE<string>("get_app_name"),
 	getDataFilePaths: () => typedError<DataFilePaths, string>(__TAURI_INVOKE("get_data_file_paths")),
+	cleanLogFiles: () => typedError<LogCleanupResult, string>(__TAURI_INVOKE("clean_log_files")),
 	restartApp: () => __TAURI_INVOKE<void>("restart_app"),
 	httpServerStatus: () => __TAURI_INVOKE<HttpServerStatus>("http_server_status"),
 	setHttpServerEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_http_server_enabled", { enabled })),
@@ -158,6 +159,8 @@ export type CliCommandStatus = {
 export type DataFilePaths = {
 	appDbPath: string,
 	serverDbPath: string,
+	appLogDir: string,
+	serverLogDir: string,
 };
 
 export type HttpServerRunState = "stopped" | "starting" | "running";
@@ -169,6 +172,11 @@ export type HttpServerStatus = {
 	mode: string,
 	startLastError: string | null,
 	startRecentLog: string | null,
+};
+
+export type LogCleanupResult = {
+	appFiles: number,
+	serverFiles: number,
 };
 
 export type NavErr = { kind: "unsupportedHostApp" } | { kind: "osaScriptFailed"; stderr: string } | { kind: "staleSession"; stderr: string } | { kind: "sessionNotFound" } | { kind: "io"; message: string };

@@ -44,6 +44,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::app_config::reset_app_config,
             shared::app_info::get_app_name,
             shared::app_info::get_data_file_paths,
+            shared::app_info::clean_log_files,
             shared::app_info::restart_app,
             shared::http_server::http_server_status,
             shared::http_server::set_http_server_enabled,

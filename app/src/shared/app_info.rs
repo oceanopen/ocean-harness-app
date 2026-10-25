@@ -1,5 +1,6 @@
-// 应用元信息查询与进程控制命令。
+// 应用元信息查询、数据/日志维护与进程控制命令。
 
+use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
@@ -32,6 +33,10 @@ pub struct DataFilePaths {
     pub app_db_path: String,
     // Go sidecar 业务数据库文件路径（文件名 SSOT 在 Go 侧 sqlite.go，同 README 口径）。
     pub server_db_path: String,
+    // Rust 应用日志目录（tauri-plugin-log 写入目标）。
+    pub app_log_dir: String,
+    // Go sidecar 日志目录（与 http_server 注入 GO_SERVER_LOG_DIR 同口径推导）。
+    pub server_log_dir: String,
 }
 
 #[tauri::command]
@@ -41,6 +46,10 @@ pub fn get_data_file_paths(app: AppHandle) -> Result<DataFilePaths, String> {
         .path()
         .app_data_dir()
         .map_err(|e| format!("resolve app_data_dir failed: {e}"))?;
+    let app_log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("resolve app_log_dir failed: {e}"))?;
     Ok(DataFilePaths {
         app_db_path: data_dir
             .join("app.db")
@@ -52,7 +61,81 @@ pub fn get_data_file_paths(app: AppHandle) -> Result<DataFilePaths, String> {
             .join("server.db")
             .to_string_lossy()
             .into_owned(),
+        app_log_dir: app_log_dir.to_string_lossy().into_owned(),
+        server_log_dir: data_dir
+            .join("app-server")
+            .join("logs")
+            .to_string_lossy()
+            .into_owned(),
     })
+}
+
+/*
+ * 日志清理（设置 → 数据清理页）：仅删历史/轮转文件，跳过各进程正在写入的当前文件。
+ * 命名模式镜像写入方 SSOT：应用侧 tauri-plugin-log 归档 `<productName>_*.log`；
+ * 服务侧 Go lumberjack 归档 `app-*.log` / `app.error-*.log`。
+ */
+#[derive(Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogCleanupResult {
+    // 应用日志目录删除文件数。
+    pub app_files: u32,
+    // 服务日志目录删除文件数。
+    pub server_files: u32,
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn clean_log_files(app: AppHandle) -> Result<LogCleanupResult, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app_data_dir failed: {e}"))?;
+    let app_log_dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("resolve app_log_dir failed: {e}"))?;
+    let app_prefix = format!("{}_", app.package_info().name);
+    let app_files = remove_hist_logs(&app_log_dir, |name| {
+        name.starts_with(&app_prefix) && name.ends_with(".log")
+    })?;
+    let server_files = remove_hist_logs(
+        &data_dir.join("app-server").join("logs"),
+        |name| {
+            (name.starts_with("app-") || name.starts_with("app.error-")) && name.ends_with(".log")
+        },
+    )?;
+    Ok(LogCleanupResult {
+        app_files,
+        server_files,
+    })
+}
+
+// 删除目录内命中历史日志命名的文件并返回删除数；目录不存在视为无历史可清。
+fn remove_hist_logs(dir: &Path, is_hist: impl Fn(&str) -> bool) -> Result<u32, String> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(e) => return Err(format!("read {} failed: {e}", dir.display())),
+    };
+    let mut removed = 0;
+    for entry in entries {
+        let path = entry
+            .map_err(|e| format!("read {} failed: {e}", dir.display()))?
+            .path();
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if is_hist(name) {
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("remove {} failed: {e}", path.display()))?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }
 
 /*
