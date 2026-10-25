@@ -4,24 +4,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"gorm.io/gorm"
 
+	"github.com/google/uuid"
+
 	"ocean-harness/server/internal/acpsession"
+	"ocean-harness/server/internal/dal/enums"
+	"ocean-harness/server/internal/dal/model"
 	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
 )
 
 /*
- * launchModeACP workspace 启动模式的 ACP 档（取值 SSOT 是前端 shared/launchSettings.ts；
+ * launchModeACP 容器 launch_settings.mode 的 ACP 档（取值 SSOT 是前端 shared/launchSettings.ts；
  * acpsession 域同款字面量门禁——跨域各自维护字面量，不做导出耦合）。
  */
 const launchModeACP = "acp"
 
 /*
- * turnNotAcceptedError 引擎受理拒绝：回合未真正发生，与 headless 会话锚点有效性无关（ACP 引擎的同步失败——配置非法、会话起不来、排队受理被拒——与启动模式解析失败全属此类）。
- * driverRoute 以此标记此类错误，编排器据其跳过 healAfterFailure 清锚（errors.As 判别，编排器不感知具体引擎；
- * 误清会把 headless 时代的续聊锚点永久丢掉）。
+ * turnNotAcceptedError 引擎受理拒绝：回合未真正发生（配置非法、会话起不来、排队受理被拒）。
+ * driverRoute 以此标记此类错误，编排器据其跳过失败自愈（errors.As 判别，编排器不感知具体引擎；
+ * 误清会丢 headless 既有会话锚点）。
  */
 type turnNotAcceptedError struct{ err error }
 
@@ -30,9 +35,10 @@ func (e turnNotAcceptedError) Error() string { return e.err.Error() }
 func (e turnNotAcceptedError) Unwrap() error { return e.err }
 
 /*
- * routeTarget 路由判定产物：引擎选择 + ACP 档的会话锚键。SessionKey 双锚形——issue uuid
- * （关联任务，与桌面工作台共享同一会话）或 conv-<会话行id>（未关联任务，以会话行为载体的
- * 独立会话，见 acpsession.BindingStore）；headless 不消费。
+ * routeTarget 路由判定产物：引擎选择 + ACP 档的会话锚键。SessionKey 双锚形——
+ * conv-<主会话行id>（任务主/子会话，与桌面工作台共享同一会话视图与审批）或 conv-<bot 会话行id>
+ * （workspace 档独立会话，见 acpsession.BindingStore）；headless 档 SessionKey 恒空
+ * （锚 = bot 会话行 claude_session_id）。
  */
 type routeTarget struct {
 	SessionKey string
@@ -40,43 +46,31 @@ type routeTarget struct {
 }
 
 /*
- * effectiveACPMode 启动模式判定（mode-only 字段合并）：绑定 issue 的 launch_settings.mode
- * 非空则覆盖 workspace 级（显式 "none" 亦为有效覆盖值——「明说不要」≠「未配置」，语义对齐
- * acpsession.mergeLaunchSettings 的字段级合并；bot 路由只消费 mode 一项）。
- * issueMode 空 = 未覆盖，回落 workspace 级。
- */
-func effectiveACPMode(workspaceMode, issueMode string) bool {
-	if issueMode != "" {
-		return issueMode == launchModeACP
-	}
-	return workspaceMode == launchModeACP
-}
-
-/*
- * driverRoute ClaudeDriver 的引擎路由实现：按 workspace 级 launch_settings.mode 与任务关联
- * 逐回合在 headless（driver_claude）与 ACP（driver_acp）两引擎间切换。
- * 路由知识收在引擎层（实现 ClaudeDriver），编排器保持零引擎感知；
- * mode 与关联每回合读取——workspace 抽屉改启动配置、面板侧改任务关联，均对在跑 bot 下一回合生效（bot 不随配置重启）。
+ * driverRoute TurnDriver 的引擎路由实现（双驱动并存）：按容器 launch_settings.mode 逐回合路由
+ * ——mode='acp' 走 ACP 三分支（workspace 档 bot 会话行锚独立会话；project 档任务主会话复用/
+ * ACP 主会话创建/终端档并建 ACP 子会话，与桌面共享同一会话视图）；其余档（none/terminal-auto/
+ * 未配置）走 headless spawn（driver_claude）。路由知识收在引擎层（实现 TurnDriver），编排器
+ * 保持零引擎感知；容器配置每回合读取——改档位/关联任务，均对在跑 bot 下一回合生效（bot 不随配置重启）。
  */
 type driverRoute struct {
-	headless ClaudeDriver
-	acp      ClaudeDriver
+	headless TurnDriver
+	acp      TurnDriver
 	// sessions 会话域消费面（审批快路径 Get/RespondPermission 消费；与 acp 引擎同源）。
 	sessions acpSessions
 	db       *gorm.DB
 	/*
-	 * resolve 一步判定路由目标：读会话行 + issue 存在性/归属校验 + 两级 launch_settings mode
-	 * 合并。读库失败 fail closed 同步报错（不静默回落 headless——配置读不出时「以为没配 ACP」
-	 * 是危险默认）。惯例实现是 resolveTarget 方法（构造器赋值）；保留字段形态供白盒测试注入替身。
+	 * resolve 一步判定路由目标：读容器启动档 + 会话行 + 任务主会话定位/创建。读库失败
+	 * fail closed 同步报错（不静默降级）。惯例实现是 resolveTarget 方法（构造器赋值）；
+	 * 保留字段形态供白盒测试注入替身。
 	 */
-	resolve func(botID, workspaceID string, conversationKey string) (routeTarget, error)
+	resolve func(cfg BotRuntimeConfig, conversationKey string) (routeTarget, error)
+	// mu 串行化主会话定位/创建（同任务并发消息防重复建主会话；纳秒级临界区）。
+	mu sync.Mutex
 }
 
 /*
- * newDriverRoute 装配路由驱动（返回具体类型：编排器同时把它当 ClaudeDriver 与 pendingGate
+ * newDriverRoute 装配路由驱动（返回具体类型：编排器同时把它当 TurnDriver 与 pendingGate
  * 两个角色装配——TryRespondPending 见 pending_gate.go）。
- * 关联校验按 (issue.id, workspace_id) 双键——关联到其他 workspace 任务的会话等同未关联（降级
- * conv 锚，不报错不阻断）。
  */
 func newDriverRoute(db *gorm.DB, sessions acpSessions) *driverRoute {
 	r := &driverRoute{
@@ -90,72 +84,207 @@ func newDriverRoute(db *gorm.DB, sessions acpSessions) *driverRoute {
 }
 
 /*
- * resolveTarget 路由判定实现（RunTurn 与 ProbeTarget 共用）。会话行经 ConversationStore
- * 读取（受理链已 GetOrCreate 保证在场，此处兜底建行——各可达路径在建行后执行，实际不触发创建）。
- * 关联与 issue 解析全部前置完成后统一走 effectiveACPMode 合并判定——issue 级 mode 显式覆盖
- * 双向生效（"none" 否决 / "acp" 启用），不得在关联解析前按 wsMode 短路（会吞掉 issue 显式
- * 覆盖；acpsession 域同为合并后判，语义须一致）。
+ * resolveTarget 路由判定实现。容器启动档判定（containerLaunch）先行——headless 档直接返回，
+ * 不触碰 ACP 会话实体；bot 会话行经 ConversationStore 读取（受理链已 GetOrCreate 保证在场，
+ * 此处兜底建行）。ACP 档：已绑会话且归属匹配、仍为 ACP 实体行直接复用（幂等）；否则按档
+ * 定位/创建（workspace 档实体化工作空间会话；project 档任务主会话三分支）并回绑
+ * conversation_id——归属变更对在跑 bot 下一回合生效的承诺由此兑现。
  */
-func (r *driverRoute) resolveTarget(botID, workspaceID string, conversationKey string) (routeTarget, error) {
-	if workspaceID == "" {
-		return routeTarget{}, nil // 未选工作空间已被编排器门禁拦截，此处兜底 headless
+func (r *driverRoute) resolveTarget(cfg BotRuntimeConfig, conversationKey string) (routeTarget, error) {
+	mode, err := r.containerLaunch(cfg)
+	if err != nil {
+		return routeTarget{}, err
+	}
+	conv, err := (&ConversationStore{DB: r.db}).GetOrCreate(cfg.BotID, conversationKey)
+	if err != nil {
+		return routeTarget{}, err
+	}
+	// 非 ACP 档（none/terminal-auto/未配置）：headless，锚 = bot 会话行 claude_session_id。
+	if mode != launchModeACP {
+		return routeTarget{}, nil
 	}
 	q := query.Use(r.db)
-	ws, err := q.Workspace.WithContext(context.Background()).Where(q.Workspace.ID.Eq(workspaceID)).First()
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return routeTarget{}, nil
+	// 已绑会话且归属匹配本次配置、仍为 ACP 实体行：直接复用（幂等）；归属漂移/被删/降级
+	// 穿透到下方定位/创建分支并覆写回绑。
+	if conv.ConversationID != "" {
+		row, e := q.Conversation.WithContext(context.Background()).Where(q.Conversation.ID.Eq(conv.ConversationID)).First()
+		if e == nil && row.Mode == enums.CONVERSATION_MODE_ACP && conversationOwnedBy(cfg, row) {
+			return routeTarget{SessionKey: acpsession.ConversationSessionKey(row.ID), ACP: true}, nil
 		}
-		return routeTarget{}, err
 	}
-	wsMode := ""
-	if ls := types.ParseLaunchSettings(ws.LaunchSettings); ls != nil {
-		wsMode = ls.Mode
+	var anchorID string
+	switch cfg.ConversationType {
+	case enums.CONVERSATION_TYPE_WORKSPACE:
+		if cfg.WorkspaceID == "" {
+			return routeTarget{}, errors.New("工作空间档未选择工作空间")
+		}
+		// 取/建该 bot 在该工作空间的 ACP 会话实体行（进工作空间会话列表，归属可倒推）。
+		row, e := r.createAcpConversation(enums.OWNER_TYPE_WORKSPACE, cfg.WorkspaceID, "")
+		if e != nil {
+			return routeTarget{}, e
+		}
+		anchorID = row.ID
+	case enums.CONVERSATION_TYPE_PROJECT:
+		if cfg.TaskID == "" {
+			return routeTarget{}, errors.New("项目档未关联任务")
+		}
+		r.mu.Lock()
+		main, me := q.Conversation.WithContext(context.Background()).
+			Where(q.Conversation.OwnerType.Eq(enums.OWNER_TYPE_TASK),
+				q.Conversation.OwnerID.Eq(cfg.TaskID),
+				q.Conversation.ParentID.Eq("")).
+			First()
+		switch {
+		case me != nil && !errors.Is(me, gorm.ErrRecordNotFound):
+			r.mu.Unlock()
+			return routeTarget{}, me
+		case errors.Is(me, gorm.ErrRecordNotFound):
+			// 无主会话：建 ACP 主会话。
+			anchorRow, ce := r.createAcpConversation(enums.OWNER_TYPE_TASK, cfg.TaskID, "")
+			if ce != nil {
+				r.mu.Unlock()
+				return routeTarget{}, ce
+			}
+			anchorID = anchorRow.ID
+		case main.Mode == enums.CONVERSATION_MODE_ACP:
+			anchorID = main.ID // 主会话已为 ACP 档：复用（与桌面共享同一会话）。
+		default:
+			// 主会话为终端档：并建 ACP 子会话（桌面主会话不受影响）。
+			sub, ce := r.createAcpConversation(enums.OWNER_TYPE_TASK, cfg.TaskID, main.ID)
+			if ce != nil {
+				r.mu.Unlock()
+				return routeTarget{}, ce
+			}
+			anchorID = sub.ID
+		}
+		r.mu.Unlock()
+	default:
+		return routeTarget{}, errors.New("会话类型未配置")
 	}
-	conv, err := (&ConversationStore{DB: r.db}).GetOrCreate(botID, conversationKey)
-	if err != nil {
-		return routeTarget{}, err
+	// 回绑 bot 会话行 conversation_id（归属可倒推；幂等覆写）。
+	if _, e := q.ImBotConversation.WithContext(context.Background()).
+		Where(q.ImBotConversation.ID.Eq(conv.ID)).
+		UpdateSimple(q.ImBotConversation.ConversationID.Value(anchorID)); e != nil {
+		return routeTarget{}, e
 	}
-	if conv.BoundIssueID == "" {
-		return unboundTarget(wsMode, conv.ID), nil
-	}
-	issue, err := q.WorkspaceIssue.WithContext(context.Background()).Where(
-		q.WorkspaceIssue.ID.Eq(conv.BoundIssueID),
-		q.WorkspaceIssue.WorkspaceID.Eq(workspaceID),
-	).First()
-	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		return unboundTarget(wsMode, conv.ID), nil // 挂空关联降级未关联：同 conv 锚形
-	case err != nil:
-		return routeTarget{}, err
-	}
-	issueMode := ""
-	if ls := types.ParseLaunchSettings(issue.LaunchSettings); ls != nil {
-		issueMode = ls.Mode
-	}
-	if !effectiveACPMode(wsMode, issueMode) {
-		return routeTarget{}, nil // issue 显式否决 ACP（如 mode="none"）：回合落回 headless
-	}
-	return routeTarget{SessionKey: issue.ID, ACP: true}, nil
-}
-
-// unboundTarget 未关联任务的目标（ACP 档以会话行为锚走工作空间根目录独立会话；否则 headless）。
-func unboundTarget(wsMode, conversationRowID string) routeTarget {
-	if wsMode != launchModeACP {
-		return routeTarget{}
-	}
-	return routeTarget{SessionKey: acpsession.ConversationSessionKey(conversationRowID), ACP: true}
+	return routeTarget{SessionKey: acpsession.ConversationSessionKey(anchorID), ACP: true}, nil
 }
 
 /*
- * RunTurn 实现见 driver.go 契约：一步解析路由目标后转发对应引擎，AcpSessionKey 在此回填
- * （TurnRequest 为值拷贝）；ACP 引擎的同步失败包 turnNotAcceptedError 标记（回合未发生，
- * 编排器不清会话锚点）。
+ * containerLaunch 读容器启动档（路由判定输入）：workspace 档 = workspace 行单级；project 档 =
+ * project+task 双级字段级合并（task 显式键覆盖，语义同 acpsession.mergeLaunchSettings）。
+ * 容器行已删按未配置回落 headless；permissionMode 为全局恒定档不在此读取。
+ */
+func (r *driverRoute) containerLaunch(cfg BotRuntimeConfig) (mode string, err error) {
+	q := query.Use(r.db)
+	var baseRaw, overrideRaw string
+	switch cfg.ConversationType {
+	case enums.CONVERSATION_TYPE_WORKSPACE:
+		if cfg.WorkspaceID == "" {
+			return "", errors.New("工作空间档未选择工作空间")
+		}
+		ws, e := q.Workspace.WithContext(context.Background()).Where(q.Workspace.ID.Eq(cfg.WorkspaceID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return "", nil
+			}
+			return "", e
+		}
+		baseRaw = ws.LaunchSettings
+	case enums.CONVERSATION_TYPE_PROJECT:
+		if cfg.TaskID == "" {
+			return "", errors.New("项目档未关联任务")
+		}
+		task, e := q.ProjectTask.WithContext(context.Background()).Where(q.ProjectTask.ID.Eq(cfg.TaskID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return "", nil
+			}
+			return "", e
+		}
+		project, e := q.Project.WithContext(context.Background()).Where(q.Project.ID.Eq(task.ProjectID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return "", nil
+			}
+			return "", e
+		}
+		baseRaw, overrideRaw = project.LaunchSettings, task.LaunchSettings
+	default:
+		return "", errors.New("会话类型未配置")
+	}
+	base, override := types.ParseLaunchSettings(baseRaw), types.ParseLaunchSettings(overrideRaw)
+	return mergedLaunchKey(base, override, func(ls *types.WorkspaceLaunchSettings) string { return ls.Mode }), nil
+}
+
+/*
+ * mergedLaunchKey 双级字段级合并取单键（语义同 acpsession.mergeLaunchSettings：override
+ * 显式配置过的键（非空串）覆盖 base，显式 none 亦是有效覆盖值）。
+ */
+func mergedLaunchKey(base, override *types.WorkspaceLaunchSettings, key func(*types.WorkspaceLaunchSettings) string) string {
+	if override != nil && key(override) != "" {
+		return key(override)
+	}
+	if base != nil {
+		return key(base)
+	}
+	return ""
+}
+
+/*
+ * conversationOwnedBy 已绑会话行的归属是否与本次配置一致：workspace 档要求
+ * owner=workspace/<workspaceID>；project 档要求 owner=task/<taskID>（主/子会话同归属维度）。
+ */
+func conversationOwnedBy(cfg BotRuntimeConfig, row *model.Conversation) bool {
+	switch cfg.ConversationType {
+	case enums.CONVERSATION_TYPE_WORKSPACE:
+		return row.OwnerType == enums.OWNER_TYPE_WORKSPACE && row.OwnerID == cfg.WorkspaceID
+	case enums.CONVERSATION_TYPE_PROJECT:
+		return row.OwnerType == enums.OWNER_TYPE_TASK && row.OwnerID == cfg.TaskID
+	default:
+		return false
+	}
+}
+
+/*
+ * createAcpConversation 落一行 ACP 会话实体（ownerType/ownerID 为归属维度；parentID 空 = 主会话，
+ * 非空 = 子会话），返回新行。workspace 档 bot 会话亦实体化（进会话列表，归属可倒推）。
+ */
+func (r *driverRoute) createAcpConversation(ownerType enums.ConversationOwnerType, ownerID, parentID string) (*model.Conversation, error) {
+	row := &model.Conversation{
+		ID:        uuid.Must(uuid.NewV7()).String(),
+		OwnerType: ownerType,
+		OwnerID:   ownerID,
+		Title:     "主会话",
+		Mode:      enums.CONVERSATION_MODE_ACP,
+		ParentID:  parentID,
+	}
+	if parentID != "" {
+		row.Title = "子会话"
+	}
+	q := query.Use(r.db)
+	if err := q.Conversation.WithContext(context.Background()).Create(row); err != nil {
+		return nil, err
+	}
+	return row, nil
+}
+
+/*
+ * RunTurn 实现见 driver.go 契约：一步解析路由目标后转发对应引擎——headless 原样透传
+ * （resume 锚由编排器经 req.SessionID 传入；引擎同步失败不包 turnNotAcceptedError，编排器
+ * 对失效锚做自愈）；ACP 在此回填 AcpSessionKey（TurnRequest 为值拷贝），同步失败包
+ * turnNotAcceptedError 标记（回合未发生，编排器不清锚）。
  */
 func (r *driverRoute) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
-	target, err := r.resolve(req.BotID, req.WorkspaceID, req.ConversationKey)
+	target, err := r.resolve(BotRuntimeConfig{
+		BotID:            req.BotID,
+		WorkspaceID:      req.WorkspaceID,
+		ConversationType: req.ConversationType,
+		ProjectID:        req.ProjectID,
+		TaskID:           req.TaskID,
+	}, req.ConversationKey)
 	if err != nil {
-		return nil, turnNotAcceptedError{fmt.Errorf("读取工作空间启动配置失败: %w", err)}
+		return nil, turnNotAcceptedError{fmt.Errorf("路由判定失败: %w", err)}
 	}
 	if !target.ACP {
 		return r.headless.RunTurn(ctx, req)
@@ -176,7 +305,7 @@ func (r *driverRoute) RunTurn(ctx context.Context, req TurnRequest) (<-chan Turn
  * 调用方不拦截——消费方按探测失败回落保守语义。
  */
 func (r *driverRoute) ProbeTarget(cfg BotRuntimeConfig, conversationKey string) (acp bool, err error) {
-	target, err := r.resolve(cfg.BotID, cfg.WorkspaceID, conversationKey)
+	target, err := r.resolve(cfg, conversationKey)
 	if err != nil {
 		return false, err
 	}

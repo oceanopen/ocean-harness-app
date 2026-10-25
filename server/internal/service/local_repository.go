@@ -149,8 +149,8 @@ func (svc LocalRepository) Update(req *types.LocalRepositoryUpdateRequest) (type
 
 /*
  * Delete 物理删除仓库（释放 localDir 供重新添加）。
- * 事务内级联清理（避免悬挂引用）：硬删中间表 t_workspace_local_repositories 关联记录 +
- * 硬删 issue↔仓库关联表 t_issue_local_repositories 中指向该仓库的记录。
+ * 事务内级联清理（避免悬挂引用）：硬删任务↔仓库与项目↔仓库两张关联表中指向该仓库的记录
+ * （关联表无归属维度，按仓库 id 全局清）。
  */
 func (svc LocalRepository) Delete(req *types.LocalRepositoryDeleteRequest) error {
 	return svc.Orm.Transaction(func(tx *gorm.DB) error {
@@ -159,14 +159,13 @@ func (svc LocalRepository) Delete(req *types.LocalRepositoryDeleteRequest) error
 		if _, e := q.LocalRepository.WithContext(svc.Context).Where(q.LocalRepository.ID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 2) 硬删中间表关联记录（工作空间↔仓库）。
-		if _, e := q.WorkspaceLocalRepository.WithContext(svc.Context).
-			Where(q.WorkspaceLocalRepository.LocalRepositoryID.Eq(req.ID)).Delete(); e != nil {
+		// 2) 硬删任务↔仓库与项目↔仓库关联记录。
+		if _, e := q.TaskLocalRepository.WithContext(svc.Context).
+			Where(q.TaskLocalRepository.LocalRepositoryID.Eq(req.ID)).Delete(); e != nil {
 			return e
 		}
-		// 3) 硬删 issue↔仓库关联记录（关联表无归属维度，按仓库 id 全局清）。
-		_, e := q.IssueLocalRepository.WithContext(svc.Context).
-			Where(q.IssueLocalRepository.LocalRepositoryID.Eq(req.ID)).Delete()
+		_, e := q.ProjectLocalRepository.WithContext(svc.Context).
+			Where(q.ProjectLocalRepository.LocalRepositoryID.Eq(req.ID)).Delete()
 		return e
 	})
 }

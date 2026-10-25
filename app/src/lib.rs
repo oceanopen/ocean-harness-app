@@ -44,6 +44,7 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::app_config::reset_app_config,
             shared::app_info::get_app_name,
             shared::app_info::get_data_file_paths,
+            shared::app_info::clean_log_files,
             shared::app_info::restart_app,
             shared::http_server::http_server_status,
             shared::http_server::set_http_server_enabled,
@@ -60,8 +61,11 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             pty::pty_list_sessions,
             pty::pty_exists,
             pty::pty_claude_running,
+            pty::pty_claude_session_id,
             pty::pty_reattach,
             pty::create_directory,
+            sessions::jsonl::get_claude_session_messages,
+            sessions::jsonl::get_claude_session_latest,
         ])
         /*
          * 以下类型不出现在任何 command 签名中（仅作为事件载荷或前端数据模型），

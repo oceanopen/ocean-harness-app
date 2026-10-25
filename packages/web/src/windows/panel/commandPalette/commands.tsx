@@ -1,13 +1,12 @@
 import type { CommandConfig } from './types';
 import {
-  DeveloperModeOutlined as DeveloperModeOutlinedIcon,
+  AssignmentOutlined as AssignmentOutlinedIcon,
   ExtensionOutlined as ExtensionOutlinedIcon,
   FolderOutlined as FolderOutlinedIcon,
   LanOutlined as LanOutlinedIcon,
   SensorsOutlined as SensorsOutlinedIcon,
   SettingsOutlined as SettingsOutlinedIcon,
   SmartToyOutlined as SmartToyOutlinedIcon,
-  SpaceDashboardOutlined as SpaceDashboardOutlinedIcon,
   ViewSidebarOutlined as ViewSidebarOutlinedIcon,
   WorkspacesOutlined as WorkspacesOutlinedIcon,
 } from '@mui/icons-material';
@@ -65,24 +64,23 @@ export const commands: CommandConfig[] = [
     closeOnSelect: true,
   },
   {
-    id: 'nav.tracker',
+    id: 'nav.workspaces',
     group: 'navigation',
-    titleI18nKey: 'panel:commandPalette.nav.tracker',
-    icon: <SpaceDashboardOutlinedIcon />,
-    keywords: ['tracker', 'workspace', 'workspaceIssue', 'kanban', '任务管理', '看板'],
-    action: ctx => ctx.navigate('tracker'),
+    titleI18nKey: 'panel:commandPalette.nav.workspaces',
+    icon: <WorkspacesOutlinedIcon />,
+    keywords: ['workspace', 'workspaces', '工作空间'],
+    action: ctx => ctx.navigate('workspaces'),
     closeOnSelect: true,
   },
   {
-    id: 'nav.devWorkbench',
+    id: 'nav.projects',
     group: 'navigation',
-    titleI18nKey: 'panel:commandPalette.nav.devWorkbench',
-    icon: <DeveloperModeOutlinedIcon />,
-    keywords: ['devWorkbench', 'dev', 'workbench', '任务工作台', '工作台'],
-    action: ctx => ctx.navigate('devWorkbench'),
+    titleI18nKey: 'panel:commandPalette.nav.projects',
+    icon: <AssignmentOutlinedIcon />,
+    keywords: ['project', 'task', '项目', '项目任务'],
+    action: ctx => ctx.navigate('projects'),
     closeOnSelect: true,
   },
-
   // ── 动作：全局快捷动作 ────────────────────────────────────────────────
   {
     id: 'action.settings',
@@ -103,20 +101,4 @@ export const commands: CommandConfig[] = [
     closeOnSelect: true,
   },
 
-  // ── 跳转：进入二级选择页，挑选实体后由宿主回写并跳转 ──────────────────
-  {
-    id: 'jump.workspace',
-    group: 'jump',
-    titleI18nKey: 'panel:commandPalette.jump.workspace',
-    icon: <WorkspacesOutlinedIcon />,
-    keywords: ['workspace', 'switch', '工作空间', '切换'],
-    /**
-     * 注释当前选中工作空间名（无则不显示），让用户在面板内即可看到当前上下文。
-     * 前缀「当前空间：」硬编码中文（提示类文案按项目惯例不走 i18n），渲染时括注为「（当前空间：名称）」。
-     */
-    getSubtitle: ctx => (ctx.currentWorkspaceName ? `当前空间：${ctx.currentWorkspaceName}` : null),
-    // 切二级页面而非直接关闭：选中后保留面板展示工作空间列表供二次过滤。
-    action: ctx => ctx.setSubPage('workspace'),
-    closeOnSelect: false,
-  },
 ];

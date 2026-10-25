@@ -1,5 +1,5 @@
 /*
- * Package acpsession ACP 会话域（T1.5）：sidecar 亲自持有 issue 级 ACP 会话生命周期——launch_settings 解析消费、绑定锚点落库（D7 受控反转：随 chat 视图删除 claude_session_ref 后，本域以 t_issue_acp_sessions 重新落绑定，sidecar 亲自持有 ACP 会话后绑定语义才成立）、事件流积累与会话视图、SSE hub 扇出；跨入口回合锁（T2.2）：桌面 prompt（即时受理）与 bot 回合（排队受理 PromptQueued）共用同一视图闸门，抢跑由 per-entry 等位队列串行；依赖方向：本包 → acp + agentcatalog + dal，由 main 装配为 global.AcpSessions，service/controller 层仅做受理转发与投影，不反向被本包依赖。
+ * Package acpsession ACP 会话域（T1.5）：sidecar 亲自持有 issue 级 ACP 会话生命周期——launch_settings 解析消费、绑定锚点落库（锚持久于 t_conversations.claude_session_id，sidecar 亲自持有 ACP 会话）、事件流积累与会话视图、SSE hub 扇出；跨入口回合锁（T2.2）：桌面 prompt（即时受理）与 bot 回合（排队受理 PromptQueued）共用同一视图闸门，抢跑由 per-entry 等位队列串行；依赖方向：本包 → acp + agentcatalog + dal，由 main 装配为 global.AcpSessions，service/controller 层仅做受理转发与投影，不反向被本包依赖。
  */
 package acpsession
 
@@ -43,37 +43,36 @@ type Dirs struct {
  * 进程（会话失败互不牵连；idle 回收后重开经锚点 resume 恢复，见 Ensure）。
  */
 type Manager struct {
-	db        *gorm.DB
-	dirs      Dirs
-	port      int    // sidecar 自身 HTTP 端口（spawn env 注入 OCEAN_HARNESS_PORT，会话内插件工具链用）
-	appDbPath string // Rust 共享 app.db 路径（闲置回收阈值读取；空 = 未注入，配置读失败回落默认）
-	log       *zap.Logger
-	bindings  *BindingStore
-	hub       *hub
+	db         *gorm.DB
+	dirs       Dirs
+	port       int    // sidecar 自身 HTTP 端口（spawn env 注入 OCEAN_HARNESS_PORT，会话内插件工具链用）
+	appDbPath  string // Rust 共享 app.db 路径（闲置回收阈值读取；空 = 未注入，配置读失败回落默认）
+	historyDir string // 会话历史 JSONL 落盘目录（空 = 持久化关闭，测试兼容）
+	log        *zap.Logger
+	bindings   *BindingStore
+	hub        *hub
 
 	mu      sync.Mutex
 	entries map[string]*sessionEntry
 }
 
 /*
- * NewManager 装配会话域（main 步骤 5.5）：启动清扫运行时锚——重启后运行时进程已不存在，锚归零即重开走全新会话（会话文件在 claude 侧仍可 resume，重启恢复留待后续评审，本域现阶段只在进程内 idle 回收场景 resume）；port 为 sidecar 自身 HTTP 端口，appDbPath 为 Rust 共享 app.db 路径（可空：闲置回收阈值读失败回落默认）。
+ * NewManager 装配会话域（main 步骤 5.5）：锚持久于 t_conversations.claude_session_id，Ensure 经 Peek→LoadSession 恢复既有会话（闲置重建与跨重启同一路径）；port 为 sidecar 自身 HTTP 端口，appDbPath 为 Rust 共享 app.db 路径（可空：闲置回收阈值读失败回落默认），historyDir 为会话历史落盘目录（可空：空 = 历史持久化关闭）。
  */
-func NewManager(db *gorm.DB, dirs Dirs, port int, appDbPath string, log *zap.Logger) (*Manager, error) {
+func NewManager(db *gorm.DB, dirs Dirs, port int, appDbPath, historyDir string, log *zap.Logger) (*Manager, error) {
 	if log == nil {
 		log = zap.NewNop()
 	}
 	m := &Manager{
-		db:        db,
-		dirs:      dirs,
-		port:      port,
-		appDbPath: appDbPath,
-		log:       log,
-		bindings:  &BindingStore{DB: db},
-		hub:       newHub(),
-		entries:   map[string]*sessionEntry{},
-	}
-	if err := m.bindings.SweepSessionIDs(context.Background()); err != nil {
-		return nil, fmt.Errorf("清扫 ACP 会话锚点失败: %w", err)
+		db:         db,
+		dirs:       dirs,
+		port:       port,
+		appDbPath:  appDbPath,
+		historyDir: historyDir,
+		log:        log,
+		bindings:   &BindingStore{DB: db},
+		hub:        newHub(),
+		entries:    map[string]*sessionEntry{},
 	}
 	return m, nil
 }
@@ -131,6 +130,7 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 		old.turnQueue.close()
 	}
 	entry := &sessionEntry{issueID: issueID, state: StatusStarting, view: newSessionView(), turnQueue: newTurnQueue()}
+	m.attachHistory(entry)
 	m.entries[issueID] = entry
 	m.mu.Unlock()
 
@@ -155,10 +155,10 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 }
 
 /*
- * runSpawn 后台 spawn 链（Ensure 受理的后续）：拉起就绪 → 落锚 + 注册 pump；失败 → 落态落因（last_error 跨重启可见）；不捕获请求 ctx（Ensure 已返回），发现 discarded（受理后 issue 被删）直接自清；resumeID 非空时拉起链以 LoadSession 恢复既有会话（失败内部降级全新会话，不阻塞受理）。
+ * runSpawn 后台 spawn 链（Ensure 受理的后续）：拉起就绪 → 落锚 + 注册 pump；失败 → 落态落因（清锚）；不捕获请求 ctx（Ensure 已返回），发现 discarded（受理后会话被删）直接自清；resumeID 非空时拉起链以 LoadSession 恢复既有会话，恢复未发生（失败降级）落 system 条目显式告知（R2）。
  */
 func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID string) {
-	client, session, err := spawnFunc(cfg, m.dirs, m.port, m.log, resumeID)
+	client, session, resumed, err := spawnFunc(cfg, m.dirs, m.port, m.log, resumeID)
 	entry.mu.Lock()
 	if entry.discarded {
 		entry.mu.Unlock()
@@ -180,6 +180,10 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID stri
 	entry.session = session
 	entry.state = StatusReady
 	frames := entry.view.setReady(string(session.ID()), cfg, session.Modes())
+	// 恢复未发生（锚失效/能力降级/闲置重开全新会话）：离线历史回放 + 显式提示（R2）。
+	if !resumed {
+		frames = append(frames, m.restoreOfflineHistory(entry, resumeID)...)
+	}
 	entry.mu.Unlock()
 	if err := m.bindings.SaveReady(context.Background(), entry.issueID, cfg.AgentCode, string(session.ID())); err != nil {
 		m.log.Warn("ACP 会话锚点落库失败", zap.String("issueId", entry.issueID), zap.Error(err))
@@ -190,28 +194,76 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID stri
 }
 
 /*
+ * attachHistory 注入条目持久化钩子（建 entry 时一次）：per-entry 代次前缀隔离跨进程折叠，
+ * 观察回调在视图锁内同步落盘（顺序即视图序）；失败只落日志不阻断会话。
+ */
+func (m *Manager) attachHistory(entry *sessionEntry) {
+	if m.historyDir == "" {
+		return
+	}
+	convID, ok := conversationRowID(entry.issueID)
+	if !ok {
+		return
+	}
+	gen := strconv.FormatInt(time.Now().UnixNano(), 36)
+	entry.view.onEntry = func(e ConversationEntry) {
+		e.EntryID = gen + "-" + e.EntryID
+		if err := appendHistoryEntry(m.historyDir, convID, e); err != nil {
+			m.log.Warn("ACP 会话历史落盘失败", zap.String("issueId", entry.issueID), zap.Error(err))
+		}
+	}
+}
+
+/*
+ * restoreOfflineHistory 恢复未发生路径的离线历史回放（spawn 成功分支，entry.mu 持有中
+ * 调用）：历史文件在盘 → 按序回放进视图 + 双系统提示（历史离线恢复 / agent 上下文重置，
+ * 历史可见、失忆显式告知）；无历史可放且带锚降级保留既有「不可恢复」告知。
+ */
+func (m *Manager) restoreOfflineHistory(entry *sessionEntry, resumeID string) []Frame {
+	var records []historyRecord
+	if m.historyDir != "" {
+		if convID, ok := conversationRowID(entry.issueID); ok {
+			var err error
+			if records, err = loadHistoryEntries(m.historyDir, convID); err != nil {
+				m.log.Warn("ACP 会话历史读取失败，跳过离线回放", zap.String("issueId", entry.issueID), zap.Error(err))
+			}
+		}
+	}
+	if len(records) == 0 {
+		if resumeID != "" {
+			return entry.view.appendSystemNotice("历史会话不可恢复，已新建会话")
+		}
+		return nil
+	}
+	frames := entry.view.replayHistory(records)
+	frames = append(frames, entry.view.appendSystemNotice("历史消息已离线恢复")...)
+	frames = append(frames, entry.view.appendSystemNotice("Agent 上下文已重置")...)
+	return frames
+}
+
+/*
  * spawnAgentSession 生产拉起链（与 acpdoctor.CheckEntry 逐段同源：vendored 安装 → vendored claude 定位 → spawn env 注入 → Launch → 握手 → 建/恢复会话 → 下发权限模式；「探测通过」与「生产拉起」同一条链，差别仅在探测后清理、本链长期持有）；node 预检不复制——那是 doctor 的 stage 级定位面职责，本链 node 缺失在 EnsureVendored/VendoredSpawnConfig 显式报错；任一后置步失败回收已拉起进程。
  */
-func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, resumeSessionID string) (*acp.AgentClient, *acp.Session, error) {
+func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, resumeSessionID string) (*acp.AgentClient, *acp.Session, bool, error) {
 	entry, ok := agentcatalog.GetAgentCatalogInfoByCode(cfg.AgentCode)
 	if !ok {
-		return nil, nil, fmt.Errorf("agent catalog 无 %q 条目", cfg.AgentCode)
+		return nil, nil, false, fmt.Errorf("agent catalog 无 %q 条目", cfg.AgentCode)
 	}
 	installDir, err := agentcatalog.EnsureVendored(entry, dirs.Resources, dirs.Adapters)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	claudeBin, err := agentcatalog.VendoredClaudeBin(installDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	env, err := acp.ClaudeEnvOverrides(entry.Env, claudeBin)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	spawn, err := entry.VendoredSpawnConfig(dirs.Resources, installDir, cfg.Cwd, env)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	/*
 	 * OCEAN_HARNESS_PORT 显式注入（语义对齐 bot 驱动 driver_claude 的 turnEnv）：sidecar
@@ -225,44 +277,46 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, 
 	 */
 	client, err := acp.Launch(context.Background(), spawn, log.With(zap.String("purpose", "issue-session")))
 	if err != nil {
-		return nil, nil, fmt.Errorf("拉起 agent 进程失败: %w", err)
+		return nil, nil, false, fmt.Errorf("拉起 agent 进程失败: %w", err)
 	}
 	if _, err := client.Initialize(context.Background()); err != nil {
 		client.Close()
 		if hint, authed := authRequired(err); authed {
-			return nil, nil, errors.New(hint)
+			return nil, nil, false, errors.New(hint)
 		}
-		return nil, nil, fmt.Errorf("ACP 握手失败: %w", err)
+		return nil, nil, false, fmt.Errorf("ACP 握手失败: %w", err)
 	}
-	session, err := newOrResumedSession(context.Background(), client, cfg, resumeSessionID, log)
+	session, resumed, err := newOrResumedSession(context.Background(), client, cfg, resumeSessionID, log)
 	if err != nil {
 		client.Close()
 		if hint, authed := authRequired(err); authed {
-			return nil, nil, errors.New(hint)
+			return nil, nil, false, errors.New(hint)
 		}
-		return nil, nil, fmt.Errorf("ACP 建会话失败: %w", err)
+		return nil, nil, false, fmt.Errorf("ACP 建会话失败: %w", err)
 	}
 	if err := client.SetPermissionMode(context.Background(), session, cfg.PermissionMode); err != nil {
 		client.Close()
-		return nil, nil, fmt.Errorf("下发权限模式失败: %w", err)
+		return nil, nil, false, fmt.Errorf("下发权限模式失败: %w", err)
 	}
-	return client, session, nil
+	return client, session, resumed, nil
 }
 
 /*
  * newOrResumedSession 建/恢复会话收口：锚点非空走 LoadSession（适配器读回 claude 会话
- * 文件并重放历史）；恢复失败（能力未声明/会话文件丢失等）降级全新会话——恢复尽力而为，
- * 不因锚点失效阻塞受理，降级后 SaveReady 以新 id 覆盖锚点。
+ * 文件并重放历史）；恢复失败（能力未声明/会话文件丢失等）降级全新会话（resumed=false，
+ * 降级事实由调用方落 system 条目显式告知，R2）——恢复尽力而为，不因锚点失效阻塞受理，
+ * 降级后 SaveReady 以新 id 覆盖锚点。
  */
-func newOrResumedSession(ctx context.Context, client *acp.AgentClient, cfg SessionConfig, resumeSessionID string, log *zap.Logger) (*acp.Session, error) {
+func newOrResumedSession(ctx context.Context, client *acp.AgentClient, cfg SessionConfig, resumeSessionID string, log *zap.Logger) (*acp.Session, bool, error) {
 	if resumeSessionID != "" {
 		session, err := client.LoadSession(ctx, acp.LoadSessionParams{Cwd: cfg.Cwd, SessionID: resumeSessionID})
 		if err == nil {
-			return session, nil
+			return session, true, nil
 		}
 		log.Warn("ACP 会话恢复失败，降级全新会话", zap.String("resumeSessionId", resumeSessionID), zap.Error(err))
 	}
-	return client.NewSession(ctx, acp.NewSessionParams{Cwd: cfg.Cwd})
+	session, err := client.NewSession(ctx, acp.NewSessionParams{Cwd: cfg.Cwd})
+	return session, false, err
 }
 
 /*
@@ -556,6 +610,7 @@ func (m *Manager) Discard(issueID string) {
 	delete(m.entries, issueID)
 	m.mu.Unlock()
 	_ = m.bindings.Delete(context.Background(), issueID)
+	m.removeHistory(issueID)
 	if !ok {
 		return
 	}
@@ -570,6 +625,20 @@ func (m *Manager) Discard(issueID string) {
 	}
 	if state != StatusTerminated {
 		m.hub.broadcast(issueID, entry.view.setTerminated("会话已删除"))
+	}
+}
+
+// removeHistory 级联删除会话历史文件（Discard 专用；尽力而为，失败仅落日志）。
+func (m *Manager) removeHistory(issueID string) {
+	if m.historyDir == "" {
+		return
+	}
+	convID, ok := conversationRowID(issueID)
+	if !ok {
+		return
+	}
+	if err := RemoveHistoryFile(m.historyDir, convID); err != nil {
+		m.log.Warn("ACP 会话历史文件删除失败", zap.String("issueId", issueID), zap.Error(err))
 	}
 }
 

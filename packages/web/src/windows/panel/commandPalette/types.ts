@@ -12,8 +12,8 @@ export type MenuKey
     | 'pluginMarketplace'
     | 'imBots'
     | 'serverStatus'
-    | 'tracker'
-    | 'devWorkbench'
+    | 'workspaces'
+    | 'projects'
     | 'settings';
 
 // 命令分组：导航 / 动作 / 跳转。决定 Dialog 内 Command.Group 的渲染顺序与分组标题。
@@ -55,7 +55,7 @@ export interface CommandPaletteContextValue {
 export interface CommandConfig {
   id: string;
   group: CommandGroup;
-  // i18n 标题 key（如 'panel:commandPalette.nav.tracker'），同时作为 cmdk 过滤 value。
+  // i18n 标题 key（如 'panel:commandPalette.nav.workspaces'），同时作为 cmdk 过滤 value。
   titleI18nKey: string;
   icon: ReactNode;
   // cmdk 额外搜索关键词（别名/英文等），与标题一同参与模糊匹配。

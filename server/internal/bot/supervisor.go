@@ -202,21 +202,35 @@ func (s *Supervisor) setLastError(botID string, msg string) {
 
 /*
  * botRuntimeConfig t_im_bots 行 → 运行时装配参数（JSON 列在此解析，渠道凭据保持 JSON 透传）。
- * 会话目录取工作空间 dir（workspace_id 关联，''/行缺失 = 未选 → 空串）。
+ * 会话根目录按档位解析（D8）：workspace 档取工作空间 dir；project 档取项目 dir（任务运行目录
+ * = {project.dir}/{taskId}/，由任务域保证）。行缺失/未选 → 空串（编排器门禁拦截）。
  */
 func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) {
 	policy, err := ParseAccessPolicy(b.AccessPolicy)
 	if err != nil {
 		return BotRuntimeConfig{}, fmt.Errorf("access_policy 解析失败: %w", err)
 	}
-	wsDir := ""
-	if b.WorkspaceID != "" {
-		q := query.Use(s.db)
-		ws, err := q.Workspace.WithContext(context.Background()).Where(q.Workspace.ID.Eq(b.WorkspaceID)).First()
-		if err == nil {
-			wsDir = ws.Dir
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return BotRuntimeConfig{}, fmt.Errorf("工作空间读取失败: %w", err)
+	rootDir := ""
+	switch b.ConversationType {
+	case enums.CONVERSATION_TYPE_WORKSPACE:
+		if b.WorkspaceID != "" {
+			q := query.Use(s.db)
+			ws, err := q.Workspace.WithContext(context.Background()).Where(q.Workspace.ID.Eq(b.WorkspaceID)).First()
+			if err == nil {
+				rootDir = ws.Dir
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return BotRuntimeConfig{}, fmt.Errorf("工作空间读取失败: %w", err)
+			}
+		}
+	case enums.CONVERSATION_TYPE_PROJECT:
+		if b.ProjectID != "" {
+			q := query.Use(s.db)
+			pr, err := q.Project.WithContext(context.Background()).Where(q.Project.ID.Eq(b.ProjectID)).First()
+			if err == nil {
+				rootDir = pr.Dir
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return BotRuntimeConfig{}, fmt.Errorf("项目读取失败: %w", err)
+			}
 		}
 	}
 	return BotRuntimeConfig{
@@ -224,7 +238,10 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 		Channel:          b.Channel,
 		Credential:       b.Credential,
 		WorkspaceID:      b.WorkspaceID,
-		WorkspaceDir:     wsDir,
+		ConversationType: b.ConversationType,
+		ProjectID:        b.ProjectID,
+		TaskID:           b.TaskID,
+		WorkspaceDir:     rootDir,
 		AccessPolicy:     policy,
 		Port:             s.port,
 		ChannelState:     b.ChannelState,

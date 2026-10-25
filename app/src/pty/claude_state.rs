@@ -1,7 +1,7 @@
 /*
- * claude 运行态探测：判定某 PTY 会话的 shell 子进程树内是否跑着 claude（「启动 claude」按钮置灰驱动）。
+ * claude 运行态探测：解析某 PTY 会话 shell 子进程树内的 claude sessionId（无则 None；bool 为其包装），「启动 claude」按钮置灰与终端捕获（T2.1 锚回写）共用。
  * 手段：`~/.claude/sessions/<pid>.json`（存活过滤即当前全部 claude 进程）→ 沿 `ps -o ppid=` 逐级向上爬父链 → 任一级 pid 命中目标会话 shell pid 即命中；进程树匹配精确到具体终端（多 pane 同 cwd 也能区分）。
- * 前端驱动（useClaudeRunning）：会话 active 即查 + EVENT_CLAUDE_SESSIONS_CHANGED + 60s 轮询兜底退出恢复（Dead 会话 json 保留、watch 不触发，只能轮询感知）。
+ * 前端驱动（useClaudeRunning / useClaudeSessionCapture）：会话 active 即查 + EVENT_CLAUDE_SESSIONS_CHANGED + 轮询兜底。
  */
 use super::state::PtySessionStore;
 
@@ -58,31 +58,37 @@ fn ancestry_depth(claude_pid: u32, shell: u32) -> Option<usize> {
 }
 
 /*
- * 会话是否跑着 claude：遍历全部活跃 claude 进程，任一父链命中本会话 shell
- * 即 true。shell pid 未知（会话不在/已退出）恒 false。
+ * 会话子进程树内 claude 进程的 sessionId：遍历活跃 claude 进程，父链命中本会话
+ * shell 即取其 sessionId（子树内多 claude 时取扫描序首个）。shell pid 未知（会话
+ * 不在/已退出）恒 None。
  */
-pub fn claude_running(store: &PtySessionStore, session_id: &str) -> bool {
+pub fn claude_session_id(store: &PtySessionStore, session_id: &str) -> Option<String> {
     let Some(shell) = shell_pid(store, session_id) else {
         // debug 级：会话不在 store 属非预期（调用方通常先 spawn），静默降级不刷屏。
         log::debug!(
             "[claude-state] session not in store: {}",
             session_id
         );
-        return false;
+        return None;
     };
     let claudes = crate::sessions::discover::list_active();
-    let running = claudes
+    let matched = claudes
         .iter()
-        .any(|s| ancestry_depth(s.pid, shell).is_some());
-    // info 级：真机排障主通道（置灰不生效时看 shell pid 与扫描到的 claude 列表）
+        .find_map(|s| ancestry_depth(s.pid, shell).map(|_| s.session_id.clone()));
+    // info 级：真机排障主通道（置灰/捕获不生效时看 shell pid 与扫描到的 claude 列表）
     log::info!(
-        "[claude-state] probe session={} shell_pid={} claude_pids={:?} running={}",
+        "[claude-state] probe session={} shell_pid={} claude_pids={:?} matched={}",
         session_id,
         shell,
         claudes.iter().map(|s| s.pid).collect::<Vec<_>>(),
-        running
+        matched.is_some()
     );
-    running
+    matched
+}
+
+// 会话是否跑着 claude（claude_session_id 的 bool 包装）。
+pub fn claude_running(store: &PtySessionStore, session_id: &str) -> bool {
+    claude_session_id(store, session_id).is_some()
 }
 
 #[cfg(test)]
@@ -104,5 +110,20 @@ mod tests {
     fn ancestry_depth_rejects_zero_and_self_loop() {
         // pid 0 / 自环（ps 异常返回自身）须终止爬取，防死循环。
         assert!(ancestry_depth(0, 42).is_none());
+    }
+
+    #[test]
+    fn ancestry_depth_hits_real_child() {
+        // 真实子进程经父链可达（Darwin 实测可能隔一层 spawn 中介进程，深度非契约）；
+        // 反向上爬（自己 → 父链）不会命中子进程 pid。
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .expect("spawn sleep");
+        let pid = child.id();
+        assert!(matches!(ancestry_depth(pid, std::process::id()), Some(_)));
+        assert!(ancestry_depth(std::process::id(), pid).is_none());
+        child.kill().ok();
+        child.wait().ok();
     }
 }

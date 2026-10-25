@@ -33,6 +33,7 @@ export const commands = {
 	resetAppConfig: () => typedError<null, string>(__TAURI_INVOKE("reset_app_config")),
 	getAppName: () => __TAURI_INVOKE<string>("get_app_name"),
 	getDataFilePaths: () => typedError<DataFilePaths, string>(__TAURI_INVOKE("get_data_file_paths")),
+	cleanLogFiles: () => typedError<LogCleanupResult, string>(__TAURI_INVOKE("clean_log_files")),
 	restartApp: () => __TAURI_INVOKE<void>("restart_app"),
 	httpServerStatus: () => __TAURI_INVOKE<HttpServerStatus>("http_server_status"),
 	setHttpServerEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_http_server_enabled", { enabled })),
@@ -49,12 +50,15 @@ export const commands = {
 	ptyListSessions: () => __TAURI_INVOKE<PtySessionInfo[]>("pty_list_sessions"),
 	ptyExists: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_exists", { sessionId }),
 	ptyClaudeRunning: (sessionId: string) => __TAURI_INVOKE<boolean>("pty_claude_running", { sessionId }),
+	ptyClaudeSessionId: (sessionId: string) => __TAURI_INVOKE<string | null>("pty_claude_session_id", { sessionId }),
 	ptyReattach: (sessionId: string, onEvent: Channel<PtyEvent>) => typedError<{
 	sessionId: string,
 	exited: boolean,
 	scrollback: string,
 } | null, string>(__TAURI_INVOKE("pty_reattach", { sessionId, onEvent })),
 	createDirectory: (path: string) => typedError<null, string>(__TAURI_INVOKE("create_directory", { path })),
+	getClaudeSessionMessages: (cwd: string, sessionId: string, offset: number | null) => typedError<ClaudeSessionMessages, string>(__TAURI_INVOKE("get_claude_session_messages", { cwd, sessionId, offset })),
+	getClaudeSessionLatest: (cwd: string, sessionId: string) => typedError<ClaudeSessionLatest, string>(__TAURI_INVOKE("get_claude_session_latest", { cwd, sessionId })),
 };
 
 /* Constants */
@@ -104,6 +108,17 @@ export type AppConfigChangedPayload = {
 	value: string,
 };
 
+export type ClaudeEntryKind = "user" | "agentMessage" | "agentThought" | "toolCall" | "toolResult";
+
+export type ClaudeSessionEntry = {
+	entryId: string,
+	kind: ClaudeEntryKind,
+	timestamp: string,
+	text: string,
+	toolName: string,
+	toolSummary: string,
+};
+
 export type ClaudeSessionInfo = {
 	pid: number,
 	sessionId: string,
@@ -115,6 +130,19 @@ export type ClaudeSessionInfo = {
 	hostApp: TerminalApp,
 	hostPid: number,
 	tty: string,
+};
+
+export type ClaudeSessionLatest = {
+	timestamp: string,
+	degraded: boolean,
+};
+
+export type ClaudeSessionMessages = {
+	entries: ClaudeSessionEntry[],
+	nextOffset: number,
+	hasMore: boolean,
+	latestTimestamp: string,
+	degraded: boolean,
 };
 
 export type ClaudeSessionStatus = "Busy" | "Waiting" | "Idle" | "GitPending" | "Dead";
@@ -131,6 +159,8 @@ export type CliCommandStatus = {
 export type DataFilePaths = {
 	appDbPath: string,
 	serverDbPath: string,
+	appLogDir: string,
+	serverLogDir: string,
 };
 
 export type HttpServerRunState = "stopped" | "starting" | "running";
@@ -142,6 +172,11 @@ export type HttpServerStatus = {
 	mode: string,
 	startLastError: string | null,
 	startRecentLog: string | null,
+};
+
+export type LogCleanupResult = {
+	appFiles: number,
+	serverFiles: number,
 };
 
 export type NavErr = { kind: "unsupportedHostApp" } | { kind: "osaScriptFailed"; stderr: string } | { kind: "staleSession"; stderr: string } | { kind: "sessionNotFound" } | { kind: "io"; message: string };

@@ -65,11 +65,16 @@ export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePan
       </Tooltip>
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />
 
-      {/* 工具图标列：注册表驱动；激活 tab 所属工具高亮；Tooltip 同贴右缘向左展开 */}
+      {/* 工具图标列：注册表驱动；激活 tab 所属工具高亮；Tooltip 同贴右缘向左展开。
+          未选中时图标禁用（工具须挂具体任务/会话）。 */}
       {WORKBENCH_TOOLS.map((tool) => {
         const active = activeTab?.toolId === tool.id;
         return (
-          <Tooltip key={tool.id} title={tool.title} placement="left">
+          <Tooltip
+            key={tool.id}
+            title={tool.title}
+            placement="left"
+          >
             <span>
               <IconButton
                 onClick={() => handleToolClick(tool.id, tool.exclusive)}

@@ -1,5 +1,5 @@
 /*
- * gitutil 的工作区安全检查能力（issueWorkspace archive 归档/取消前置检查）：与 gitutil.go 的吞错探测风格不同，本文件服务于「删目录前的安全检查」，失败必须显式报错（误判为「干净」会导致带未提交变更的目录被静默删除），错误携带输出摘要。
+ * gitutil 的工作区安全检查能力（taskWorkspace archive 归档/取消前置检查）：与 gitutil.go 的吞错探测风格不同，本文件服务于「删目录前的安全检查」，失败必须显式报错（误判为「干净」会导致带未提交变更的目录被静默删除），错误携带输出摘要。
  */
 package gitutil
 
@@ -49,7 +49,7 @@ func LogAhead(dir, fromRef, toRef string) (string, error) {
 }
 
 /*
- * 工作区 diff 能力（issueWorkspace 文件工具「Git 变更」模式）：口径只看未 commit 的变更（HEAD 对比暂存区+工作区），untracked 新文件经 StatusPorcelain 的 "??" 行补充；
+ * 工作区 diff 能力（taskWorkspace 文件工具「Git 变更」模式）：口径只看未 commit 的变更（HEAD 对比暂存区+工作区），untracked 新文件经 StatusPorcelain 的 "??" 行补充；
  * 不对比基准分支、不探测 upstream——已提交历史一概不算。
  */
 

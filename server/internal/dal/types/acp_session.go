@@ -2,11 +2,12 @@ package types
 
 /*
  * ACP 会话域（/api/acpSession）的请求 DTO：响应 shape SSOT 是 acpsession.ViewSnapshot（嵌套 ACP wire 结构原样透传，镜像到 types 只会双份维护，见 view.go 的 SSOT 注释）。
+ * 会话键统一为 conversationId（conv-<t_conversations.id> 锚键由会话域拼装，HTTP 面只传实体 id）。
  */
 
 // AcpSessionEnsureRequest 是 POST /api/acpSession/ensure 的入参（幂等受理，异步建模）。
 type AcpSessionEnsureRequest struct {
-	IssueID string `json:"issueId" binding:"required"`
+	ConversationID string `json:"conversationId" binding:"required"`
 	/*
 	 * PickedLaunchMode 临场启动覆盖（LaunchModePicker 三选一受理；仅声明本次会话以 acp 运行，不落库不记忆，与 workspace/issue 持久化配置的门禁语义互补）。
 	 */
@@ -15,27 +16,27 @@ type AcpSessionEnsureRequest struct {
 
 // AcpSessionGetInfoRequest 是 POST /api/acpSession/getInfo 的入参。
 type AcpSessionGetInfoRequest struct {
-	IssueID string `json:"issueId" binding:"required"`
+	ConversationID string `json:"conversationId" binding:"required"`
 }
 
 // AcpSessionPromptRequest 是 POST /api/acpSession/prompt 的入参（受理即返回，回合终态经 SSE）。
 type AcpSessionPromptRequest struct {
-	IssueID string `json:"issueId" binding:"required"`
-	Text    string `json:"text" binding:"required"`
+	ConversationID string `json:"conversationId" binding:"required"`
+	Text           string `json:"text" binding:"required"`
 }
 
 // AcpSessionCancelRequest 是 POST /api/acpSession/cancel 的入参（软取消当前回合，幂等）。
 type AcpSessionCancelRequest struct {
-	IssueID string `json:"issueId" binding:"required"`
+	ConversationID string `json:"conversationId" binding:"required"`
 }
 
 /*
  * AcpSessionRespondPermissionRequest 是 POST /api/acpSession/respondPermission 的入参（pendingId 为会话域本地序号，自 1 起）。
  */
 type AcpSessionRespondPermissionRequest struct {
-	IssueID   string `json:"issueId" binding:"required"`
-	PendingID uint64 `json:"pendingId" binding:"required"`
-	OptionID  string `json:"optionId" binding:"required"`
+	ConversationID string `json:"conversationId" binding:"required"`
+	PendingID      uint64 `json:"pendingId" binding:"required"`
+	OptionID       string `json:"optionId" binding:"required"`
 }
 
 /*
@@ -43,13 +44,13 @@ type AcpSessionRespondPermissionRequest struct {
  * content 仅 accept 时有意义，键值对透传 ACP wire）。
  */
 type AcpSessionRespondElicitationRequest struct {
-	IssueID   string         `json:"issueId" binding:"required"`
-	PendingID uint64         `json:"pendingId" binding:"required"`
-	Action    string         `json:"action" binding:"required,oneof=accept decline cancel"`
-	Content   map[string]any `json:"content"`
+	ConversationID string         `json:"conversationId" binding:"required"`
+	PendingID      uint64         `json:"pendingId" binding:"required"`
+	Action         string         `json:"action" binding:"required,oneof=accept decline cancel"`
+	Content        map[string]any `json:"content"`
 }
 
 // AcpSessionEventsRequest 是 GET /api/acpSession/events 的入参（SSE 长连，issueId 走 query）。
 type AcpSessionEventsRequest struct {
-	IssueID string `form:"issueId" binding:"required"`
+	ConversationID string `form:"conversationId" binding:"required"`
 }

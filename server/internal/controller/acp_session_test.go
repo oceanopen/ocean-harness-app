@@ -64,14 +64,14 @@ func TestAcpEventsHandlerReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开临时 sqlite: %v", err)
 	}
-	// Manager 启动清扫双表触达（锚点表 + 会话映射表），夹具一并迁移。
-	if err := db.AutoMigrate(&model.IssueAcpSession{}, &model.ImBotConversation{}); err != nil {
+	// Manager 装配触达会话映射表，夹具一并迁移。
+	if err := db.AutoMigrate(&model.ImBotConversation{}); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
 	if sqlDB, err := db.DB(); err == nil {
 		t.Cleanup(func() { _ = sqlDB.Close() })
 	}
-	mgr, err := acpsession.NewManager(db, acpsession.Dirs{}, 0, "", nil)
+	mgr, err := acpsession.NewManager(db, acpsession.Dirs{}, 0, "", "", nil)
 	if err != nil {
 		t.Fatalf("装配 Manager: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestAcpEventsHandlerReject(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodGet, "/api/acpSession/events?issueId=t3-no-such-issue", nil)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/acpSession/events?conversationId=t3-no-such-issue", nil)
 	AcpSession{}.Events(c)
 
 	if w.Code != http.StatusNotFound {

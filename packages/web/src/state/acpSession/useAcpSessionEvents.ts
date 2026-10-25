@@ -25,7 +25,7 @@ export interface AcpEventsStream {
  * 断线语义（后端契约 hub.go）：连接层瞬态错误交 EventSource 自动重连（重连即新一次订阅，首帧为新快照，作为 seq 重同步点）；EventSource 永久失败（readyState CLOSED，含服务端 404/409 订阅拒绝——非 200 规范不自动重连）置 failed 终态待手动重试；增量帧 seq 断档（慢订户被服务端断开等）主动 close 重建，无补帧逻辑。
  * 生命周期与闸门一致：闸门关闭/卸载即断开，重开重建连。
  */
-export function useAcpSessionEvents(issueId: string, enabled: boolean): AcpEventsStream {
+export function useAcpSessionEvents(conversationId: string, enabled: boolean): AcpEventsStream {
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<AcpEventsPhase>('connecting');
   const [failedMessage, setFailedMessage] = useState<string | null>(null);
@@ -57,7 +57,7 @@ export function useAcpSessionEvents(issueId: string, enabled: boolean): AcpEvent
        * 缓存尚未建立（getInfo 在飞）时：快照帧直接落缓存；增量帧 updater 返回
        * undefined 即不写（TanStack Query 语义），等快照/查询先到。
        */
-      queryClient.setQueryData<AcpViewSnapshot>(acpSessionKeys.view(issueId), prev =>
+      queryClient.setQueryData<AcpViewSnapshot>(acpSessionKeys.view(conversationId), prev =>
         prev ? applyFrame(prev, frame) : frame.snapshot);
     };
 
@@ -110,7 +110,7 @@ export function useAcpSessionEvents(issueId: string, enabled: boolean): AcpEvent
       setPhase('connecting');
       let url: string;
       try {
-        url = await serverUrl('/api/acpSession/events', { issueId });
+        url = await serverUrl('/api/acpSession/events', { conversationId });
       } catch (e) {
         // go-server 未运行：无自动恢复方，直接 failed 终态待手动重试。
         if (disposed) {
@@ -136,7 +136,7 @@ export function useAcpSessionEvents(issueId: string, enabled: boolean): AcpEvent
       es?.removeEventListener('error', onError);
       close();
     };
-  }, [issueId, enabled, attempt, queryClient]);
+  }, [conversationId, enabled, attempt, queryClient]);
 
   return { phase, failedMessage, retry };
 }

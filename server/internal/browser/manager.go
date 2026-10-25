@@ -55,10 +55,10 @@ var (
 
 const (
 	/*
-	 * maxConcurrentProfiles 全局并发 profile 上限（manager 单飞互斥之外的总闸；每任务
-	 * 闸 MaxSessionsPerTask 之外的资源兜底，多工作空间并行时封顶）。
+	 * maxConcurrentProfiles 全局并发 profile 上限（manager 单飞互斥之外的总闸；单会话闸
+	 * MaxSessionsPerConversation 之外的资源兜底，多会话多实例并行时封顶）。
 	 */
-	maxConcurrentProfiles = 10
+	maxConcurrentProfiles = 50
 	// consecutiveTimeoutLimit 连续调用超时阈值：置 failed 自动重建。
 	consecutiveTimeoutLimit = 3
 )
@@ -219,9 +219,9 @@ func (e *sessionEntry) stopIdleTimerLocked() {
 
 /*
  * Ensure 幂等受理引擎会话：ready 复用（headless 一致时）；starting 等就绪（上限 ensureWaitTimeout）；failed/idle 自动（重）拉；ready 且显式 headless 与当前不同 = close + reopen（D10 切换，登录态在 profile 目录续存，重开成本 1-3s）。
- * headless/workspaceID 缺省读 profile 偏好文件，显式传入覆写回存（workspaceID 即共享登录态键，落盘后 idle 冷启动/无头切换重建自动读回，不依赖调用方每次携带）。
+ * headless 缺省读 profile 偏好文件，显式传入覆写回存。
  */
-func (m *Manager) Ensure(ctx context.Context, profile string, headless *bool, workspaceID string) (SessionView, error) {
+func (m *Manager) Ensure(ctx context.Context, profile string, headless *bool) (SessionView, error) {
 	if err := ValidateProfileName(profile); err != nil {
 		return SessionView{}, err
 	}
@@ -229,7 +229,7 @@ func (m *Manager) Ensure(ctx context.Context, profile string, headless *bool, wo
 	if err != nil {
 		return SessionView{}, err
 	}
-	wantHeadless, err := m.resolvePrefs(profileDir, headless, workspaceID)
+	wantHeadless, err := m.resolvePrefs(profileDir, headless)
 	if err != nil {
 		return SessionView{}, err
 	}
@@ -239,22 +239,17 @@ func (m *Manager) Ensure(ctx context.Context, profile string, headless *bool, wo
 
 /*
  * resolvePrefs D10 偏好解析：缺省读 prefs.json（缺失取 ReadProfilePrefs 缺省），显式
- * headless/workspaceID 覆写回存——两字段合并写回，互不抹除；无显式入参零落盘。
+ * headless 覆写回存；无显式入参零落盘。
  */
-func (m *Manager) resolvePrefs(profileDir string, headless *bool, workspaceID string) (bool, error) {
+func (m *Manager) resolvePrefs(profileDir string, headless *bool) (bool, error) {
 	prefs, err := ReadProfilePrefs(profileDir)
 	if err != nil {
 		return false, err
 	}
-	if headless == nil && workspaceID == "" {
+	if headless == nil {
 		return prefs.Headless, nil
 	}
-	if headless != nil {
-		prefs.Headless = *headless
-	}
-	if workspaceID != "" {
-		prefs.WorkspaceID = workspaceID
-	}
+	prefs.Headless = *headless
 	if err := WriteProfilePrefs(profileDir, prefs); err != nil {
 		return false, err
 	}
@@ -262,17 +257,17 @@ func (m *Manager) resolvePrefs(profileDir string, headless *bool, workspaceID st
 }
 
 /*
- * taskActiveCount 同一配额基座（issueQuotaBase 归组）下 starting/ready 条目数（每任务
- * 并发上限判据）。须持 m.mu 调用；他条目状态经各自 entry.mu 短锁读取（锁序同文件头纪律）；
- * self 为调用方条目——其 mu 已被持有不可重入，受理时恒为 idle/failed 本就不计活跃。
+ * conversationActiveCount 同一配额基座（conversationQuotaBase 按会话归组）下 starting/ready
+ * 条目数（单会话并发上限判据）。须持 m.mu 调用；他条目状态经各自 entry.mu 短锁读取
+ * （锁序同文件头纪律）；self 为调用方条目——受理时恒为 idle/failed 本就不计活跃。
  */
-func (m *Manager) taskActiveCount(self *sessionEntry, base string) int {
+func (m *Manager) conversationActiveCount(self *sessionEntry, base string) int {
 	n := 0
 	for _, e := range m.entries {
 		if e == self {
 			continue
 		}
-		if eBase, ok := issueQuotaBase(e.profile); !ok || eBase != base {
+		if eBase, ok := conversationQuotaBase(e.profile); !ok || eBase != base {
 			continue
 		}
 		e.mu.Lock()
@@ -317,7 +312,7 @@ func (m *Manager) ensureSpawned(ctx context.Context, entry *sessionEntry, profil
 			if err != nil {
 				return err
 			}
-			wantHeadless, err = m.resolvePrefs(profileDir, nil, "")
+			wantHeadless, err = m.resolvePrefs(profileDir, nil)
 			if err != nil {
 				return err
 			}
@@ -343,10 +338,10 @@ func (m *Manager) ensureSpawned(ctx context.Context, entry *sessionEntry, profil
 				m.mu.Unlock()
 				return fmt.Errorf("并发浏览器 profile 达上限（%d），请先关闭其它会话", maxConcurrentProfiles)
 			}
-			if base, isTask := issueQuotaBase(profile); isTask && m.taskActiveCount(entry, base) >= MaxSessionsPerTask {
+			if base, isConv := conversationQuotaBase(profile); isConv && m.conversationActiveCount(entry, base) >= MaxSessionsPerConversation {
 				entry.mu.Unlock()
 				m.mu.Unlock()
-				return fmt.Errorf("任务并发浏览器会话达上限（%d），请先释放不需要的会话", MaxSessionsPerTask)
+				return fmt.Errorf("单会话并发浏览器实例达上限（%d），请先释放不需要的实例", MaxSessionsPerConversation)
 			}
 			m.activeCount++
 		default:
@@ -393,9 +388,7 @@ func (m *Manager) ensureSpawned(ctx context.Context, entry *sessionEntry, profil
 			m.stopObserver(profile)
 			m.dropLiveViewer(profile, "无头模式切换，实时画面已断开")
 			// 切换前导出旧引擎共享登录态（对齐 Close 收尾语义，best-effort）。
-			if wsID := m.resolveWorkspaceID(profile); wsID != "" {
-				m.exportAuthState(profile, wsID, old)
-			}
+			m.exportAuthState(profile, old)
 			_ = old.Close() // 旧引擎优雅关停（锁外慢操作）
 		}
 		m.hub.broadcast([]Frame{{Type: FrameSessions, Sessions: []SessionView{sv}}})
@@ -513,13 +506,10 @@ func (m *Manager) runSpawn(entry *sessionEntry) {
 	m.mu.Unlock()
 
 	/*
-	 * 工作空间共享登录态注入（置 ready 前锁外同步完成）：ready 即放行外部调用，注入
+	 * 全局共享登录态注入（置 ready 前锁外同步完成）：ready 即放行外部调用，注入
 	 * 晚于 ready 会与首导航竞速——此刻 state 仍 starting，外部调用一律 waitSpawn 等待。
 	 */
-	wsID := m.resolveWorkspaceID(profile)
-	if wsID != "" {
-		m.injectAuthState(entry, profile, wsID, handle)
-	}
+	m.injectAuthState(entry, profile, handle)
 
 	m.mu.Lock()
 	entry.mu.Lock()
@@ -547,9 +537,7 @@ func (m *Manager) runSpawn(entry *sessionEntry) {
 	m.startObserver(profile)          // 页面投影观察者随会话就绪启动（后台自愈，不阻塞）
 	go m.restorePages(profile, entry) // 页面现场恢复（best-effort，不阻塞就绪返回）
 	go m.watchExit(entry, handle)
-	if wsID != "" {
-		go m.runAuthSync(entry, profile, wsID, handle) // 周期导出（Exited 即退，随引擎生命周期收敛）
-	}
+	go m.runAuthSync(entry, profile, handle) // 周期导出（Exited 即退，随引擎生命周期收敛）
 	close(spawnDone)
 }
 
@@ -672,7 +660,7 @@ func (m *Manager) acceptCall(ctx context.Context, profile, callName, issueTag st
 	if err := ValidateProfileName(profile); err != nil {
 		return nil, nil, nil, err
 	}
-	if _, err := m.Ensure(ctx, profile, nil, ""); err != nil {
+	if _, err := m.Ensure(ctx, profile, nil); err != nil {
 		return nil, nil, nil, err
 	}
 	entry := m.entryOf(profile)
@@ -951,11 +939,9 @@ func (m *Manager) Close(profile string) error {
 		entry.mu.Unlock()
 		/*
 		 * 引擎收尾前导出共享登录态（引擎仍活、localStorage 可全集收集；best-effort 不
-		 * 阻塞关闭，周期导出兜底）。工作空间缺失/解析失败时自然跳过。
+		 * 阻塞关闭，周期导出兜底）。
 		 */
-		if wsID := m.resolveWorkspaceID(profile); wsID != "" {
-			m.exportAuthState(profile, wsID, handle)
-		}
+		m.exportAuthState(profile, handle)
 		_ = handle.Close() // 锁外慢操作
 	}
 	return nil

@@ -1,17 +1,5 @@
 {
   "workspace": {
-    "summary": "共 {{total}} 个工作空间",
-    "empty": {
-      "title": "暂无工作空间",
-      "desc": "点击「新建工作空间」开始管理",
-      "noMatch": "没有匹配的工作空间"
-    },
-    "selectHint": "请先选择工作空间",
-    "actions": {
-      "add": "新建工作空间",
-      "switch": "切换工作空间",
-      "refresh": "刷新"
-    },
     "add": {
       "title": "新建工作空间",
       "name": "名称",
@@ -24,79 +12,28 @@
       "emojiPicker": "选择常用表情",
       "description": "描述",
       "descriptionPlaceholder": "请输入描述（选填）",
-      "repositories": "关联仓库",
-      "repositoriesPlaceholder": "选择关联的本地仓库（选填）",
-      "repositoriesNoRepo": "暂无本地仓库，可在「仓库」页添加",
       "confirm": "确定",
       "cancel": "取消"
     },
     "edit": {
       "title": "编辑工作空间",
       "confirm": "保存"
-    },
-    "card": {
-      "noDescription": "暂无描述",
-      "updatedAtLabel": "更新于",
-      "current": "当前工作空间",
-      "edit": "编辑",
-      "delete": "删除",
-      "dirLabel": "工作目录"
-    },
-    "delete": {
-      "title": "删除工作空间",
-      "confirmMsg": "确认删除工作空间「{{name}}」？此操作不可恢复。",
-      "confirm": "删除",
-      "cancel": "取消"
-    },
-    "error": {
-      "title": "加载工作空间列表失败",
-      "desc": "请稍后重试",
-      "retry": "重试"
     }
   },
   "workspaceIssue": {
-    "actions": {
-      "add": "新建 任务",
-      "refresh": "刷新"
-    },
     "create": {
       "title": "新建 任务",
       "confirm": "创建",
       "cancel": "取消"
     },
-    "card": {
-      "edit": "编辑"
-    },
-    "filter": {
-      "allStates": "全部状态",
-      "state": "状态"
-    },
-    "view": {
-      "list": "列表",
-      "board": "看板"
-    },
-    "empty": {
-      "title": "暂无 任务",
-      "desc": "点击「新建 任务」开始管理",
-      "noMatch": "没有匹配的 任务"
-    },
-    "error": {
-      "title": "加载 任务 列表失败",
-      "desc": "请稍后重试",
-      "retry": "重试"
-    },
     "toast": {
-      "created": "任务「{{name}}」创建成功",
       "createFailed": "创建失败：{{message}}",
-      "updated": "任务 已更新",
       "updateFailed": "更新失败：{{message}}",
-      "deleted": "任务 已删除",
       "deleteFailed": "删除失败：{{message}}",
       "typeCreated": "类型「{{name}}」已创建",
       "typeUpdated": "类型已更新",
       "typeDeleted": "类型已删除",
-      "typeOpFailed": "类型操作失败：{{message}}",
-      "moveFailed": "移动失败：{{message}}"
+      "typeOpFailed": "类型操作失败：{{message}}"
     },
     "detail": {
       "close": "关闭",
@@ -109,7 +46,7 @@
       "type": "类型",
       "branch": "关联分支",
       "branchPlaceholder": "选择或输入分支名",
-      "branchNoRepoHint": "请先在工作空间设置中关联仓库",
+      "branchNoRepoHint": "暂无本地仓库，可在「仓库」页添加",
       "createdAt": "创建于",
       "completedAt": "完成于",
       "save": "保存",

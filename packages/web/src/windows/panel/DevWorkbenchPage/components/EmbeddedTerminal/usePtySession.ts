@@ -21,6 +21,11 @@ export type PtySessionStatus
  */
 export type PtySpawnKind = 'direct' | 'plain' | 'reattach';
 
+// 生效直启命令：终端锚恢复优先（T2.2 锚在即恢复，忽略调用方直启命令），否则原直启命令；空 = 裸 shell。
+function effectiveDirectCommand(directCommand: string | null, resumeClaudeId: string | null | undefined): string | null {
+  return resumeClaudeId ? `claude --resume ${resumeClaudeId}` : directCommand;
+}
+
 export interface UsePtySessionResult {
   status: PtySessionStatus;
   // 本编排轮 attach 落定的进程形态（active/exited 时有值；重编排随 attachKey 重置为 null）
@@ -42,8 +47,8 @@ export interface UsePtySessionResult {
 
 interface UsePtySessionArgs {
   /**
-   * PTY 会话锚点（store key），由调用方派生：统一 `${issueId}::${paneId}`
-   * （main → `issueId::main`，附加 pane → `issueId::<uuid>`）。
+   * PTY 会话锚点（store key），由调用方经 paneAnchorId 派生：统一
+   * `${容器id}::${会话id}::${paneId}`（main → `…::main`，附加 pane → `…::<uuid>`）。
    */
   sessionId: string;
   /**
@@ -71,6 +76,13 @@ interface UsePtySessionArgs {
    */
   directCommand: string | null;
   /**
+   * 终端锚恢复（T2.2）：非 null 且 fresh spawn 时 PTY 直接 spawn `claude --resume <id>`（忽略 directCommand——锚在即恢复意图；reattach 不注入=不 spawn 即无命令；锚空走直启/裸启 + T2.1 捕获）。
+   * cwd 须由锚归属实体派生（T5.3 调用方责任，异源会 resume 落错目录）；锚值变化经 attachKey 触发重编排。
+   */
+  resumeClaudeId?: string | null;
+  /** resume 失败回调：带锚启动的 shell 退出（CLI resume 失败即退出）时以锚值通知，调用方剔除后重开脱困。 */
+  onResumeFailed?: (resumeClaudeId: string) => void;
+  /**
    * 输出回调（TerminalView 的 write 桥）；reattach/spawn 复用的 scrollback 也经此一次
    * 送达（replay=true 标记历史回放——TerminalView 在回放窗口抑制查询应答，防乱码）。
    * 要求稳定引用（父层 useCallback([])），本 hook 不做 ref 转发层。
@@ -80,7 +92,7 @@ interface UsePtySessionArgs {
 
 /**
  * 挂载编排（顺序显式）：exists → 存在则 reattach（scrollback 随返回值一次回放）；reattach 报 exited 或返回 null（并发关闭）→ fallthrough 到 spawn——Rust 端「已退出移除重起」承接（修复此前 exited 短路导致「重开」走不到 spawn 的缺口），回放 scrollback 后重起，fresh=false 复用分支亦回放（StrictMode 双挂载下早期输出丢失须靠 scrollback 补齐）。
- * 后端 pty_spawn 幂等，React 19 StrictMode 双挂载安全；unmount 不调 ptyShutdown——会话与 ring 常驻（切 issue/切菜单仅断订阅，回切 reattach 重载）。
+ * 后端 pty_spawn 幂等，React 19 StrictMode 双挂载安全；unmount 不调 ptyShutdown——会话与 ring 常驻（切任务/切会话/切菜单仅断订阅，回切 reattach 重载）。
  */
 async function attach(
   args: UsePtySessionArgs,
@@ -109,7 +121,7 @@ async function attach(
   const channel = new Channel<PtyEvent>();
   channel.onmessage = onEvent;
   const spawned = await unwrap(
-    commands.ptySpawn({ sessionId, cwd, cols: spawnSize.cols, rows: spawnSize.rows, directCommand: args.directCommand ?? undefined }, channel),
+    commands.ptySpawn({ sessionId, cwd, cols: spawnSize.cols, rows: spawnSize.rows, directCommand: effectiveDirectCommand(args.directCommand, args.resumeClaudeId) ?? undefined }, channel),
   );
   if (!spawned.fresh && spawned.scrollback) {
     args.onData(spawned.scrollback, true);
@@ -117,7 +129,7 @@ async function attach(
   return { next: 'active', spawned: true };
 }
 
-export function usePtySession({ sessionId, cwd, enabled, cols, rows, directCommand, onData }: UsePtySessionArgs): UsePtySessionResult {
+export function usePtySession({ sessionId, cwd, enabled, cols, rows, directCommand, resumeClaudeId, onResumeFailed, onData }: UsePtySessionArgs): UsePtySessionResult {
   const [status, setStatus] = useState<PtySessionStatus>('connecting');
   const [spawnKind, setSpawnKind] = useState<PtySpawnKind | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -145,7 +157,10 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
    * 用「上轮 key 不一致则渲染期重置」替代 effect 内同步 setState（react/set-state-in-effect，
    * 同 PanelApp mounted 标志的渲染期调整模式）——仅重置一次，不触发额外提交。
    */
-  const attachKey = `${sessionId}\n${cwd ?? ''}\n${directCommand ?? ''}\n${attempt}`;
+  // attachKey 不含生效命令项：锚回写（空→非空）等中途漂移不得触发活会话重编排（reattach 会把
+  // scrollback 重复回放进同一 xterm）；resume/directCommand 仅 fresh spawn 消费，重开有 attempt、
+  // 重挂载有 effect 重跑兜底。
+  const attachKey = `${sessionId}\n${cwd ?? ''}\n${attempt}`;
   const lastAttachKeyRef = useRef<string | null>(null);
   if (lastAttachKeyRef.current !== attachKey) {
     lastAttachKeyRef.current = attachKey;
@@ -184,13 +199,19 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
      * 见（宽高 0 跳过 fit）的边缘场景。先测量后生胎，无「spawn 后纠正」步骤。
      */
     const spawnSize = pendingSizeRef.current ?? { cols, rows };
-    attach({ sessionId, cwd, enabled, cols, rows, directCommand, onData }, onEvent, spawnSize)
+    // spawnKind 按最终生效命令判定（锚恢复注入后 CLI 也是第一进程，报 direct 与 T3.3 消费语义一致）。
+    const direct = effectiveDirectCommand(directCommand, resumeClaudeId);
+    attach({ sessionId, cwd, enabled, cols, rows, directCommand, resumeClaudeId, onData }, onEvent, spawnSize)
       .then((result) => {
         if (cancelled) {
           return;
         }
+        // 带锚启动的 shell 退出：CLI --resume 失败（transcript 不存在等）即退出——通知剔除失效锚，重开脱困。
+        if (result.next === 'exited' && resumeClaudeId != null) {
+          onResumeFailed?.(resumeClaudeId);
+        }
         setStatus(result.next);
-        setSpawnKind(result.spawned ? (directCommand ? 'direct' : 'plain') : 'reattach');
+        setSpawnKind(result.spawned ? (direct ? 'direct' : 'plain') : 'reattach');
         if (result.spawned) {
           lastRequestedRef.current = spawnSize;
         }
@@ -219,7 +240,7 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
     return () => {
       cancelled = true;
     };
-  }, [enabled, sessionId, cwd, cols, rows, directCommand, attempt, onData]);
+  }, [enabled, sessionId, cwd, cols, rows, directCommand, resumeClaudeId, onResumeFailed, attempt, onData]);
 
   // 以下操作函数均为稳定引用（deps 仅 sessionId），直接交给 TerminalView 接线。
   const write = useCallback((data: string) => {

@@ -11,7 +11,7 @@ export const MIN_PANE_RATIO = 0.2;
 export const MAX_PANE_RATIO = 0.8;
 
 export type PaneLayoutNode
-  // 叶子 = 一个终端 pane。paneId: 'main'（主 pane，锚点即 issueId）| 8 位 uuid（附加 pane）
+  // 叶子 = 一个终端 pane。paneId: 'main'（主 pane）| 8 位 uuid（附加 pane）
   = | { type: 'leaf'; paneId: string }
   /**
    * 分割节点：direction 决定 flex 方向；ratio ∈ [MIN, MAX] 为 first 子占比（divider
@@ -25,6 +25,21 @@ export type PaneLayoutNode
  * 保证终端区至少一个 pane——§3.5）。
  */
 export const MAIN_PANE_ID = 'main';
+
+// pane 锚 = `${容器id}::${会话id}::${paneId}`（PTY store key；容器 id = 任务页 task.id / 工作空间页 workspace.id）。
+// 每会话独立 pane 集合（切会话互不干扰、旧 pane 后端常驻可回切）；容器删除按首段前缀全关（pty_shutdown_issue）。
+// legacy（无会话编排语境）会话段用占位。
+export const LEGACY_CONVERSATION_ID = 'legacy';
+
+// 布局树 scope key：容器 + 会话两段（每会话一套 pane 布局，paneId 之上一级）。
+export function paneScopeId(containerId: string, conversationId: string | null | undefined): string {
+  return `${containerId}::${conversationId || LEGACY_CONVERSATION_ID}`;
+}
+
+// PTY 会话锚：scope + paneId 三段拼接（EmbeddedTerminal 唯一派生点）。
+export function paneAnchorId(containerId: string, conversationId: string | null | undefined, paneId: string): string {
+  return `${paneScopeId(containerId, conversationId)}::${paneId}`;
+}
 
 /**
  * 生成附加 pane id：crypto.randomUUID() 前 8 位（orca 同长度；展示可辨识、

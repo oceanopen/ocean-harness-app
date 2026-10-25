@@ -103,11 +103,11 @@ export function layoutFor(tree: PaneLayoutNode | undefined): PaneLayoutNode {
   return tree ?? INITIAL_LAYOUT;
 }
 
-// ---------- 持久化（localStorage 按 issue，文档 §3.3） ----------
+// ---------- 持久化（localStorage 按 scope，文档 §3.3） ----------
 
-// localStorage key：terminal_pane_layout_<issueId>（paneId 8 位设计保证 key 短）。
-function layoutKey(issueId: string): string {
-  return `terminal_pane_layout_${issueId}`;
+// localStorage key：terminal_pane_layout_<scopeId>（paneId 8 位设计保证 key 短）。
+function layoutKey(scopeId: string): string {
+  return `terminal_pane_layout_${scopeId}`;
 }
 
 /**
@@ -134,10 +134,10 @@ function isValidNode(node: unknown): node is PaneLayoutNode {
   return false;
 }
 
-// 读回 issue 布局：无记录/JSON 解析失败/结构校验失败 → INITIAL_LAYOUT（单 main）。
-export function loadLayout(issueId: string): PaneLayoutNode {
+// 读回 scope 布局：无记录/JSON 解析失败/结构校验失败 → INITIAL_LAYOUT（单 main）。
+export function loadLayout(scopeId: string): PaneLayoutNode {
   try {
-    const raw = localStorage.getItem(layoutKey(issueId));
+    const raw = localStorage.getItem(layoutKey(scopeId));
     if (raw == null) {
       return INITIAL_LAYOUT;
     }
@@ -150,16 +150,16 @@ export function loadLayout(issueId: string): PaneLayoutNode {
 }
 
 /**
- * 写入 issue 布局：非默认树（有分割）才落盘；单 main 树移除 key——localStorage
+ * 写入 scope 布局：非默认树（有分割）才落盘；单 main 树移除 key——localStorage
  * 不积 corpse，也保证「关闭全部附加 pane」后下次打开回到干净单 pane。
  */
-export function saveLayout(issueId: string, tree: PaneLayoutNode): void {
+export function saveLayout(scopeId: string, tree: PaneLayoutNode): void {
   try {
     if (tree.type === 'leaf') {
-      localStorage.removeItem(layoutKey(issueId));
+      localStorage.removeItem(layoutKey(scopeId));
       return;
     }
-    localStorage.setItem(layoutKey(issueId), JSON.stringify(tree));
+    localStorage.setItem(layoutKey(scopeId), JSON.stringify(tree));
   } catch (e) {
     // 写失败（隐私模式/超限）不致命：布局仅 UI 状态，下次会话回落单 pane。
     console.warn('[terminalPanes] save layout failed:', e);
@@ -167,13 +167,24 @@ export function saveLayout(issueId: string, tree: PaneLayoutNode): void {
 }
 
 /**
- * 清理 issue 的布局记录（归档/取消 onSuccess 调用——issue 终结时移除本地痕迹，
- * 防 localStorage 积累脏 key；此前无清理机制，顺手补上）。
+ * 清理容器全部布局记录（归档/删除 onSuccess 调用）：按 `${containerId}::` 前缀扫 key
+ * 逐个移除；兼带清理锚迁移前旧版单段 key（`terminal_pane_layout_<containerId>`）。
  */
-export function removeLayout(issueId: string): void {
+export function removeLayouts(containerId: string): void {
   try {
-    localStorage.removeItem(layoutKey(issueId));
+    const prefix = `terminal_pane_layout_${containerId}::`;
+    const legacyKey = `terminal_pane_layout_${containerId}`;
+    const stale: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key != null && (key.startsWith(prefix) || key === legacyKey)) {
+        stale.push(key);
+      }
+    }
+    for (const key of stale) {
+      localStorage.removeItem(key);
+    }
   } catch (e) {
-    console.warn('[terminalPanes] remove layout failed:', e);
+    console.warn('[terminalPanes] remove layouts failed:', e);
   }
 }

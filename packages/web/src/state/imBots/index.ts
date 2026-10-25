@@ -4,7 +4,6 @@
  */
 export { imBotsKeys } from './keys';
 export {
-  useBindImBotIssue,
   useCreateImBot,
   useDeleteImBot,
   useImBotConversations,

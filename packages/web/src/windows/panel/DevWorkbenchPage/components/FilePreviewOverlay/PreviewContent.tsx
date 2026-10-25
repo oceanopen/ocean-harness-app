@@ -16,6 +16,8 @@ import ViewerToolbar from '../fileViewer/ViewerToolbar';
 
 interface PreviewContentProps {
   issueId: string;
+  /** workspaceId 在场 = 工作空间页归属：内容/diff/fileRaw 查询走工作空间目录本身。 */
+  workspaceId?: string;
   /**
    * 激活 tab 的文件相对路径（父层按 tab id 作 key，切 tab 即重挂载——query 缓存命中 +
    * staleTime 0 静默重验，见 state/workspaceFiles/queries.ts）。
@@ -33,12 +35,12 @@ interface PreviewContentProps {
  * （父层按「面板模式 + getGitChanges 变更集」派生的 changedPaths）时走 fileDiff query，否则走 content query；变更集加载中 changedPaths 为空集，先保持文件内容渲染，到位后原位切 diff（组件按 tab id 作 key，模式切换不重挂载）。
  * file 链路双层分派——传输 kind（后端定夺）× text 内呈现细分（markdown/code）；diff 走 DiffViewer 或信息态；容器 tabIndex=-1 于挂载时夺焦（焦点若留在背后 xterm 会打进不可见终端），Escape 冒泡至浮层根处理。
  */
-export default function PreviewContent({ issueId, path, changedPaths }: PreviewContentProps) {
+export default function PreviewContent({ issueId, workspaceId, path, changedPaths }: PreviewContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const hasChange = changedPaths.has(path);
   // 两条 query 按派生决策互斥启用（path 传 null 关闸），hook 顺序恒定不条件化。
-  const contentQuery = useWorkspaceFileContent(issueId, hasChange ? null : path);
-  const diffQuery = useWorkspaceFileDiff(issueId, hasChange ? path : null);
+  const contentQuery = useWorkspaceFileContent(issueId, hasChange ? null : path, workspaceId);
+  const diffQuery = useWorkspaceFileDiff(issueId, hasChange ? path : null, workspaceId);
   const active = hasChange ? diffQuery : contentQuery;
   const { data, dataUpdatedAt, error, isLoading, refetch } = active;
   /**
@@ -89,13 +91,14 @@ export default function PreviewContent({ issueId, path, changedPaths }: PreviewC
             )
           : hasChange
             ? renderDiffContent(data as IssueWorkspaceFileDiffResponseData, path)
-            : renderContent(data as IssueWorkspaceFileContentResponseData, { issueId, path, dataUpdatedAt })}
+            : renderContent(data as IssueWorkspaceFileContentResponseData, { issueId, workspaceId, path, dataUpdatedAt })}
     </Box>
   );
 }
 
 interface RenderContext {
   issueId: string;
+  workspaceId?: string;
   path: string;
   // 内容 query 的最后更新时间戳（图片缓存刷新令牌）。
   dataUpdatedAt: number;
@@ -119,10 +122,10 @@ function renderDiffContent(data: IssueWorkspaceFileDiffResponseData, path: strin
 function renderContent(data: IssueWorkspaceFileContentResponseData, ctx: RenderContext) {
   switch (data.kind) {
     case 'image':
-      return <ImageViewer issueId={ctx.issueId} path={ctx.path} version={ctx.dataUpdatedAt} />;
+      return <ImageViewer issueId={ctx.issueId} workspaceId={ctx.workspaceId} path={ctx.path} version={ctx.dataUpdatedAt} />;
     case 'text':
       return resolveTextViewer(ctx.path) === 'markdown'
-        ? <MarkdownViewer content={data.content ?? ''} issueId={ctx.issueId} path={ctx.path} />
+        ? <MarkdownViewer content={data.content ?? ''} issueId={ctx.issueId} workspaceId={ctx.workspaceId} path={ctx.path} />
         : (
             <>
               {/* 操作栏（语言名·行数 + 复制）在 PreviewContent 层组合而非塞进 CodeViewer

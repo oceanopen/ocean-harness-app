@@ -1,4 +1,4 @@
-import type { ImBotBindIssueRequest, ImBotConversationModel, ImBotModel, WorkspaceIssueResponseData } from '@src/services';
+import type { ImBotConversationModel, ImBotModel } from '@src/services';
 import ExpandLessOutlinedIcon from '@mui/icons-material/ExpandLessOutlined';
 import ExpandMoreOutlinedIcon from '@mui/icons-material/ExpandMoreOutlined';
 import {
@@ -18,72 +18,32 @@ import { chatTypeLabel, conversationActiveText, conversationShortCode } from './
 
 interface ImBotBotCardProps {
   bot: ImBotModel;
-  // 当前工作台选中任务（绑定目标 + 聚合 chip 判定基准）。
-  issue: WorkspaceIssueResponseData;
-  /**
-   * 面板级绑定 mutation 在飞请求（isPending 时的 variables；null = 空闲）。写操作统一在
-   * 面板层确认弹窗后执行（单飞行中操作），本卡按 botId 自筛后驱动行级按钮 loading/disabled。
-   */
-  bindPending: ImBotBindIssueRequest | null;
-  // 会话行操作上抛（关联/切换/解绑统一由面板层确认弹窗承接）。
-  onConversationAction: (bot: ImBotModel, conversation: ImBotConversationModel) => void;
+  // 在场 = 工作空间语境：IM 会话投影命中该会话 id 时头部标注「已关联当前会话」。
+  linkedConversationId?: string;
 }
 
-/** 会话明细行：身份行（类型 · 最近活跃 · key 短码）+ 绑定态行 + 操作按钮。 */
-function ConversationRow(props: {
-  conversation: ImBotConversationModel;
-  issue: WorkspaceIssueResponseData;
-  bindPending: ImBotBindIssueRequest | null;
-  onAction: (conversation: ImBotConversationModel) => void;
-}) {
-  const { conversation, issue, bindPending, onAction } = props;
-  const boundCurrent = conversation.boundIssueId === issue.id;
-  const boundOther = conversation.boundIssueId !== '' && !boundCurrent;
-  // 本 bot 有在飞操作时禁用其余行（单飞行中操作），命中行以 loading 呈现。
-  const rowLoading = bindPending != null && bindPending.conversationKey === conversation.conversationKey;
-  const rowDisabled = bindPending != null && !rowLoading;
-
+/** 会话明细只读行：身份行（类型 · 最近活跃 · key 短码）；路由归属由消息侧自动维护，不在此操作。 */
+function ConversationRow({ conversation }: { conversation: ImBotConversationModel }) {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '12px', py: '6px' }}>
-      <Box sx={{ flex: 1, minWidth: '0px' }}>
-        <Typography sx={{ fontSize: '12px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {`${chatTypeLabel(conversation.chatType)} · ${conversationActiveText(conversation.lastMessageAt)} · ${conversationShortCode(conversation.conversationKey)}`}
-        </Typography>
-        {boundCurrent && (
-          <Typography sx={{ fontSize: '12px', color: 'success.main' }}>已关联当前任务</Typography>
-        )}
-        {boundOther && (
-          <Typography sx={{ fontSize: '12px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {`已关联：${conversation.boundIssueName || '（任务已不存在）'}`}
-          </Typography>
-        )}
-      </Box>
-      <Button
-        size="small"
-        color={boundCurrent ? 'inherit' : 'primary'}
-        disabled={rowDisabled}
-        loading={rowLoading}
-        onClick={() => onAction(conversation)}
-        sx={{ flexShrink: 0 }}
-      >
-        {boundCurrent ? '解除关联' : boundOther ? '切换为当前任务' : '关联当前任务'}
-      </Button>
+    <Box sx={{ display: 'flex', alignItems: 'center', px: '12px', py: '6px' }}>
+      <Typography sx={{ fontSize: '12px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {`${chatTypeLabel(conversation.chatType)} · ${conversationActiveText(conversation.lastMessageAt)} · ${conversationShortCode(conversation.conversationKey)}`}
+      </Typography>
     </Box>
   );
 }
 
 /**
- * ImBotBotCard：bot 聚合卡——名称 + 连接状态徽标 + 「N 个会话已关联」聚合 chip，展开列
- * 会话明细（私聊/群聊 · 最近活跃 · key 短码 + 所绑任务 + 行级绑定操作）。
- * 会话数据经 useImBotConversations(bot.id) 按 bot 独立缓存；绑定/解绑/切换均上抛面板层确认弹窗执行。
+ * ImBotBotCard：bot 聚合卡（只读）——名称 + 启用态 + 连接状态徽标 + 会话计数（工作空间
+ * 语境标注「已关联当前会话」），展开列会话明细。会话数据经 useImBotConversations(bot.id)
+ * 按 bot 独立缓存；归属/启用变更统一走「IM 机器人」页编辑抽屉。
  */
-export default function ImBotBotCard({ bot, issue, bindPending, onConversationAction }: ImBotBotCardProps) {
+export default function ImBotBotCard({ bot, linkedConversationId }: ImBotBotCardProps) {
   const [expanded, setExpanded] = useState(true);
   const { data: conversations = [], isLoading, error, refetch } = useImBotConversations(bot.id);
-  const boundCount = conversations.filter(c => c.boundIssueId === issue.id).length;
   const chip = imBotStateChip(bot.connState);
-  // 本卡只消费属于本 bot 的在飞请求（面板级单飞行中操作的全局下传值）。
-  const cardBindPending = bindPending != null && bindPending.botId === bot.id ? bindPending : null;
+  const linkedToCurrent = linkedConversationId != null
+    && conversations.some(row => row.conversationId === linkedConversationId);
 
   return (
     <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
@@ -93,6 +53,7 @@ export default function ImBotBotCard({ bot, issue, bindPending, onConversationAc
         sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '12px', py: '10px', cursor: 'pointer' }}
       >
         <Typography sx={{ fontSize: '13px', fontWeight: 600 }}>{bot.name}</Typography>
+        <Typography sx={{ fontSize: '12px', color: 'text.secondary' }}>{bot.enabled ? '已启用' : '已停用'}</Typography>
         <Tooltip title={bot.lastError || chip.tooltip}>
           <Chip size="small" label={chip.label} color={chip.color} variant="outlined" />
         </Tooltip>
@@ -101,12 +62,16 @@ export default function ImBotBotCard({ bot, issue, bindPending, onConversationAc
           : (
               <Chip
                 size="small"
-                label={boundCount > 0 ? `${boundCount} 个会话已关联` : '未关联'}
-                color={boundCount > 0 ? 'success' : 'default'}
+                label={conversations.length > 0 ? `${conversations.length} 个会话` : '暂无会话'}
                 variant="outlined"
                 sx={{ fontSize: '12px' }}
               />
             )}
+        {linkedToCurrent && (
+          <Tooltip title="该机器人的 IM 会话已绑定当前选中的工作空间会话">
+            <Chip size="small" label="已关联当前会话" color="primary" variant="outlined" sx={{ fontSize: '12px' }} />
+          </Tooltip>
+        )}
         {/* 展开箭头带自身 onClick（键盘可激活；stopPropagation 防与父行点击冒泡双 toggle 抵消） */}
         <IconButton
           size="small"
@@ -145,13 +110,7 @@ export default function ImBotBotCard({ bot, issue, bindPending, onConversationAc
                     </Typography>
                   )
                 : conversations.map(conversation => (
-                    <ConversationRow
-                      key={conversation.conversationKey}
-                      conversation={conversation}
-                      issue={issue}
-                      bindPending={cardBindPending}
-                      onAction={conv => onConversationAction(bot, conv)}
-                    />
+                    <ConversationRow key={conversation.conversationKey} conversation={conversation} />
                   ))}
         </Box>
       )}

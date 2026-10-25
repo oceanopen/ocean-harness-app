@@ -1,5 +1,5 @@
 /*
- * gitutil 的 clone/分支写能力（读能力见 gitutil.go），issueWorkspace cloneRepos 步骤用；
+ * gitutil 的 clone/分支写能力（读能力见 gitutil.go），taskWorkspace cloneRepos 步骤用；
  * 写操作失败必须携带 stderr 摘要（gitOutput 丢弃 stderr 只适合探测式读取），故独立 gitRunEnv。
  */
 package gitutil

@@ -48,12 +48,12 @@ func (svc GithubTool) ResolveRepo(issueID string, localRepositoryID int) (*Githu
 	if issueID == "" {
 		return ref, nil
 	}
-	link, err := q.IssueLocalRepository.WithContext(svc.Context).
-		Where(q.IssueLocalRepository.IssueID.Eq(issueID), q.IssueLocalRepository.LocalRepositoryID.Eq(localRepositoryID)).
+	link, err := q.TaskLocalRepository.WithContext(svc.Context).
+		Where(q.TaskLocalRepository.TaskID.Eq(issueID), q.TaskLocalRepository.LocalRepositoryID.Eq(localRepositoryID)).
 		First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("issue 未关联该仓库（%s），无法推导基准分支；请确认 localRepositoryId 或显式传入 base", repo.Name)
+			return nil, fmt.Errorf("任务未关联该仓库（%s），无法推导基准分支；请确认 localRepositoryId 或显式传入 base", repo.Name)
 		}
 		return nil, err
 	}

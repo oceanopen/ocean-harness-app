@@ -1,17 +1,5 @@
 {
   "workspace": {
-    "summary": "{{total}} workspaces",
-    "empty": {
-      "title": "No workspaces",
-      "desc": "Click \"New workspace\" to get started",
-      "noMatch": "No matching workspaces"
-    },
-    "selectHint": "Please select a workspace first",
-    "actions": {
-      "add": "New workspace",
-      "switch": "Switch workspace",
-      "refresh": "Refresh"
-    },
     "add": {
       "title": "New Workspace",
       "name": "Name",
@@ -24,79 +12,28 @@
       "emojiPicker": "Pick emoji",
       "description": "Description",
       "descriptionPlaceholder": "Enter description (optional)",
-      "repositories": "Associated repositories",
-      "repositoriesPlaceholder": "Select local repositories (optional)",
-      "repositoriesNoRepo": "No local repositories yet — add some in the Repositories page",
       "confirm": "OK",
       "cancel": "Cancel"
     },
     "edit": {
       "title": "Edit workspace",
       "confirm": "Save"
-    },
-    "card": {
-      "noDescription": "No description",
-      "updatedAtLabel": "Updated",
-      "current": "Current workspace",
-      "edit": "Edit",
-      "delete": "Delete",
-      "dirLabel": "Workspace Directory"
-    },
-    "delete": {
-      "title": "Delete workspace",
-      "confirmMsg": "Delete workspace \"{{name}}\"? This cannot be undone.",
-      "confirm": "Delete",
-      "cancel": "Cancel"
-    },
-    "error": {
-      "title": "Failed to load workspaces",
-      "desc": "Please try again later",
-      "retry": "Retry"
     }
   },
   "workspaceIssue": {
-    "actions": {
-      "add": "New task",
-      "refresh": "Refresh"
-    },
     "create": {
       "title": "New task",
       "confirm": "Create",
       "cancel": "Cancel"
     },
-    "card": {
-      "edit": "Edit"
-    },
-    "filter": {
-      "allStates": "All states",
-      "state": "State"
-    },
-    "view": {
-      "list": "List",
-      "board": "Board"
-    },
-    "empty": {
-      "title": "No tasks",
-      "desc": "Click \"New task\" to get started",
-      "noMatch": "No matching tasks"
-    },
-    "error": {
-      "title": "Failed to load tasks",
-      "desc": "Please try again later",
-      "retry": "Retry"
-    },
     "toast": {
-      "created": "Task \"{{name}}\" created",
       "createFailed": "Create failed: {{message}}",
-      "updated": "Task updated",
       "updateFailed": "Update failed: {{message}}",
-      "deleted": "Task deleted",
       "deleteFailed": "Delete failed: {{message}}",
       "typeCreated": "Type \"{{name}}\" created",
       "typeUpdated": "Type updated",
       "typeDeleted": "Type deleted",
-      "typeOpFailed": "Type operation failed: {{message}}",
-      "moveFailed": "Move failed: {{message}}"
+      "typeOpFailed": "Type operation failed: {{message}}"
     },
     "detail": {
       "close": "Close",
@@ -109,7 +46,7 @@
       "type": "Type",
       "branch": "Branch",
       "branchPlaceholder": "Select or enter branch name",
-      "branchNoRepoHint": "Associate a repository in workspace settings first",
+      "branchNoRepoHint": "No local repositories yet. Add one on the Repositories page.",
       "createdAt": "Created",
       "completedAt": "Completed",
       "save": "Save",

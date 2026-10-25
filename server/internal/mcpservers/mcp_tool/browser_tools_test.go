@@ -2,59 +2,100 @@ package mcptool
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gorm.io/gorm"
 
+	"ocean-harness/server/internal/browser"
+	"ocean-harness/server/internal/dal/enums"
+	"ocean-harness/server/internal/dal/model"
 	mcpdto "ocean-harness/server/internal/mcpservers/mcp_dto"
+	"ocean-harness/server/internal/service"
 )
 
 /*
- * browser 工具面纯函数单测：profile 归一、引擎入参抽取（剥服务端自有字段）、归因元数据追加、
- * 逃生舱黑名单前置拒绝（后者走 handler 真实入口——黑名单校验先于链式装配，无需测试环境装配）。
+ * browser 工具面单测：profile 归一（会话行反查派生）、引擎入参抽取（剥服务端自有字段）、
+ * 归因元数据追加、逃生舱黑名单前置拒绝（后者走 handler 真实入口——黑名单校验先于链式装配，
+ * 无需测试环境装配）。
  */
 
+// newResolveProfileSvc 临时 sqlite + 会话表装配的 BrowserSession（resolveProfile DB 依赖）。
+func newResolveProfileSvc(t *testing.T) *service.BrowserSession {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("打开临时 sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.Conversation{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	svc := &service.BrowserSession{}
+	svc.Context = context.Background()
+	svc.Orm = db
+	return svc
+}
+
+// seedConversation 播种会话行（ID/ownerType/ownerID 最小面）。
+func seedConversation(t *testing.T, svc *service.BrowserSession, id string, ownerType enums.ConversationOwnerType, ownerID string) {
+	t.Helper()
+	now := time.Now()
+	row := &model.Conversation{ID: id, OwnerType: ownerType, OwnerID: ownerID, Mode: enums.CONVERSATION_MODE_ACP, CreatedAt: now, UpdatedAt: now}
+	if err := svc.Orm.Create(row).Error; err != nil {
+		t.Fatalf("播种会话 %s: %v", id, err)
+	}
+}
+
 func TestResolveProfile(t *testing.T) {
-	if got := resolveProfile("", "", "", 1); got != defaultBrowserProfile {
-		t.Fatalf(`resolveProfile("", "", "", 1) = %q, want %q`, got, defaultBrowserProfile)
+	// 显式 profile 优先与双空缺省不触 DB：svc 可为 nil。
+	if got, err := resolveProfile(nil, "work", "", 1); err != nil || got != "work" {
+		t.Fatalf(`resolveProfile("work", "", 1) = %q, %v; want 原值`, got, err)
 	}
-	if got := resolveProfile("work", "", "", 1); got != "work" {
-		t.Fatalf(`resolveProfile("work", "", "", 1) = %q, want 原值`, got)
+	if got, err := resolveProfile(nil, "", "", 1); err != nil || got != defaultBrowserProfile {
+		t.Fatalf(`resolveProfile("", "", 1) = %q, %v; want %q`, got, err, defaultBrowserProfile)
 	}
-	// 任务派生约定：profile 留空且 issueId 在手 → issue-<issueId>（槽位 1 基名）；显式 profile 不被覆写。
-	if got := resolveProfile("", "abc-123", "", 1); got != "issue-abc-123" {
-		t.Fatalf(`resolveProfile("", "abc-123", "", 1) = %q, want issue-abc-123`, got)
+
+	svc := newResolveProfileSvc(t)
+	seedConversation(t, svc, "conv-1", enums.OWNER_TYPE_TASK, "task-1")
+	seedConversation(t, svc, "conv-ws", enums.OWNER_TYPE_WORKSPACE, "ws-1")
+
+	// 任务派生约定：profile 留空且会话在手 → issue-<taskId>_session-<conversationId>-NN。
+	want1 := browser.TaskProfilePrefix + "task-1" + browser.SessionSegment + "conv-1-01"
+	got, err := resolveProfile(svc, "", "conv-1", 1)
+	if err != nil || got != want1 {
+		t.Fatalf("resolveProfile(conv-1, 1) = %q, %v; want %q", got, err, want1)
 	}
-	if got := resolveProfile("work", "abc-123", "", 1); got != "work" {
-		t.Fatalf(`resolveProfile("work", "abc-123", "", 1) = %q, want 原值`, got)
+	want3 := browser.TaskProfilePrefix + "task-1" + browser.SessionSegment + "conv-1-03"
+	got, err = resolveProfile(svc, "", "conv-1", 3)
+	if err != nil || got != want3 {
+		t.Fatalf("resolveProfile(conv-1, 3) = %q, %v; want %q", got, err, want3)
 	}
-	// 多开槽位：2-5 追加 -N 后缀；越界槽位退回基名（ProfileOpen 前置显式报错，此处兜底）。
-	if got := resolveProfile("", "abc-123", "", 3); got != "issue-abc-123-3" {
-		t.Fatalf(`resolveProfile("", "abc-123", "", 3) = %q, want issue-abc-123-3`, got)
+	// 显式 profile 不被覆写。
+	if got, err := resolveProfile(svc, "work", "conv-1", 1); err != nil || got != "work" {
+		t.Fatalf("resolveProfile(work, conv-1, 1) = %q, %v; want 原值", got, err)
 	}
-	if got := resolveProfile("", "abc-123", "", 9); got != "issue-abc-123" {
-		t.Fatalf(`resolveProfile("", "abc-123", "", 9) = %q, want issue-abc-123（越界退基名）`, got)
-	}
-	// 工作空间派生约定：profile 与 issueId 均留空 → workspace-<workspaceId>；issueId 优先。
-	if got := resolveProfile("", "", "ws-1", 1); got != "workspace-ws-1" {
-		t.Fatalf(`resolveProfile("", "", "ws-1", 1) = %q, want workspace-ws-1`, got)
-	}
-	if got := resolveProfile("", "abc-123", "ws-1", 1); got != "issue-abc-123" {
-		t.Fatalf(`resolveProfile("", "abc-123", "ws-1", 1) = %q, want issue-abc-123（issueId 优先）`, got)
+	// workspace 归属会话 / 不存在的会话：无法解析归属任务。
+	for _, conv := range []string{"conv-ws", "conv-missing"} {
+		if _, err := resolveProfile(svc, "", conv, 1); err == nil || !strings.Contains(err.Error(), "无法解析归属任务") {
+			t.Fatalf("resolveProfile(%s) err = %v, want 无法解析归属任务", conv, err)
+		}
 	}
 }
 
 func TestEngineArgs(t *testing.T) {
 	in := mcpdto.BrowserNavigateArgs{
-		BrowserProfileArgs: mcpdto.BrowserProfileArgs{Profile: "work", IssueID: "issue-1"},
+		BrowserProfileArgs: mcpdto.BrowserProfileArgs{Profile: "work", ConversationID: "conv-1"},
 		URL:                "https://example.com",
 	}
 	args := engineArgs(&in)
 	if args["url"] != "https://example.com" {
 		t.Fatalf("url = %v, want 引擎参数保留", args["url"])
 	}
-	for _, banned := range []string{"profile", "issueId"} {
+	for _, banned := range []string{"profile", "conversationId"} {
 		if _, ok := args[banned]; ok {
 			t.Fatalf("args 含服务端自有字段 %s: %v", banned, args)
 		}
@@ -84,14 +125,14 @@ func TestWithForwardMeta(t *testing.T) {
 	withForwardMeta(res, "work", "")
 	last, ok := res.Content[1].(*mcp.TextContent)
 	if !ok || res.Content[0] != mcp.Content(engine) || last.Text != "[profile: work]" {
-		t.Fatalf("无 issueId 元数据 = %+v, want 引擎 Content 保持首位、[profile: work] 尾部追加", res.Content)
+		t.Fatalf("无 conversationId 元数据 = %+v, want 引擎 Content 保持首位、[profile: work] 尾部追加", res.Content)
 	}
 
 	res = &mcp.CallToolResult{Content: []mcp.Content{engine}}
-	withForwardMeta(res, "work", "issue-9")
+	withForwardMeta(res, "work", "conv-9")
 	last, ok = res.Content[1].(*mcp.TextContent)
-	if !ok || last.Text != "[profile: work, issueId: issue-9]" {
-		t.Fatalf("带 issueId 元数据 = %v, want [profile: work, issueId: issue-9] 尾部追加", res.Content[1])
+	if !ok || last.Text != "[profile: work, conversationId: conv-9]" {
+		t.Fatalf("带 conversationId 元数据 = %v, want [profile: work, conversationId: conv-9] 尾部追加", res.Content[1])
 	}
 }
 

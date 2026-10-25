@@ -1,7 +1,6 @@
-import type { WorkspaceIssueResponseData } from '@src/services';
 import type { ToolTab } from '@src/state/workbenchTools';
 import type { PointerEvent } from 'react';
-import type { WorkbenchToolDef } from './toolRegistry';
+import type { WorkbenchToolDef, WorkbenchToolIssue } from './toolRegistry';
 import { Close as CloseIcon } from '@mui/icons-material';
 import { Box, IconButton, Tab, Tabs, Typography, useTheme } from '@mui/material';
 import { useToolTabs, useWorkbenchToolsStore } from '@src/state/workbenchTools';
@@ -18,12 +17,13 @@ interface DragContext {
 }
 
 interface ToolPanelAreaProps {
-  // 选中 issue（null = 未选中/加载中，空态文案兜底）。工具渲染上下文 + tabs 归属 key。
-  issue: WorkspaceIssueResponseData | null;
-  // 是否存在选中意图（URL 优先 + store 兜底的合成值，非 issue 对象就绪）：空 tab 栏时
-  // 按此区分文案——无选中「请先选择左侧任务」；有选中（含列表加载瞬态）「在右侧工具条
-  // 选择工具」。锚定意图而非对象，跨任务切换的加载瞬态不闪文案。
+  // 选中锚定（null = 未选中/加载中，空态文案兜底）。工具渲染上下文 + tabs 归属 key。
+  issue: WorkbenchToolIssue | null;
+  // 是否存在选中意图（scope 门禁合成值，非锚定对象就绪）：空 tab 栏时区分文案——
+  // 无选中提示去左侧选任务/会话；有选中（含列表加载瞬态）「在右侧工具条选择工具」。
   hasSelection: boolean;
+  // 无选中空态文案（按页面 scope 由调用方区分：任务页/工作空间页）。
+  emptyHint: string;
   // 面板区展开（页面按 config 折叠态传入，与选中态解耦；收起时外层 width 0）。
   visible: boolean;
   // 持久化宽度（config 订阅值，拖拽结束经 onWidthCommit 落盘后回填）。
@@ -39,7 +39,7 @@ interface ToolPanelAreaProps {
 // （无防抖）。空 tab 栏保持面板区展开（空态提示）。非激活 tab 的内容组件不渲染——
 // 工具会话必须后端常驻（见 toolRegistry 架构红线注释），视口卸载不销毁会话。
 // tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
-export default function ToolPanelArea({ issue, hasSelection, visible, width, onWidthCommit }: ToolPanelAreaProps) {
+export default function ToolPanelArea({ issue, hasSelection, emptyHint, visible, width, onWidthCommit }: ToolPanelAreaProps) {
   const theme = useTheme();
   const closeTab = useWorkbenchToolsStore(s => s.closeTab);
   const setActiveTab = useWorkbenchToolsStore(s => s.setActiveTab);
@@ -175,13 +175,13 @@ export default function ToolPanelArea({ issue, hasSelection, visible, width, onW
         </Tabs>
 
         {/* 内容区：激活 tab 的工具视口；空 tab 栏空态提示（面板区保持展开）。文案按
-            选中意图区分：未选中提示去左侧选任务；已选中（不知道该 issue 有哪些工具 tab，
-            也可能没有）提示去右侧工具条选工具。 */}
+            选中意图区分：未选中提示去左侧选（emptyHint 按 scope）；已选中（不知道该锚定
+            有哪些工具 tab，也可能没有）提示去右侧工具条选工具。 */}
         {activeEntry == null
           ? (
               <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: '16px' }}>
                 <Typography variant="body2" color="text.secondary">
-                  {hasSelection ? '在右侧工具条选择工具' : '请先选择左侧任务'}
+                  {hasSelection ? '在右侧工具条选择工具' : emptyHint}
                 </Typography>
               </Box>
             )

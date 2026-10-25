@@ -1,6 +1,6 @@
 /*
  * browser 工具面 DTO（T2.2，23+1 工具）：原生 6（status / profile_open / session_close / auth_state / auth_request / tool_list）+ 转发 17 + 逃生舱 1（tool_call）。
- * 入参两段来源：转发 17 与逃生舱的引擎参数段是 @playwright/mcp 0.0.83 引擎 zod schema 的逐字段镜像（字段可选性对齐引擎：引擎无 .optional() 的字段不带 omitempty，即自动进 required），profile/issueId 是服务端自有附加段，经 BrowserProfileArgs 匿名嵌入平铺（jsonschema-go 对匿名嵌入字段平铺推导，引擎参数段不受嵌套失真）；原生 6 的入参对齐 service 层既有 REST 请求体语义。
+ * 入参两段来源：转发 17 与逃生舱的引擎参数段是 @playwright/mcp 0.0.83 引擎 zod schema 的逐字段镜像（字段可选性对齐引擎：引擎无 .optional() 的字段不带 omitempty，即自动进 required），profile/conversationId 是服务端自有附加段，经 BrowserProfileArgs 匿名嵌入平铺（jsonschema-go 对匿名嵌入字段平铺推导，引擎参数段不受嵌套失真）；原生 6 的入参对齐 service 层既有 REST 请求体语义。
  * 出参 Content 仅原生 6 需要（平铺镜像，见包注释）；转发 17 与逃生舱不走类型化出参（手工透传引擎 Content 数组，无 Out DTO——类型化出参的自动装配会丢 ImageContent）。
  */
 package mcpdto
@@ -9,19 +9,17 @@ package mcpdto
 
 /*
  * BrowserProfileArgs browser_* 工具集共用基座（匿名嵌入平铺）：profile 留空时按
- * issueId → workspaceId 次序派生会话（issue-<issueId> 任务派生 / workspace-<workspaceId>
- * 工作空间派生），均留空用 default（mcp_tool 层归一，引擎会话自动 ensure，idle 冷启动
- * 1-3s 属预期）；issueId 兼作服务端操作流水归因（面板 recentCalls 徽标）。同工作空间的
- * 会话共享登录态（workspaceId 为共享键，spawn 注入/导出 auth-states/<workspaceId>.json）；
- * 任务多开会话（issue-<issueId>-2..-5）经 browser_profile_open 的 slot 创建，其余工具按
- * 显式 profile 名寻址。
+ * conversationId 派生会话（issue-<taskId>_session-<conversationId>-NN，taskId 由会话行
+ * 反查，D11），均留空用 default（mcp_tool 层归一，引擎会话自动 ensure，idle 冷启动
+ * 1-3s 属预期）；conversationId 兼作服务端操作流水归因（面板 recentCalls 徽标）。
+ * 登录态全局一份（auth-states/default.json，任一会话登录全部实例共享）；会话多开实例
+ * （-02..-10 后缀）经 browser_profile_open 的 slot 创建，其余工具按显式 profile 名寻址。
  */
 type BrowserProfileArgs struct {
-	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名；留空时按 issueId → workspaceId 次序派生（issue-<issueId> / workspace-<workspaceId>），否则用 default；不同 profile 各自独立引擎进程，同工作空间会话共享登录态"`
-	IssueID string `json:"issueId,omitempty" jsonschema:"归因 issue 主键（uuid 文本）；profile 留空时优先决定目标会话（任务派生），可留空"`
-	// WorkspaceID 共享登录态键（任务上下文推荐携带，落盘偏好持久化）；profile 与 issueId
-	// 均留空时兼作会话派生（workspace-<id>，工作空间自身实例）。
-	WorkspaceID string `json:"workspaceId,omitempty" jsonschema:"工作空间主键（uuid 文本）：作为该会话共享登录态的键（spawn 时注入/导出该工作空间登录态）；profile 与 issueId 均留空时兼作会话派生（workspace-<workspaceId>），可留空"`
+	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名；留空时按 conversationId 派生（issue-<taskId>_session-<conversationId>-NN），否则用 default；不同 profile 各自独立引擎进程，登录态全局共享"`
+	// ConversationID 会话主键（uuid 文本）：profile 留空时决定目标实例派生（会话行反查
+	// 归属任务），并兼作操作流水归因；profile 显式传入时可留空。
+	ConversationID string `json:"conversationId,omitempty" jsonschema:"会话主键（uuid 文本）：profile 留空时决定目标实例的派生（须为任务归属会话），并兼作操作流水归因；profile 显式传入时可留空"`
 }
 
 // —— 原生 6 工具入参 ——
@@ -33,14 +31,14 @@ type BrowserStatusArgs struct{}
 type BrowserProfileOpenArgs struct {
 	BrowserProfileArgs
 	Headless *bool `json:"headless,omitempty" jsonschema:"无头模式；留空读 profile 偏好文件，显式传入覆写并回存（模式切换会关掉重开，登录态在 profile 目录续存）"`
-	// Slot 任务多开槽位：仅 issueId 派生时生效，1 = 第 1 会话（基名），2-5 多开
-	// （issue-<issueId>-N）；profile 显式传入时忽略。
-	Slot *int `json:"slot,omitempty" jsonschema:"任务会话槽位（1-5，缺省 1）：仅按 issueId 派生时生效，2 起创建任务多开会话（issue-<issueId>-N），后续操作按返回的 profile 名寻址；profile 显式传入时忽略"`
+	// Slot 会话多开槽位：仅 conversationId 派生时生效，-01..-10 两位后缀；profile 显式
+	// 传入时忽略。
+	Slot *int `json:"slot,omitempty" jsonschema:"实例槽位（1-10，缺省 1）：仅按 conversationId 派生时生效，对应 profile 名 -01..-10 两位后缀，后续操作按返回的 profile 名寻址；profile 显式传入时忽略"`
 }
 
 /*
  * BrowserSessionCloseArgs 是 browser_session_close
- * 的入参（释放引擎进程，幂等；登录态在 profile 目录续存。关停无操作归因语义，不带 issueId）。
+ * 的入参（释放引擎进程，幂等；登录态在 profile 目录续存。关停无操作归因语义，不带 conversationId）。
  */
 type BrowserSessionCloseArgs struct {
 	Profile string `json:"profile,omitempty" jsonschema:"浏览器 profile 名，留空用 default；任务派生会话须显式传 issue-<issueId>（见 browser_profile_open 的派生约定），留空关停的是 default 而非任务会话"`

@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/agentcatalog"
+	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
 )
@@ -26,7 +26,7 @@ const launchModeAcp = "acp"
 type SessionConfig struct {
 	SessionKey     string
 	WorkspaceDir   string // 工作空间根目录（绝对路径，校验见 resolveSessionConfig）
-	Cwd            string // 会话工作目录：issue 锚 = <WorkspaceDir>/<issueId>；conv- 锚 = 工作空间根目录
+	Cwd            string // 会话工作目录：任务锚 = <WorkspaceDir>/<taskId>；conv- 锚 = 工作空间根目录
 	AgentCode      string // 已回落（空配置回落首个 enabled catalog 条目）
 	PermissionMode acp.PermissionMode
 }
@@ -52,58 +52,110 @@ func mergeLaunchSettings(base, override *types.WorkspaceLaunchSettings) *types.W
 		if override.AutoCommand != "" {
 			merged.AutoCommand = override.AutoCommand
 		}
-		if override.PermissionMode != "" {
-			merged.PermissionMode = override.PermissionMode
-		}
 	}
 	return merged
 }
 
 /*
- * resolveSessionConfig 由会话锚键解析会话配置（issue uuid / conv-<会话行id> 双锚形分派，
- * 前缀判别见 binding.go）：路径安全校验 → 锚载体存在性 → launch_settings 字段级合并
- * （issue 锚 = workspace + issue 覆盖；conv- 锚 = workspace 单级）→ mode 门禁（持久化配置
- * 显式 acp，或请求显式声明临场 acp——LaunchModePicker 三选一仅本次有效不落库，否则拒绝）
- * → agentCode / permissionMode 回落与校验 → cwd 兜底建目录；DB 只读 + 目录兜底创建，
- * 同步调用（Ensure 受理期），校验失败立即反馈 HTTP 调用方。
+ * errNotConversationEntity 会话实体锚未命中的判别哨兵（conv-<id> 按行存在性消歧：
+ * 非 t_conversations 行即回落 bot 未关联会话旧链，T4.3 收敛后移除回落分支）。
+ */
+var errNotConversationEntity = errors.New("非会话实体锚")
+
+/*
+ * resolveSessionConfig 由会话锚键解析会话配置（统一 conv-<id> 键形，按行存在性消歧，
+ * 前缀判别见 binding.go）：t_conversations 行走会话实体上下文（见
+ * resolveConversationEntityConfig）；未命中回落 bot 未关联会话旧链（T4.3 收敛后移除）
+ * → mode 门禁 → agentCode / permissionMode 回落与校验 → cwd 兜底建目录；同步调用
+ * （Ensure 受理期），校验失败立即反馈 HTTP 调用方。
  */
 func resolveSessionConfig(ctx context.Context, db *gorm.DB, sessionKey, pickedLaunchMode string) (SessionConfig, error) {
-	if IsConversationSessionKey(sessionKey) {
-		return resolveConversationSessionConfig(ctx, db, sessionKey, pickedLaunchMode)
+	if !IsConversationSessionKey(sessionKey) {
+		return SessionConfig{}, errors.New("会话键非法（须为 conv-<会话id> 形）")
 	}
-	if !ValidIssueID(sessionKey) {
-		return SessionConfig{}, errors.New("issueId 非法")
+	cfg, err := resolveConversationEntityConfig(ctx, db, sessionKey, pickedLaunchMode)
+	if err == nil {
+		return cfg, nil
 	}
+	if !errors.Is(err, errNotConversationEntity) {
+		return SessionConfig{}, err
+	}
+	return resolveConversationSessionConfig(ctx, db, sessionKey, pickedLaunchMode)
+}
+
+/*
+ * resolveConversationEntityConfig 会话实体锚（conv-<t_conversations.id>）的配置解析：
+ * 会话行 → 归属实体两档（workspace 会话 = 工作空间根目录 + workspace 单级配置；task 会话 =
+ * {project.dir}/{ownerId}/ + project+task 双级合并）→ mode 门禁（持久化配置显式 acp，
+ * 或请求显式声明临场 acp——LaunchModePicker 仅本次有效不落库，否则拒绝）→ agentCode /
+ * permissionMode 回落与校验 → cwd 兜底建目录。行不存在返回 errNotConversationEntity。
+ */
+func resolveConversationEntityConfig(ctx context.Context, db *gorm.DB, sessionKey, pickedLaunchMode string) (SessionConfig, error) {
+	convID, _ := conversationRowID(sessionKey)
 	q := query.Use(db)
-	issue, err := q.WorkspaceIssue.WithContext(ctx).Where(q.WorkspaceIssue.ID.Eq(sessionKey)).First()
+	conv, err := q.Conversation.WithContext(ctx).Where(q.Conversation.ID.Eq(convID)).First()
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return SessionConfig{}, errors.New("issue 不存在")
+			return SessionConfig{}, errNotConversationEntity
 		}
 		return SessionConfig{}, err
 	}
-	cfg, err := workspaceSessionBase(ctx, q, issue.WorkspaceID, pickedLaunchMode, "issue 所属工作空间不存在", "issue 启动模式未配置为 ACP，无法创建 ACP 会话")
-	if err != nil {
-		return SessionConfig{}, err
+	var baseDir string
+	var merged *types.WorkspaceLaunchSettings
+	switch conv.OwnerType {
+	case enums.OWNER_TYPE_WORKSPACE:
+		ws, e := q.Workspace.WithContext(ctx).Where(q.Workspace.ID.Eq(conv.OwnerID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return SessionConfig{}, errors.New("会话归属工作空间不存在")
+			}
+			return SessionConfig{}, e
+		}
+		if !filepath.IsAbs(ws.Dir) {
+			return SessionConfig{}, errors.New("工作空间目录须为绝对路径")
+		}
+		baseDir = ws.Dir
+		merged = types.ParseLaunchSettings(ws.LaunchSettings)
+	case enums.OWNER_TYPE_TASK:
+		task, e := q.ProjectTask.WithContext(ctx).Where(q.ProjectTask.ID.Eq(conv.OwnerID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return SessionConfig{}, errors.New("会话归属任务不存在")
+			}
+			return SessionConfig{}, e
+		}
+		project, e := q.Project.WithContext(ctx).Where(q.Project.ID.Eq(task.ProjectID)).First()
+		if e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				return SessionConfig{}, errors.New("会话归属项目不存在")
+			}
+			return SessionConfig{}, e
+		}
+		if !filepath.IsAbs(project.Dir) {
+			return SessionConfig{}, errors.New("项目目录须为绝对路径")
+		}
+		baseDir = project.Dir
+		merged = mergeLaunchSettings(types.ParseLaunchSettings(project.LaunchSettings), types.ParseLaunchSettings(task.LaunchSettings))
+	default:
+		return SessionConfig{}, errors.New("会话归属类型非法")
 	}
-	merged := mergeLaunchSettings(
-		types.ParseLaunchSettings(cfg.workspaceSettings),
-		types.ParseLaunchSettings(issue.LaunchSettings),
-	)
 	if pickedLaunchMode != launchModeAcp && (merged == nil || merged.Mode != launchModeAcp) {
-		return SessionConfig{}, errors.New("issue 启动模式未配置为 ACP，无法创建 ACP 会话")
+		return SessionConfig{}, errors.New("会话启动模式未配置为 ACP，无法创建 ACP 会话")
 	}
 	agentCode, mode, err := resolveAgentSettings(merged)
 	if err != nil {
 		return SessionConfig{}, err
 	}
-	cwd := filepath.Join(cfg.dir, sessionKey)
+	cwd := baseDir
+	if conv.OwnerType == enums.OWNER_TYPE_TASK {
+		cwd = filepath.Join(baseDir, conv.OwnerID)
+	}
 	if err := os.MkdirAll(cwd, 0o755); err != nil {
 		return SessionConfig{}, fmt.Errorf("创建会话工作目录失败: %w", err)
 	}
 	return SessionConfig{
 		SessionKey:     sessionKey,
-		WorkspaceDir:   cfg.dir,
+		WorkspaceDir:   baseDir,
 		Cwd:            cwd,
 		AgentCode:      agentCode,
 		PermissionMode: mode,
@@ -186,10 +238,11 @@ type sessionBase struct {
 }
 
 /*
- * resolveAgentSettings agentCode / permissionMode 回落与校验（两锚形共用尾段）：
- * agentCode 空回落首个 enabled catalog 条目；permissionMode 空回落 bypassPermissions，
- * 仅 acceptEdits / bypassPermissions 合法。
- */
+/*
+  - resolveAgentSettings agentCode 回落（两锚形共用尾段）：agentCode 空回落首个 enabled catalog
+  - 条目。permissionMode 已固化为 bypassPermissions（T4.2 复盘拍板：配置项删除，headless/ACP
+  - 双驱动均全自动，无审批交互）。
+*/
 func resolveAgentSettings(merged *types.WorkspaceLaunchSettings) (string, acp.PermissionMode, error) {
 	agentCode := ""
 	if merged != nil {
@@ -205,26 +258,5 @@ func resolveAgentSettings(merged *types.WorkspaceLaunchSettings) (string, acp.Pe
 	if _, ok := agentcatalog.GetAgentCatalogInfoByCode(agentCode); !ok {
 		return "", "", fmt.Errorf("agent catalog 无 %q 条目", agentCode)
 	}
-	mode := acp.PermissionMode("")
-	if merged != nil {
-		mode = acp.PermissionMode(merged.PermissionMode)
-	}
-	if mode == "" {
-		mode = acp.PermissionModeBypassPermissions
-	}
-	if mode != acp.PermissionModeAcceptEdits && mode != acp.PermissionModeBypassPermissions {
-		return "", "", fmt.Errorf("权限模式 %q 非法（可选 acceptEdits / bypassPermissions）", mode)
-	}
-	return agentCode, mode, nil
-}
-
-/*
- * ValidIssueID 校验 issueId 可安全拼入文件路径（与 service 层 issueWorkspaceValidIssueID
- * 同语义互为参照：拒绝空串、路径分隔符与 Clean 后会变化的值，防 "../x" 路径穿越）。
- */
-func ValidIssueID(issueID string) bool {
-	return issueID != "" &&
-		issueID != "." && issueID != ".." &&
-		!strings.ContainsAny(issueID, `/\`) &&
-		filepath.Clean(issueID) == issueID
+	return agentCode, acp.PermissionModeBypassPermissions, nil
 }

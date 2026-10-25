@@ -5,32 +5,29 @@
  */
 package mcpdto
 
-import "ocean-harness/server/internal/dal/enums"
-
 // —— 入参 Args ——
 
 /*
- * IssueIDArgs 仅需 issueId 的工具共用（issue_get_info / workspace_status）。
+ * TaskIDArgs 仅需 taskId 的工具共用（task_get_info / task_workspace_status）。
  * required 由反射规则推导：无 omitempty 的字段自动进 required，故无需手写 InputSchema。
  */
-type IssueIDArgs struct {
-	IssueID string `json:"issueId" jsonschema:"issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
+type TaskIDArgs struct {
+	TaskID string `json:"taskId" jsonschema:"任务主键（uuid 文本）" vd:"@:$!=''; msg:'taskId 不能为空'"`
 }
 
 /*
- * IssueUpdateArgs 部分更新入参（issue_update）：三业务字段全可选，
+ * TaskUpdateArgs 部分更新入参（task_update）：两业务字段全可选，
  * 空 = 保留原值（首期不支持经 MCP 置空字段）。
  */
-type IssueUpdateArgs struct {
-	IssueID     string          `json:"issueId" jsonschema:"目标 issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
-	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"目标状态，留空不改。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED；DONE 记录完成时间"`
-	Name        string          `json:"name,omitempty" jsonschema:"新标题，留空不改（不支持置空）"`
-	Description string          `json:"description,omitempty" jsonschema:"新描述（Markdown），留空不改（不支持置空）"`
+type TaskUpdateArgs struct {
+	TaskID      string `json:"taskId" jsonschema:"目标任务主键（uuid 文本）" vd:"@:$!=''; msg:'taskId 不能为空'"`
+	Name        string `json:"name,omitempty" jsonschema:"新标题，留空不改（不支持置空）"`
+	Description string `json:"description,omitempty" jsonschema:"新描述（Markdown），留空不改（不支持置空）"`
 }
 
-// WorkspaceStatusArgs 是 workspace_status 的入参（目录经 issueId 由服务端解析，不入参）。
+// WorkspaceStatusArgs 是 workspace_status 的入参（目录经 taskId 由服务端解析，不入参）。
 type WorkspaceStatusArgs struct {
-	IssueID string `json:"issueId" jsonschema:"issue 主键（uuid 文本）" vd:"@:$!=''; msg:'issueId 不能为空'"`
+	TaskID string `json:"taskId" jsonschema:"任务主键（uuid 文本）" vd:"@:$!=''; msg:'taskId 不能为空'"`
 }
 
 /*
@@ -39,37 +36,31 @@ type WorkspaceStatusArgs struct {
  */
 type WorkspaceListArgs struct{}
 
-// IssueListArgs 是 issue_list 的入参（stateCode 留空返回全部状态）。
-type IssueListArgs struct {
-	WorkspaceID string          `json:"workspaceId" jsonschema:"工作空间主键（uuid 文本，workspace_list 返回的 id）"`
-	StateCode   enums.StateCode `json:"stateCode,omitempty" jsonschema:"按状态过滤，留空返回全部状态。可选 BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
+// TaskListArgs 是 task_list 的入参。
+type TaskListArgs struct {
+	ProjectID string `json:"projectId" jsonschema:"项目主键（uuid 文本）"`
 }
 
 // —— 出参 Content（平铺镜像，见包注释） ——
 
-// IssueContent 是单个 issue 的出参（issue_get_info 返回单对象；issue_child_create 返回新建对象）。
-type IssueContent struct {
-	ID                   string                   `json:"id" jsonschema:"issue 主键（uuid）"`
-	Name                 string                   `json:"name" jsonschema:"标题"`
-	Description          string                   `json:"description,omitempty" jsonschema:"描述（Markdown）"`
-	StateCode            string                   `json:"stateCode" jsonschema:"状态：BACKLOG/TODO/IN_PROGRESS/DONE/CANCELLED"`
-	StartDate            string                   `json:"startDate,omitempty" jsonschema:"开始日期（yyyy-mm-dd），留空表示未设置"`
-	TargetDate           string                   `json:"targetDate,omitempty" jsonschema:"目标日期（yyyy-mm-dd），留空表示未设置"`
-	CompletedAt          string                   `json:"completedAt,omitempty" jsonschema:"完成时间（RFC3339），留空表示未完成"`
-	SortOrder            float64                  `json:"sortOrder" jsonschema:"看板排序权重（升序）"`
-	Type                 *IssueTypeContent        `json:"type,omitempty" jsonschema:"issue 类型（单值），留空表示未分类"`
-	RepositoryBranchList []IssueRepoBranchContent `json:"repositoryBranchList" jsonschema:"关联仓库与基准分支列表"`
+// TaskContent 是单个任务的出参（task_get_info 返回单对象）。
+type TaskContent struct {
+	ID                   string                  `json:"id" jsonschema:"任务主键（uuid）"`
+	Name                 string                  `json:"name" jsonschema:"标题"`
+	Description          string                  `json:"description,omitempty" jsonschema:"描述（Markdown）"`
+	Type                 *TaskTypeContent        `json:"type,omitempty" jsonschema:"任务类型（单值），留空表示未分类"`
+	RepositoryBranchList []TaskRepoBranchContent `json:"repositoryBranchList" jsonschema:"关联仓库与基准分支列表"`
 }
 
-// IssueTypeContent 是 issue 类型的出参（单值）。
-type IssueTypeContent struct {
+// TaskTypeContent 是任务类型的出参（单值）。
+type TaskTypeContent struct {
 	ID    int    `json:"id" jsonschema:"类型 id"`
 	Name  string `json:"name" jsonschema:"类型名"`
 	Color string `json:"color,omitempty" jsonschema:"类型颜色（如 #ff5050，留空表示无色）"`
 }
 
-// IssueRepoBranchContent 是 issue 关联仓库+分支的出参项。
-type IssueRepoBranchContent struct {
+// TaskRepoBranchContent 是任务关联仓库+分支的出参项。
+type TaskRepoBranchContent struct {
 	LocalRepositoryID int    `json:"localRepositoryId" jsonschema:"本地仓库 id"`
 	RepositoryBranch  string `json:"repositoryBranch,omitempty" jsonschema:"基准分支名（工作空间初始化按此 clone），留空表示仓库默认分支"`
 }
@@ -83,8 +74,8 @@ type WorkspaceStatusContent struct {
 // WorkspaceStateContent 是 .workspace-init-state.json 的镜像。
 type WorkspaceStateContent struct {
 	Version   int                        `json:"version" jsonschema:"schema 版本"`
-	IssueID   string                     `json:"issueId" jsonschema:"issue 主键"`
-	BaseDir   string                     `json:"baseDir" jsonschema:"工作空间根目录（绝对路径；各仓库在 {baseDir}/{issueId}/repo/{仓库名}）"`
+	TaskID    string                     `json:"taskId" jsonschema:"任务主键"`
+	BaseDir   string                     `json:"baseDir" jsonschema:"工作空间根目录（绝对路径；各仓库在 {baseDir}/{taskId}/repo/{仓库名}）"`
 	Status    string                     `json:"status" jsonschema:"顶层状态（含义同 serverStatus，另含 SKIPPED）"`
 	Steps     []*WorkspaceStepContent    `json:"steps" jsonschema:"各初始化步骤进度（固定顺序：createDirs→sshConfig→cloneRepos）"`
 	Manifest  []*WorkspaceRepoRefContent `json:"manifest" jsonschema:"已受理的仓库+基准分支清单（幂等键）"`
@@ -133,7 +124,7 @@ type WorkspaceListContent struct {
 	Workspaces []*WorkspaceContent `json:"workspaces" jsonschema:"工作空间列表（新建在前）；无工作空间为空数组"`
 }
 
-// IssueListContent 是 issue_list 的出参（复用 IssueContent 平铺镜像）。
-type IssueListContent struct {
-	Issues []*IssueContent `json:"issues" jsonschema:"任务列表（按看板顺序）；无任务为空数组"`
+// TaskListContent 是 task_list 的出参（复用 TaskContent 平铺镜像）。
+type TaskListContent struct {
+	Tasks []*TaskContent `json:"tasks" jsonschema:"任务列表（created_at 升序）；无任务为空数组"`
 }

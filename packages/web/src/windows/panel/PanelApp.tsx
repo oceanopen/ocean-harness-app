@@ -1,15 +1,15 @@
 import type { WorkspaceModel } from '@src/services';
 import type { MenuKey } from './commandPalette/types';
+import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import DeveloperModeOutlinedIcon from '@mui/icons-material/DeveloperModeOutlined';
 import ExtensionOutlinedIcon from '@mui/icons-material/ExtensionOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import LanOutlinedIcon from '@mui/icons-material/LanOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SmartToyOutlinedIcon from '@mui/icons-material/SmartToyOutlined';
-import SpaceDashboardOutlinedIcon from '@mui/icons-material/SpaceDashboardOutlined';
+import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import { Box, Breadcrumbs, IconButton, List, Typography, useTheme } from '@mui/material';
 import appIcon from '@src/assets/app-icon.svg';
 import MenuListItemButton from '@src/components/menuListItemButton/MenuListItemButton';
@@ -36,16 +36,16 @@ import { Navigate, Route, Routes, useLocation, useMatch, useNavigate } from 'rea
 import ClaudeSessionsPage from './ClaudeSessionsPage/ClaudeSessionsPage';
 import CommandPaletteProvider from './commandPalette/CommandPaletteProvider';
 import CommandPaletteTrigger from './commandPalette/CommandPaletteTrigger';
-import DevWorkbenchPage from './DevWorkbenchPage/DevWorkbenchPage';
 import ImBotsPage from './ImBotsPage/ImBotsPage';
 import PluginMarketplacePage from './PluginMarketplacePage/PluginMarketplacePage';
+import ProjectsPage from './ProjectsPage/ProjectsPage';
 import RepositoriesPage from './RepositoriesPage/RepositoriesPage';
-import { DEFAULT_MENU, MENU_PATHS, menuToPath, pathToMenu, TRACKER_WID_PARAM } from './routes';
+import { DEFAULT_MENU, MENU_PATHS, menuToPath, pathToMenu, WORKSPACES_WID_PARAM } from './routes';
 import ServerStatusIndicator from './ServerStatusIndicator';
 import ServerStatusPage from './ServerStatusPage';
 import { pathToSection, SECTION_MENUS } from './SettingsPage/routes';
 import SettingsPage from './SettingsPage/SettingsPage';
-import TrackerPage from './TrackerPage/TrackerPage';
+import WorkspacesPage from './WorkspacesPage/WorkspacesPage';
 
 // 侧边栏折叠状态 decode：缺失/非法值回落到默认（展开）。
 // 模块级函数保证引用稳定（useConfigValue 依赖项要求，避免每次渲染重订阅）。
@@ -67,8 +67,8 @@ const SIDEBAR_COLLAPSED_WIDTH = 56;
 // 子状态页：切回时经「记忆上次完整路径」恢复 URL 子状态（wid/iid），页面组件随之重建。
 // settings 同理记忆上次分区（/settings/<section>），齿轮/托盘/命令面板再入时回到上次分区。
 const PATH_MEMORY_MENUS: ReadonlySet<MenuKey> = new Set<MenuKey>([
-  'tracker',
-  'devWorkbench',
+  'workspaces',
+  'projects',
   'settings',
 ]);
 
@@ -78,12 +78,11 @@ function PanelApp() {
   const location = useLocation();
   const navigate = useNavigate();
   const activeMenu = pathToMenu(location.pathname);
-  // ⌘W 兜底（macOS 菜单让位后由前端接管，见 useCloseWindowShortcut 头注释）：非
-  // devWorkbench 菜单页保持默认关窗；devWorkbench 页由页面级处理器接管（关 tab/关窗），
-  // 本兜底让位——两者按 activeMenu 互斥，永不同时动作。
-  useCloseWindowShortcut(activeMenu !== 'devWorkbench');
+  // ⌘W 关窗兜底（macOS 菜单让位后由前端接管，见 useCloseWindowShortcut 头注释）：
+  // 工作台内容区挂有自己的页面级处理器（关 tab 优先），本兜底与其并存语义见彼处。
+  useCloseWindowShortcut(true);
   const [repoRefreshTrigger, setRepoRefreshTrigger] = useState(0);
-  // tracker 选择态由 tracker store 持有（命令面板/TrackerPage 共享读写），不再上提到此。
+  // 工作空间选择态由 tracker store 持有（命令面板「跳到工作空间」读写），不再上提到此。
   const currentWorkspaceId = useTrackerStore(s => s.selectedWorkspace?.id ?? null);
   // 选中实体名供命令面板 jump 命令声明式渲染名称注释（id 用于逻辑判断，name 用于展示）。
   const currentWorkspaceName = useTrackerStore(s => s.selectedWorkspace?.name ?? null);
@@ -96,11 +95,11 @@ function PanelApp() {
   const toggleCollapsed = () => {
     void setAppConfig(PANEL_SIDEBAR_COLLAPSED_KEY, toYesNo(!collapsed));
   };
-  // 工作台沉浸模式（全屏）：devWorkbench 页激活且全屏时隐藏 App 外壳（本组件左侧菜单
-  // 栏 + 顶部导航栏），页面占满窗口；其余页面不受影响。全屏态由 DevWorkbenchPage 持有
-  // （入口/退出/卸载复位均在彼处，见 devWorkbench store 头注释）——此处只读订阅。
+  // 工作台沉浸模式（全屏）：WorkbenchContent 全屏时隐藏 App 外壳（本组件左侧菜单
+  // 栏 + 顶部导航栏），页面占满窗口。全屏态由 WorkbenchContent 持有（入口/退出/卸载
+  // 复位均在彼处，见 devWorkbench store 头注释）——此处只读订阅。
   const workbenchFullscreen = useDevWorkbenchStore(s => s.workbenchFullscreen);
-  const immersive = activeMenu === 'devWorkbench' && workbenchFullscreen;
+  const immersive = workbenchFullscreen;
 
   // 记忆每个子状态页的「上次完整路径（含 query）」：切走后再切回时恢复到子状态，而非基础路径——
   // 页面已改为切走即卸载，切回经此路径记忆 + URL→store 同步重建选中态（store 全局，不随组件卸载丢）。
@@ -117,10 +116,10 @@ function PanelApp() {
     navigate(lastPathRef.current[menu] ?? menuToPath(menu));
   }, [navigate]);
 
-  // 跳到工作空间：回写选中并导航 /tracker?wid=<id>。
+  // 跳到工作空间：回写命令面板上下文选中并导航到工作空间页 ?wid=<id>。
   const selectWorkspace = useCallback((ws: WorkspaceModel) => {
     useTrackerStore.getState().selectWorkspace(ws);
-    navigate(`/tracker?${TRACKER_WID_PARAM}=${ws.id}`);
+    navigate(`/workspaces?${WORKSPACES_WID_PARAM}=${ws.id}`);
   }, [navigate]);
 
   // 监听后端 panel:navigate 事件，复用 goMenu 切到指定页面（含路径记忆恢复）。
@@ -160,8 +159,8 @@ function PanelApp() {
     { key: 'repositories', label: t('panel:menu.repositories'), icon: <FolderOutlinedIcon /> },
     { key: 'pluginMarketplace', label: t('panel:menu.pluginMarketplace'), icon: <ExtensionOutlinedIcon /> },
     { key: 'imBots', label: t('panel:menu.imBots'), icon: <SmartToyOutlinedIcon /> },
-    { key: 'tracker', label: t('panel:menu.tracker'), icon: <SpaceDashboardOutlinedIcon /> },
-    { key: 'devWorkbench', label: t('panel:menu.devWorkbench'), icon: <DeveloperModeOutlinedIcon /> },
+    { key: 'workspaces', label: t('panel:menu.workspaces'), icon: <WorkspacesOutlinedIcon /> },
+    { key: 'projects', label: t('panel:menu.projects'), icon: <AssignmentOutlinedIcon /> },
     { key: 'settings', label: t('settings:title'), icon: <SettingsOutlinedIcon /> },
   ];
   // 侧栏隐藏菜单：不渲染入口但页面仍可达（服务状态经顶栏指示器、设置经顶栏齿轮跳转进入）。
@@ -202,7 +201,7 @@ function PanelApp() {
             data-tauri-drag-region 承担窗口拖拽（双击切换 maximize）；drag region 精确
             匹配 mousedown target，胶囊/齿轮等交互子元素天然不触发拖拽；logo/Breadcrumbs/
             flex 占位为非交互元素，须 pointerEvents:none 让 mousedown 穿透到本栏。
-            沉浸模式（devWorkbench 全屏）不渲染——页面占满窗口。 */}
+            沉浸模式（工作台全屏）不渲染——页面占满窗口。 */}
         {!immersive && (
           <Box
             data-tauri-drag-region={isMacOS || undefined}
@@ -321,8 +320,8 @@ function PanelApp() {
               <Route path={MENU_PATHS.repositories} element={<RepositoriesPage windowShownTrigger={repoRefreshTrigger} />} />
               <Route path={MENU_PATHS.pluginMarketplace} element={<PluginMarketplacePage windowShownTrigger={repoRefreshTrigger} />} />
               <Route path={MENU_PATHS.imBots} element={<ImBotsPage />} />
-              <Route path={MENU_PATHS.tracker} element={<TrackerPage />} />
-              <Route path={MENU_PATHS.devWorkbench} element={<DevWorkbenchPage />} />
+              <Route path={MENU_PATHS.workspaces} element={<WorkspacesPage />} />
+              <Route path={MENU_PATHS.projects} element={<ProjectsPage />} />
               {/* settings 为嵌套页：splat 挂载，分区子路由由 SettingsPage 内层 Routes 消费。 */}
               <Route path={`${MENU_PATHS.settings}/*`} element={<SettingsPage />} />
               <Route path="*" element={<Navigate to={menuToPath(DEFAULT_MENU)} replace />} />

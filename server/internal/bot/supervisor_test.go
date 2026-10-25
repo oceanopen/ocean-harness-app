@@ -54,7 +54,9 @@ type stubFailingFactory struct{}
 
 func (f *stubFailingFactory) Channel() enums.Channel { return enums.CHANNEL_WECOM }
 
-func (f *stubFailingFactory) Create() (ChannelRuntime, error) { return nil, errors.New("渠道创建失败") }
+func (f *stubFailingFactory) Create() (ChannelRuntime, error) {
+	return nil, errors.New("渠道创建失败")
+}
 
 /*
  * newSupervisorHarness 装配被测 supervisor + 已注册渠道替身 + 单条启用 bot 行

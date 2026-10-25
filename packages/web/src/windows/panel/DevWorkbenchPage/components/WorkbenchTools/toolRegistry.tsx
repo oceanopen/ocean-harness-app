@@ -4,18 +4,33 @@
  * ⚠️ 架构红线（终端链路同款铁律）：render 只是「视口」——有状态的工具会话必须后端常驻，tab 卸载只断渲染流、重挂载 reattach；纯前端持有状态禁止。
  */
 import type { SvgIconComponent } from '@mui/icons-material';
-import type { WorkspaceIssueResponseData } from '@src/services';
 import type { ReactNode } from 'react';
-import { FolderOutlined as FolderOutlinedIcon, Language as LanguageIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
+import { FolderOutlined as FolderOutlinedIcon, ForumOutlined as ForumOutlinedIcon, Language as LanguageIcon, SmartToy as SmartToyIcon } from '@mui/icons-material';
+import ClaudeSessionsViewer from '../ClaudeSessionsViewer/ClaudeSessionsViewer';
 import ImBotPanel from '../ImBotPanel/ImBotPanel';
 import WorkspaceFilePanel from '../WorkspaceFilePanel/WorkspaceFilePanel';
 import BrowserPanel from './BrowserPanel/BrowserPanel';
 
 /**
- * 工具渲染上下文：当前选中 issue（面板内容均围绕选中任务；hasSelection 已由外层保证非空）。
+ * 工具渲染锚定（结构子集）：任务页 = 选中任务；工作空间页 = 选中会话（projectId 回落
+ * 容器 id，containerId 标记容器归属）。各工具按 conversationScope 切数据面，锚定不改变
+ * 查询语义。
+ */
+export interface WorkbenchToolIssue {
+  id: string;
+  projectId: string;
+  name: string;
+  /** 工作空间页锚定时的容器（工作空间）id；任务页锚定缺省——任务维度无工作空间容器。 */
+  containerId?: string;
+  /** 锚定语境（缺省 = 任务）：工具据此在任务/工作空间两族数据面间分派。 */
+  conversationScope?: 'task' | 'workspace';
+}
+
+/**
+ * 工具渲染上下文：当前选中锚定（任务或会话；可用性已由外层门禁保证非空）。
  */
 export interface WorkbenchToolRenderCtx {
-  issue: WorkspaceIssueResponseData;
+  issue: WorkbenchToolIssue;
   /**
    * 面板区展开态（收起 = 外层 width 0 但本组件仍挂载）：帧流类视口的暂停闸门
    * （浏览器面板实时画面「收起即停」，D4 展示侧对偶）。
@@ -38,7 +53,8 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     title: '文件',
     icon: FolderOutlinedIcon,
     exclusive: true,
-    render: ({ issue }) => <WorkspaceFilePanel issueId={issue.id} />,
+    // 工作空间页锚定（containerId 在场）→ 目录 = 工作空间本身；任务页不传保持 taskId 两跳现状。
+    render: ({ issue }) => <WorkspaceFilePanel issueId={issue.id} workspaceId={issue.containerId} />,
   },
   {
     id: 'imBots',
@@ -48,12 +64,32 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     render: ({ issue }) => <ImBotPanel issue={issue} />,
   },
   {
+    id: 'claudeSessions',
+    title: 'Claude 会话',
+    icon: ForumOutlinedIcon,
+    exclusive: true,
+    // 会话维度工具：任务页 = 主会话+子会话卡片列表；工作空间页 = 当前选中会话单卡。
+    render: ({ issue }) => (
+      <ClaudeSessionsViewer
+        issueId={issue.id}
+        projectId={issue.projectId}
+        conversationScope={issue.conversationScope}
+        containerId={issue.containerId}
+      />
+    ),
+  },
+  {
     id: 'browser',
     title: '浏览器',
     icon: LanguageIcon,
     exclusive: true,
     render: ({ issue, panelVisible }) => (
-      <BrowserPanel issueId={issue.id} workspaceId={issue.workspaceId} panelVisible={panelVisible} />
+      <BrowserPanel
+        issueId={issue.id}
+        panelVisible={panelVisible}
+        conversationScope={issue.conversationScope}
+        containerId={issue.containerId}
+      />
     ),
   },
 ];

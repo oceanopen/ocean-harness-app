@@ -1,5 +1,5 @@
 /*
- * Package mcpservers 内嵌 MCP Server（docs/agent_dev_01_tasks.md T2.1），把 tracker / issueWorkspace 的既有 service 能力与 GitHub 外部服务工具（T4.1）以 MCP 工具形式暴露，供 issue 运行工作空间内的 AI agent（经 T1.3 生成的 .mcp.json 接入）调用。
+ * Package mcpservers 内嵌 MCP Server（docs/agent_dev_01_tasks.md T2.1），把 tracker / taskWorkspace 的既有 service 能力与 GitHub 外部服务工具（T4.1）以 MCP 工具形式暴露，供 issue 运行工作空间内的 AI agent（经 T1.3 生成的 .mcp.json 接入）调用。
  * 模式移植自 pros-admin-server/mcp_servers（go-sdk，Streamable HTTP，无鉴权单机场景）。组织方式（单 server 归口——T2.1 原预留的「每业务域一个 server 按路径扩展」框架取消，多端点对调用方有割裂感）：全部工具注册在唯一的 ocean_harness server（本文件 init()），工具名按前缀分组（issue_* / github_*，后续平台/业务同理）；
  * 共用基础设施在 mcp_util/（McpTool 基类与失败日志、app_config 只读读取；工具结果的装配由 SDK ToolHandlerFor 自动完成），工具 handler 实现在 mcp_tool/（文件按业务域命名），入出参 DTO 在 mcp_dto/。注意：同包多文件 init() 按文件名序执行，新工具注册一律追加在本文件 init() 内，不另立 mcp_*.go 的 init（避免字母序在前拿到未初始化的 server 单例）。
  */
@@ -25,24 +25,24 @@ func init() {
 	mcpServerOceanHarness = mcp.NewServer(&mcp.Implementation{
 		Name:    "ocean_harness",
 		Version: "v1.0.0",
-		Title:   "ocean-harness 任务管理工具（issue / 工作空间 / GitHub）",
+		Title:   "ocean-harness 任务管理工具（任务 / 工作空间 / GitHub）",
 	}, nil)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
-		Name:        "issue_get_info",
+		Name:        "task_get_info",
 		Description: "获取 issue 详情（标题、描述、状态、类型、关联仓库与基准分支）。",
-	}, mcptool.McpOceanHarnessTool{}.IssueGetInfo)
+	}, mcptool.McpOceanHarnessTool{}.TaskGetInfo)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
-		Name: "issue_update",
+		Name: "task_update",
 		Description: "部分更新 issue：stateCode/name/description 仅更新传入的非空字段，其余字段（含类型、" +
 			"关联仓库分支、日期）保留原值。stateCode 变化触发完成时间流转（DONE 记录完成时间）。",
-	}, mcptool.McpOceanHarnessTool{}.IssueUpdate)
+	}, mcptool.McpOceanHarnessTool{}.TaskUpdate)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
-		Name: "issue_workspace_status",
-		Description: "查询某 issue 运行工作空间的初始化状态（顶层结论 + createDirs/sshConfig/" +
-			"cloneRepos 各步骤与仓库级进度）。workspace 基目录取应用设置，无需传入。",
+		Name: "task_workspace_status",
+		Description: "查询某任务运行工作空间的初始化状态（顶层结论 + createDirs/sshConfig/" +
+			"cloneRepos 各步骤与仓库级进度）。目录由服务端按 taskId 解析，无需传入。",
 	}, mcptool.McpOceanHarnessTool{}.WorkspaceStatus)
 
 	// —— 列举工具（workspace / issue 清单，供选择类工作流逐级定位）——
@@ -53,18 +53,23 @@ func init() {
 	}, mcptool.McpOceanHarnessTool{}.WorkspaceList)
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
-		Name: "issue_list",
+		Name:        "project_list",
+		Description: "列出全部项目（新建在前）：id/名称/项目根目录/描述。无副作用读。",
+	}, mcptool.McpOceanHarnessTool{}.ProjectList)
+
+	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
+		Name: "task_list",
 		Description: "列出某工作空间下的全部任务（按看板顺序）；" +
-			"workspaceId 取 workspace_list 返回的 id，stateCode 留空返回全部状态。单任务详情请用 issue_get_info。",
-	}, mcptool.McpOceanHarnessTool{}.IssueList)
+			"projectId 取 project_list 返回的 id。单任务详情请用 task_get_info。",
+	}, mcptool.McpOceanHarnessTool{}.TaskList)
 
 	// —— GitHub 外部服务工具（T4.1，github_ 前缀分组；PAT 经设置 → 个人中心录入）——
 
 	mcp.AddTool(mcpServerOceanHarness, &mcp.Tool{
 		Name: "github_create_pr",
 		Description: "为本地仓库对应的 GitHub 仓库创建 Pull Request。" +
-			"仓库按 localRepositoryId 定位（issue_get_info 的 repositoryBranchList）；" +
-			"head 留空默认 agent_{issueId}，base 留空默认该 issue 关联的基准分支；" +
+			"仓库按 localRepositoryId 定位（task_get_info 的 repositoryBranchList）；" +
+			"head 留空默认 agent_{taskId}，base 留空默认该任务关联的基准分支；" +
 			"需先在 设置 → 个人中心 → GitHub 录入 PAT。",
 	}, mcptool.McpGithubTool{}.CreatePullRequest)
 

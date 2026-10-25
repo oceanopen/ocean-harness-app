@@ -167,7 +167,7 @@ func TestTurnEnv(t *testing.T) {
 
 /*
  * TestBuildClaudeArgsDelivery 投递令牌 → argv 注入矩阵：无令牌零注入；带令牌注入
- * --mcp-config（内容指向 im 投递端点）+ send_file 白名单位，cleanup 删临时配置文件。
+ * --mcp-config（内容指向 im 投递端点），cleanup 删临时配置文件；工具白名单恒不注入。
  */
 func TestBuildClaudeArgsDelivery(t *testing.T) {
 	args, cleanup, err := buildClaudeArgs(TurnRequest{SystemPrompt: "sp"})
@@ -176,7 +176,7 @@ func TestBuildClaudeArgsDelivery(t *testing.T) {
 	}
 	cleanup()
 	joined := strings.Join(args, " ")
-	if strings.Contains(joined, "--mcp-config") || strings.Contains(joined, imSendFileToolName) {
+	if strings.Contains(joined, "--mcp-config") {
 		t.Fatalf("无令牌不应注入 MCP 配置: %s", joined)
 	}
 
@@ -185,8 +185,11 @@ func TestBuildClaudeArgsDelivery(t *testing.T) {
 		t.Fatalf("带令牌构建: %v", err)
 	}
 	joined = strings.Join(args, " ")
-	if !strings.Contains(joined, "--mcp-config") || !strings.Contains(joined, imSendFileToolName) {
-		t.Fatalf("带令牌应注入 MCP 配置与白名单: %s", joined)
+	if !strings.Contains(joined, "--mcp-config") {
+		t.Fatalf("带令牌应注入 MCP 配置: %s", joined)
+	}
+	if strings.Contains(joined, "--allowedTools") {
+		t.Fatalf("headless 不注入工具白名单（权限档全权表达）: %s", joined)
 	}
 	idx := -1
 	for i, a := range args {
@@ -206,5 +209,45 @@ func TestBuildClaudeArgsDelivery(t *testing.T) {
 	cleanup()
 	if _, err := os.Stat(args[idx+1]); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("cleanup 应删除临时配置文件")
+	}
+}
+
+// TestBuildClaudeArgsPermissions headless 全自动恒定：argv 恒带 --dangerously-skip-permissions（权限档已全局收敛）。
+func TestBuildClaudeArgsPermissions(t *testing.T) {
+	args, cleanup, err := buildClaudeArgs(TurnRequest{})
+	if err != nil {
+		t.Fatalf("构建: %v", err)
+	}
+	cleanup()
+	if joined := strings.Join(args, " "); !strings.Contains(joined, "--dangerously-skip-permissions") {
+		t.Fatalf("headless 应恒定全自动: %s", joined)
+	}
+}
+
+// TestBuildClaudeArgsResume headless 续聊锚：SessionID 非空注入 --resume，空不开新参数。
+func TestBuildClaudeArgsResume(t *testing.T) {
+	args, cleanup, err := buildClaudeArgs(TurnRequest{})
+	if err != nil {
+		t.Fatalf("新会话构建: %v", err)
+	}
+	cleanup()
+	if joined := strings.Join(args, " "); strings.Contains(joined, "--resume") {
+		t.Fatalf("无锚不应带 --resume: %s", joined)
+	}
+
+	args, cleanup, err = buildClaudeArgs(TurnRequest{SessionID: "sess-1"})
+	if err != nil {
+		t.Fatalf("resume 构建: %v", err)
+	}
+	cleanup()
+	joined := strings.Join(args, " ")
+	idx := -1
+	for i, a := range args {
+		if a == "--resume" {
+			idx = i
+		}
+	}
+	if idx < 0 || idx+1 >= len(args) || args[idx+1] != "sess-1" {
+		t.Fatalf("SessionID 应注入 --resume: %s", joined)
 	}
 }

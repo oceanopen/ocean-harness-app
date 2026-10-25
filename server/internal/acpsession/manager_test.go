@@ -18,7 +18,6 @@ import (
 
 	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/dal/model"
-	"ocean-harness/server/internal/dal/query"
 )
 
 /*
@@ -50,32 +49,32 @@ func TestMain(m *testing.M) {
  * 直接失败，模拟 vendored/握手链报错）；calls 统计实际调用次数（join 幂等断言用）；
  * resumeIDs 记录每次收到的 resumeID（Ensure 锚点接线断言用，可 nil）。
  */
-func fakeSpawn(script string, wantErr error, calls *atomic.Int64, resumeIDs *[]string) func(SessionConfig, Dirs, int, *zap.Logger, string) (*acp.AgentClient, *acp.Session, error) {
-	return func(cfg SessionConfig, _ Dirs, _ int, log *zap.Logger, resumeID string) (*acp.AgentClient, *acp.Session, error) {
+func fakeSpawn(script string, wantErr error, calls *atomic.Int64, resumeIDs *[]string) func(SessionConfig, Dirs, int, *zap.Logger, string) (*acp.AgentClient, *acp.Session, bool, error) {
+	return func(cfg SessionConfig, _ Dirs, _ int, log *zap.Logger, resumeID string) (*acp.AgentClient, *acp.Session, bool, error) {
 		calls.Add(1)
 		if resumeIDs != nil {
 			*resumeIDs = append(*resumeIDs, resumeID)
 		}
 		if wantErr != nil {
-			return nil, nil, wantErr
+			return nil, nil, false, wantErr
 		}
 		client, err := acp.Launch(context.Background(), acp.SpawnConfig{
 			Command: []string{fakeAgentBin, script},
 			Cwd:     cfg.Cwd,
 		}, log)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 		if _, err := client.Initialize(context.Background()); err != nil {
 			client.Close()
-			return nil, nil, err
+			return nil, nil, false, err
 		}
-		session, err := newOrResumedSession(context.Background(), client, cfg, resumeID, log)
+		session, resumed, err := newOrResumedSession(context.Background(), client, cfg, resumeID, log)
 		if err != nil {
 			client.Close()
-			return nil, nil, err
+			return nil, nil, false, err
 		}
-		return client, session, nil
+		return client, session, resumed, nil
 	}
 }
 
@@ -87,8 +86,9 @@ func newManagerWithIssue(t *testing.T, script string, wantErr error) (*Manager, 
 	t.Helper()
 	db := newTestDB(t)
 	wsDir := t.TempDir()
-	issueID := seedIssue(t, db, wsDir, `{"mode":"acp"}`, "")
-	mgr, err := NewManager(db, Dirs{}, 0, "", zap.NewNop())
+	taskID := seedIssue(t, db, wsDir, `{"mode":"acp"}`, "")
+	issueID := ConversationSessionKey(seedTaskConversation(t, db, taskID))
+	mgr, err := NewManager(db, Dirs{}, 0, "", "", zap.NewNop())
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
@@ -141,26 +141,6 @@ func waitFirstTick(t *testing.T, frames <-chan Frame) {
 	})
 }
 
-// bindingRow 按 issueId 查锚点行（断言辅助）。
-func bindingRow(t *testing.T, db *gorm.DB, issueID string) *model.IssueAcpSession {
-	t.Helper()
-	q := queryOf(db)
-	row, err := q.IssueAcpSession.WithContext(context.Background()).Where(
-		q.IssueAcpSession.IssueID.Eq(issueID)).First()
-	if err != nil {
-		t.Fatalf("查绑定行: %v", err)
-	}
-	return row
-}
-
-// bindingExists 锚点行是否存在（存在性断言不 Fatal）。
-func bindingExists(db *gorm.DB, issueID string) bool {
-	q := queryOf(db)
-	_, err := q.IssueAcpSession.WithContext(context.Background()).Where(
-		q.IssueAcpSession.IssueID.Eq(issueID)).First()
-	return err == nil
-}
-
 // waitForCondition 轮询等待条件成立（异步落库路径的最终一致断言）。
 func waitForCondition(t *testing.T, what string, pred func() bool) {
 	t.Helper()
@@ -177,7 +157,7 @@ func waitForCondition(t *testing.T, what string, pred func() bool) {
 	}
 }
 
-func TestEnsureReadyPromptAndAnchor(t *testing.T) {
+func TestEnsureReadyPrompt(t *testing.T) {
 	mgr, db, issueID, frames, calls := newManagerWithIssue(t, "happy", nil)
 	ctx := context.Background()
 
@@ -223,11 +203,17 @@ func TestEnsureReadyPromptAndAnchor(t *testing.T) {
 		t.Fatalf("回合终态应落快照，got %+v", snap)
 	}
 
-	// 锚点落库：acp_session_id 非空 + last_error 清空 + spawn 恰好一次。
-	row := bindingRow(t, db, issueID)
-	if row.AcpSessionID == "" || row.LastError != "" || row.AgentCode == "" {
-		t.Fatalf("锚点应就绪落库，got %+v", row)
+	// 锚点落库：会话实体行 claude_session_id 非空 + agent_code 记录。
+	convID, _ := conversationRowID(issueID)
+	convRow, err := queryOf(db).Conversation.WithContext(ctx).Where(queryOf(db).Conversation.ID.Eq(convID)).First()
+	if err != nil {
+		t.Fatalf("读会话行: %v", err)
 	}
+	if convRow.ClaudeSessionID == "" || convRow.AgentCode != "claude-acp" {
+		t.Fatalf("锚点应就绪落库: %+v", convRow)
+	}
+
+	// spawn 恰好一次。
 	if n := calls.Load(); n != 1 {
 		t.Fatalf("spawn 应恰好一次，got %d", n)
 	}
@@ -263,12 +249,13 @@ func TestEnsureSpawnFailureAndRetry(t *testing.T) {
 	if failed.Status.Error == "" {
 		t.Fatalf("failed 帧应带原因，got %+v", failed.Status)
 	}
-	// 落因清锚：last_error 非空 + acp_session_id 空。
-	waitForCondition(t, "失败落因", func() bool {
-		row := bindingRow(t, db, issueID)
-		return row.LastError != "" && row.AcpSessionID == ""
+	// 落因清锚：会话实体行 claude_session_id 归零。
+	convID, _ := conversationRowID(issueID)
+	waitForCondition(t, "失败清锚", func() bool {
+		row, err := queryOf(db).Conversation.WithContext(ctx).Where(queryOf(db).Conversation.ID.Eq(convID)).First()
+		return err == nil && row.ClaudeSessionID == ""
 	})
-	// failed 态可重试：换成功 spawn 重建 → ready + 重新落锚清错。
+	// failed 态可重试：换成功 spawn 重建 → ready + 重新落锚。
 	old := spawnFunc
 	spawnFunc = fakeSpawn("happy", nil, &atomic.Int64{}, nil)
 	defer func() { spawnFunc = old }()
@@ -278,14 +265,14 @@ func TestEnsureSpawnFailureAndRetry(t *testing.T) {
 		t.Fatalf("重试 Ensure: %v", err)
 	}
 	waitFrame(t, frames2, "重建 ready", statusFrameIs(StatusReady))
-	row := bindingRow(t, db, issueID)
-	if row.AcpSessionID == "" || row.LastError != "" {
-		t.Fatalf("重建应重新落锚清错，got %+v", row)
-	}
+	waitForCondition(t, "重建落锚", func() bool {
+		row, err := queryOf(db).Conversation.WithContext(ctx).Where(queryOf(db).Conversation.ID.Eq(convID)).First()
+		return err == nil && row.ClaudeSessionID != ""
+	})
 }
 
 func TestProcessDeathTerminates(t *testing.T) {
-	mgr, db, issueID, frames, _ := newManagerWithIssue(t, "crash", nil)
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "crash", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -297,36 +284,21 @@ func TestProcessDeathTerminates(t *testing.T) {
 	if !strings.Contains(terminated.Status.Error, "异常退出") {
 		t.Fatalf("意外死亡应携带异常退出证据，got %q", terminated.Status.Error)
 	}
-	// 清锚落因（pump 收尾异步落库）。
-	waitForCondition(t, "锚点清零落因", func() bool {
-		row := bindingRow(t, db, issueID)
-		return row.AcpSessionID == "" && strings.Contains(row.LastError, "异常退出")
-	})
 }
 
-// TestTerminateKeepsBindingRow 主动终结：预设原因落因清锚 + terminated 帧广播；绑定行保留；幂等与 no-op 防御。
-func TestTerminateKeepsBindingRow(t *testing.T) {
-	mgr, db, issueID, frames, _ := newManagerWithIssue(t, "happy", nil)
+// TestTerminateBroadcastsReason 主动终结：预设原因随 terminated 帧广播；幂等与 no-op 防御。
+func TestTerminateBroadcastsReason(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "happy", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
-	if row := bindingRow(t, db, issueID); row.AcpSessionID == "" {
-		t.Fatalf("ready 后应有锚点")
-	}
 
 	const reason = "回合长时间无事件无响应，已强制终结会话"
 	mgr.Terminate(issueID, reason)
 	terminated := waitFrame(t, frames, "terminated 帧", func(f Frame) bool { return f.Type == FrameTerminated })
 	if terminated.Status.Status != StatusTerminated || terminated.Status.Error != reason {
 		t.Fatalf("terminated 帧应携带预设原因，got %+v", terminated.Status)
-	}
-	waitForCondition(t, "预设原因落因清锚", func() bool {
-		row := bindingRow(t, db, issueID)
-		return row.AcpSessionID == "" && strings.Contains(row.LastError, "强制终结")
-	})
-	if !bindingExists(db, issueID) {
-		t.Fatalf("Terminate 应保留绑定行（与 Discard 的差异）")
 	}
 
 	// 幂等：已终态再 Terminate 与未知 issue 均为 no-op。
@@ -598,14 +570,13 @@ func TestRespondAfterTurnSettled(t *testing.T) {
 }
 
 func TestDiscardCascade(t *testing.T) {
-	mgr, db, issueID, frames, _ := newManagerWithIssue(t, "happy", nil)
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "happy", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
 	mgr.Discard(issueID)
-	// 绑定行删除 + 会话终结帧（ready 态终结帧经 pump 哨兵路径到达）。
-	waitForCondition(t, "绑定行删除", func() bool { return !bindingExists(db, issueID) })
+	// 会话终结帧（ready 态终结帧经 pump 哨兵路径到达）。
 	waitFrame(t, frames, "terminated 帧", func(f Frame) bool { return f.Type == FrameTerminated })
 	// 幂等：二次 Discard 无害；Discard 后 Get 回 idle。
 	mgr.Discard(issueID)
@@ -884,96 +855,16 @@ func TestPromptQueuedDeathReleasesAllWaiters(t *testing.T) {
 	}
 }
 
-func TestBindingStoreLifecycle(t *testing.T) {
-	db := newTestDB(t)
-	store := &BindingStore{DB: db}
-	ctx := context.Background()
-
-	if err := store.GetOrCreate(ctx, "i-1"); err != nil {
-		t.Fatalf("GetOrCreate 建行: %v", err)
-	}
-	firstID := bindingRow(t, db, "i-1").ID
-	if err := store.GetOrCreate(ctx, "i-1"); err != nil {
-		t.Fatalf("GetOrCreate 幂等: %v", err)
-	}
-	row := bindingRow(t, db, "i-1")
-	if row.ID != firstID {
-		t.Fatalf("GetOrCreate 幂等（不重建行）: %d vs %d", row.ID, firstID)
-	}
-	if err := store.SaveReady(ctx, "i-1", "claude-acp", "sess-9"); err != nil {
-		t.Fatalf("SaveReady: %v", err)
-	}
-	row = bindingRow(t, db, "i-1")
-	if row.AcpSessionID != "sess-9" || row.AgentCode != "claude-acp" || row.LastError != "" {
-		t.Fatalf("SaveReady 落锚: %+v", row)
-	}
-	// Peek 只读锚点：落锚后返回 id、无行返回空串（不动行、不建行）。
-	peeked, err := store.Peek(ctx, "i-1")
-	if err != nil || peeked != "sess-9" {
-		t.Fatalf("Peek 落锚行: %v %q", err, peeked)
-	}
-	if peeked, err := store.Peek(ctx, "i-none"); err != nil || peeked != "" {
-		t.Fatalf("Peek 无行应空串: %v %q", err, peeked)
-	}
-	if bindingExists(db, "i-none") {
-		t.Fatal("Peek 不应建行")
-	}
-	if err := store.SaveError(ctx, "i-1", "claude-acp", "握手失败"); err != nil {
-		t.Fatalf("SaveError: %v", err)
-	}
-	row = bindingRow(t, db, "i-1")
-	if row.AcpSessionID != "" || row.LastError != "握手失败" {
-		t.Fatalf("SaveError 清锚落因: %+v", row)
-	}
-	// 无行 issue 的 SaveError 为 no-op（不复活行）。
-	if err := store.SaveError(ctx, "i-none", "x", "y"); err != nil {
-		t.Fatalf("无行 SaveError 应 no-op: %v", err)
-	}
-	if bindingExists(db, "i-none") {
-		t.Fatal("无行 SaveError 不应建行")
-	}
-	// 启动清扫：锚清零、行保留、错误保留。
-	if err := store.SweepSessionIDs(ctx); err != nil {
-		t.Fatalf("SweepSessionIDs: %v", err)
-	}
-	row = bindingRow(t, db, "i-1")
-	if row.AcpSessionID != "" || row.LastError != "握手失败" {
-		t.Fatalf("清扫应只清锚: %+v", row)
-	}
-	// 删除 + 幂等。
-	if err := store.Delete(ctx, "i-1"); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if bindingExists(db, "i-1") {
-		t.Fatal("Delete 应删行")
-	}
-	if err := store.Delete(ctx, "i-1"); err != nil {
-		t.Fatalf("Delete 幂等: %v", err)
-	}
-}
-
 /*
- * TestBindingStoreConversationAnchor conv- 锚的绑定分派：锚载体是 t_im_bot_conversations
- * （bot 域所有行，只读消费）——GetOrCreate 校验行在场不建行、Peek/SaveReady 只动
- * acp_session_id、SaveError 只清锚、Delete no-op、清扫两表锚同清。
+ * TestBindingStoreConversationAnchor conv- 键的窄桩契约：GetOrCreate 校验会话行在场
+ * （缺失报错不建行）；锚读写 SaveReady/SaveError/Delete 窄桩期恒 no-op 返回 nil。
  */
 func TestBindingStoreConversationAnchor(t *testing.T) {
 	db := newTestDB(t)
 	store := &BindingStore{DB: db}
 	ctx := context.Background()
 	key := ConversationSessionKey(seedBotConversation(t, db, "ws-conv"))
-	convRow := func() *model.ImBotConversation {
-		t.Helper()
-		convID, _ := conversationRowID(key)
-		q := query.Use(db)
-		row, err := q.ImBotConversation.WithContext(ctx).Where(q.ImBotConversation.ID.Eq(convID)).First()
-		if err != nil {
-			t.Fatalf("读会话行: %v", err)
-		}
-		return row
-	}
 
-	// GetOrCreate 只校验行在场；行缺失报错不建行。
 	if err := store.GetOrCreate(ctx, key); err != nil {
 		t.Fatalf("行在场应通过: %v", err)
 	}
@@ -981,38 +872,16 @@ func TestBindingStoreConversationAnchor(t *testing.T) {
 		t.Fatal("行缺失应报错（不自动建锚行）")
 	}
 	if err := store.SaveReady(ctx, key, "claude-acp", "sess-conv"); err != nil {
-		t.Fatalf("SaveReady: %v", err)
+		t.Fatalf("SaveReady 窄桩应 no-op: %v", err)
 	}
-	if row := convRow(); row.AcpSessionID != "sess-conv" {
-		t.Fatalf("SaveReady 应落锚到会话行: %+v", row)
+	if peeked, err := store.Peek(ctx, key); err != nil || peeked != "" {
+		t.Fatalf("Peek 窄桩期应恒空串: %v %q", err, peeked)
 	}
-	peeked, err := store.Peek(ctx, key)
-	if err != nil || peeked != "sess-conv" {
-		t.Fatalf("Peek 读回会话行锚: %v %q", err, peeked)
-	}
-	// SaveError 只清锚不落因（last_error 列不属会话行）。
 	if err := store.SaveError(ctx, key, "claude-acp", "boom"); err != nil {
-		t.Fatalf("SaveError: %v", err)
+		t.Fatalf("SaveError 窄桩应 no-op: %v", err)
 	}
-	if row := convRow(); row.AcpSessionID != "" {
-		t.Fatalf("SaveError 应清会话行锚: %+v", row)
-	}
-	// Delete no-op：行归属 bot 域，锚清理只属会话域清扫。
 	if err := store.Delete(ctx, key); err != nil {
-		t.Fatalf("Delete 应 no-op: %v", err)
-	}
-	if convRow().ID == "" {
-		t.Fatal("Delete 不得删会话行")
-	}
-	// 启动清扫：会话行锚同清、行保留。
-	if err := store.SaveReady(ctx, key, "claude-acp", "sess-conv-2"); err != nil {
-		t.Fatalf("SaveReady 重落: %v", err)
-	}
-	if err := store.SweepSessionIDs(ctx); err != nil {
-		t.Fatalf("SweepSessionIDs: %v", err)
-	}
-	if row := convRow(); row.AcpSessionID != "" {
-		t.Fatalf("清扫应清会话行锚: %+v", row)
+		t.Fatalf("Delete 窄桩应 no-op: %v", err)
 	}
 }
 
@@ -1040,9 +909,12 @@ func TestNewOrResumedSession(t *testing.T) {
 	log := zap.NewNop()
 
 	t.Run("空锚走NewSession", func(t *testing.T) {
-		session, err := newOrResumedSession(ctx, launchACPClient(t, "happy"), cfg, "", log)
+		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "happy"), cfg, "", log)
 		if err != nil {
 			t.Fatalf("NewSession: %v", err)
+		}
+		if resumed {
+			t.Fatal("空锚不应标记 resumed")
 		}
 		if session.ID() == "sess-anchor" {
 			t.Fatalf("空锚应自生成新 id，got %q", session.ID())
@@ -1050,9 +922,12 @@ func TestNewOrResumedSession(t *testing.T) {
 	})
 
 	t.Run("锚点恢复以请求id注册", func(t *testing.T) {
-		session, err := newOrResumedSession(ctx, launchACPClient(t, "load"), cfg, "sess-anchor", log)
+		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "load"), cfg, "sess-anchor", log)
 		if err != nil {
 			t.Fatalf("LoadSession: %v", err)
+		}
+		if !resumed {
+			t.Fatal("LoadSession 成功应标记 resumed")
 		}
 		if session.ID() != "sess-anchor" {
 			t.Fatalf("恢复应以请求 id 注册，got %q", session.ID())
@@ -1060,14 +935,71 @@ func TestNewOrResumedSession(t *testing.T) {
 	})
 
 	t.Run("能力未声明降级NewSession", func(t *testing.T) {
-		session, err := newOrResumedSession(ctx, launchACPClient(t, "happy"), cfg, "sess-anchor", log)
+		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "happy"), cfg, "sess-anchor", log)
 		if err != nil {
 			t.Fatalf("降级 NewSession: %v", err)
+		}
+		if resumed {
+			t.Fatal("降级不应标记 resumed")
 		}
 		if session.ID() == "sess-anchor" {
 			t.Fatalf("降级应全新会话（非请求 id），got %q", session.ID())
 		}
 	})
+}
+
+/*
+ * TestBindingStoreLifecycle 会话实体锚生命周期：GetOrCreate 校验行在场（不代建，实体行归
+ * conversation CRUD 管理）、SaveReady 落锚（agentCode + claudeSessionId）、Peek 读回、
+ * SaveError 清锚、Delete 清锚保行。
+ */
+func TestBindingStoreLifecycle(t *testing.T) {
+	db := newTestDB(t)
+	store := &BindingStore{DB: db}
+	ctx := context.Background()
+
+	if err := store.GetOrCreate(ctx, ConversationSessionKey("no-such-conv")); err == nil {
+		t.Fatal("行不存在应报错")
+	}
+	taskID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
+	convID := seedTaskConversation(t, db, taskID)
+	key := ConversationSessionKey(convID)
+	if err := store.GetOrCreate(ctx, key); err != nil {
+		t.Fatalf("行在场应通过: %v", err)
+	}
+	convRow := func() *model.Conversation {
+		t.Helper()
+		row, err := queryOf(db).Conversation.WithContext(ctx).Where(queryOf(db).Conversation.ID.Eq(convID)).First()
+		if err != nil {
+			t.Fatalf("读会话行: %v", err)
+		}
+		return row
+	}
+	if err := store.SaveReady(ctx, key, "claude-acp", "sess-9"); err != nil {
+		t.Fatalf("SaveReady: %v", err)
+	}
+	if row := convRow(); row.ClaudeSessionID != "sess-9" || row.AgentCode != "claude-acp" {
+		t.Fatalf("SaveReady 落锚: %+v", row)
+	}
+	peeked, err := store.Peek(ctx, key)
+	if err != nil || peeked != "sess-9" {
+		t.Fatalf("Peek 读回锚: %v %q", err, peeked)
+	}
+	if err := store.SaveError(ctx, key, "claude-acp", "握手失败"); err != nil {
+		t.Fatalf("SaveError: %v", err)
+	}
+	if row := convRow(); row.ClaudeSessionID != "" {
+		t.Fatalf("SaveError 应清锚: %+v", row)
+	}
+	if err := store.SaveReady(ctx, key, "claude-acp", "sess-10"); err != nil {
+		t.Fatalf("重落锚: %v", err)
+	}
+	if err := store.Delete(ctx, key); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if row := convRow(); row.ClaudeSessionID != "" {
+		t.Fatalf("Delete 应清锚保行: %+v", row)
+	}
 }
 
 /*
@@ -1087,19 +1019,16 @@ func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newTestDB(t)
-			issueID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
-			mgr, err := NewManager(db, Dirs{}, 0, "", zap.NewNop())
+			taskID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
+			key := ConversationSessionKey(seedTaskConversation(t, db, taskID))
+			mgr, err := NewManager(db, Dirs{}, 0, "", "", zap.NewNop())
 			if err != nil {
 				t.Fatalf("NewManager: %v", err)
 			}
 			t.Cleanup(mgr.StopAll)
 			if tc.seedID != "" {
-				// SaveReady 为 update-only：先 GetOrCreate 建行再落锚。
-				store := &BindingStore{DB: db}
-				if err := store.GetOrCreate(context.Background(), issueID); err != nil {
-					t.Fatalf("建绑定行: %v", err)
-				}
-				if err := store.SaveReady(context.Background(), issueID, "claude-acp", tc.seedID); err != nil {
+				// 锚写入由 SaveReady 承担（行已由种子就绪，update-only 直写）。
+				if err := (&BindingStore{DB: db}).SaveReady(context.Background(), key, "claude-acp", tc.seedID); err != nil {
 					t.Fatalf("种锚: %v", err)
 				}
 			}
@@ -1108,11 +1037,11 @@ func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 			old := spawnFunc
 			spawnFunc = fakeSpawn(tc.script, nil, calls, &resumeIDs)
 			t.Cleanup(func() { spawnFunc = old })
-			if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+			if _, err := mgr.Ensure(context.Background(), key, ""); err != nil {
 				t.Fatalf("Ensure: %v", err)
 			}
 			waitForCondition(t, "会话就绪", func() bool {
-				return mgr.Get(issueID).Status == StatusReady
+				return mgr.Get(key).Status == StatusReady
 			})
 			if n := len(resumeIDs); n != 1 {
 				t.Fatalf("spawn 应恰好一次，got %d", n)
@@ -1120,7 +1049,7 @@ func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 			if resumeIDs[0] != tc.wantResume {
 				t.Fatalf("spawn 应收到 resumeID %q，got %q", tc.wantResume, resumeIDs[0])
 			}
-			snap := mgr.Get(issueID)
+			snap := mgr.Get(key)
 			if tc.wantResume == "" {
 				if snap.AcpSessionID == "" {
 					t.Fatal("空锚全新会话的快照 sessionId 不应为空")
@@ -1131,5 +1060,38 @@ func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 				t.Fatalf("就绪快照 sessionId 应为 %q，got %q", tc.wantResume, snap.AcpSessionID)
 			}
 		})
+	}
+}
+
+/*
+ * TestEnsureResumeFallbackNotice R2 显式提示：带锚受理但恢复未发生（fake 强制 resumed=false），
+ * 就绪后快照应含一条 system 条目告知「历史会话不可恢复」。
+ */
+func TestEnsureResumeFallbackNotice(t *testing.T) {
+	db := newTestDB(t)
+	taskID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
+	key := ConversationSessionKey(seedTaskConversation(t, db, taskID))
+	mgr, err := NewManager(db, Dirs{}, 0, "", "", zap.NewNop())
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	t.Cleanup(mgr.StopAll)
+	if err := (&BindingStore{DB: db}).SaveReady(context.Background(), key, "claude-acp", "sess-gone"); err != nil {
+		t.Fatalf("种锚: %v", err)
+	}
+	calls := &atomic.Int64{}
+	old := spawnFunc
+	spawnFunc = func(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, resumeID string) (*acp.AgentClient, *acp.Session, bool, error) {
+		client, session, _, err := fakeSpawn("happy", nil, calls, nil)(cfg, dirs, port, log, resumeID)
+		return client, session, false, err
+	}
+	t.Cleanup(func() { spawnFunc = old })
+	if _, err := mgr.Ensure(context.Background(), key, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitForCondition(t, "会话就绪", func() bool { return mgr.Get(key).Status == StatusReady })
+	snap := mgr.Get(key)
+	if len(snap.Entries) != 1 || snap.Entries[0].Kind != "system" || !strings.Contains(snap.Entries[0].Text, "历史会话不可恢复") {
+		t.Fatalf("降级应落 system 条目: %+v", snap.Entries)
 	}
 }

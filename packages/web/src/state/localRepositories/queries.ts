@@ -4,6 +4,7 @@ import type {
   LocalRepositoryUpdateRequest,
 } from '@src/services';
 import { LocalRepositoryService } from '@src/services';
+import { projectsKeys } from '@src/state/projects';
 import { trackerKeys } from '@src/state/tracker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { localRepositoryKeys } from './keys';
@@ -61,16 +62,17 @@ export function useUpdateLocalRepository() {
 
 /*
  * 物理删除本地仓库。入参为 id（与 tracker 域 useDelete* 签名一致）。
- * 后端删仓库事务级联清工作空间↔仓库（t_workspace_local_repositories）与 issue↔仓库关联，
- * 故除本地仓库列表外还需失效 tracker 整域，否则 UI 残留悬挂引用。
+ * 后端删仓库事务级联清任务↔仓库与项目↔仓库两张关联表，
+ * 故除本地仓库列表外还需失效 tracker 整域与 projects 域，否则 UI 残留悬挂引用。
  */
 export function useDeleteLocalRepository() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => LocalRepositoryService.delete({ id }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: localRepositoryKeys.list() });
-      qc.invalidateQueries({ queryKey: trackerKeys.root });
+      void qc.invalidateQueries({ queryKey: localRepositoryKeys.list() });
+      void qc.invalidateQueries({ queryKey: trackerKeys.root });
+      void qc.invalidateQueries({ queryKey: projectsKeys.root });
     },
   });
 }

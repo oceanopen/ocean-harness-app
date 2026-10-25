@@ -561,21 +561,24 @@ export default function TerminalView({ theme, fontSize, scrollbackRows, cursorSt
               </Tooltip>
               {/*
               启动 claude（terminal_03 §3.2）：跑着置灰（探测驱动）、退出恢复、
-              exited 禁用（shell 已死注入无意义）
+              exited 禁用（shell 已死注入无意义）。仅附加 pane 渲染（T2.3：主 pane 收敛
+              受控启动路径——直启/临场直启 + 锚 resume，无手动按钮入口）
               */}
-              <Tooltip title="启动 claude">
-                <span>
-                  <IconButton
-                    size="small"
-                    onClick={onStartClaude}
-                    disabled={claudeRunning || exited}
-                    aria-label="启动 claude"
-                    sx={TOOLBAR_ICON_SX}
-                  >
-                    <ClaudeIcon />
-                  </IconButton>
-                </span>
-              </Tooltip>
+              {!isMain && (
+                <Tooltip title="启动 claude">
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={onStartClaude}
+                      disabled={claudeRunning || exited}
+                      aria-label="启动 claude"
+                      sx={TOOLBAR_ICON_SX}
+                    >
+                      <ClaudeIcon />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
             </Box>
           </>
         )}

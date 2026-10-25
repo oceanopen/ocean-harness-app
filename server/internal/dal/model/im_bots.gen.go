@@ -13,17 +13,20 @@ const TableNameImBot = "t_im_bots"
 
 // ImBot mapped from table <t_im_bots>
 type ImBot struct {
-	ID           string        `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
-	Name         string        `gorm:"column:name;type:TEXT;not null" json:"name"`
-	Channel      enums.Channel `gorm:"column:channel;type:TEXT;not null" json:"channel"`
-	Credential   string        `gorm:"column:credential;type:TEXT;not null;default:'{}'" json:"credential"`
-	WorkspaceID  string        `gorm:"column:workspace_id;type:TEXT;not null;default:''" json:"workspaceId"`
-	AccessPolicy string        `gorm:"column:access_policy;type:TEXT;not null" json:"accessPolicy"`
-	Enabled      enums.YesNo   `gorm:"column:enabled;type:TEXT;not null" json:"enabled"`
-	ChannelState string        `gorm:"column:channel_state;type:TEXT;not null;default:'{}'" json:"channelState"`
-	LastError    string        `gorm:"column:last_error;type:TEXT;not null;default:''" json:"lastError"`
-	CreatedAt    time.Time     `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
-	UpdatedAt    time.Time     `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
+	ID               string                 `gorm:"column:id;type:TEXT;primaryKey" json:"id"`
+	Name             string                 `gorm:"column:name;type:TEXT;not null" json:"name"`
+	Channel          enums.Channel          `gorm:"column:channel;type:TEXT;not null" json:"channel"`
+	Credential       string                 `gorm:"column:credential;type:TEXT;not null;default:'{}'" json:"credential"`
+	ConversationType enums.ConversationType `gorm:"column:conversation_type;type:TEXT;not null;default:''" json:"conversationType"`
+	WorkspaceID      string                 `gorm:"column:workspace_id;type:TEXT;not null;default:''" json:"workspaceId"`
+	ProjectID        string                 `gorm:"column:project_id;type:TEXT;not null;default:''" json:"projectId"`
+	TaskID           string                 `gorm:"column:task_id;type:TEXT;not null;default:''" json:"taskId"`
+	AccessPolicy     string                 `gorm:"column:access_policy;type:TEXT;not null" json:"accessPolicy"`
+	Enabled          enums.YesNo            `gorm:"column:enabled;type:TEXT;not null" json:"enabled"`
+	ChannelState     string                 `gorm:"column:channel_state;type:TEXT;not null;default:'{}'" json:"channelState"`
+	LastError        string                 `gorm:"column:last_error;type:TEXT;not null;default:''" json:"lastError"`
+	CreatedAt        time.Time              `gorm:"column:created_at;type:DATETIME;not null" json:"createdAt"`
+	UpdatedAt        time.Time              `gorm:"column:updated_at;type:DATETIME;not null" json:"updatedAt"`
 }
 
 // TableName ImBot's table name

@@ -5,6 +5,6 @@
 export const trackerKeys = {
   root: ['tracker'] as const,
   workspaces: () => [...trackerKeys.root, 'workspaces'] as const,
-  workspaceTypes: (workspaceId: string) => [...trackerKeys.root, 'workspaceTypes', { workspaceId }] as const,
-  workspaceIssues: (workspaceId: string) => [...trackerKeys.root, 'workspaceIssues', { workspaceId }] as const,
+  projectTypes: (projectId: string) => [...trackerKeys.root, 'projectTypes', { projectId }] as const,
+  projectTasks: (projectId: string) => [...trackerKeys.root, 'projectTasks', { projectId }] as const,
 } as const;

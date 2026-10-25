@@ -53,6 +53,17 @@ export type {
   McpContent,
 } from './BrowserSessionService';
 
+export { ConversationService } from './ConversationService';
+export type {
+  ConversationCreateRequest,
+  ConversationDeleteRequest,
+  ConversationGetInfoRequest,
+  ConversationGetListRequest,
+  ConversationModel,
+  ConversationSetClaudeSessionIdRequest,
+  ConversationUpdateRequest,
+} from './ConversationService';
+
 export { DoctorService } from './DoctorService';
 export type {
   DoctorCheckRequest,
@@ -63,9 +74,9 @@ export type {
 } from './DoctorService';
 
 export { ImBotService } from './ImBotService';
+export type { ImBotConversationType } from './ImBotService';
 export type {
   ImBotAccessPolicy,
-  ImBotBindIssueRequest,
   ImBotConversationModel,
   ImBotCreateRequest,
   ImBotDeleteRequest,
@@ -80,32 +91,6 @@ export type {
   ImBotRestartRequest,
   ImBotUpdateRequest,
 } from './ImBotService';
-
-export { ISSUE_WORKSPACE_STEP_KEY, IssueWorkspaceService } from './IssueWorkspaceService';
-export type {
-  IssueWorkspaceArchiveAction,
-  IssueWorkspaceArchiveRequest,
-  IssueWorkspaceArchiveResponseData,
-  IssueWorkspaceFileContentKind,
-  IssueWorkspaceFileContentRequest,
-  IssueWorkspaceFileContentResponseData,
-  IssueWorkspaceFileDiffRequest,
-  IssueWorkspaceFileDiffResponseData,
-  IssueWorkspaceFileNode,
-  IssueWorkspaceFileTreeRequest,
-  IssueWorkspaceFileTreeResponseData,
-  IssueWorkspaceGitChangeFile,
-  IssueWorkspaceGitChangesRequest,
-  IssueWorkspaceGitChangesResponseData,
-  IssueWorkspaceInitRequest,
-  IssueWorkspaceRepoRef,
-  IssueWorkspaceRepoState,
-  IssueWorkspaceState,
-  IssueWorkspaceStatus,
-  IssueWorkspaceStatusRequest,
-  IssueWorkspaceStatusResponseData,
-  IssueWorkspaceStep,
-} from './IssueWorkspaceService';
 
 export { LocalRepositoryService } from './LocalRepositoryService';
 export type {
@@ -134,18 +119,63 @@ export type {
   PluginOperationRequest,
 } from './PluginMarketplaceService';
 
-export { WorkspaceIssueService } from './WorkspaceIssueService';
+export { ProjectService } from './ProjectService';
+export type {
+  ProjectCreateRequest,
+  ProjectDeleteRequest,
+  ProjectGetInfoRequest,
+  ProjectGetListRequest,
+  ProjectModel,
+  ProjectUpdateRequest,
+} from './ProjectService';
+
+export { ProjectTaskService } from './ProjectTaskService';
 export type {
   IssueRepositoryBranchModel,
-  WorkspaceIssueCreateRequest,
-  WorkspaceIssueDeleteRequest,
-  WorkspaceIssueGetListRequest,
+  ProjectTaskCreateRequest,
+  ProjectTaskDeleteRequest,
+  ProjectTaskGetListRequest,
+  ProjectTaskResponseData,
+  ProjectTaskUpdateRequest,
   WorkspaceIssueMoveRequest,
-  WorkspaceIssueResponseData,
-  WorkspaceIssueUpdateRequest,
-} from './WorkspaceIssueService';
+} from './ProjectTaskService';
 
+export { ProjectTypeService } from './ProjectTypeService';
+export type {
+  ProjectTypeCreateRequest,
+  ProjectTypeDeleteRequest,
+  ProjectTypeGetListRequest,
+  ProjectTypeModel,
+  ProjectTypeUpdateRequest,
+} from './ProjectTypeService';
+export { ISSUE_WORKSPACE_STEP_KEY, TaskWorkspaceService } from './TaskWorkspaceService';
+
+export type {
+  IssueWorkspaceArchiveAction,
+  IssueWorkspaceArchiveResponseData,
+  IssueWorkspaceFileContentKind,
+  IssueWorkspaceFileContentRequest,
+  IssueWorkspaceFileContentResponseData,
+  IssueWorkspaceFileDiffRequest,
+  IssueWorkspaceFileDiffResponseData,
+  IssueWorkspaceFileNode,
+  IssueWorkspaceFileTreeRequest,
+  IssueWorkspaceFileTreeResponseData,
+  IssueWorkspaceGitChangeFile,
+  IssueWorkspaceGitChangesRequest,
+  IssueWorkspaceGitChangesResponseData,
+  IssueWorkspaceRepoRef,
+  IssueWorkspaceRepoState,
+  IssueWorkspaceState,
+  IssueWorkspaceStatus,
+  IssueWorkspaceStep,
+  TaskWorkspaceArchiveRequest,
+  TaskWorkspaceInitRequest,
+  TaskWorkspaceStatusRequest,
+  TaskWorkspaceStatusResponseData,
+} from './TaskWorkspaceService';
 export { WorkspaceService } from './WorkspaceService';
+
 export type {
   WorkspaceCreateRequest,
   WorkspaceDeleteRequest,
@@ -154,12 +184,3 @@ export type {
   WorkspaceModel,
   WorkspaceUpdateRequest,
 } from './WorkspaceService';
-
-export { WorkspaceTypeService } from './WorkspaceTypeService';
-export type {
-  WorkspaceTypeCreateRequest,
-  WorkspaceTypeDeleteRequest,
-  WorkspaceTypeGetListRequest,
-  WorkspaceTypeModel,
-  WorkspaceTypeUpdateRequest,
-} from './WorkspaceTypeService';

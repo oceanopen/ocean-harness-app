@@ -1,4 +1,5 @@
 import type { DataFilePaths } from '@src/shared/bindings';
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import SettingsSuggestOutlinedIcon from '@mui/icons-material/SettingsSuggestOutlined';
 import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
@@ -19,10 +20,9 @@ import { unwrap } from '@src/shared/commands';
 import { useToast } from '@src/shared/useToast';
 import { useCallback, useEffect, useState } from 'react';
 
-// 数据清理分区页：应用设置（app.db）与服务数据（server.db）两个清理项，各自展示
-// 数据库文件实际路径并提供「重置」（均为不可逆操作，Dialog 二次确认）。
-// 应用设置走 SQL 级清空 + 自动重启应用收敛；服务数据走 Rust 停 sidecar → 删库文件 →
-// 重拉（迁移自动重建），成功后整页刷新清空前端缓存。
+// 数据清理分区页：应用设置（app.db）、服务数据（server.db）、历史日志三个清理项。
+// 应用设置走 SQL 级清空 + 自动重启收敛；服务数据走停 sidecar → 删库 → 重拉 + 整页刷新；
+// 日志仅删轮转归档（当前写入文件保留）点击直接执行，重置类均走 Dialog 二次确认。
 
 // 页内文案集中定义（按需求 i18n 仅接入菜单级；文案集中于此，后续迁移时整体搬入
 // settings.json 的 dataCleanup 段即可）。
@@ -39,6 +39,10 @@ const TEXTS = {
     desc: '重置服务数据库的全部数据：工作空间、issue 与子任务、IM 机器人配置与会话绑定、本地仓库登记等将全部清空，回到全新安装状态；服务将自动重启。',
     dialogTitle: '重置服务数据',
     dialogMsg: '将清空服务数据库的全部数据（工作空间、issue、机器人配置、本地仓库登记等），操作不可恢复；服务将自动重启。是否确认重置？',
+  },
+  logs: {
+    title: '日志清理',
+    desc: '清理应用与服务运行产生的历史日志文件（轮转归档）；正在写入的当前日志文件保留。',
   },
 } as const;
 
@@ -75,39 +79,54 @@ function SectionCard({ header, children }: { header: React.ReactNode; children: 
   );
 }
 
+// 路径展示行：label 缺省时仅展示路径（存量卡片形态），有 label 用于日志目录等多行场景。
+interface CleanupPathRow {
+  label?: string;
+  path: string;
+}
+
 interface CleanupCardProps {
   icon: React.ReactNode;
   title: string;
   desc: string;
-  path: string;
+  paths: CleanupPathRow[];
   disabled: boolean;
   onCleanup: () => void;
   onCopyPath: (path: string) => void;
+  cleanupLabel?: string;
+  busy?: boolean;
 }
 
-// 单个清理项卡片：标题栏 + 影响面描述 + 数据库文件路径（复制按钮）+ 清理按钮。
-function CleanupCard({ icon, title, desc, path, disabled, onCleanup, onCopyPath }: CleanupCardProps) {
+// 单个清理项卡片：标题栏 + 影响面描述 + 路径行（各行复制按钮）+ 清理按钮。
+function CleanupCard({ icon, title, desc, paths: rows, disabled, onCleanup, onCopyPath, cleanupLabel = '重置', busy = false }: CleanupCardProps) {
   return (
     <SectionCard header={<SectionHeader icon={icon} label={title} />}>
       <Box sx={{ px: '16px', py: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <Typography variant="body2" color="text.secondary">
           {desc}
         </Typography>
-        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <IconButton
-            size="small"
-            onClick={() => void onCopyPath(path)}
-            aria-label="复制数据库文件路径"
-          >
-            <ContentCopyOutlinedIcon fontSize="small" />
-          </IconButton>
-          <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '12px' }}>
-            {path}
-          </Typography>
-        </Stack>
+        {rows.map(({ label, path }) => (
+          <Stack key={path} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <IconButton
+              size="small"
+              onClick={() => void onCopyPath(path)}
+              aria-label={label != null ? `复制${label}` : '复制路径'}
+            >
+              <ContentCopyOutlinedIcon fontSize="small" />
+            </IconButton>
+            {label != null && (
+              <Typography sx={{ fontSize: '12px', color: 'text.secondary', flexShrink: 0 }}>
+                {label}
+              </Typography>
+            )}
+            <Typography sx={{ fontFamily: 'monospace', wordBreak: 'break-all', fontSize: '12px' }}>
+              {path}
+            </Typography>
+          </Stack>
+        ))}
         <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button color="error" variant="outlined" disabled={disabled} onClick={onCleanup}>
-            重置
+            {busy ? <CircularProgress size={16} color="inherit" /> : cleanupLabel}
           </Button>
         </Box>
       </Box>
@@ -122,6 +141,8 @@ function DataCleanupPage() {
   // 二次确认目标：null = 弹窗关闭；'app' / 'server' 决定确认后执行的清理流。
   const [target, setTarget] = useState<'app' | 'server' | null>(null);
   const [resetting, setResetting] = useState(false);
+  // 日志清理与重置流相互独立，单独 loading。
+  const [cleaningLogs, setCleaningLogs] = useState(false);
 
   useEffect(() => {
     unwrap(commands.getDataFilePaths())
@@ -170,6 +191,19 @@ function DataCleanupPage() {
     }
   }, [showToast]);
 
+  // 日志清理仅删轮转归档、无重启副作用：点击直接执行，toast 反馈删除计数。
+  const handleCleanLogs = useCallback(async () => {
+    setCleaningLogs(true);
+    try {
+      const result = await unwrap(commands.cleanLogFiles());
+      showToast(`已清理 ${result.appFiles + result.serverFiles} 个日志文件`, 'success');
+    } catch (e) {
+      showToast(`日志清理失败：${String(e)}`, 'error');
+    } finally {
+      setCleaningLogs(false);
+    }
+  }, [showToast]);
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <Box sx={{ p: '24px', flex: 1, overflow: 'auto' }}>
@@ -188,7 +222,7 @@ function DataCleanupPage() {
               icon={<SettingsSuggestOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
               title={TEXTS.app.title}
               desc={TEXTS.app.desc}
-              path={paths.appDbPath}
+              paths={[{ path: paths.appDbPath }]}
               disabled={resetting}
               onCleanup={() => setTarget('app')}
               onCopyPath={copyPath}
@@ -197,9 +231,23 @@ function DataCleanupPage() {
               icon={<StorageOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
               title={TEXTS.server.title}
               desc={TEXTS.server.desc}
-              path={paths.serverDbPath}
+              paths={[{ path: paths.serverDbPath }]}
               disabled={resetting}
               onCleanup={() => setTarget('server')}
+              onCopyPath={copyPath}
+            />
+            <CleanupCard
+              icon={<ArticleOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
+              title={TEXTS.logs.title}
+              desc={TEXTS.logs.desc}
+              paths={[
+                { label: '应用日志目录', path: paths.appLogDir },
+                { label: '服务日志目录', path: paths.serverLogDir },
+              ]}
+              disabled={resetting || cleaningLogs}
+              busy={cleaningLogs}
+              cleanupLabel="清理"
+              onCleanup={() => void handleCleanLogs()}
               onCopyPath={copyPath}
             />
           </Box>

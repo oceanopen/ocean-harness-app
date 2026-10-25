@@ -112,13 +112,12 @@ export interface BrowserLiveEvent {
 
 /**
  * POST /api/browserSession/ensure：拉起/复用 profile 会话（同步等就绪）。Headless 为 D10 覆盖：
- * 缺省（undefined = 键省略）读 profile 偏好文件，显式传入覆写并回存。workspaceId 为共享
- * 登录态键：非空写入 profile 偏好持久化（后续冷启动/重建自动读回），缺省读偏好。
+ * 缺省（undefined = 键省略）读 profile 偏好文件，显式传入覆写并回存。登录态全局一份
+ * （auth-states/default.json，T7.2），无需携带归属键。
  */
 export interface BrowserSessionEnsureRequest {
   profile: string;
   headless?: boolean;
-  workspaceId?: string;
 }
 
 // POST /api/browserSession/close：释放会话（幂等，登录态在 profile 目录续存）。
@@ -160,7 +159,7 @@ export interface BrowserSessionInputRequest {
  */
 export interface BrowserSessionAnalyzeRequest {
   profile: string;
-  issueId: string;
+  conversationId: string;
   targetId?: string;
 }
 
@@ -196,7 +195,7 @@ export class BrowserSessionService {
     return request<null>('POST', '/api/browserSession/input', req);
   }
 
-  // analyze：「AI 分析此页」即时受理（回答走 issue 绑定 agent 会话既有链路）。
+  // analyze：「AI 分析此页」即时受理（回答走会话实体绑定的 agent 会话既有链路）。
   static analyze(req: BrowserSessionAnalyzeRequest): Promise<null> {
     return request<null>('POST', '/api/browserSession/analyze', req);
   }

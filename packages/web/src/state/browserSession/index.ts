@@ -1,11 +1,11 @@
 export { useBrowserStageStore } from './activation';
+export type { ConversationProfile } from './derive';
 export {
-  deriveIssueProfile,
-  deriveIssueProfileSlot,
+  CONVERSATION_SESSION_SLOT_COUNT,
+  deriveConversationProfile,
   isSessionLive,
   isTaskSessionProfile,
-  parseTaskSessionProfile,
-  TASK_SESSION_SLOT_COUNT,
+  parseConversationProfile,
 } from './derive';
 export { browserSessionKeys } from './keys';
 export {

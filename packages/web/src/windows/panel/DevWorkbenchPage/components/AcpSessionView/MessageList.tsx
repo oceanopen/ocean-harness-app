@@ -70,6 +70,12 @@ const EntryItem = memo(({ entry, expanded, onToggleToolCall }: {
           <MarkdownMessage text={entry.text ?? ''} messageSx={{ color: 'text.secondary' }} />
         </Box>
       );
+    case 'system':
+      return (
+        <Box sx={{ alignSelf: 'stretch', borderLeft: '2px solid', borderColor: 'warning.main', pl: '10px' }}>
+          <Typography variant="caption" color="warning.main">{entry.text}</Typography>
+        </Box>
+      );
     case 'toolCall': {
       const toolCall = entry.toolCall ?? { toolCallId: toolCallIdOf(entry) };
       return (

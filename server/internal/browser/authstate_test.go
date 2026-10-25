@@ -84,10 +84,7 @@ func TestReadSharedState(t *testing.T) {
 
 func TestWriteSharedStateAtomicRoundTrip(t *testing.T) {
 	withTestRoot(t)
-	path, err := AuthStatePath("ws-1")
-	if err != nil {
-		t.Fatalf("AuthStatePath: %v", err)
-	}
+	path := AuthStatePath()
 	want := StorageState{
 		Cookies: []StorageCookie{{Name: "a", Domain: ".x.com", Path: "/", Expires: -1, SameSite: "Lax"}},
 		Origins: []StorageOrigin{{Origin: "https://a.com", LocalStorage: []StorageKV{{Name: "k", Value: "v"}}}},
@@ -116,32 +113,8 @@ func TestWriteSharedStateAtomicRoundTrip(t *testing.T) {
 
 func TestAuthStatePath(t *testing.T) {
 	root := withTestRoot(t)
-	path, err := AuthStatePath("a1-_X")
-	if err != nil {
-		t.Fatalf("AuthStatePath: %v", err)
-	}
-	if want := filepath.Join(root, "auth-states", "a1-_X.json"); path != want {
+	path := AuthStatePath()
+	if want := filepath.Join(root, "auth-states", "default.json"); path != want {
 		t.Fatalf("path = %q, want %q", path, want)
-	}
-	if _, err := AuthStatePath("../escape"); err == nil {
-		t.Fatal("路径穿越 workspace id 未被拒绝")
-	}
-}
-
-func TestParseProfileNamespace(t *testing.T) {
-	issueID := "0197abcd-0000-7000-8000-000000000000"
-	for profile, want := range map[string][2]string{
-		"issue-" + issueID: {IssueProfilePrefix, issueID},
-		"workspace-ws1":    {WorkspaceProfilePrefix, "ws1"},
-		"default":          {"", ""},
-		"issue-":           {"", ""},
-		"custom-profile":   {"", ""},
-		"prefixissue-x":    {"", ""},
-		"workspace-":       {"", ""},
-	} {
-		prefix, id := ParseProfileNamespace(profile)
-		if prefix != want[0] || id != want[1] {
-			t.Errorf("ParseProfileNamespace(%q) = (%q, %q), want (%q, %q)", profile, prefix, id, want[0], want[1])
-		}
 	}
 }

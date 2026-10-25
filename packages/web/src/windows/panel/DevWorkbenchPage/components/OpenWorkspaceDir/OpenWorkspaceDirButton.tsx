@@ -34,8 +34,8 @@ const OPEN_TOOL_CONFIG_KEYS: readonly string[] = [WORKSPACE_OPEN_TOOL_KEY];
 const FLYOUT_CLOSE_GRACE_MS = 150;
 
 interface OpenWorkspaceDirButtonProps {
-  // 当前选中 issue id（打开目录 = {workspaceDir}/{issueId}，与终端 cwd 派生同源）。
-  issueId: string;
+  // 当前选中 issue id（打开目录 = {workspaceDir}/{issueId}，与终端 cwd 派生同源）；null = 开容器根目录自身。
+  issueId: string | null;
   // 当前工作空间的工作区目录（页面解析下传；null = 解析中，按钮禁用）。
   workspaceDir: string | null;
 }
@@ -106,7 +106,7 @@ export default function OpenWorkspaceDirButton({ issueId, workspaceDir }: OpenWo
     }
     setOpening(true);
     try {
-      await openWorkspaceDir(toolId, issueWorkspacePath(workspaceDir, issueId));
+      await openWorkspaceDir(toolId, issueId != null ? issueWorkspacePath(workspaceDir, issueId) : workspaceDir);
       if (toolId !== preferred) {
         void setAppConfig(WORKSPACE_OPEN_TOOL_KEY, toolId);
       }

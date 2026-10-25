@@ -11,57 +11,58 @@ import (
  * HasMany 在父表选项引用子表模板，故按「叶子优先」顺序创建。
  */
 func GenModelTracker() {
-	// 类型：workspace 级预定义，issue 经 t_workspace_issues.type_id 单值引用。
-	workspaceType := G.GenerateModelAs("t_workspace_types", "WorkspaceType",
-		gen.FieldType("workspace_id", "string"), // 所属工作空间 uuid
+	// 类型：project 级预定义，任务经 t_project_tasks.type_id 单值引用。
+	projectType := G.GenerateModelAs("t_project_types", "ProjectType",
+		gen.FieldType("project_id", "string"), // 所属项目 uuid
 	)
-	// 工作空间 ↔ 本地仓库 多对多中间表：无关联关系，service 层手动 JOIN 查询（与表间无 DB 外键约定一致）。
-	// workspace_id 为工作空间主键 uuid 文本。
-	workspaceLocalRepository := G.GenerateModelAs("t_workspace_local_repositories", "WorkspaceLocalRepository",
-		gen.FieldType("workspace_id", "string"),
+	// 项目 ↔ 本地仓库 多对多中间表：无关联关系，service 层手动 JOIN 查询（与表间无 DB 外键约定一致）。
+	projectLocalRepository := G.GenerateModelAs("t_project_local_repositories", "ProjectLocalRepository",
+		gen.FieldType("project_id", "string"),
 	)
-	// issue ↔ 本地仓库+分支 关联表：issue_id 同为 TEXT uuid；service 层批量组装。
-	issueLocalRepository := G.GenerateModelAs("t_issue_local_repositories", "IssueLocalRepository",
-		gen.FieldType("issue_id", "string"),
+	// 任务 ↔ 本地仓库+分支 关联表：task_id 同为 TEXT uuid；service 层批量组装。
+	taskLocalRepository := G.GenerateModelAs("t_task_local_repositories", "TaskLocalRepository",
+		gen.FieldType("task_id", "string"),
 	)
 
-	issue := G.GenerateModelAs("t_workspace_issues", "WorkspaceIssue",
-		// issue 主键为 TEXT uuid 字符串（与 claude session_id 同格式）；workspace_id 同为 uuid 文本。
+	task := G.GenerateModelAs("t_project_tasks", "ProjectTask",
+		// 任务主键为 TEXT uuid 字符串（任务目录名）；project_id 同为 uuid 文本。
 		gen.FieldType("id", "string"),
-		gen.FieldType("workspace_id", "string"), // 所属工作空间 uuid
-		gen.FieldType("state_code", "enums.StateCode"),
-		// completed_at 用 *time.Time 指针：未完成=nil（写 NULL）/ 完成=&time，便于 Save 统一处理可空语义。
-		gen.FieldType("completed_at", "*time.Time"),
-		gen.FieldRelate(field.HasMany, "IssueLocalRepositoryList", issueLocalRepository, &field.RelateConfig{
+		gen.FieldType("project_id", "string"), // 所属项目 uuid
+		gen.FieldRelate(field.HasMany, "TaskLocalRepositoryList", taskLocalRepository, &field.RelateConfig{
 			RelateSlicePointer: true,
 			GORMTag: field.GormTag{
-				"foreignKey": []string{"IssueID"}, // 子表 t_issue_local_repositories.issue_id
-				"references": []string{"ID"},      // 父表 t_workspace_issues.id
+				"foreignKey": []string{"TaskID"}, // 子表 t_task_local_repositories.task_id
+				"references": []string{"ID"},     // 父表 t_project_tasks.id
 			},
-			JSONTag: "issueLocalRepositoryList,omitempty",
+			JSONTag: "taskLocalRepositoryList,omitempty",
+		}),
+	)
+
+	project := G.GenerateModelAs("t_projects", "Project",
+		// 主键为 TEXT uuid 字符串（Create 时生成 uuid v7，时间有序）。
+		gen.FieldType("id", "string"),
+		gen.FieldRelate(field.HasMany, "ProjectTaskList", task, &field.RelateConfig{
+			RelateSlicePointer: true,
+			GORMTag: field.GormTag{
+				"foreignKey": []string{"ProjectID"}, // 子表 t_project_tasks.project_id
+				"references": []string{"ID"},        // 父表 t_projects.id
+			},
+			JSONTag: "projectTaskList,omitempty",
+		}),
+		gen.FieldRelate(field.HasMany, "ProjectTypeList", projectType, &field.RelateConfig{
+			RelateSlicePointer: true,
+			GORMTag: field.GormTag{
+				"foreignKey": []string{"ProjectID"}, // 子表 t_project_types.project_id
+				"references": []string{"ID"},        // 父表 t_projects.id
+			},
+			JSONTag: "projectTypeList,omitempty",
 		}),
 	)
 
 	workspace := G.GenerateModelAs("t_workspaces", "Workspace",
-		// 主键为 TEXT uuid 字符串（Create 时生成 uuid v7，时间有序）。
+		// 主键为 TEXT uuid 字符串（Create 时生成 uuid v7，时间有序）；工作空间无子表关联（去任务/仓库化）。
 		gen.FieldType("id", "string"),
-		gen.FieldRelate(field.HasMany, "WorkspaceIssueList", issue, &field.RelateConfig{
-			RelateSlicePointer: true,
-			GORMTag: field.GormTag{
-				"foreignKey": []string{"WorkspaceID"}, // 子表 t_workspace_issues.workspace_id
-				"references": []string{"ID"},          // 父表 t_workspaces.id
-			},
-			JSONTag: "workspaceIssueList,omitempty",
-		}),
-		gen.FieldRelate(field.HasMany, "WorkspaceTypeList", workspaceType, &field.RelateConfig{
-			RelateSlicePointer: true,
-			GORMTag: field.GormTag{
-				"foreignKey": []string{"WorkspaceID"}, // 子表 t_workspace_types.workspace_id
-				"references": []string{"ID"},          // 父表 t_workspaces.id
-			},
-			JSONTag: "workspaceTypeList,omitempty",
-		}),
 	)
 
-	G.ApplyBasic(workspace, issue, workspaceType, workspaceLocalRepository, issueLocalRepository)
+	G.ApplyBasic(workspace, project, task, projectType, projectLocalRepository, taskLocalRepository)
 }

@@ -8,6 +8,7 @@ import {
   CircularProgress,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import {
@@ -34,6 +35,8 @@ const DEFAULT_EXPANDED_DIRS: ReadonlySet<string> = new Set([DEFAULT_EXPANDED_DIR
 
 interface WorkspaceFilePanelProps {
   issueId: string;
+  /** workspaceId 在场 = 工作空间页归属：五查询走工作空间目录本身（taskId 不传）；任务页不传保持 taskId 现状。 */
+  workspaceId?: string;
 }
 
 // WorkspaceFilePanel：开发工作台工具面板区的「文件」tab 内容（T5.1，经 toolRegistry
@@ -42,13 +45,17 @@ interface WorkspaceFilePanelProps {
 // 子任务面板 T3.1 同决策）。点击文件行 → openPreviewTab（两模式统一，tab id = 文件路径）
 // → 终端内容区浮层预览，tab 内容形态（文件内容/diff）由浮层按「面板模式 + 变更集」渲染
 // 期派生。模式存域 store（按 issue 会话级，预览浮层同读；切工具 tab 重挂载不丢）。
-export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps) {
+export default function WorkspaceFilePanel({ issueId, workspaceId }: WorkspaceFilePanelProps) {
   const qc = useQueryClient();
+  // workspaceId 归属：GitChanges 恒拉兼任 isGitRepo 探测（非 git 置灰 Git tab）；
+  // 任务归属维持仅 git 模式拉取（任务页行为零变化）。探测在途/失败按钮保持可用降级。
+  const workspaceScope = workspaceId != null && workspaceId !== '';
   const mode = useFilePanelMode(issueId);
   const setFilePanelMode = useWorkspaceFilesStore(s => s.setFilePanelMode);
-  const { data, isLoading, error, isFetching, refetch } = useWorkspaceFileTree(issueId);
+  const { data, isLoading, error, isFetching, refetch } = useWorkspaceFileTree(issueId, workspaceId);
   // 变更列表仅 git 模式拉取（issueId 传 null 关闸，切回模式命中缓存 + staleTime 0 重验）。
-  const gitQuery = useWorkspaceGitChanges(mode === 'git' ? issueId : null);
+  const gitQuery = useWorkspaceGitChanges(workspaceScope || mode === 'git' ? issueId : null, workspaceId);
+  const gitAvailable = !workspaceScope || (gitQuery.data?.isGitRepo ?? true);
 
   const toggleDirExpanded = useWorkspaceFilesStore(s => s.toggleDirExpanded);
   const openPreviewTab = useWorkspaceFilesStore(s => s.openPreviewTab);
@@ -142,7 +149,11 @@ export default function WorkspaceFilePanel({ issueId }: WorkspaceFilePanelProps)
               onChange={(_, v) => v != null && setFilePanelMode(issueId, v)}
             >
               <ToggleButton value="all" sx={{ py: '2px', px: '8px' }}>全部文件</ToggleButton>
-              <ToggleButton value="git" sx={{ py: '2px', px: '8px' }}>Git 变更</ToggleButton>
+              <Tooltip title={gitAvailable ? undefined : '当前目录非git仓库，不可查看'}>
+                <span>
+                  <ToggleButton value="git" disabled={!gitAvailable} sx={{ py: '2px', px: '8px' }}>Git 变更</ToggleButton>
+                </span>
+              </Tooltip>
             </ToggleButtonGroup>
             <RefreshIconButton
               onClick={refresh}

@@ -142,11 +142,13 @@ func (api AcpSession) Events(ctx *gin.Context) {
 		api.JsonFail(err)
 		return
 	}
-	if httpStatus, err := acpEventsReject(global.AcpSessions.Get(req.IssueID).Status); err != nil {
+	// 会话锚键包装与 service 层同规则（HTTP 面收裸 conversationId）。
+	sessionKey := acpsession.ConversationSessionKey(req.ConversationID)
+	if httpStatus, err := acpEventsReject(global.AcpSessions.Get(sessionKey).Status); err != nil {
 		api.JsonFailWithStatus(httpStatus, err)
 		return
 	}
-	frames, cancel := global.AcpSessions.Subscribe(req.IssueID)
+	frames, cancel := global.AcpSessions.Subscribe(sessionKey)
 	defer cancel()
 
 	writer := api.Context.Writer

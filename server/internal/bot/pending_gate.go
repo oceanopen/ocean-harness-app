@@ -31,8 +31,14 @@ func (r *driverRoute) TryRespondPending(cfg BotRuntimeConfig, msg InboundMessage
 	if !ok {
 		return "", false
 	}
-	target, err := r.resolve(cfg.BotID, cfg.WorkspaceID, msg.ConversationKey)
-	if err != nil || !target.ACP {
+	target, err := r.resolve(BotRuntimeConfig{
+		BotID:            cfg.BotID,
+		WorkspaceID:      cfg.WorkspaceID,
+		ConversationType: cfg.ConversationType,
+		ProjectID:        cfg.ProjectID,
+		TaskID:           cfg.TaskID,
+	}, msg.ConversationKey)
+	if err != nil {
 		return "", false
 	}
 	snap := r.sessions.Get(target.SessionKey)

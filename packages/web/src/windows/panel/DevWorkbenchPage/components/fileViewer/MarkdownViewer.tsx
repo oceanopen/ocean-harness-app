@@ -7,7 +7,7 @@ import {
   VisibilityOutlined as VisibilityOutlinedIcon,
 } from '@mui/icons-material';
 import { Box, Dialog, IconButton, ToggleButton, ToggleButtonGroup, Tooltip, Typography, useTheme } from '@mui/material';
-import { IssueWorkspaceService } from '@src/services';
+import { TaskWorkspaceService } from '@src/services';
 import { open as openUrl } from '@tauri-apps/plugin-shell';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
@@ -46,8 +46,10 @@ const codePreSx = {
 
 interface MarkdownViewerProps {
   content: string;
-  // 图片相对路径解析与 fileRaw URL 构造上下文（issueId + 本文件相对路径）。
+  // 图片相对路径解析与 fileRaw URL 构造上下文（归属互斥 + 本文件相对路径）。
   issueId: string;
+  /** workspaceId 在场 = 工作空间页归属：内链图片 fileRaw 请求带 workspaceId。 */
+  workspaceId?: string;
   path: string;
 }
 
@@ -216,7 +218,7 @@ function MdCodeBlock({ code, language }: CustomRendererProps) {
  * Markdown 只读渲染（观感对齐 halo，实现按本项目栈裁剪）：Streamdown static 模式承载排版/GFM/公式；代码块自绘渲染器（shiki 静态高亮，全屏内按需 CM6）；图片经 fileRaw 直连。
  * 外链经 plugin-shell 走系统浏览器（Tauri webview 内 target=_blank 不可靠，MarkdownEditor 同款处理）；头部 36px（ViewerToolbar 共享载体）：meta + 预览/源码切换 + 复制，源码视图复用 CodeViewer（与代码文件预览同观感）。
  */
-export default function MarkdownViewer({ content, issueId, path }: MarkdownViewerProps) {
+export default function MarkdownViewer({ content, issueId, workspaceId, path }: MarkdownViewerProps) {
   const theme = useTheme();
   const dark = theme.palette.mode === 'dark';
   const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
@@ -228,12 +230,12 @@ export default function MarkdownViewer({ content, issueId, path }: MarkdownViewe
   const mermaidOptions = useMemo(() => ({ config: { theme: dark ? 'dark' : 'default' } }), [dark]);
   /**
    * fileRaw 端点 base（一次解析，渲染期同步拼 img src；path 逐张 encodeURIComponent）。
-   * 端点 SSOT 在 IssueWorkspaceService.fileRawBase（与 fileRawUrl 同源）。
+   * 端点 SSOT 在 TaskWorkspaceService.fileRawBase（与 fileRawUrl 同源）。
    */
   const [rawBase, setRawBase] = useState<string | null>(null);
   useEffect(() => {
     let alive = true;
-    IssueWorkspaceService.fileRawBase()
+    TaskWorkspaceService.fileRawBase()
       .then(url => alive && setRawBase(url))
       .catch(e => console.warn('[MarkdownViewer] resolve fileRaw base failed:', e));
     return () => {
@@ -247,7 +249,10 @@ export default function MarkdownViewer({ content, issueId, path }: MarkdownViewe
     if (rawBase == null) {
       return null;
     }
-    return `${rawBase}?issueId=${encodeURIComponent(issueId)}&path=${encodeURIComponent(relPath)}`;
+    const ownership = workspaceId != null && workspaceId !== ''
+      ? `workspaceId=${encodeURIComponent(workspaceId)}`
+      : `taskId=${encodeURIComponent(issueId)}`;
+    return `${rawBase}?${ownership}&path=${encodeURIComponent(relPath)}`;
   };
 
   return (

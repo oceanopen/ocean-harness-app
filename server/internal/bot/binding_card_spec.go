@@ -133,7 +133,7 @@ func workspaceCardSpec(workspaces []*model.Workspace, keyword string) (CardSpec,
 }
 
 // issueCardSpec 任务绑定卡构造（同上）。
-func issueCardSpec(issues []*model.WorkspaceIssue, keyword string) (CardSpec, bool) {
+func issueCardSpec(issues []*model.ProjectTask, keyword string) (CardSpec, bool) {
 	if len(issues) == 0 {
 		return CardSpec{}, false
 	}
@@ -150,7 +150,7 @@ func issueCardSpec(issues []*model.WorkspaceIssue, keyword string) (CardSpec, bo
 }
 
 // taskunbindCardSpec 解绑确认卡构造：单选项 = 出卡时绑定的任务，指纹 = 绑定 id 单元素序列。
-func taskunbindCardSpec(issue *model.WorkspaceIssue) CardSpec {
+func taskunbindCardSpec(issue *model.ProjectTask) CardSpec {
 	return CardSpec{
 		Title:       "解绑任务",
 		Description: "点击确认解除本会话的任务绑定",
@@ -177,7 +177,7 @@ func workspaceCardText(keyword string, workspaces []*model.Workspace) string {
 	return b.String()
 }
 
-func issueCardText(keyword string, issues []*model.WorkspaceIssue) string {
+func issueCardText(keyword string, issues []*model.ProjectTask) string {
 	lead := "请点击卡片选择要绑定的任务："
 	if keyword != "" {
 		lead = "匹配到 " + strconv.Itoa(len(issues)) + " 个任务，请点击卡片选择："
@@ -192,7 +192,7 @@ func issueCardText(keyword string, issues []*model.WorkspaceIssue) string {
 }
 
 // taskunbindCardText 解绑卡同帧文本：确认引导 + 任务全名。
-func taskunbindCardText(issue *model.WorkspaceIssue) string {
+func taskunbindCardText(issue *model.ProjectTask) string {
 	return "当前会话已绑定任务，点击卡片确认解绑：\n- " + issue.Name
 }
 
@@ -231,7 +231,7 @@ func workspaceNumberedText(keyword string, workspaces []*model.Workspace) string
 }
 
 // issueNumberedText 任务绑定的编号文本渲染（无卡渠道）。
-func issueNumberedText(keyword string, issues []*model.WorkspaceIssue) string {
+func issueNumberedText(keyword string, issues []*model.ProjectTask) string {
 	lead := "请回复编号选择要绑定的任务："
 	if keyword != "" {
 		lead = "匹配到 " + strconv.Itoa(len(issues)) + " 个任务，请回复编号选择："
@@ -244,7 +244,7 @@ func issueNumberedText(keyword string, issues []*model.WorkspaceIssue) string {
 }
 
 // taskunbindNumberedText 解绑确认的编号文本渲染（无卡渠道，单选项恒 1）。
-func taskunbindNumberedText(issue *model.WorkspaceIssue) string {
+func taskunbindNumberedText(issue *model.ProjectTask) string {
 	return numberedOptionList("当前会话已绑定任务，回复 1 确认解绑：", []string{issue.Name})
 }
 
@@ -260,7 +260,7 @@ func workspaceIDKeys(workspaces []*model.Workspace) []string {
 	return ids
 }
 
-func issueIDKeys(issues []*model.WorkspaceIssue) []string {
+func issueIDKeys(issues []*model.ProjectTask) []string {
 	ids := make([]string, 0, len(issues))
 	for _, issue := range issues {
 		ids = append(ids, issue.ID)
