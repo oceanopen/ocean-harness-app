@@ -9,13 +9,14 @@ export interface ImBotAccessPolicy {
   allowUsers: string[]; // 企微 userid
 }
 
-export type ImBotConversationType = 'workspace' | 'project';
+// '' = 未配置（bot 可暂不绑定会话目标，收消息时提示先配置）。
+export type ImBotConversationType = '' | 'workspace' | 'project';
 
 export interface ImBotModel {
   id: string; // uuid
   name: string;
   channel: string; // 渠道枚举（wecom | weixin）
-  conversationType: ImBotConversationType; // 会话类型两档（D8）：workspace / project
+  conversationType: ImBotConversationType; // 会话类型两档（D8）：workspace / project；'' = 未配置
   workspaceId: string; // workspace 档的关联工作空间（project 档为空）
   projectId: string; // project 档的关联项目
   taskId: string; // project 档可选关联任务（空 = 未关联，收消息拦截提示）
@@ -38,8 +39,8 @@ export interface ImBotCreateRequest {
   botId: string;
   secret: string;
   conversationType: ImBotConversationType;
-  workspaceId?: string; // workspace 档必填
-  projectId?: string; // project 档必填
+  workspaceId?: string; // 可选：workspace 档关联工作空间
+  projectId?: string; // 可选：project 档关联项目
   taskId?: string; // project 档可选
   accessPolicy: ImBotAccessPolicy;
   enabled?: boolean;

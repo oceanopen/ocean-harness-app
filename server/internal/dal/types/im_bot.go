@@ -41,13 +41,13 @@ type ImBotGetInfoRequest struct {
 }
 
 // ImBotCreateRequest 是 POST /api/imBot/create 的入参（仅 wecom 可手工创建；weixin 由 service 拒绝并引导扫码）。
-// 归属按 conversationType 两档必填（D8）：workspace 档 workspaceId 必填；project 档 projectId 必填、taskId 可选；档外字段由 service 归一清空。
+// 归属按 conversationType 两档可选（未配置合法）：提供值时才校验存在性与归属；档外字段由 service 归一清空。
 type ImBotCreateRequest struct {
 	Channel          enums.Channel          `json:"channel" binding:"required,oneof=wecom weixin"`
 	Name             string                 `json:"name" binding:"required,max=100"`
 	BotId            string                 `json:"botId" binding:"required"`
 	Secret           string                 `json:"secret" binding:"required"`
-	ConversationType enums.ConversationType `json:"conversationType" binding:"required,oneof=workspace project"`
+	ConversationType enums.ConversationType `json:"conversationType" binding:"omitempty,oneof=workspace project"`
 	WorkspaceId      string                 `json:"workspaceId"`
 	ProjectId        string                 `json:"projectId"`
 	TaskId           string                 `json:"taskId"`
@@ -61,7 +61,7 @@ type ImBotUpdateRequest struct {
 	Name             string                 `json:"name" binding:"required,max=100"`
 	BotId            string                 `json:"botId" binding:"omitempty"`
 	Secret           string                 `json:"secret" binding:"omitempty"`
-	ConversationType enums.ConversationType `json:"conversationType" binding:"required,oneof=workspace project"`
+	ConversationType enums.ConversationType `json:"conversationType" binding:"omitempty,oneof=workspace project"`
 	WorkspaceId      string                 `json:"workspaceId"`
 	ProjectId        string                 `json:"projectId"`
 	TaskId           string                 `json:"taskId"`

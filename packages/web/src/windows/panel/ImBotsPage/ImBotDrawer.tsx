@@ -1,4 +1,5 @@
 import type { ImBotAccessPolicy, ImBotConversationType, ImBotModel } from '@src/services';
+import ClearOutlinedIcon from '@mui/icons-material/ClearOutlined';
 import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
@@ -23,9 +24,8 @@ import { useState } from 'react';
 import { IM_BOT_CHANNELS } from './imBotChannels';
 
 // IM bot 编辑抽屉（ResizableDrawer 右滑可拖宽）：secret 掩码回显、保存留空 = 沿用原值；
-// 会话类型两档（D8）：工作空间档选工作空间；项目档选项目 + 可选关联任务（未关联任务收消息
-// 由服务端提示拦截）。渠道为首位禁用下拉。weixin 行无手工凭据（隐藏 botId/secret，换凭据走
-// 「重新扫码授权」换绑链路）。由父组件按需挂载：每次打开全新草稿，关闭即卸载。
+// 会话类型两档（D8）可选可清空：工作空间档选工作空间、项目档选项目 + 可选关联任务，未配置合法
+// （收消息由服务端提示拦截）；切档/清档/清项目级联清空下游。weixin 行换凭据走「重新扫码授权」。
 interface ImBotDrawerProps {
   bot: ImBotModel | null; // null = 新建（手动接入），非 null = 编辑该 bot
   channelKey: string; // 新建时列表页当前渠道（编辑以 bot.channel 为准）
@@ -33,7 +33,7 @@ interface ImBotDrawerProps {
   onClose: () => void;
 }
 
-/** 表单 draft（secret/allowUsers 以文本态编辑，提交时拆分）。各 id 空串 = 未选。 */
+/** 表单 draft（secret/allowUsers 以文本态编辑，提交时拆分）。各 id 与会话类型空串 = 未选。 */
 interface ImBotDraft {
   name: string;
   botId: string;
@@ -52,7 +52,7 @@ function draftFromBot(bot: ImBotModel | null): ImBotDraft {
     name: bot?.name ?? '',
     botId: bot?.botId ?? '',
     secret: bot?.secret ?? '',
-    conversationType: bot?.conversationType ?? 'workspace',
+    conversationType: bot?.conversationType ?? '',
     workspaceId: bot?.workspaceId ?? '',
     projectId: bot?.projectId ?? '',
     taskId: bot?.taskId ?? '',
@@ -68,6 +68,23 @@ function splitList(text: string): string[] {
     .split(/[,，]/)
     .map(item => item.trim())
     .filter(item => item !== '');
+}
+
+// 选择框清空按钮（endAdornment 注入）：mousedown 阻断避免触发下拉展开。
+function clearAdornment(onClear: () => void) {
+  return (
+    <InputAdornment position="end">
+      <IconButton
+        size="small"
+        aria-label="清空"
+        onMouseDown={e => e.stopPropagation()}
+        onClick={onClear}
+        sx={{ '& svg': { fontSize: '16px' } }}
+      >
+        <ClearOutlinedIcon />
+      </IconButton>
+    </InputAdornment>
+  );
 }
 
 function ImBotDrawer(props: ImBotDrawerProps) {
@@ -90,17 +107,26 @@ function ImBotDrawer(props: ImBotDrawerProps) {
   // saving 中的禁用是既有交互，保持不动。
   const saving = createMutation.isPending || updateMutation.isPending;
 
-  // 必填校验：名称恒必填 + 按档位校验容器（工作空间档=工作空间；项目档=项目）；wecom 另需
+  // 必填校验：仅名称与凭据（归属四字段全部可选，未配置由收消息链路提示拦截）；wecom 需
   // botId 与 secret（创建必填，编辑清空 = 沿用原值）；weixin 无手工凭据字段，校验面更窄。
   const invalid
     = draft.name.trim() === ''
       || (!isWeixin && draft.botId.trim() === '')
-      || (!editing && !isWeixin && draft.secret.trim() === '')
-      || (draft.conversationType === 'workspace' && draft.workspaceId === '')
-      || (draft.conversationType === 'project' && draft.projectId === '');
+      || (!editing && !isWeixin && draft.secret.trim() === '');
 
   const setField = <K extends keyof ImBotDraft>(key: K, value: ImBotDraft[K]) => {
     setDraft(prev => ({ ...prev, [key]: value }));
+  };
+
+  // 切换/清空会话类型：下游容器选择一并清空（档位语义变化后旧值不可复用）。
+  const changeConversationType = (value: ImBotConversationType) => {
+    setDraft(prev => ({ ...prev, conversationType: value, workspaceId: '', projectId: '', taskId: '' }));
+  };
+
+  // 清空项目：关联任务随项目清空（任务选项由项目派生）。
+  const clearProject = () => {
+    setField('projectId', '');
+    setField('taskId', '');
   };
 
   const handleSave = () => {
@@ -259,12 +285,14 @@ function ImBotDrawer(props: ImBotDrawerProps) {
           <TextField
             size="small"
             fullWidth
-            required
             select
             label="会话类型"
             value={draft.conversationType}
-            onChange={e => setField('conversationType', e.target.value as ImBotConversationType)}
-            helperText={helpText('工作空间档：工作目录不变的会话；项目档：每任务独立目录（任务可选关联）')}
+            onChange={e => changeConversationType(e.target.value as ImBotConversationType)}
+            slotProps={{ input: { endAdornment: draft.conversationType !== '' ? clearAdornment(() => changeConversationType('')) : undefined } }}
+            helperText={helpText(draft.conversationType === ''
+              ? '可不选：暂不绑定会话目标，收消息时提示先配置'
+              : '工作空间档：工作目录不变的会话；项目档：每任务独立目录（任务可选关联）')}
           >
             <MenuItem value="workspace">工作空间</MenuItem>
             <MenuItem value="project">项目</MenuItem>
@@ -274,15 +302,15 @@ function ImBotDrawer(props: ImBotDrawerProps) {
             <TextField
               size="small"
               fullWidth
-              required
               select
               label="工作空间"
               value={draft.workspaceId}
               onChange={e => setField('workspaceId', e.target.value)}
+              slotProps={{ input: { endAdornment: draft.workspaceId !== '' ? clearAdornment(() => setField('workspaceId', '')) : undefined } }}
               helperText={helpText(
                 draft.workspaceId !== ''
                   ? `会话目录取该工作空间的目录：${workspaces.find(ws => ws.id === draft.workspaceId)?.dir ?? ''}`
-                  : '每个机器人绑定一个工作空间（会话目录取其工作区目录）',
+                  : '可选；不选则收消息时提示先配置',
               )}
             >
               {workspaces.map(ws => (
@@ -296,7 +324,6 @@ function ImBotDrawer(props: ImBotDrawerProps) {
               <TextField
                 size="small"
                 fullWidth
-                required
                 select
                 label="项目"
                 value={draft.projectId}
@@ -304,10 +331,11 @@ function ImBotDrawer(props: ImBotDrawerProps) {
                   setField('projectId', e.target.value);
                   setField('taskId', '');
                 }}
+                slotProps={{ input: { endAdornment: draft.projectId !== '' ? clearAdornment(clearProject) : undefined } }}
                 helperText={helpText(
                   draft.projectId !== ''
                     ? `项目根目录：${projects.find(pr => pr.id === draft.projectId)?.dir ?? ''}（各任务会话在其任务子目录运行）`
-                    : '每个机器人绑定一个项目（会话按任务子目录运行）',
+                    : '可选；不选则收消息时提示先配置',
                 )}
               >
                 {projects.map(pr => (
@@ -321,6 +349,7 @@ function ImBotDrawer(props: ImBotDrawerProps) {
                 label="关联任务（可选）"
                 value={draft.taskId}
                 onChange={e => setField('taskId', e.target.value)}
+                slotProps={{ input: { endAdornment: draft.taskId !== '' ? clearAdornment(() => setField('taskId', '')) : undefined } }}
                 helperText={helpText(
                   draft.projectId === ''
                     ? '先选择项目'
@@ -329,7 +358,6 @@ function ImBotDrawer(props: ImBotDrawerProps) {
                       : '可不关联：收到消息时机器人会提示先指定任务',
                 )}
               >
-                <MenuItem value="">不关联任务</MenuItem>
                 {projectTasks.map(t => (
                   <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>
                 ))}

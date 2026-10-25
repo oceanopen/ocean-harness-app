@@ -542,35 +542,36 @@ func mergeRuntimeStatus(item *types.ImBotResponseData, row *model.ImBot, st bot.
  * 非空逐一校验存在性（工作空间 / 项目 / 任务）。
  */
 /*
- * ensureOwnershipExists D8 归属校验与归一：conversationType 两档必填（workspace|project）。
- * workspace 档 → workspaceId 必填（project/task 清空）；project 档 → projectId 必填、taskId 可选
- * （须归属该项目；workspaceId 清空）。返回归一后的三 id，调用方以返回值落库。
+ * ensureOwnershipExists D8 归属校验与归一：conversationType 未配置合法（全空落库）；提供值才校验
+ * （workspaceId/projectId 须存在，taskId 须存在且归属所选项目），档外字段归一清空。
+ * 返回归一后的三 id，调用方以返回值落库。
  */
 func (svc ImBot) ensureOwnershipExists(conversationType enums.ConversationType, workspaceID, projectID, taskID string) (string, string, string, error) {
 	q := query.Use(svc.Orm)
 	switch conversationType {
 	case enums.CONVERSATION_TYPE_WORKSPACE:
-		if workspaceID == "" {
-			return "", "", "", errors.New("工作空间档必须选择工作空间")
-		}
-		if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(workspaceID)).First(); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return "", "", "", errors.New("工作空间不存在")
+		if workspaceID != "" {
+			if _, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(workspaceID)).First(); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return "", "", "", errors.New("工作空间不存在")
+				}
+				return "", "", "", err
 			}
-			return "", "", "", err
 		}
 		return workspaceID, "", "", nil
 	case enums.CONVERSATION_TYPE_PROJECT:
-		if projectID == "" {
-			return "", "", "", errors.New("项目档必须选择项目")
-		}
-		if _, err := q.Project.WithContext(svc.Context).Where(q.Project.ID.Eq(projectID)).First(); err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return "", "", "", errors.New("项目不存在")
+		if projectID != "" {
+			if _, err := q.Project.WithContext(svc.Context).Where(q.Project.ID.Eq(projectID)).First(); err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return "", "", "", errors.New("项目不存在")
+				}
+				return "", "", "", err
 			}
-			return "", "", "", err
 		}
 		if taskID != "" {
+			if projectID == "" {
+				return "", "", "", errors.New("关联任务须先选择项目")
+			}
 			task, err := q.ProjectTask.WithContext(svc.Context).Where(q.ProjectTask.ID.Eq(taskID)).First()
 			if err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -583,8 +584,10 @@ func (svc ImBot) ensureOwnershipExists(conversationType enums.ConversationType, 
 			}
 		}
 		return "", projectID, taskID, nil
+	case "":
+		return "", "", "", nil
 	default:
-		return "", "", "", errors.New("会话类型必填（工作空间或项目）")
+		return "", "", "", errors.New("会话类型非法（workspace 或 project）")
 	}
 }
 
