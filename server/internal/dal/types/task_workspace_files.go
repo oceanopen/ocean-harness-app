@@ -1,7 +1,7 @@
 package types
 
 /*
- * taskWorkspace 文件浏览（T5.1 本期：列表 + 内容预览）的 HTTP 入参/出参，目录经 taskId 由 service 从工作空间解析，文件系统即内容 SSOT——只读遍历，无 watcher（前端手动刷新）；
+ * taskWorkspace 文件浏览（T5.1 本期：列表 + 内容预览）的 HTTP 入参/出参，查看归属 taskId / workspaceId 二选一（service 白名单解析目录），文件系统即内容 SSOT——只读遍历，无 watcher（前端手动刷新）；
  * 内容传输 kind 由后端定夺（前后端单一真相，下期 fileSave 编辑判定复用同一套），文本内部细分（markdown/代码/纯文本）是前端呈现 concern，不经由本层。
  */
 
@@ -15,13 +15,18 @@ const (
 	IW_FILE_KIND_TOO_LARGE TaskWorkspaceFileContentKind = "tooLarge" // 超文本预览上限（合法响应态，非错误；size 供提示文案）
 )
 
-// TaskWorkspaceFileTreeRequest 是 POST /api/taskWorkspace/getFileTree 的入参。
+/*
+ * TaskWorkspaceFileTreeRequest 是 POST /api/taskWorkspace/getFileTree 的入参。
+ * 查看归属（其余四个文件/Git 端点同款）：TaskID / WorkspaceID 互斥且必传其一（XOR
+ * 无法用 gin binding 表达，校验收敛在 service 层，故均不设 required）。
+ */
 type TaskWorkspaceFileTreeRequest struct {
-	TaskID string `json:"taskId" binding:"required"`
+	TaskID      string `json:"taskId"`
+	WorkspaceID string `json:"workspaceId"`
 }
 
 /*
- * TaskWorkspaceFileNode 是文件树节点（扁平表成员，WalkDir 词法序）：Path 为相对 {baseDir}/{taskId}/ 的正斜杠路径（自生成，前端直接用作树 key 与 getFileContent 的 path 入参）；
+ * TaskWorkspaceFileNode 是文件树节点（扁平表成员，WalkDir 词法序）：Path 为相对查看根目录（taskId 归属 {baseDir}/{taskId}/、workspaceId 归属工作空间目录本身）的正斜杠路径（自生成，前端直接用作树 key 与 getFileContent 的 path 入参）；
  * 目录 Size 恒 0。
  */
 type TaskWorkspaceFileNode struct {
@@ -41,11 +46,12 @@ type TaskWorkspaceFileTreeResponseData struct {
 }
 
 /*
- * TaskWorkspaceFileContentRequest 是 POST /api/taskWorkspace/getFileContent 的入参：Path 为相对 {baseDir}/{taskId}/ 的路径（getFileTree 返回的 node.path，service 层防穿越）。
+ * TaskWorkspaceFileContentRequest 是 POST /api/taskWorkspace/getFileContent 的入参：Path 为相对查看根目录的路径（getFileTree 返回的 node.path，service 层防穿越）。
  */
 type TaskWorkspaceFileContentRequest struct {
-	TaskID string `json:"taskId" binding:"required"`
-	Path   string `json:"path" binding:"required"`
+	TaskID      string `json:"taskId"`
+	WorkspaceID string `json:"workspaceId"`
+	Path        string `json:"path" binding:"required"`
 }
 
 /*
@@ -65,7 +71,8 @@ type TaskWorkspaceFileContentResponseData struct {
 
 // TaskWorkspaceGitChangesRequest 是 POST /api/taskWorkspace/getGitChanges 的入参。
 type TaskWorkspaceGitChangesRequest struct {
-	TaskID string `json:"taskId" binding:"required"`
+	TaskID      string `json:"taskId"`
+	WorkspaceID string `json:"workspaceId"`
 }
 
 /*
@@ -80,18 +87,22 @@ type TaskWorkspaceGitChangeFile struct {
 }
 
 /*
- * TaskWorkspaceGitChangesResponseData 是 getGitChanges 的响应：全部仓库未提交变更的扁平表（无变更为空数组）。
+ * TaskWorkspaceGitChangesResponseData 是 getGitChanges 的响应：全部仓库未提交变更的扁平表（无变更为空数组）；
+ * IsGitRepo = 查看根目录是否 git 仓库（taskId 归属恒 false——任务目录本身不是仓库，多仓库在其 repo/ 下；
+ * workspaceId 归属经 gitutil.IsRepo 探测，git 命令失败按非 git 计）。
  */
 type TaskWorkspaceGitChangesResponseData struct {
-	Files []TaskWorkspaceGitChangeFile `json:"files"`
+	Files     []TaskWorkspaceGitChangeFile `json:"files"`
+	IsGitRepo bool                         `json:"isGitRepo"`
 }
 
 /*
- * TaskWorkspaceFileDiffRequest 是 POST /api/taskWorkspace/getFileDiff 的入参：Path 为 getGitChanges 返回的 file.path（repo/{name}/ 前缀的工作空间相对路径）。
+ * TaskWorkspaceFileDiffRequest 是 POST /api/taskWorkspace/getFileDiff 的入参：Path 为 getGitChanges 返回的 file.path（taskId 归属带 repo/{name}/ 前缀，workspaceId 归属为仓库内相对路径）。
  */
 type TaskWorkspaceFileDiffRequest struct {
-	TaskID string `json:"taskId" binding:"required"`
-	Path   string `json:"path" binding:"required"`
+	TaskID      string `json:"taskId"`
+	WorkspaceID string `json:"workspaceId"`
+	Path        string `json:"path" binding:"required"`
 }
 
 /*

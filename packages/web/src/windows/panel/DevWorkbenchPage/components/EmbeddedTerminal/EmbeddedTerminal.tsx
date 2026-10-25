@@ -194,6 +194,15 @@ export default function EmbeddedTerminal({ containerId, workspaceDir, startupCli
    * status 恒 'connecting'），引导分支先于 spinner 渲染，不闪错态。startupCli 不参与 enabled：
    * null = 明确不直启（none 档临场选择后/ACP 档），正常 spawn 裸 shell；「列表解析中」的等待语义在父层消化（TerminalLaunchFlow 不挂载），挂载即终值，directCommand（attachKey 成分）无中途变化路径。
    */
+  // resume 失败锚登记（按锚值）：失效锚的重开不再注入 resume，脱困为裸启新会话。
+  const [resumeFailedIds, setResumeFailedIds] = useState<Set<string>>(() => new Set());
+  const markResumeFailed = useCallback((id: string) => {
+    setResumeFailedIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
   const session = usePtySession({
     sessionId,
     cwd,
@@ -206,7 +215,9 @@ export default function EmbeddedTerminal({ containerId, workspaceDir, startupCli
      * 直启失败（CLI 未安装等）由 Rust 侧回落普通 shell（warn log），用户可手动启动。
      */
     directCommand: isMain ? startupCli : null,
-    resumeClaudeId,
+    // resume 失败自愈：带锚 shell 退出（CLI --resume 失败即退出）→ 剔除失效锚重开脱困为裸启。
+    resumeClaudeId: resumeFailedIds.has(resumeClaudeId ?? '') ? null : resumeClaudeId,
+    onResumeFailed: markResumeFailed,
     onData: handleTerminalData,
   });
 

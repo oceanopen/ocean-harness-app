@@ -21,14 +21,19 @@ import (
 const iwRepoDirPrefix = "repo"
 
 /*
- * GitChanges POST /api/taskWorkspace/getGitChanges：列出全部仓库的未提交变更（扁平表，
- * Path 带 repo/{name}/ 前缀，与 getFileTree 的 node.path 同构——前端复用同一套组树）。
+ * GitChanges POST /api/taskWorkspace/getGitChanges：列出查看根的未提交变更（扁平表）。
+ * taskId 归属扫描 {root}/repo/ 多仓库，Path 带 repo/{name}/ 前缀（与 getFileTree 的
+ * node.path 同构——前端复用同一套组树）；workspaceId 归属根即仓库本体，Path 为仓库内
+ * 相对路径，IsRepo 探测失败/非 git 均返回空表 + IsGitRepo=false 不报错。
  * 与文件树同名单的忽略段（node_modules 等）不进变更表：树里看不见的文件，这里也不出现。
  */
 func (svc TaskWorkspace) GitChanges(req *types.TaskWorkspaceGitChangesRequest) (*types.TaskWorkspaceGitChangesResponseData, error) {
-	root, err := svc.taskWorkspaceRoot(req.TaskID)
+	root, err := svc.taskWorkspaceViewRoot(req.TaskID, req.WorkspaceID)
 	if err != nil {
 		return nil, err
+	}
+	if req.WorkspaceID != "" {
+		return workspaceRootGitChanges(root)
 	}
 	repoNames, err := taskWorkspaceRepoNames(root)
 	if err != nil {
@@ -57,21 +62,57 @@ func (svc TaskWorkspace) GitChanges(req *types.TaskWorkspaceGitChangesRequest) (
 }
 
 /*
+ * workspaceRootGitChanges workspaceId 归属的变更读取：根即 git 仓库（IsRepo 探测，
+ * git 命令不存在等失败按非 git 处理），变更 Path 为仓库内相对路径（无 repo/ 前缀）。
+ */
+func workspaceRootGitChanges(root string) (*types.TaskWorkspaceGitChangesResponseData, error) {
+	data := &types.TaskWorkspaceGitChangesResponseData{Files: []types.TaskWorkspaceGitChangeFile{}}
+	if !gitutil.IsRepo(root) {
+		return data, nil
+	}
+	data.IsGitRepo = true
+	entries, err := gitutil.UncommittedChanges(root)
+	if err != nil {
+		return nil, errors.New("仓库读取变更失败: " + err.Error())
+	}
+	for _, e := range entries {
+		if taskWorkspaceHasIgnoredSegment(e.Path) {
+			continue
+		}
+		data.Files = append(data.Files, types.TaskWorkspaceGitChangeFile{
+			Path:   e.Path,
+			Status: e.Status,
+			Ins:    e.Ins,
+			Del:    e.Del,
+		})
+	}
+	return data, nil
+}
+
+/*
  * FileDiff POST /api/taskWorkspace/getFileDiff：返回单文件未提交变更的前后内容对（OldContent=HEAD 版本，NewContent=工作区当前）。
- * 文本判定沿用 FileContent 范式（NUL/非 UTF-8 → binary；超上限 → tooLarge）；删除态工作区文件不存在按空串处理（EvalSymlinks 链要求存在，故不复用 taskWorkspaceFilePath，改用轻量段校验）。
+ * 文本判定沿用 FileContent 范式（NUL/非 UTF-8 → binary；超上限 → tooLarge）；删除态工作区文件不存在按空串处理（EvalSymlinks 链要求存在，故不复用 taskWorkspaceFilePath，两归属均用轻量段校验——taskId 归属 taskWorkspaceSplitRepoPath，workspaceId 归属 taskWorkspaceValidateRelPath）。
  */
 func (svc TaskWorkspace) FileDiff(req *types.TaskWorkspaceFileDiffRequest) (*types.TaskWorkspaceFileDiffResponseData, error) {
-	root, err := svc.taskWorkspaceRoot(req.TaskID)
+	root, err := svc.taskWorkspaceViewRoot(req.TaskID, req.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
-	repoName, rel, err := taskWorkspaceSplitRepoPath(req.Path)
-	if err != nil {
-		return nil, err
+	var repoAbs, rel, missingMsg string
+	if req.WorkspaceID != "" {
+		if err := taskWorkspaceValidateRelPath(req.Path); err != nil {
+			return nil, err
+		}
+		repoAbs, rel, missingMsg = root, req.Path, "目录不是 git 仓库"
+	} else {
+		repoName, r, splitErr := taskWorkspaceSplitRepoPath(req.Path)
+		if splitErr != nil {
+			return nil, splitErr
+		}
+		repoAbs, rel, missingMsg = filepath.Join(root, iwRepoDirPrefix, repoName), r, "仓库不存在: "+repoName
 	}
-	repoAbs := filepath.Join(root, iwRepoDirPrefix, repoName)
 	if !gitutil.IsGitDir(repoAbs) {
-		return nil, errors.New("仓库不存在: " + repoName)
+		return nil, errors.New(missingMsg)
 	}
 
 	// 状态与行数：从该仓库未提交变更里按 rel 对齐取；找不到 = 已提交或路径无效。
@@ -144,6 +185,25 @@ func taskWorkspaceRepoNames(root string) ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+/*
+ * taskWorkspaceValidateRelPath workspaceId 归属 FileDiff 的 path 轻量校验（仓库内相对路径）：
+ * 拒绝空串/绝对路径/NUL/反斜杠/Clean 后逃逸/忽略名单段（同 taskWorkspaceSplitRepoPath 的
+ * 校验口径，仅少 repo/ 前缀拆解——删除态文件不存在，不做 EvalSymlinks 存在性链）。
+ */
+func taskWorkspaceValidateRelPath(path string) error {
+	if path == "" || strings.ContainsAny(path, "\x00\\") || filepath.IsAbs(path) {
+		return errors.New("path 非法")
+	}
+	clean := filepath.Clean(path)
+	if clean == "." || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return errors.New("path 非法")
+	}
+	if taskWorkspaceHasIgnoredSegment(filepath.ToSlash(clean)) {
+		return errors.New("path 非法")
+	}
+	return nil
 }
 
 /*

@@ -19,9 +19,6 @@ interface DragContext {
 interface ToolPanelAreaProps {
   // 选中锚定（null = 未选中/加载中，空态文案兜底）。工具渲染上下文 + tabs 归属 key。
   issue: WorkbenchToolIssue | null;
-  // 当前锚定维度不可用的工具 id 集（页面按 scope 传入，与工具条禁用集同源）：
-  // 相关 tab 头与内容均不渲染（store 记录保留，切回适用维度原样恢复）。
-  scopedOutToolIds?: readonly string[];
   // 是否存在选中意图（scope 门禁合成值，非锚定对象就绪）：空 tab 栏时区分文案——
   // 无选中提示去左侧选任务/会话；有选中（含列表加载瞬态）「在右侧工具条选择工具」。
   hasSelection: boolean;
@@ -42,7 +39,7 @@ interface ToolPanelAreaProps {
 // （无防抖）。空 tab 栏保持面板区展开（空态提示）。非激活 tab 的内容组件不渲染——
 // 工具会话必须后端常驻（见 toolRegistry 架构红线注释），视口卸载不销毁会话。
 // tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
-export default function ToolPanelArea({ issue, scopedOutToolIds, hasSelection, emptyHint, visible, width, onWidthCommit }: ToolPanelAreaProps) {
+export default function ToolPanelArea({ issue, hasSelection, emptyHint, visible, width, onWidthCommit }: ToolPanelAreaProps) {
   const theme = useTheme();
   const closeTab = useWorkbenchToolsStore(s => s.closeTab);
   const setActiveTab = useWorkbenchToolsStore(s => s.setActiveTab);
@@ -50,10 +47,10 @@ export default function ToolPanelArea({ issue, scopedOutToolIds, hasSelection, e
   const { tabs, activeTabId } = useToolTabs(issueId);
 
   // 遗留 tab 防御：注册表查不到 def（已下线工具的残留记录）不渲染 tab 头/内容。
-  // tab↔def 成对查一次（整个渲染周期唯一查表点）；维度不可用工具的 tab 一并滤除。
+  // tab↔def 成对查一次（整个渲染周期唯一查表点）。
   const validEntries = tabs
     .map((tab): { tab: ToolTab; def: WorkbenchToolDef | undefined } => ({ tab, def: toolDefById(tab.toolId) }))
-    .filter((e): e is { tab: ToolTab; def: WorkbenchToolDef } => e.def != null && !(scopedOutToolIds?.includes(e.tab.toolId) ?? false));
+    .filter((e): e is { tab: ToolTab; def: WorkbenchToolDef } => e.def != null);
   // 激活项展示回退：activeTabId 不在有效项中（遗留脏数据/刚关闭清空）时回落首个有效 tab，
   // 保证 tab 头高亮与内容区始终一致、内容区不渲染成无提示空白。
   const displayActiveId = validEntries.some(e => e.tab.id === activeTabId)

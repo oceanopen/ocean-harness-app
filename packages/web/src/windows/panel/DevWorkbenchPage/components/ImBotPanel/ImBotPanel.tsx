@@ -8,25 +8,32 @@ import RefreshIconButton from '../RefreshIconButton';
 import ImBotBotCard from './ImBotBotCard';
 
 interface ImBotPanelProps {
-  // 当前选中锚定（挂载方经 toolRegistry ctx 保证非空；projectId/taskId 决定 bot 关联过滤域）。
+  // 当前选中锚定（挂载方经 toolRegistry ctx 保证非空）：conversationScope + projectId/
+  // containerId/id 共同决定 bot 关联过滤域。
   issue: WorkbenchToolIssue;
 }
 
 /**
- * ImBotPanel：开发工作台工具面板区的「IM 机器人」tab 内容（经 toolRegistry 挂载）。
- * 只读展示「当前会话关联 bot」——项目档且关联本项目、任务未限定（空 = 项目通用）或对准本任务的
- * bot 聚合卡；归属变更统一走「IM 机器人」页编辑抽屉，面板无写操作。数据：useImBots 共享列表缓存 + 会话明细 per-bot query，实时性靠头部刷新按钮手动 invalidate 整域。
+ * ImBotPanel：开发工作台工具面板区的「IM 机器人」tab 内容（经 toolRegistry 挂载），双场景：
+ * 任务语境 = 项目档且关联本项目、任务未限定（空 = 项目通用）或对准本任务的 bot；工作空间
+ * 语境 = 工作空间档且关联本工作空间的 bot（并标注其 IM 会话是否绑定当前选中会话）。归属
+ * 变更统一走「IM 机器人」页编辑抽屉，面板无写操作。数据：useImBots 共享列表缓存 + 会话明细
+ * per-bot query，实时性靠头部刷新按钮手动 invalidate 整域。
  */
 export default function ImBotPanel({ issue }: ImBotPanelProps) {
   const qc = useQueryClient();
   const { data: bots = [], isLoading, error, isFetching } = useImBots();
+  const workspaceScope = issue.conversationScope === 'workspace';
 
-  // 当前任务关联 bot：项目档 + 本项目 + 任务未限定（空）或对准本任务；工作空间档与其他项目不在此列。
-  const relatedBots = bots.filter(
-    bot => bot.conversationType === 'project'
-      && bot.projectId === issue.projectId
-      && (bot.taskId === '' || bot.taskId === issue.id),
-  );
+  // 关联 bot：任务语境 = 项目档 + 本项目 + 任务未限定（空）或对准本任务；工作空间语境 =
+  // 工作空间档 + 本空间；其他项目/空间档不在此列。
+  const relatedBots = workspaceScope
+    ? bots.filter(bot => bot.conversationType === 'workspace' && bot.workspaceId === issue.containerId)
+    : bots.filter(
+        bot => bot.conversationType === 'project'
+          && bot.projectId === issue.projectId
+          && (bot.taskId === '' || bot.taskId === issue.id),
+      );
   // 离线提示：存在启用中但断连的 bot（渠道无关），标题红点 + 卡片红色徽标（后者已有）。
   const hasOfflineBot = relatedBots.some(bot => bot.enabled && bot.connState === 'disconnected');
 
@@ -87,16 +94,24 @@ export default function ImBotPanel({ issue }: ImBotPanelProps) {
                   }}
                 >
                   <SmartToyOutlinedIcon sx={{ fontSize: '48px', color: 'text.secondary' }} />
-                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>当前任务暂无关联机器人</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                    {workspaceScope ? '当前工作空间暂无关联机器人' : '当前任务暂无关联机器人'}
+                  </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    在「IM 机器人」页编辑机器人，选择本项目与本任务即可接入
+                    {workspaceScope
+                      ? '在「IM 机器人」页编辑机器人，选择本工作空间即可接入'
+                      : '在「IM 机器人」页编辑机器人，选择本项目与本任务即可接入'}
                   </Typography>
                 </Box>
               )
             : (
                 <Box sx={{ flex: 1, overflow: 'auto', pt: '12px', pb: '4px', px: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {relatedBots.map(bot => (
-                    <ImBotBotCard key={bot.id} bot={bot} />
+                    <ImBotBotCard
+                      key={bot.id}
+                      bot={bot}
+                      linkedConversationId={workspaceScope ? issue.id : undefined}
+                    />
                   ))}
                 </Box>
               )}

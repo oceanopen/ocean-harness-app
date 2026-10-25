@@ -112,9 +112,15 @@ export type IssueWorkspaceFileContentKind
     | 'binary'
     | 'tooLarge';
 
+/*
+ * 文件/Git 五端点共用归属入参（taskId / workspaceId 互斥且必传其一，校验在后端，
+ * 前端按调用方 scope 二选一传入）。
+ */
+
 /** POST /api/project/taskWorkspace/getFileTree 的入参。 */
 export interface IssueWorkspaceFileTreeRequest {
-  taskId: string;
+  taskId?: string;
+  workspaceId?: string;
 }
 
 /**
@@ -136,7 +142,8 @@ export interface IssueWorkspaceFileTreeResponseData {
 
 /** POST /api/project/taskWorkspace/getFileContent 的入参（path 即树节点 path）。 */
 export interface IssueWorkspaceFileContentRequest {
-  taskId: string;
+  taskId?: string;
+  workspaceId?: string;
   path: string;
 }
 
@@ -161,19 +168,23 @@ export interface IssueWorkspaceGitChangeFile {
 
 /** POST /api/project/taskWorkspace/getGitChanges 的入参。 */
 export interface IssueWorkspaceGitChangesRequest {
-  taskId: string;
+  taskId?: string;
+  workspaceId?: string;
 }
 
 /**
- * getGitChanges 响应：全部仓库未提交变更的扁平表（无变更为空数组）。
+ * getGitChanges 响应：全部仓库未提交变更的扁平表（无变更为空数组）。isGitRepo = 查看根
+ * 是否 git 仓库（workspaceId 归属经后端探测，非 git/探测失败均 false；taskId 归属恒 false）。
  */
 export interface IssueWorkspaceGitChangesResponseData {
   files: IssueWorkspaceGitChangeFile[];
+  isGitRepo: boolean;
 }
 
 /** POST /api/project/taskWorkspace/getFileDiff 的入参（path 为 getGitChanges 的 file.path）。 */
 export interface IssueWorkspaceFileDiffRequest {
-  taskId: string;
+  taskId?: string;
+  workspaceId?: string;
   path: string;
 }
 
@@ -231,10 +242,16 @@ export class TaskWorkspaceService {
 
   /**
    * fileRawUrl：图片原始字节直连 URL（<img src>，类静态资源；base 解析同 request）。
-   * v 为缓存刷新参数（重验/重开时变化强制重新加载）。
+   * 归属 taskId / workspaceId 与五端点同款互斥；v 为缓存刷新参数（重验/重开时变化强制重新加载）。
    */
-  static fileRawUrl(req: { taskId: string; path: string; v?: string | number }): Promise<string> {
-    const query: Record<string, string> = { taskId: req.taskId, path: req.path };
+  static fileRawUrl(req: { taskId?: string; workspaceId?: string; path: string; v?: string | number }): Promise<string> {
+    const query: Record<string, string> = { path: req.path };
+    if (req.taskId != null && req.taskId !== '') {
+      query.taskId = req.taskId;
+    }
+    if (req.workspaceId != null && req.workspaceId !== '') {
+      query.workspaceId = req.workspaceId;
+    }
     if (req.v != null) {
       query.v = String(req.v);
     }

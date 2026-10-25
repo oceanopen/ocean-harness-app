@@ -104,6 +104,8 @@ function ImageViewerToolbar({ natural, loaded, onFit }: ImageViewerToolbarProps)
 
 interface ImageViewerProps {
   issueId: string;
+  /** workspaceId 在场 = 工作空间页归属：fileRaw 请求带 workspaceId（taskId 不传）。 */
+  workspaceId?: string;
   path: string;
   // 缓存刷新令牌（内容重验时变化 → URL 变化强制重新加载；服务端另有 no-store 双保险）。
   version: number | string;
@@ -114,7 +116,7 @@ interface ImageViewerProps {
  * 直连本地文件（零 base64 转码）+ 滚轮缩放/拖拽平移/双击缩放（库内建）+ 适应窗口
  * （fitOnInit 加载即 contain，手动按钮重算）+ 实际大小 + 棋盘格透明底 + 尺寸/百分比显示。
  */
-export default function ImageViewer({ issueId, path, version }: ImageViewerProps) {
+export default function ImageViewer({ issueId, workspaceId, path, version }: ImageViewerProps) {
   const theme = useTheme();
   const dark = theme.palette.mode === 'dark';
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -137,7 +139,11 @@ export default function ImageViewer({ issueId, path, version }: ImageViewerProps
   // URL 解析（base 来自 httpServerStatus 缓存，异步一次）；version 变化（重验）换 URL。
   useEffect(() => {
     let alive = true;
-    TaskWorkspaceService.fileRawUrl({ taskId: issueId, path, v: version })
+    TaskWorkspaceService.fileRawUrl(
+      workspaceId != null && workspaceId !== ''
+        ? { workspaceId, path, v: version }
+        : { taskId: issueId, path, v: version },
+    )
       .then(u => alive && setUrl(u))
       .catch((e) => {
         console.warn('[ImageViewer] resolve fileRaw url failed:', e);
@@ -148,7 +154,7 @@ export default function ImageViewer({ issueId, path, version }: ImageViewerProps
     return () => {
       alive = false;
     };
-  }, [issueId, path, version]);
+  }, [issueId, workspaceId, path, version]);
 
   // 适应窗口（halo fitScale 同款公式：contain 内缩且不放大，容器实测尺寸先测量后使用）。
   const handleFit = (controls: ReturnType<typeof useControls>) => {

@@ -1,8 +1,11 @@
 package service
 
 import (
+	"time"
+
 	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/apis"
+	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
 	"ocean-harness/server/internal/global"
 )
@@ -30,8 +33,17 @@ func (svc AcpSession) GetInfo(req *types.AcpSessionGetInfoRequest) (acpsession.V
 }
 
 // Prompt 受理一轮回合（立即返回；回合终态经 SSE turnEnded 帧）。
+// Prompt 受理一轮回合，并回写会话 updated_at（会话行「相对时间」的数据源：
+// bot 路径由 HandleInbound 的 TouchLastMessage 承担，桌面 ACP 路径由此处对等补齐）。
 func (svc AcpSession) Prompt(req *types.AcpSessionPromptRequest) error {
-	return global.AcpSessions.Prompt(acpsession.ConversationSessionKey(req.ConversationID), req.Text)
+	if err := global.AcpSessions.Prompt(acpsession.ConversationSessionKey(req.ConversationID), req.Text); err != nil {
+		return err
+	}
+	q := query.Use(svc.Orm)
+	_, err := q.Conversation.WithContext(svc.Context).
+		Where(q.Conversation.ID.Eq(req.ConversationID)).
+		UpdateSimple(q.Conversation.UpdatedAt.Value(time.Now()))
+	return err
 }
 
 // Cancel 软取消当前回合（幂等 no-op 安全）。

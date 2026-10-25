@@ -9,11 +9,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
+
+	"ocean-harness/server/internal/dal/query"
 	"ocean-harness/server/internal/dal/types"
 )
 
 /*
- * 工作空间文件浏览（T5.1 本期：列表 + 预览）。方法挂在 TaskWorkspace 上（同包多文件分工惯例，见 task_workspace.go 头注释）：只读访问 {taskId}/（目录经 taskId 从 DB 解析）。
+ * 工作空间文件浏览（T5.1 本期：列表 + 预览）。方法挂在 TaskWorkspace 上（同包多文件分工惯例，见 task_workspace.go 头注释）：只读访问查看根目录（taskId → {baseDir}/{taskId}，workspaceId → 工作空间目录本身）。
  * 设计要点：一次性全树——忽略构建产物后典型工作空间数千节点，本机单次遍历毫秒级；懒加载逐目录增量合并是「先占位后回填」式复杂度，不做，节点上限兜底病态目录。忽略名单同时约束两个接口——getFileTree 看不见的文件，getFileContent 点名也拿不到；.ssh 按用户决策移出名单（树中可见可查）。
  * symlink：树遍历跳过（不进树）；内容读取经 EvalSymlinks 全链解析 + root 前缀断言，逃出 root 一律拒绝（指向 root 内的 symlink 解析后可读——树不展示 symlink，此路仅兜直接点名读取）。
  */
@@ -51,7 +54,7 @@ var taskWorkspaceImageMimes = map[string]string{
  * 扁平节点表（WalkDir 词法序，父目录天然先于其内条目），前端纯函数组树。
  */
 func (svc TaskWorkspace) FileTree(req *types.TaskWorkspaceFileTreeRequest) (*types.TaskWorkspaceFileTreeResponseData, error) {
-	root, err := svc.taskWorkspaceRoot(req.TaskID)
+	root, err := svc.taskWorkspaceViewRoot(req.TaskID, req.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +115,7 @@ func (svc TaskWorkspace) FileTree(req *types.TaskWorkspaceFileTreeRequest) (*typ
  * 图片分派（base64）→ 文本上限 → 整读嗅探（NUL / 非 UTF-8 → binary）→ text 全文。
  */
 func (svc TaskWorkspace) FileContent(req *types.TaskWorkspaceFileContentRequest) (*types.TaskWorkspaceFileContentResponseData, error) {
-	root, err := svc.taskWorkspaceRoot(req.TaskID)
+	root, err := svc.taskWorkspaceViewRoot(req.TaskID, req.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
@@ -160,11 +163,11 @@ func (svc TaskWorkspace) FileContent(req *types.TaskWorkspaceFileContentRequest)
 
 /*
  * FileRaw GET /api/taskWorkspace/fileRaw：图片原始字节直连（<img src> 消费，类静态资源
- * 服务）。校验链与 getFileContent 完全一致（taskId/rel 路径/忽略名单/symlink
- * 解析断言）+ 扩展名白名单（仅图片——本端点为 <img> 服务，不做通用文件下载）。
+ * 服务）。校验链与 getFileContent 完全一致（归属/taskID 或 workspaceID/rel 路径/忽略名单
+ * /symlink 解析断言）+ 扩展名白名单（仅图片——本端点为 <img> 服务，不做通用文件下载）。
  */
-func (svc TaskWorkspace) FileRaw(taskID, rel string) ([]byte, string, error) {
-	root, err := svc.taskWorkspaceRoot(taskID)
+func (svc TaskWorkspace) FileRaw(taskID, workspaceID, rel string) ([]byte, string, error) {
+	root, err := svc.taskWorkspaceViewRoot(taskID, workspaceID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -184,7 +187,7 @@ func (svc TaskWorkspace) FileRaw(taskID, rel string) ([]byte, string, error) {
 }
 
 /*
- * taskWorkspaceRoot 服务入口统一换算：taskId → 工作空间目录 → {dir}/{taskId} 根
+ * taskWorkspaceRoot 任务归属服务入口统一换算：taskId → 工作空间目录 → {dir}/{taskId} 根
  * （目录经 resolveIssueBaseDir 校验为绝对路径，此处仅拼接）。
  */
 func (svc TaskWorkspace) taskWorkspaceRoot(taskID string) (string, error) {
@@ -196,6 +199,35 @@ func (svc TaskWorkspace) taskWorkspaceRoot(taskID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(baseDir, taskID), nil
+}
+
+/*
+ * taskWorkspaceViewRoot 文件/Git 五端点共用的归属解析：TaskID / WorkspaceID 互斥且必传其一，
+ * workspaceId → t_workspaces 存在性 + 目录绝对路径校验后取工作空间目录本身（不拼子目录），
+ * taskId → 原两跳 {baseDir}/{taskId}（taskWorkspaceValidTaskID 校验保留在 taskId 路径）。
+ */
+func (svc TaskWorkspace) taskWorkspaceViewRoot(taskID, workspaceID string) (string, error) {
+	if taskID != "" && workspaceID != "" {
+		return "", errors.New("taskId 与 workspaceId 不可同时传入")
+	}
+	if taskID == "" && workspaceID == "" {
+		return "", errors.New("taskId 与 workspaceId 必传其一")
+	}
+	if workspaceID == "" {
+		return svc.taskWorkspaceRoot(taskID)
+	}
+	q := query.Use(svc.Orm)
+	ws, err := q.Workspace.WithContext(svc.Context).Where(q.Workspace.ID.Eq(workspaceID)).First()
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("工作空间不存在")
+		}
+		return "", err
+	}
+	if !filepath.IsAbs(ws.Dir) {
+		return "", errors.New("工作空间目录须为绝对路径")
+	}
+	return ws.Dir, nil
 }
 
 /*

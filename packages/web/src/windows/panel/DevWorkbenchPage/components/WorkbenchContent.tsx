@@ -236,15 +236,20 @@ export default function WorkbenchContent({
   // 工具条/工具面板/全屏等消费方随锚定启用，不再要求任务对象在场。
   const hasSelection = conversationScope === 'workspace' ? selectedConversationId != null : selectedTaskId != null;
   // 工具面板锚定：任务页 = 选中任务；工作空间页 = 选中会话（projectId 回落容器 id，
-  // 各工具数据面仍按自身维度消费，锚定不改变查询语义）。
+  // containerId 标记容器归属 + conversationScope 供各工具切数据面；锚定不改变查询语义）。
   const toolIssue: WorkbenchToolIssue | null = conversationScope === 'workspace'
     ? (container != null && selectedConversationId != null
-        ? { id: selectedConversationId, projectId: container.id, name: activeConversation?.title ?? container.name }
+        ? {
+            id: selectedConversationId,
+            projectId: container.id,
+            name: activeConversation?.title ?? container.name,
+            containerId: container.id,
+            conversationScope: 'workspace',
+          }
         : null)
-    : task;
-  // 工具维度门禁：任务会话维度工具落在工作空间会话锚定上不可用（注册表 scopedOut 声明），
-  // 工具条禁用 + 面板区过滤同源下发。
-  const scopedOutToolIds: readonly string[] = conversationScope === 'workspace' ? ['claudeSessions'] : [];
+    : task != null
+      ? { ...task, conversationScope: 'task' }
+      : null;
 
   // 生效启动设置（T0.4）：task 覆盖字段级合并 container，未覆盖键回落。合并值驱动
   // 终端直启派生与启动分流；task/container/catalog 任一解析中时 startupCli=null
@@ -326,18 +331,19 @@ export default function WorkbenchContent({
         return;
       }
       e.preventDefault();
-      const taskId = task?.id ?? null;
+      // 锚定随页语境：工作空间页锚选中会话，任务页锚选中任务（浮层 tabs 同源）。
+      const anchorId = conversationScope === 'workspace' ? selectedConversationId : task?.id ?? null;
       const { previewTabsByIssue, closePreviewTab: closeTab } = useWorkspaceFilesStore.getState();
-      const tabs = taskId != null ? previewTabsByIssue[taskId] : undefined;
-      if (taskId != null && tabs != null && tabs.tabs.length > 0 && tabs.activeTabId != null) {
-        closeTab(taskId, tabs.activeTabId);
+      const tabs = anchorId != null ? previewTabsByIssue[anchorId] : undefined;
+      if (anchorId != null && tabs != null && tabs.tabs.length > 0 && tabs.activeTabId != null) {
+        closeTab(anchorId, tabs.activeTabId);
       } else {
         void getCurrentWindow().close();
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [task?.id]);
+  }, [conversationScope, selectedConversationId, task?.id]);
 
   // Esc 直退沉浸模式（全屏态下预览浮层的 Esc 关 tab 让位——浮层 onKeyDown 读 store 判断）。
   // 仅全屏态挂监听；Dialog 类浮层（归档确认/md 代码块全屏）内的 Esc 由 MUI Modal 自身
@@ -621,17 +627,26 @@ export default function WorkbenchContent({
               不挤压布局零 SIGWINCH）锚定。 */}
           <Box sx={{ flex: 1, minHeight: '0px', position: 'relative' }}>
             {terminalContent}
-            {/* 工作空间文件预览浮层：tabs 按任务隔离、非空才可见；与终端
-                内容为兄弟节点，absolute 定位不参与 flex 布局（会话后端常驻仅视觉遮盖）。 */}
+            {/* 工作空间文件预览浮层：tabs 按锚定 id 隔离（任务页=任务、工作空间页=会话）、
+                非空才可见；与终端内容为兄弟节点，absolute 定位不参与 flex 布局（会话后端
+                常驻仅视觉遮盖）。工作空间页 workspaceId 使五查询/fileRaw 走空间目录本身。 */}
             {task != null && <FilePreviewOverlay issueId={task.id} />}
-            {/* 浏览器操作台浮层：激活 profile（useBrowserStageStore）接管终端内容区，
-                FilePreviewOverlay 同款接管语义；显隐自派生（未激活渲染 null）。 */}
-            {task != null && <BrowserStageOverlay issueId={task.id} />}
+            {conversationScope === 'workspace' && container != null && selectedConversationId != null && (
+              <FilePreviewOverlay issueId={selectedConversationId} workspaceId={container.id} />
+            )}
+            {/* 浏览器操作台浮层：激活 profile 接管终端内容区（FilePreviewOverlay 同款接管
+                语义），按锚定命名空间过滤（任务页 = 任务族、工作空间页 = 工作空间族）；
+                显隐自派生（未激活渲染 null）。 */}
+            {conversationScope === 'workspace'
+              ? (
+                  container != null && selectedConversationId != null
+                  && <BrowserStageOverlay ownerKind="workspace" ownerId={container.id} />
+                )
+              : task != null && <BrowserStageOverlay ownerKind="issue" ownerId={task.id} />}
           </Box>
         </Box>
         <ToolPanelArea
           issue={toolIssue}
-          scopedOutToolIds={scopedOutToolIds}
           hasSelection={hasSelection}
           emptyHint={conversationScope === 'workspace' ? '请先选择左侧会话' : '请先选择左侧任务'}
           visible={toolAreaVisible}
@@ -644,7 +659,6 @@ export default function WorkbenchContent({
           仅工具图标禁用（工具须挂具体任务），方格开关保持可用（面板恒展示后须能收起）。 */}
       <WorkbenchToolRail
         issueId={toolIssue?.id ?? null}
-        scopedOutToolIds={scopedOutToolIds}
         panelCollapsed={toolAreaCollapsed}
         onTogglePanel={toggleToolAreaCollapsed}
         onExpandPanel={() => void setAppConfig(PANEL_DEV_TOOL_AREA_COLLAPSED_KEY, toYesNo(false))}

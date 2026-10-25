@@ -80,6 +80,8 @@ interface UsePtySessionArgs {
    * cwd 须由锚归属实体派生（T5.3 调用方责任，异源会 resume 落错目录）；锚值变化经 attachKey 触发重编排。
    */
   resumeClaudeId?: string | null;
+  /** resume 失败回调：带锚启动的 shell 退出（CLI resume 失败即退出）时以锚值通知，调用方剔除后重开脱困。 */
+  onResumeFailed?: (resumeClaudeId: string) => void;
   /**
    * 输出回调（TerminalView 的 write 桥）；reattach/spawn 复用的 scrollback 也经此一次
    * 送达（replay=true 标记历史回放——TerminalView 在回放窗口抑制查询应答，防乱码）。
@@ -127,7 +129,7 @@ async function attach(
   return { next: 'active', spawned: true };
 }
 
-export function usePtySession({ sessionId, cwd, enabled, cols, rows, directCommand, resumeClaudeId, onData }: UsePtySessionArgs): UsePtySessionResult {
+export function usePtySession({ sessionId, cwd, enabled, cols, rows, directCommand, resumeClaudeId, onResumeFailed, onData }: UsePtySessionArgs): UsePtySessionResult {
   const [status, setStatus] = useState<PtySessionStatus>('connecting');
   const [spawnKind, setSpawnKind] = useState<PtySpawnKind | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -204,6 +206,10 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
         if (cancelled) {
           return;
         }
+        // 带锚启动的 shell 退出：CLI --resume 失败（transcript 不存在等）即退出——通知剔除失效锚，重开脱困。
+        if (result.next === 'exited' && resumeClaudeId != null) {
+          onResumeFailed?.(resumeClaudeId);
+        }
         setStatus(result.next);
         setSpawnKind(result.spawned ? (direct ? 'direct' : 'plain') : 'reattach');
         if (result.spawned) {
@@ -234,7 +240,7 @@ export function usePtySession({ sessionId, cwd, enabled, cols, rows, directComma
     return () => {
       cancelled = true;
     };
-  }, [enabled, sessionId, cwd, cols, rows, directCommand, resumeClaudeId, attempt, onData]);
+  }, [enabled, sessionId, cwd, cols, rows, directCommand, resumeClaudeId, onResumeFailed, attempt, onData]);
 
   // 以下操作函数均为稳定引用（deps 仅 sessionId），直接交给 TerminalView 接线。
   const write = useCallback((data: string) => {

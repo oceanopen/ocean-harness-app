@@ -9,7 +9,7 @@ import { useConfigReady } from '@src/shared/useConfigReady';
 import { useConfigValue } from '@src/shared/useConfigValue';
 import { useDocumentVisible } from '@src/shared/useDocumentVisible';
 import {
-  isTaskSessionProfile,
+  parseConversationProfile,
   useBrowserFrameStream,
   useBrowserSessionEvents,
   useBrowserSessionView,
@@ -25,17 +25,19 @@ const LIVE_REFRESH_CONFIG_KEYS = [BROWSER_LIVE_REFRESH_MS_KEY];
 
 /**
  * BrowserStageOverlay：浏览器操作台浮层——激活 profile 接管工作台终端内容区（inset 0 遮盖
- * 不挤压布局）；激活态经 useBrowserStageStore 共享，激活期自持投影 SSE 订阅。按任务命名
- * 空间绑定：激活 profile 属当前任务（任意槽位）才渲染，issue 切换即收起。
+ * 不挤压布局）；激活态经 useBrowserStageStore 共享，激活期自持投影 SSE 订阅。按锚定命名
+ * 空间族绑定（任务页 issue 族 / 工作空间页 workspace 族）：激活 profile 属当前 owner
+ * （任意槽位）才渲染，切换锚定即收起。
  */
-export default function BrowserStageOverlay({ issueId }: { issueId: string }) {
+export default function BrowserStageOverlay({ ownerKind, ownerId }: { ownerKind: 'issue' | 'workspace'; ownerId: string }) {
   const activatedProfile = useBrowserStageStore(s => s.activatedProfile);
   const deactivate = useBrowserStageStore(s => s.deactivate);
   useEffect(() => {
-    // 切走任务即收起浮层（会话归属跟随任务；新任务的浮层由用户显式激活，不代拉起）。
+    // 切走锚定即收起浮层（会话归属跟随锚定；新锚定的浮层由用户显式激活，不代拉起）。
     deactivate();
-  }, [issueId, deactivate]);
-  if (activatedProfile == null || !isTaskSessionProfile(issueId, activatedProfile)) {
+  }, [ownerId, deactivate]);
+  const activated = activatedProfile != null ? parseConversationProfile(activatedProfile) : null;
+  if (activatedProfile == null || activated == null || activated.ownerKind !== ownerKind || activated.ownerID !== ownerId) {
     return null;
   }
   return <StageContent key={activatedProfile} profile={activatedProfile} />;

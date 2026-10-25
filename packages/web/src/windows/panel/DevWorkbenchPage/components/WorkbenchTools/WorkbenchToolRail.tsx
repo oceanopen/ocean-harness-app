@@ -8,8 +8,6 @@ interface WorkbenchToolRailProps {
   // 选中 issue id；null = 未选中（工具图标禁用；方格开关保持可用——面板区可见性与
   // 选中态解耦后，未选中时也须能收起面板）。
   issueId: string | null;
-  // 当前锚定维度不可用的工具 id 集（页面按 scope 传入）：图标禁用 + Tooltip 说明。
-  scopedOutToolIds?: readonly string[];
   // 面板区折叠态（config SSOT 订阅值，由页面传入；rail 不直接订阅 config）。
   panelCollapsed: boolean;
   // 方格点击：切面板区折叠（页面写 config）。
@@ -23,7 +21,7 @@ interface WorkbenchToolRailProps {
 // 下方为工具图标列（注册表驱动，点击 = openTool + 面板区未展开则展开）。激活 tab 所属
 // 工具高亮（并存工具任一实例激活即高亮；有 tab 非激活不作次级态，保持两态简单）。
 // tabs 读取走域级 useToolTabs（hydration + 响应式订阅成对封装，见 store.ts 注释）。
-export default function WorkbenchToolRail({ issueId, scopedOutToolIds, panelCollapsed, onTogglePanel, onExpandPanel }: WorkbenchToolRailProps) {
+export default function WorkbenchToolRail({ issueId, panelCollapsed, onTogglePanel, onExpandPanel }: WorkbenchToolRailProps) {
   const openTool = useWorkbenchToolsStore(s => s.openTool);
   const { tabs, activeTabId } = useToolTabs(issueId);
   const activeTab = tabs.find(t => t.id === activeTabId) ?? null;
@@ -68,20 +66,19 @@ export default function WorkbenchToolRail({ issueId, scopedOutToolIds, panelColl
       <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }} />
 
       {/* 工具图标列：注册表驱动；激活 tab 所属工具高亮；Tooltip 同贴右缘向左展开。
-          禁用项（未选中/维度不可用）不触发点击，Tooltip 追加维度说明。 */}
+          未选中时图标禁用（工具须挂具体任务/会话）。 */}
       {WORKBENCH_TOOLS.map((tool) => {
         const active = activeTab?.toolId === tool.id;
-        const scopedOut = scopedOutToolIds?.includes(tool.id) ?? false;
         return (
           <Tooltip
             key={tool.id}
-            title={scopedOut ? `${tool.title}（任务会话维度工具，请先选择任务）` : tool.title}
+            title={tool.title}
             placement="left"
           >
             <span>
               <IconButton
                 onClick={() => handleToolClick(tool.id, tool.exclusive)}
-                disabled={issueId == null || scopedOut}
+                disabled={issueId == null}
                 aria-label={`打开${tool.title}`}
                 sx={{
                   'width': WORKBENCH_TITLEBAR_HEIGHT,

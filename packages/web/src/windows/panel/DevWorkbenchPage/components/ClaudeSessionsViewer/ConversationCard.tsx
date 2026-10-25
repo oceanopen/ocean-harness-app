@@ -4,6 +4,7 @@ import { Box, Button, Chip, IconButton, Tooltip, Typography } from '@mui/materia
 import { formatRelativeTime } from '@src/shared/time';
 import { useImBotConversations, useImBots } from '@src/state/imBots';
 import { useProjects } from '@src/state/projects';
+import { useWorkspaces } from '@src/state/tracker';
 import { issueWorkspacePath } from '@src/windows/panel/DevWorkbenchPage/issueWorkspacePath';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +16,8 @@ interface ConversationCardProps {
   running: boolean;
   projectId: string;
   issueId: string;
+  // 工作空间语境的容器 id（在场 = workspace 会话）：历史 cwd 与关联 bot 候选切工作空间域。
+  containerId?: string;
   onLiveView: () => void;
 }
 
@@ -22,14 +25,18 @@ interface ConversationCardProps {
  * 会话卡片（O16）：标题 + 子会话/mode/锚状态徽标 + 实时查看 + 关联 bot 行 + 可展开本地历史。
  * 纯展示组件：live 点击上抛（viewer 分流 acp 内嵌 / terminal 提示），历史展开态卡片自持。
  */
-function ConversationCard({ conversation, running, projectId, issueId, onLiveView }: ConversationCardProps) {
+function ConversationCard({ conversation, running, projectId, issueId, containerId, onLiveView }: ConversationCardProps) {
   const { t } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
   const anchored = conversation.claudeSessionId !== '';
-  // 历史直读 cwd = 任务工作区目录（{项目目录}/{taskId}）；项目缺失（旧数据）降级「暂无本地历史」。
+  // 历史直读 cwd：任务会话 = 任务工作区目录（{项目目录}/{taskId}）；工作空间会话 = 空间目录本身。
   const { data: projects = [] } = useProjects();
-  const projectDir = projects.find(p => p.id === projectId)?.dir ?? null;
-  const cwd = projectDir != null ? issueWorkspacePath(projectDir, issueId) : null;
+  const { data: workspaces = [] } = useWorkspaces();
+  const projectDir = containerId == null ? projects.find(p => p.id === projectId)?.dir ?? null : null;
+  const workspaceDir = containerId != null ? workspaces.find(w => w.id === containerId)?.dir ?? null : null;
+  const cwd = containerId != null
+    ? workspaceDir
+    : projectDir != null ? issueWorkspacePath(projectDir, issueId) : null;
 
   return (
     <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper', overflow: 'hidden', flexShrink: 0 }}>
@@ -64,7 +71,7 @@ function ConversationCard({ conversation, running, projectId, issueId, onLiveVie
         </Tooltip>
       </Box>
       <Box sx={{ px: '12px', pb: '10px', display: 'flex', alignItems: 'center', gap: '16px' }}>
-        <ConversationBotNames conversationId={conversation.id} projectId={projectId} />
+        <ConversationBotNames conversationId={conversation.id} projectId={projectId} containerId={containerId} />
         <Typography sx={{ fontSize: '12px', color: 'text.disabled', flexShrink: 0 }}>
           {formatRelativeTime(new Date(conversation.updatedAt).getTime(), t, 'tracker')}
         </Typography>
@@ -74,10 +81,12 @@ function ConversationCard({ conversation, running, projectId, issueId, onLiveVie
   );
 }
 
-/** 关联 bot 行：候选 = 项目档且归属本项目；无候选直接「无关联 bot」。 */
-function ConversationBotNames({ conversationId, projectId }: { conversationId: string; projectId: string }) {
+/** 关联 bot 行：候选按语境 = 项目档本项目 / 工作空间档本空间；无候选直接「无关联 bot」。 */
+function ConversationBotNames({ conversationId, projectId, containerId }: { conversationId: string; projectId: string; containerId?: string }) {
   const { data: bots = [] } = useImBots();
-  const candidates = bots.filter(bot => bot.conversationType === 'project' && bot.projectId === projectId);
+  const candidates = containerId != null
+    ? bots.filter(bot => bot.conversationType === 'workspace' && bot.workspaceId === containerId)
+    : bots.filter(bot => bot.conversationType === 'project' && bot.projectId === projectId);
   if (candidates.length === 0) {
     return (
       <Typography noWrap sx={{ fontSize: '12px', color: 'text.secondary', flex: 1, minWidth: '0px' }}>

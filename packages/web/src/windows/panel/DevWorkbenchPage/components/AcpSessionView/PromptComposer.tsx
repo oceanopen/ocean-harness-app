@@ -2,6 +2,8 @@ import type { KeyboardEvent } from 'react';
 import { Box, Button, TextField } from '@mui/material';
 import { useToast } from '@src/shared/useToast';
 import { useCancelAcpSession, usePromptAcpSession } from '@src/state/acpSession';
+import { conversationKeys } from '@src/state/conversation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 /**
@@ -14,6 +16,7 @@ export default function PromptComposer({ conversationId, turnActive }: { convers
   const prompt = usePromptAcpSession();
   const cancel = useCancelAcpSession();
   const toast = useToast();
+  const queryClient = useQueryClient();
 
   const send = () => {
     const value = text.trim();
@@ -23,7 +26,11 @@ export default function PromptComposer({ conversationId, turnActive }: { convers
     prompt.mutate(
       { conversationId, text: value },
       {
-        onSuccess: () => setText(''),
+        // 受理成功即失效会话域缓存：左树「相对时间」随消息实时刷新。
+        onSuccess: () => {
+          setText('');
+          void queryClient.invalidateQueries({ queryKey: conversationKeys.root });
+        },
         onError: err => toast.show(`发送失败：${err.message}`, 'error'),
       },
     );

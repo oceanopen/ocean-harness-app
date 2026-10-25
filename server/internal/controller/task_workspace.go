@@ -157,12 +157,13 @@ func (api TaskWorkspace) FileRaw(ctx *gin.Context) {
 	svc := service.TaskWorkspace{}
 	api.MakeContext(ctx).MakeService(&svc.Service)
 	taskID := ctx.Query("taskId")
+	workspaceID := ctx.Query("workspaceId")
 	path := ctx.Query("path")
-	if taskID == "" || path == "" {
+	if (taskID == "" && workspaceID == "") || path == "" {
 		api.JsonFail(errors.New("参数缺失"))
 		return
 	}
-	raw, mime, err := svc.FileRaw(taskID, path)
+	raw, mime, err := svc.FileRaw(taskID, workspaceID, path)
 	if err != nil {
 		api.JsonFail(err)
 		return

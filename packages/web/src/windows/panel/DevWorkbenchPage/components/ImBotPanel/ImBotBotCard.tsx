@@ -18,6 +18,8 @@ import { chatTypeLabel, conversationActiveText, conversationShortCode } from './
 
 interface ImBotBotCardProps {
   bot: ImBotModel;
+  // 在场 = 工作空间语境：IM 会话投影命中该会话 id 时头部标注「已关联当前会话」。
+  linkedConversationId?: string;
 }
 
 /** 会话明细只读行：身份行（类型 · 最近活跃 · key 短码）；路由归属由消息侧自动维护，不在此操作。 */
@@ -32,13 +34,16 @@ function ConversationRow({ conversation }: { conversation: ImBotConversationMode
 }
 
 /**
- * ImBotBotCard：bot 聚合卡（只读）——名称 + 启用态 + 连接状态徽标 + 会话计数，展开列会话明细。
- * 会话数据经 useImBotConversations(bot.id) 按 bot 独立缓存；归属/启用变更统一走「IM 机器人」页编辑抽屉。
+ * ImBotBotCard：bot 聚合卡（只读）——名称 + 启用态 + 连接状态徽标 + 会话计数（工作空间
+ * 语境标注「已关联当前会话」），展开列会话明细。会话数据经 useImBotConversations(bot.id)
+ * 按 bot 独立缓存；归属/启用变更统一走「IM 机器人」页编辑抽屉。
  */
-export default function ImBotBotCard({ bot }: ImBotBotCardProps) {
+export default function ImBotBotCard({ bot, linkedConversationId }: ImBotBotCardProps) {
   const [expanded, setExpanded] = useState(true);
   const { data: conversations = [], isLoading, error, refetch } = useImBotConversations(bot.id);
   const chip = imBotStateChip(bot.connState);
+  const linkedToCurrent = linkedConversationId != null
+    && conversations.some(row => row.conversationId === linkedConversationId);
 
   return (
     <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', bgcolor: 'background.paper' }}>
@@ -62,6 +67,11 @@ export default function ImBotBotCard({ bot }: ImBotBotCardProps) {
                 sx={{ fontSize: '12px' }}
               />
             )}
+        {linkedToCurrent && (
+          <Tooltip title="该机器人的 IM 会话已绑定当前选中的工作空间会话">
+            <Chip size="small" label="已关联当前会话" color="primary" variant="outlined" sx={{ fontSize: '12px' }} />
+          </Tooltip>
+        )}
         {/* 展开箭头带自身 onClick（键盘可激活；stopPropagation 防与父行点击冒泡双 toggle 抵消） */}
         <IconButton
           size="small"

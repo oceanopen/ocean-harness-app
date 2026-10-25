@@ -13,12 +13,17 @@ import BrowserPanel from './BrowserPanel/BrowserPanel';
 
 /**
  * 工具渲染锚定（结构子集）：任务页 = 选中任务；工作空间页 = 选中会话（projectId 回落
- * 容器 id）。各工具的数据面仍按自身维度消费这些字段，锚定不改变查询语义。
+ * 容器 id，containerId 标记容器归属）。各工具按 conversationScope 切数据面，锚定不改变
+ * 查询语义。
  */
 export interface WorkbenchToolIssue {
   id: string;
   projectId: string;
   name: string;
+  /** 工作空间页锚定时的容器（工作空间）id；任务页锚定缺省——任务维度无工作空间容器。 */
+  containerId?: string;
+  /** 锚定语境（缺省 = 任务）：工具据此在任务/工作空间两族数据面间分派。 */
+  conversationScope?: 'task' | 'workspace';
 }
 
 /**
@@ -39,8 +44,6 @@ export interface WorkbenchToolDef {
   title: string;
   icon: SvgIconComponent;
   exclusive: boolean;
-  // 锚定维度超出工具适用域（如任务会话维度工具落在工作空间会话上）→ 工具条禁用、面板区不渲染。
-  scopedOut?: (ctx: WorkbenchToolRenderCtx) => boolean;
   render: (ctx: WorkbenchToolRenderCtx) => ReactNode;
 }
 
@@ -50,7 +53,8 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     title: '文件',
     icon: FolderOutlinedIcon,
     exclusive: true,
-    render: ({ issue }) => <WorkspaceFilePanel issueId={issue.id} />,
+    // 工作空间页锚定（containerId 在场）→ 目录 = 工作空间本身；任务页不传保持 taskId 两跳现状。
+    render: ({ issue }) => <WorkspaceFilePanel issueId={issue.id} workspaceId={issue.containerId} />,
   },
   {
     id: 'imBots',
@@ -64,9 +68,15 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     title: 'Claude 会话',
     icon: ForumOutlinedIcon,
     exclusive: true,
-    // 任务会话维度工具（子会话/关联 bot 查看）：工作空间会话无子会话概念，恒不可用。
-    scopedOut: () => true,
-    render: ({ issue }) => <ClaudeSessionsViewer issueId={issue.id} projectId={issue.projectId} />,
+    // 会话维度工具：任务页 = 主会话+子会话卡片列表；工作空间页 = 当前选中会话单卡。
+    render: ({ issue }) => (
+      <ClaudeSessionsViewer
+        issueId={issue.id}
+        projectId={issue.projectId}
+        conversationScope={issue.conversationScope}
+        containerId={issue.containerId}
+      />
+    ),
   },
   {
     id: 'browser',
@@ -74,7 +84,12 @@ export const WORKBENCH_TOOLS: readonly WorkbenchToolDef[] = [
     icon: LanguageIcon,
     exclusive: true,
     render: ({ issue, panelVisible }) => (
-      <BrowserPanel issueId={issue.id} panelVisible={panelVisible} />
+      <BrowserPanel
+        issueId={issue.id}
+        panelVisible={panelVisible}
+        conversationScope={issue.conversationScope}
+        containerId={issue.containerId}
+      />
     ),
   },
 ];
