@@ -145,6 +145,9 @@ function ImBotCard(props: {
   const { bot, health, onEdit, onDeleteAsk } = props;
   const restartMutation = useRestartImBot();
   const chip = imBotStateChip(bot.connState);
+  // 待配置徽标：关联必选位缺失才提示（workspace=工作空间、project=项目；任务可选不拦）。
+  const assocMissing = bot.conversationType === 'project' ? bot.projectId === '' : bot.workspaceId === '';
+  const assocLabel = bot.conversationType === 'project' ? '项目' : '工作空间';
   // 关联名称解析（O17）：项目列表共享缓存；任务列表按项目档的 projectId 拉取（空串 hooks 守卫不查询）。
   const { data: projects = [] } = useProjects();
   const { data: projectTasks = [] } = useProjectTasks(bot.conversationType === 'project' && bot.projectId !== '' ? bot.projectId : null);
@@ -161,8 +164,8 @@ function ImBotCard(props: {
             <Chip size="small" label={health.label} color={health.color} variant="outlined" />
           </Tooltip>
         )}
-        {bot.workspaceId === '' && (
-          <Tooltip title="尚未选择工作空间，对话时将收到补选提醒">
+        {assocMissing && (
+          <Tooltip title={`尚未选择${assocLabel}，对话时将收到补选提醒`}>
             <Chip size="small" label="待配置" color="warning" variant="outlined" sx={{ fontSize: '12px' }} />
           </Tooltip>
         )}
