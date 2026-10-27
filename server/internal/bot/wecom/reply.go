@@ -120,3 +120,6 @@ func (s *replyStream) ByteLimit() int { return byteLimit }
 
 // MarkdownFrames 实现 bot.MarkdownFrameStream：企微流式帧渲染 markdown（quote/粗体）。
 func (s *replyStream) MarkdownFrames() bool { return true }
+
+// FinalThoughtFrames 实现 bot.FinalThoughtFrameStream：企微终帧保留思考过程摘要。
+func (s *replyStream) FinalThoughtFrames() bool { return true }

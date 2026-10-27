@@ -39,6 +39,14 @@ type MarkdownFrameStream interface {
 }
 
 /*
+* FinalThoughtFrameStream ReplyStream 的可选内容能力面：终帧是否携带「💭 思考过程」摘要面板
+* （流式面板特性的收尾）。纯文本整条发送渠道不实现即终帧只含正文，中间帧打字态不受影响。
+ */
+type FinalThoughtFrameStream interface {
+	FinalThoughtFrames() bool
+}
+
+/*
  * ChannelRuntime 渠道适配器运行时：连接生命周期 + 入站回调 + 开回复流。
  * 渠道身份由 Factory.Channel() 承载（注册表 key），运行时不再重复声明。
  */

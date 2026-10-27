@@ -59,6 +59,11 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	if mfs, ok := rs.(MarkdownFrameStream); ok {
 		useMarkdown = mfs.MarkdownFrames()
 	}
+	// 终帧内容能力探测：未声明渠道终帧不携带思考过程摘要（微信类整条发送）。
+	finalThought := false
+	if fts, ok := rs.(FinalThoughtFrameStream); ok {
+		finalThought = fts.FinalThoughtFrames()
+	}
 
 	snapshot := func() string {
 		mu.Lock()
@@ -166,7 +171,10 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	<-tickerDone
 
 	mu.Lock()
-	panel := finalPanelContent(thinkingBuf, useMarkdown) // 终帧只带思考过程摘要，工具列表不进终帧
+	panel := ""
+	if finalThought {
+		panel = finalPanelContent(thinkingBuf, useMarkdown)
+	}
 	final := currentText
 	mu.Unlock()
 

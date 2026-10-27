@@ -163,6 +163,9 @@ type plainReplyStream struct {
 
 func (p *plainReplyStream) MarkdownFrames() bool { return false }
 
+// FinalThoughtFrames 声明终帧思考能力：本用例仅验 markdown 降级，终帧基线保持含 💭。
+func (p *plainReplyStream) FinalThoughtFrames() bool { return true }
+
 // 纯文本渠道降级：无 quote 块、无粗体标签，面板分区与正文结构保留。
 func TestPumpReplyPlainChannelDegrades(t *testing.T) {
 	rs := &plainReplyStream{}
@@ -180,5 +183,30 @@ func TestPumpReplyPlainChannelDegrades(t *testing.T) {
 	want := "💭 思考过程：\n先分析问题\n\n答案"
 	if len(frames) != 2 || frames[1].content != want || !frames[1].final {
 		t.Fatalf("纯文本渠道应降级为无 quote/粗体帧: %+v want %q", frames, want)
+	}
+}
+
+// bareReplyStream 模拟微信类整条发送渠道：复用 fake 行为，仅关闭终帧思考能力位。
+type bareReplyStream struct {
+	*fakeReplyStream
+}
+
+func (b *bareReplyStream) FinalThoughtFrames() bool { return false }
+
+// 无能力位渠道：终帧只含正文，无 💭 摘要段（中间帧打字态不受影响）。
+func TestPumpReplyFinalFrameOmitsThoughtWithoutCapability(t *testing.T) {
+	rs := &bareReplyStream{fakeReplyStream: &fakeReplyStream{}}
+	events := make(chan TurnEvent, 2)
+	events <- TurnEvent{Type: TurnThinking, Delta: "先分析问题"}
+	events <- TurnEvent{Type: TurnText, Delta: "答案"}
+	done := pumpAsync(rs, events)
+	time.Sleep(2*streamTickInterval + 50*time.Millisecond)
+	close(events)
+	<-done
+	frames := rs.snapshot()
+	want := "答案"
+	last := frames[len(frames)-1]
+	if !last.final || last.content != want || strings.Contains(last.content, "💭") {
+		t.Fatalf("无能力位终帧应只含正文: %+v", frames)
 	}
 }

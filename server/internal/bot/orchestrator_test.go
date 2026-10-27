@@ -43,6 +43,9 @@ func (f *fakeReplyStream) ByteLimit() int { return 20480 }
 // MarkdownFrames 实现 MarkdownFrameStream：测试替身默认按 markdown 渠道组帧。
 func (f *fakeReplyStream) MarkdownFrames() bool { return true }
 
+// FinalThoughtFrames 声明终帧思考能力：存量终帧断言基线保持含 💭 摘要。
+func (f *fakeReplyStream) FinalThoughtFrames() bool { return true }
+
 /*
  * fakeCardReplyStream 卡能力流替身（CardReplyStream 实现）：帧记录之上追加卡事件记录
  * （SendCard 附卡帧 / UpdateCard 卡更新）——「不出卡」类负向断言的入口。
