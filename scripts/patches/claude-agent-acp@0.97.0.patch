@@ -1,8 +1,8 @@
 diff --git a/dist/acp-agent.js b/dist/acp-agent.js
-index 67f4a1d..bac5eea 100644
+index 1371c2c..79a2abd 100644
 --- a/dist/acp-agent.js
 +++ b/dist/acp-agent.js
-@@ -1474,6 +1474,7 @@ export class ClaudeAcpAgent {
+@@ -1462,6 +1462,7 @@ export class ClaudeAcpAgent {
          const response = await this.createSession(params, {
              // Revisit these meta values once we support resume
              resume: params._meta?.claudeCode?.options?.resume,
@@ -10,7 +10,7 @@ index 67f4a1d..bac5eea 100644
          });
          this.afterSetupResponse(response.sessionId, params.mcpServers);
          return response;
-@@ -8629,6 +8630,23 @@ export class ClaudeAcpAgent {
+@@ -9050,6 +9051,23 @@ export class ClaudeAcpAgent {
              // Set our own session id if not resuming an existing session.
              options.sessionId = creationOpts.publicSessionId ? randomUUID() : sessionId;
          }
