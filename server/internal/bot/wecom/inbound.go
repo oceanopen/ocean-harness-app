@@ -1,9 +1,7 @@
 package wecom
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -124,7 +122,7 @@ func (r *channelRuntime) buildWithAttachment(in *bot.InboundMessage, url, aesKey
 	if url == "" {
 		return
 	}
-	path, name, ok := r.downloadAttachment(in.MessageID, len(in.Files)+1, url, aesKey, kind, fallbackName)
+	path, name, ok := r.downloadAttachment(in.MessageID, url, aesKey, kind, fallbackName, in.Files)
 	if !ok {
 		in.Text = strings.TrimSpace(in.Text + "\n（附件下载失败，未包含在本次消息中）")
 		return
@@ -153,10 +151,10 @@ func (r *channelRuntime) buildMixed(mixed aibottypes.MixedContent, in *bot.Inbou
 }
 
 /*
- * downloadAttachment 下载解密并落盘到 <workspaceDir>/.wecom-attachments/<msgId>/<n>-<name>。
+ * downloadAttachment 下载解密并落盘到 <workspaceDir>/.bot-outbox/download/<msgId前8>-<name>。
  * 返回 (绝对路径, 展示文件名, 是否成功)。
  */
-func (r *channelRuntime) downloadAttachment(msgID string, index int, url, aesKey, kind, fallbackName string) (string, string, bool) {
+func (r *channelRuntime) downloadAttachment(msgID, url, aesKey, kind, fallbackName string, existing []bot.InboundFile) (string, string, bool) {
 	r.mu.Lock()
 	client := r.client
 	workspaceDir := ""
@@ -173,13 +171,11 @@ func (r *channelRuntime) downloadAttachment(msgID string, index int, url, aesKey
 		r.log.Warn("bot 附件下载失败", zap.String("kind", kind), zap.Error(err))
 		return "", "", false
 	}
-	name := bot.SanitizeFileName(strings.TrimSpace(filename), fallbackName)
-	dir := filepath.Join(workspaceDir, ".wecom-attachments", bot.SanitizeFileName(msgID, "msg"))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	path, name, err := bot.InboundFilePath(workspaceDir, msgID, filename, fallbackName, existing)
+	if err != nil {
 		r.log.Warn("bot 附件目录创建失败", zap.Error(err))
 		return "", "", false
 	}
-	path := filepath.Join(dir, fmt.Sprintf("%d-%s", index, name))
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		r.log.Warn("bot 附件写盘失败", zap.Error(err))
 		return "", "", false

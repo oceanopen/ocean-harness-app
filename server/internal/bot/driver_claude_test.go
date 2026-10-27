@@ -224,6 +224,30 @@ func TestBuildClaudeArgsPermissions(t *testing.T) {
 	}
 }
 
+// TestBuildClaudeArgsPresetSessionID headless 预置锚：PresetSessionID 非空注入 --session-id
+// （新会话即预置 id）；与 SessionID 并存时 resume 优先（active 锚优先级高于预置注入）。
+func TestBuildClaudeArgsPresetSessionID(t *testing.T) {
+	args, cleanup, err := buildClaudeArgs(TurnRequest{PresetSessionID: "preset-1"})
+	if err != nil {
+		t.Fatalf("预置锚构建: %v", err)
+	}
+	cleanup()
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--session-id preset-1") || strings.Contains(joined, "--resume") {
+		t.Fatalf("预置锚应注入 --session-id: %s", joined)
+	}
+
+	args, cleanup, err = buildClaudeArgs(TurnRequest{SessionID: "sess-1", PresetSessionID: "preset-1"})
+	if err != nil {
+		t.Fatalf("双锚构建: %v", err)
+	}
+	cleanup()
+	joined = strings.Join(args, " ")
+	if !strings.Contains(joined, "--resume sess-1") || strings.Contains(joined, "--session-id") {
+		t.Fatalf("active 锚应优先 resume 且不注入预置: %s", joined)
+	}
+}
+
 // TestBuildClaudeArgsResume headless 续聊锚：SessionID 非空注入 --resume，空不开新参数。
 func TestBuildClaudeArgsResume(t *testing.T) {
 	args, cleanup, err := buildClaudeArgs(TurnRequest{})

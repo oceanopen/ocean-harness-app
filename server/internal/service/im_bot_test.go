@@ -23,14 +23,15 @@ const (
 	imBotIssueForeign = "0199aaaa-0000-7111-8111-3b6ac9e1f002"
 )
 
-// newImBotTestDB 临时目录 sqlite 文件库 + 会话链路四表（workspace / bot / 会话映射 / 任务）。
+// newImBotTestDB 临时目录 sqlite 文件库 + 会话链路四表（workspace / bot / 会话 / 任务），
+// AutoMigrate 后重建 bot 幂等部分唯一索引（gorm tag 建不出 WHERE 子句）。
 func newImBotTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("打开临时 sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.ImBot{}, &model.ImBotConversation{}, &model.ProjectTask{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.ImBot{}, &model.Conversation{}, &model.ProjectTask{}); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
 	return db
@@ -70,12 +71,13 @@ func mkImBotFixture(t *testing.T, db *gorm.DB) {
 	}
 	latest := time.Now()
 	earlier := latest.Add(-time.Hour)
-	for _, conv := range []*model.ImBotConversation{
-		{ID: "conv-1", BotID: "bot-1", ConversationKey: "single:u1", ConversationID: imBotIssueLocal, LastMessageAt: &latest},
-		{ID: "conv-2", BotID: "bot-1", ConversationKey: "group:g1", ClaudeSessionID: "sess-keep", LastMessageAt: &earlier},
-		{ID: "conv-3", BotID: "bot-1", ConversationKey: "single:u2"},
+	// bot 字落会话行本体（唯一会话源）：行 id 即 ConversationId，owner 承载归属。
+	for _, conv := range []*model.Conversation{
+		{ID: "conv-1", OwnerType: enums.OWNER_TYPE_TASK, OwnerID: imBotIssueLocal, Mode: enums.CONVERSATION_MODE_ACP, BotID: "bot-1", BotChannel: enums.CHANNEL_WECOM, BotConversationKey: "single:u1", LastMessageAt: &latest},
+		{ID: "conv-2", OwnerType: enums.OWNER_TYPE_WORKSPACE, OwnerID: "ws-1", Mode: enums.CONVERSATION_MODE_TERMINAL, ClaudeSessionID: "sess-keep", ClaudeSessionStatus: enums.CLAUDE_SESSION_STATUS_ACTIVE, BotID: "bot-1", BotChannel: enums.CHANNEL_WECOM, BotConversationKey: "group:g1", LastMessageAt: &earlier},
+		{ID: "conv-3", OwnerType: enums.OWNER_TYPE_WORKSPACE, OwnerID: "ws-1", Mode: enums.CONVERSATION_MODE_TERMINAL, BotID: "bot-1", BotChannel: enums.CHANNEL_WECOM, BotConversationKey: "single:u2"},
 	} {
-		if err := q.ImBotConversation.WithContext(ctx).Create(conv); err != nil {
+		if err := q.Conversation.WithContext(ctx).Create(conv); err != nil {
 			t.Fatalf("建会话行: %v", err)
 		}
 	}
@@ -83,7 +85,7 @@ func mkImBotFixture(t *testing.T, db *gorm.DB) {
 
 /*
  * TestImBotGetConversations 会话列表装配：排序（活跃倒序 + 从未活跃殿后）/ chatType 前缀派生 /
- * 归属会话锚直出 / bot 不存在拒绝。
+ * 渠道标识与行 id 直出 / bot 不存在拒绝。
  */
 func TestImBotGetConversations(t *testing.T) {
 	db := newImBotTestDB(t)
@@ -105,11 +107,11 @@ func TestImBotGetConversations(t *testing.T) {
 	if rows[0].ChatType != "single" || rows[1].ChatType != "group" {
 		t.Fatalf("chatType 前缀派生错误: %q / %q", rows[0].ChatType, rows[1].ChatType)
 	}
-	if rows[0].ConversationId != imBotIssueLocal {
-		t.Fatalf("归属会话锚装配错误: %+v", rows[0])
+	if rows[0].ConversationId != "conv-1" || rows[0].Channel != enums.CHANNEL_WECOM {
+		t.Fatalf("行 id 与渠道标识装配错误: %+v", rows[0])
 	}
-	if rows[1].ConversationId != "" || rows[2].LastMessageAt != nil {
-		t.Fatalf("未关联/从未活跃形态错误: %+v %+v", rows[1], rows[2])
+	if rows[2].LastMessageAt != nil {
+		t.Fatalf("从未活跃形态错误: %+v", rows[2])
 	}
 	if _, err := svc.GetConversations(&types.ImBotGetConversationsRequest{BotId: "bot-99"}); err == nil {
 		t.Fatal("bot 不存在应拒绝")

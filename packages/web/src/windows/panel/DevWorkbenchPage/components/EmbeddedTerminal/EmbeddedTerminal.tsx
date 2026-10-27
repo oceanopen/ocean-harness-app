@@ -100,10 +100,16 @@ interface EmbeddedTerminalProps {
    */
   conversationId?: string | null;
   /**
-   * 终端锚恢复 id（T2.2；T5.3 从 conversation 行读 claudeSessionId 传入，cwd 须与锚同源派生）。
-   * null = 无锚（直启/裸启 + T2.1 捕获）。
+   * 终端锚恢复 id（T2.2；T5.3 从 conversation 行读 active 态 claudeSessionId 传入，cwd 须与锚同源派生）。
+   * null = 无 active 锚（预置/无锚走直启注入或裸启 + T2.1 捕获）。
    */
   resumeClaudeId?: string | null;
+  /**
+   * 预置会话 id（pending 未驱动锚）：fresh spawn 时向 claude 直启命令追加 --session-id，
+   * 手动「启动 claude」按钮同源注入——新会话即预置 id，与行 claude_session_id 绝对一致。
+   * null = 无预置锚。
+   */
+  presetClaudeId?: string | null;
   /**
    * cwd 直用覆盖（T5.3；非 null = 工作空间页会话，cwd = 工作空间根目录，会话锚维度
    * 即 conversationId）。null/缺省 = 按 `${dir}/${containerId}` 任务工作区派生。
@@ -116,7 +122,7 @@ interface EmbeddedTerminalProps {
  * 父层按 scope（容器+会话）重挂载：切任务/切会话即重挂新 pane 集合（unmount 仅断订阅，后端会话/ring 常驻，回切 reattach 回到原进程现场）。数据通路（函数式两条单向线，无响应式层）：输出 Channel → usePtySession(onData) → writeDataRef → terminal.write；输入 xterm onData → session.write → ptyWrite → shell。
  * writeDataRef 是全链唯一 ref 桥：Channel 数据可在任何时刻到达（含 StrictMode 双挂载窗口），ref 直读直写不经渲染周期——state 版桥在 React 19 StrictMode 下实测「fn→null→fn 连续 setState 后闭包仍读到 null」，输出全丢。
  */
-export default function EmbeddedTerminal({ containerId, workspaceDir, startupCli, paneId = 'main', conversationId = null, resumeClaudeId = null, cwdOverride = null }: EmbeddedTerminalProps) {
+export default function EmbeddedTerminal({ containerId, workspaceDir, startupCli, paneId = 'main', conversationId = null, resumeClaudeId = null, presetClaudeId = null, cwdOverride = null }: EmbeddedTerminalProps) {
   const isMain = paneId === 'main';
   const { show: showToast, snack: toastSnack } = useToast();
   // 字号（terminal_03 §3.3）：每 pane 各自订阅，设置保存事件驱动全量 pane 生效。
@@ -217,6 +223,8 @@ export default function EmbeddedTerminal({ containerId, workspaceDir, startupCli
     directCommand: isMain ? startupCli : null,
     // resume 失败自愈：带锚 shell 退出（CLI --resume 失败即退出）→ 剔除失效锚重开脱困为裸启。
     resumeClaudeId: resumeFailedIds.has(resumeClaudeId ?? '') ? null : resumeClaudeId,
+    // 预置锚注入仅主 pane（与 directCommand/resume 同源——同一条 spawn 命令线）。
+    presetClaudeId: isMain ? presetClaudeId : null,
     onResumeFailed: markResumeFailed,
     onData: handleTerminalData,
   });
@@ -259,9 +267,10 @@ export default function EmbeddedTerminal({ containerId, workspaceDir, startupCli
    * 非输出流启发式。
    */
   const claudeRunning = useClaudeRunning(sessionId, session.status);
+  // 手动启动注入预置 id（pending 锚）：手动路径与直启路径同源——新会话即预置 id，绝对一致。
   const startClaude = useCallback(() => {
-    session.write('claude\r');
-  }, [session]);
+    session.write(presetClaudeId ? `claude --session-id ${presetClaudeId}\r` : 'claude\r');
+  }, [session, presetClaudeId]);
   // 「新开终端」按配置直启：配置 none 裸 shell / 配置 claude 起新 claude 会话。
   const reopenPlain = useCallback(() => {
     session.reopen();

@@ -26,14 +26,14 @@ func newCascadeBindingTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("打开临时 sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.ImBot{}, &model.ImBotConversation{}, &model.Project{}, &model.ProjectTask{}, &model.TaskLocalRepository{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.ImBot{}, &model.Conversation{}, &model.Project{}, &model.ProjectTask{}, &model.TaskLocalRepository{}); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
 	return db
 }
 
 /*
- * mkCascadeFixture 建 workspace + bot（绑 workspace）+ 两会话行（带归属锚/带续聊锚）+
+ * mkCascadeFixture 建 workspace + bot（绑 workspace）+ 两 bot 会话行（带归属/带续聊锚）+
  * project + 两任务（任务A / 对照组）+ 任务A 的仓库关联，返回 (workspaceID, taskAID)。
  */
 func mkCascadeFixture(t *testing.T, db *gorm.DB) (string, string) {
@@ -50,11 +50,11 @@ func mkCascadeFixture(t *testing.T, db *gorm.DB) (string, string) {
 	}); err != nil {
 		t.Fatalf("建 bot: %v", err)
 	}
-	for _, conv := range []*model.ImBotConversation{
-		{ID: "conv-u1", BotID: "bot-1", ConversationKey: "single:u1", ConversationID: "0198eeee-0000-7111-8111-3b6ac9e1f201"},
-		{ID: "conv-u2", BotID: "bot-1", ConversationKey: "single:u2", ClaudeSessionID: "sess-keep"},
+	for _, conv := range []*model.Conversation{
+		{ID: "conv-u1", OwnerType: enums.OWNER_TYPE_TASK, OwnerID: "0198eeee-0000-7111-8111-3b6ac9e1f201", Mode: enums.CONVERSATION_MODE_ACP, BotID: "bot-1", BotChannel: enums.CHANNEL_WECOM, BotConversationKey: "single:u1"},
+		{ID: "conv-u2", OwnerType: enums.OWNER_TYPE_WORKSPACE, OwnerID: workspaceID, Mode: enums.CONVERSATION_MODE_TERMINAL, ClaudeSessionID: "sess-keep", ClaudeSessionStatus: enums.CLAUDE_SESSION_STATUS_ACTIVE, BotID: "bot-1", BotChannel: enums.CHANNEL_WECOM, BotConversationKey: "single:u2"},
 	} {
-		if err := q.ImBotConversation.WithContext(ctx).Create(conv); err != nil {
+		if err := q.Conversation.WithContext(ctx).Create(conv); err != nil {
 			t.Fatalf("建会话行: %v", err)
 		}
 	}
@@ -99,7 +99,7 @@ func TestTaskDeleteCascade(t *testing.T) {
 	if err != nil || len(links) != 0 {
 		t.Fatalf("被删任务的仓库关联应级联硬删: n=%d err=%v", len(links), err)
 	}
-	convs, err := q.ImBotConversation.WithContext(context.Background()).Find()
+	convs, err := q.Conversation.WithContext(context.Background()).Find()
 	if err != nil || len(convs) != 2 {
 		t.Fatalf("会话行不应被任务删除触碰: n=%d err=%v", len(convs), err)
 	}
@@ -129,7 +129,7 @@ func TestWorkspaceDeleteUnbindsBots(t *testing.T) {
 	if err != nil || len(tasks) != 2 {
 		t.Fatalf("任务不属工作空间级联面，应全部保留: n=%d err=%v", len(tasks), err)
 	}
-	convs, err := q.ImBotConversation.WithContext(context.Background()).Find()
+	convs, err := q.Conversation.WithContext(context.Background()).Find()
 	if err != nil || len(convs) != 2 {
 		t.Fatalf("会话行不应被 workspace 删除触碰: n=%d err=%v", len(convs), err)
 	}

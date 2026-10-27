@@ -17,6 +17,7 @@ import (
 	"gorm.io/gorm"
 
 	"ocean-harness/server/internal/acp"
+	"ocean-harness/server/internal/dal/enums"
 	"ocean-harness/server/internal/dal/model"
 )
 
@@ -49,11 +50,11 @@ func TestMain(m *testing.M) {
  * 直接失败，模拟 vendored/握手链报错）；calls 统计实际调用次数（join 幂等断言用）；
  * resumeIDs 记录每次收到的 resumeID（Ensure 锚点接线断言用，可 nil）。
  */
-func fakeSpawn(script string, wantErr error, calls *atomic.Int64, resumeIDs *[]string) func(SessionConfig, Dirs, int, *zap.Logger, string) (*acp.AgentClient, *acp.Session, bool, error) {
-	return func(cfg SessionConfig, _ Dirs, _ int, log *zap.Logger, resumeID string) (*acp.AgentClient, *acp.Session, bool, error) {
+func fakeSpawn(script string, wantErr error, calls *atomic.Int64, anchors *[]Anchor) func(SessionConfig, Dirs, int, *zap.Logger, Anchor) (*acp.AgentClient, *acp.Session, bool, error) {
+	return func(cfg SessionConfig, _ Dirs, _ int, log *zap.Logger, anchor Anchor) (*acp.AgentClient, *acp.Session, bool, error) {
 		calls.Add(1)
-		if resumeIDs != nil {
-			*resumeIDs = append(*resumeIDs, resumeID)
+		if anchors != nil {
+			*anchors = append(*anchors, anchor)
 		}
 		if wantErr != nil {
 			return nil, nil, false, wantErr
@@ -69,7 +70,7 @@ func fakeSpawn(script string, wantErr error, calls *atomic.Int64, resumeIDs *[]s
 			client.Close()
 			return nil, nil, false, err
 		}
-		session, resumed, err := newOrResumedSession(context.Background(), client, cfg, resumeID, log)
+		session, resumed, err := newOrResumedSession(context.Background(), client, cfg, anchor, log)
 		if err != nil {
 			client.Close()
 			return nil, nil, false, err
@@ -249,11 +250,11 @@ func TestEnsureSpawnFailureAndRetry(t *testing.T) {
 	if failed.Status.Error == "" {
 		t.Fatalf("failed 帧应带原因，got %+v", failed.Status)
 	}
-	// 落因清锚：会话实体行 claude_session_id 归零。
+	// 落因锚重置：会话实体行换新预置 id 并回 pending（失败 = 下次受理开新会话）。
 	convID, _ := conversationRowID(issueID)
-	waitForCondition(t, "失败清锚", func() bool {
+	waitForCondition(t, "失败锚重置", func() bool {
 		row, err := queryOf(db).Conversation.WithContext(ctx).Where(queryOf(db).Conversation.ID.Eq(convID)).First()
-		return err == nil && row.ClaudeSessionID == ""
+		return err == nil && row.ClaudeSessionID != "" && row.ClaudeSessionStatus == enums.CLAUDE_SESSION_STATUS_PENDING
 	})
 	// failed 态可重试：换成功 spawn 重建 → ready + 重新落锚。
 	old := spawnFunc
@@ -856,14 +857,25 @@ func TestPromptQueuedDeathReleasesAllWaiters(t *testing.T) {
 }
 
 /*
- * TestBindingStoreConversationAnchor conv- 键的窄桩契约：GetOrCreate 校验会话行在场
- * （缺失报错不建行）；锚读写 SaveReady/SaveError/Delete 窄桩期恒 no-op 返回 nil。
+ * TestBindingStoreConversationAnchor conv- 键锚存储契约（唯一会话源 t_conversations）：
+ * GetOrCreate 校验会话行在场（缺失报错不建行）；Peek 读预置锚与状态；SaveReady 落实际
+ * id + active；SaveError/Delete 锚重置（换新预置 id 回 pending）；SyncClaudeSessionID
+ * 值变即覆写、同值幂等。
  */
 func TestBindingStoreConversationAnchor(t *testing.T) {
 	db := newTestDB(t)
 	store := &BindingStore{DB: db}
 	ctx := context.Background()
-	key := ConversationSessionKey(seedBotConversation(t, db, "ws-conv"))
+	// 手工种带预置锚的会话行（公共 seedTaskConversation 不带锚——供空锚 legacy 语义用例复用）。
+	sessionID, status := model.NewPresetClaudeSession()
+	if err := queryOf(db).Conversation.WithContext(ctx).Create(&model.Conversation{
+		ID: "conv-anchor-preset", OwnerType: enums.OWNER_TYPE_TASK, OwnerID: "task-anchor",
+		Title: "t", Mode: enums.CONVERSATION_MODE_ACP,
+		ClaudeSessionID: sessionID, ClaudeSessionStatus: status,
+	}); err != nil {
+		t.Fatalf("种预置锚会话行: %v", err)
+	}
+	key := ConversationSessionKey("conv-anchor-preset")
 
 	if err := store.GetOrCreate(ctx, key); err != nil {
 		t.Fatalf("行在场应通过: %v", err)
@@ -871,17 +883,39 @@ func TestBindingStoreConversationAnchor(t *testing.T) {
 	if err := store.GetOrCreate(ctx, ConversationSessionKey("no-such-row")); err == nil {
 		t.Fatal("行缺失应报错（不自动建锚行）")
 	}
-	if err := store.SaveReady(ctx, key, "claude-acp", "sess-conv"); err != nil {
-		t.Fatalf("SaveReady 窄桩应 no-op: %v", err)
+	preset, err := store.Peek(ctx, key)
+	if err != nil || preset.ClaudeSessionID == "" || preset.Status != enums.CLAUDE_SESSION_STATUS_PENDING {
+		t.Fatalf("预置锚应可读且为 pending: %+v err=%v", preset, err)
 	}
-	if peeked, err := store.Peek(ctx, key); err != nil || peeked != "" {
-		t.Fatalf("Peek 窄桩期应恒空串: %v %q", err, peeked)
+	if err := store.SaveReady(ctx, key, "claude-acp", "sess-live"); err != nil {
+		t.Fatalf("SaveReady: %v", err)
+	}
+	live, err := store.Peek(ctx, key)
+	if err != nil || live.ClaudeSessionID != "sess-live" || live.Status != enums.CLAUDE_SESSION_STATUS_ACTIVE {
+		t.Fatalf("SaveReady 应落实际 id + active: %+v err=%v", live, err)
+	}
+	if err := store.SyncClaudeSessionID(ctx, key, "sess-rotated"); err != nil {
+		t.Fatalf("SyncClaudeSessionID: %v", err)
+	}
+	synced, err := store.Peek(ctx, key)
+	if err != nil || synced.ClaudeSessionID != "sess-rotated" {
+		t.Fatalf("id 轮换应同步覆锚: %+v err=%v", synced, err)
 	}
 	if err := store.SaveError(ctx, key, "claude-acp", "boom"); err != nil {
-		t.Fatalf("SaveError 窄桩应 no-op: %v", err)
+		t.Fatalf("SaveError: %v", err)
+	}
+	reset, err := store.Peek(ctx, key)
+	if err != nil || reset.ClaudeSessionID == "" || reset.ClaudeSessionID == "sess-rotated" {
+		t.Fatalf("失败应锚重置换新预置 id: %+v err=%v", reset, err)
+	}
+	if reset.Status != enums.CLAUDE_SESSION_STATUS_PENDING {
+		t.Fatalf("锚重置应回 pending: %+v", reset)
 	}
 	if err := store.Delete(ctx, key); err != nil {
-		t.Fatalf("Delete 窄桩应 no-op: %v", err)
+		t.Fatalf("Delete: %v", err)
+	}
+	if err := store.SyncClaudeSessionID(ctx, key, "sess-rotated"); err != nil {
+		t.Fatalf("Sync 同值幂等: %v", err)
 	}
 }
 
@@ -909,7 +943,7 @@ func TestNewOrResumedSession(t *testing.T) {
 	log := zap.NewNop()
 
 	t.Run("空锚走NewSession", func(t *testing.T) {
-		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "happy"), cfg, "", log)
+		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "happy"), cfg, Anchor{}, log)
 		if err != nil {
 			t.Fatalf("NewSession: %v", err)
 		}
@@ -922,7 +956,7 @@ func TestNewOrResumedSession(t *testing.T) {
 	})
 
 	t.Run("锚点恢复以请求id注册", func(t *testing.T) {
-		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "load"), cfg, "sess-anchor", log)
+		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "load"), cfg, Anchor{ClaudeSessionID: "sess-anchor", Status: enums.CLAUDE_SESSION_STATUS_ACTIVE}, log)
 		if err != nil {
 			t.Fatalf("LoadSession: %v", err)
 		}
@@ -935,7 +969,7 @@ func TestNewOrResumedSession(t *testing.T) {
 	})
 
 	t.Run("能力未声明降级NewSession", func(t *testing.T) {
-		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "happy"), cfg, "sess-anchor", log)
+		session, resumed, err := newOrResumedSession(ctx, launchACPClient(t, "happy"), cfg, Anchor{ClaudeSessionID: "sess-anchor", Status: enums.CLAUDE_SESSION_STATUS_ACTIVE}, log)
 		if err != nil {
 			t.Fatalf("降级 NewSession: %v", err)
 		}
@@ -950,8 +984,8 @@ func TestNewOrResumedSession(t *testing.T) {
 
 /*
  * TestBindingStoreLifecycle 会话实体锚生命周期：GetOrCreate 校验行在场（不代建，实体行归
- * conversation CRUD 管理）、SaveReady 落锚（agentCode + claudeSessionId）、Peek 读回、
- * SaveError 清锚、Delete 清锚保行。
+ * conversation CRUD 管理）、SaveReady 落锚（agentCode + 实际 id + active）、Peek 读回、
+ * SaveError/Delete 锚重置（换新预置 id 回 pending，保行）。
  */
 func TestBindingStoreLifecycle(t *testing.T) {
 	db := newTestDB(t)
@@ -982,14 +1016,14 @@ func TestBindingStoreLifecycle(t *testing.T) {
 		t.Fatalf("SaveReady 落锚: %+v", row)
 	}
 	peeked, err := store.Peek(ctx, key)
-	if err != nil || peeked != "sess-9" {
-		t.Fatalf("Peek 读回锚: %v %q", err, peeked)
+	if err != nil || peeked.ClaudeSessionID != "sess-9" || peeked.Status != enums.CLAUDE_SESSION_STATUS_ACTIVE {
+		t.Fatalf("Peek 读回锚: %v %+v", err, peeked)
 	}
 	if err := store.SaveError(ctx, key, "claude-acp", "握手失败"); err != nil {
 		t.Fatalf("SaveError: %v", err)
 	}
-	if row := convRow(); row.ClaudeSessionID != "" {
-		t.Fatalf("SaveError 应清锚: %+v", row)
+	if row := convRow(); row.ClaudeSessionID == "" || row.ClaudeSessionID == "sess-9" || row.ClaudeSessionStatus != enums.CLAUDE_SESSION_STATUS_PENDING {
+		t.Fatalf("SaveError 应锚重置（换新预置 id 回 pending）: %+v", row)
 	}
 	if err := store.SaveReady(ctx, key, "claude-acp", "sess-10"); err != nil {
 		t.Fatalf("重落锚: %v", err)
@@ -997,8 +1031,8 @@ func TestBindingStoreLifecycle(t *testing.T) {
 	if err := store.Delete(ctx, key); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if row := convRow(); row.ClaudeSessionID != "" {
-		t.Fatalf("Delete 应清锚保行: %+v", row)
+	if row := convRow(); row.ClaudeSessionID == "" || row.ClaudeSessionID == "sess-10" {
+		t.Fatalf("Delete 应锚重置保行: %+v", row)
 	}
 }
 
@@ -1033,9 +1067,9 @@ func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 				}
 			}
 			calls := &atomic.Int64{}
-			var resumeIDs []string
+			var anchors []Anchor
 			old := spawnFunc
-			spawnFunc = fakeSpawn(tc.script, nil, calls, &resumeIDs)
+			spawnFunc = fakeSpawn(tc.script, nil, calls, &anchors)
 			t.Cleanup(func() { spawnFunc = old })
 			if _, err := mgr.Ensure(context.Background(), key, ""); err != nil {
 				t.Fatalf("Ensure: %v", err)
@@ -1043,11 +1077,11 @@ func TestEnsureResumeAnchorPassthrough(t *testing.T) {
 			waitForCondition(t, "会话就绪", func() bool {
 				return mgr.Get(key).Status == StatusReady
 			})
-			if n := len(resumeIDs); n != 1 {
+			if n := len(anchors); n != 1 {
 				t.Fatalf("spawn 应恰好一次，got %d", n)
 			}
-			if resumeIDs[0] != tc.wantResume {
-				t.Fatalf("spawn 应收到 resumeID %q，got %q", tc.wantResume, resumeIDs[0])
+			if anchors[0].ClaudeSessionID != tc.wantResume {
+				t.Fatalf("spawn 应收到锚 %q，got %+v", tc.wantResume, anchors[0])
 			}
 			snap := mgr.Get(key)
 			if tc.wantResume == "" {
@@ -1081,8 +1115,8 @@ func TestEnsureResumeFallbackNotice(t *testing.T) {
 	}
 	calls := &atomic.Int64{}
 	old := spawnFunc
-	spawnFunc = func(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, resumeID string) (*acp.AgentClient, *acp.Session, bool, error) {
-		client, session, _, err := fakeSpawn("happy", nil, calls, nil)(cfg, dirs, port, log, resumeID)
+	spawnFunc = func(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, anchor Anchor) (*acp.AgentClient, *acp.Session, bool, error) {
+		client, session, _, err := fakeSpawn("happy", nil, calls, nil)(cfg, dirs, port, log, anchor)
 		return client, session, false, err
 	}
 	t.Cleanup(func() { spawnFunc = old })

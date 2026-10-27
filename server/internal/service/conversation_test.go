@@ -43,7 +43,8 @@ func seedConversation(t *testing.T, db *gorm.DB, id, claudeSessionID string) {
 	}
 }
 
-// TestSetClaudeSessionID 终端锚回写三态：空锚落值、非空锚首捕获胜出、行不存在报错。
+// TestSetClaudeSessionID 终端锚回写三态：捕获落值并置 active、id 轮换持续同步（终端内
+// /clear 新会话即新 id）、行不存在报错。
 func TestSetClaudeSessionID(t *testing.T) {
 	db := newConversationTestDB(t)
 	seedConversation(t, db, "conv-1", "")
@@ -51,18 +52,19 @@ func TestSetClaudeSessionID(t *testing.T) {
 
 	row, err := svc.SetClaudeSessionID(&types.ConversationSetClaudeSessionIdRequest{ID: "conv-1", ClaudeSessionID: "sid-1"})
 	if err != nil {
-		t.Fatalf("空锚写入: %v", err)
+		t.Fatalf("锚写入: %v", err)
 	}
-	if row.ClaudeSessionID != "sid-1" {
-		t.Fatalf("空锚写入后锚值 = %q, want sid-1", row.ClaudeSessionID)
+	if row.ClaudeSessionID != "sid-1" || row.ClaudeSessionStatus != enums.CLAUDE_SESSION_STATUS_ACTIVE {
+		t.Fatalf("捕获应落锚并置 active: id=%q status=%q", row.ClaudeSessionID, row.ClaudeSessionStatus)
 	}
 
+	// 轮换同步：观测到新 id 即覆写（绝对一致以实际值为准）。
 	row, err = svc.SetClaudeSessionID(&types.ConversationSetClaudeSessionIdRequest{ID: "conv-1", ClaudeSessionID: "sid-2"})
 	if err != nil {
-		t.Fatalf("非空锚复设: %v", err)
+		t.Fatalf("轮换同步: %v", err)
 	}
-	if row.ClaudeSessionID != "sid-1" {
-		t.Fatalf("首捕获胜出被破坏：锚值 = %q, want sid-1", row.ClaudeSessionID)
+	if row.ClaudeSessionID != "sid-2" {
+		t.Fatalf("轮换应覆写锚值 = %q, want sid-2", row.ClaudeSessionID)
 	}
 
 	if _, err := svc.SetClaudeSessionID(&types.ConversationSetClaudeSessionIdRequest{ID: "conv-missing", ClaudeSessionID: "sid-3"}); err == nil || err.Error() != "会话不存在" {

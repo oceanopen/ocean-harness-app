@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"go.uber.org/zap"
+
+	"ocean-harness/server/internal/dal/enums"
 )
 
 /*
@@ -133,26 +135,27 @@ func openAccess() AccessPolicy { return AccessPolicy{Mode: AccessModeOpen} }
 
 // issueCmdCfg 测试用运行配置。
 func issueCmdCfg() BotRuntimeConfig {
-	return BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: openAccess()}
+	return BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WEIXIN, ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: openAccess()}
 }
 
 /*
- * TestRunTurnWorkspaceGate 工作空间门禁（未选 workspace 的 bot）：已 markSeen（消息已被
+ * TestRunTurnWorkspaceGate 工作空间门禁（工作目录未就绪的 bot）：已 markSeen（消息已被
  * 处理，不算失败、不触发会话自愈），纯指引文本终帧收口，不出回合（nil driver 不 panic
  * 即证明主路径未触达）。
  */
 func TestRunTurnWorkspaceGate(t *testing.T) {
 	o, store := newOrchestratorWithDB(t)
 	rs := &fakeReplyStream{}
-	o.HandleInbound(BotRuntimeConfig{BotID: "bot-1", AccessPolicy: openAccess()}, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "跑一下测试"}, func() (ReplyStream, error) {
+	cfg := BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WEIXIN, ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1", AccessPolicy: openAccess()}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "跑一下测试"}, func() (ReplyStream, error) {
 		return rs, nil
 	})
 	frames := finalFrameOf(t, "门禁终帧", rs)
 	if len(frames) != 2 || frames[0].content != "> 收到，处理中…" || frames[1].content != workspaceGateLead || !frames[1].final {
 		t.Fatalf("门禁应占位帧后接指引终帧: %+v", frames)
 	}
-	if seen, err := store.HasSeen("bot-1", "single:u1", "m-1"); err != nil || !seen {
-		t.Fatalf("门禁消息应 markSeen: seen=%v err=%v", seen, err)
+	if !store.HasSeen(cfg, "single:u1", "m-1") {
+		t.Fatal("门禁消息应 markSeen")
 	}
 }
 

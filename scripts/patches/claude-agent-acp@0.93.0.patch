@@ -1,0 +1,36 @@
+diff --git a/dist/acp-agent.js b/dist/acp-agent.js
+index 67f4a1d..bac5eea 100644
+--- a/dist/acp-agent.js
++++ b/dist/acp-agent.js
+@@ -1474,6 +1474,7 @@ export class ClaudeAcpAgent {
+         const response = await this.createSession(params, {
+             // Revisit these meta values once we support resume
+             resume: params._meta?.claudeCode?.options?.resume,
++            reuseSessionId: params._meta?.claudeCode?.sessionId,
+         });
+         this.afterSetupResponse(response.sessionId, params.mcpServers);
+         return response;
+@@ -8629,6 +8630,23 @@ export class ClaudeAcpAgent {
+             // Set our own session id if not resuming an existing session.
+             options.sessionId = creationOpts.publicSessionId ? randomUUID() : sessionId;
+         }
++        // OceanHarness patch: publish the actual Claude session id so hosts can keep
++        // their anchor in sync (fresh-context restarts rotate the id under a stable ACP id).
++        try {
++            const claudeSessionId = options.sessionId ?? options.resume;
++            if (claudeSessionId !== undefined) {
++                await this.client.sessionUpdate({
++                    sessionId,
++                    update: {
++                        sessionUpdate: "session_info_update",
++                        _meta: { claudeCode: { sessionId: claudeSessionId } },
++                    },
++                });
++            }
++        }
++        catch {
++            // Best-effort: never fail session creation on publication.
++        }
+         // Handle abort controller from meta options
+         if (abortController?.signal.aborted) {
+             throw new Error("Cancelled");

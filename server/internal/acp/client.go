@@ -7,9 +7,12 @@ package acp
 
 import (
 	"context"
+	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -192,6 +195,37 @@ type LoadSessionParams struct {
 	 * 会话以请求 id 注册）。
 	 */
 	SessionID string
+}
+
+/*
+ * ClaudeSessionMeta 新会话的预置 claude 会话 id wire 载荷（session/new _meta 经 vendored
+ * patch 透传到 SDK options.sessionId，等价 CLI --session-id）；空 id 返回 nil（随机 id 语义）。
+ */
+func ClaudeSessionMeta(claudeSessionID string) acp1.Meta {
+	if claudeSessionID == "" {
+		return nil
+	}
+	return acp1.Meta{
+		"claudeCode": jsontext.Value(`{"sessionId":` + strconv.Quote(claudeSessionID) + `}`),
+	}
+}
+
+/*
+ * ClaudeSessionIdFromMeta 从 session/update 的 _meta 提取实际 claude 会话 id（vendored
+ * patch 在会话启动/轮换时发布；缺失返回空串）。结构：_meta.claudeCode.sessionId。
+ */
+func ClaudeSessionIdFromMeta(meta acp1.Meta) string {
+	raw, ok := meta["claudeCode"]
+	if !ok {
+		return ""
+	}
+	var v struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := json.Unmarshal(json.RawMessage(raw), &v); err != nil || v.SessionID == "" {
+		return ""
+	}
+	return v.SessionID
 }
 
 /*

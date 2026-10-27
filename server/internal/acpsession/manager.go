@@ -20,6 +20,7 @@ import (
 	"ocean-harness/server/internal/acp"
 	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/appdb"
+	"ocean-harness/server/internal/dal/enums"
 )
 
 /*
@@ -101,7 +102,7 @@ type sessionEntry struct {
 
 /*
  * spawnFunc 测试替换点（对齐 acpdoctor probeFunc 惯例）：catalog 条目 → vendored 拉起链
- * → spawn env 注入 → 握手 → 建/恢复会话（resumeSessionID 非空走 LoadSession）→ 下发权限模式。
+ * → spawn env 注入 → 握手 → 建/恢复会话（anchor 判定，见 newOrResumedSession）→ 下发权限模式。
  */
 var spawnFunc = spawnAgentSession
 
@@ -141,24 +142,27 @@ func (m *Manager) Ensure(ctx context.Context, issueID, pickedLaunchMode string) 
 		return ViewSnapshot{}, err
 	}
 	/*
-	 * 锚点只读预取：非空即可恢复（idle 回收后的重建路径）；读取异常按全新会话受理（恢复
-	 * 尽力而为，不因锚点读失败阻塞受理）。
+	 * 锚点只读预取：active/存量锚 → LoadSession resume；pending 预置锚 → 新会话携带预置
+	 * id（vendored patch 经 _meta 下发，等价 CLI --session-id）；无锚 → 随机 id 新会话。
+	 * 读取异常按全新会话受理（恢复尽力而为，不因锚点读失败阻塞受理）。
 	 */
-	resumeID, err := m.bindings.Peek(ctx, issueID)
+	anchor, err := m.bindings.Peek(ctx, issueID)
 	if err != nil {
 		m.log.Warn("读取会话锚点失败，按全新会话受理", zap.String("issueId", issueID), zap.Error(err))
-		resumeID = ""
+		anchor = Anchor{}
 	}
 	m.hub.broadcast(issueID, entry.view.setStarting(cfg))
-	go m.runSpawn(entry, cfg, resumeID)
+	go m.runSpawn(entry, cfg, anchor)
 	return entry.view.snapshot(), nil
 }
 
 /*
- * runSpawn 后台 spawn 链（Ensure 受理的后续）：拉起就绪 → 落锚 + 注册 pump；失败 → 落态落因（清锚）；不捕获请求 ctx（Ensure 已返回），发现 discarded（受理后会话被删）直接自清；resumeID 非空时拉起链以 LoadSession 恢复既有会话，恢复未发生（失败降级）落 system 条目显式告知（R2）。
+ * runSpawn 后台 spawn 链（Ensure 受理的后续）：拉起就绪 → 落锚 + 注册 pump；失败 → 落态落因（锚重置为
+ * 新预置 id，下次受理同语义开新会话）；不捕获请求 ctx（Ensure 已返回），发现 discarded（受理后会话被删）
+ * 直接自清；anchor 判定恢复路径（active 锚 LoadSession 恢复；恢复未发生〔失败降级〕落 system 条目显式告知，R2）。
  */
-func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID string) {
-	client, session, resumed, err := spawnFunc(cfg, m.dirs, m.port, m.log, resumeID)
+func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, anchor Anchor) {
+	client, session, resumed, err := spawnFunc(cfg, m.dirs, m.port, m.log, anchor)
 	entry.mu.Lock()
 	if entry.discarded {
 		entry.mu.Unlock()
@@ -182,7 +186,7 @@ func (m *Manager) runSpawn(entry *sessionEntry, cfg SessionConfig, resumeID stri
 	frames := entry.view.setReady(string(session.ID()), cfg, session.Modes())
 	// 恢复未发生（锚失效/能力降级/闲置重开全新会话）：离线历史回放 + 显式提示（R2）。
 	if !resumed {
-		frames = append(frames, m.restoreOfflineHistory(entry, resumeID)...)
+		frames = append(frames, m.restoreOfflineHistory(entry, anchor.ClaudeSessionID)...)
 	}
 	entry.mu.Unlock()
 	if err := m.bindings.SaveReady(context.Background(), entry.issueID, cfg.AgentCode, string(session.ID())); err != nil {
@@ -244,7 +248,7 @@ func (m *Manager) restoreOfflineHistory(entry *sessionEntry, resumeID string) []
 /*
  * spawnAgentSession 生产拉起链（与 acpdoctor.CheckEntry 逐段同源：vendored 安装 → vendored claude 定位 → spawn env 注入 → Launch → 握手 → 建/恢复会话 → 下发权限模式；「探测通过」与「生产拉起」同一条链，差别仅在探测后清理、本链长期持有）；node 预检不复制——那是 doctor 的 stage 级定位面职责，本链 node 缺失在 EnsureVendored/VendoredSpawnConfig 显式报错；任一后置步失败回收已拉起进程。
  */
-func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, resumeSessionID string) (*acp.AgentClient, *acp.Session, bool, error) {
+func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, anchor Anchor) (*acp.AgentClient, *acp.Session, bool, error) {
 	entry, ok := agentcatalog.GetAgentCatalogInfoByCode(cfg.AgentCode)
 	if !ok {
 		return nil, nil, false, fmt.Errorf("agent catalog 无 %q 条目", cfg.AgentCode)
@@ -286,7 +290,7 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, 
 		}
 		return nil, nil, false, fmt.Errorf("ACP 握手失败: %w", err)
 	}
-	session, resumed, err := newOrResumedSession(context.Background(), client, cfg, resumeSessionID, log)
+	session, resumed, err := newOrResumedSession(context.Background(), client, cfg, anchor, log)
 	if err != nil {
 		client.Close()
 		if hint, authed := authRequired(err); authed {
@@ -302,20 +306,24 @@ func spawnAgentSession(cfg SessionConfig, dirs Dirs, port int, log *zap.Logger, 
 }
 
 /*
- * newOrResumedSession 建/恢复会话收口：锚点非空走 LoadSession（适配器读回 claude 会话
- * 文件并重放历史）；恢复失败（能力未声明/会话文件丢失等）降级全新会话（resumed=false，
- * 降级事实由调用方落 system 条目显式告知，R2）——恢复尽力而为，不因锚点失效阻塞受理，
- * 降级后 SaveReady 以新 id 覆盖锚点。
+ * newOrResumedSession 建/恢复会话收口（锚二择）：active/存量锚 → LoadSession 恢复，失败降级
+ * 全新随机 id 会话（resumed=false，调用方落 system 条目告知，SaveReady 以实际 id 覆锚——不带
+ * 预置 meta，避免 reuseSessionId 撞既有转录）；pending 预置锚 / 无锚 → 新会话（预置 id 经
+ * _meta 下发，vendored patch 等价 CLI --session-id）。
  */
-func newOrResumedSession(ctx context.Context, client *acp.AgentClient, cfg SessionConfig, resumeSessionID string, log *zap.Logger) (*acp.Session, bool, error) {
-	if resumeSessionID != "" {
-		session, err := client.LoadSession(ctx, acp.LoadSessionParams{Cwd: cfg.Cwd, SessionID: resumeSessionID})
+func newOrResumedSession(ctx context.Context, client *acp.AgentClient, cfg SessionConfig, anchor Anchor, log *zap.Logger) (*acp.Session, bool, error) {
+	if anchor.ClaudeSessionID != "" && anchor.Status != enums.CLAUDE_SESSION_STATUS_PENDING {
+		session, err := client.LoadSession(ctx, acp.LoadSessionParams{Cwd: cfg.Cwd, SessionID: anchor.ClaudeSessionID})
 		if err == nil {
 			return session, true, nil
 		}
-		log.Warn("ACP 会话恢复失败，降级全新会话", zap.String("resumeSessionId", resumeSessionID), zap.Error(err))
+		log.Warn("ACP 会话恢复失败，降级全新会话", zap.String("resumeSessionId", anchor.ClaudeSessionID), zap.Error(err))
 	}
-	session, err := client.NewSession(ctx, acp.NewSessionParams{Cwd: cfg.Cwd})
+	presetID := ""
+	if anchor.Status == enums.CLAUDE_SESSION_STATUS_PENDING {
+		presetID = anchor.ClaudeSessionID
+	}
+	session, err := client.NewSession(ctx, acp.NewSessionParams{Cwd: cfg.Cwd, Meta: acp.ClaudeSessionMeta(presetID)})
 	return session, false, err
 }
 
@@ -342,7 +350,26 @@ func (m *Manager) pump(entry *sessionEntry) {
 			m.finishTerminated(entry)
 			return
 		}
+		m.syncClaudeAnchor(entry, event.Update)
 		m.hub.broadcast(entry.issueID, entry.view.applyEvent(&event))
+	}
+}
+
+/*
+ * syncClaudeAnchor 实际 claude 会话 id 持续同步（绝对一致主通道）：vendored patch 在会话
+ * 启动/id 轮换时经 session_info_update._meta 发布实际 id，本处以发布值为准即时覆锚——
+ * adapter 内部轮换（fresh-context 重启等）与降级随机 id 的锚漂移由本通道收敛。
+ */
+func (m *Manager) syncClaudeAnchor(entry *sessionEntry, n *acp1.SessionNotification) {
+	if n == nil {
+		return
+	}
+	info, ok := n.Update.Variant().(acp1.SessionUpdateSessionInfoUpdate)
+	if !ok {
+		return
+	}
+	if err := m.bindings.SyncClaudeSessionID(context.Background(), entry.issueID, acp.ClaudeSessionIdFromMeta(info.Meta)); err != nil {
+		m.log.Warn("会话锚点同步失败", zap.String("issueId", entry.issueID), zap.Error(err))
 	}
 }
 
@@ -384,10 +411,9 @@ func (m *Manager) finishTerminated(entry *sessionEntry) {
 }
 
 /*
- * Terminate 主动终结会话（回合失败收尾/活性判死的入口，幂等）：Close 进程组后收敛全部
- * 复用既有链——连接停止使在途 prompt 失败（endTurn(error) 释放回合槽），pump 哨兵走
- * finishTerminated（置态、清锚落因、广播终结帧）。与 Discard 的差异：保留绑定行（下条
- * 消息 Ensure 全新会话重建，绑定关系不受影响）。
+ * Terminate 主动终结会话（回合失败收尾/活性判死的入口，幂等）：Close 进程组后收敛全部复用
+ * 既有链——在途 prompt 失败释放回合槽，pump 哨兵走 finishTerminated（置态、锚重置、广播）。
+ * 与 Discard 的差异：保留绑定行（下条消息 Ensure 以重置锚重建）。
  */
 func (m *Manager) Terminate(issueID, reason string) {
 	m.mu.Lock()

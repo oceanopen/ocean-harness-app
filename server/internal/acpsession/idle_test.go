@@ -83,9 +83,9 @@ func TestIdleTimeoutFromConfig(t *testing.T) {
 
 /*
  * newIdleTestManager 装配被测 Manager + 种子 issue。spawn 顶替按用例定制：script 定
- * fakeagent 脚本；resumeIDs 非 nil 时记录每次收到的 resumeID（回收闭环断言用）。
+ * fakeagent 脚本；anchors 非 nil 时记录每次收到的锚（回收闭环断言用）。
  */
-func newIdleTestManager(t *testing.T, script string, resumeIDs *[]string) (*Manager, *gorm.DB, string) {
+func newIdleTestManager(t *testing.T, script string, anchors *[]Anchor) (*Manager, *gorm.DB, string) {
 	t.Helper()
 	db := newTestDB(t)
 	taskID := seedIssue(t, db, t.TempDir(), `{"mode":"acp"}`, "")
@@ -96,7 +96,7 @@ func newIdleTestManager(t *testing.T, script string, resumeIDs *[]string) (*Mana
 	}
 	t.Cleanup(mgr.StopAll)
 	old := spawnFunc
-	spawnFunc = fakeSpawn(script, nil, &atomic.Int64{}, resumeIDs)
+	spawnFunc = fakeSpawn(script, nil, &atomic.Int64{}, anchors)
 	t.Cleanup(func() { spawnFunc = old })
 	return mgr, db, issueID
 }
@@ -162,7 +162,7 @@ func TestReclaimIdlePostponesOnThresholdIncrease(t *testing.T) {
 func TestReclaimIdleKeepsAnchorAndResumes(t *testing.T) {
 	// 阈值远大于就绪快照读取窗口（firstID 在回收前必读到），又足够短让回收必然发生。
 	overrideIdleTimeout(t, 400*time.Millisecond)
-	var resumeIDs []string
+	var resumeIDs []Anchor
 	mgr, _, sessKey := newIdleTestManager(t, "load", &resumeIDs)
 
 	// 首开：空锚全新会话（load 脚本 NewSession 通用，正常生成 id）。

@@ -19,7 +19,7 @@ const streamTickInterval = 200 * time.Millisecond
 
 /*
  * OverflowSink 超长全文落盘回调：回复超过渠道 ByteLimit 时被调用一次，回调负责把全文写入
- * 持久位置并返回展示在截断提示里的路径（如 "<workspace>/.bot-outbox/<ts>-<msgid>.md"）。
+ * 持久位置并返回展示在截断提示里的路径（如 "<workspace>/.bot-outbox/overflow/<ts>-<msgid>.md"）。
  * 返回空串则截断提示不附路径。落盘放编排器（知道 msgid/工作目录），泵只负责拼帧。
  */
 type OverflowSink func(fullText string) string

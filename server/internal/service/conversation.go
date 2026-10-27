@@ -15,9 +15,9 @@ import (
 )
 
 /*
- * Conversation 对应 /api/conversation 命名空间下的业务逻辑。会话第一性实体：仅存元数据，消息内容直读 claude 本地 jsonl。
- * claude_session_id 为终端/ACP 统一锚：ACP 链路经 acpsession 域覆盖写，终端捕获经 SetClaudeSessionID 首捕获胜出。
- * mode 为必填入参（前端编排按归属实体 mergeLaunchSettings 算好）。
+ * Conversation 对应 /api/conversation 命名空间下的业务逻辑。会话第一性实体（唯一会话源）：
+ * 仅存元数据，消息内容直读 claude 本地 jsonl；锚语义（预置/二择/绝对一致）见 EnsureConversation
+ * 同款约定。mode 为必填入参（前端编排按归属实体 mergeLaunchSettings 算好）。
  */
 type Conversation struct {
 	apis.Service
@@ -46,17 +46,21 @@ func (svc Conversation) GetInfo(req *types.ConversationGetInfoRequest) (*model.C
 }
 
 // Create 新建会话：校验归属实体存在；title 空默认「新会话」；parentId 空 = 主会话。
+// 建行即预置 claude 会话锚（驱动注入 --session-id / ACP _meta，与 bot 域建行同规则）。
 func (svc Conversation) Create(req *types.ConversationCreateRequest) (*model.Conversation, error) {
 	if err := svc.ensureOwnerExists(req.OwnerType, req.OwnerID); err != nil {
 		return nil, err
 	}
+	sessionID, status := model.NewPresetClaudeSession()
 	conv := &model.Conversation{
-		ID:        uuid.Must(uuid.NewV7()).String(),
-		OwnerType: req.OwnerType,
-		OwnerID:   req.OwnerID,
-		Title:     req.Title,
-		Mode:      req.Mode,
-		ParentID:  req.ParentID,
+		ID:                  uuid.Must(uuid.NewV7()).String(),
+		OwnerType:           req.OwnerType,
+		OwnerID:             req.OwnerID,
+		Title:               req.Title,
+		Mode:                req.Mode,
+		ParentID:            req.ParentID,
+		ClaudeSessionID:     sessionID,
+		ClaudeSessionStatus: status,
 	}
 	if conv.Title == "" {
 		conv.Title = "新会话"
@@ -86,14 +90,18 @@ func (svc Conversation) Update(req *types.ConversationUpdateRequest) (*model.Con
 	return conv, nil
 }
 
-// SetClaudeSessionID 终端捕获回写统一锚：条件更新仅在锚为空时落值（首捕获胜出，并发败方
-// 与幂等复设同走读回现行的返回契约），updated_at 随更新刷新。
+/*
+ * SetClaudeSessionID 终端捕获回写锚（持续同步语义，绝对一致铁律）：观测值变化即覆写并置
+ * active——预置 id（首启 --session-id 后回捕同值天然幂等）与终端内 id 轮换（/clear 新会话）
+ * 都以实际观测值为准。
+ */
 func (svc Conversation) SetClaudeSessionID(req *types.ConversationSetClaudeSessionIdRequest) (*model.Conversation, error) {
 	q := query.Use(svc.Orm)
 	_, err := q.Conversation.WithContext(svc.Context).
-		Where(q.Conversation.ID.Eq(req.ID), q.Conversation.ClaudeSessionID.Eq("")).
+		Where(q.Conversation.ID.Eq(req.ID)).
 		UpdateSimple(
 			q.Conversation.ClaudeSessionID.Value(req.ClaudeSessionID),
+			q.Conversation.ClaudeSessionStatus.Value(enums.CLAUDE_SESSION_STATUS_ACTIVE),
 			q.Conversation.UpdatedAt.Value(time.Now()),
 		)
 	if err != nil {

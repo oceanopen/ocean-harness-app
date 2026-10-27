@@ -22,6 +22,8 @@ interface PaneLayoutProps {
   conversationId?: string | null;
   // 终端锚恢复 id（T2.2，仅主 pane 消费，防附加 pane 被注入 resume）。
   resumeClaudeId?: string | null;
+  // 预置会话 id（pending 未驱动锚，仅主 pane 消费，注入 --session-id）。
+  presetClaudeId?: string | null;
 }
 
 /**
@@ -29,7 +31,7 @@ interface PaneLayoutProps {
  * 几何由 layoutGeometry 纯函数从（树, 容器尺寸）计算；容器尺寸经根容器 ResizeObserver 测量——窗口缩放/面板开合挤压/比例调整同路径重算；pane 内终端的 fit/resize 走 TerminalView 自带 ResizeObserver（现有链路零改动）。
  * 残余伪影定论（勿再追查）：左右分屏/拖分割条后 pane 顶部偶现单行空行，属 shell 侧固有反应——宽度变化引起折行时 zsh 重绘账目错位多吐换行，iTerm2/Terminal.app 外部终端拖窄到折行同样出现（实测对照）；拖拽中连续 cols 变化逐次累积、反向拖拽重排合并回退；上下分屏（纯高度变化）不触发；新 spawn 的 pane（零 resize）恒干净。应用侧已收敛到每次真实几何变化恰一次 SIGWINCH（usePtySession 尺寸台账去重），无进一步优化空间。
  */
-export default function PaneLayout({ containerId, scopeId, node, workspaceDir, startupCli, cwdOverride = null, conversationId = null, resumeClaudeId = null }: PaneLayoutProps) {
+export default function PaneLayout({ containerId, scopeId, node, workspaceDir, startupCli, cwdOverride = null, conversationId = null, resumeClaudeId = null, presetClaudeId = null }: PaneLayoutProps) {
   const setRatio = useTerminalPanesStore(s => s.setRatio);
 
   /**
@@ -95,6 +97,7 @@ export default function PaneLayout({ containerId, scopeId, node, workspaceDir, s
                 cwdOverride={cwdOverride}
                 conversationId={conversationId}
                 resumeClaudeId={pane.paneId === 'main' ? resumeClaudeId : null}
+                presetClaudeId={pane.paneId === 'main' ? presetClaudeId : null}
               />
             </Box>
           ))}

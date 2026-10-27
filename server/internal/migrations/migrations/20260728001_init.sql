@@ -118,38 +118,29 @@ CREATE TABLE t_im_bots (
     updated_at        DATETIME NOT NULL
 );
 
--- t_im_bot_conversations：bot 会话映射（多轮上下文在 claude 会话存储，本表只存锚点）。
--- conversation_key：'single:<userid>' / 'group:<chatid>'；claude_session_id 为 headless
--- --resume 锚（空=未开场，ACP 单驱动后随驱动下线）；conversation_id 为归属会话锚
--- （空=未关联，指向 t_conversations.id，由 T4.3 起读写）。
-CREATE TABLE t_im_bot_conversations (
-    id                TEXT PRIMARY KEY,
-    bot_id            TEXT     NOT NULL,
-    conversation_key  TEXT     NOT NULL,
-    claude_session_id TEXT     NOT NULL DEFAULT '',
-    conversation_id   TEXT     NOT NULL DEFAULT '',
-    seen_message_ids  TEXT     NOT NULL DEFAULT '[]',
-    last_message_at   DATETIME,
-    created_at        DATETIME NOT NULL,
-    updated_at        DATETIME NOT NULL
-);
-CREATE UNIQUE INDEX udx_im_bot_conversations_bot_conversation
-    ON t_im_bot_conversations (bot_id, conversation_key);
-
--- t_conversations：会话第一性实体（应用只存元数据，消息内容直读 claude 本地 jsonl）。
+-- t_agent_conversations：agent 会话第一性实体（唯一会话源，bot 渠道会话亦为本表行）。
 -- owner_type ∈ {workspace,task} + owner_id 定归属；mode ∈ {terminal,acp} 定打开方式；
--- agent_code 当前恒 claude（为多 agent 预留）；claude_session_id 为终端/ACP 统一锚
--- （空 = 未锚定，终端 fresh spawn 后捕获回写）；parent_id 空串 = 主会话。
-CREATE TABLE t_conversations (
-    id                TEXT PRIMARY KEY,
-    owner_type        TEXT     NOT NULL,
-    owner_id          TEXT     NOT NULL,
-    title             TEXT     NOT NULL DEFAULT '',
-    mode              TEXT     NOT NULL,
-    agent_code        TEXT     NOT NULL DEFAULT '',
-    claude_session_id TEXT     NOT NULL DEFAULT '',
-    parent_id         TEXT     NOT NULL DEFAULT '',
-    created_at        DATETIME NOT NULL,
-    updated_at        DATETIME NOT NULL
+-- agent_code 当前恒 claude（为多 agent 预留）。claude_session_id 建行即预生成 claude
+-- 会话 id（与实际 claude 会话 id 绝对一致：驱动注入 --session-id/--resume + 运行期同步）；
+-- claude_session_status ∈ {pending,active}（pending=预置未驱动，active=已驱动）。
+-- bot_id/bot_channel/bot_conversation_key 为 bot 渠道归属（非 bot 行恒空；渠道间天然不同行，
+-- 唯一性由核心层按幂等键判别保证）；last_message_at 为最近消息时间（前端展示共用列）；
+-- parent_id 空串 = 主会话。
+CREATE TABLE t_agent_conversations (
+    id                    TEXT PRIMARY KEY,
+    owner_type            TEXT     NOT NULL,
+    owner_id              TEXT     NOT NULL,
+    title                 TEXT     NOT NULL DEFAULT '',
+    mode                  TEXT     NOT NULL,
+    agent_code            TEXT     NOT NULL DEFAULT '',
+    claude_session_id     TEXT     NOT NULL DEFAULT '',
+    claude_session_status TEXT     NOT NULL DEFAULT '',
+    parent_id             TEXT     NOT NULL DEFAULT '',
+    bot_id                TEXT     NOT NULL DEFAULT '',
+    bot_channel           TEXT     NOT NULL DEFAULT '',
+    bot_conversation_key  TEXT     NOT NULL DEFAULT '',
+    last_message_at       DATETIME,
+    created_at            DATETIME NOT NULL,
+    updated_at            DATETIME NOT NULL
 );
-CREATE INDEX idx_conversations_owner ON t_conversations (owner_type, owner_id);
+CREATE INDEX idx_agent_conversations_owner ON t_agent_conversations (owner_type, owner_id);

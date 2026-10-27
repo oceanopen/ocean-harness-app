@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -168,8 +169,8 @@ func (svc ImBot) Update(req *types.ImBotUpdateRequest) (*types.ImBotResponseData
 }
 
 /*
- * Delete 物理删除 bot + 事务级联删会话映射（无 DB 外键，service 层手动级联——tracker 基线约定），
- * 并停止其连接。
+ * Delete 物理删除 bot + 事务级联会话解绑（无 DB 外键，service 层手动级联——tracker 基线约定）：
+ * 会话行归会话域/桌面域不随删（共享会话历史保留），bot 字段清空 = 幂等键失效。并停止其连接。
  */
 func (svc ImBot) Delete(req *types.ImBotDeleteRequest) error {
 	if _, err := svc.mustGet(req.ID); err != nil {
@@ -177,8 +178,14 @@ func (svc ImBot) Delete(req *types.ImBotDeleteRequest) error {
 	}
 	err := svc.Orm.Transaction(func(tx *gorm.DB) error {
 		qtx := query.Use(tx)
-		if _, err := qtx.ImBotConversation.WithContext(svc.Context).
-			Where(qtx.ImBotConversation.BotID.Eq(req.ID)).Delete(); err != nil {
+		if _, err := qtx.Conversation.WithContext(svc.Context).
+			Where(qtx.Conversation.BotID.Eq(req.ID)).
+			UpdateSimple(
+				qtx.Conversation.BotID.Value(""),
+				qtx.Conversation.BotChannel.Value(enums.Channel("")),
+				qtx.Conversation.BotConversationKey.Value(""),
+				qtx.Conversation.UpdatedAt.Value(time.Now()),
+			); err != nil {
 			return err
 		}
 		if _, err := qtx.ImBot.WithContext(svc.Context).Where(qtx.ImBot.ID.Eq(req.ID)).Delete(); err != nil {
@@ -212,16 +219,17 @@ func (svc ImBot) Restart(req *types.ImBotRestartRequest) error {
 
 // ---------- 会话级绑定（工具栏数据链，D1/D7） ----------
 
-// GetConversations 返回 bot 的会话列表（最近活跃在前，从未活跃殿后）+ 绑定任务名批量装配。
+// GetConversations 返回 bot 的会话列表（最近活跃在前，从未活跃殿后；t_conversations 单表，
+// bot 字落会话行本体，绑定任务名批量装配）。
 func (svc ImBot) GetConversations(req *types.ImBotGetConversationsRequest) ([]types.ImBotConversationData, error) {
 	if _, err := svc.mustGet(req.BotId); err != nil {
 		return nil, err
 	}
 	q := query.Use(svc.Orm)
-	rows, err := q.ImBotConversation.WithContext(svc.Context).
-		Where(q.ImBotConversation.BotID.Eq(req.BotId)).
-		Order(q.ImBotConversation.LastMessageAt.Desc()).
-		Order(q.ImBotConversation.ID.Desc()).
+	rows, err := q.Conversation.WithContext(svc.Context).
+		Where(q.Conversation.BotID.Eq(req.BotId)).
+		Order(q.Conversation.LastMessageAt.Desc()).
+		Order(q.Conversation.ID.Desc()).
 		Find()
 	if err != nil {
 		return nil, err
@@ -229,9 +237,10 @@ func (svc ImBot) GetConversations(req *types.ImBotGetConversationsRequest) ([]ty
 	out := make([]types.ImBotConversationData, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, types.ImBotConversationData{
-			ConversationKey: row.ConversationKey,
-			ChatType:        chatTypeOfKey(row.ConversationKey),
-			ConversationId:  row.ConversationID,
+			ConversationKey: row.BotConversationKey,
+			ChatType:        chatTypeOfKey(row.BotConversationKey),
+			ConversationId:  row.ID,
+			Channel:         row.BotChannel,
 			LastMessageAt:   row.LastMessageAt,
 		})
 	}

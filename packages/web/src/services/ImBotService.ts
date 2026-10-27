@@ -72,12 +72,14 @@ export interface ImBotRestartRequest {
 
 /**
  * ImBotConversationModel：对齐后端 types.ImBotConversationData 的 JSON 形态
- * （t_im_bot_conversations 会话行投影）。chatType 由会话键前缀派生，绑定锚为会话级。
+ * （t_conversations 会话行投影，bot 字落会话行本体——唯一会话源）。chatType 由会话键
+ * 前缀派生；conversationId 即会话行 id（恒非空）；channel 为渠道标识。
  */
 export interface ImBotConversationModel {
   conversationKey: string; // single:<userid> / group:<chatid>
   chatType: 'single' | 'group'; // single 私聊 / group 群聊（前端映射文案）
-  conversationId: string; // 关联会话实体 id（T4.3 消息路由回写；空 = 尚未有消息）
+  conversationId: string; // 会话行 id
+  channel: 'weixin' | 'wecom'; // 渠道标识
   lastMessageAt: string | null; // null = 从未活跃
 }
 

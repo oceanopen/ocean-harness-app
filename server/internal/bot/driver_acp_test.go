@@ -446,7 +446,7 @@ func TestAcpDriverPromptMetaDisplay(t *testing.T) {
 	disp := &acpsession.EntryDisplay{
 		Text:  "帮我看看构建",
 		Quote: &acpsession.EntryQuote{Author: "alice", Text: "panic: nil map", Truncated: true},
-		Files: []acpsession.EntryFile{{Name: "log.txt", Path: "/ws/.wecom-attachments/m1/log.txt"}},
+		Files: []acpsession.EntryFile{{Name: "log.txt", Path: "/ws/.bot-outbox/download/m1-log.txt"}},
 	}
 	if _, err := driver.RunTurn(context.Background(), TurnRequest{ConversationKey: "single:u1", AcpSessionKey: "issue-acp", Prompt: "hi", SystemPrompt: ComposeSystemPrompt(), Display: disp}); err != nil {
 		t.Fatalf("受理失败: %v", err)
@@ -1240,7 +1240,7 @@ func TestAcpDriverTurnContextCancel(t *testing.T) {
  * 「启动失败 + 落因」（受理模型、帧流、failed 落因三者的跨域联动各验一遍）。
  */
 func TestAcpDriverRealManagerSpawnFailure(t *testing.T) {
-	db := newBotTestDB(t, &model.Project{}, &model.ProjectTask{}, &model.Conversation{}, &model.ImBotConversation{})
+	db := newBotTestDB(t, &model.Project{}, &model.ProjectTask{}, &model.Conversation{})
 	q := query.Use(db)
 	proj := &model.Project{ID: "proj-acp", Name: "proj", Dir: t.TempDir(), LaunchSettings: `{"mode":"acp"}`}
 	if err := q.Project.WithContext(context.Background()).Create(proj); err != nil {

@@ -2,7 +2,6 @@ package weixin
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,11 +12,8 @@ import (
 	"ocean-harness/server/internal/dal/enums"
 )
 
-// quoteTextMaxRunes 引用文本截断上限；attachmentDirName 附件落盘目录（bot 工作目录内）。
-const (
-	quoteTextMaxRunes = 2000
-	attachmentDirName = ".weixin-attachments"
-)
+// quoteTextMaxRunes 引用文本截断上限。
+const quoteTextMaxRunes = 2000
 
 // replyRoute 回复路由载荷（OpenReply 依据；context_token 为协议会话亲和标识，原样回传）。
 type replyRoute struct {
@@ -51,12 +47,12 @@ func (r *channelRuntime) normalizeInbound(cg connGen, m *inboundMessage) bot.Inb
 		case item.Type == 3 && item.VoiceItem != nil && strings.TrimSpace(item.VoiceItem.Text) != "":
 			out.Text = strings.TrimSpace(item.VoiceItem.Text) // 语音转写文本直接作正文（协议无裸语音下载）
 		case item.Type == 2 && item.ImageItem != nil:
-			r.stageAttachment(cg, &out, item.ImageItem.AESKey, item.ImageItem.Media, "image.png")
+			r.stageAttachment(cg, &out, item.ImageItem.AESKey, item.ImageItem.Media, "image.png", "image.png")
 		case item.Type == 4 && item.FileItem != nil:
 			r.stageAttachment(cg, &out, item.FileItem.AESKey, item.FileItem.Media,
-				attachmentName(item.FileItem.FileName, "file.bin"))
+				attachmentName(item.FileItem.FileName, "file.bin"), "file.bin")
 		case item.Type == 5 && item.VideoItem != nil:
-			r.stageAttachment(cg, &out, item.VideoItem.AESKey, item.VideoItem.Media, "video.mp4")
+			r.stageAttachment(cg, &out, item.VideoItem.AESKey, item.VideoItem.Media, "video.mp4", "video.mp4")
 		}
 		if item.RefMsg != nil {
 			out.Quote = quoteFromRef(item.RefMsg)
@@ -109,30 +105,11 @@ func attachmentName(raw, fallback string) string {
 	return name
 }
 
-// uniqueName 同消息内同名附件追加序号（image.png → image-2.png），避免相互覆盖。
-func uniqueName(existing []bot.InboundFile, name string) string {
-	taken := make(map[string]bool, len(existing))
-	for _, f := range existing {
-		taken[f.Name] = true
-	}
-	if !taken[name] {
-		return name
-	}
-	ext := filepath.Ext(name)
-	base := strings.TrimSuffix(name, ext)
-	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s-%d%s", base, i, ext)
-		if !taken[candidate] {
-			return candidate
-		}
-	}
-}
-
 /*
- * stageAttachment 下载解密落盘（<workspaceDir>/.weixin-attachments/<msgID>/<name>）并追加到
+ * stageAttachment 下载解密落盘（<workspaceDir>/.bot-outbox/download/<msgId前8>-<name>）并追加到
  * Files。任一步失败仅告警并降级为无附件——媒体丢失不应阻塞文本主链路。
  */
-func (r *channelRuntime) stageAttachment(cg connGen, out *bot.InboundMessage, keyDirect string, media inboundMedia, name string) {
+func (r *channelRuntime) stageAttachment(cg connGen, out *bot.InboundMessage, keyDirect string, media inboundMedia, rawName, fallback string) {
 	if cg.cfg.WorkspaceDir == "" || out.MessageID == "" {
 		return
 	}
@@ -156,14 +133,11 @@ func (r *channelRuntime) stageAttachment(cg connGen, out *bot.InboundMessage, ke
 		cg.log.Warn("微信附件解密失败，降级为无附件", zap.String("msgID", out.MessageID), zap.Error(err))
 		return
 	}
-	// 目录段经 SanitizeFileName 净化（message_id 为远端可控字符串，与 wecom 附件目录同防）。
-	dir := filepath.Join(cg.cfg.WorkspaceDir, attachmentDirName, bot.SanitizeFileName(out.MessageID, "msg"))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		cg.log.Warn("微信附件目录创建失败，降级为无附件", zap.Error(err))
+	dest, name, err := bot.InboundFilePath(cg.cfg.WorkspaceDir, out.MessageID, rawName, fallback, out.Files)
+	if err != nil {
+		cg.log.Warn("微信附件目录创建失败，降级为无附件", zap.String("msgID", out.MessageID), zap.Error(err))
 		return
 	}
-	name = uniqueName(out.Files, name)
-	dest := filepath.Join(dir, name)
 	if err := os.WriteFile(dest, plain, 0o644); err != nil {
 		cg.log.Warn("微信附件落盘失败，降级为无附件", zap.Error(err))
 		return

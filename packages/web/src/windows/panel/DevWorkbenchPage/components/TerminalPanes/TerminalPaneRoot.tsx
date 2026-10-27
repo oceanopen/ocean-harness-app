@@ -16,6 +16,8 @@ interface TerminalPaneRootProps {
   conversationId?: string | null;
   // 终端锚恢复 id（T2.2，仅主 pane 消费）。
   resumeClaudeId?: string | null;
+  // 预置会话 id（pending 未驱动锚，仅主 pane 消费，注入 --session-id）。
+  presetClaudeId?: string | null;
 }
 
 /**
@@ -23,13 +25,13 @@ interface TerminalPaneRootProps {
  * 职责：读 store 渲染该 scope（容器+会话）的布局树。分割与关闭 pane 均由各 pane 内 TerminalView
  * 工具栏的按钮承担（EmbeddedTerminal props 闭包自识别目标 pane）：分割 = handleSplit（splitPane，左右/上下分屏）；关闭 = handleClose。
  */
-export default function TerminalPaneRoot({ containerId, workspaceDir, startupCli, cwdOverride, conversationId, resumeClaudeId }: TerminalPaneRootProps) {
+export default function TerminalPaneRoot({ containerId, workspaceDir, startupCli, cwdOverride, conversationId, resumeClaudeId, presetClaudeId }: TerminalPaneRootProps) {
   const scopeId = paneScopeId(containerId, conversationId);
   const layout = useTerminalPanesStore(s => layoutFor(s.layouts[scopeId]));
 
   return (
     <Box sx={{ height: '100%', overflow: 'hidden' }}>
-      <PaneLayout containerId={containerId} scopeId={scopeId} node={layout} workspaceDir={workspaceDir} startupCli={startupCli} cwdOverride={cwdOverride} conversationId={conversationId} resumeClaudeId={resumeClaudeId} />
+      <PaneLayout containerId={containerId} scopeId={scopeId} node={layout} workspaceDir={workspaceDir} startupCli={startupCli} cwdOverride={cwdOverride} conversationId={conversationId} resumeClaudeId={resumeClaudeId} presetClaudeId={presetClaudeId} />
     </Box>
   );
 }

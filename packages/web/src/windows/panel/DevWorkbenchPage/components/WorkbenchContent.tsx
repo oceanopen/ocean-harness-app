@@ -110,10 +110,9 @@ function terminalStartupCli(mode: 'none' | 'terminal-auto' | 'acp' | undefined, 
   return mode === 'terminal-auto' ? autoCommand ?? 'claude' : null;
 }
 
-// 标题栏 IconButton 统一 sx：text.secondary 色调 + icon 尺寸 16px（与终端工具栏
-// TOOLBAR_ICON_SX 同档对齐）。尺寸必须走 '& svg' 后代选择器——SvgIcon 的
-// width/height = 1em 跟随自身 font-size，由其 variant class 显式设定（缺省
-// medium = 24px），在 IconButton 上直接设 fontSize 对 svg 无效（实测教训）。
+// 标题栏 IconButton 统一 sx：text.secondary 色调 + icon 16px。尺寸必须走 '& svg' 后代
+// 选择器——SvgIcon 的 size 跟随自身 font-size（缺省 24px），IconButton 上直接设
+// fontSize 对 svg 无效（实测教训，详见 mui-icon-size 记忆）。
 const TITLEBAR_ICON_SX = { 'color': 'text.secondary', '& svg': { fontSize: '16px' } } as const;
 
 // 布局挂载前置配置集：左树折叠 + 工具面板区折叠/宽度三个 key 决定各栏首帧几何。
@@ -374,10 +373,9 @@ export default function WorkbenchContent({
     useDevWorkbenchStore.getState().setWorkbenchFullscreen(false);
   }, []);
 
-  // 会话体（T5.3）：mode 分流——acp → ACP 会话视图；terminal → 现终端启动链原样（直启/
-  // 临场两选一），接线 T2.1 捕获锚归属与 T2.2 锚恢复（锚非空才注入）。pane 锚 =
-  // `${容器id}::${会话id}::${paneId}`：容器 id 任务页取 task.id、工作空间页取 workspace.id
-  // （每会话独立 pane 集合，切会话互不干扰）；cwd 任务页 = 任务工作区、工作空间页 = 空间根目录。
+  // 会话体（T5.3）：mode 分流（acp → ACP 视图；terminal → 终端启动链）。锚二择按行
+  // claude_session_status：active/存量 → resume 注入，pending → --session-id 注入。
+  // pane 锚三段（容器/会话/pane）与 cwd 派生规则见 TerminalPanes/types.ts。
   const renderConversationContent = (conversation: ConversationModel, taskScoped: boolean): ReactNode => {
     if (conversation.mode === 'acp') {
       return (
@@ -386,6 +384,7 @@ export default function WorkbenchContent({
         </TerminalErrorBoundary>
       );
     }
+    const anchorId = conversation.claudeSessionId !== '' ? conversation.claudeSessionId : null;
     return (
       <TerminalLaunchFlow
         key={conversation.id}
@@ -397,7 +396,8 @@ export default function WorkbenchContent({
         terminalAgentLabel={terminalAgentLabel(effLaunch?.autoCommand)}
         acpAgentLabel={acpAgentLabel(agentCatalog, effLaunch?.agentCode)}
         conversationId={conversation.id}
-        resumeClaudeId={conversation.claudeSessionId !== '' ? conversation.claudeSessionId : null}
+        resumeClaudeId={anchorId != null && conversation.claudeSessionStatus !== 'pending' ? anchorId : null}
+        presetClaudeId={anchorId != null && conversation.claudeSessionStatus === 'pending' ? anchorId : null}
       />
     );
   };

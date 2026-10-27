@@ -35,7 +35,12 @@ func newConversation(db *gorm.DB, opts ...gen.DOOption) conversation {
 	_conversation.Mode = field.NewField(tableName, "mode")
 	_conversation.AgentCode = field.NewField(tableName, "agent_code")
 	_conversation.ClaudeSessionID = field.NewString(tableName, "claude_session_id")
+	_conversation.ClaudeSessionStatus = field.NewField(tableName, "claude_session_status")
 	_conversation.ParentID = field.NewString(tableName, "parent_id")
+	_conversation.BotID = field.NewString(tableName, "bot_id")
+	_conversation.BotChannel = field.NewField(tableName, "bot_channel")
+	_conversation.BotConversationKey = field.NewString(tableName, "bot_conversation_key")
+	_conversation.LastMessageAt = field.NewTime(tableName, "last_message_at")
 	_conversation.CreatedAt = field.NewTime(tableName, "created_at")
 	_conversation.UpdatedAt = field.NewTime(tableName, "updated_at")
 
@@ -47,17 +52,22 @@ func newConversation(db *gorm.DB, opts ...gen.DOOption) conversation {
 type conversation struct {
 	conversationDo conversationDo
 
-	ALL             field.Asterisk
-	ID              field.String
-	OwnerType       field.Field
-	OwnerID         field.String
-	Title           field.String
-	Mode            field.Field
-	AgentCode       field.Field
-	ClaudeSessionID field.String
-	ParentID        field.String
-	CreatedAt       field.Time
-	UpdatedAt       field.Time
+	ALL                 field.Asterisk
+	ID                  field.String
+	OwnerType           field.Field
+	OwnerID             field.String
+	Title               field.String
+	Mode                field.Field
+	AgentCode           field.Field
+	ClaudeSessionID     field.String
+	ClaudeSessionStatus field.Field
+	ParentID            field.String
+	BotID               field.String
+	BotChannel          field.Field
+	BotConversationKey  field.String
+	LastMessageAt       field.Time
+	CreatedAt           field.Time
+	UpdatedAt           field.Time
 
 	fieldMap map[string]field.Expr
 }
@@ -81,7 +91,12 @@ func (c *conversation) updateTableName(table string) *conversation {
 	c.Mode = field.NewField(table, "mode")
 	c.AgentCode = field.NewField(table, "agent_code")
 	c.ClaudeSessionID = field.NewString(table, "claude_session_id")
+	c.ClaudeSessionStatus = field.NewField(table, "claude_session_status")
 	c.ParentID = field.NewString(table, "parent_id")
+	c.BotID = field.NewString(table, "bot_id")
+	c.BotChannel = field.NewField(table, "bot_channel")
+	c.BotConversationKey = field.NewString(table, "bot_conversation_key")
+	c.LastMessageAt = field.NewTime(table, "last_message_at")
 	c.CreatedAt = field.NewTime(table, "created_at")
 	c.UpdatedAt = field.NewTime(table, "updated_at")
 
@@ -112,7 +127,7 @@ func (c *conversation) GetFieldByName(fieldName string) (field.OrderExpr, bool) 
 }
 
 func (c *conversation) fillFieldMap() {
-	c.fieldMap = make(map[string]field.Expr, 10)
+	c.fieldMap = make(map[string]field.Expr, 15)
 	c.fieldMap["id"] = c.ID
 	c.fieldMap["owner_type"] = c.OwnerType
 	c.fieldMap["owner_id"] = c.OwnerID
@@ -120,7 +135,12 @@ func (c *conversation) fillFieldMap() {
 	c.fieldMap["mode"] = c.Mode
 	c.fieldMap["agent_code"] = c.AgentCode
 	c.fieldMap["claude_session_id"] = c.ClaudeSessionID
+	c.fieldMap["claude_session_status"] = c.ClaudeSessionStatus
 	c.fieldMap["parent_id"] = c.ParentID
+	c.fieldMap["bot_id"] = c.BotID
+	c.fieldMap["bot_channel"] = c.BotChannel
+	c.fieldMap["bot_conversation_key"] = c.BotConversationKey
+	c.fieldMap["last_message_at"] = c.LastMessageAt
 	c.fieldMap["created_at"] = c.CreatedAt
 	c.fieldMap["updated_at"] = c.UpdatedAt
 }

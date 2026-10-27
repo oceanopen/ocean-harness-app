@@ -137,6 +137,7 @@ type BotRuntimeConfig struct {
 /*
  * TurnRequest 一次 claude 回合的请求。SessionID 为 headless 语义（空 = 新会话，非空 =
  * --resume 续聊锚，编排器自 bot 会话行回填）；ACP 驱动不消费它（共享会话无 resume，bot 侧不写会话锚点）。
+ * PresetSessionID 为 pending 预置锚（headless 新会话注入 --session-id，与 SessionID 互斥消费）。
  */
 type TurnRequest struct {
 	BotID            string // bot 行 id uuid（与 ConversationKey 组成绑定查询键 (bot_id, conversation_key)；headless 不消费）
@@ -147,6 +148,7 @@ type TurnRequest struct {
 	ProjectID        string                   // project 档关联项目行 id（路由 resolve 输入）
 	TaskID           string                   // project 档可选关联任务行 id（路由 resolve 输入）
 	SessionID        string                   // headless --resume 锚（编排器回填）；ACP 不消费
+	PresetSessionID  string                   // headless --session-id 预置锚（pending 态建行预生成值，新会话即预置 id）；ACP 不消费
 	AcpSessionKey    string                   // 路由层回填的会话锚键（conv-<会话实体行id>，与桌面共享同一会话载体）；headless 不消费
 	Prompt           string                   // prompt.go 组装后的最终 user prompt
 	SystemPrompt     string                   // ComposeSystemPrompt 产物（固定守则段）

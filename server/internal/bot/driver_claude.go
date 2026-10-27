@@ -132,6 +132,12 @@ func buildClaudeArgs(req TurnRequest) (args []string, cleanup func(), err error)
 	}
 	if req.SessionID != "" {
 		args = append(args, "--resume", req.SessionID)
+	} else if req.PresetSessionID != "" {
+		/*
+		 * 预置锚新会话：--session-id 使 jsonl 文件名即建行预生成 id（应用会话与 claude
+		 * 会话同体）；与 --resume 互斥（active 锚优先，pending 才走预置注入）。
+		 */
+		args = append(args, "--session-id", req.PresetSessionID)
 	}
 	if strings.TrimSpace(req.SystemPrompt) != "" {
 		args = append(args, "--append-system-prompt", req.SystemPrompt)

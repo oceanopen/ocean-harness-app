@@ -61,3 +61,20 @@ func (c ConversationMode) Value() (driver.Value, error) {
 		return nil, fmt.Errorf("invalid ConversationMode: %v", c)
 	}
 }
+
+/*
+ * ClaudeSessionStatus claude 会话状态（t_conversations.claude_session_status）：pending = 预置未
+ * 驱动（claude_session_id 为建行预生成值，驱动时以 --session-id 开新会话），active = 已驱动
+ * （锚与实际 claude 会话 id 一致，复用走 --resume / session/load）。空串 = 存量哨兵，语义同 active。
+ */
+type ClaudeSessionStatus string
+
+const (
+	CLAUDE_SESSION_STATUS_PENDING ClaudeSessionStatus = "pending"
+	CLAUDE_SESSION_STATUS_ACTIVE  ClaudeSessionStatus = "active"
+)
+
+// Value 实现 driver.Valuer：空串哨兵合法，非空透传（值域校验归调用方）。
+func (c ClaudeSessionStatus) Value() (driver.Value, error) {
+	return string(c), nil
+}

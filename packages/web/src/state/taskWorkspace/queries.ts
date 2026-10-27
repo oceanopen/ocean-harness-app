@@ -18,7 +18,7 @@ export function useTaskWorkspaceStatus(taskId: string | null) {
     queryKey: taskWorkspaceKeys.status(taskId ?? ''),
     queryFn: () => TaskWorkspaceService.status({ taskId: taskId! }),
     enabled: taskId != null,
-    refetchInterval: query => {
+    refetchInterval: (query) => {
       const serverStatus = query.state.data?.serverStatus;
       return serverStatus === 'PENDING' || serverStatus === 'RUNNING' ? 1000 : false;
     },

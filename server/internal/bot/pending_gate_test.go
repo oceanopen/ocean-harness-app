@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 
 	"ocean-harness/server/internal/acpsession"
+
+	"ocean-harness/server/internal/dal/enums"
 )
 
 /*
@@ -247,7 +249,7 @@ func TestOrchestratorPendingGateHit(t *testing.T) {
 	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
-	cfg := BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	cfg := BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WEIXIN, ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 	o.HandleInbound(cfg, gateMsg("1"), func() (ReplyStream, error) { return rs, nil })
 
 	if gate.calls != 1 {
@@ -274,7 +276,7 @@ func TestOrchestratorPendingGateRedelivery(t *testing.T) {
 	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
-	cfg := BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	cfg := BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WEIXIN, ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 	msg := InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "1"}
 	open := func() (ReplyStream, error) { return rs, nil }
 
@@ -306,7 +308,7 @@ func TestOrchestratorPendingGateMiss(t *testing.T) {
 	o := NewOrchestrator(store, driver, gate, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
-	cfg := BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	cfg := BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WEIXIN, ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 	o.HandleInbound(cfg, gateMsg("1"), func() (ReplyStream, error) { return rs, nil })
 
 	if gate.calls != 1 {
@@ -334,7 +336,7 @@ func TestOrchestratorPendingGateNil(t *testing.T) {
 	o := NewOrchestrator(store, driver, nil, nil, zap.NewNop())
 
 	rs := &fakeReplyStream{}
-	cfg := BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	cfg := BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WEIXIN, ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 	o.HandleInbound(cfg, gateMsg("1"), func() (ReplyStream, error) { return rs, nil })
 
 	waitFor(t, "回合完成", func() bool { return driver.turnCount() == 1 })

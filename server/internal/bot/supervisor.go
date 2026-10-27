@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"go.uber.org/zap"
@@ -202,8 +204,8 @@ func (s *Supervisor) setLastError(botID string, msg string) {
 
 /*
  * botRuntimeConfig t_im_bots 行 → 运行时装配参数（JSON 列在此解析，渠道凭据保持 JSON 透传）。
- * 会话根目录按档位解析（D8）：workspace 档取工作空间 dir；project 档取项目 dir（任务运行目录
- * = {project.dir}/{taskId}/，由任务域保证）。行缺失/未选 → 空串（编排器门禁拦截）。
+ * 会话根目录按档位解析（D8）：workspace 档取工作空间 dir；project 档取任务运行目录
+ * {project.dir}/{taskId}/（与 ACP 会话 cwd 同构；未关联任务回落项目 dir）。缺失/未选 → 空串。
  */
 func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) {
 	policy, err := ParseAccessPolicy(b.AccessPolicy)
@@ -228,6 +230,16 @@ func (s *Supervisor) botRuntimeConfig(b *model.ImBot) (BotRuntimeConfig, error) 
 			pr, err := q.Project.WithContext(context.Background()).Where(q.Project.ID.Eq(b.ProjectID)).First()
 			if err == nil {
 				rootDir = pr.Dir
+				// 任务运行目录（与 ACP 会话 cwd 同构）；未关联任务时回落项目目录（回合由门禁拦截）。
+				if b.TaskID != "" {
+					if _, e := q.ProjectTask.WithContext(context.Background()).Where(q.ProjectTask.ID.Eq(b.TaskID)).First(); e != nil {
+						return BotRuntimeConfig{}, fmt.Errorf("关联任务不存在（可能已删除，请重新配置）: %w", e)
+					}
+					rootDir = filepath.Join(pr.Dir, b.TaskID)
+					if err := os.MkdirAll(rootDir, 0o755); err != nil {
+						return BotRuntimeConfig{}, fmt.Errorf("任务目录创建失败: %w", err)
+					}
+				}
 			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 				return BotRuntimeConfig{}, fmt.Errorf("项目读取失败: %w", err)
 			}

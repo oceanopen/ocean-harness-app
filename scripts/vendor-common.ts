@@ -10,6 +10,8 @@
  * - 统一安装驱动 installSpec：快路径 → 临时目录 → 安装 → 条目收尾 → 终验 → 原子 rename。
  *   失败清理（rm 临时目录 + fail）单点收敛于此——域侧 postInstall 抛错即安装失败，
  *   域文件只写各自的差异步骤，不再各自处理半成品清理。
+ * - 条目级源码 patch（PatchDecl）：pnpm patchedDependencies 随安装应用，快路径以源
+ *   sha 标记复验（patch 更新不静默跳过）。
  *
  * 安装形态（勿破坏）：staging 内置 .npmrc（node-linker=hoisted）+ 自身 pnpm-workspace.yaml
  * （staging 即工作区根，天然不向上吸附；supportedArchitectures 声明构建目标平台），产出
@@ -25,8 +27,9 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { basename, dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
@@ -140,6 +143,37 @@ export interface ReadyPin {
   version: string;
 }
 
+/** 条目级 patch 声明：key 为 pnpm patchedDependencies 键（形如 pkg@version），file 为仓库内 patch 文件路径。 */
+export interface PatchDecl {
+  key: string;
+  file: string;
+}
+
+/** patch 源文件的 sha256（快路径判据：staging 内标记与当前源一致才复用，patch 更新即整目录重装）。 */
+function patchSha(patch: PatchDecl): string {
+  return createHash('sha256').update(readFileSync(patch.file)).digest('hex');
+}
+
+/** 快路径 patch 判据：无 patch 条目恒真；有则要求 staging 内 sha 标记与当前源文件一致。 */
+function patchApplied(dir: string, patch?: PatchDecl): boolean {
+  if (!patch) {
+    return true;
+  }
+  try {
+    return readFileSync(resolve(dir, 'patches', '.ocean-patch-sha'), 'utf-8').trim() === patchSha(patch);
+  } catch {
+    return false;
+  }
+}
+
+/** patch 落进临时目录：patches/<basename> + package.json 的 pnpm.patchedDependencies 声明由调用方合并，这里写 sha 标记。 */
+function stagePatch(tmpDir: string, patch: PatchDecl): void {
+  const patchesDir = resolve(tmpDir, 'patches');
+  mkdirSync(patchesDir, { recursive: true });
+  copyFileSync(patch.file, resolve(patchesDir, basename(patch.file)));
+  writeFileSync(resolve(patchesDir, '.ocean-patch-sha'), `${patchSha(patch)}\n`);
+}
+
 /**
  * staging 是否已就绪：目标包就位且版本匹配，readyPins 逐项同验（版本不符或读不到即
  * 未就绪）；platformBinRel 非 null 时还要求该相对路径文件存在（claude 域传目标平台
@@ -213,6 +247,8 @@ export interface InstallSpecItem {
   extraEnv?: Record<string, string>;
   /** 条目专属收尾（如 claude SDK 校验链）；抛错即安装失败，驱动统一清理半成品。 */
   postInstall?: (tmpDir: string) => void;
+  /** 条目级源码 patch（可省）：安装时经 pnpm patchedDependencies 应用（patch 与 pin 版本强绑定）。 */
+  patch?: PatchDecl;
 }
 
 /**
@@ -230,7 +266,7 @@ export function installSpec(item: InstallSpecItem): void {
   const version = spec.slice(at + 1);
   const dir = resolve(STAGING_ROOT, item.id, version);
 
-  if (stagingReady(dir, pkg, version, item.readyBinRel, item.readyPins ?? [])) {
+  if (patchApplied(dir, item.patch) && stagingReady(dir, pkg, version, item.readyBinRel, item.readyPins ?? [])) {
     log(`${spec} 已就绪（${item.readyBinRel ? `${item.platform.os}-${item.platform.cpu} 就绪判据在位` : '版本匹配'}），跳过（${dir}）`);
     return;
   }
@@ -241,9 +277,14 @@ export function installSpec(item: InstallSpecItem): void {
   const tmpDir = resolve(STAGING_ROOT, item.id, `.${version}.tmp-${process.pid}`);
   rmSync(tmpDir, { recursive: true, force: true });
   mkdirSync(tmpDir, { recursive: true });
+  const manifest: Record<string, unknown> = { private: true, packageManager: packageManagerSpec() };
+  if (item.patch) {
+    stagePatch(tmpDir, item.patch);
+    manifest.pnpm = { patchedDependencies: { [item.patch.key]: `patches/${basename(item.patch.file)}` } };
+  }
   writeFileSync(
     resolve(tmpDir, 'package.json'),
-    `${JSON.stringify({ private: true, packageManager: packageManagerSpec() }, null, 2)}\n`,
+    `${JSON.stringify(manifest, null, 2)}\n`,
   );
   writeFileSync(resolve(tmpDir, '.npmrc'), STAGING_NPMRC);
   writeFileSync(resolve(tmpDir, 'pnpm-workspace.yaml'), stagingWorkspaceYaml(item.platform));

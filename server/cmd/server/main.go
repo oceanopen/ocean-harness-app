@@ -163,7 +163,7 @@ func printRuntimeConfig(cfg *config.Config) {
 
 /*
  * cleanupOrphanAcpHistory 启动孤儿清理：历史目录中无对应会话行的文件静默删除（活集 =
- * 会话实体行 + bot 窄桩行双表并集）；活集查询失败整批保留（宁多留不误删）。
+ * t_conversations 会话行全集，唯一会话源）；活集查询失败整批保留（宁多留不误删）。
  */
 func cleanupOrphanAcpHistory(db *gorm.DB, dir string) {
 	ids, err := acpsession.HistoryConversationIDs(dir)
@@ -191,22 +191,15 @@ func cleanupOrphanAcpHistory(db *gorm.DB, dir string) {
 	}
 }
 
-// liveConversationIDs 会话活集批查：会话实体行与 bot 窄桩行两类锚载体的 id 并集。
+// liveConversationIDs 会话活集批查（t_conversations 全表 id 集）。
 func liveConversationIDs(db *gorm.DB) (map[string]bool, error) {
 	q := query.Use(db)
 	convRows, err := q.Conversation.WithContext(context.Background()).Select(q.Conversation.ID).Find()
 	if err != nil {
 		return nil, err
 	}
-	botRows, err := q.ImBotConversation.WithContext(context.Background()).Select(q.ImBotConversation.ID).Find()
-	if err != nil {
-		return nil, err
-	}
-	live := make(map[string]bool, len(convRows)+len(botRows))
+	live := make(map[string]bool, len(convRows))
 	for _, row := range convRows {
-		live[row.ID] = true
-	}
-	for _, row := range botRows {
 		live[row.ID] = true
 	}
 	return live, nil

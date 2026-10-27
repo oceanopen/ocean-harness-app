@@ -16,9 +16,14 @@ const (
 	CHANNEL_WEIXIN Channel = "weixin"
 )
 
-// Value 实现 driver.Valuer：写库时校验合法值并返回底层 string；非法值返回错误，由 gorm 在 INSERT/UPDATE 时触发。
+/*
+ * Value 实现 driver.Valuer：空串 = 未绑定哨兵合法（会话行 bot 解绑写空），非空校验合法值；
+ * 非法值返回错误，由 gorm 在 INSERT/UPDATE 时触发。
+ */
 func (c Channel) Value() (driver.Value, error) {
 	switch c {
+	case "":
+		return "", nil
 	case CHANNEL_WECOM, CHANNEL_WEIXIN:
 		return string(c), nil
 	default:

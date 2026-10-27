@@ -1,8 +1,9 @@
 import { request } from './http';
 
 /**
- * ConversationModel：会话实体（应用只存元数据，消息内容直读 claude 本地 jsonl）。
- * claudeSessionId 为终端/ACP 统一锚（空 = 未锚定）；parentId 空 = 主会话。
+ * ConversationModel：会话实体（唯一会话源，应用只存元数据，消息内容直读 claude 本地 jsonl）。
+ * claudeSessionId 建行即预生成且与实际 claude 会话 id 绝对一致；claudeSessionStatus pending =
+ * 预置未驱动（spawn 注入 --session-id）、active/空 = 已驱动（resume）；parentId 空 = 主会话。
  */
 export interface ConversationModel {
   id: string; // uuid v7
@@ -12,6 +13,7 @@ export interface ConversationModel {
   mode: 'terminal' | 'acp';
   agentCode: string; // 当前恒 claude（多 agent 预留）
   claudeSessionId: string;
+  claudeSessionStatus: 'pending' | 'active' | ''; // 空 = 存量哨兵（语义同 active）
   parentId: string;
   createdAt: string;
   updatedAt: string;
@@ -43,7 +45,7 @@ export interface ConversationUpdateRequest {
   title: string;
 }
 
-// POST /api/conversation/setClaudeSessionId 的入参（终端捕获回写统一锚）。
+// POST /api/conversation/setClaudeSessionId 的入参（终端捕获回写锚，观测值即覆写）。
 export interface ConversationSetClaudeSessionIdRequest {
   id: string;
   claudeSessionId: string;
@@ -75,7 +77,7 @@ export class ConversationService {
     return request<ConversationModel>('POST', '/api/conversation/update', req);
   }
 
-  // setClaudeSessionId：终端捕获回写统一锚（锚非空不覆盖，返回现行行）。
+  // setClaudeSessionId：终端捕获回写锚（观测值即覆写并置 active，返回现行行）。
   static setClaudeSessionId(req: ConversationSetClaudeSessionIdRequest): Promise<ConversationModel> {
     return request<ConversationModel>('POST', '/api/conversation/setClaudeSessionId', req);
   }

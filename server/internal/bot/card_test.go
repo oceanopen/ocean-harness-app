@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"go.uber.org/zap"
+
+	"ocean-harness/server/internal/dal/enums"
 )
 
 /*
@@ -64,7 +66,7 @@ func interactionMsg() InboundMessage {
 }
 
 func interactionCfg() BotRuntimeConfig {
-	return BotRuntimeConfig{BotID: "bot-1", WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
+	return BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WEIXIN, ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: AccessPolicy{Mode: AccessModeOpen}}
 }
 
 /*
@@ -100,9 +102,8 @@ func TestOrchestratorInteractionFallback(t *testing.T) {
 	if n := driver.turnCount(); n != 0 {
 		t.Fatalf("交互不应出回合，got %d", n)
 	}
-	seen, err := store.HasSeen("bot-1", "single:u1", "ev-1")
-	if err != nil || !seen {
-		t.Fatalf("兜底处理应 MarkSeen: seen=%v err=%v", seen, err)
+	if !store.HasSeen(interactionCfg(), "single:u1", "ev-1") {
+		t.Fatal("兜底处理应 MarkSeen")
 	}
 }
 

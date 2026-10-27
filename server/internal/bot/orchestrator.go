@@ -185,7 +185,7 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 		return
 	}
 	// 活动时间戳顺延（受理即触碰）：ACP 等无锚回写链路的唯一时基来源，防闲置误报逐条重放。
-	if err := o.store.TouchLastMessage(cfg.BotID, msg.ConversationKey, time.Now()); err != nil {
+	if err := o.store.TouchLastMessage(cfg, msg.ConversationKey, time.Now()); err != nil {
 		o.log.Warn("bot 会话活动时间戳写入失败", zap.Error(err))
 	}
 	// 占位帧走 quote 样式（思考面板同款），标识非正文。
@@ -214,24 +214,18 @@ func accessDeniedText(reason string) string {
 	return "您不在该机器人的使用白名单内，请联系机器人管理员。"
 }
 
-// seenOrFlush 幂等闸：已见即终帧回统一文案并返回 true；查询失败按放行处理（what 为放行场景标注）。
-func (o *Orchestrator) seenOrFlush(cfg BotRuntimeConfig, key, msgID string, rs ReplyStream, what string) bool {
-	seen, err := o.store.HasSeen(cfg.BotID, key, msgID)
-	if err != nil {
-		o.log.Error("bot 幂等查询失败（放行"+what+"）", zap.Error(err))
-	}
-	if seen {
+// seenOrFlush 幂等闸：已见即终帧回统一文案并返回 true。
+func (o *Orchestrator) seenOrFlush(cfg BotRuntimeConfig, key, msgID string, rs ReplyStream, _ string) bool {
+	if o.store.HasSeen(cfg, key, msgID) {
 		_ = rs.Flush(msgAlreadySeenText, true)
 		return true
 	}
 	return false
 }
 
-// markSeen 幂等收口：登记已处理（拦截步/权威复查共用），失败仅告警不阻断。
+// markSeen 幂等收口：登记已处理（拦截步/权威复查共用）。
 func (o *Orchestrator) markSeen(cfg BotRuntimeConfig, key, msgID string) {
-	if err := o.store.MarkSeen(cfg.BotID, key, msgID); err != nil {
-		o.log.Error("bot markSeen 失败", zap.Error(err))
-	}
+	o.store.MarkSeen(cfg, key, msgID)
 }
 
 /*
@@ -363,13 +357,16 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		return
 	}
 
-	// headless resume 锚（空 = 下条消息开新会话；读失败按新会话处理）。ACP 路由不消费该字段。
-	prevSessionID, anchorErr := o.store.SessionID(cfg.BotID, key)
+	/*
+	 * headless 驱动锚二择（读失败按新会话处理）：active → resumeID 续聊；pending → 预置 id
+	 * 开新会话（--session-id，jsonl 文件名即预置 id）。ACP 路由不消费。
+	 */
+	resumeID, presetID, anchorErr := o.store.HeadlessAnchor(cfg, key)
 	if anchorErr != nil {
 		o.log.Error("bot 会话读取失败（按新会话处理）", zap.Error(anchorErr))
 	}
 
-	// 超长全文落盘：.bot-outbox/<ts>-<msgid 前 8 位>.md，帧内附路径。
+	// 超长全文落盘：.bot-outbox/overflow/<ts>-<msgid 前 8 位>.md，帧内附路径。
 	sink := o.overflowSink(cfg, msg)
 
 	/*
@@ -382,7 +379,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	if a, ok := job.reply.(ArtifactReplyStream); ok {
 		ars = a
 		nonce := fmt.Sprintf("%d-%s", time.Now().UnixMilli(), shortID(msg.MessageID))
-		dir := filepath.Join(cfg.WorkspaceDir, ".bot-outbox", "delivery", nonce)
+		dir := filepath.Join(cfg.WorkspaceDir, outboxDirName, "delivery", nonce)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			o.log.Warn("bot 交付目录创建失败（本轮跳过产物投递）", zap.Error(err))
 		} else {
@@ -432,7 +429,8 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		TaskID:           cfg.TaskID,
 		WorkspaceDir:     cfg.WorkspaceDir,
 		ConversationKey:  key,
-		SessionID:        prevSessionID,
+		SessionID:        resumeID,
+		PresetSessionID:  presetID,
 		Prompt:           prompt,
 		SystemPrompt:     systemPrompt,
 		Display:          buildTurnDisplay(msg, string(cfg.Channel)),
@@ -452,7 +450,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		_ = job.reply.Flush(turnFailureReply("❌ 无法启动机器人会话：", err), true)
 		var rejected turnNotAcceptedError
 		if !errors.As(err, &rejected) {
-			o.healAfterFailure(cfg.BotID, key, prevSessionID)
+			o.healAfterFailure(cfg, key, prevAnchorTried(resumeID, presetID))
 		}
 		return
 	}
@@ -463,9 +461,14 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		o.log.Warn("bot 回合失败", zap.String("botID", cfg.BotID),
 			zap.String("conversation", key), zap.Error(outcome.Err))
 	}
-	// 会话锚回写（outcome.SessionID 仅 headless 引擎捕获；ACP 不产出则不触碰）。
+	// 会话锚回写（outcome.SessionID 仅 headless 引擎捕获；ACP 不产出则不触碰）。预置注入
+	// 场景校验一致性：捕获值偏离预置 id 以实际值为准（绝对一致铁律），偏离仅告警观测。
 	if outcome.SessionID != "" {
-		if err := o.store.FinishTurn(cfg.BotID, key, outcome.SessionID, time.Now()); err != nil {
+		if presetID != "" && outcome.SessionID != presetID {
+			o.log.Warn("headless 会话 id 偏离预置锚，以实际值为准",
+				zap.String("preset", presetID), zap.String("actual", outcome.SessionID))
+		}
+		if err := o.store.FinishTurn(cfg, key, outcome.SessionID, time.Now()); err != nil {
 			o.log.Error("bot 会话回写失败", zap.Error(err))
 		}
 	}
@@ -478,7 +481,7 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	}
 	// 取消（/stop 或 SIGTERM/Stop）导致的回合中断不是会话失效：claude 侧锚点仍可用，不做自愈清除。
 	if outcome.Err != nil && turnCtx.Err() == nil {
-		o.healAfterFailure(cfg.BotID, key, prevSessionID)
+		o.healAfterFailure(cfg, key, prevAnchorTried(resumeID, presetID))
 	}
 }
 
@@ -527,7 +530,7 @@ func (o *Orchestrator) applyControlCommand(cfg BotRuntimeConfig, conversationKey
 		return "⏹ 已停止当前回复，会话上下文保留，继续对话即可。"
 	case slashClearToken:
 		o.stopConversation(queueKey(cfg.BotID, conversationKey))
-		if err := o.store.ClearSessionID(cfg.BotID, conversationKey); err != nil {
+		if err := o.store.ResetSessionID(cfg, conversationKey); err != nil {
 			o.log.Error("bot 会话锚点清理失败", zap.Error(err))
 		}
 		return "🧹 上下文已清空，下一条消息将开启新会话。"
@@ -572,22 +575,28 @@ func (o *Orchestrator) queueBusy(key string) bool {
 }
 
 /*
- * healAfterFailure 回合失败后的 headless 会话自愈：本轮尝试过 resume（prev 非空）→ 清空锚点，
- * 用户重发即开新会话（失败文案已提示重试）。本轮本是新会话则无事可做。
+ * healAfterFailure 回合失败后的 headless 会话自愈：本轮尝试过锚驱动（resume/preset 任一非空）
+ * → 锚重置（换新预置 id 回 pending），用户重发即开新会话（失败文案已提示重试）。本轮本是
+ * 裸新会话则无事可做。
  */
-func (o *Orchestrator) healAfterFailure(botID string, conversationKey, prevSessionID string) {
-	if prevSessionID == "" {
+func (o *Orchestrator) healAfterFailure(cfg BotRuntimeConfig, conversationKey string, anchorTried bool) {
+	if !anchorTried {
 		return
 	}
-	if err := o.store.ClearSessionID(botID, conversationKey); err != nil {
+	if err := o.store.ResetSessionID(cfg, conversationKey); err != nil {
 		o.log.Error("bot 会话锚点清理失败", zap.Error(err))
 	}
+}
+
+// prevAnchorTried 本轮是否尝试过锚驱动（resume/preset 任一在场）。
+func prevAnchorTried(resumeID, presetID string) bool {
+	return resumeID != "" || presetID != ""
 }
 
 // overflowSink 生成超长全文落盘回调（懒创建目录；失败时返回空路径降级为静默截断）。
 func (o *Orchestrator) overflowSink(cfg BotRuntimeConfig, msg InboundMessage) OverflowSink {
 	return func(fullText string) string {
-		dir := filepath.Join(cfg.WorkspaceDir, ".bot-outbox")
+		dir := filepath.Join(cfg.WorkspaceDir, outboxDirName, "overflow")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			o.log.Error("bot outbox 目录创建失败", zap.Error(err))
 			return ""
@@ -608,20 +617,23 @@ func shortID(id string) string {
 }
 
 /*
- * SanitizeFileName 文件名净化：仅保留字母数字与 -_.（跨平台安全），空结果回落 fallback。
- * 核心与渠道适配器共用（wecom 附件落盘同名过滤），单一 SSOT。
+ * SanitizeFileName 文件名净化：剔除路径分隔符/控制字符/Windows 保留字符，去首尾空白点与
+ * 首部 '_-'（防与 msgId 前缀拼出 '-_'/'--' 怪名），保留 Unicode（中文合法）；空结果回落 fallback。
+ * 核心与渠道适配器共用，单一 SSOT。
  */
 func SanitizeFileName(s, fallback string) string {
 	var b strings.Builder
 	for _, r := range s {
-		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
-			b.WriteRune(r)
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(`/\:*?"<>|`, r) {
+			continue
 		}
+		b.WriteRune(r)
 	}
-	if b.Len() == 0 {
+	name := strings.TrimLeft(strings.Trim(b.String(), " ."), "_-")
+	if name == "" {
 		return fallback
 	}
-	return b.String()
+	return name
 }
 
 // Stop 优雅停止：关队列（停止受理）→ 取消生命周期 ctx（杀在途回合）→ 等 worker 收尾。

@@ -1,6 +1,8 @@
 package bot
 
 import (
+	"time"
+
 	"context"
 	"errors"
 	"fmt"
@@ -41,13 +43,29 @@ func (d *syncFailDriver) RunTurn(_ context.Context, _ TurnRequest) (<-chan TurnE
 	return nil, d.err
 }
 
-// presetSessionAnchor 预置会话行 + 续聊锚（SaveSessionID 不建行，须先 GetOrCreate）。
+// headlessAnchorOf 读 ux 会话的 active 续聊锚（空 = 无锚）。
+func headlessAnchorOf(t *testing.T, store *ConversationStore) string {
+	t.Helper()
+	resume, _, err := store.HeadlessAnchor(uxCfg(), "single:u1")
+	if err != nil {
+		t.Fatalf("读续聊锚: %v", err)
+	}
+	return resume
+}
+
+// uxCfg ux 用例的工作空间档运行配置（幂等键 bot-1/single:u1 的行 owner）。
+func uxCfg() BotRuntimeConfig {
+	return BotRuntimeConfig{BotID: "bot-1", Channel: enums.CHANNEL_WEIXIN, ConversationType: enums.CONVERSATION_TYPE_WORKSPACE, WorkspaceID: "ws-1", WorkspaceDir: "/tmp/ocean-test", AccessPolicy: openAccess()}
+}
+
+// presetSessionAnchor 预置会话行 + active 态续聊锚（EnsureConversation 建行后 FinishTurn 落 active 锚）。
 func presetSessionAnchor(t *testing.T, store *ConversationStore, sessionID string) {
 	t.Helper()
-	if _, err := store.GetOrCreate("bot-1", "single:u1"); err != nil {
+	cfg := uxCfg()
+	if _, err := store.EnsureConversation(cfg, "single:u1"); err != nil {
 		t.Fatalf("预置会话行: %v", err)
 	}
-	if err := store.SaveSessionID("bot-1", "single:u1", sessionID); err != nil {
+	if err := store.FinishTurn(cfg, "single:u1", sessionID, time.Now()); err != nil {
 		t.Fatalf("预置会话锚: %v", err)
 	}
 }
@@ -194,7 +212,7 @@ func TestSlashStopKillsTurn(t *testing.T) {
 	if frames1[len(frames1)-1].content != "⏹ 已停止当前回复。" {
 		t.Fatalf("被打断回合终帧应为取消叙事: %+v", frames1)
 	}
-	if seen, _ := store.HasSeen("bot-1", "single:u1", "m-3"); !seen {
+	if !store.HasSeen(uxCfg(), "single:u1", "m-3") {
 		t.Fatal("控制指令应 MarkSeen")
 	}
 }
@@ -211,7 +229,7 @@ func TestSlashClear(t *testing.T) {
 	if len(frames) != 1 || !frames[0].final || !strings.Contains(frames[0].content, "上下文已清空") {
 		t.Fatalf("/clear 应单终帧确认: %+v", frames)
 	}
-	if id, _ := store.SessionID("bot-1", "single:u1"); id != "" {
+	if id := headlessAnchorOf(t, store); id != "" {
 		t.Fatalf("/clear 应清空 headless 会话锚: %q", id)
 	}
 }
@@ -235,6 +253,27 @@ func TestRunTurnResumesSessionAnchor(t *testing.T) {
 }
 
 /*
+ * TestRunTurnPassesPresetSessionAnchor headless 锚链·预置：pending 态建行预生成值随
+ * TurnRequest.PresetSessionID 传入引擎（--session-id 开新会话即预置 id）。
+ */
+func TestRunTurnPassesPresetSessionAnchor(t *testing.T) {
+	driver := &recordingDriver{}
+	o, store := newOrchestratorWithDriver(t, driver)
+	conv, err := store.EnsureConversation(issueCmdCfg(), "single:u1")
+	if err != nil {
+		t.Fatalf("预置会话行: %v", err)
+	}
+	rs := &fakeReplyStream{}
+	o.HandleInbound(issueCmdCfg(), InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "开场"}, func() (ReplyStream, error) {
+		return rs, nil
+	})
+	waitFor(t, "回合执行", func() bool { return driver.captured().Prompt != "" })
+	if got := driver.captured().PresetSessionID; got != conv.ClaudeSessionID {
+		t.Fatalf("pending 态应传预置锚: got=%q want=%q", got, conv.ClaudeSessionID)
+	}
+}
+
+/*
  * TestRunTurnPersistsSessionAnchor headless 锚链·写：终态帧携带的会话 id 回写 bot 会话行
  * （--resume 后 id 可能刷新，每回合以捕获值为准）。
  */
@@ -246,7 +285,7 @@ func TestRunTurnPersistsSessionAnchor(t *testing.T) {
 		return rs, nil
 	})
 	waitFor(t, "锚回写", func() bool {
-		id, _ := store.SessionID("bot-1", "single:u1")
+		id := headlessAnchorOf(t, store)
 		return id == "s-new"
 	})
 }
@@ -271,7 +310,7 @@ func TestRunTurnSpawnFailureHealsAnchor(t *testing.T) {
 		}
 		return false
 	})
-	if id, _ := store.SessionID("bot-1", "single:u1"); id != "" {
+	if id := headlessAnchorOf(t, store); id != "" {
 		t.Fatalf("spawn 失败应清空锚点自愈: %q", id)
 	}
 
@@ -290,7 +329,7 @@ func TestRunTurnSpawnFailureHealsAnchor(t *testing.T) {
 		}
 		return false
 	})
-	if id, _ := store.SessionID("bot-1", "single:u1"); id != "s-prev" {
+	if id := headlessAnchorOf(t, store); id != "s-prev" {
 		t.Fatalf("受理拒绝不得清锚: %q", id)
 	}
 }

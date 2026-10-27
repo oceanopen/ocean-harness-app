@@ -64,8 +64,8 @@ func TestAcpEventsHandlerReject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("打开临时 sqlite: %v", err)
 	}
-	// Manager 装配触达会话映射表，夹具一并迁移。
-	if err := db.AutoMigrate(&model.ImBotConversation{}); err != nil {
+	// Manager 装配触达会话表，夹具一并迁移。
+	if err := db.AutoMigrate(&model.Conversation{}); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
 	if sqlDB, err := db.DB(); err == nil {

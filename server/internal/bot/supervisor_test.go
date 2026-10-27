@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -99,6 +100,55 @@ func botRow(t *testing.T, db *gorm.DB, botID string) *model.ImBot {
 func lastErrorOf(t *testing.T, db *gorm.DB, botID string) string {
 	t.Helper()
 	return botRow(t, db, botID).LastError
+}
+
+/*
+ * TestBotRuntimeConfigRootDir 会话根目录按档位解析：workspace 档取工作空间 dir；project 档
+ * 取任务运行目录 {project.dir}/{taskId}（未关联任务回落项目 dir）。
+ */
+func TestBotRuntimeConfigRootDir(t *testing.T) {
+	db := newBotTestDB(t, &model.ImBot{}, &model.Workspace{}, &model.Project{}, &model.ProjectTask{})
+	q := query.Use(db)
+	ctx := context.Background()
+	wsDir, prDir := t.TempDir(), t.TempDir()
+	if err := q.Workspace.WithContext(ctx).Create(&model.Workspace{ID: "ws-1", Name: "ws", Dir: wsDir}); err != nil {
+		t.Fatalf("建工作空间行: %v", err)
+	}
+	if err := q.Project.WithContext(ctx).Create(&model.Project{ID: "pr-1", Name: "pr", Dir: prDir}); err != nil {
+		t.Fatalf("建项目行: %v", err)
+	}
+	if err := q.ProjectTask.WithContext(ctx).Create(&model.ProjectTask{ID: "task-1", ProjectID: "pr-1", Name: "task"}); err != nil {
+		t.Fatalf("建任务行: %v", err)
+	}
+	s := NewSupervisor(db, 9100, nil, NewDeliveryRegistry(), zap.NewNop())
+
+	mk := func(id string, ct enums.ConversationType, wsID, prID, taskID string) *model.ImBot {
+		return &model.ImBot{ID: id, Name: "bot", Channel: enums.CHANNEL_WECOM,
+			ConversationType: ct, WorkspaceID: wsID, ProjectID: prID, TaskID: taskID,
+			AccessPolicy: `{"mode":"open"}`, Enabled: enums.YES_NO_YES}
+	}
+	cases := []struct {
+		name string
+		bot  *model.ImBot
+		want string
+	}{
+		{"workspace 档", mk("b-ws", enums.CONVERSATION_TYPE_WORKSPACE, "ws-1", "", ""), wsDir},
+		{"project 档关联任务", mk("b-task", enums.CONVERSATION_TYPE_PROJECT, "", "pr-1", "task-1"), filepath.Join(prDir, "task-1")},
+		{"project 档未关联任务", mk("b-pr", enums.CONVERSATION_TYPE_PROJECT, "", "pr-1", ""), prDir},
+	}
+	for _, c := range cases {
+		cfg, err := s.botRuntimeConfig(c.bot)
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if cfg.WorkspaceDir != c.want {
+			t.Fatalf("%s: WorkspaceDir = %q, want %q", c.name, cfg.WorkspaceDir, c.want)
+		}
+	}
+	// 悬空任务引用（任务行已删）：fail closed 拒绝启动，迫使重新配置。
+	if _, err := s.botRuntimeConfig(mk("b-dangling", enums.CONVERSATION_TYPE_PROJECT, "", "pr-1", "task-x")); err == nil {
+		t.Fatalf("悬空任务引用应启动失败")
+	}
 }
 
 // TestApplyBotStartsChannel 启用行 ApplyBot：渠道被拉起且 last_error 保持清空。

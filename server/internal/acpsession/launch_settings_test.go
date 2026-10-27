@@ -67,7 +67,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	if sqlDB, err := db.DB(); err == nil {
 		t.Cleanup(func() { _ = sqlDB.Close() })
 	}
-	if err := db.AutoMigrate(&model.Workspace{}, &model.Project{}, &model.ProjectTask{}, &model.Conversation{}, &model.ImBot{}, &model.ImBotConversation{}); err != nil {
+	if err := db.AutoMigrate(&model.Workspace{}, &model.Project{}, &model.ProjectTask{}, &model.Conversation{}, &model.ImBot{}); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}
 	return db
@@ -124,26 +124,6 @@ func seedWorkspaceConversation(t *testing.T, db *gorm.DB, wsID string) string {
 		ID: convID, OwnerType: enums.OWNER_TYPE_WORKSPACE, OwnerID: wsID, Title: "w", Mode: enums.CONVERSATION_MODE_ACP,
 	}); err != nil {
 		t.Fatalf("建 workspace conversation: %v", err)
-	}
-	return convID
-}
-
-// seedBotConversation 建 bot 行（绑 workspace）+ 会话行（conv- 锚载体），返回会话行 id。
-func seedBotConversation(t *testing.T, db *gorm.DB, wsID string) string {
-	t.Helper()
-	q := queryOf(db)
-	botID := fmt.Sprintf("bot-%d", seedIssueSeq.Add(1))
-	if err := q.ImBot.WithContext(context.Background()).Create(&model.ImBot{
-		ID: botID, Name: "bot", Channel: enums.CHANNEL_WECOM, WorkspaceID: wsID,
-		AccessPolicy: `{"mode":"open"}`, Enabled: enums.YES_NO_YES,
-	}); err != nil {
-		t.Fatalf("建 bot: %v", err)
-	}
-	convID := fmt.Sprintf("conv-row-%d", seedIssueSeq.Add(1))
-	if err := q.ImBotConversation.WithContext(context.Background()).Create(&model.ImBotConversation{
-		ID: convID, BotID: botID, ConversationKey: fmt.Sprintf("single:u-%s", convID), SeenMessageIds: "[]",
-	}); err != nil {
-		t.Fatalf("建会话行: %v", err)
 	}
 	return convID
 }
@@ -263,53 +243,5 @@ func TestResolveSessionConfigRelDir(t *testing.T) {
 	convID := seedTaskConversation(t, db, task.ID)
 	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey(convID), ""); err == nil || !strings.Contains(err.Error(), "绝对路径") {
 		t.Fatalf("相对目录应拒绝，got %v", err)
-	}
-}
-
-/*
- * TestResolveSessionConfigConversationAnchor conv- 锚解析（IM 未关联任务的独立会话）：
- * 三跳解析（会话行 → bot → workspace）、launch_settings 只消费 workspace 单级、cwd 即
- * 工空间根目录；workspace 非 acp / 会话行缺失拒绝。
- */
-func TestResolveSessionConfigConversationAnchor(t *testing.T) {
-	db := newTestDB(t)
-	ctx := context.Background()
-	q := queryOf(db)
-
-	// workspace 级显式 agentCode/permissionMode 供 conv 会话继承。
-	wsDir := t.TempDir()
-	mkWS := func(launchSettings string) string {
-		id := fmt.Sprintf("ws-conv-%d", seedIssueSeq.Add(1))
-		if err := q.Workspace.WithContext(ctx).Create(&model.Workspace{
-			ID: id, Name: "ws", Dir: wsDir, LaunchSettings: launchSettings,
-		}); err != nil {
-			t.Fatalf("建 workspace: %v", err)
-		}
-		return id
-	}
-
-	wsID := mkWS(`{"mode":"acp","agentCode":"claude-acp","permissionMode":"acceptEdits"}`)
-	key := ConversationSessionKey(seedBotConversation(t, db, wsID))
-	cfg, err := resolveSessionConfig(ctx, db, key, "")
-	if err != nil {
-		t.Fatalf("resolveSessionConfig(conv): %v", err)
-	}
-	if cfg.SessionKey != key || cfg.WorkspaceDir != wsDir || cfg.Cwd != wsDir {
-		t.Fatalf("conv 锚 cwd 应为工作空间根目录: %+v", cfg)
-	}
-	// permissionMode 已固化为 bypass：存量 JSON 里的 acceptEdits 键被忽略。
-	if cfg.AgentCode != "claude-acp" || cfg.PermissionMode != acp.PermissionModeBypassPermissions {
-		t.Fatalf("permissionMode 应恒 bypass: agent=%q mode=%q", cfg.AgentCode, cfg.PermissionMode)
-	}
-
-	// workspace 非 acp 拒绝。
-	keyNone := ConversationSessionKey(seedBotConversation(t, db, mkWS(`{"mode":"none"}`)))
-	if _, err := resolveSessionConfig(ctx, db, keyNone, ""); err == nil || !strings.Contains(err.Error(), "未配置为 ACP") {
-		t.Fatalf("workspace 非 acp 应拒绝: %v", err)
-	}
-
-	// 会话行缺失拒绝。
-	if _, err := resolveSessionConfig(ctx, db, ConversationSessionKey("no-such-row"), ""); err == nil {
-		t.Fatal("会话行缺失应拒绝")
 	}
 }

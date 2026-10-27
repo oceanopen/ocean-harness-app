@@ -18,6 +18,9 @@ import { catalogVersionOf, fail, installSpec, log, pnpmAdd, repoRoot, rootPkg } 
 /** claude SDK 包名：adapter 的传递依赖，staging 明文化 + 根声明防漂移的校验对象。 */
 const CLAUDE_SDK_PKG = '@anthropic-ai/claude-agent-sdk';
 
+/** patch 目录（scripts/patches/）：patch 文件名与安装 spec 同形（pkg@version.patch），与 pin 版本强绑定。 */
+const PATCHES_DIR = resolve(repoRoot, 'scripts/patches');
+
 const CATALOG_PATH = resolve(repoRoot, 'server/internal/agentcatalog/agent-catalog.json');
 
 /** agent catalog 条目（本模块只消费这些字段）。 */
@@ -83,6 +86,14 @@ function adapterSpec(entry: CatalogEntry): string {
   return spec;
 }
 
+/** 条目 patch 声明：scripts/patches/<包尾段>@<版本>.patch 存在即启用（升级 pin 时须同步重放 patch）。 */
+function adapterPatch(spec: string): { key: string; file: string } | undefined {
+  const at = spec.lastIndexOf('@');
+  const base = spec.slice(0, at).split('/').pop() ?? spec;
+  const file = resolve(PATCHES_DIR, `${base}${spec.slice(at)}.patch`);
+  return existsSync(file) ? { key: spec, file } : undefined;
+}
+
 /**
  * claude 专属收尾（installSpec postInstall）：抛错即安装失败（驱动统一清理半成品）。
  * 链条：SDK 存在性 → 根声明防漂移 → 明文提升（--save-exact 精确版本，lockfile 同步收敛）
@@ -131,6 +142,7 @@ export function installClaudeAdapters(platform: TargetPlatform): void {
       // 快路径亦复验 SDK pin：staging 在位但根声明被改错时不再静默跳过（重装后由
       // postInstall 漂移断言响亮报错）。
       readyPins: [{ pkg: CLAUDE_SDK_PKG, version: sdkPin.version }],
+      patch: adapterPatch(spec),
       postInstall: tmpDir => claudePostInstall(tmpDir, spec, platform, sdkPin),
     });
   }

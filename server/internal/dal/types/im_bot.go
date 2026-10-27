@@ -85,14 +85,16 @@ type ImBotGetConversationsRequest struct {
 }
 
 /*
- * ImBotConversationData bot 会话行投影（工具栏会话明细数据链）：ChatType 由会话键前缀派生（group: → 群聊，single: → 私聊，key 前缀自描述不落表）；
- * ConversationId 为归属会话锚（指向 t_conversations.id，空 = 未关联）。
+ * ImBotConversationData bot 会话行投影（工具栏会话明细数据链，t_conversations 单表）：ChatType
+ * 由会话键前缀派生（group: → 群聊，single: → 私聊，key 前缀自描述不落表）；ConversationId 为
+ * 会话行 id（bot 字落会话行本体，恒非空）；Channel 为渠道标识（weixin/wework）。
  */
 type ImBotConversationData struct {
-	ConversationKey string     `json:"conversationKey"`
-	ChatType        string     `json:"chatType"`       // single | group
-	ConversationId  string     `json:"conversationId"` // 空 = 未关联
-	LastMessageAt   *time.Time `json:"lastMessageAt"`  // null = 从未活跃
+	ConversationKey string        `json:"conversationKey"`
+	ChatType        string        `json:"chatType"`       // single | group
+	ConversationId  string        `json:"conversationId"` // 会话行 id
+	Channel         enums.Channel `json:"channel"`        // weixin | wework
+	LastMessageAt   *time.Time    `json:"lastMessageAt"`  // null = 从未活跃
 }
 
 /*
