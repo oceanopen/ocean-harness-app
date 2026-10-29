@@ -15,6 +15,10 @@
     }
   },
   "app": {
+    "section": {
+      "preferences": "偏好设置",
+      "runtime": "运行配置"
+    },
     "row": {
       "language": "界面语言",
       "appearance": "外观",

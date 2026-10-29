@@ -15,6 +15,10 @@
     }
   },
   "app": {
+    "section": {
+      "preferences": "Preferences",
+      "runtime": "Runtime"
+    },
     "row": {
       "language": "Language",
       "appearance": "Appearance",

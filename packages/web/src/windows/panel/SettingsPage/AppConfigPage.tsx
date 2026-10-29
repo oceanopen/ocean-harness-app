@@ -5,8 +5,10 @@ import LanguageIcon from '@mui/icons-material/Language';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PictureInPictureAltOutlinedIcon from '@mui/icons-material/PictureInPictureAltOutlined';
 import RocketLaunchOutlinedIcon from '@mui/icons-material/RocketLaunchOutlined';
+import SettingsSuggestOutlinedIcon from '@mui/icons-material/SettingsSuggestOutlined';
 import SpeedOutlinedIcon from '@mui/icons-material/SpeedOutlined';
 import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined';
+import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import {
   Box,
   Button,
@@ -46,6 +48,7 @@ import {
 } from '@src/shared/settingOption';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { SectionCard, SectionHeader } from './SectionCard';
 
 function AppConfigPage() {
   const { t } = useTranslation();
@@ -138,14 +141,23 @@ function AppConfigPage() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Box sx={{ p: '24px', flex: 1, overflow: 'auto' }}>
-        <Box
-          sx={{
-            borderRadius: '8px',
-            border: '1px solid',
-            borderColor: 'divider',
-            overflow: 'hidden',
-          }}
+      <Box
+        sx={{
+          p: '24px',
+          flex: 1,
+          overflow: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+        }}
+      >
+        <SectionCard
+          header={(
+            <SectionHeader
+              icon={<TuneOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
+              label={t('settings:app.section.preferences')}
+            />
+          )}
         >
           <Box
             sx={{
@@ -209,6 +221,41 @@ function AppConfigPage() {
 
           <Divider />
 
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              px: '16px',
+              py: '12px',
+              gap: '16px',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              <RocketLaunchOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: '4px' }} />
+              <Box>
+                <Typography>{t('settings:app.row.launchAtLogin')}</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t('settings:app.help.launchAtLogin')}
+                </Typography>
+              </Box>
+            </Box>
+            <Switch
+              size="small"
+              checked={draftLaunchAtLogin === YES_NO.YES}
+              onChange={e => setDraftLaunchAtLogin(toYesNo(e.target.checked))}
+            />
+          </Box>
+        </SectionCard>
+
+        <SectionCard
+          header={(
+            <SectionHeader
+              icon={<SettingsSuggestOutlinedIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
+              label={t('settings:app.section.runtime')}
+            />
+          )}
+        >
           <Box
             sx={{
               display: 'flex',
@@ -315,34 +362,7 @@ function AppConfigPage() {
             </FormControl>
           </Box>
 
-          <Divider />
-
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-              px: '16px',
-              py: '12px',
-              gap: '16px',
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-              <RocketLaunchOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: '4px' }} />
-              <Box>
-                <Typography>{t('settings:app.row.launchAtLogin')}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {t('settings:app.help.launchAtLogin')}
-                </Typography>
-              </Box>
-            </Box>
-            <Switch
-              size="small"
-              checked={draftLaunchAtLogin === YES_NO.YES}
-              onChange={e => setDraftLaunchAtLogin(toYesNo(e.target.checked))}
-            />
-          </Box>
-        </Box>
+        </SectionCard>
       </Box>
 
       <Box

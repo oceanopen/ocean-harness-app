@@ -59,41 +59,8 @@ import { iterm2SplitDirectionOptions } from '@src/shared/settingOption';
 import { buildTerminalTheme, DEFAULT_TERMINAL_THEME_ID, parseTerminalThemeId, TERMINAL_THEME_IDS } from '@src/windows/panel/DevWorkbenchPage/components/EmbeddedTerminal/terminalTheme';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { SectionCard, SectionHeader } from './SectionCard';
 import TerminalPreview from './TerminalPreview';
-
-// 模块段卡片标题栏：灰底横条（action.hover）+ 图标 + 小节名，两个模块段各一张
-// 独立卡片，区隔「编程工具终端监听」与「应用嵌入终端」两组配置。
-function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        px: '16px',
-        py: '12px',
-        bgcolor: 'action.hover',
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-      }}
-    >
-      {icon}
-      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-        {label}
-      </Typography>
-    </Box>
-  );
-}
-
-// 单个模块段卡片容器（标题栏 + 内容）。
-function SectionCard({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-      {header}
-      {children}
-    </Box>
-  );
-}
 
 // 主题下拉显示名：i18n 词条（terminal_05 目录常量 key 化）。
 function themeDisplayName(id: TerminalThemeId, t: (key: string) => string): string {

@@ -19,6 +19,7 @@ import { commands } from '@src/shared/bindings';
 import { unwrap } from '@src/shared/commands';
 import { useToast } from '@src/shared/useToast';
 import { useCallback, useEffect, useState } from 'react';
+import { SectionCard, SectionHeader } from './SectionCard';
 
 // 数据清理分区页：应用设置（app.db）、服务数据（server.db）、历史日志三个清理项。
 // 应用设置走 SQL 级清空 + 自动重启收敛；服务数据走停 sidecar → 删库 → 重拉 + 整页刷新；
@@ -45,39 +46,6 @@ const TEXTS = {
     desc: '清理应用与服务运行产生的历史日志文件（轮转归档）；正在写入的当前日志文件保留。',
   },
 } as const;
-
-// 模块段卡片标题栏/容器：与 TerminalConfigPage 本地组件同构（设置页各分区自持样式，
-// 出现第三个消费方时再考虑提升到公共组件）。
-function SectionHeader({ icon, label }: { icon: React.ReactNode; label: string }) {
-  return (
-    <Box
-      sx={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        px: '16px',
-        py: '12px',
-        bgcolor: 'action.hover',
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-      }}
-    >
-      {icon}
-      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-        {label}
-      </Typography>
-    </Box>
-  );
-}
-
-function SectionCard({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <Box sx={{ borderRadius: '8px', border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
-      {header}
-      {children}
-    </Box>
-  );
-}
 
 // 路径展示行：label 缺省时仅展示路径（存量卡片形态），有 label 用于日志目录等多行场景。
 interface CleanupPathRow {
