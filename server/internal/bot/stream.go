@@ -36,14 +36,14 @@ type TurnOutcome struct {
 
 /*
  * PumpReply 回复泵：消费 TurnEvent 流 → 覆写式流式回复；主 goroutine 消费事件、ticker 唯一周期写者、终帧由主 goroutine 收口（两写者一次交接）。
- * 帧形态：quote 面板（思考+工具两大段，整回合累计不清）+ quote 挂起状态行 + 正文共存；终帧保留面板。
+ * 帧形态：quote 面板（思考 + 在飞工具两段，工具结算即移除、无在飞不渲染）+ quote 挂起状态行 + 正文共存；终帧保留面板（无工具分区）。
  * 思考分区窗口：思考/工具期尾部跟随，正文期与终帧头部摘要。卡随 tick 一次性消费，收尾未发出的卡直接丢弃（挂起随回合终态结算）。
  */
 func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sink OverflowSink, log *zap.Logger) TurnOutcome {
 	var mu sync.Mutex
 	var statusText, thinkingBuf, currentText, sessionID string
 	var headWindow bool // 思考分区窗口方向：正文期头部摘要 / 思考工具期尾部跟随
-	var tools []toolEntry
+	var tools []string  // 在飞工具清单：仅正在执行的工具，结算即移除
 	var pendingCard *CardSpec
 	var turnErr error
 	var isError bool
@@ -135,14 +135,14 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 			mu.Unlock()
 		case TurnToolUse:
 			mu.Lock()
-			tools = append(tools, toolEntry{name: ev.ToolName})
-			headWindow = false
+			tools = append(tools, ev.ToolName)
+			headWindow = false // 思考工具期：尾部窗口跟随最新思考
 			statusText = ""
 			mu.Unlock()
 		case TurnStatus:
 			mu.Lock()
 			if ev.ToolName != "" {
-				settleTool(tools, ev.ToolName, ev.Status) // 工具终态：面板对应行就地结算
+				removeTool(&tools, ev.ToolName) // 工具终态：在飞行就地移除，不驻留终态文案
 			} else {
 				statusText = ev.Status // 挂起状态行：面板下方临时段，随内容推进让位
 				if ev.Card != nil {
@@ -220,17 +220,11 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 // errTurnFailed result 帧标记 is_error（回合被 max-turns 等中断，进程本身正常退出）。
 var errTurnFailed = errors.New("claude 回合被中断")
 
-// toolEntry 面板工具分区的一行：settled 非空为终态文案（✅/❌），空 = 执行中。
-type toolEntry struct {
-	name    string
-	settled string
-}
-
-// settleTool 就地结算最早同名未完结工具行（同名多次调用按序结算）。
-func settleTool(tools []toolEntry, name, settled string) {
-	for i := range tools {
-		if tools[i].name == name && tools[i].settled == "" {
-			tools[i].settled = settled
+// removeTool 移除最早同名在飞工具行（同名并发按序结算）。
+func removeTool(tools *[]string, name string) {
+	for i, n := range *tools {
+		if n == name {
+			*tools = append((*tools)[:i], (*tools)[i+1:]...)
 			return
 		}
 	}
@@ -240,10 +234,11 @@ func settleTool(tools []toolEntry, name, settled string) {
 const thoughtWindowRunes = 300
 
 /*
- * panelContent 面板明文形态（包 quote 前）：思考分区 + 工具分区两大段、段间空行；
- * headWindow 决定思考窗口方向（尾部跟随 / 头部摘要），md=false 时标签剥离粗体，任一段可缺席。
+ * panelContent 面板明文形态（包 quote 前）：思考分区 + 在飞工具分区两大段、段间空行；
+ * 无在飞工具则工具分区缺席；headWindow 决定思考窗口方向（尾部跟随 / 头部摘要），
+ * md=false 时标签剥离粗体，思考分区可缺席。
  */
-func panelContent(thinkingBuf string, headWindow bool, tools []toolEntry, md bool) string {
+func panelContent(thinkingBuf string, headWindow bool, tools []string, md bool) string {
 	thinkingLabel, toolLabel := "🤔 思考中：", "🔧 调用工具："
 	if md {
 		thinkingLabel, toolLabel = "**🤔 思考中：**", "**🔧 调用工具：**"
@@ -255,13 +250,8 @@ func panelContent(thinkingBuf string, headWindow bool, tools []toolEntry, md boo
 	if len(tools) > 0 {
 		var b strings.Builder
 		b.WriteString(toolLabel)
-		for _, t := range tools {
-			b.WriteString("\n")
-			if t.settled != "" {
-				b.WriteString(t.settled)
-			} else {
-				b.WriteString("⏳ " + t.name + " 执行中…")
-			}
+		for _, name := range tools {
+			b.WriteString("\n⏳ " + name + " 执行中…")
 		}
 		sections = append(sections, b.String())
 	}

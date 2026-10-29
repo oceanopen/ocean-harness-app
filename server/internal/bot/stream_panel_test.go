@@ -60,8 +60,8 @@ func TestPumpReplyToolCoexistsWithThinking(t *testing.T) {
 	}
 }
 
-// 工具终态事件：面板对应工具行就地结算（✅），不新增分区、不清面板。
-func TestPumpReplyToolSettledUpdatesPanel(t *testing.T) {
+// 工具终态事件：在飞行移除该工具行，分区空则「🔧 调用工具」整体不渲染。
+func TestPumpReplyToolSettledRemovesLine(t *testing.T) {
 	rs := &fakeReplyStream{}
 	events := make(chan TurnEvent, 3)
 	events <- TurnEvent{Type: TurnThinking, Delta: "先分析"}
@@ -69,9 +69,25 @@ func TestPumpReplyToolSettledUpdatesPanel(t *testing.T) {
 	events <- TurnEvent{Type: TurnStatus, Status: "✅ Bash 已完成", ToolName: "Bash"}
 
 	frames := pumpFrames(rs, events)
-	want := "> **🤔 思考中：**\n> 先分析\n>\n> **🔧 调用工具：**\n> ✅ Bash 已完成"
+	want := "> **🤔 思考中：**\n> 先分析"
 	if len(frames) != 2 || frames[0].content != want {
-		t.Fatalf("工具终态应就地更新工具行: %+v", frames)
+		t.Fatalf("工具终态后工具分区应整体消失: %+v want %q", frames, want)
+	}
+}
+
+// 并行在飞工具逐行显示；单个终态只移除对应行，其余在飞行保留。
+func TestPumpReplyParallelToolsPartialSettle(t *testing.T) {
+	rs := &fakeReplyStream{}
+	events := make(chan TurnEvent, 4)
+	events <- TurnEvent{Type: TurnThinking, Delta: "先分析"}
+	events <- TurnEvent{Type: TurnToolUse, ToolName: "Bash"}
+	events <- TurnEvent{Type: TurnToolUse, ToolName: "Edit"}
+	events <- TurnEvent{Type: TurnStatus, Status: "✅ Bash 已完成", ToolName: "Bash"}
+
+	frames := pumpFrames(rs, events)
+	want := "> **🤔 思考中：**\n> 先分析\n>\n> **🔧 调用工具：**\n> ⏳ Edit 执行中…"
+	if len(frames) != 2 || frames[0].content != want {
+		t.Fatalf("并行工具应逐行显示、结算仅移除对应行: %+v want %q", frames, want)
 	}
 }
 
