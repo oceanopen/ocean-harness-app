@@ -394,7 +394,7 @@ function AppConfigPage() {
               <ForumOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: '4px' }} />
               <Box>
                 <Typography>{t('settings:app.row.incomingPolicy')}</Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '12px' }}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '12px', whiteSpace: 'pre-line' }}>
                   {t('settings:app.help.incomingPolicy')}
                 </Typography>
               </Box>

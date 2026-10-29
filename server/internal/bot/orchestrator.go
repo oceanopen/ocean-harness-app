@@ -245,6 +245,10 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 				headEnqueued = true
 			}
 		case BotIncomingLatest:
+			// 先置新消息抢占取消叙事再停止：被打断回合终帧区别于 /stop 停止。
+			if _, pause := o.captureTurnHandle(qKey); pause != nil {
+				pause.setStopNotice(interruptedStopText)
+			}
 			o.stopConversation(qKey)
 			interrupting = true
 		}
@@ -685,6 +689,10 @@ func (o *Orchestrator) applyControlCommand(cfg BotRuntimeConfig, conversationKey
 		}
 		return "⏹ 已停止当前回复，会话上下文保留，继续对话即可。"
 	case slashClearToken:
+		// 先置清空取消叙事再停止：被打断回合终帧与清空语义一致。
+		if _, pause := o.captureTurnHandle(queueKey(cfg.BotID, conversationKey)); pause != nil {
+			pause.setStopNotice(clearedStopText)
+		}
 		o.stopConversation(queueKey(cfg.BotID, conversationKey))
 		if err := o.store.ResetSessionID(cfg, conversationKey); err != nil {
 			o.log.Error("bot 会话锚点清理失败", zap.Error(err))

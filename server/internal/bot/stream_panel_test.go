@@ -215,6 +215,37 @@ func TestPumpReplyErrorFinalKeepsPanel(t *testing.T) {
 }
 
 /*
+ * 取消叙事区分：槽内覆盖优先（新消息抢占 / clear 清空），空回落默认停止文案（/stop、编排器停止）。
+ */
+func TestPumpReplyCancelNarrative(t *testing.T) {
+	run := func(stopNotice string) string {
+		rs := &fakeReplyStream{}
+		slot := &pauseNoticeHolder{}
+		ctx, cancel := context.WithCancel(withPauseNotice(context.Background(), slot))
+		events := make(chan TurnEvent, 2)
+		events <- TurnEvent{Type: TurnText, Delta: "写到一半"}
+		if stopNotice != "" {
+			slot.setStopNotice(stopNotice)
+		}
+		cancel()
+		events <- TurnEvent{Type: TurnError, Err: errors.New("claude 回合失败: context canceled")}
+		close(events)
+		<-pumpAsyncWithCtx(ctx, rs, events)
+		frames := rs.snapshot()
+		return frames[len(frames)-1].content
+	}
+	if got := run(interruptedStopText); got != interruptedStopText {
+		t.Fatalf("新消息抢占取消叙事: %q", got)
+	}
+	if got := run(clearedStopText); got != clearedStopText {
+		t.Fatalf("清空取消叙事: %q", got)
+	}
+	if got := run(""); got != "⏹ 已停止当前回复。" {
+		t.Fatalf("/stop 取消叙事应保持默认: %q", got)
+	}
+}
+
+/*
  * 吞没解释终帧（尊重 CLI 行为）：回合正常结束但无真实文本产出（canned 被驱动层过滤 =
  * CLI 将消息并入会话处理）→ 终帧为中文解释，不重试。
  */

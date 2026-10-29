@@ -37,13 +37,14 @@ type TurnOutcome struct {
 }
 
 /*
- * pauseNoticeHolder 暂停通知槽（per-turn ctx 携带）：priority 抢占时编排器写入暂停文案并
- * 取消回合，泵取消分支据此转「非终帧暂停」收口；槽为空 = 取消走默认终帧叙事（/stop、
- * 编排器停止、interrupt 档丢弃）。
+ * pauseNoticeHolder 暂停通知槽（per-turn ctx 携带）：notice 为 priority 抢占的暂停叙事
+ * （非终帧暂停收口，空 = 非暂停取消）；stopNotice 为取消叙事覆盖（新消息抢占 / clear 清空
+ * 置位，空 = 默认停止文案：/stop、编排器停止）。
  */
 type pauseNoticeHolder struct {
-	mu     sync.Mutex
-	notice string
+	mu         sync.Mutex
+	notice     string
+	stopNotice string
 }
 
 func (h *pauseNoticeHolder) set(notice string) {
@@ -58,8 +59,26 @@ func (h *pauseNoticeHolder) get() string {
 	return h.notice
 }
 
+func (h *pauseNoticeHolder) setStopNotice(notice string) {
+	h.mu.Lock()
+	h.stopNotice = notice
+	h.mu.Unlock()
+}
+
+func (h *pauseNoticeHolder) getStopNotice() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stopNotice
+}
+
 // swallowedExplainText CLI 并入处理未单独回复的解释终帧（尊重 CLI 行为，消除运行异常歧义）。
 const swallowedExplainText = "ℹ️ 本条消息与上一回合间隔过近，claude CLI 已将其并入会话处理、未单独生成回复（CLI 会话机制的正常行为，非运行异常）。如需获得单独回复，请稍后重发。"
+
+// interruptedStopText 新消息抢占（interrupt 档）导致取消的叙事覆盖。
+const interruptedStopText = "⏹ 有新消息要处理，已停止当前回复。"
+
+// clearedStopText /clear 导致取消的叙事覆盖（停止且会话上下文已清空）。
+const clearedStopText = "⏹ 已停止当前回复并清空上下文。"
 
 // pauseNoticeCtxKey ctx 键类型。
 type pauseNoticeCtxKey struct{}
@@ -73,6 +92,14 @@ func withPauseNotice(ctx context.Context, h *pauseNoticeHolder) context.Context 
 func pauseNoticeFromCtx(ctx context.Context) string {
 	if h, ok := ctx.Value(pauseNoticeCtxKey{}).(*pauseNoticeHolder); ok {
 		return h.get()
+	}
+	return ""
+}
+
+// stopNoticeFromCtx 读取取消叙事覆盖（新消息抢占 / clear 清空置位；空 = 默认停止文案）。
+func stopNoticeFromCtx(ctx context.Context) string {
+	if h, ok := ctx.Value(pauseNoticeCtxKey{}).(*pauseNoticeHolder); ok {
+		return h.getStopNotice()
 	}
 	return ""
 }
@@ -250,7 +277,11 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	case errors.Is(out.Err, errTurnFailed):
 		final = "❌ 处理未完成（回合被中断）：\n" + final
 	case out.Err != nil && ctx.Err() != nil:
-		final = "⏹ 已停止当前回复。" // /stop 或编排器停止：取消叙事，非失败
+		if s := stopNoticeFromCtx(ctx); s != "" {
+			final = s // 新消息抢占（interrupt 档）/ /clear 清空的取消叙事覆盖
+		} else {
+			final = "⏹ 已停止当前回复。" // /stop 或编排器停止：取消叙事，非失败
+		}
 	case out.Err != nil:
 		body := final
 		final = turnFailureReply("❌ 处理失败：", out.Err)

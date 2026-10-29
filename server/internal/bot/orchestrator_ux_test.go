@@ -311,9 +311,10 @@ func TestIncomingLatestRunsOnlyNewest(t *testing.T) {
 		t.Fatalf("interrupt 档占位帧应为抢占文案: %+v", frames)
 	}
 	frames1 := finalFrameOf(t, "被打断回合终帧", rs1)
-	if frames1[len(frames1)-1].content != "⏹ 已停止当前回复。" {
+	if frames1[len(frames1)-1].content != "⏹ 有新消息要处理，已停止当前回复。" {
 		t.Fatalf("被打断回合终帧应为取消叙事: %+v", frames1)
 	}
+
 	waitFor(t, "最新消息回合已受理", func() bool { return len(driver.capturedPrompts()) == 2 })
 	frames2 := finalFrameOf(t, "最新消息终帧", rs2)
 	if len(frames2) < 2 || !frames2[len(frames2)-1].final {
@@ -519,6 +520,40 @@ func TestSlashClear(t *testing.T) {
 	frames := rs.snapshot()
 	if len(frames) != 1 || !frames[0].final || !strings.Contains(frames[0].content, "上下文已清空") {
 		t.Fatalf("/clear 应单终帧确认: %+v", frames)
+	}
+	if id := headlessAnchorOf(t, store); id != "" {
+		t.Fatalf("/clear 应清空 headless 会话锚: %q", id)
+	}
+}
+
+/*
+ * TestSlashClearKillsTurnWithClearedNarrative /clear 打断在途回合：被打断回合终帧为清空
+ * 取消叙事（区别于 /stop），会话锚同时清空。
+ */
+func TestSlashClearKillsTurnWithClearedNarrative(t *testing.T) {
+	driver := &blockingDriver{started: make(chan struct{})}
+	o, store := newOrchestratorWithDB(t)
+	o.driver = driver
+	presetSessionAnchor(t, store, "s-prev")
+	cfg := issueCmdCfg()
+
+	rsTurn := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "跑个任务"}, func() (ReplyStream, error) {
+		return rsTurn, nil
+	})
+	<-driver.started
+
+	rsCmd := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "/clear"}, func() (ReplyStream, error) {
+		return rsCmd, nil
+	})
+	framesCmd := rsCmd.snapshot()
+	if len(framesCmd) != 1 || !framesCmd[0].final || !strings.Contains(framesCmd[0].content, "上下文已清空") {
+		t.Fatalf("/clear 应单终帧确认: %+v", framesCmd)
+	}
+	framesTurn := finalFrameOf(t, "被打断回合终帧", rsTurn)
+	if framesTurn[len(framesTurn)-1].content != clearedStopText {
+		t.Fatalf("被打断回合终帧应为清空取消叙事: %+v", framesTurn)
 	}
 	if id := headlessAnchorOf(t, store); id != "" {
 		t.Fatalf("/clear 应清空 headless 会话锚: %q", id)
