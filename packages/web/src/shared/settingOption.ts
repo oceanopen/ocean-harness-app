@@ -1,4 +1,4 @@
-import type { AcpSessionIdleTimeoutMinutes, Appearance, BrowserRefreshMs, Iterm2SplitDirection, Language } from './appConfig';
+import type { AcpSessionIdleTimeoutMinutes, Appearance, BotIncomingPolicy, BrowserRefreshMs, Iterm2SplitDirection, Language } from './appConfig';
 
 export interface LanguageOption {
   value: Language;
@@ -32,6 +32,17 @@ export const acpSessionIdleTimeoutOptions: AcpSessionIdleTimeoutOption[] = [
   { value: 15, labelKey: 'settings:app.option.idleMinutes' },
   { value: 30, labelKey: 'settings:app.option.idleMinutes' },
   { value: 60, labelKey: 'settings:app.option.idleMinutes' },
+];
+
+export interface BotIncomingPolicyOption {
+  value: BotIncomingPolicy;
+  labelKey: string;
+}
+
+export const botIncomingPolicyOptions: BotIncomingPolicyOption[] = [
+  { value: 'priority', labelKey: 'settings:app.option.incomingPriority' },
+  { value: 'queue', labelKey: 'settings:app.option.incomingQueue' },
+  { value: 'interrupt', labelKey: 'settings:app.option.incomingLatest' },
 ];
 
 export interface Iterm2SplitDirectionOption {

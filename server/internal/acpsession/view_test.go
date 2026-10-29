@@ -86,6 +86,38 @@ func TestViewChunkAggregation(t *testing.T) {
 	}
 }
 
+/*
+ * CLI 合成回复（中断收尾标记）不聚合不出帧，仅置沉降信号标记（读后即清）；
+ * 同回合真实回复聚合不受影响。
+ */
+func TestViewSyntheticNoReplyFiltered(t *testing.T) {
+	view := newSessionView()
+	if _, err := view.beginTurn("先跑", PromptMeta{}); err != nil {
+		t.Fatalf("beginTurn: %v", err)
+	}
+	frames := framesOf(t, view,
+		textChunkUpdate("s1", false, CliSyntheticNoReplyText),
+		textChunkUpdate("s1", false, "真实回复"),
+	)
+	for _, f := range frames {
+		if f.Type == FrameEntry && strings.Contains(f.Entry.Text, CliSyntheticNoReplyText) {
+			t.Fatalf("合成回复不得聚合进条目: %+v", frames)
+		}
+	}
+	if !view.takeSyntheticFlag() {
+		t.Fatal("合成回复帧应置沉降标记")
+	}
+	if view.takeSyntheticFlag() {
+		t.Fatal("沉降标记应读后即清")
+	}
+	snap := view.snapshot()
+	for _, e := range snap.Entries {
+		if e.Kind == entryKindAgentMessage && e.Text != "真实回复" {
+			t.Fatalf("agent 条目应只含真实回复: %+v", snap.Entries)
+		}
+	}
+}
+
 func TestViewToolCallPartialMerge(t *testing.T) {
 	view := newSessionView()
 	// 初建（tool_call 变体，Title 为值类型）。

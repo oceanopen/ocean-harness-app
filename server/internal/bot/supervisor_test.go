@@ -68,7 +68,7 @@ func newSupervisorHarness(t *testing.T) (*Supervisor, *stubChannelRuntime) {
 	db := newBotTestDB(t, &model.ImBot{})
 	createBotRow(t, db, "bot-1", enums.YES_NO_YES)
 	rt := &stubChannelRuntime{}
-	s := NewSupervisor(db, 9100, nil, NewDeliveryRegistry(), zap.NewNop())
+	s := NewSupervisor(db, 9100, "", nil, NewDeliveryRegistry(), zap.NewNop())
 	s.Register(&stubChannelFactory{rt: rt})
 	return s, rt
 }
@@ -120,7 +120,7 @@ func TestBotRuntimeConfigRootDir(t *testing.T) {
 	if err := q.ProjectTask.WithContext(ctx).Create(&model.ProjectTask{ID: "task-1", ProjectID: "pr-1", Name: "task"}); err != nil {
 		t.Fatalf("建任务行: %v", err)
 	}
-	s := NewSupervisor(db, 9100, nil, NewDeliveryRegistry(), zap.NewNop())
+	s := NewSupervisor(db, 9100, "", nil, NewDeliveryRegistry(), zap.NewNop())
 
 	mk := func(id string, ct enums.ConversationType, wsID, prID, taskID string) *model.ImBot {
 		return &model.ImBot{ID: id, Name: "bot", Channel: enums.CHANNEL_WECOM,
@@ -170,7 +170,7 @@ func TestApplyBotStartsChannel(t *testing.T) {
 func TestApplyBotChannelFailureWritesLastError(t *testing.T) {
 	db := newBotTestDB(t, &model.ImBot{})
 	createBotRow(t, db, "bot-1", enums.YES_NO_YES)
-	s := NewSupervisor(db, 9100, nil, NewDeliveryRegistry(), zap.NewNop())
+	s := NewSupervisor(db, 9100, "", nil, NewDeliveryRegistry(), zap.NewNop())
 	s.Register(&stubFailingFactory{})
 
 	err := s.ApplyBot(botRow(t, db, "bot-1"))

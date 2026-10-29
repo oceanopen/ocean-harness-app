@@ -1,10 +1,13 @@
 package bot
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // pumpFrames 预灌事件 → 后台起泵 → 等 ticker 发帧 → 收口，返回帧快照。
@@ -14,6 +17,45 @@ func pumpFrames(rs ReplyStream, events chan TurnEvent) []fakeFrame {
 	close(events)
 	<-done
 	return rs.(*fakeReplyStream).snapshot()
+}
+
+// pumpAsyncWithCtx 自定义 ctx 起泵（暂停收口用例：ctx 携带暂停通知槽）。
+func pumpAsyncWithCtx(ctx context.Context, rs ReplyStream, events chan TurnEvent) <-chan TurnOutcome {
+	done := make(chan TurnOutcome, 1)
+	go func() { done <- PumpReply(ctx, rs, events, nil, zap.NewNop()) }()
+	return done
+}
+
+/*
+ * 暂停收口（priority 抢占）：ctx 取消 + 暂停通知在挂 → 非终帧 ⏸ 保持流开启、全程无终帧，
+ * outcome 携带 Paused 与已产出的部分正文。
+ */
+func TestPumpReplyPauseKeepsStreamOpen(t *testing.T) {
+	rs := &fakeReplyStream{}
+	slot := &pauseNoticeHolder{}
+	ctx, cancel := context.WithCancel(withPauseNotice(context.Background(), slot))
+	events := make(chan TurnEvent, 1)
+	events <- TurnEvent{Type: TurnText, Delta: "写到一半"}
+	done := pumpAsyncWithCtx(ctx, rs, events)
+	time.Sleep(2*streamTickInterval + 50*time.Millisecond) // 等正文帧发出
+	slot.set("⏸ 检测到新消息，本回复先暂停，待新消息处理完毕后自动继续。")
+	cancel()
+	close(events)
+	outcome := <-done
+
+	if !outcome.Paused || outcome.FinalText != "写到一半" {
+		t.Fatalf("暂停收口应返回 Paused + 部分正文: %+v", outcome)
+	}
+	frames := rs.snapshot()
+	last := frames[len(frames)-1]
+	if last.final || !strings.Contains(last.content, "⏸") {
+		t.Fatalf("末帧应为含 ⏸ 文案的非终帧: %+v", frames)
+	}
+	for _, f := range frames {
+		if f.final {
+			t.Fatalf("暂停收口不得写终帧（流保持开启）: %+v", frames)
+		}
+	}
 }
 
 // 思考流式期：quote 面板内标签分区，短内容原样直出（无省略号）。
@@ -169,6 +211,25 @@ func TestPumpReplyErrorFinalKeepsPanel(t *testing.T) {
 	want := "> **💭 思考过程：**\n> 先分析\n\n❌ 处理失败：boom\n请重试或调整后重新发送。"
 	if len(frames) != 2 || frames[0].final || frames[1].content != want {
 		t.Fatalf("失败终帧应保留面板 + 失败文案: %+v want %q", frames, want)
+	}
+}
+
+/*
+ * 吞没解释终帧（尊重 CLI 行为）：回合正常结束但无真实文本产出（canned 被驱动层过滤 =
+ * CLI 将消息并入会话处理）→ 终帧为中文解释，不重试。
+ */
+func TestPumpReplySwallowedExplainsFinal(t *testing.T) {
+	rs := &fakeReplyStream{}
+	events := make(chan TurnEvent, 1)
+	events <- TurnEvent{Type: TurnDone}
+	done := pumpAsync(rs, events)
+	close(events)
+	<-done
+
+	frames := rs.snapshot()
+	last := frames[len(frames)-1]
+	if !last.final || last.content != swallowedExplainText {
+		t.Fatalf("空产出终帧应为吞没中文解释: %+v", frames)
 	}
 }
 

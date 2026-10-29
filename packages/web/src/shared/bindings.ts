@@ -64,7 +64,11 @@ export const commands = {
 /* Constants */
 export const ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY = "acp_session_idle_timeout_minutes" as const;
 
+export const BOT_INCOMING_POLICY_KEY = "bot_incoming_policy" as const;
+
 export const DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES = 30 as const;
+
+export const DEFAULT_BOT_INCOMING_POLICY = "priority" as const;
 
 export const DEFAULT_ITERM2_SPLIT_DIRECTION = "horizontal" as const;
 

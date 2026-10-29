@@ -89,8 +89,9 @@ type sessionEntry struct {
 	client    *acp.AgentClient
 	session   *acp.Session
 	view      *sessionView
-	turnQueue *turnQueue // 跨入口回合等位队列（T2.2）：PromptQueued 排队受理的槽位等待
-	discarded bool       // Discard 已受理：后台 spawn 完成后发现即自清（不落锚、不注册 pump）
+	turnQueue *turnQueue    // 跨入口回合等位队列（T2.2）：PromptQueued 排队受理的槽位等待
+	discarded bool          // Discard 已受理：后台 spawn 完成后发现即自清（不落锚、不注册 pump）
+	settleCh  chan struct{} // cancelled 回合闸门沉降信号（pump 见合成回复帧非阻塞填充；cap 1）
 
 	idleTimer *time.Timer // 闲置回收倒计时（完全空闲判据通过时起表；离开空闲停表）
 	idleSince time.Time   // 本次空闲起点（到期回调按当前配置重算剩余时长，改阈值即时生效）
@@ -352,6 +353,18 @@ func (m *Manager) pump(entry *sessionEntry) {
 		}
 		m.syncClaudeAnchor(entry, event.Update)
 		m.hub.broadcast(entry.issueID, entry.view.applyEvent(&event))
+		// 合成回复帧到达 → 通知 cancelled 回合的闸门沉降等待者（无等待者时非阻塞丢弃）。
+		if entry.view.takeSyntheticFlag() {
+			entry.mu.Lock()
+			ch := entry.settleCh
+			entry.mu.Unlock()
+			if ch != nil {
+				select {
+				case ch <- struct{}{}:
+				default:
+				}
+			}
+		}
 	}
 }
 
@@ -533,11 +546,44 @@ func (m *Manager) acceptTurn(entry *sessionEntry, frames []Frame, text string) {
 	client, session := entry.client, entry.session
 	entry.mu.Unlock()
 	go func() {
+		// 沉降信号槽先于回合挂载：合成回复帧无论在回合内还是回合结束后到达都能命中。
+		settle := make(chan struct{}, 1)
+		entry.mu.Lock()
+		entry.settleCh = settle
+		entry.mu.Unlock()
+		defer func() {
+			entry.mu.Lock()
+			entry.settleCh = nil
+			entry.mu.Unlock()
+		}()
 		stop, promptErr := client.PromptText(context.Background(), session, text)
+		/*
+		 * cancelled 回合的闸门沉降先于 endTurn 广播：视图闸门（turnActive）保持关闭，
+		 * 迟到与排队中的下一回合一律等沉降完成后才可受理（无绕行窗口）。
+		 */
+		m.settleGate(entry, stop, settle)
 		m.hub.broadcast(entry.issueID, entry.view.endTurn(string(stop), errorText(promptErr)))
 		entry.turnQueue.release()
 		m.resetIdleCheck(entry) // 回合终态：重新评估闲置倒计时
 	}()
+}
+
+// settleGateTimeout cancelled 回合闸门沉降上限（CLI 合成回复写入滞后的兜底，真机实证可达数秒）。
+const settleGateTimeout = 3 * time.Second
+
+/*
+ * settleGate cancelled 回合的闸门沉降：CLI 对被中断回合的合成回复写入可滞后数秒，闸门过早
+ * 打开会让下一回合 prompt 撞上 queued-command 吞没窗口（真机实证）——合成回复帧到达即放行
+ * （CLI 收尾完成的信号），超时兜底；正常完成回合零等待。
+ */
+func (m *Manager) settleGate(entry *sessionEntry, stop acp1.StopReason, settle chan struct{}) {
+	if stop != acp1.StopReasonCancelled {
+		return
+	}
+	select {
+	case <-settle:
+	case <-time.After(settleGateTimeout):
+	}
 }
 
 // Cancel 软取消当前回合（无活动回合幂等 no-op，语义见 acp.CancelTurn）。

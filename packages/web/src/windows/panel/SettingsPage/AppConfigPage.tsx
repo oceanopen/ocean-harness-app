@@ -1,6 +1,7 @@
 import type { SelectChangeEvent } from '@mui/material/Select';
-import type { AcpSessionIdleTimeoutMinutes, Appearance, BrowserRefreshMs, Language } from '@src/shared/appConfig';
+import type { AcpSessionIdleTimeoutMinutes, Appearance, BotIncomingPolicy, BrowserRefreshMs, Language } from '@src/shared/appConfig';
 import type { YesNo } from '@src/shared/bindings';
+import ForumOutlinedIcon from '@mui/icons-material/ForumOutlined';
 import LanguageIcon from '@mui/icons-material/Language';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PictureInPictureAltOutlinedIcon from '@mui/icons-material/PictureInPictureAltOutlined';
@@ -22,10 +23,12 @@ import {
 import {
   ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY,
   APPEARANCE_KEY,
+  BOT_INCOMING_POLICY_KEY,
   BROWSER_LIVE_REFRESH_MS_KEY,
   BROWSER_PREVIEW_REFRESH_MS_KEY,
   DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
   DEFAULT_APPEARANCE,
+  DEFAULT_BOT_INCOMING_POLICY,
   DEFAULT_BROWSER_LIVE_REFRESH_MS,
   DEFAULT_BROWSER_PREVIEW_REFRESH_MS,
   DEFAULT_LANGUAGE,
@@ -34,6 +37,7 @@ import {
   LANGUAGE_KEY,
   LAUNCH_AT_LOGIN_KEY,
   parseAcpSessionIdleTimeoutMinutes,
+  parseBotIncomingPolicy,
   parseBrowserRefreshMs,
   parseYesNo,
   setAppConfig,
@@ -43,6 +47,7 @@ import {
 import {
   acpSessionIdleTimeoutOptions,
   appearanceOptions,
+  botIncomingPolicyOptions,
   browserRefreshMsOptions,
   languageOptions,
 } from '@src/shared/settingOption';
@@ -59,6 +64,8 @@ function AppConfigPage() {
   const [draftAppearance, setDraftAppearance] = useState<Appearance>(DEFAULT_APPEARANCE);
   const [savedAcpIdle, setSavedAcpIdle] = useState<AcpSessionIdleTimeoutMinutes>(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
   const [draftAcpIdle, setDraftAcpIdle] = useState<AcpSessionIdleTimeoutMinutes>(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
+  const [savedIncomingPolicy, setSavedIncomingPolicy] = useState<BotIncomingPolicy>(DEFAULT_BOT_INCOMING_POLICY);
+  const [draftIncomingPolicy, setDraftIncomingPolicy] = useState<BotIncomingPolicy>(DEFAULT_BOT_INCOMING_POLICY);
   const [savedLiveRefresh, setSavedLiveRefresh] = useState<BrowserRefreshMs>(DEFAULT_BROWSER_LIVE_REFRESH_MS);
   const [draftLiveRefresh, setDraftLiveRefresh] = useState<BrowserRefreshMs>(DEFAULT_BROWSER_LIVE_REFRESH_MS);
   const [savedPreviewRefresh, setSavedPreviewRefresh] = useState<BrowserRefreshMs>(DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
@@ -71,10 +78,11 @@ function AppConfigPage() {
       getAppConfig(LANGUAGE_KEY),
       getAppConfig(APPEARANCE_KEY),
       getAppConfig(ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY),
+      getAppConfig(BOT_INCOMING_POLICY_KEY),
       getAppConfig(BROWSER_LIVE_REFRESH_MS_KEY),
       getAppConfig(BROWSER_PREVIEW_REFRESH_MS_KEY),
       getAppConfig(LAUNCH_AT_LOGIN_KEY),
-    ]).then(([lang, appearance, idleMinutes, liveRefresh, previewRefresh, launchAtLogin]) => {
+    ]).then(([lang, appearance, idleMinutes, incomingPolicy, liveRefresh, previewRefresh, launchAtLogin]) => {
       if (lang === 'system' || lang === 'zh-CN' || lang === 'en') {
         setSavedLanguage(lang);
         setDraftLanguage(lang);
@@ -86,6 +94,9 @@ function AppConfigPage() {
       const acpIdle = parseAcpSessionIdleTimeoutMinutes(idleMinutes);
       setSavedAcpIdle(acpIdle);
       setDraftAcpIdle(acpIdle);
+      const incoming = parseBotIncomingPolicy(incomingPolicy);
+      setSavedIncomingPolicy(incoming);
+      setDraftIncomingPolicy(incoming);
       const live = parseBrowserRefreshMs(liveRefresh, DEFAULT_BROWSER_LIVE_REFRESH_MS);
       setSavedLiveRefresh(live);
       setDraftLiveRefresh(live);
@@ -102,6 +113,7 @@ function AppConfigPage() {
     = draftLanguage !== savedLanguage
       || draftAppearance !== savedAppearance
       || draftAcpIdle !== savedAcpIdle
+      || draftIncomingPolicy !== savedIncomingPolicy
       || draftLiveRefresh !== savedLiveRefresh
       || draftPreviewRefresh !== savedPreviewRefresh
       || draftLaunchAtLogin !== savedLaunchAtLogin;
@@ -110,6 +122,7 @@ function AppConfigPage() {
     setDraftLanguage(DEFAULT_LANGUAGE);
     setDraftAppearance(DEFAULT_APPEARANCE);
     setDraftAcpIdle(DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES);
+    setDraftIncomingPolicy(DEFAULT_BOT_INCOMING_POLICY);
     setDraftLiveRefresh(DEFAULT_BROWSER_LIVE_REFRESH_MS);
     setDraftPreviewRefresh(DEFAULT_BROWSER_PREVIEW_REFRESH_MS);
     setDraftLaunchAtLogin(DEFAULT_LAUNCH_AT_LOGIN);
@@ -118,6 +131,7 @@ function AppConfigPage() {
     setDraftLanguage(savedLanguage);
     setDraftAppearance(savedAppearance);
     setDraftAcpIdle(savedAcpIdle);
+    setDraftIncomingPolicy(savedIncomingPolicy);
     setDraftLiveRefresh(savedLiveRefresh);
     setDraftPreviewRefresh(savedPreviewRefresh);
     setDraftLaunchAtLogin(savedLaunchAtLogin);
@@ -127,6 +141,7 @@ function AppConfigPage() {
       setAppConfig(LANGUAGE_KEY, draftLanguage),
       setAppConfig(APPEARANCE_KEY, draftAppearance),
       setAppConfig(ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY, String(draftAcpIdle)),
+      setAppConfig(BOT_INCOMING_POLICY_KEY, draftIncomingPolicy),
       setAppConfig(BROWSER_LIVE_REFRESH_MS_KEY, String(draftLiveRefresh)),
       setAppConfig(BROWSER_PREVIEW_REFRESH_MS_KEY, String(draftPreviewRefresh)),
       setAppConfig(LAUNCH_AT_LOGIN_KEY, draftLaunchAtLogin),
@@ -134,6 +149,7 @@ function AppConfigPage() {
     setSavedLanguage(draftLanguage);
     setSavedAppearance(draftAppearance);
     setSavedAcpIdle(draftAcpIdle);
+    setSavedIncomingPolicy(draftIncomingPolicy);
     setSavedLiveRefresh(draftLiveRefresh);
     setSavedPreviewRefresh(draftPreviewRefresh);
     setSavedLaunchAtLogin(draftLaunchAtLogin);
@@ -362,6 +378,41 @@ function AppConfigPage() {
             </FormControl>
           </Box>
 
+          <Divider />
+
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              px: '16px',
+              py: '12px',
+              gap: '16px',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+              <ForumOutlinedIcon fontSize="small" sx={{ color: 'text.secondary', mt: '4px' }} />
+              <Box>
+                <Typography>{t('settings:app.row.incomingPolicy')}</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '12px' }}>
+                  {t('settings:app.help.incomingPolicy')}
+                </Typography>
+              </Box>
+            </Box>
+            <FormControl size="small" sx={{ minWidth: '140px' }}>
+              <Select
+                value={draftIncomingPolicy}
+                onChange={(e: SelectChangeEvent<BotIncomingPolicy>) =>
+                  setDraftIncomingPolicy(e.target.value as BotIncomingPolicy)}
+              >
+                {botIncomingPolicyOptions.map(opt => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {t(opt.labelKey)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
         </SectionCard>
       </Box>
 

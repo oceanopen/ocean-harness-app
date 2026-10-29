@@ -275,3 +275,16 @@ func TestBuildClaudeArgsResume(t *testing.T) {
 		t.Fatalf("SessionID 应注入 --resume: %s", joined)
 	}
 }
+
+// CLI 合成回复过滤：text_delta 与 result 均不作为回合产出（空产出走泵侧吞没重试）。
+func TestParseClaudeLineFiltersSyntheticNoReply(t *testing.T) {
+	st := &turnParseState{}
+	got := parseClaudeLine(`{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"No response requested."}}}`, st)
+	if len(got) != 0 {
+		t.Fatalf("合成回复 text_delta 应被过滤: %+v", got)
+	}
+	done := parseClaudeLine(`{"type":"result","result":"No response requested.","session_id":"s-1"}`, st)
+	if len(done) != 1 || done[0].Type != TurnDone || done[0].Result != "" || done[0].SessionID != "s-1" {
+		t.Fatalf("合成回复 result 应清空产出（会话 id 保留）: %+v", done)
+	}
+}

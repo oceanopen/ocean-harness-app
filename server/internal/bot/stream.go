@@ -26,12 +26,55 @@ type OverflowSink func(fullText string) string
 
 /*
  * TurnOutcome 一次回合推送的终态。SessionID 为 init/result 捕获的 claude 会话 id
- * （可能为空，如 spawn 即失败）；Err 非 nil = 回合失败（终帧已写失败文案）。
+ * （可能为空，如 spawn 即失败）；Err 非 nil = 回合失败（终帧已写失败文案）；
+ * Paused = 抢占暂停收口（非终帧、流保持开启待恢复续写，FinalText 为已产出的部分正文）。
  */
 type TurnOutcome struct {
 	FinalText string
 	SessionID string
 	Err       error
+	Paused    bool
+}
+
+/*
+ * pauseNoticeHolder 暂停通知槽（per-turn ctx 携带）：priority 抢占时编排器写入暂停文案并
+ * 取消回合，泵取消分支据此转「非终帧暂停」收口；槽为空 = 取消走默认终帧叙事（/stop、
+ * 编排器停止、interrupt 档丢弃）。
+ */
+type pauseNoticeHolder struct {
+	mu     sync.Mutex
+	notice string
+}
+
+func (h *pauseNoticeHolder) set(notice string) {
+	h.mu.Lock()
+	h.notice = notice
+	h.mu.Unlock()
+}
+
+func (h *pauseNoticeHolder) get() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.notice
+}
+
+// swallowedExplainText CLI 并入处理未单独回复的解释终帧（尊重 CLI 行为，消除运行异常歧义）。
+const swallowedExplainText = "ℹ️ 本条消息与上一回合间隔过近，claude CLI 已将其并入会话处理、未单独生成回复（CLI 会话机制的正常行为，非运行异常）。如需获得单独回复，请稍后重发。"
+
+// pauseNoticeCtxKey ctx 键类型。
+type pauseNoticeCtxKey struct{}
+
+// withPauseNotice 携带暂停通知槽的 ctx（runTurn 每回合注入）。
+func withPauseNotice(ctx context.Context, h *pauseNoticeHolder) context.Context {
+	return context.WithValue(ctx, pauseNoticeCtxKey{}, h)
+}
+
+// pauseNoticeFromCtx 读取暂停通知（无槽或空 = 非暂停取消）。
+func pauseNoticeFromCtx(ctx context.Context) string {
+	if h, ok := ctx.Value(pauseNoticeCtxKey{}).(*pauseNoticeHolder); ok {
+		return h.get()
+	}
+	return ""
 }
 
 /*
@@ -189,6 +232,20 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 	case isError:
 		out.Err = errTurnFailed
 	}
+
+	/*
+	 * 暂停收口（priority 抢占）：ctx 取消且暂停通知在挂 → 发非终帧暂停文案，流保持开启、
+	 * 不截断不终帧；恢复轮在同一流上继续流式，终帧态与流关闭权留给恢复轮。
+	 */
+	if notice := pauseNoticeFromCtx(ctx); notice != "" && ctx.Err() != nil {
+		if err := rs.Flush(quoteAware(rs, notice), false); err != nil {
+			log.Warn("bot 暂停帧发送失败（流保持开启）", zap.Error(err))
+		}
+		out.Paused = true
+		out.FinalText = strings.TrimSpace(final)
+		return out
+	}
+
 	switch {
 	case errors.Is(out.Err, errTurnFailed):
 		final = "❌ 处理未完成（回合被中断）：\n" + final
@@ -202,7 +259,8 @@ func PumpReply(ctx context.Context, rs ReplyStream, events <-chan TurnEvent, sin
 		}
 	default:
 		if strings.TrimSpace(final) == "" {
-			final = "（回合结束，无文本输出）"
+			// 空产出 = CLI 将本条消息并入会话处理未单独生成回复（canned 已被驱动层过滤）。
+			final = swallowedExplainText
 		}
 	}
 	// 成功路径超长走落盘，失败路径静默截断。

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"ocean-harness/server/internal/appdb"
 	"ocean-harness/server/internal/dal/enums"
 
 	"go.uber.org/zap"
@@ -21,6 +22,31 @@ const queueCapacity = 8
 
 // maxConcurrentTurns 全局同时在跑的 claude 回合上限（每回合一个真实 claude 子进程）。
 const maxConcurrentTurns = 10
+
+/*
+ * BotIncomingPolicy bot 忙时新消息处理策略（应用设置页写入 app.db，编排器受理忙时现读）：
+ * queue = 排到队尾 FIFO；priority = 中断在途回合、新消息插队首、原队列保留继续；
+ * interrupt = 中断在途回合并排空队列（各收 ⏹ 提示），仅处理最新消息。
+ */
+type BotIncomingPolicy string
+
+const (
+	BotIncomingQueue    BotIncomingPolicy = "queue"
+	BotIncomingPriority BotIncomingPolicy = "priority"
+	BotIncomingLatest   BotIncomingPolicy = "interrupt"
+)
+
+// defaultBotIncomingPolicy 默认档「优先处理（队列保留）」：空值/读失败/非法值统一回落。
+const defaultBotIncomingPolicy = BotIncomingPriority
+
+// parseBotIncomingPolicy 值域外回落默认（与前端 appConfig.ts parse 对齐约定）。
+func parseBotIncomingPolicy(value string) BotIncomingPolicy {
+	switch BotIncomingPolicy(strings.TrimSpace(value)) {
+	case BotIncomingQueue, BotIncomingPriority, BotIncomingLatest:
+		return BotIncomingPolicy(strings.TrimSpace(value))
+	}
+	return defaultBotIncomingPolicy
+}
 
 // errQueueFull 会话队列已满。
 var errQueueFull = errors.New("排队已满")
@@ -37,12 +63,15 @@ const msgAlreadySeenText = "该消息已处理过，重复推送已忽略。"
 /*
  * turnJob 一个待执行回合。reply 是受理时已开出并发过占位帧的回复流——企微 5 秒被动回复
  * 窗口在受理瞬间被占住，排队多久都不超窗（写者交接恒单写者：占位帧 → 状态帧 → 回复泵）。
- * （闲置 freshSession 字段随闲置提醒移除删除；headless 会话锚经 TurnRequest.SessionID 传递。）
+ * resume/resumePartial 标记暂停恢复轮（priority 抢占）：resume 跳过幂等复查，resumePartial
+ * 注入续写上下文（做到一半的内容带入下轮）。
  */
 type turnJob struct {
-	cfg   BotRuntimeConfig
-	msg   InboundMessage
-	reply ReplyStream
+	cfg           BotRuntimeConfig
+	msg           InboundMessage
+	reply         ReplyStream
+	resume        bool
+	resumePartial string
 }
 
 /*
@@ -63,11 +92,15 @@ type Orchestrator struct {
 	 */
 	Deliveries *DeliveryRegistry
 
+	// AppDbPath Rust 共享 app.db 路径（忙时新消息策略读取；空 = 未注入，策略回落默认）。
+	AppDbPath string
+
 	ctx         context.Context // 生命周期 ctx：Stop 级联取消全部在途回合（杀 claude 子进程）
 	cancel      context.CancelFunc
 	mu          sync.Mutex
 	queues      map[string]chan turnJob       // key: <botID>:<conversationKey>；首消息惰性建，进程期常驻
 	turnCancels map[string]context.CancelFunc // key 同上；在途回合取消句柄（/stop /clear 拦截步消费）
+	pauseSlots  map[string]*pauseNoticeHolder // key 同上；在途回合暂停通知槽（priority 抢占写入）
 	busy        map[string]bool               // key 同上；worker 执行中标记（排队占位文案分流）
 	turns       chan struct{}                 // 全局并发回合信号量（maxConcurrentTurns 个槽位）
 	wg          sync.WaitGroup
@@ -90,6 +123,7 @@ func NewOrchestrator(store *ConversationStore, driver TurnDriver, gate pendingGa
 		cancel:       cancel,
 		queues:       make(map[string]chan turnJob),
 		turnCancels:  make(map[string]context.CancelFunc),
+		pauseSlots:   make(map[string]*pauseNoticeHolder),
 		busy:         make(map[string]bool),
 		turns:        make(chan struct{}, maxConcurrentTurns),
 	}
@@ -188,18 +222,55 @@ func (o *Orchestrator) HandleInbound(cfg BotRuntimeConfig, msg InboundMessage, o
 	if err := o.store.TouchLastMessage(cfg, msg.ConversationKey, time.Now()); err != nil {
 		o.log.Warn("bot 会话活动时间戳写入失败", zap.Error(err))
 	}
-	// 占位帧走 quote 样式（思考面板同款），标识非正文。
-	placeholder := quoteAware(rs, "收到，处理中…")
-	if o.queueBusy(queueKey(cfg.BotID, msg.ConversationKey)) {
-		placeholder = quoteAware(rs, "收到。当前有任务处理中，排队中，稍后自动继续…")
+	/*
+	 * 忙时新消息策略分流（仅忙时读配置，无争用零开销）：priority = 中断在途回合 + 队首插入
+	 * （原队列保留，入列即完成，不再走队尾）；interrupt = 中断在途回合 + 排空队列（被排空
+	 * 消息各收 ⏹ 提示）；queue = 队尾 FIFO 现状。在途回合的 ⏹ 提示由回复泵取消路径覆盖。
+	 */
+	qKey := queueKey(cfg.BotID, msg.ConversationKey)
+	headEnqueued := false
+	interrupting := false
+	var enqueueErr error
+	if o.queueBusy(qKey) {
+		switch o.botIncomingPolicy() {
+		case BotIncomingPriority:
+			// 先入队后暂停（失败不波及在途回合）：队满拒绝时在途回合照常存活。
+			cancelTurn, pause := o.captureTurnHandle(qKey)
+			enqueueErr = o.enqueueHead(cfg, msg, rs)
+			if enqueueErr == nil {
+				if pause != nil && cancelTurn != nil {
+					pause.set(pauseNoticeText)
+					cancelTurn() // 被抢占回合发 ⏸ 非终帧保持流开启，worker 侧重新入队待恢复
+				}
+				headEnqueued = true
+			}
+		case BotIncomingLatest:
+			o.stopConversation(qKey)
+			interrupting = true
+		}
 	}
-	if err := rs.Flush(placeholder, false); err != nil {
+
+	// 占位帧走 quote 样式（思考面板同款），标识非正文；分支标记判定而非事后探测
+	// queueBusy——interrupt 取消后 busy 标记要等 worker 收尾才清除，探测会误报排队文案。
+	placeholder := "收到，处理中…"
+	switch {
+	case headEnqueued:
+		placeholder = "收到。上一条回复已暂停，本条将优先处理，完成后自动继续上一条…"
+	case interrupting:
+		placeholder = "收到。已中断上一条消息的处理，正在处理本条…"
+	case enqueueErr == nil && o.queueBusy(qKey):
+		placeholder = "收到。当前有任务处理中，排队中，稍后自动继续…"
+	}
+	if err := rs.Flush(quoteAware(rs, placeholder), false); err != nil {
 		o.log.Warn("bot 占位帧发送失败（继续回合）", zap.Error(err))
 	}
 
-	if err := o.enqueue(cfg, msg, rs); err != nil {
+	if enqueueErr == nil && !headEnqueued {
+		enqueueErr = o.enqueue(cfg, msg, rs)
+	}
+	if enqueueErr != nil {
 		text := "当前消息较多，排队已满，请稍后再发。"
-		if errors.Is(err, errStopped) {
+		if errors.Is(enqueueErr, errStopped) {
 			text = "机器人已停止服务。"
 		}
 		_ = rs.Flush(text, true)
@@ -245,12 +316,17 @@ const taskUnboundGateLead = "本项目机器人尚未关联任务：请在应用
 
 // enqueue 入队（不存在则惰性建会话队列 + worker）。已停止 / 队列满 fail closed。
 func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) error {
+	return o.enqueueJob(turnJob{cfg: cfg, msg: msg, reply: rs})
+}
+
+// enqueueJob 按 job 入队（resume 轮与普通消息共用通道与容量语义）。
+func (o *Orchestrator) enqueueJob(job turnJob) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.closed {
 		return errStopped
 	}
-	key := queueKey(cfg.BotID, msg.ConversationKey)
+	key := queueKey(job.cfg.BotID, job.msg.ConversationKey)
 	ch, ok := o.queues[key]
 	if !ok {
 		ch = make(chan turnJob, queueCapacity)
@@ -259,7 +335,7 @@ func (o *Orchestrator) enqueue(cfg BotRuntimeConfig, msg InboundMessage, rs Repl
 		go o.worker(ch)
 	}
 	select {
-	case ch <- turnJob{cfg: cfg, msg: msg, reply: rs}:
+	case ch <- job:
 		return nil
 	default:
 		return errQueueFull
@@ -307,21 +383,30 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	 * defer 注销兜底全部退出路径。
 	 */
 	turnCtx, cancel := context.WithCancel(o.ctx)
+	pauseSlot := &pauseNoticeHolder{}
+	turnCtx = withPauseNotice(turnCtx, pauseSlot)
 	o.mu.Lock()
 	o.turnCancels[qKey] = cancel
+	o.pauseSlots[qKey] = pauseSlot
 	o.mu.Unlock()
 	defer func() {
 		o.mu.Lock()
 		delete(o.turnCancels, qKey)
+		delete(o.pauseSlots, qKey)
 		o.mu.Unlock()
 		cancel()
 	}()
 
-	// 权威幂等复查（受理与执行之间可能已有同 msgid 入队）。
-	if o.seenOrFlush(cfg, key, msg.MessageID, job.reply, "执行") {
-		return
+	/*
+	 * 权威幂等复查（受理与执行之间可能已有同 msgid 入队）：resume 轮豁免——首跑已登记，
+	 * 复查会把恢复轮误判为重投直接收口。
+	 */
+	if !job.resume {
+		if o.seenOrFlush(cfg, key, msg.MessageID, job.reply, "执行") {
+			return
+		}
+		o.markSeen(cfg, key, msg.MessageID)
 	}
-	o.markSeen(cfg, key, msg.MessageID)
 
 	/*
 	 * #帮助 指令步（置于全部绑定指令与门禁之前）：帮助不依赖任何前置状态（未选工作空间
@@ -421,6 +506,9 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		return
 	}
 	prompt := BuildTurnPrompt(msg)
+	if job.resumePartial != "" {
+		prompt += pausedContextSuffix(job.resumePartial)
+	}
 	events, err := o.driver.RunTurn(turnCtx, TurnRequest{
 		BotID:            cfg.BotID,
 		WorkspaceID:      cfg.WorkspaceID,
@@ -439,9 +527,18 @@ func (o *Orchestrator) runTurn(job turnJob) {
 	})
 	if err != nil {
 		<-o.turns
-		// 取消竞态（select 命中槽位后 ctx 才取消）：等同 Stop 短路径，不清锚点。
+		/*
+		 * 取消竞态（select 命中槽位后 ctx 才取消）：暂停通知在挂 = priority 建立期抢占——
+		 * 泵未启动，与泵暂停收口同款（⏸ 非终帧 + 重新入队待恢复），消息不丢；恢复轮不重排
+		 * （防抢占反复下的重排环）。其余取消（/stop、编排器停止）等同 Stop 短路径，不清锚点。
+		 */
 		if turnCtx.Err() != nil {
-			_ = job.reply.Flush("机器人已停止服务。", true)
+			if pauseNoticeFromCtx(turnCtx) != "" && !job.resume {
+				_ = job.reply.Flush(quoteAware(job.reply, pauseNoticeText), false)
+				o.enqueuePaused(job, "")
+			} else {
+				_ = job.reply.Flush("机器人已停止服务。", true)
+			}
 			return
 		}
 		// 引擎同步失败：终态帧收口。受理拒绝（turnNotAcceptedError：ACP 引导失败等，回合未发生）
@@ -471,6 +568,14 @@ func (o *Orchestrator) runTurn(job turnJob) {
 		if err := o.store.FinishTurn(cfg, key, outcome.SessionID, time.Now()); err != nil {
 			o.log.Error("bot 会话回写失败", zap.Error(err))
 		}
+	}
+	/*
+	 * 暂停收口（priority 抢占）：被抢占回合带部分正文重新队尾入列，新消息与原队列之后自动
+	 * 恢复（resume 轮在同一回复流上继续流式）；锚已回写，恢复轮 resume 到最新会话。
+	 */
+	if outcome.Paused {
+		o.enqueuePaused(job, outcome.FinalText)
+		return
 	}
 	/*
 	 * 产物投递（仅交付目录就绪且回合成功）：终帧之后按文件名序逐个 SendArtifact——
@@ -515,6 +620,57 @@ func (o *Orchestrator) deliverArtifacts(ars ArtifactReplyStream, dir string) {
 			_ = ars.SendNotice("文件「" + name + "」投递失败：" + firstLine(err.Error()))
 		}
 	}
+}
+
+// pauseNoticeText priority 抢占写入被暂停回复的过渡帧（非终帧，流保持开启待恢复续写）。
+const pauseNoticeText = "⏸ 检测到新消息，本回复先暂停，待新消息处理完毕后自动继续。"
+
+/*
+ * captureTurnHandle 在 mu 下取在途回合句柄（取消函数 + 暂停通知槽）：priority 档入队成功后
+ * 置暂停文案并取消，入队失败（队满/停止）不波及既有回合。
+ */
+func (o *Orchestrator) captureTurnHandle(key string) (context.CancelFunc, *pauseNoticeHolder) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.turnCancels[key], o.pauseSlots[key]
+}
+
+/*
+ * enqueueHead 队首插入（priority 档）：mu 下排空存量 → 插入新 job → 按原序放回（存量 FIFO
+ * 不变，多次插入自然形成后到先服务）；存量已达 queueCapacity 回落 errQueueFull（fail closed）。
+ * 仅忙时调用（忙必有队列）；发送全程持 o.mu（与 enqueue 同款纪律，容量余量保证不阻塞）。
+ */
+func (o *Orchestrator) enqueueHead(cfg BotRuntimeConfig, msg InboundMessage, rs ReplyStream) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.closed {
+		return errStopped
+	}
+	ch := o.queues[queueKey(cfg.BotID, msg.ConversationKey)]
+	if ch == nil {
+		return errStopped // 理论不可达（忙必有队列），fail closed 防御 nil 通道发送
+	}
+	var held []turnJob
+drain:
+	for {
+		select {
+		case job := <-ch:
+			held = append(held, job)
+		default:
+			break drain
+		}
+	}
+	if len(held) >= queueCapacity {
+		for i := len(held) - 1; i >= 0; i-- {
+			ch <- held[i]
+		}
+		return errQueueFull
+	}
+	ch <- turnJob{cfg: cfg, msg: msg, reply: rs}
+	for i := len(held) - 1; i >= 0; i-- {
+		ch <- held[i]
+	}
+	return nil
 }
 
 /*
@@ -567,11 +723,39 @@ func (o *Orchestrator) stopConversation(key string) bool {
 	return cancelTurn != nil
 }
 
-// queueBusy 会话队列忙碌（worker 执行中或有积压）——排队占位文案分流的依据。
+/*
+ * enqueuePaused 被暂停回合重新队尾入列（resume 轮）：暂停与新消息插入之间队列容量必有空位，
+ * 满时降级终帧收口（理论边缘，fail visible 不静默丢消息）。
+ */
+func (o *Orchestrator) enqueuePaused(job turnJob, partial string) {
+	resumed := job
+	resumed.resume = true
+	resumed.resumePartial = partial
+	if err := o.enqueueJob(resumed); err != nil {
+		o.log.Warn("bot 暂停回合恢复入列失败", zap.Error(err))
+		_ = resumed.reply.Flush("⏹ 本回复恢复失败（排队已满），请重新发送。", true)
+	}
+}
+
+// pausedContextSuffix 恢复轮的暂停上下文注入：已输出到一半的内容供衔接，不重复已有内容。
+func pausedContextSuffix(partial string) string {
+	return "\n\n<paused_context>\n本条消息此前的回复因新消息插队而暂停。以下是你此前已输出到一半的内容（用户已看到），请从中断处自然继续，不要重复已有内容：\n" + partial + "\n</paused_context>"
+}
+
+// queueBusy 会话队列忙碌（worker 执行中或有积压）——排队占位文案分流与策略分流的依据。
 func (o *Orchestrator) queueBusy(key string) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.busy[key] || (o.queues[key] != nil && len(o.queues[key]) > 0)
+}
+
+// botIncomingPolicy 忙时新消息策略现读（仅忙时调用，无争用零开销；读失败回落默认）。
+func (o *Orchestrator) botIncomingPolicy() BotIncomingPolicy {
+	value, err := appdb.ReadAppConfigValue(o.AppDbPath, appdb.KeyBotIncomingPolicy)
+	if err != nil {
+		return defaultBotIncomingPolicy
+	}
+	return parseBotIncomingPolicy(value)
 }
 
 /*

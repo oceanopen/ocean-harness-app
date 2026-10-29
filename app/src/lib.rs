@@ -133,6 +133,14 @@ pub fn build_specta_builder() -> Builder<tauri::Wry> {
             shared::app_config::DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
         )
         .constant(
+            "BOT_INCOMING_POLICY_KEY",
+            shared::app_config::BOT_INCOMING_POLICY_KEY,
+        )
+        .constant(
+            "DEFAULT_BOT_INCOMING_POLICY",
+            shared::app_config::DEFAULT_BOT_INCOMING_POLICY,
+        )
+        .constant(
             "LAUNCH_AT_LOGIN_KEY",
             shared::app_config::LAUNCH_AT_LOGIN_KEY,
         )

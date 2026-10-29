@@ -1,5 +1,5 @@
 import type { YesNo } from './bindings';
-import { commands, DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES } from './bindings';
+import { commands, DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES, DEFAULT_BOT_INCOMING_POLICY } from './bindings';
 import { unwrap } from './commands';
 
 /**
@@ -8,7 +8,9 @@ import { unwrap } from './commands';
  */
 export {
   ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY,
+  BOT_INCOMING_POLICY_KEY,
   DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES,
+  DEFAULT_BOT_INCOMING_POLICY,
   DEFAULT_ITERM2_SPLIT_DIRECTION,
   DEFAULT_POLL_INTERVAL_SECS,
   DEFAULT_TERMINAL_POST_OPEN_COMMAND,
@@ -47,6 +49,16 @@ export function toYesNo(value: boolean): YesNo {
 
 export function parseYesNo(value: string | null, fallback: YesNo): YesNo {
   return value === YES_NO.YES || value === YES_NO.NO ? value : fallback;
+}
+
+/**
+ * bot 忙时新消息处理策略（Go bot 编排器消费）：queue = 排到队尾；priority = 中断在途回合、
+ * 新消息插队首、原队列保留；interrupt = 中断在途回合并清空队列，仅处理最新。
+ */
+export type BotIncomingPolicy = 'queue' | 'priority' | 'interrupt';
+
+export function parseBotIncomingPolicy(value: string | null): BotIncomingPolicy {
+  return value === 'queue' || value === 'priority' || value === 'interrupt' ? value : DEFAULT_BOT_INCOMING_POLICY;
 }
 
 // 开机自启动开关：系统登录项状态的本地镜像（系统优先：启动时 Rust 以系统真实状态回写，

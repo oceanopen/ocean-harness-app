@@ -345,6 +345,33 @@ func TestPromptTurnGateAndCancel(t *testing.T) {
 	}
 }
 
+/*
+ * cancelled 回合闸门沉降：无合成回复帧时 turnEnded 帧晚于超时兜底才广播（视图闸门保持
+ * 关闭，PromptQueued 无绕行窗口）；fakeagent 不产 canned，验证延迟生效与后续受理。
+ */
+func TestCancelledTurnSettleDelaysGate(t *testing.T) {
+	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "slow-cancel", nil)
+	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	waitFrame(t, frames, "ready", statusFrameIs(StatusReady))
+	if err := mgr.Prompt(issueID, "跑起来"); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	waitFirstTick(t, frames)
+	start := time.Now()
+	if err := mgr.Cancel(issueID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	waitFrame(t, frames, "cancelled 终态", func(f Frame) bool { return f.Type == FrameTurnEnded })
+	if elapsed := time.Since(start); elapsed < settleGateTimeout {
+		t.Fatalf("cancelled 回合 turnEnded 应晚于沉降（%s），实测 %s", settleGateTimeout, elapsed)
+	}
+	if err := mgr.PromptQueued(context.Background(), issueID, "下一轮", PromptMeta{}); err != nil {
+		t.Fatalf("沉降后应可受理: %v", err)
+	}
+}
+
 func TestRespondPermissionFlow(t *testing.T) {
 	mgr, _, issueID, frames, _ := newManagerWithIssue(t, "permission", nil)
 	if _, err := mgr.Ensure(context.Background(), issueID, ""); err != nil {

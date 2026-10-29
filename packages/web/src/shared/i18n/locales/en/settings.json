@@ -25,12 +25,14 @@
       "acpIdleTimeout": "ACP idle session reclaim",
       "browserLiveRefresh": "Live viewport refresh interval",
       "browserPreviewRefresh": "Mini preview refresh interval",
-      "launchAtLogin": "Launch at login"
+      "launchAtLogin": "Launch at login",
+      "incomingPolicy": "New messages while busy"
     },
     "help": {
       "acpIdleTimeout": "Sessions idle beyond this duration exit automatically and restore on reopen",
       "browserRefresh": "Minimum interval between frame pushes; larger saves resources, smaller feels smoother, changes apply immediately",
-      "launchAtLogin": "Start automatically in the background after login and stay in the system tray"
+      "launchAtLogin": "Start automatically in the background after login and stay in the system tray",
+      "incomingPolicy": "How new messages are handled while the bot is processing one. Priority: the new message runs first; the in-flight reply pauses and resumes automatically afterwards (queued and paused messages are kept); Latest only: interrupts and clears the queue, processing only the newest message; Queue: new messages are appended and run in order"
     },
     "option": {
       "followSystem": "Follow system",
@@ -39,7 +41,10 @@
       "light": "Light",
       "dark": "Dark",
       "idleMinutes": "{{minutes}} min",
-      "refreshSeconds": "{{seconds}} s"
+      "refreshSeconds": "{{seconds}} s",
+      "incomingPriority": "Priority (keep queue)",
+      "incomingQueue": "Queue",
+      "incomingLatest": "Latest only (clear queue)"
     }
   },
   "terminal": {

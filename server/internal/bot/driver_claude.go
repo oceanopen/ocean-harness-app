@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"ocean-harness/server/internal/acp"
+	"ocean-harness/server/internal/acpsession"
 	"ocean-harness/server/internal/agentcatalog"
 	"ocean-harness/server/internal/clibin"
 	"ocean-harness/server/internal/dal/enums"
@@ -294,6 +295,10 @@ func parseClaudeLine(line string, st *turnParseState) []TurnEvent {
 		}
 		switch raw.Event.Delta.Type {
 		case "text_delta":
+			if raw.Event.Delta.Text == acpsession.CliSyntheticNoReplyText {
+				// CLI 合成回复（收尾/吞没标记，非模型产出）：丢弃不出正文，空产出走泵侧吞没重试。
+				return nil
+			}
 			return []TurnEvent{{Type: TurnText, Delta: raw.Event.Delta.Text}}
 		case "thinking_delta":
 			// 思考增量差分：累计全量 + 水位线仅在有新增长时发增量事件（ACP 驱动同款语义）。
@@ -340,9 +345,14 @@ func parseClaudeLine(line string, st *turnParseState) []TurnEvent {
 		}
 		return evs
 	case "result":
+		// CLI 合成回复不作为回合产出（同 text_delta 过滤，空产出走吞没重试）。
+		result := raw.Result
+		if result == acpsession.CliSyntheticNoReplyText {
+			result = ""
+		}
 		return []TurnEvent{{
 			Type:      TurnDone,
-			Result:    raw.Result,
+			Result:    result,
 			SessionID: raw.SessionID,
 			IsError:   raw.IsError,
 		}}

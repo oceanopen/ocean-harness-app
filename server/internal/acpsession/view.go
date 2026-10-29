@@ -310,6 +310,22 @@ type sessionView struct {
 	sysSeq     int // system 条目序号（entryId 命名空间：sys-<n>，与回合/工具命名空间互斥）
 	turnActive bool
 	stopReason string
+
+	// syntheticNoReplySeen CLI 合成回复帧到达标记（takeSyntheticFlag 消费即清；闸门沉降信号源）。
+	syntheticNoReplySeen bool
+}
+
+// CliSyntheticNoReplyText claude CLI 对被中断/吞没回合的合成回复（二进制内建常量，非模型产出；
+// 真机实证其写入可滞后数秒，聚合进回合窗口会污染下一条消息的显示；bot 域驱动层同源过滤）。
+const CliSyntheticNoReplyText = "No response requested."
+
+// takeSyntheticFlag 消费合成回复到达标记（读后即清；须持 mu 或在单线程消费点调用）。
+func (v *sessionView) takeSyntheticFlag() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	seen := v.syntheticNoReplySeen
+	v.syntheticNoReplySeen = false
+	return seen
 }
 
 func newSessionView() *sessionView {
@@ -408,7 +424,13 @@ func (v *sessionView) applyEvent(event *acp.SessionEvent) []Frame {
 func (v *sessionView) applyUpdateLocked(n *acp1.SessionNotification) []Frame {
 	switch inner := n.Update.Variant().(type) {
 	case acp1.SessionUpdateAgentMessageChunk:
-		return v.appendChunkLocked(entryKindAgentMessage, textOfChunk(inner.Content))
+		text := textOfChunk(inner.Content)
+		if text == CliSyntheticNoReplyText {
+			// CLI 合成回复（中断/吞没的收尾标记，非模型产出）：不聚合不出帧，仅置沉降信号。
+			v.syntheticNoReplySeen = true
+			return nil
+		}
+		return v.appendChunkLocked(entryKindAgentMessage, text)
 	case acp1.SessionUpdateAgentThoughtChunk:
 		return v.appendChunkLocked(entryKindAgentThought, textOfChunk(inner.Content))
 	case acp1.SessionUpdateToolCall:

@@ -359,10 +359,11 @@ func TestPumpReplySendsCard(t *testing.T) {
 	spec := permissionCardSpec("i-1", testAcpSessionID, permPendingView(7))
 	status := "⏳ Agent 请求审批，回复数字应答：\n1. 允许（Bash: echo hi）\n2. 拒绝（Bash: echo hi）"
 
-	events := make(chan TurnEvent, 1)
+	events := make(chan TurnEvent, 2)
 	events <- TurnEvent{Type: TurnStatus, Status: status, Card: &spec}
 	done := pumpAsync(rs, events)
 	time.Sleep(2*streamTickInterval + 50*time.Millisecond) // 等 ticker 至少一个周期发卡
+	events <- TurnEvent{Type: TurnText, Delta: "已处理"}      // 回合产出正文（卡用例不涉吞没语义）
 	close(events)
 	<-done
 
@@ -384,10 +385,11 @@ func TestPumpReplyCardFailureFallsBackToText(t *testing.T) {
 	rs := &failSendCardStream{}
 	spec := permissionCardSpec("i-1", testAcpSessionID, permPendingView(7))
 
-	events := make(chan TurnEvent, 1)
+	events := make(chan TurnEvent, 2)
 	events <- TurnEvent{Type: TurnStatus, Status: "⏳ Agent 请求审批…", Card: &spec}
 	done := pumpAsync(rs, events)
 	time.Sleep(2*streamTickInterval + 50*time.Millisecond)
+	events <- TurnEvent{Type: TurnText, Delta: "已处理"}
 	close(events)
 	<-done
 
@@ -412,10 +414,11 @@ func TestPumpReplyCardOnPlainStream(t *testing.T) {
 	rs := &fakeReplyStream{}
 	spec := permissionCardSpec("i-1", testAcpSessionID, permPendingView(7))
 
-	events := make(chan TurnEvent, 1)
+	events := make(chan TurnEvent, 2)
 	events <- TurnEvent{Type: TurnStatus, Status: "⏳ Agent 请求审批…", Card: &spec}
 	done := pumpAsync(rs, events)
 	time.Sleep(2*streamTickInterval + 50*time.Millisecond)
+	events <- TurnEvent{Type: TurnText, Delta: "已处理"}
 	close(events)
 	<-done
 

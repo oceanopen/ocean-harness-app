@@ -101,7 +101,7 @@ func main() {
 	 */
 	global.BotDeliveries = bot.NewDeliveryRegistry()
 	mcpservers.SetIMDeliveryRegistry(global.BotDeliveries)
-	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, acpSessions, global.BotDeliveries, global.Logger)
+	global.BotSupervisor = bot.NewSupervisor(global.SqliteDB, cfg.Port, cfg.AppDbPath, acpSessions, global.BotDeliveries, global.Logger)
 	global.BotSupervisor.Register(wecom.Factory{})
 	global.BotSupervisor.Register(weixin.Factory{})
 	global.BotSupervisor.StartEnabled()

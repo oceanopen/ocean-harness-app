@@ -65,6 +65,15 @@ pub const LAUNCH_AT_LOGIN_KEY: &str = "launch_at_login";
 pub const ACP_SESSION_IDLE_TIMEOUT_MINUTES_KEY: &str = "acp_session_idle_timeout_minutes";
 pub const DEFAULT_ACP_SESSION_IDLE_TIMEOUT_MINUTES: u64 = 30;
 
+/*
+ * bot 忙时新消息处理策略（Go bot 编排器消费）：queue = 排队到队尾（FIFO）；priority =
+ * 中断在途回合，新消息插队首，原队列保留继续；interrupt = 中断在途回合并清空排队队列，
+ * 仅处理最新消息。Go sidecar 经 GO_SERVER_APP_DB 只读此 key，受理忙时现读（改配置即生效）。
+ * 值域与脏值回落默认由前端 appConfig.ts 与 Go 侧 parse 对齐约定。
+ */
+pub const BOT_INCOMING_POLICY_KEY: &str = "bot_incoming_policy";
+pub const DEFAULT_BOT_INCOMING_POLICY: &str = "priority";
+
 pub struct AppConfigState(pub Mutex<Connection>);
 
 pub fn init(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {

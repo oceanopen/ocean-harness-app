@@ -25,6 +25,7 @@ import (
 const (
 	KeyGithubPAT                    = "github_pat"
 	KeyAcpSessionIdleTimeoutMinutes = "acp_session_idle_timeout_minutes"
+	KeyBotIncomingPolicy            = "bot_incoming_policy"
 )
 
 // 环境类哨兵错误（可被调用方 errors.Is 判别后映射为各自面向用户的文案）。

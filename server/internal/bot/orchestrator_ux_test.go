@@ -1,15 +1,18 @@
 package bot
 
 import (
-	"time"
-
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
-	"ocean-harness/server/internal/dal/enums"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"ocean-harness/server/internal/appdb"
+	"ocean-harness/server/internal/dal/enums"
 
 	"go.uber.org/zap"
 )
@@ -143,6 +146,292 @@ func finalFrameOf(t *testing.T, name string, rs ReplyStream) []fakeFrame {
  */
 
 /*
+ * presetIncomingPolicy 临时 app.db 写入忙时新消息策略（表结构与 Rust 侧 app_config 同构），
+ * 返回路径供用例中途改档（ReadAppConfigValue 无缓存，改后即读即生效）。
+ */
+func presetIncomingPolicy(t *testing.T, policy string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "app.db")
+	setIncomingPolicy(t, path, policy)
+	return path
+}
+
+// setIncomingPolicy 向临时 app.db 覆写策略值（INSERT OR REPLACE，支持用例中途改档）。
+func setIncomingPolicy(t *testing.T, path, policy string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("打开临时 app.db: %v", err)
+	}
+	defer db.Close()
+	if _, err := db.Exec("CREATE TABLE IF NOT EXISTS app_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
+		t.Fatalf("建 app_config 表: %v", err)
+	}
+	if _, err := db.Exec("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)", appdb.KeyBotIncomingPolicy, policy); err != nil {
+		t.Fatalf("写入忙时新消息策略: %v", err)
+	}
+}
+
+/*
+ * preemptDriver 首回合阻塞至 ctx 取消、后续回合即完成（priority/interrupt 抢占链路宿主）：
+ * prompts 记录回合受理序，承载「插队先于存量队列」的顺序断言。
+ */
+type preemptDriver struct {
+	started chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	prompts []string
+}
+
+func (d *preemptDriver) RunTurn(ctx context.Context, req TurnRequest) (<-chan TurnEvent, error) {
+	d.mu.Lock()
+	first := len(d.prompts) == 0
+	d.prompts = append(d.prompts, req.Prompt)
+	d.mu.Unlock()
+	d.once.Do(func() { close(d.started) })
+	events := make(chan TurnEvent, 2)
+	if first {
+		// 首回合先产一段正文再阻塞（驱动暂停场景的部分正文与恢复续写断言）。
+		events <- TurnEvent{Type: TurnText, Delta: "已输出的一半"}
+		go func() {
+			<-ctx.Done()
+			events <- TurnEvent{Type: TurnError, Err: fmt.Errorf("claude 回合失败: %w", ctx.Err())}
+			close(events)
+		}()
+		return events, nil
+	}
+	events <- TurnEvent{Type: TurnDone, Result: "ok"}
+	close(events)
+	return events, nil
+}
+
+// capturedPrompts 回合 prompt 受理序只读拷贝。
+func (d *preemptDriver) capturedPrompts() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.prompts...)
+}
+
+/*
+ * TestIncomingPriorityJumpsQueue priority 档（默认档）：忙时新消息暂停在途回合（非终帧 ⏸
+ * 保持流开启）并插到队首；执行序 = 新消息 → 原队列 → 被暂停回合，恢复轮携带暂停上下文在
+ * 同一回复流上续写至终帧。
+ */
+func TestIncomingPriorityJumpsQueue(t *testing.T) {
+	dbPath := presetIncomingPolicy(t, string(BotIncomingQueue))
+	driver := &preemptDriver{started: make(chan struct{})}
+	o, _ := newOrchestratorWithDB(t)
+	o.driver = driver
+	o.AppDbPath = dbPath
+	cfg := issueCmdCfg()
+
+	rs1 := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "首条任务"}, func() (ReplyStream, error) {
+		return rs1, nil
+	})
+	<-driver.started
+
+	// 排队档下第二条消息按现状排到队尾。
+	rs2 := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "排队任务"}, func() (ReplyStream, error) {
+		return rs2, nil
+	})
+	if frames := rs2.snapshot(); len(frames) != 1 || frames[0].content != "> 收到。当前有任务处理中，排队中，稍后自动继续…" {
+		t.Fatalf("排队档占位帧应为排队文案: %+v", frames)
+	}
+
+	// 中途改档 priority：第三条消息暂停在途回合并插队首，存量 m-2 与被暂停的 m-1 依次恢复。
+	setIncomingPolicy(t, dbPath, string(BotIncomingPriority))
+	rs3 := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-3", ConversationKey: "single:u1", SenderID: "u1", Text: "插队任务"}, func() (ReplyStream, error) {
+		return rs3, nil
+	})
+	if frames := rs3.snapshot(); len(frames) != 1 || frames[0].content != "> 收到。上一条回复已暂停，本条将优先处理，完成后自动继续上一条…" {
+		t.Fatalf("priority 档占位帧应为抢占文案: %+v", frames)
+	}
+	waitFor(t, "被暂停回合出现 ⏸ 非终帧", func() bool {
+		for _, f := range rs1.snapshot() {
+			if !f.final && strings.Contains(f.content, "⏸") {
+				return true
+			}
+		}
+		return false
+	})
+
+	// 受理序 = 首条 → 插队条 → 存量排队条 → 首条恢复轮（携带暂停上下文续写）。
+	waitFor(t, "四回合按抢占序受理", func() bool { return len(driver.capturedPrompts()) == 4 })
+	prompts := driver.capturedPrompts()
+	if !strings.Contains(prompts[0], "首条任务") || !strings.Contains(prompts[1], "插队任务") ||
+		!strings.Contains(prompts[2], "排队任务") || !strings.Contains(prompts[3], "首条任务") {
+		t.Fatalf("回合受理序不符（首条/插队/排队/首条恢复）: %q", prompts)
+	}
+	if !strings.Contains(prompts[3], "<paused_context>") || !strings.Contains(prompts[3], "已输出的一半") {
+		t.Fatalf("恢复轮应携带暂停上下文与已产出部分: %.300q", prompts[3])
+	}
+
+	// 被暂停回合在同一流上续写至终帧：⏸ 非终帧之后仍有产出帧，最后终帧收口。
+	frames1 := finalFrameOf(t, "被暂停回合恢复终帧", rs1)
+	pauseIdx := -1
+	for i, f := range frames1 {
+		if strings.Contains(f.content, "⏸") {
+			pauseIdx = i
+		}
+	}
+	if pauseIdx < 0 || pauseIdx == len(frames1)-1 {
+		t.Fatalf("⏸ 后应在同一流继续产出并终帧收口: %+v", frames1)
+	}
+	if frames2 := finalFrameOf(t, "存量排队消息终帧", rs2); len(frames2) < 2 || !frames2[len(frames2)-1].final {
+		t.Fatalf("存量排队消息应保留并继续执行收终帧: %+v", frames2)
+	}
+}
+
+/*
+ * TestIncomingLatestRunsOnlyNewest interrupt 档：忙时新消息中断在途回合并排空队列，仅处理
+ * 最新消息（被排空消息各收 ⏹ 未执行提示，文案与 /stop 排空同源，已由该链路用例覆盖）。
+ */
+func TestIncomingLatestRunsOnlyNewest(t *testing.T) {
+	dbPath := presetIncomingPolicy(t, string(BotIncomingLatest))
+	driver := &preemptDriver{started: make(chan struct{})}
+	o, _ := newOrchestratorWithDB(t)
+	o.driver = driver
+	o.AppDbPath = dbPath
+	cfg := issueCmdCfg()
+
+	rs1 := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "首条任务"}, func() (ReplyStream, error) {
+		return rs1, nil
+	})
+	<-driver.started
+
+	rs2 := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "最新任务"}, func() (ReplyStream, error) {
+		return rs2, nil
+	})
+	if frames := rs2.snapshot(); len(frames) != 1 || frames[0].content != "> 收到。已中断上一条消息的处理，正在处理本条…" {
+		t.Fatalf("interrupt 档占位帧应为抢占文案: %+v", frames)
+	}
+	frames1 := finalFrameOf(t, "被打断回合终帧", rs1)
+	if frames1[len(frames1)-1].content != "⏹ 已停止当前回复。" {
+		t.Fatalf("被打断回合终帧应为取消叙事: %+v", frames1)
+	}
+	waitFor(t, "最新消息回合已受理", func() bool { return len(driver.capturedPrompts()) == 2 })
+	frames2 := finalFrameOf(t, "最新消息终帧", rs2)
+	if len(frames2) < 2 || !frames2[len(frames2)-1].final {
+		t.Fatalf("最新消息应执行收终帧: %+v", frames2)
+	}
+}
+
+// estBlockDriver 建立期阻塞替身：首回合 RunTurn 阻塞至 ctx 取消后返回错误（建立期抢占宿主），
+// 后续回合即完成。
+type estBlockDriver struct {
+	started chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	calls   int
+}
+
+func (d *estBlockDriver) RunTurn(ctx context.Context, _ TurnRequest) (<-chan TurnEvent, error) {
+	d.mu.Lock()
+	d.calls++
+	first := d.calls == 1
+	d.mu.Unlock()
+	d.once.Do(func() { close(d.started) })
+	if first {
+		<-ctx.Done()
+		return nil, fmt.Errorf("排队等待回合结束被取消: %w", ctx.Err())
+	}
+	events := make(chan TurnEvent, 1)
+	events <- TurnEvent{Type: TurnDone, Result: "ok"}
+	close(events)
+	return events, nil
+}
+
+/*
+ * TestIncomingPriorityPreemptsEstablishingTurn 建立期抢占：RunTurn 未返回即被抢占（泵未启动）
+ * → ⏸ 非终帧 + 重新入队待恢复，恢复轮在同一回复流上执行收终帧，消息不丢。
+ */
+func TestIncomingPriorityPreemptsEstablishingTurn(t *testing.T) {
+	dbPath := presetIncomingPolicy(t, string(BotIncomingPriority))
+	driver := &estBlockDriver{started: make(chan struct{})}
+	o, _ := newOrchestratorWithDB(t)
+	o.driver = driver
+	o.AppDbPath = dbPath
+	cfg := issueCmdCfg()
+
+	rs1 := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "首条"}, func() (ReplyStream, error) {
+		return rs1, nil
+	})
+	<-driver.started
+
+	rs2 := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-2", ConversationKey: "single:u1", SenderID: "u1", Text: "抢占"}, func() (ReplyStream, error) {
+		return rs2, nil
+	})
+
+	frames1 := finalFrameOf(t, "建立期抢占后恢复终帧", rs1)
+	paused := false
+	for _, f := range frames1 {
+		if !f.final && strings.Contains(f.content, "⏸") {
+			paused = true
+		}
+	}
+	if !paused {
+		t.Fatalf("建立期抢占应有 ⏸ 非终帧: %+v", frames1)
+	}
+	if frames2 := finalFrameOf(t, "抢占消息终帧", rs2); len(frames2) < 2 || !frames2[len(frames2)-1].final {
+		t.Fatalf("抢占消息应执行收终帧: %+v", frames2)
+	}
+}
+
+/*
+ * TestIncomingPriorityQueueFullKeepsTurn priority 档队满回归：插队被拒（排队已满）时在途
+ * 回合必须存活（先入队后取消的时序保证），存量队列原样保留继续执行。
+ */
+func TestIncomingPriorityQueueFullKeepsTurn(t *testing.T) {
+	dbPath := presetIncomingPolicy(t, string(BotIncomingQueue))
+	driver := &preemptDriver{started: make(chan struct{})}
+	o, _ := newOrchestratorWithDB(t)
+	o.driver = driver
+	o.AppDbPath = dbPath
+	cfg := issueCmdCfg()
+
+	rs1 := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-1", ConversationKey: "single:u1", SenderID: "u1", Text: "首条任务"}, func() (ReplyStream, error) {
+		return rs1, nil
+	})
+	<-driver.started
+
+	// 排队档灌满队列（queueCapacity 条）。
+	for i := 2; i <= 1+queueCapacity; i++ {
+		o.HandleInbound(cfg, InboundMessage{MessageID: fmt.Sprintf("m-%d", i), ConversationKey: "single:u1", SenderID: "u1", Text: "占位任务"}, func() (ReplyStream, error) {
+			return &fakeReplyStream{}, nil
+		})
+	}
+
+	// 改档 priority 后新消息插队：队满被拒，在途回合不得被波及。
+	setIncomingPolicy(t, dbPath, string(BotIncomingPriority))
+	rsFull := &fakeReplyStream{}
+	o.HandleInbound(cfg, InboundMessage{MessageID: "m-full", ConversationKey: "single:u1", SenderID: "u1", Text: "插队任务"}, func() (ReplyStream, error) {
+		return rsFull, nil
+	})
+	frames := finalFrameOf(t, "队满拒绝终帧", rsFull)
+	if frames[len(frames)-1].content != "当前消息较多，排队已满，请稍后再发。" {
+		t.Fatalf("队满应拒绝收终帧: %+v", frames)
+	}
+	// 留出取消竞态窗口后复核：在途回合无终帧、无新回合受理。
+	time.Sleep(100 * time.Millisecond)
+	if len(driver.capturedPrompts()) != 1 {
+		t.Fatalf("队满拒绝不应触发新回合: %q", driver.capturedPrompts())
+	}
+	for _, f := range rs1.snapshot() {
+		if f.final {
+			t.Fatalf("队满拒绝后在途回合应存活（不该有终帧）: %+v", rs1.snapshot())
+		}
+	}
+}
+
+/*
  * TestRunTurnProjectTaskUnboundGate 项目档未关联任务门禁（D8 提示后拦截）：已 markSeen，
  * 纯指引文本终帧收口，不出回合（nil driver 不 panic 即证明主路径未触达）。
  */
@@ -179,6 +468,8 @@ func TestSlashStopKillsTurn(t *testing.T) {
 	driver := &blockingDriver{started: make(chan struct{})}
 	o, store := newOrchestratorWithDB(t)
 	o.driver = driver
+	// 排队档注入：本用例专测 /stop 链路，与忙时新消息默认档（priority）解耦。
+	o.AppDbPath = presetIncomingPolicy(t, string(BotIncomingQueue))
 	cfg := issueCmdCfg()
 
 	rs1 := &fakeReplyStream{}

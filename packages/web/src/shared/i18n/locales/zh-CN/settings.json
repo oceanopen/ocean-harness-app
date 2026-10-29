@@ -25,12 +25,14 @@
       "acpIdleTimeout": "ACP 会话闲置回收",
       "browserLiveRefresh": "实时画面刷新间隔",
       "browserPreviewRefresh": "迷你预览刷新间隔",
-      "launchAtLogin": "开机自启动"
+      "launchAtLogin": "开机自启动",
+      "incomingPolicy": "忙时新消息处理"
     },
     "help": {
       "acpIdleTimeout": "空闲超过该时长的会话自动退出，重开时自动恢复",
       "browserRefresh": "画面变化后推送新帧的最小间隔，调大更省资源、调小更流畅，改动即时生效",
-      "launchAtLogin": "登录系统后自动在后台启动并托盘常驻，无需手动打开"
+      "launchAtLogin": "登录系统后自动在后台启动并托盘常驻，无需手动打开",
+      "incomingPolicy": "机器人正在处理消息时又收到新消息的处理方式。优先处理：新消息插队最先执行，进行中的回复暂停并在其后自动继续（原队列与被暂停回复均保留）；仅处理最新：中断当前回合并清空排队队列，只处理最新一条；排队：新消息排到队尾依次执行"
     },
     "option": {
       "followSystem": "跟随系统",
@@ -39,7 +41,10 @@
       "light": "浅色",
       "dark": "深色",
       "idleMinutes": "{{minutes}} 分钟",
-      "refreshSeconds": "{{seconds}} 秒"
+      "refreshSeconds": "{{seconds}} 秒",
+      "incomingPriority": "优先处理（队列保留）",
+      "incomingQueue": "排队处理",
+      "incomingLatest": "仅处理最新（清空队列）"
     }
   },
   "terminal": {
