@@ -2,8 +2,8 @@
  * vendor-common.ts — vendor staging 公共设施（被 prepare-vendor-staging.ts 编排，两域模块复用）
  *
  * 总体机制见入口 scripts/prepare-vendor-staging.ts 头注释；本模块收口三类共享物：
- * - 基准解析：根 package.json 声明（rootPkg）、pnpm-workspace.yaml 顶层 catalog 段版本
- *   （catalogVersionOf，版本 SSOT 同款机制）、staging 的 pnpm 版本注入（packageManagerSpec）。
+ * - 基准解析：根 package.json 声明（rootPkg，仅 packageManager 注入用）、staging 的
+ *   pnpm 版本注入（packageManagerSpec）；vendored 版本 SSOT 在 vendor-pins.ts，此处不解析。
  * - 平台与 staging 形态：构建目标平台解析（targetPlatform）、staging 三件套
  *   （package.json/.npmrc/pnpm-workspace.yaml）、就绪判定（stagingReady）、临时目录卫生
  *   （cleanStaleTmp）、pnpm add 封装（pnpmAdd）。
@@ -36,11 +36,8 @@ import { fileURLToPath } from 'node:url';
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const STAGING_ROOT = resolve(repoRoot, 'app/resources/acp-adapters');
 
-const WORKSPACE_YAML = resolve(repoRoot, 'pnpm-workspace.yaml');
-
 export const rootPkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as {
   packageManager?: string;
-  devDependencies?: Record<string, string>;
 };
 
 export function log(message: string): void {
@@ -59,27 +56,6 @@ function packageManagerSpec(): string {
     fail(`根 package.json packageManager 缺失或非 pnpm（实际：${pm ?? '无'}），staging 无法注入 pnpm 版本声明`);
   }
   return pm;
-}
-
-/** pnpm-workspace.yaml 顶层 catalog: 段内指定包的声明版本（单/双引号与裸值、行尾注释均兼容；段结束/缺失返回 null）。 */
-export function catalogVersionOf(pkg: string): string | null {
-  const escaped = pkg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`^\\s+['"]?${escaped}['"]?:\\s*(['"]?)(.+?)\\1\\s*(?:#.*)?$`);
-  let inCatalog = false;
-  for (const line of readFileSync(WORKSPACE_YAML, 'utf8').split('\n')) {
-    if (!inCatalog) {
-      inCatalog = /^catalog:\s*(?:#.*)?$/.test(line);
-      continue;
-    }
-    if (/^\S/.test(line)) {
-      break; // 下一个顶层 key：catalog 段结束（后续缩进行属其他段，禁止误匹配）
-    }
-    const matched = line.match(pattern);
-    if (matched) {
-      return matched[2];
-    }
-  }
-  return null;
 }
 
 /**

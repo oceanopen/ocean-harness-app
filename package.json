@@ -32,11 +32,8 @@
     "release": "node scripts/release.ts"
   },
   "devDependencies": {
-    "@agentclientprotocol/claude-agent-acp": "catalog:",
     "@antfu/eslint-config": "catalog:",
-    "@anthropic-ai/claude-agent-sdk": "catalog:",
     "@eslint-react/eslint-plugin": "catalog:",
-    "@playwright/mcp": "catalog:",
     "@tauri-apps/cli": "catalog:",
     "@types/node": "catalog:",
     "bumpp": "catalog:",

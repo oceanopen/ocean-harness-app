@@ -12,10 +12,9 @@ packages:
 
 # 依赖版本 SSOT：全仓依赖一律在此登记版本、包内以 "catalog:" 引用
 # （eslint pnpm/json-enforce-catalog 规则兜底校验），杜绝各包版本漂移。
+# vendored 外部组件（随包分发、非 workspace 依赖）的版本不在此登记，SSOT 在 scripts/vendor-pins.ts。
 catalog:
-  '@agentclientprotocol/claude-agent-acp': 0.97.0
   '@antfu/eslint-config': ^9.0.0
-  '@anthropic-ai/claude-agent-sdk': 0.3.310
   '@codemirror/commands': ^6.11.0
   '@codemirror/lang-cpp': ^6.0.3
   '@codemirror/lang-css': ^6.3.1
@@ -48,7 +47,6 @@ catalog:
   '@mui/icons-material': ^9.1.0
   '@mui/material': ^9.1.0
   '@mui/x-date-pickers': ^9.10.1
-  '@playwright/mcp': 0.0.83
   '@streamdown/mermaid': ^1.0.2
   '@svgr/core': ^8.1.0
   '@svgr/plugin-jsx': ^8.1.0

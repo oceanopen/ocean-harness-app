@@ -9,7 +9,7 @@
  * 安装条目三类（分域模块，公共设施与统一安装驱动在 vendor-common.ts）：
  * - claude-acp：catalog 的 claude adapter 条目（vendor-claude-adapters.ts，SDK 专属校验链）。
  * - browser-engine：browser 引擎伪条目 id=playwright-mcp（vendor-browser-engine.ts，
- *   pnpm-workspace.yaml catalog 段版本 SSOT + browser-mcp.json 投影防漂移）。
+ *   vendor-pins 版本 SSOT + browser-mcp.json 投影防漂移）。
  * - node-runtime：内嵌 node 二进制（vendor-node-runtime.ts，官方 dist 直下，应用自持
  *   node 运行时）。
  *

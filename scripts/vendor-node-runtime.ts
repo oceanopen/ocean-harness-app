@@ -20,9 +20,10 @@ import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } f
 import { resolve } from 'node:path';
 import process from 'node:process';
 import { cleanStaleTmp, fail, log, STAGING_ROOT } from './vendor-common.ts';
+import { VENDOR_NODE_VERSION } from './vendor-pins.ts';
 
-/** 内嵌 node 版本 pin（唯一 SSOT）：与根 engines >=24.18 同线。 */
-const NODE_VERSION = '24.18.0';
+/** 内嵌 node 版本 pin（SSOT 在 vendor-pins）：与根 engines >=24.18 同线。 */
+const NODE_VERSION = VENDOR_NODE_VERSION;
 
 /** 官方 dist 镜像覆盖 env（默认 nodejs.org，受限网络指向镜像后重跑）。 */
 const MIRROR_ENV = 'NODEJS_DIST_MIRROR';

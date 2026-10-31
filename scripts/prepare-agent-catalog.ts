@@ -11,8 +11,8 @@
  *   node scripts/prepare-agent-catalog.ts --offline               # 离线：读快照重建
  *   node scripts/prepare-agent-catalog.ts --pin @scope/pkg@1.2.3  # 覆盖 pin（同步在线校验）
  *
- * 升级验证流程（风险 §5.2）：改 pnpm-workspace.yaml catalog 段版本（root devDeps 以
- * catalog: 引用，SSOT 在 catalog 段）→ 跑本脚本 → OCEAN_ACP_REAL_HANDSHAKE=1
+ * 升级验证流程（风险 §5.2）：改 scripts/vendor-pins.ts 版本 pin（vendored 组件版本唯一
+ * SSOT）→ 跑本脚本 → OCEAN_ACP_REAL_HANDSHAKE=1
  * go test ./internal/acp -run TestRealHandshake（缺省命令即 catalog 条目）→ 提交。
  * 扩展 agent：BUILTIN_AGENT_IDS 与 PROJECT_OVERRIDES 各加一条目 + 补 registry 快照，
  * 代码零改动（native-acp 条目无需 pin）。
@@ -24,7 +24,7 @@ import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { catalogVersionOf } from './vendor-common.ts';
+import { VENDOR_PKG_PINS } from './vendor-pins.ts';
 
 /** ACP registry 快照条目（本脚本只消费这些字段；完整结构见 acp-registry.snapshot.json）。 */
 interface RegistryEntry {
@@ -43,7 +43,6 @@ interface Registry {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = resolve(repoRoot, 'server/internal/agentcatalog');
-const rootPkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8')) as { devDependencies?: Record<string, string> };
 const CATALOG_PATH = resolve(OUT_DIR, 'agent-catalog.json');
 const SNAPSHOT_PATH = resolve(OUT_DIR, 'acp-registry.snapshot.json');
 const ACP_REGISTRY_URL = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json';
@@ -54,8 +53,8 @@ const NPM_TIMEOUT_MS = 30_000;
 const BUILTIN_AGENT_IDS = ['claude-acp'];
 
 /**
- * pin 包名表：id → npm 包名（版本不住这里——root devDeps 以 catalog: 引用，版本 SSOT
- * 在 pnpm-workspace.yaml catalog 段，升级即改 catalog 段条目）。包名不跟随 registry 的包名迁移，
+ * pin 包名表：id → npm 包名（版本不住这里——版本 SSOT 在 scripts/vendor-pins.ts，
+ * 升级即改 pins 条目）。包名不跟随 registry 的包名迁移，
  * 以本项目真握手验证结论为准；版本须为精确版本（拒绝 range/latest，脚本强校验）。
  * native-acp 条目（直连 CLI）不进此表。
  */
@@ -166,19 +165,16 @@ async function main() {
       fail(`白名单条目 ${id} 缺 PROJECT_OVERRIDES（label/strategy/enabled 必填）`);
     }
 
-    // pin spec 组装：默认 = pin 包名表 + root 声明版本（catalog: 引用解析到
-    // pnpm-workspace.yaml catalog 段 SSOT）；--pin 以完整 spec 覆盖（临时测试用，仍过精确版本校验）。
+    // pin spec 组装：默认 = pin 包名表 + vendor-pins SSOT 版本；--pin 以完整 spec 覆盖
+    // （临时测试用，仍过精确版本校验）。
     let pinSpec: string | undefined;
     if (ADAPTER_PINS[id] !== undefined) {
       if (pinOverride) {
         pinSpec = pinOverride;
       } else {
-        const declared = rootPkg.devDependencies?.[ADAPTER_PINS[id]];
-        const version = declared === 'catalog:'
-          ? catalogVersionOf(ADAPTER_PINS[id])
-          : declared;
+        const version = VENDOR_PKG_PINS[ADAPTER_PINS[id] as keyof typeof VENDOR_PKG_PINS];
         if (!version) {
-          fail(`缺 ${ADAPTER_PINS[id]} 版本声明（root devDeps 为 catalog: 引用时 pnpm-workspace.yaml catalog 段须有对应条目；升级即改 catalog 段版本）`);
+          fail(`缺 ${ADAPTER_PINS[id]} 版本 pin（scripts/vendor-pins.ts VENDOR_PKG_PINS 须有对应条目；升级即改 pins 版本）`);
         }
         pinSpec = `${ADAPTER_PINS[id]}@${version}`;
       }
