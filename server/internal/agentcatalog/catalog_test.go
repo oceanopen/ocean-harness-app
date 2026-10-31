@@ -2,6 +2,7 @@ package agentcatalog
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,6 +37,37 @@ func TestLoadEmbedded(t *testing.T) {
 	}
 	if len(Enabled()) == 0 {
 		t.Fatal("Enabled() 为空")
+	}
+}
+
+/*
+ * TestEmbeddedVersionPinConsistency 内嵌产物自洽断言：npx-adapter 条目的 version 字段须与
+ * args pin 版本后缀一致——EnsureVendored 按前者定位打包资源、vendor 脚本按后者安装，漂移即
+ * 运行期「资源缺失」。
+ */
+func TestEmbeddedVersionPinConsistency(t *testing.T) {
+	cat, err := Load()
+	if err != nil {
+		t.Fatalf("Load(): %v", err)
+	}
+	for _, entry := range cat.Agents {
+		if entry.Strategy != StrategyNpxAdapter {
+			continue
+		}
+		spec := ""
+		for _, arg := range slices.Backward(entry.Args) {
+			if !strings.HasPrefix(arg, "-") {
+				spec = arg
+				break
+			}
+		}
+		at := strings.LastIndex(spec, "@")
+		if at <= 0 {
+			t.Fatalf("条目 %s pin 形态异常: %q", entry.ID, spec)
+		}
+		if pin := spec[at+1:]; entry.Version != pin {
+			t.Fatalf("条目 %s version 字段(%q) 与 args pin(%q) 漂移——重跑 pnpm server:catalog:refresh 同步", entry.ID, entry.Version, pin)
+		}
 	}
 }
 

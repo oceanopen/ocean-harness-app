@@ -26,6 +26,7 @@ const CATALOG_PATH = resolve(repoRoot, 'server/internal/agentcatalog/agent-catal
 /** agent catalog 条目（本模块只消费这些字段）。 */
 interface CatalogEntry {
   id: string;
+  version?: string;
   args: string[];
   enabled?: boolean;
   strategy?: string;
@@ -134,6 +135,14 @@ export function installClaudeAdapters(platform: TargetPlatform): void {
   const sdkPin = rootClaudeSdkPin();
   for (const entry of entries) {
     const spec = adapterSpec(entry);
+    /*
+     * version 字段与 args pin 强一致：EnsureVendored 按前者定位资源目录、本脚本按后者安装，
+     * 漂移即打包产物与运行期查找错位（运行期报「资源缺失」）。
+     */
+    const specVersion = spec.slice(spec.lastIndexOf('@') + 1);
+    if (entry.version !== specVersion) {
+      fail(`catalog 条目 ${entry.id} version(${entry.version ?? '空'}) 与 args pin(${specVersion}) 漂移——重跑 pnpm server:catalog:refresh 同步`);
+    }
     installSpec({
       id: entry.id,
       spec,
